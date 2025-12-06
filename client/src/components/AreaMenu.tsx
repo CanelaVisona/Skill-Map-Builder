@@ -1,4 +1,4 @@
-import { useSkillTree } from "@/lib/skill-context";
+import { useSkillTree, iconMap } from "@/lib/skill-context";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, PanelLeftClose, PanelLeftOpen } from "lucide-react";
@@ -37,12 +37,14 @@ export function AreaMenu() {
     }
 
     addSkill(activeAreaId, {
+      areaId: activeAreaId,
       title: data.title,
       description: data.description,
-      x: 50, // Always center
+      x: 50,
       y: newY,
       status: data.locked ? "locked" : "available",
-      dependencies: lastSkill ? [lastSkill.id] : []
+      dependencies: lastSkill ? [lastSkill.id] : [],
+      manualLock: data.locked ? 1 : 0
     });
     
     reset();
@@ -83,7 +85,7 @@ export function AreaMenu() {
       <div className="flex-1 overflow-y-auto py-2 space-y-1 px-2">
         {areas.map((area) => {
           const isActive = area.id === activeAreaId;
-          const Icon = area.icon;
+          const Icon = iconMap[area.icon] || iconMap.Home;
           
           return (
             <button

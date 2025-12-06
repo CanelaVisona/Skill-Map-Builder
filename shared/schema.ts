@@ -1,18 +1,32 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-export const users = pgTable("users", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  username: text("username").notNull().unique(),
-  password: text("password").notNull(),
+export const areas = pgTable("areas", {
+  id: varchar("id").primaryKey(),
+  name: text("name").notNull(),
+  icon: text("icon").notNull(),
+  color: text("color").notNull(),
+  description: text("description").notNull(),
 });
 
-export const insertUserSchema = createInsertSchema(users).pick({
-  username: true,
-  password: true,
+export const skills = pgTable("skills", {
+  id: varchar("id").primaryKey(),
+  areaId: varchar("area_id").notNull().references(() => areas.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  status: text("status").notNull(),
+  x: integer("x").notNull(),
+  y: integer("y").notNull(),
+  dependencies: jsonb("dependencies").notNull().$type<string[]>(),
+  manualLock: integer("manual_lock").$type<0 | 1>().default(0),
 });
 
-export type InsertUser = z.infer<typeof insertUserSchema>;
-export type User = typeof users.$inferSelect;
+export const insertAreaSchema = createInsertSchema(areas);
+export const insertSkillSchema = createInsertSchema(skills).omit({ id: true });
+
+export type InsertArea = z.infer<typeof insertAreaSchema>;
+export type Area = typeof areas.$inferSelect;
+export type InsertSkill = z.infer<typeof insertSkillSchema>;
+export type Skill = typeof skills.$inferSelect;

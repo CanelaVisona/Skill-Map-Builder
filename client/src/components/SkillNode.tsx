@@ -1,15 +1,14 @@
 import { motion } from "framer-motion";
-import { Skill } from "../data/skills";
+import { type Skill, useSkillTree } from "@/lib/skill-context";
 import { cn } from "@/lib/utils";
 import { Check, Lock, Trash2, Unlock } from "lucide-react";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { useSkillTree } from "@/lib/skill-context";
 
 interface SkillNodeProps {
   skill: Skill;

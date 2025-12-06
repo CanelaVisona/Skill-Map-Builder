@@ -1,5 +1,28 @@
 import { createContext, useContext, useState, useEffect } from "react";
-import { Area, INITIAL_AREAS, Skill, SkillStatus } from "../data/skills";
+import { Music, Trophy, BookOpen, Home } from "lucide-react";
+
+export type SkillStatus = "locked" | "available" | "mastered";
+
+export interface Skill {
+  id: string;
+  areaId: string;
+  title: string;
+  description: string;
+  status: SkillStatus;
+  x: number;
+  y: number;
+  dependencies: string[];
+  manualLock?: number;
+}
+
+export interface Area {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  description: string;
+  skills: Skill[];
+}
 
 interface SkillTreeContextType {
   areas: Area[];
@@ -10,151 +33,248 @@ interface SkillTreeContextType {
   deleteSkill: (areaId: string, skillId: string) => void;
   toggleLock: (areaId: string, skillId: string) => void;
   activeArea: Area | undefined;
+  isLoading: boolean;
 }
 
 const SkillTreeContext = createContext<SkillTreeContextType | undefined>(undefined);
 
+const iconMap: Record<string, any> = {
+  Music,
+  Trophy,
+  BookOpen,
+  Home,
+};
+
 export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
-  const [areas, setAreas] = useState<Area[]>(INITIAL_AREAS);
-  const [activeAreaId, setActiveAreaId] = useState<string>(INITIAL_AREAS[0].id);
+  const [areas, setAreas] = useState<Area[]>([]);
+  const [activeAreaId, setActiveAreaId] = useState<string>("");
+  const [isLoading, setIsLoading] = useState(true);
 
   const activeArea = areas.find(a => a.id === activeAreaId);
 
-  const toggleSkillStatus = (areaId: string, skillId: string) => {
-    setAreas(prev => prev.map(area => {
-      if (area.id !== areaId) return area;
+  // Load areas from API
+  useEffect(() => {
+    async function loadAreas() {
+      try {
+        const response = await fetch("/api/areas");
+        const data = await response.json();
+        setAreas(data);
+        if (data.length > 0 && !activeAreaId) {
+          setActiveAreaId(data[0].id);
+        }
+      } catch (error) {
+        console.error("Error loading areas:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadAreas();
+  }, []);
 
-      return {
-        ...area,
-        skills: area.skills.map(skill => {
-          if (skill.id !== skillId) return skill;
-          
-          const nextStatus: Record<SkillStatus, SkillStatus> = {
-            "locked": "locked", // Can't toggle locked manually via click, must use lock toggle
-            "available": "mastered",
-            "mastered": "available"
-          };
-          
-          return { ...skill, status: nextStatus[skill.status] };
-        })
-      };
-    }));
+  const toggleSkillStatus = async (areaId: string, skillId: string) => {
+    const area = areas.find(a => a.id === areaId);
+    if (!area) return;
+    
+    const skill = area.skills.find(s => s.id === skillId);
+    if (!skill) return;
+
+    const nextStatus: Record<SkillStatus, SkillStatus> = {
+      "locked": "locked",
+      "available": "mastered",
+      "mastered": "available"
+    };
+
+    const newStatus = nextStatus[skill.status];
+
+    try {
+      await fetch(`/api/skills/${skillId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+
+      setAreas(prev => prev.map(area => {
+        if (area.id !== areaId) return area;
+        return {
+          ...area,
+          skills: area.skills.map(skill => 
+            skill.id === skillId ? { ...skill, status: newStatus } : skill
+          )
+        };
+      }));
+    } catch (error) {
+      console.error("Error toggling skill status:", error);
+    }
   };
 
-  const toggleLock = (areaId: string, skillId: string) => {
-    setAreas(prev => prev.map(area => {
-      if (area.id !== areaId) return area;
+  const toggleLock = async (areaId: string, skillId: string) => {
+    const area = areas.find(a => a.id === areaId);
+    if (!area) return;
+    
+    const skill = area.skills.find(s => s.id === skillId);
+    if (!skill) return;
 
-      return {
-        ...area,
-        skills: area.skills.map(skill => {
-          if (skill.id !== skillId) return skill;
-          
-          const isLocked = skill.status === "locked";
-          return { 
-            ...skill, 
-            status: isLocked ? "available" : "locked",
-            manualLock: !isLocked // If we are locking, set manualLock to true. If unlocking, false.
-          };
-        })
-      };
-    }));
+    const isLocked = skill.status === "locked";
+    const newStatus = isLocked ? "available" : "locked";
+    const newManualLock = isLocked ? 0 : 1;
+
+    try {
+      await fetch(`/api/skills/${skillId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          status: newStatus,
+          manualLock: newManualLock
+        }),
+      });
+
+      setAreas(prev => prev.map(area => {
+        if (area.id !== areaId) return area;
+        return {
+          ...area,
+          skills: area.skills.map(skill => 
+            skill.id === skillId 
+              ? { ...skill, status: newStatus, manualLock: newManualLock } 
+              : skill
+          )
+        };
+      }));
+    } catch (error) {
+      console.error("Error toggling lock:", error);
+    }
   };
 
-  const deleteSkill = (areaId: string, skillId: string) => {
-    setAreas(prev => prev.map(area => {
-      if (area.id !== areaId) return area;
+  const deleteSkill = async (areaId: string, skillId: string) => {
+    const area = areas.find(a => a.id === areaId);
+    if (!area) return;
 
-      const skillToDelete = area.skills.find(s => s.id === skillId);
-      if (!skillToDelete) return area;
+    const skillToDelete = area.skills.find(s => s.id === skillId);
+    if (!skillToDelete) return;
 
-      // Find children (nodes that depend on this skill)
-      const children = area.skills.filter(s => s.dependencies.includes(skillId));
+    // Find children (nodes that depend on this skill)
+    const children = area.skills.filter(s => s.dependencies.includes(skillId));
+    const newDependencies = skillToDelete.dependencies;
 
-      // Re-link: children should now depend on the deleted skill's dependencies
-      // In a linear tree, skillToDelete usually has 0 or 1 dependency.
-      const newDependencies = skillToDelete.dependencies;
+    try {
+      // Delete the skill
+      await fetch(`/api/skills/${skillId}`, { method: "DELETE" });
 
-      const updatedSkills = area.skills
-        .filter(s => s.id !== skillId) // Remove the skill
-        .map(s => {
-          if (children.find(c => c.id === s.id)) {
-            // This is a child, update its dependencies
-            return {
-              ...s,
-              dependencies: s.dependencies
-                .filter(d => d !== skillId) // Remove old dependency
-                .concat(newDependencies) // Add new dependencies (grandparent)
-                // Also shift up if needed?
-                // Let's shift up by 150px to close the gap
-                // Only shift if it was below the deleted node
-            };
-          }
-          return s;
-        })
-        // Shift all nodes below the deleted one up by 150px
-        .map(s => {
-          if (s.y > skillToDelete.y) {
-            return { ...s, y: s.y - 150 };
-          }
-          return s;
+      // Update children's dependencies
+      for (const child of children) {
+        const updatedDeps = child.dependencies
+          .filter(d => d !== skillId)
+          .concat(newDependencies);
+        
+        await fetch(`/api/skills/${child.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dependencies: updatedDeps }),
         });
+      }
 
-      return {
-        ...area,
-        skills: updatedSkills
-      };
-    }));
+      // Shift nodes below up by 150px
+      const nodesToShift = area.skills.filter(s => s.y > skillToDelete.y);
+      for (const node of nodesToShift) {
+        await fetch(`/api/skills/${node.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ y: node.y - 150 }),
+        });
+      }
+
+      // Update local state
+      setAreas(prev => prev.map(area => {
+        if (area.id !== areaId) return area;
+
+        const updatedSkills = area.skills
+          .filter(s => s.id !== skillId)
+          .map(s => {
+            let updated = { ...s };
+            
+            if (children.find(c => c.id === s.id)) {
+              updated.dependencies = s.dependencies
+                .filter(d => d !== skillId)
+                .concat(newDependencies);
+            }
+            
+            if (s.y > skillToDelete.y) {
+              updated.y = s.y - 150;
+            }
+            
+            return updated;
+          });
+
+        return { ...area, skills: updatedSkills };
+      }));
+    } catch (error) {
+      console.error("Error deleting skill:", error);
+    }
   };
 
-  const addSkill = (areaId: string, newSkillData: Omit<Skill, "id">) => {
-    setAreas(prev => prev.map(area => {
-      if (area.id !== areaId) return area;
-      
-      const newSkill: Skill = {
-        ...newSkillData,
-        id: Math.random().toString(36).substr(2, 9),
-      };
-      
-      return {
-        ...area,
-        skills: [...area.skills, newSkill]
-      };
-    }));
+  const addSkill = async (areaId: string, newSkillData: Omit<Skill, "id">) => {
+    try {
+      const response = await fetch("/api/skills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newSkillData),
+      });
+      const newSkill = await response.json();
+
+      setAreas(prev => prev.map(area => {
+        if (area.id !== areaId) return area;
+        return {
+          ...area,
+          skills: [...area.skills, newSkill]
+        };
+      }));
+    } catch (error) {
+      console.error("Error adding skill:", error);
+    }
   };
 
   // Auto-unlock logic
   useEffect(() => {
-    setAreas(prevAreas => {
-      let hasChanges = false;
-      const newAreas = prevAreas.map(area => {
-        const newSkills = area.skills.map(skill => {
-          if (skill.status !== "locked") return skill;
-          if (skill.manualLock) return skill; // Skip if manually locked
+    if (isLoading || areas.length === 0) return;
 
-          // Check if all dependencies are mastered
-          const dependencies = skill.dependencies.map(depId => 
-            area.skills.find(s => s.id === depId)
-          );
-          
-          const allDepsMastered = dependencies.every(dep => dep && dep.status === "mastered");
-          
-          if (allDepsMastered) {
-            hasChanges = true;
-            return { ...skill, status: "available" as SkillStatus };
-          }
-          return skill;
-        });
+    const updatesToMake: Array<{ skillId: string; newStatus: SkillStatus }> = [];
+
+    areas.forEach(area => {
+      area.skills.forEach(skill => {
+        if (skill.status !== "locked") return;
+        if (skill.manualLock) return;
+
+        const dependencies = skill.dependencies.map(depId => 
+          area.skills.find(s => s.id === depId)
+        );
         
-        if (area.skills !== newSkills) return { ...area, skills: newSkills };
-        return area;
+        const allDepsMastered = dependencies.every(dep => dep && dep.status === "mastered");
+        
+        if (allDepsMastered) {
+          updatesToMake.push({ skillId: skill.id, newStatus: "available" });
+        }
       });
-
-      return hasChanges ? newAreas : prevAreas;
     });
-  }, [areas]); // This might cause a loop if not careful, but setAreas checks identity. 
-               // Actually, creating new object references every time inside toggleSkillStatus triggers this.
-               // For prototype, it's fine.
+
+    if (updatesToMake.length > 0) {
+      Promise.all(
+        updatesToMake.map(({ skillId, newStatus }) =>
+          fetch(`/api/skills/${skillId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: newStatus }),
+          })
+        )
+      ).then(() => {
+        setAreas(prev => prev.map(area => ({
+          ...area,
+          skills: area.skills.map(skill => {
+            const update = updatesToMake.find(u => u.skillId === skill.id);
+            return update ? { ...skill, status: update.newStatus } : skill;
+          })
+        })));
+      });
+    }
+  }, [areas, isLoading]);
 
   return (
     <SkillTreeContext.Provider value={{ 
@@ -165,7 +285,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       addSkill,
       deleteSkill,
       toggleLock,
-      activeArea 
+      activeArea,
+      isLoading
     }}>
       {children}
     </SkillTreeContext.Provider>
@@ -177,3 +298,5 @@ export function useSkillTree() {
   if (!context) throw new Error("useSkillTree must be used within SkillTreeProvider");
   return context;
 }
+
+export { iconMap };

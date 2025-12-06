@@ -1,38 +1,66 @@
-import { type User, type InsertUser } from "@shared/schema";
-import { randomUUID } from "crypto";
-
-// modify the interface with any CRUD methods
-// you might need
+import { eq } from "drizzle-orm";
+import { db } from "./db";
+import { type Area, type Skill, type InsertArea, type InsertSkill, areas, skills } from "@shared/schema";
 
 export interface IStorage {
-  getUser(id: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
+  // Areas
+  getAreas(): Promise<Area[]>;
+  getArea(id: string): Promise<Area | undefined>;
+  createArea(area: InsertArea): Promise<Area>;
+  deleteArea(id: string): Promise<void>;
+
+  // Skills
+  getSkills(areaId: string): Promise<Skill[]>;
+  getSkill(id: string): Promise<Skill | undefined>;
+  createSkill(skill: InsertSkill): Promise<Skill>;
+  updateSkill(id: string, skill: Partial<InsertSkill>): Promise<Skill | undefined>;
+  deleteSkill(id: string): Promise<void>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User>;
-
-  constructor() {
-    this.users = new Map();
+export class DbStorage implements IStorage {
+  // Areas
+  async getAreas(): Promise<Area[]> {
+    return await db.select().from(areas);
   }
 
-  async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
+  async getArea(id: string): Promise<Area | undefined> {
+    const result = await db.select().from(areas).where(eq(areas.id, id));
+    return result[0];
   }
 
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
+  async createArea(area: InsertArea): Promise<Area> {
+    const result = await db.insert(areas).values(area).returning();
+    return result[0];
   }
 
-  async createUser(insertUser: InsertUser): Promise<User> {
-    const id = randomUUID();
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
-    return user;
+  async deleteArea(id: string): Promise<void> {
+    await db.delete(areas).where(eq(areas.id, id));
+  }
+
+  // Skills
+  async getSkills(areaId: string): Promise<Skill[]> {
+    return await db.select().from(skills).where(eq(skills.areaId, areaId));
+  }
+
+  async getSkill(id: string): Promise<Skill | undefined> {
+    const result = await db.select().from(skills).where(eq(skills.id, id));
+    return result[0];
+  }
+
+  async createSkill(skill: InsertSkill): Promise<Skill> {
+    const id = Math.random().toString(36).substr(2, 9);
+    const result = await db.insert(skills).values({ ...skill, id }).returning();
+    return result[0];
+  }
+
+  async updateSkill(id: string, skill: Partial<InsertSkill>): Promise<Skill | undefined> {
+    const result = await db.update(skills).set(skill).where(eq(skills.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteSkill(id: string): Promise<void> {
+    await db.delete(skills).where(eq(skills.id, id));
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DbStorage();

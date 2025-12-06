@@ -1,4 +1,4 @@
-import { Skill } from "../data/skills";
+import { type Skill } from "@/lib/skill-context";
 import { cn } from "@/lib/utils";
 
 interface SkillConnectionProps {
