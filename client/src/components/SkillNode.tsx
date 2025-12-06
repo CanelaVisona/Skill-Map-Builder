@@ -6,7 +6,7 @@ import { useState, useRef } from "react";
 import {
   Popover,
   PopoverContent,
-  PopoverTrigger,
+  PopoverAnchor,
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 
@@ -22,7 +22,7 @@ export function SkillNode({ skill, areaColor, onClick }: SkillNodeProps) {
   
   const { activeAreaId, deleteSkill, toggleLock } = useSkillTree();
   const [isOpen, setIsOpen] = useState(false);
-  const longPressTimer = useRef<NodeJS.Timeout | null>(null);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPress = useRef(false);
 
   const handleTouchStart = () => {
@@ -30,12 +30,13 @@ export function SkillNode({ skill, areaColor, onClick }: SkillNodeProps) {
     longPressTimer.current = setTimeout(() => {
       isLongPress.current = true;
       setIsOpen(true);
-    }, 2000); // 2000ms for long press
+    }, 2000);
   };
 
   const handleTouchEnd = () => {
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
     }
   };
 
@@ -43,6 +44,7 @@ export function SkillNode({ skill, areaColor, onClick }: SkillNodeProps) {
     if (isLongPress.current) {
       e.preventDefault();
       e.stopPropagation();
+      isLongPress.current = false;
       return;
     }
     if (!isLocked) {
@@ -50,7 +52,6 @@ export function SkillNode({ skill, areaColor, onClick }: SkillNodeProps) {
     }
   };
 
-  // Also support mouse down/up for desktop testing of "long press"
   const handleMouseDown = () => {
     isLongPress.current = false;
     longPressTimer.current = setTimeout(() => {
@@ -62,18 +63,27 @@ export function SkillNode({ skill, areaColor, onClick }: SkillNodeProps) {
   const handleMouseUp = () => {
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const handleOpenChange = (open: boolean) => {
+    if (!open) {
+      setIsOpen(false);
+      isLongPress.current = false;
     }
   };
 
   return (
-    <Popover open={isOpen} onOpenChange={setIsOpen}>
-      <PopoverTrigger asChild>
+    <Popover open={isOpen} onOpenChange={handleOpenChange}>
+      <PopoverAnchor asChild>
         <div
           className="absolute -translate-x-1/2 -translate-y-1/2 z-20 cursor-pointer touch-none select-none"
           style={{ left: `${skill.x}%`, top: `${skill.y}px` }}
           onClick={handleClick}
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchEnd}
           onMouseDown={handleMouseDown}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
@@ -108,7 +118,7 @@ export function SkillNode({ skill, areaColor, onClick }: SkillNodeProps) {
             {skill.title}
           </div>
         </div>
-      </PopoverTrigger>
+      </PopoverAnchor>
       <PopoverContent 
         side="top" 
         collisionPadding={16} 
