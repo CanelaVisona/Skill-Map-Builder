@@ -240,23 +240,45 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     const skill = area.skills.find(s => s.id === skillId);
     if (!skill) return;
 
-    const moveAmount = direction === "up" ? -50 : 50;
-    const newY = Math.max(50, skill.y + moveAmount);
+    const sortedSkills = [...area.skills].sort((a, b) => a.y - b.y);
+    const currentIndex = sortedSkills.findIndex(s => s.id === skillId);
+    
+    let neighborIndex: number;
+    if (direction === "up") {
+      neighborIndex = currentIndex - 1;
+    } else {
+      neighborIndex = currentIndex + 1;
+    }
+
+    if (neighborIndex < 0 || neighborIndex >= sortedSkills.length) return;
+
+    const neighbor = sortedSkills[neighborIndex];
+    const currentY = skill.y;
+    const neighborY = neighbor.y;
 
     try {
-      await fetch(`/api/skills/${skillId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ y: newY }),
-      });
+      await Promise.all([
+        fetch(`/api/skills/${skillId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ y: neighborY }),
+        }),
+        fetch(`/api/skills/${neighbor.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ y: currentY }),
+        })
+      ]);
 
       setAreas(prev => prev.map(area => {
         if (area.id !== areaId) return area;
         return {
           ...area,
-          skills: area.skills.map(s => 
-            s.id === skillId ? { ...s, y: newY } : s
-          )
+          skills: area.skills.map(s => {
+            if (s.id === skillId) return { ...s, y: neighborY };
+            if (s.id === neighbor.id) return { ...s, y: currentY };
+            return s;
+          })
         };
       }));
     } catch (error) {
