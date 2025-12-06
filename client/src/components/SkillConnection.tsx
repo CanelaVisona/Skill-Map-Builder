@@ -17,12 +17,6 @@ export function SkillConnection({ start, end, active, areaColor }: SkillConnecti
 
   return (
     <svg className="absolute inset-0 w-full h-full pointer-events-none z-10 overflow-visible">
-      <defs>
-        <linearGradient id={`grad-${start.id}-${end.id}`} x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="currentColor" stopOpacity="0.1" />
-          <stop offset="100%" stopColor="currentColor" stopOpacity="1" />
-        </linearGradient>
-      </defs>
       
       {/* Background Line (Dim) */}
       <line
@@ -30,23 +24,23 @@ export function SkillConnection({ start, end, active, areaColor }: SkillConnecti
         y1={`${y1}%`}
         x2={`${x2}%`}
         y2={`${y2}%`}
-        className="stroke-muted/30"
-        strokeWidth="2"
+        className="stroke-muted"
+        strokeWidth="1"
       />
 
-      {/* Active Line (Glow) */}
+      {/* Active Line */}
       <line
         x1={`${x1}%`}
         y1={`${y1}%`}
         x2={`${x2}%`}
         y2={`${y2}%`}
         className={cn(
-          "transition-all duration-1000 ease-out",
-          active ? areaColor : "stroke-transparent"
+          "transition-all duration-500 ease-in-out",
+          active ? "stroke-foreground" : "stroke-transparent"
         )}
-        strokeWidth="2"
-        strokeDasharray="4 4"
+        strokeWidth="1.5"
       />
     </svg>
   );
 }
+

@@ -11,23 +11,11 @@ function SkillCanvas() {
 
   return (
     <div className="flex-1 relative overflow-hidden bg-background">
-      {/* Grid Background */}
-      <div 
-        className="absolute inset-0 opacity-[0.03]" 
-        style={{ 
-          backgroundImage: `linear-gradient(to right, #fff 1px, transparent 1px), linear-gradient(to bottom, #fff 1px, transparent 1px)`,
-          backgroundSize: '40px 40px'
-        }} 
-      />
-      
-      {/* Radial Gradient overlay */}
-      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-background/20 to-background pointer-events-none" />
-
       <div className="absolute inset-0 p-8">
-        <div className="h-full w-full relative max-w-4xl mx-auto mt-10 border border-white/5 rounded-3xl bg-black/20 backdrop-blur-sm shadow-2xl overflow-hidden">
+        <div className="h-full w-full relative max-w-4xl mx-auto mt-10">
           
-          <div className="absolute top-6 left-8 z-10">
-            <h2 className={`text-3xl font-display font-bold ${activeArea.color} glow-text mb-2`}>
+          <div className="absolute top-0 left-0 z-10">
+            <h2 className="text-2xl font-bold tracking-tight mb-1">
               {activeArea.name}
             </h2>
             <p className="text-muted-foreground max-w-md text-sm leading-relaxed">
@@ -35,14 +23,14 @@ function SkillCanvas() {
             </p>
           </div>
 
-          <div className="relative w-full h-full">
+          <div className="relative w-full h-full mt-20">
             <AnimatePresence mode="wait">
               <motion.div
                 key={activeArea.id}
-                initial={{ opacity: 0, scale: 0.95, filter: "blur(10px)" }}
-                animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
-                exit={{ opacity: 0, scale: 1.05, filter: "blur(10px)" }}
-                transition={{ duration: 0.5 }}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.4 }}
                 className="w-full h-full relative"
               >
                 {/* Connections */}
