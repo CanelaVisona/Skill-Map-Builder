@@ -27,13 +27,13 @@ export function AreaMenu() {
   const onSubmit = (data: any) => {
     // Find the last skill to calculate position and dependency
     let lastSkill = null;
-    let newY = 20; // Default start position if no skills exist
+    let newY = 100; // Default start position (pixels)
 
     if (activeArea && activeArea.skills.length > 0) {
       // Assuming skills are sorted by creation or we just take the last one in the array
       // Since we want a linear tree, the last one in the array is the "bottom" one
       lastSkill = activeArea.skills[activeArea.skills.length - 1];
-      newY = lastSkill.y + 20; // Add 20% vertical spacing
+      newY = lastSkill.y + 150; // Add 150px vertical spacing
     }
 
     addSkill(activeAreaId, {

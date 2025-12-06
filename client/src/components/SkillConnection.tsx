@@ -21,9 +21,9 @@ export function SkillConnection({ start, end, active, areaColor }: SkillConnecti
       {/* Background Line (Dim) */}
       <line
         x1={`${x1}%`}
-        y1={`${y1}%`}
+        y1={y1}
         x2={`${x2}%`}
-        y2={`${y2}%`}
+        y2={y2}
         className="stroke-muted"
         strokeWidth="1"
       />
@@ -31,9 +31,9 @@ export function SkillConnection({ start, end, active, areaColor }: SkillConnecti
       {/* Active Line */}
       <line
         x1={`${x1}%`}
-        y1={`${y1}%`}
+        y1={y1}
         x2={`${x2}%`}
-        y2={`${y2}%`}
+        y2={y2}
         className={cn(
           "transition-all duration-500 ease-in-out",
           active ? "stroke-foreground" : "stroke-transparent"
