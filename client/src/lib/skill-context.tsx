@@ -7,6 +7,7 @@ interface SkillTreeContextType {
   setActiveAreaId: (id: string) => void;
   toggleSkillStatus: (areaId: string, skillId: string) => void;
   addSkill: (areaId: string, skill: Omit<Skill, "id">) => void;
+  deleteSkill: (areaId: string, skillId: string) => void;
   activeArea: Area | undefined;
 }
 
@@ -36,6 +37,52 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
           // Logic: Can only toggle if dependencies are met (which they should be if it's available/mastered)
           return { ...skill, status: nextStatus[skill.status] };
         })
+      };
+    }));
+  };
+
+  const deleteSkill = (areaId: string, skillId: string) => {
+    setAreas(prev => prev.map(area => {
+      if (area.id !== areaId) return area;
+
+      const skillToDelete = area.skills.find(s => s.id === skillId);
+      if (!skillToDelete) return area;
+
+      // Find children (nodes that depend on this skill)
+      const children = area.skills.filter(s => s.dependencies.includes(skillId));
+
+      // Re-link: children should now depend on the deleted skill's dependencies
+      // In a linear tree, skillToDelete usually has 0 or 1 dependency.
+      const newDependencies = skillToDelete.dependencies;
+
+      const updatedSkills = area.skills
+        .filter(s => s.id !== skillId) // Remove the skill
+        .map(s => {
+          if (children.find(c => c.id === s.id)) {
+            // This is a child, update its dependencies
+            return {
+              ...s,
+              dependencies: s.dependencies
+                .filter(d => d !== skillId) // Remove old dependency
+                .concat(newDependencies) // Add new dependencies (grandparent)
+                // Also shift up if needed?
+                // Let's shift up by 150px to close the gap
+                // Only shift if it was below the deleted node
+            };
+          }
+          return s;
+        })
+        // Shift all nodes below the deleted one up by 150px
+        .map(s => {
+          if (s.y > skillToDelete.y) {
+            return { ...s, y: s.y - 150 };
+          }
+          return s;
+        });
+
+      return {
+        ...area,
+        skills: updatedSkills
       };
     }));
   };
@@ -95,6 +142,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       setActiveAreaId, 
       toggleSkillStatus, 
       addSkill,
+      deleteSkill,
       activeArea 
     }}>
       {children}
