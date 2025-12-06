@@ -13,6 +13,7 @@ export interface Skill {
   y: number;
   dependencies: string[];
   manualLock?: number;
+  isFinalNode?: number;
 }
 
 export interface Area {
