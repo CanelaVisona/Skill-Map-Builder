@@ -164,6 +164,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       toggleSkillStatus, 
       addSkill,
       deleteSkill,
+      toggleLock,
       activeArea 
     }}>
       {children}
