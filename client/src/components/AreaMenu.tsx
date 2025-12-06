@@ -16,7 +16,7 @@ export function AreaMenu() {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isOpen, setIsOpen] = useState(true);
   
-  const { register, handleSubmit, reset, setValue, watch } = useForm({
+  const { register, handleSubmit, reset, setValue, watch, getValues } = useForm({
     defaultValues: {
       title: "",
       description: "",
@@ -26,15 +26,15 @@ export function AreaMenu() {
   });
 
   const onSubmit = (data: any) => {
-    // Find the last skill to calculate position and dependency
+    const locked = getValues("locked");
+    const isFinalNode = getValues("isFinalNode");
+    
     let lastSkill = null;
-    let newY = 100; // Default start position (pixels)
+    let newY = 100;
 
     if (activeArea && activeArea.skills.length > 0) {
-      // Assuming skills are sorted by creation or we just take the last one in the array
-      // Since we want a linear tree, the last one in the array is the "bottom" one
       lastSkill = activeArea.skills[activeArea.skills.length - 1];
-      newY = lastSkill.y + 150; // Add 150px vertical spacing
+      newY = lastSkill.y + 150;
     }
 
     addSkill(activeAreaId, {
@@ -43,10 +43,10 @@ export function AreaMenu() {
       description: data.description,
       x: 50,
       y: newY,
-      status: data.locked ? "locked" : "available",
+      status: locked ? "locked" : "available",
       dependencies: lastSkill ? [lastSkill.id] : [],
-      manualLock: data.locked ? 1 : 0,
-      isFinalNode: data.isFinalNode ? 1 : 0
+      manualLock: locked ? 1 : 0,
+      isFinalNode: isFinalNode ? 1 : 0
     });
     
     reset();
@@ -155,6 +155,7 @@ export function AreaMenu() {
               <div className="flex items-center space-x-2 pt-2">
                 <Checkbox 
                   id="locked" 
+                  checked={watch("locked")}
                   onCheckedChange={(checked) => setValue("locked", checked as boolean)} 
                 />
                 <Label htmlFor="locked" className="cursor-pointer text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
@@ -164,6 +165,7 @@ export function AreaMenu() {
               <div className="flex items-center space-x-2 pt-2">
                 <Checkbox 
                   id="isFinalNode" 
+                  checked={watch("isFinalNode")}
                   onCheckedChange={(checked) => setValue("isFinalNode", checked as boolean)} 
                 />
                 <Label htmlFor="isFinalNode" className="cursor-pointer text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
