@@ -9,12 +9,17 @@ function SkillCanvas() {
 
   if (!activeArea) return null;
 
+  // Calculate the required height based on the lowest node
+  // We add some padding (e.g. + 20%) to ensure the last node isn't at the very edge
+  const maxY = Math.max(...activeArea.skills.map(s => s.y), 80);
+  const containerHeight = Math.max(100, maxY + 20);
+
   return (
-    <div className="flex-1 relative overflow-hidden bg-background">
-      <div className="absolute inset-0 p-8">
-        <div className="h-full w-full relative max-w-4xl mx-auto mt-10">
+    <div className="flex-1 relative overflow-hidden bg-background flex flex-col">
+      <div className="flex-1 overflow-y-auto p-8 scroll-smooth">
+        <div className="w-full relative max-w-4xl mx-auto mt-10 min-h-full">
           
-          <div className="absolute top-0 left-0 z-10">
+          <div className="absolute top-0 left-0 z-10 sticky">
             <h2 className="text-2xl font-bold tracking-tight mb-1">
               {activeArea.name}
             </h2>
@@ -23,7 +28,10 @@ function SkillCanvas() {
             </p>
           </div>
 
-          <div className="relative w-full h-full mt-20">
+          <div 
+            className="relative w-full mt-20 transition-all duration-500 ease-in-out"
+            style={{ height: `${containerHeight}%`, minHeight: "600px" }}
+          >
             <AnimatePresence mode="wait">
               <motion.div
                 key={activeArea.id}
