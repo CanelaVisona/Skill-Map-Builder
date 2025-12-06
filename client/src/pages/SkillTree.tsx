@@ -11,6 +11,24 @@ function SkillCanvas() {
 
   const visibleSkills = activeArea.skills.filter(s => s.level <= activeArea.unlockedLevel);
 
+  // Find the first skill of each level (lowest Y position per level)
+  const firstSkillOfLevel = new Set<string>();
+  const levelGroups = new Map<number, typeof visibleSkills>();
+  
+  visibleSkills.forEach(skill => {
+    if (!levelGroups.has(skill.level)) {
+      levelGroups.set(skill.level, []);
+    }
+    levelGroups.get(skill.level)!.push(skill);
+  });
+  
+  levelGroups.forEach((skills) => {
+    const firstSkill = skills.reduce((min, s) => s.y < min.y ? s : min, skills[0]);
+    if (firstSkill) {
+      firstSkillOfLevel.add(firstSkill.id);
+    }
+  });
+
   const maxY = Math.max(...visibleSkills.map(s => s.y), 400);
   const containerHeight = maxY + 200;
 
@@ -68,6 +86,7 @@ function SkillCanvas() {
                     skill={skill}
                     areaColor={activeArea.color}
                     onClick={() => toggleSkillStatus(activeArea.id, skill.id)}
+                    isFirstOfLevel={firstSkillOfLevel.has(skill.id)}
                   />
                 ))}
               </motion.div>

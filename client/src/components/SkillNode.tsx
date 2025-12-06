@@ -14,9 +14,10 @@ interface SkillNodeProps {
   skill: Skill;
   areaColor: string;
   onClick: () => void;
+  isFirstOfLevel?: boolean;
 }
 
-export function SkillNode({ skill, areaColor, onClick }: SkillNodeProps) {
+export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNodeProps) {
   const isLocked = skill.status === "locked";
   const isMastered = skill.status === "mastered";
   const isFinalMastered = skill.isFinalNode === 1 && isMastered;
@@ -91,6 +92,13 @@ export function SkillNode({ skill, areaColor, onClick }: SkillNodeProps) {
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
         >
+          {/* Level Marker */}
+          {isFirstOfLevel && (
+            <div className="absolute right-14 top-1/2 -translate-y-1/2 whitespace-nowrap text-xs font-semibold text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-full border border-border">
+              Level {skill.level}
+            </div>
+          )}
+
           {/* Node Circle */}
           <motion.div
             initial={false}
