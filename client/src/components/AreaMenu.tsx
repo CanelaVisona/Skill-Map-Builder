@@ -29,11 +29,16 @@ export function AreaMenu() {
     const locked = getValues("locked");
     const isFinalNode = getValues("isFinalNode");
     
+    if (!activeArea) return;
+    
+    const currentLevel = activeArea.nextLevelToAssign;
+    const skillsInCurrentLevel = activeArea.skills.filter(s => s.level === currentLevel);
+    
     let lastSkill = null;
     let newY = 100;
 
-    if (activeArea && activeArea.skills.length > 0) {
-      lastSkill = activeArea.skills[activeArea.skills.length - 1];
+    if (skillsInCurrentLevel.length > 0) {
+      lastSkill = skillsInCurrentLevel[skillsInCurrentLevel.length - 1];
       newY = lastSkill.y + 150;
     }
 
@@ -46,7 +51,8 @@ export function AreaMenu() {
       status: locked ? "locked" : "available",
       dependencies: lastSkill ? [lastSkill.id] : [],
       manualLock: locked ? 1 : 0,
-      isFinalNode: isFinalNode ? 1 : 0
+      isFinalNode: isFinalNode ? 1 : 0,
+      level: currentLevel
     });
     
     reset();

@@ -36,6 +36,19 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/areas/:id", async (req, res) => {
+    try {
+      const area = await storage.updateArea(req.params.id, req.body);
+      if (!area) {
+        res.status(404).json({ message: "Area not found" });
+        return;
+      }
+      res.json(area);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.delete("/api/areas/:id", async (req, res) => {
     try {
       await storage.deleteArea(req.params.id);

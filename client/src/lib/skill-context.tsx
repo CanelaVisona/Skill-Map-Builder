@@ -14,6 +14,7 @@ export interface Skill {
   dependencies: string[];
   manualLock?: number;
   isFinalNode?: number;
+  level: number;
 }
 
 export interface Area {
@@ -22,6 +23,8 @@ export interface Area {
   icon: string;
   color: string;
   description: string;
+  unlockedLevel: number;
+  nextLevelToAssign: number;
   skills: Skill[];
 }
 
@@ -87,6 +90,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     };
 
     const newStatus = nextStatus[skill.status];
+    const isFinalNodeBeingMastered = skill.isFinalNode === 1 && newStatus === "mastered";
 
     try {
       await fetch(`/api/skills/${skillId}`, {
@@ -95,15 +99,39 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({ status: newStatus }),
       });
 
-      setAreas(prev => prev.map(area => {
-        if (area.id !== areaId) return area;
-        return {
-          ...area,
-          skills: area.skills.map(skill => 
-            skill.id === skillId ? { ...skill, status: newStatus } : skill
-          )
-        };
-      }));
+      if (isFinalNodeBeingMastered) {
+        const newUnlockedLevel = skill.level + 1;
+        await fetch(`/api/areas/${areaId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            unlockedLevel: newUnlockedLevel,
+            nextLevelToAssign: newUnlockedLevel
+          }),
+        });
+
+        setAreas(prev => prev.map(a => {
+          if (a.id !== areaId) return a;
+          return {
+            ...a,
+            unlockedLevel: newUnlockedLevel,
+            nextLevelToAssign: newUnlockedLevel,
+            skills: a.skills.map(s => 
+              s.id === skillId ? { ...s, status: newStatus } : s
+            )
+          };
+        }));
+      } else {
+        setAreas(prev => prev.map(a => {
+          if (a.id !== areaId) return a;
+          return {
+            ...a,
+            skills: a.skills.map(s => 
+              s.id === skillId ? { ...s, status: newStatus } : s
+            )
+          };
+        }));
+      }
     } catch (error) {
       console.error("Error toggling skill status:", error);
     }

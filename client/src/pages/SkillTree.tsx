@@ -9,10 +9,10 @@ function SkillCanvas() {
 
   if (!activeArea) return null;
 
-  // Calculate the required height based on the lowest node (in pixels now)
-  // Add padding to ensure the last node isn't at the very edge
-  const maxY = Math.max(...activeArea.skills.map(s => s.y), 400);
-  const containerHeight = maxY + 200; // Height in pixels
+  const visibleSkills = activeArea.skills.filter(s => s.level <= activeArea.unlockedLevel);
+
+  const maxY = Math.max(...visibleSkills.map(s => s.y), 400);
+  const containerHeight = maxY + 200;
 
   return (
     <div className="flex-1 relative overflow-hidden bg-background flex flex-col">
@@ -42,12 +42,11 @@ function SkillCanvas() {
                 className="w-full h-full relative"
               >
                 {/* Connections */}
-                {activeArea.skills.map(skill => {
+                {visibleSkills.map(skill => {
                   return skill.dependencies.map(depId => {
-                    const depSkill = activeArea.skills.find(s => s.id === depId);
+                    const depSkill = visibleSkills.find(s => s.id === depId);
                     if (!depSkill) return null;
 
-                    // Line is active if the dependency is mastered (meaning path is open)
                     const isActive = depSkill.status === "mastered";
 
                     return (
@@ -63,7 +62,7 @@ function SkillCanvas() {
                 })}
 
                 {/* Nodes */}
-                {activeArea.skills.map(skill => (
+                {visibleSkills.map(skill => (
                   <SkillNode
                     key={skill.id}
                     skill={skill}

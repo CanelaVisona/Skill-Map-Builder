@@ -9,6 +9,8 @@ export const areas = pgTable("areas", {
   icon: text("icon").notNull(),
   color: text("color").notNull(),
   description: text("description").notNull(),
+  unlockedLevel: integer("unlocked_level").notNull().default(1),
+  nextLevelToAssign: integer("next_level_to_assign").notNull().default(1),
 });
 
 export const skills = pgTable("skills", {
@@ -22,6 +24,7 @@ export const skills = pgTable("skills", {
   dependencies: jsonb("dependencies").notNull().$type<string[]>(),
   manualLock: integer("manual_lock").$type<0 | 1>().default(0),
   isFinalNode: integer("is_final_node").$type<0 | 1>().default(0),
+  level: integer("level").notNull().default(1),
 });
 
 export const insertAreaSchema = createInsertSchema(areas);

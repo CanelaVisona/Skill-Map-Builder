@@ -7,6 +7,7 @@ export interface IStorage {
   getAreas(): Promise<Area[]>;
   getArea(id: string): Promise<Area | undefined>;
   createArea(area: InsertArea): Promise<Area>;
+  updateArea(id: string, area: Partial<InsertArea>): Promise<Area | undefined>;
   deleteArea(id: string): Promise<void>;
 
   // Skills
@@ -30,6 +31,11 @@ export class DbStorage implements IStorage {
 
   async createArea(area: InsertArea): Promise<Area> {
     const result = await db.insert(areas).values(area).returning();
+    return result[0];
+  }
+
+  async updateArea(id: string, area: Partial<InsertArea>): Promise<Area | undefined> {
+    const result = await db.update(areas).set(area).where(eq(areas.id, id)).returning();
     return result[0];
   }
 
