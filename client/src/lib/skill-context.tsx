@@ -91,6 +91,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
 
     const newStatus = nextStatus[skill.status];
     const isFinalNodeBeingMastered = skill.isFinalNode === 1 && newStatus === "mastered";
+    const isFinalNodeBeingUnmastered = skill.isFinalNode === 1 && skill.status === "mastered" && newStatus === "available";
 
     try {
       await fetch(`/api/skills/${skillId}`, {
@@ -119,6 +120,42 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
             skills: a.skills.map(s => 
               s.id === skillId ? { ...s, status: newStatus } : s
             )
+          };
+        }));
+      } else if (isFinalNodeBeingUnmastered) {
+        const revertedLevel = skill.level;
+        
+        const higherLevelSkills = area.skills.filter(s => s.level > revertedLevel);
+        
+        await Promise.all([
+          fetch(`/api/areas/${areaId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+              unlockedLevel: revertedLevel,
+              nextLevelToAssign: revertedLevel
+            }),
+          }),
+          ...higherLevelSkills.map(s => 
+            fetch(`/api/skills/${s.id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ status: "locked" }),
+            })
+          )
+        ]);
+
+        setAreas(prev => prev.map(a => {
+          if (a.id !== areaId) return a;
+          return {
+            ...a,
+            unlockedLevel: revertedLevel,
+            nextLevelToAssign: revertedLevel,
+            skills: a.skills.map(s => {
+              if (s.id === skillId) return { ...s, status: newStatus };
+              if (s.level > revertedLevel) return { ...s, status: "locked" as SkillStatus };
+              return s;
+            })
           };
         }));
       } else {
@@ -325,6 +362,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       area.skills.forEach(skill => {
         if (skill.status !== "locked") return;
         if (skill.manualLock) return;
+        if (skill.level > area.unlockedLevel) return;
 
         const dependencies = skill.dependencies.map(depId => 
           area.skills.find(s => s.id === depId)
