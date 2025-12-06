@@ -47,9 +47,11 @@ export function SkillNode({ skill, areaColor, onClick }: SkillNodeProps) {
       isLongPress.current = false;
       return;
     }
-    if (!isLocked) {
-      onClick();
+    if (isLocked) {
+      toggleLock(activeAreaId, skill.id);
+      return;
     }
+    onClick();
   };
 
   const handleMouseDown = () => {
