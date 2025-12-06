@@ -30,7 +30,7 @@ export function SkillNode({ skill, areaColor, onClick }: SkillNodeProps) {
     longPressTimer.current = setTimeout(() => {
       isLongPress.current = true;
       setIsOpen(true);
-    }, 2000);
+    }, 1500);
   };
 
   const handleTouchEnd = () => {
@@ -59,7 +59,7 @@ export function SkillNode({ skill, areaColor, onClick }: SkillNodeProps) {
     longPressTimer.current = setTimeout(() => {
       isLongPress.current = true;
       setIsOpen(true);
-    }, 2000);
+    }, 1500);
   };
 
   const handleMouseUp = () => {
