@@ -8,8 +8,9 @@ export interface Skill {
   description: string;
   status: SkillStatus;
   x: number; // Percentage 0-100
-  y: number; // Percentage 0-100
+  y: number; // Pixels
   dependencies: string[];
+  manualLock?: boolean;
 }
 
 export interface Area {

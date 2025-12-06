@@ -8,6 +8,7 @@ interface SkillTreeContextType {
   toggleSkillStatus: (areaId: string, skillId: string) => void;
   addSkill: (areaId: string, skill: Omit<Skill, "id">) => void;
   deleteSkill: (areaId: string, skillId: string) => void;
+  toggleLock: (areaId: string, skillId: string) => void;
   activeArea: Area | undefined;
 }
 
@@ -29,13 +30,32 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
           if (skill.id !== skillId) return skill;
           
           const nextStatus: Record<SkillStatus, SkillStatus> = {
-            "locked": "locked", // Can't toggle locked manually usually, but for prototype maybe?
+            "locked": "locked", // Can't toggle locked manually via click, must use lock toggle
             "available": "mastered",
-            "mastered": "available" // Allow toggle back
+            "mastered": "available"
           };
           
-          // Logic: Can only toggle if dependencies are met (which they should be if it's available/mastered)
           return { ...skill, status: nextStatus[skill.status] };
+        })
+      };
+    }));
+  };
+
+  const toggleLock = (areaId: string, skillId: string) => {
+    setAreas(prev => prev.map(area => {
+      if (area.id !== areaId) return area;
+
+      return {
+        ...area,
+        skills: area.skills.map(skill => {
+          if (skill.id !== skillId) return skill;
+          
+          const isLocked = skill.status === "locked";
+          return { 
+            ...skill, 
+            status: isLocked ? "available" : "locked",
+            manualLock: !isLocked // If we are locking, set manualLock to true. If unlocking, false.
+          };
         })
       };
     }));
@@ -110,6 +130,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       const newAreas = prevAreas.map(area => {
         const newSkills = area.skills.map(skill => {
           if (skill.status !== "locked") return skill;
+          if (skill.manualLock) return skill; // Skip if manually locked
 
           // Check if all dependencies are mastered
           const dependencies = skill.dependencies.map(depId => 

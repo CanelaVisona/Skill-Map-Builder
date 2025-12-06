@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { Skill } from "../data/skills";
 import { cn } from "@/lib/utils";
-import { Check, Lock, Trash2 } from "lucide-react";
+import { Check, Lock, Trash2, Unlock } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import {
   Popover,
@@ -21,7 +21,7 @@ export function SkillNode({ skill, areaColor, onClick }: SkillNodeProps) {
   const isLocked = skill.status === "locked";
   const isMastered = skill.status === "mastered";
   
-  const { activeAreaId, deleteSkill } = useSkillTree();
+  const { activeAreaId, deleteSkill, toggleLock } = useSkillTree();
   const [isOpen, setIsOpen] = useState(false);
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
   const isLongPress = useRef(false);
@@ -123,7 +123,20 @@ export function SkillNode({ skill, areaColor, onClick }: SkillNodeProps) {
             </p>
           </div>
           
-          <div className="pt-2 border-t border-border flex justify-end">
+          <div className="pt-2 border-t border-border flex justify-end gap-2">
+             <Button 
+               variant="outline" 
+               size="sm" 
+               className="h-8 px-3 text-xs"
+               onClick={() => {
+                 toggleLock(activeAreaId, skill.id);
+                 setIsOpen(false);
+               }}
+             >
+               {isLocked ? <Unlock className="mr-2 h-3 w-3" /> : <Lock className="mr-2 h-3 w-3" />}
+               {isLocked ? "Unlock" : "Lock"}
+             </Button>
+
              <Button 
                variant="secondary" 
                size="sm" 
@@ -134,7 +147,7 @@ export function SkillNode({ skill, areaColor, onClick }: SkillNodeProps) {
                }}
              >
                <Trash2 className="mr-2 h-3 w-3" />
-               Delete Node
+               Delete
              </Button>
           </div>
         </div>
