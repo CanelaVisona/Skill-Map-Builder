@@ -40,6 +40,10 @@ export function AreaMenu() {
     if (skillsInCurrentLevel.length > 0) {
       lastSkill = skillsInCurrentLevel.reduce((max, s) => s.y > max.y ? s : max, skillsInCurrentLevel[0]);
       newY = lastSkill.y + 150;
+    } else if (activeArea.skills.length > 0) {
+      const lastSkillOverall = activeArea.skills.reduce((max, s) => s.y > max.y ? s : max, activeArea.skills[0]);
+      newY = lastSkillOverall.y + 150;
+      lastSkill = lastSkillOverall;
     }
 
     addSkill(activeAreaId, {
