@@ -31,7 +31,7 @@ export function SkillNode({ skill, areaColor, onClick }: SkillNodeProps) {
     longPressTimer.current = setTimeout(() => {
       isLongPress.current = true;
       setIsOpen(true);
-    }, 500); // 500ms for long press
+    }, 2000); // 2000ms for long press
   };
 
   const handleTouchEnd = () => {
@@ -57,7 +57,7 @@ export function SkillNode({ skill, areaColor, onClick }: SkillNodeProps) {
     longPressTimer.current = setTimeout(() => {
       isLongPress.current = true;
       setIsOpen(true);
-    }, 500);
+    }, 2000);
   };
 
   const handleMouseUp = () => {
@@ -121,7 +121,7 @@ export function SkillNode({ skill, areaColor, onClick }: SkillNodeProps) {
           
           <div className="pt-2 border-t border-border flex justify-end">
              <Button 
-               variant="destructive" 
+               variant="secondary" 
                size="sm" 
                className="h-8 px-3 text-xs"
                onClick={() => {
