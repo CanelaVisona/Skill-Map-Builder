@@ -6,7 +6,7 @@ interface SkillTreeContextType {
   activeAreaId: string;
   setActiveAreaId: (id: string) => void;
   toggleSkillStatus: (areaId: string, skillId: string) => void;
-  addSkill: (areaId: string, skill: Omit<Skill, "id" | "status">) => void;
+  addSkill: (areaId: string, skill: Omit<Skill, "id">) => void;
   activeArea: Area | undefined;
 }
 
@@ -40,14 +40,13 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     }));
   };
 
-  const addSkill = (areaId: string, newSkillData: Omit<Skill, "id" | "status">) => {
+  const addSkill = (areaId: string, newSkillData: Omit<Skill, "id">) => {
     setAreas(prev => prev.map(area => {
       if (area.id !== areaId) return area;
       
       const newSkill: Skill = {
         ...newSkillData,
         id: Math.random().toString(36).substr(2, 9),
-        status: "available" // Default to available for now for simplicity
       };
       
       return {

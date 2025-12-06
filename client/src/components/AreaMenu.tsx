@@ -7,28 +7,44 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
+import { Checkbox } from "./ui/checkbox";
 import { useForm } from "react-hook-form";
 import { useState } from "react";
 
 export function AreaMenu() {
-  const { areas, activeAreaId, setActiveAreaId, addSkill } = useSkillTree();
+  const { areas, activeAreaId, setActiveAreaId, addSkill, activeArea } = useSkillTree();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isOpen, setIsOpen] = useState(true);
   
-  const { register, handleSubmit, reset } = useForm();
+  const { register, handleSubmit, reset, setValue, watch } = useForm({
+    defaultValues: {
+      title: "",
+      description: "",
+      locked: false
+    }
+  });
 
   const onSubmit = (data: any) => {
-    // Random position for new skills for now, near center
-    const randomX = 40 + Math.random() * 20;
-    const randomY = 40 + Math.random() * 20;
-    
+    // Find the last skill to calculate position and dependency
+    let lastSkill = null;
+    let newY = 20; // Default start position if no skills exist
+
+    if (activeArea && activeArea.skills.length > 0) {
+      // Assuming skills are sorted by creation or we just take the last one in the array
+      // Since we want a linear tree, the last one in the array is the "bottom" one
+      lastSkill = activeArea.skills[activeArea.skills.length - 1];
+      newY = lastSkill.y + 20; // Add 20% vertical spacing
+    }
+
     addSkill(activeAreaId, {
       title: data.title,
       description: data.description,
-      x: randomX,
-      y: randomY,
-      dependencies: [] // New skills have no deps by default in this simple UI
+      x: 50, // Always center
+      y: newY,
+      status: data.locked ? "locked" : "available",
+      dependencies: lastSkill ? [lastSkill.id] : []
     });
+    
     reset();
     setIsAddOpen(false);
   };
@@ -132,6 +148,15 @@ export function AreaMenu() {
                 <Label htmlFor="description">Description</Label>
                 <Textarea id="description" {...register("description")} placeholder="Short description of goal" />
               </div>
+              <div className="flex items-center space-x-2 pt-2">
+                <Checkbox 
+                  id="locked" 
+                  onCheckedChange={(checked) => setValue("locked", checked as boolean)} 
+                />
+                <Label htmlFor="locked" className="cursor-pointer text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                  Start as Locked
+                </Label>
+              </div>
               <Button type="submit" className="w-full">
                 Initialize Node
               </Button>
@@ -142,4 +167,5 @@ export function AreaMenu() {
     </motion.div>
   );
 }
+
 
