@@ -38,7 +38,7 @@ export function AreaMenu() {
     let newY = 100;
 
     if (skillsInCurrentLevel.length > 0) {
-      lastSkill = skillsInCurrentLevel[skillsInCurrentLevel.length - 1];
+      lastSkill = skillsInCurrentLevel.reduce((max, s) => s.y > max.y ? s : max, skillsInCurrentLevel[0]);
       newY = lastSkill.y + 150;
     }
 
