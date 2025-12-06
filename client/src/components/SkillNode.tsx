@@ -110,11 +110,15 @@ export function SkillNode({ skill, areaColor, onClick }: SkillNodeProps) {
           </div>
         </div>
       </PopoverTrigger>
-      <PopoverContent side="right" className="w-64 border-border bg-popover/95 backdrop-blur-xl shadow-xl p-4">
+      <PopoverContent 
+        side="top" 
+        collisionPadding={16} 
+        className="w-64 border-border bg-popover/95 backdrop-blur-xl shadow-xl p-4 z-50"
+      >
         <div className="space-y-3">
-          <div>
+          <div className="max-h-[200px] overflow-y-auto custom-scrollbar">
             <h4 className="font-semibold leading-none mb-1.5">{skill.title}</h4>
-            <p className="text-sm text-muted-foreground leading-relaxed">
+            <p className="text-sm text-muted-foreground leading-relaxed break-words">
               {skill.description || "No description available."}
             </p>
           </div>
