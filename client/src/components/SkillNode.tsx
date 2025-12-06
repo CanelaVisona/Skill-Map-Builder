@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { type Skill, useSkillTree } from "@/lib/skill-context";
 import { cn } from "@/lib/utils";
-import { Check, Lock, Trash2, Unlock } from "lucide-react";
+import { Check, Lock, Trash2, Unlock, ChevronUp, ChevronDown } from "lucide-react";
 import { useState, useRef } from "react";
 import {
   Popover,
@@ -20,7 +20,7 @@ export function SkillNode({ skill, areaColor, onClick }: SkillNodeProps) {
   const isLocked = skill.status === "locked";
   const isMastered = skill.status === "mastered";
   
-  const { activeAreaId, deleteSkill, toggleLock } = useSkillTree();
+  const { activeAreaId, deleteSkill, toggleLock, moveSkill } = useSkillTree();
   const [isOpen, setIsOpen] = useState(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPress = useRef(false);
@@ -127,6 +127,27 @@ export function SkillNode({ skill, areaColor, onClick }: SkillNodeProps) {
         className="w-64 border-border bg-popover/95 backdrop-blur-xl shadow-xl p-4 z-50"
       >
         <div className="space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => moveSkill(activeAreaId, skill.id, "up")}
+              data-testid="button-move-up"
+            >
+              <ChevronUp className="h-4 w-4" />
+            </Button>
+            <span className="text-xs text-muted-foreground">Mover</span>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => moveSkill(activeAreaId, skill.id, "down")}
+              data-testid="button-move-down"
+            >
+              <ChevronDown className="h-4 w-4" />
+            </Button>
+          </div>
           <div className="max-h-[200px] overflow-y-auto custom-scrollbar">
             <h4 className="font-semibold leading-none mb-1.5">{skill.title}</h4>
             <p className="text-sm text-muted-foreground leading-relaxed break-words">

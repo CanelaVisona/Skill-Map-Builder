@@ -32,6 +32,7 @@ interface SkillTreeContextType {
   addSkill: (areaId: string, skill: Omit<Skill, "id">) => void;
   deleteSkill: (areaId: string, skillId: string) => void;
   toggleLock: (areaId: string, skillId: string) => void;
+  moveSkill: (areaId: string, skillId: string, direction: "up" | "down") => void;
   activeArea: Area | undefined;
   isLoading: boolean;
 }
@@ -232,6 +233,37 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const moveSkill = async (areaId: string, skillId: string, direction: "up" | "down") => {
+    const area = areas.find(a => a.id === areaId);
+    if (!area) return;
+
+    const skill = area.skills.find(s => s.id === skillId);
+    if (!skill) return;
+
+    const moveAmount = direction === "up" ? -50 : 50;
+    const newY = Math.max(50, skill.y + moveAmount);
+
+    try {
+      await fetch(`/api/skills/${skillId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ y: newY }),
+      });
+
+      setAreas(prev => prev.map(area => {
+        if (area.id !== areaId) return area;
+        return {
+          ...area,
+          skills: area.skills.map(s => 
+            s.id === skillId ? { ...s, y: newY } : s
+          )
+        };
+      }));
+    } catch (error) {
+      console.error("Error moving skill:", error);
+    }
+  };
+
   // Auto-unlock logic
   useEffect(() => {
     if (isLoading || areas.length === 0) return;
@@ -285,6 +317,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       addSkill,
       deleteSkill,
       toggleLock,
+      moveSkill,
       activeArea,
       isLoading
     }}>
