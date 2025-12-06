@@ -19,6 +19,7 @@ interface SkillNodeProps {
 export function SkillNode({ skill, areaColor, onClick }: SkillNodeProps) {
   const isLocked = skill.status === "locked";
   const isMastered = skill.status === "mastered";
+  const isFinalMastered = skill.isFinalNode === 1 && isMastered;
   
   const { activeAreaId, deleteSkill, toggleLock, moveSkill } = useSkillTree();
   const [isOpen, setIsOpen] = useState(false);
@@ -99,7 +100,8 @@ export function SkillNode({ skill, areaColor, onClick }: SkillNodeProps) {
             className={cn(
               "w-10 h-10 rounded-full border flex items-center justify-center transition-all duration-300 relative",
               isLocked ? "bg-muted border-muted-foreground/20 text-muted-foreground/50" : "bg-card border-border hover:border-foreground/50",
-              isMastered && "bg-foreground border-foreground text-background shadow-sm"
+              isMastered && !isFinalMastered && "bg-foreground border-foreground text-background shadow-sm",
+              isFinalMastered && "bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/30"
             )}
           >
             {isLocked ? (

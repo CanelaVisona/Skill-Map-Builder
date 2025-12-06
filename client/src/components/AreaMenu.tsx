@@ -20,7 +20,8 @@ export function AreaMenu() {
     defaultValues: {
       title: "",
       description: "",
-      locked: false
+      locked: false,
+      isFinalNode: false
     }
   });
 
@@ -44,7 +45,8 @@ export function AreaMenu() {
       y: newY,
       status: data.locked ? "locked" : "available",
       dependencies: lastSkill ? [lastSkill.id] : [],
-      manualLock: data.locked ? 1 : 0
+      manualLock: data.locked ? 1 : 0,
+      isFinalNode: data.isFinalNode ? 1 : 0
     });
     
     reset();
@@ -157,6 +159,15 @@ export function AreaMenu() {
                 />
                 <Label htmlFor="locked" className="cursor-pointer text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
                   Start as Locked
+                </Label>
+              </div>
+              <div className="flex items-center space-x-2 pt-2">
+                <Checkbox 
+                  id="isFinalNode" 
+                  onCheckedChange={(checked) => setValue("isFinalNode", checked as boolean)} 
+                />
+                <Label htmlFor="isFinalNode" className="cursor-pointer text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                  Nodo Final
                 </Label>
               </div>
               <Button type="submit" className="w-full">
