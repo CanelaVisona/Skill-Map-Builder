@@ -246,6 +246,19 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     const children = area.skills.filter(s => s.dependencies.includes(skillId));
     const newDependencies = skillToDelete.dependencies;
 
+    // Check if we're deleting a final node - need to mark the previous one as final
+    const wasIsFinalNode = skillToDelete.isFinalNode === 1;
+    let newFinalNodeId: string | null = null;
+    
+    if (wasIsFinalNode) {
+      const sameLevelSkills = area.skills
+        .filter(s => s.level === skillToDelete.level && s.id !== skillId)
+        .sort((a, b) => a.y - b.y);
+      if (sameLevelSkills.length > 0) {
+        newFinalNodeId = sameLevelSkills[sameLevelSkills.length - 1].id;
+      }
+    }
+
     try {
       // Delete the skill
       await fetch(`/api/skills/${skillId}`, { method: "DELETE" });
@@ -273,6 +286,15 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
         });
       }
 
+      // Mark new final node if needed
+      if (newFinalNodeId) {
+        await fetch(`/api/skills/${newFinalNodeId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isFinalNode: 1 }),
+        });
+      }
+
       // Update local state
       setAreas(prev => prev.map(area => {
         if (area.id !== areaId) return area;
@@ -290,6 +312,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
             
             if (s.y > skillToDelete.y) {
               updated.y = s.y - 150;
+            }
+
+            if (s.id === newFinalNodeId) {
+              updated.isFinalNode = 1;
             }
             
             return updated;
@@ -368,27 +394,62 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     const currentY = skill.y;
     const neighborY = neighbor.y;
 
+    const sameLevelSkills = sortedSkills.filter(s => s.level === skill.level);
+    const lastSameLevelSkill = sameLevelSkills[sameLevelSkills.length - 1];
+    const isCurrentFinal = skill.isFinalNode === 1;
+    const isNeighborFinal = neighbor.isFinalNode === 1;
+    const sameLevel = skill.level === neighbor.level;
+
+    let swapFinalNode = false;
+    if (sameLevel && (isCurrentFinal || isNeighborFinal)) {
+      swapFinalNode = true;
+    }
+
     try {
-      await Promise.all([
+      const updates: Promise<Response>[] = [
         fetch(`/api/skills/${skillId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ y: neighborY }),
+          body: JSON.stringify({ 
+            y: neighborY,
+            ...(swapFinalNode && isCurrentFinal ? { isFinalNode: 0 } : {}),
+            ...(swapFinalNode && isNeighborFinal ? { isFinalNode: 1 } : {})
+          }),
         }),
         fetch(`/api/skills/${neighbor.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ y: currentY }),
+          body: JSON.stringify({ 
+            y: currentY,
+            ...(swapFinalNode && isNeighborFinal ? { isFinalNode: 0 } : {}),
+            ...(swapFinalNode && isCurrentFinal ? { isFinalNode: 1 } : {})
+          }),
         })
-      ]);
+      ];
+
+      await Promise.all(updates);
 
       setAreas(prev => prev.map(area => {
         if (area.id !== areaId) return area;
         return {
           ...area,
           skills: area.skills.map(s => {
-            if (s.id === skillId) return { ...s, y: neighborY };
-            if (s.id === neighbor.id) return { ...s, y: currentY };
+            if (s.id === skillId) {
+              return { 
+                ...s, 
+                y: neighborY,
+                ...(swapFinalNode && isCurrentFinal ? { isFinalNode: 0 } : {}),
+                ...(swapFinalNode && isNeighborFinal ? { isFinalNode: 1 } : {})
+              };
+            }
+            if (s.id === neighbor.id) {
+              return { 
+                ...s, 
+                y: currentY,
+                ...(swapFinalNode && isNeighborFinal ? { isFinalNode: 0 } : {}),
+                ...(swapFinalNode && isCurrentFinal ? { isFinalNode: 1 } : {})
+              };
+            }
             return s;
           })
         };
