@@ -57,12 +57,39 @@ export class DbStorage implements IStorage {
 
   async createSkill(skill: InsertSkill): Promise<Skill> {
     const id = Math.random().toString(36).substr(2, 9);
-    const result = await db.insert(skills).values({ ...skill, id }).returning();
+    const insertData: typeof skills.$inferInsert = {
+      id,
+      areaId: skill.areaId,
+      title: skill.title,
+      description: skill.description,
+      status: skill.status,
+      x: skill.x,
+      y: skill.y,
+      dependencies: skill.dependencies as string[],
+      manualLock: (skill.manualLock ?? 0) as 0 | 1,
+      isFinalNode: (skill.isFinalNode ?? 0) as 0 | 1,
+      level: skill.level,
+      levelPosition: skill.levelPosition,
+    };
+    const result = await db.insert(skills).values(insertData).returning();
     return result[0];
   }
 
   async updateSkill(id: string, skill: Partial<InsertSkill>): Promise<Skill | undefined> {
-    const result = await db.update(skills).set(skill).where(eq(skills.id, id)).returning();
+    const updateData: Record<string, unknown> = {};
+    if (skill.areaId !== undefined) updateData.areaId = skill.areaId;
+    if (skill.title !== undefined) updateData.title = skill.title;
+    if (skill.description !== undefined) updateData.description = skill.description;
+    if (skill.status !== undefined) updateData.status = skill.status;
+    if (skill.x !== undefined) updateData.x = skill.x;
+    if (skill.y !== undefined) updateData.y = skill.y;
+    if (skill.dependencies !== undefined) updateData.dependencies = skill.dependencies as string[];
+    if (skill.manualLock !== undefined) updateData.manualLock = skill.manualLock as 0 | 1;
+    if (skill.isFinalNode !== undefined) updateData.isFinalNode = skill.isFinalNode as 0 | 1;
+    if (skill.level !== undefined) updateData.level = skill.level;
+    if (skill.levelPosition !== undefined) updateData.levelPosition = skill.levelPosition;
+    
+    const result = await db.update(skills).set(updateData).where(eq(skills.id, id)).returning();
     return result[0];
   }
 
