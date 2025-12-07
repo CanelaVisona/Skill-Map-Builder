@@ -51,6 +51,9 @@ interface SkillTreeContextType {
   activeArea: Area | undefined;
   isLoading: boolean;
   projects: Project[];
+  activeProjectId: string;
+  setActiveProjectId: (id: string) => void;
+  activeProject: Project | undefined;
   createProject: (name: string, description: string, icon: string) => Promise<void>;
   deleteProject: (projectId: string) => Promise<void>;
 }
@@ -68,9 +71,11 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
   const [areas, setAreas] = useState<Area[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeAreaId, setActiveAreaId] = useState<string>("");
+  const [activeProjectId, setActiveProjectId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
 
   const activeArea = areas.find(a => a.id === activeAreaId);
+  const activeProject = projects.find(p => p.id === activeProjectId);
 
   // Load areas and projects from API
   useEffect(() => {
@@ -655,6 +660,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       activeArea,
       isLoading,
       projects,
+      activeProjectId,
+      setActiveProjectId,
+      activeProject,
       createProject,
       deleteProject
     }}>

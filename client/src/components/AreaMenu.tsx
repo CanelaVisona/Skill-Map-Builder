@@ -184,11 +184,13 @@ function AreaItem({ area, isActive, isMenuOpen, onSelect, onDelete }: AreaItemPr
 
 interface ProjectItemProps {
   project: Project;
+  isActive: boolean;
   isMenuOpen: boolean;
+  onSelect: () => void;
   onDelete: () => void;
 }
 
-function ProjectItem({ project, isMenuOpen, onDelete }: ProjectItemProps) {
+function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete }: ProjectItemProps) {
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPress = useRef(false);
@@ -224,10 +226,17 @@ function ProjectItem({ project, isMenuOpen, onDelete }: ProjectItemProps) {
     }
   };
 
+  const handleClick = () => {
+    if (!isLongPress.current) {
+      onSelect();
+    }
+  };
+
   return (
     <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
       <PopoverAnchor asChild>
-        <div
+        <button
+          onClick={handleClick}
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
           onTouchCancel={handleTouchEnd}
@@ -235,13 +244,15 @@ function ProjectItem({ project, isMenuOpen, onDelete }: ProjectItemProps) {
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
           className={cn(
-            "w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 group relative overflow-hidden touch-none select-none cursor-default",
-            "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+            "w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 group relative overflow-hidden touch-none select-none",
+            isActive 
+              ? "bg-primary/10 text-foreground" 
+              : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
             !isMenuOpen && "justify-center px-2"
           )}
           data-testid={`project-item-${project.id}`}
         >
-          <Icon size={18} className="shrink-0 group-hover:text-foreground" />
+          <Icon size={18} className={cn("shrink-0", isActive ? "text-primary" : "group-hover:text-foreground")} />
           
           {isMenuOpen && (
             <motion.span 
@@ -252,7 +263,7 @@ function ProjectItem({ project, isMenuOpen, onDelete }: ProjectItemProps) {
               {project.name}
             </motion.span>
           )}
-        </div>
+        </button>
       </PopoverAnchor>
       <PopoverContent 
         side="right" 
@@ -278,7 +289,7 @@ function ProjectItem({ project, isMenuOpen, onDelete }: ProjectItemProps) {
 }
 
 export function AreaMenu() {
-  const { areas, activeAreaId, setActiveAreaId, createArea, deleteArea, projects, createProject, deleteProject } = useSkillTree();
+  const { areas, activeAreaId, setActiveAreaId, createArea, deleteArea, projects, activeProjectId, setActiveProjectId, createProject, deleteProject } = useSkillTree();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isOpen, setIsOpen] = useState(true);
   const [dialogStep, setDialogStep] = useState<DialogStep>("choose");
@@ -461,7 +472,9 @@ export function AreaMenu() {
             <ProjectItem
               key={project.id}
               project={project}
+              isActive={project.id === activeProjectId}
               isMenuOpen={isOpen}
+              onSelect={() => setActiveProjectId(project.id)}
               onDelete={() => deleteProject(project.id)}
             />
           ))
