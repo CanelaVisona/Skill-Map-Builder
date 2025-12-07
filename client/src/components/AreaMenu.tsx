@@ -1,13 +1,13 @@
 import { useSkillTree, iconMap } from "@/lib/skill-context";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, PanelLeftClose, PanelLeftOpen, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera } from "lucide-react";
+import { Plus, PanelLeftClose, PanelLeftOpen, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban } from "lucide-react";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 type DialogStep = "choose" | "new-area" | "new-project";
 
@@ -15,7 +15,7 @@ const iconKeywords: Record<string, string[]> = {
   Music: ["música", "musica", "guitarra", "guitar", "piano", "canto", "instrumento", "song", "canción"],
   Trophy: ["deporte", "fútbol", "futbol", "football", "soccer", "basket", "tenis", "competencia", "ganador", "winner"],
   BookOpen: ["libro", "lectura", "literatura", "leer", "estudio", "study", "book", "reading"],
-  Home: ["casa", "hogar", "home", "limpieza", "cocina", "organización"],
+  Home: ["casa", "hogar", "home", "limpieza", "organización"],
   Dumbbell: ["gym", "gimnasio", "ejercicio", "fitness", "workout", "peso", "músculo"],
   Briefcase: ["trabajo", "work", "negocio", "business", "empleo", "carrera", "profesional"],
   Heart: ["salud", "health", "bienestar", "meditación", "yoga", "mental"],
@@ -25,6 +25,22 @@ const iconKeywords: Record<string, string[]> = {
   Gamepad2: ["juegos", "gaming", "videojuegos", "game"],
   Camera: ["foto", "fotografía", "photography", "video", "film"]
 };
+
+const availableIcons = [
+  { name: "Music", icon: Music },
+  { name: "Trophy", icon: Trophy },
+  { name: "BookOpen", icon: BookOpen },
+  { name: "Home", icon: Home },
+  { name: "Dumbbell", icon: Dumbbell },
+  { name: "Briefcase", icon: Briefcase },
+  { name: "Heart", icon: Heart },
+  { name: "Utensils", icon: Utensils },
+  { name: "Palette", icon: Palette },
+  { name: "Code", icon: Code },
+  { name: "Gamepad2", icon: Gamepad2 },
+  { name: "Camera", icon: Camera },
+  { name: "FolderKanban", icon: FolderKanban },
+];
 
 function getIconForTitle(title: string): string {
   const lowerTitle = title.toLowerCase();
@@ -45,7 +61,8 @@ const extendedIconMap: Record<string, any> = {
   Palette,
   Code,
   Gamepad2,
-  Camera
+  Camera,
+  FolderKanban
 };
 
 export function AreaMenu() {
@@ -53,32 +70,121 @@ export function AreaMenu() {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isOpen, setIsOpen] = useState(true);
   const [dialogStep, setDialogStep] = useState<DialogStep>("choose");
-  const [areaName, setAreaName] = useState("");
-  const [areaDescription, setAreaDescription] = useState("");
+  const [itemName, setItemName] = useState("");
+  const [itemDescription, setItemDescription] = useState("");
+  const [selectedIcon, setSelectedIcon] = useState("Home");
+
+  useEffect(() => {
+    if (itemName) {
+      const detected = getIconForTitle(itemName);
+      setSelectedIcon(detected);
+    }
+  }, [itemName]);
 
   const handleDialogClose = (open: boolean) => {
     setIsAddOpen(open);
     if (!open) {
       setDialogStep("choose");
-      setAreaName("");
-      setAreaDescription("");
+      setItemName("");
+      setItemDescription("");
+      setSelectedIcon("Home");
     }
   };
 
   const handleCreateArea = async () => {
-    if (!areaName.trim()) return;
+    if (!itemName.trim()) return;
     
-    const icon = getIconForTitle(areaName);
-    await createArea(areaName.trim(), areaDescription.trim(), icon);
+    await createArea(itemName.trim(), itemDescription.trim(), selectedIcon);
     
     setIsAddOpen(false);
     setDialogStep("choose");
-    setAreaName("");
-    setAreaDescription("");
+    setItemName("");
+    setItemDescription("");
+    setSelectedIcon("Home");
   };
 
-  const detectedIcon = getIconForTitle(areaName);
-  const DetectedIconComponent = extendedIconMap[detectedIcon] || Home;
+  const handleCreateProject = async () => {
+    if (!itemName.trim()) return;
+    setIsAddOpen(false);
+    setDialogStep("choose");
+    setItemName("");
+    setItemDescription("");
+    setSelectedIcon("Home");
+  };
+
+  const SelectedIconComponent = extendedIconMap[selectedIcon] || Home;
+
+  const renderForm = (type: "area" | "project") => (
+    <div className="space-y-4 mt-4">
+      <div className="space-y-2">
+        <Label>Icono</Label>
+        <div className="grid grid-cols-7 gap-2">
+          {availableIcons.map(({ name, icon: IconComp }) => (
+            <button
+              key={name}
+              type="button"
+              onClick={() => setSelectedIcon(name)}
+              className={cn(
+                "w-9 h-9 rounded-lg flex items-center justify-center transition-all",
+                selectedIcon === name 
+                  ? "bg-primary text-primary-foreground" 
+                  : "bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground"
+              )}
+              data-testid={`icon-${name.toLowerCase()}`}
+            >
+              <IconComp size={18} />
+            </button>
+          ))}
+        </div>
+      </div>
+      
+      <div className="space-y-2">
+        <Label htmlFor="item-name">Título</Label>
+        <Input 
+          id="item-name" 
+          value={itemName}
+          onChange={(e) => setItemName(e.target.value)}
+          placeholder={type === "area" ? "ej: Guitarra, Cocina..." : "ej: Aprender React, Renovar casa..."}
+          data-testid="input-item-name"
+        />
+      </div>
+      
+      <div className="space-y-2">
+        <Label htmlFor="item-description">Descripción</Label>
+        <Textarea 
+          id="item-description" 
+          value={itemDescription}
+          onChange={(e) => setItemDescription(e.target.value)}
+          placeholder={type === "area" ? "Describe esta área de desarrollo" : "Describe este proyecto"}
+          rows={3}
+          data-testid="input-item-description"
+        />
+      </div>
+      
+      <div className="flex gap-2 pt-2">
+        <Button 
+          variant="outline" 
+          onClick={() => {
+            setDialogStep("choose");
+            setItemName("");
+            setItemDescription("");
+            setSelectedIcon("Home");
+          }}
+          className="flex-1"
+        >
+          Atrás
+        </Button>
+        <Button 
+          onClick={type === "area" ? handleCreateArea : handleCreateProject}
+          disabled={!itemName.trim()}
+          className="flex-1"
+          data-testid={`button-create-${type}`}
+        >
+          Hecho
+        </Button>
+      </div>
+    </div>
+  );
 
   return (
     <motion.div 
@@ -203,7 +309,7 @@ export function AreaMenu() {
                       onClick={() => setDialogStep("new-project")}
                       data-testid="button-new-project"
                     >
-                      <Plus className="h-6 w-6" />
+                      <FolderKanban className="h-6 w-6" />
                       <span>Nuevo Proyecto</span>
                     </Button>
                   </div>
@@ -216,57 +322,7 @@ export function AreaMenu() {
                 <DialogHeader>
                   <DialogTitle>Nueva Área</DialogTitle>
                 </DialogHeader>
-                <div className="space-y-4 mt-4">
-                  <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
-                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                      <DetectedIconComponent size={20} className="text-primary" />
-                    </div>
-                    <span className="text-sm text-muted-foreground">
-                      Icono detectado automáticamente
-                    </span>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="area-name">Título</Label>
-                    <Input 
-                      id="area-name" 
-                      value={areaName}
-                      onChange={(e) => setAreaName(e.target.value)}
-                      placeholder="ej: Guitarra, Cocina, Programación..."
-                      data-testid="input-area-name"
-                    />
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="area-description">Descripción</Label>
-                    <Textarea 
-                      id="area-description" 
-                      value={areaDescription}
-                      onChange={(e) => setAreaDescription(e.target.value)}
-                      placeholder="Describe brevemente esta área de desarrollo"
-                      rows={3}
-                      data-testid="input-area-description"
-                    />
-                  </div>
-                  
-                  <div className="flex gap-2 pt-2">
-                    <Button 
-                      variant="outline" 
-                      onClick={() => setDialogStep("choose")}
-                      className="flex-1"
-                    >
-                      Atrás
-                    </Button>
-                    <Button 
-                      onClick={handleCreateArea}
-                      disabled={!areaName.trim()}
-                      className="flex-1"
-                      data-testid="button-create-area"
-                    >
-                      Hecho
-                    </Button>
-                  </div>
-                </div>
+                {renderForm("area")}
               </>
             )}
 
@@ -275,18 +331,7 @@ export function AreaMenu() {
                 <DialogHeader>
                   <DialogTitle>Nuevo Proyecto</DialogTitle>
                 </DialogHeader>
-                <div className="space-y-4 mt-4">
-                  <p className="text-sm text-muted-foreground">
-                    Los proyectos estarán disponibles próximamente.
-                  </p>
-                  <Button 
-                    variant="outline" 
-                    onClick={() => setDialogStep("choose")}
-                    className="w-full"
-                  >
-                    Atrás
-                  </Button>
-                </div>
+                {renderForm("project")}
               </>
             )}
           </DialogContent>
