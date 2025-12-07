@@ -62,7 +62,24 @@ export async function registerRoutes(
   app.post("/api/skills", async (req, res) => {
     try {
       const validatedSkill = insertSkillSchema.parse(req.body);
-      const skill = await storage.createSkill(validatedSkill);
+      
+      const currentCount = await storage.countSkillsInLevel(validatedSkill.areaId, validatedSkill.level);
+      
+      if (currentCount >= 5) {
+        res.status(400).json({ message: "Este nivel ya tiene 5 nodos. Completa el nodo final para desbloquear el siguiente nivel." });
+        return;
+      }
+      
+      const levelPosition = currentCount + 1;
+      const isFinalNode = levelPosition === 5 ? 1 : 0;
+      
+      const skillWithPosition = {
+        ...validatedSkill,
+        levelPosition,
+        isFinalNode: isFinalNode as 0 | 1,
+      };
+      
+      const skill = await storage.createSkill(skillWithPosition);
       res.status(201).json(skill);
     } catch (error: any) {
       const validationError = fromError(error);

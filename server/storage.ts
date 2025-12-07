@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { db } from "./db";
 import { type Area, type Skill, type InsertArea, type InsertSkill, areas, skills } from "@shared/schema";
 
@@ -16,6 +16,7 @@ export interface IStorage {
   createSkill(skill: InsertSkill): Promise<Skill>;
   updateSkill(id: string, skill: Partial<InsertSkill>): Promise<Skill | undefined>;
   deleteSkill(id: string): Promise<void>;
+  countSkillsInLevel(areaId: string, level: number): Promise<number>;
 }
 
 export class DbStorage implements IStorage {
@@ -66,6 +67,13 @@ export class DbStorage implements IStorage {
 
   async deleteSkill(id: string): Promise<void> {
     await db.delete(skills).where(eq(skills.id, id));
+  }
+
+  async countSkillsInLevel(areaId: string, level: number): Promise<number> {
+    const result = await db.select().from(skills).where(
+      and(eq(skills.areaId, areaId), eq(skills.level, level))
+    );
+    return result.length;
   }
 }
 

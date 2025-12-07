@@ -25,6 +25,7 @@ export const skills = pgTable("skills", {
   manualLock: integer("manual_lock").$type<0 | 1>().default(0),
   isFinalNode: integer("is_final_node").$type<0 | 1>().default(0),
   level: integer("level").notNull().default(1),
+  levelPosition: integer("level_position").notNull().default(1),
 });
 
 export const insertAreaSchema = createInsertSchema(areas);
