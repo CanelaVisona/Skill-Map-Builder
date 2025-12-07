@@ -28,10 +28,20 @@ export const skills = pgTable("skills", {
   levelPosition: integer("level_position").notNull().default(1),
 });
 
+export const projects = pgTable("projects", {
+  id: varchar("id").primaryKey(),
+  name: text("name").notNull(),
+  icon: text("icon").notNull(),
+  description: text("description").notNull(),
+});
+
 export const insertAreaSchema = createInsertSchema(areas);
 export const insertSkillSchema = createInsertSchema(skills).omit({ id: true });
+export const insertProjectSchema = createInsertSchema(projects);
 
 export type InsertArea = z.infer<typeof insertAreaSchema>;
 export type Area = typeof areas.$inferSelect;
 export type InsertSkill = z.infer<typeof insertSkillSchema>;
 export type Skill = typeof skills.$inferSelect;
+export type InsertProject = z.infer<typeof insertProjectSchema>;
+export type Project = typeof projects.$inferSelect;
