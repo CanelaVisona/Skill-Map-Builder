@@ -64,6 +64,11 @@ export async function registerRoutes(
       const validatedSkill = insertSkillSchema.parse(req.body);
       const skillLevel = validatedSkill.level ?? 1;
       
+      if (!validatedSkill.areaId) {
+        res.status(400).json({ message: "areaId is required" });
+        return;
+      }
+      
       const currentCount = await storage.countSkillsInLevel(validatedSkill.areaId, skillLevel);
       
       if (currentCount >= 5) {
@@ -108,7 +113,12 @@ export async function registerRoutes(
       // Only the auto-unlock system or mastering should change status of locked nodes
       if (req.body.status === "available" && existingSkill.status === "locked") {
         // Verify dependencies are mastered before allowing unlock
-        const allSkills = await storage.getSkills(existingSkill.areaId);
+        let allSkills: typeof existingSkill[] = [];
+        if (existingSkill.areaId) {
+          allSkills = await storage.getSkills(existingSkill.areaId);
+        } else if (existingSkill.projectId) {
+          allSkills = await storage.getProjectSkills(existingSkill.projectId);
+        }
         const dependencies = (existingSkill.dependencies as string[]) || [];
         
         if (dependencies.length > 0) {
@@ -184,8 +194,14 @@ export async function registerRoutes(
   // Projects
   app.get("/api/projects", async (req, res) => {
     try {
-      const projects = await storage.getProjects();
-      res.json(projects);
+      const projectsList = await storage.getProjects();
+      const projectsWithSkills = await Promise.all(
+        projectsList.map(async (project) => {
+          const skills = await storage.getProjectSkills(project.id);
+          return { ...project, skills };
+        })
+      );
+      res.json(projectsWithSkills);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -195,7 +211,7 @@ export async function registerRoutes(
     try {
       const validatedProject = insertProjectSchema.parse(req.body);
       const project = await storage.createProject(validatedProject);
-      res.status(201).json(project);
+      res.status(201).json({ ...project, skills: [] });
     } catch (error: any) {
       const validationError = fromError(error);
       res.status(400).json({ message: validationError.toString() });
@@ -208,6 +224,79 @@ export async function registerRoutes(
       res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/projects/:id/generate-level", async (req, res) => {
+    try {
+      const { level } = req.body;
+      const projectId = req.params.id;
+      
+      if (!level || typeof level !== "number") {
+        res.status(400).json({ message: "Level is required and must be a number" });
+        return;
+      }
+      
+      const allSkills = await storage.getProjectSkills(projectId);
+      const existingLevelSkills = allSkills.filter(s => s.level === level);
+      
+      if (existingLevelSkills.length > 0) {
+        const updatedProject = await storage.updateProject(projectId, { 
+          unlockedLevel: level, 
+          nextLevelToAssign: level 
+        });
+        res.status(200).json({ updatedProject, createdSkills: existingLevelSkills });
+        return;
+      }
+      
+      let startY = 100;
+      if (allSkills.length > 0) {
+        const lastSkill = allSkills.reduce((max, s) => s.y > max.y ? s : max, allSkills[0]);
+        startY = lastSkill.y + 150;
+      }
+      
+      const { updatedProject, createdSkills } = await storage.generateProjectLevelWithSkills(projectId, level, startY);
+      
+      res.status(201).json({ updatedProject, createdSkills });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Skills for projects
+  app.post("/api/projects/:id/skills", async (req, res) => {
+    try {
+      const projectId = req.params.id;
+      const validatedSkill = insertSkillSchema.parse({ ...req.body, projectId });
+      const skillLevel = validatedSkill.level ?? 1;
+      
+      const currentCount = await storage.countProjectSkillsInLevel(projectId, skillLevel);
+      
+      if (currentCount >= 5) {
+        res.status(400).json({ message: "Este nivel ya tiene 5 nodos. Completa el nodo final para desbloquear el siguiente nivel." });
+        return;
+      }
+      
+      const levelPosition = currentCount + 1;
+      const isFinalNode = levelPosition === 5 ? 1 : 0;
+      const enforcedStatus = levelPosition > 1 ? "locked" : validatedSkill.status;
+      const enforcedManualLock = levelPosition > 1 ? 0 : (validatedSkill.manualLock || 0);
+      
+      const skillWithPosition = {
+        ...validatedSkill,
+        projectId,
+        level: skillLevel,
+        levelPosition,
+        isFinalNode: isFinalNode as 0 | 1,
+        status: enforcedStatus,
+        manualLock: enforcedManualLock as 0 | 1,
+      };
+      
+      const skill = await storage.createSkill(skillWithPosition);
+      res.status(201).json(skill);
+    } catch (error: any) {
+      const validationError = fromError(error);
+      res.status(400).json({ message: validationError.toString() });
     }
   });
 

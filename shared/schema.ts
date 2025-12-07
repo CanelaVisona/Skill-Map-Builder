@@ -15,7 +15,8 @@ export const areas = pgTable("areas", {
 
 export const skills = pgTable("skills", {
   id: varchar("id").primaryKey(),
-  areaId: varchar("area_id").notNull().references(() => areas.id, { onDelete: "cascade" }),
+  areaId: varchar("area_id").references(() => areas.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   description: text("description").notNull(),
   status: text("status").notNull(),
@@ -33,6 +34,8 @@ export const projects = pgTable("projects", {
   name: text("name").notNull(),
   icon: text("icon").notNull(),
   description: text("description").notNull(),
+  unlockedLevel: integer("unlocked_level").notNull().default(1),
+  nextLevelToAssign: integer("next_level_to_assign").notNull().default(1),
 });
 
 export const insertAreaSchema = createInsertSchema(areas);

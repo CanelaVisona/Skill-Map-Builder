@@ -12,16 +12,21 @@ export interface IStorage {
 
   // Skills
   getSkills(areaId: string): Promise<Skill[]>;
+  getProjectSkills(projectId: string): Promise<Skill[]>;
   getSkill(id: string): Promise<Skill | undefined>;
   createSkill(skill: InsertSkill): Promise<Skill>;
   updateSkill(id: string, skill: Partial<InsertSkill>): Promise<Skill | undefined>;
   deleteSkill(id: string): Promise<void>;
   countSkillsInLevel(areaId: string, level: number): Promise<number>;
+  countProjectSkillsInLevel(projectId: string, level: number): Promise<number>;
   generateLevelWithSkills(areaId: string, level: number, startY: number): Promise<{ updatedArea: Area; createdSkills: Skill[] }>;
+  generateProjectLevelWithSkills(projectId: string, level: number, startY: number): Promise<{ updatedProject: Project; createdSkills: Skill[] }>;
 
   // Projects
   getProjects(): Promise<Project[]>;
+  getProject(id: string): Promise<Project | undefined>;
   createProject(project: InsertProject): Promise<Project>;
+  updateProject(id: string, project: Partial<InsertProject>): Promise<Project | undefined>;
   deleteProject(id: string): Promise<void>;
 }
 
@@ -53,6 +58,10 @@ export class DbStorage implements IStorage {
   // Skills
   async getSkills(areaId: string): Promise<Skill[]> {
     return await db.select().from(skills).where(eq(skills.areaId, areaId));
+  }
+
+  async getProjectSkills(projectId: string): Promise<Skill[]> {
+    return await db.select().from(skills).where(eq(skills.projectId, projectId));
   }
 
   async getSkill(id: string): Promise<Skill | undefined> {
@@ -109,6 +118,13 @@ export class DbStorage implements IStorage {
     return result.length;
   }
 
+  async countProjectSkillsInLevel(projectId: string, level: number): Promise<number> {
+    const result = await db.select().from(skills).where(
+      and(eq(skills.projectId, projectId), eq(skills.level, level))
+    );
+    return result.length;
+  }
+
   async generateLevelWithSkills(areaId: string, level: number, startY: number): Promise<{ updatedArea: Area; createdSkills: Skill[] }> {
     const createdSkills: Skill[] = [];
     let previousSkillId: string | null = null;
@@ -152,13 +168,62 @@ export class DbStorage implements IStorage {
     return { updatedArea, createdSkills };
   }
 
+  async generateProjectLevelWithSkills(projectId: string, level: number, startY: number): Promise<{ updatedProject: Project; createdSkills: Skill[] }> {
+    const createdSkills: Skill[] = [];
+    let previousSkillId: string | null = null;
+
+    await db.transaction(async (tx) => {
+      await tx.update(projects)
+        .set({ unlockedLevel: level, nextLevelToAssign: level })
+        .where(eq(projects.id, projectId));
+
+      for (let position = 1; position <= 5; position++) {
+        const id = Math.random().toString(36).substr(2, 9);
+        const deps: string[] = previousSkillId ? [previousSkillId] : [];
+        const skillData: typeof skills.$inferInsert = {
+          id,
+          projectId,
+          title: "?",
+          description: "",
+          x: 50,
+          y: startY + (position - 1) * 150,
+          status: position === 1 ? "available" : "locked",
+          dependencies: deps,
+          level,
+          levelPosition: position,
+          isFinalNode: (position === 5 ? 1 : 0) as 0 | 1,
+          manualLock: 0 as 0 | 1,
+        };
+
+        const result = await tx.insert(skills).values(skillData).returning();
+        createdSkills.push(result[0]);
+        previousSkillId = id;
+      }
+    });
+
+    const updatedProjectResult = await db.select().from(projects).where(eq(projects.id, projectId));
+    const updatedProject = updatedProjectResult[0];
+
+    return { updatedProject, createdSkills };
+  }
+
   // Projects
   async getProjects(): Promise<Project[]> {
     return await db.select().from(projects);
   }
 
+  async getProject(id: string): Promise<Project | undefined> {
+    const result = await db.select().from(projects).where(eq(projects.id, id));
+    return result[0];
+  }
+
   async createProject(project: InsertProject): Promise<Project> {
     const result = await db.insert(projects).values(project).returning();
+    return result[0];
+  }
+
+  async updateProject(id: string, project: Partial<InsertProject>): Promise<Project | undefined> {
+    const result = await db.update(projects).set(project).where(eq(projects.id, id)).returning();
     return result[0];
   }
 
