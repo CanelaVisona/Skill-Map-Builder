@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { type Skill, useSkillTree } from "@/lib/skill-context";
 import { cn } from "@/lib/utils";
-import { Check, Lock, Trash2, Unlock, ChevronUp, ChevronDown } from "lucide-react";
+import { Check, Lock, Trash2, Unlock, ChevronUp, ChevronDown, Pencil } from "lucide-react";
 import { useState, useRef } from "react";
 import {
   Popover,
@@ -9,6 +9,16 @@ import {
   PopoverAnchor,
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 
 interface SkillNodeProps {
   skill: Skill;
@@ -22,10 +32,28 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
   const isMastered = skill.status === "mastered";
   const isFinalMastered = skill.isFinalNode === 1 && isMastered;
   
-  const { activeAreaId, deleteSkill, toggleLock, moveSkill } = useSkillTree();
+  const { activeAreaId, deleteSkill, toggleLock, moveSkill, updateSkill } = useSkillTree();
   const [isOpen, setIsOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editTitle, setEditTitle] = useState(skill.title);
+  const [editDescription, setEditDescription] = useState(skill.description || "");
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPress = useRef(false);
+
+  const handleEditOpen = () => {
+    setEditTitle(skill.title);
+    setEditDescription(skill.description || "");
+    setIsOpen(false);
+    setIsEditDialogOpen(true);
+  };
+
+  const handleEditSave = () => {
+    updateSkill(activeAreaId, skill.id, { 
+      title: editTitle, 
+      description: editDescription 
+    });
+    setIsEditDialogOpen(false);
+  };
 
   const handleTouchStart = () => {
     isLongPress.current = false;
@@ -79,6 +107,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
   };
 
   return (
+    <>
     <Popover open={isOpen} onOpenChange={handleOpenChange}>
       <PopoverAnchor asChild>
         <div
@@ -170,6 +199,17 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
                variant="outline" 
                size="sm" 
                className="h-8 px-3 text-xs"
+               onClick={handleEditOpen}
+               data-testid="button-edit-skill"
+             >
+               <Pencil className="mr-2 h-3 w-3" />
+               Editar
+             </Button>
+
+             <Button 
+               variant="outline" 
+               size="sm" 
+               className="h-8 px-3 text-xs"
                onClick={() => {
                  toggleLock(activeAreaId, skill.id);
                  setIsOpen(false);
@@ -195,6 +235,46 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
         </div>
       </PopoverContent>
     </Popover>
+
+    <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle>Editar Habilidad</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-4 py-4">
+          <div className="grid gap-2">
+            <Label htmlFor="edit-title">Título</Label>
+            <Input
+              id="edit-title"
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              placeholder="Nombre de la habilidad"
+              data-testid="input-edit-title"
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="edit-description">Descripción</Label>
+            <Textarea
+              id="edit-description"
+              value={editDescription}
+              onChange={(e) => setEditDescription(e.target.value)}
+              placeholder="Descripción de la habilidad"
+              rows={4}
+              data-testid="input-edit-description"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setIsEditDialogOpen(false)} data-testid="button-cancel-edit">
+            Cancelar
+          </Button>
+          <Button onClick={handleEditSave} data-testid="button-save-edit">
+            Guardar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  </>
   );
 }
 
