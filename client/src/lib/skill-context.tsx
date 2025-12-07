@@ -103,24 +103,46 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
 
       if (isFinalNodeBeingMastered) {
         const newUnlockedLevel = skill.level + 1;
-        await fetch(`/api/areas/${areaId}`, {
-          method: "PATCH",
+        
+        // Generate 5 placeholder nodes for the new level (this also updates area in a transaction)
+        // This endpoint is idempotent - if nodes exist, it returns them without creating duplicates
+        const generateResponse = await fetch(`/api/areas/${areaId}/generate-level`, {
+          method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
-            unlockedLevel: newUnlockedLevel,
-            nextLevelToAssign: newUnlockedLevel
-          }),
+          body: JSON.stringify({ level: newUnlockedLevel }),
         });
-
+        
+        if (!generateResponse.ok) {
+          console.error("Failed to generate new level");
+          setAreas(prev => prev.map(a => {
+            if (a.id !== areaId) return a;
+            return {
+              ...a,
+              skills: a.skills.map(s => 
+                s.id === skillId ? { ...s, status: newStatus } : s
+              )
+            };
+          }));
+          return;
+        }
+        
+        const { updatedArea, createdSkills } = await generateResponse.json();
+        
+        // Merge skills - avoid duplicates by checking existing skill IDs
         setAreas(prev => prev.map(a => {
           if (a.id !== areaId) return a;
+          const existingSkillIds = new Set(a.skills.map(s => s.id));
+          const newSkills = createdSkills.filter((s: Skill) => !existingSkillIds.has(s.id));
           return {
             ...a,
-            unlockedLevel: newUnlockedLevel,
-            nextLevelToAssign: newUnlockedLevel,
-            skills: a.skills.map(s => 
-              s.id === skillId ? { ...s, status: newStatus } : s
-            )
+            unlockedLevel: updatedArea.unlockedLevel,
+            nextLevelToAssign: updatedArea.nextLevelToAssign,
+            skills: [
+              ...a.skills.map(s => 
+                s.id === skillId ? { ...s, status: newStatus } : s
+              ),
+              ...newSkills
+            ]
           };
         }));
       } else if (isFinalNodeBeingUnmastered) {

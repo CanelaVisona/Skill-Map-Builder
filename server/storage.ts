@@ -17,6 +17,7 @@ export interface IStorage {
   updateSkill(id: string, skill: Partial<InsertSkill>): Promise<Skill | undefined>;
   deleteSkill(id: string): Promise<void>;
   countSkillsInLevel(areaId: string, level: number): Promise<number>;
+  generateLevelWithSkills(areaId: string, level: number, startY: number): Promise<{ updatedArea: Area; createdSkills: Skill[] }>;
 }
 
 export class DbStorage implements IStorage {
@@ -74,6 +75,49 @@ export class DbStorage implements IStorage {
       and(eq(skills.areaId, areaId), eq(skills.level, level))
     );
     return result.length;
+  }
+
+  async generateLevelWithSkills(areaId: string, level: number, startY: number): Promise<{ updatedArea: Area; createdSkills: Skill[] }> {
+    const createdSkills: Skill[] = [];
+    let previousSkillId: string | null = null;
+
+    // Use a transaction to ensure atomicity
+    await db.transaction(async (tx) => {
+      // Update area's unlocked level first
+      await tx.update(areas)
+        .set({ unlockedLevel: level, nextLevelToAssign: level })
+        .where(eq(areas.id, areaId));
+
+      // Create 5 skills for the new level
+      for (let position = 1; position <= 5; position++) {
+        const id = Math.random().toString(36).substr(2, 9);
+        const deps: string[] = previousSkillId ? [previousSkillId] : [];
+        const skillData: typeof skills.$inferInsert = {
+          id,
+          areaId,
+          title: `Nivel ${level} - Nodo ${position}`,
+          description: "Haz clic para editar este nodo",
+          x: 50,
+          y: startY + (position - 1) * 150,
+          status: position === 1 ? "available" : "locked",
+          dependencies: deps,
+          level,
+          levelPosition: position,
+          isFinalNode: (position === 5 ? 1 : 0) as 0 | 1,
+          manualLock: 0 as 0 | 1,
+        };
+
+        const result = await tx.insert(skills).values(skillData).returning();
+        createdSkills.push(result[0]);
+        previousSkillId = id;
+      }
+    });
+
+    // Fetch the updated area
+    const updatedAreaResult = await db.select().from(areas).where(eq(areas.id, areaId));
+    const updatedArea = updatedAreaResult[0];
+
+    return { updatedArea, createdSkills };
   }
 }
 

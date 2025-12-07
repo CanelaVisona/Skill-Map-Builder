@@ -62,8 +62,9 @@ export async function registerRoutes(
   app.post("/api/skills", async (req, res) => {
     try {
       const validatedSkill = insertSkillSchema.parse(req.body);
+      const skillLevel = validatedSkill.level ?? 1;
       
-      const currentCount = await storage.countSkillsInLevel(validatedSkill.areaId, validatedSkill.level);
+      const currentCount = await storage.countSkillsInLevel(validatedSkill.areaId, skillLevel);
       
       if (currentCount >= 5) {
         res.status(400).json({ message: "Este nivel ya tiene 5 nodos. Completa el nodo final para desbloquear el siguiente nivel." });
@@ -80,6 +81,7 @@ export async function registerRoutes(
       
       const skillWithPosition = {
         ...validatedSkill,
+        level: skillLevel,
         levelPosition,
         isFinalNode: isFinalNode as 0 | 1,
         status: enforcedStatus,
@@ -133,6 +135,47 @@ export async function registerRoutes(
     try {
       await storage.deleteSkill(req.params.id);
       res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Generate 5 placeholder nodes for a new level (transactional, idempotent)
+  app.post("/api/areas/:id/generate-level", async (req, res) => {
+    try {
+      const { level } = req.body;
+      const areaId = req.params.id;
+      
+      if (!level || typeof level !== "number") {
+        res.status(400).json({ message: "Level is required and must be a number" });
+        return;
+      }
+      
+      // Check if level already has nodes - if so, just update area and return existing nodes
+      const allSkills = await storage.getSkills(areaId);
+      const existingLevelSkills = allSkills.filter(s => s.level === level);
+      
+      if (existingLevelSkills.length > 0) {
+        // Level already has nodes - update area's unlockedLevel and return existing data
+        const updatedArea = await storage.updateArea(areaId, { 
+          unlockedLevel: level, 
+          nextLevelToAssign: level 
+        });
+        res.status(200).json({ updatedArea, createdSkills: existingLevelSkills });
+        return;
+      }
+      
+      // Get last skill to calculate starting Y position
+      let startY = 100;
+      if (allSkills.length > 0) {
+        const lastSkill = allSkills.reduce((max, s) => s.y > max.y ? s : max, allSkills[0]);
+        startY = lastSkill.y + 150;
+      }
+      
+      // Use transactional method that updates area and creates all skills atomically
+      const { updatedArea, createdSkills } = await storage.generateLevelWithSkills(areaId, level, startY);
+      
+      res.status(201).json({ updatedArea, createdSkills });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
