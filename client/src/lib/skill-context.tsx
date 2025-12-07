@@ -29,6 +29,13 @@ export interface Area {
   skills: Skill[];
 }
 
+export interface Project {
+  id: string;
+  name: string;
+  icon: string;
+  description: string;
+}
+
 interface SkillTreeContextType {
   areas: Area[];
   activeAreaId: string;
@@ -43,6 +50,9 @@ interface SkillTreeContextType {
   deleteArea: (areaId: string) => Promise<void>;
   activeArea: Area | undefined;
   isLoading: boolean;
+  projects: Project[];
+  createProject: (name: string, description: string, icon: string) => Promise<void>;
+  deleteProject: (projectId: string) => Promise<void>;
 }
 
 const SkillTreeContext = createContext<SkillTreeContextType | undefined>(undefined);
@@ -56,28 +66,34 @@ const iconMap: Record<string, any> = {
 
 export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
   const [areas, setAreas] = useState<Area[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [activeAreaId, setActiveAreaId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
 
   const activeArea = areas.find(a => a.id === activeAreaId);
 
-  // Load areas from API
+  // Load areas and projects from API
   useEffect(() => {
-    async function loadAreas() {
+    async function loadData() {
       try {
-        const response = await fetch("/api/areas");
-        const data = await response.json();
-        setAreas(data);
-        if (data.length > 0 && !activeAreaId) {
-          setActiveAreaId(data[0].id);
+        const [areasResponse, projectsResponse] = await Promise.all([
+          fetch("/api/areas"),
+          fetch("/api/projects")
+        ]);
+        const areasData = await areasResponse.json();
+        const projectsData = await projectsResponse.json();
+        setAreas(areasData);
+        setProjects(projectsData);
+        if (areasData.length > 0 && !activeAreaId) {
+          setActiveAreaId(areasData[0].id);
         }
       } catch (error) {
-        console.error("Error loading areas:", error);
+        console.error("Error loading data:", error);
       } finally {
         setIsLoading(false);
       }
     }
-    loadAreas();
+    loadData();
   }, []);
 
   const toggleSkillStatus = async (areaId: string, skillId: string) => {
@@ -532,6 +548,47 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const createProject = async (name: string, description: string, icon: string) => {
+    try {
+      const id = name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') + '_' + Date.now();
+      const response = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id,
+          name,
+          icon,
+          description,
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to create project");
+      }
+      
+      const newProject = await response.json();
+      setProjects(prev => [...prev, newProject]);
+    } catch (error) {
+      console.error("Error creating project:", error);
+    }
+  };
+
+  const deleteProject = async (projectId: string) => {
+    try {
+      const response = await fetch(`/api/projects/${projectId}`, {
+        method: "DELETE",
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to delete project");
+      }
+      
+      setProjects(prev => prev.filter(p => p.id !== projectId));
+    } catch (error) {
+      console.error("Error deleting project:", error);
+    }
+  };
+
   // Auto-unlock logic
   useEffect(() => {
     if (isLoading || areas.length === 0) return;
@@ -596,7 +653,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       createArea,
       deleteArea,
       activeArea,
-      isLoading
+      isLoading,
+      projects,
+      createProject,
+      deleteProject
     }}>
       {children}
     </SkillTreeContext.Provider>

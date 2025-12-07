@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertAreaSchema, insertSkillSchema } from "@shared/schema";
+import { insertAreaSchema, insertSkillSchema, insertProjectSchema } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 
 export async function registerRoutes(
@@ -176,6 +176,36 @@ export async function registerRoutes(
       const { updatedArea, createdSkills } = await storage.generateLevelWithSkills(areaId, level, startY);
       
       res.status(201).json({ updatedArea, createdSkills });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Projects
+  app.get("/api/projects", async (req, res) => {
+    try {
+      const projects = await storage.getProjects();
+      res.json(projects);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/projects", async (req, res) => {
+    try {
+      const validatedProject = insertProjectSchema.parse(req.body);
+      const project = await storage.createProject(validatedProject);
+      res.status(201).json(project);
+    } catch (error: any) {
+      const validationError = fromError(error);
+      res.status(400).json({ message: validationError.toString() });
+    }
+  });
+
+  app.delete("/api/projects/:id", async (req, res) => {
+    try {
+      await storage.deleteProject(req.params.id);
+      res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

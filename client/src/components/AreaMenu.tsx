@@ -1,4 +1,4 @@
-import { useSkillTree, iconMap } from "@/lib/skill-context";
+import { useSkillTree, iconMap, type Project } from "@/lib/skill-context";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, PanelLeftClose, PanelLeftOpen, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2 } from "lucide-react";
@@ -182,8 +182,103 @@ function AreaItem({ area, isActive, isMenuOpen, onSelect, onDelete }: AreaItemPr
   );
 }
 
+interface ProjectItemProps {
+  project: Project;
+  isMenuOpen: boolean;
+  onDelete: () => void;
+}
+
+function ProjectItem({ project, isMenuOpen, onDelete }: ProjectItemProps) {
+  const [isPopoverOpen, setIsPopoverOpen] = useState(false);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isLongPress = useRef(false);
+  const Icon = extendedIconMap[project.icon] || FolderKanban;
+
+  const handleTouchStart = () => {
+    isLongPress.current = false;
+    longPressTimer.current = setTimeout(() => {
+      isLongPress.current = true;
+      setIsPopoverOpen(true);
+    }, 1500);
+  };
+
+  const handleTouchEnd = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const handleMouseDown = () => {
+    isLongPress.current = false;
+    longPressTimer.current = setTimeout(() => {
+      isLongPress.current = true;
+      setIsPopoverOpen(true);
+    }, 1500);
+  };
+
+  const handleMouseUp = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  return (
+    <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
+      <PopoverAnchor asChild>
+        <div
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchEnd}
+          onMouseDown={handleMouseDown}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          className={cn(
+            "w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 group relative overflow-hidden touch-none select-none cursor-default",
+            "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+            !isMenuOpen && "justify-center px-2"
+          )}
+          data-testid={`project-item-${project.id}`}
+        >
+          <Icon size={18} className="shrink-0 group-hover:text-foreground" />
+          
+          {isMenuOpen && (
+            <motion.span 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="font-medium text-sm truncate"
+            >
+              {project.name}
+            </motion.span>
+          )}
+        </div>
+      </PopoverAnchor>
+      <PopoverContent 
+        side="right" 
+        align="start"
+        className="w-48 p-2"
+      >
+        <Button
+          variant="destructive"
+          size="sm"
+          className="w-full"
+          onClick={() => {
+            onDelete();
+            setIsPopoverOpen(false);
+          }}
+          data-testid={`button-delete-project-${project.id}`}
+        >
+          <Trash2 className="mr-2 h-4 w-4" />
+          Eliminar
+        </Button>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export function AreaMenu() {
-  const { areas, activeAreaId, setActiveAreaId, createArea, deleteArea } = useSkillTree();
+  const { areas, activeAreaId, setActiveAreaId, createArea, deleteArea, projects, createProject, deleteProject } = useSkillTree();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isOpen, setIsOpen] = useState(true);
   const [dialogStep, setDialogStep] = useState<DialogStep>("choose");
@@ -222,6 +317,9 @@ export function AreaMenu() {
 
   const handleCreateProject = async () => {
     if (!itemName.trim()) return;
+    
+    await createProject(itemName.trim(), itemDescription.trim(), selectedIcon);
+    
     setIsAddOpen(false);
     setDialogStep("choose");
     setItemName("");
@@ -354,9 +452,20 @@ export function AreaMenu() {
           </div>
         )}
 
-        <div className="text-xs text-muted-foreground px-3 py-2 italic">
-          {isOpen ? "Sin proyectos aún" : "—"}
-        </div>
+        {projects.length === 0 ? (
+          <div className="text-xs text-muted-foreground px-3 py-2 italic">
+            {isOpen ? "Sin proyectos aún" : "—"}
+          </div>
+        ) : (
+          projects.map((project) => (
+            <ProjectItem
+              key={project.id}
+              project={project}
+              isMenuOpen={isOpen}
+              onDelete={() => deleteProject(project.id)}
+            />
+          ))
+        )}
       </div>
 
       <div className="p-2 border-t border-border space-y-2">
