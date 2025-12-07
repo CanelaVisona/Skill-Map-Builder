@@ -1,6 +1,6 @@
 import { eq, and } from "drizzle-orm";
 import { db } from "./db";
-import { type Area, type Skill, type InsertArea, type InsertSkill, areas, skills } from "@shared/schema";
+import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, areas, skills, projects } from "@shared/schema";
 
 export interface IStorage {
   // Areas
@@ -18,6 +18,11 @@ export interface IStorage {
   deleteSkill(id: string): Promise<void>;
   countSkillsInLevel(areaId: string, level: number): Promise<number>;
   generateLevelWithSkills(areaId: string, level: number, startY: number): Promise<{ updatedArea: Area; createdSkills: Skill[] }>;
+
+  // Projects
+  getProjects(): Promise<Project[]>;
+  createProject(project: InsertProject): Promise<Project>;
+  deleteProject(id: string): Promise<void>;
 }
 
 export class DbStorage implements IStorage {
@@ -145,6 +150,20 @@ export class DbStorage implements IStorage {
     const updatedArea = updatedAreaResult[0];
 
     return { updatedArea, createdSkills };
+  }
+
+  // Projects
+  async getProjects(): Promise<Project[]> {
+    return await db.select().from(projects);
+  }
+
+  async createProject(project: InsertProject): Promise<Project> {
+    const result = await db.insert(projects).values(project).returning();
+    return result[0];
+  }
+
+  async deleteProject(id: string): Promise<void> {
+    await db.delete(projects).where(eq(projects.id, id));
   }
 }
 
