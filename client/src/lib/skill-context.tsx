@@ -378,8 +378,11 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     const skill = area.skills.find(s => s.id === skillId);
     if (!skill) return;
 
-    const sortedSkills = [...area.skills].sort((a, b) => a.y - b.y);
-    const currentIndex = sortedSkills.findIndex(s => s.id === skillId);
+    const sameLevelSkills = [...area.skills]
+      .filter(s => s.level === skill.level)
+      .sort((a, b) => a.y - b.y);
+    
+    const currentIndex = sameLevelSkills.findIndex(s => s.id === skillId);
     
     let neighborIndex: number;
     if (direction === "up") {
@@ -388,22 +391,22 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       neighborIndex = currentIndex + 1;
     }
 
-    if (neighborIndex < 0 || neighborIndex >= sortedSkills.length) return;
+    if (neighborIndex < 0 || neighborIndex >= sameLevelSkills.length) return;
 
-    const neighbor = sortedSkills[neighborIndex];
+    const neighbor = sameLevelSkills[neighborIndex];
     const currentY = skill.y;
     const neighborY = neighbor.y;
 
-    const sameLevelSkills = sortedSkills.filter(s => s.level === skill.level);
-    const lastSameLevelSkill = sameLevelSkills[sameLevelSkills.length - 1];
     const isCurrentFinal = skill.isFinalNode === 1;
     const isNeighborFinal = neighbor.isFinalNode === 1;
-    const sameLevel = skill.level === neighbor.level;
 
     let swapFinalNode = false;
-    if (sameLevel && (isCurrentFinal || isNeighborFinal)) {
+    if (isCurrentFinal || isNeighborFinal) {
       swapFinalNode = true;
     }
+
+    const currentDeps = skill.dependencies;
+    const neighborDeps = neighbor.dependencies;
 
     try {
       const updates: Promise<Response>[] = [
@@ -412,6 +415,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ 
             y: neighborY,
+            dependencies: neighborDeps,
             ...(swapFinalNode && isCurrentFinal ? { isFinalNode: 0 } : {}),
             ...(swapFinalNode && isNeighborFinal ? { isFinalNode: 1 } : {})
           }),
@@ -421,6 +425,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ 
             y: currentY,
+            dependencies: currentDeps,
             ...(swapFinalNode && isNeighborFinal ? { isFinalNode: 0 } : {}),
             ...(swapFinalNode && isCurrentFinal ? { isFinalNode: 1 } : {})
           }),
@@ -438,6 +443,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
               return { 
                 ...s, 
                 y: neighborY,
+                dependencies: neighborDeps,
                 ...(swapFinalNode && isCurrentFinal ? { isFinalNode: 0 } : {}),
                 ...(swapFinalNode && isNeighborFinal ? { isFinalNode: 1 } : {})
               };
@@ -446,6 +452,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
               return { 
                 ...s, 
                 y: currentY,
+                dependencies: currentDeps,
                 ...(swapFinalNode && isNeighborFinal ? { isFinalNode: 0 } : {}),
                 ...(swapFinalNode && isCurrentFinal ? { isFinalNode: 1 } : {})
               };

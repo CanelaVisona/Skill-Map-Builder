@@ -59,24 +59,28 @@ function SkillCanvas() {
                 transition={{ duration: 0.4 }}
                 className="w-full h-full relative"
               >
-                {/* Connections */}
-                {visibleSkills.map(skill => {
-                  return skill.dependencies.map(depId => {
-                    const depSkill = visibleSkills.find(s => s.id === depId);
-                    if (!depSkill) return null;
-
-                    const isActive = depSkill.status === "mastered";
-
-                    return (
+                {/* Connections - based on visual Y position */}
+                {Array.from(levelGroups.entries()).flatMap(([level, skills]) => {
+                  const sortedByY = [...skills].sort((a, b) => a.y - b.y);
+                  const connections = [];
+                  
+                  for (let i = 0; i < sortedByY.length - 1; i++) {
+                    const parentSkill = sortedByY[i];
+                    const childSkill = sortedByY[i + 1];
+                    const isActive = parentSkill.status === "mastered";
+                    
+                    connections.push(
                       <SkillConnection
-                        key={`${depSkill.id}-${skill.id}`}
-                        start={depSkill}
-                        end={skill}
+                        key={`${parentSkill.id}-${childSkill.id}`}
+                        start={parentSkill}
+                        end={childSkill}
                         active={isActive}
                         areaColor={activeArea.color}
                       />
                     );
-                  });
+                  }
+                  
+                  return connections;
                 })}
 
                 {/* Nodes */}
