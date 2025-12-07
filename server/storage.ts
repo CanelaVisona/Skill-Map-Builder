@@ -95,8 +95,8 @@ export class DbStorage implements IStorage {
         const skillData: typeof skills.$inferInsert = {
           id,
           areaId,
-          title: `Nivel ${level} - Nodo ${position}`,
-          description: "Haz clic para editar este nodo",
+          title: "?",
+          description: "",
           x: 50,
           y: startY + (position - 1) * 150,
           status: position === 1 ? "available" : "locked",

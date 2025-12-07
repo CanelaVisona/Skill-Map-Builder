@@ -35,6 +35,7 @@ interface SkillTreeContextType {
   setActiveAreaId: (id: string) => void;
   toggleSkillStatus: (areaId: string, skillId: string) => void;
   addSkill: (areaId: string, skill: Omit<Skill, "id">) => void;
+  updateSkill: (areaId: string, skillId: string, updates: { title?: string; description?: string }) => void;
   deleteSkill: (areaId: string, skillId: string) => void;
   toggleLock: (areaId: string, skillId: string) => void;
   moveSkill: (areaId: string, skillId: string, direction: "up" | "down") => void;
@@ -322,6 +323,28 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const updateSkill = async (areaId: string, skillId: string, updates: { title?: string; description?: string }) => {
+    try {
+      await fetch(`/api/skills/${skillId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+
+      setAreas(prev => prev.map(area => {
+        if (area.id !== areaId) return area;
+        return {
+          ...area,
+          skills: area.skills.map(skill => 
+            skill.id === skillId ? { ...skill, ...updates } : skill
+          )
+        };
+      }));
+    } catch (error) {
+      console.error("Error updating skill:", error);
+    }
+  };
+
   const moveSkill = async (areaId: string, skillId: string, direction: "up" | "down") => {
     const area = areas.find(a => a.id === areaId);
     if (!area) return;
@@ -432,6 +455,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       setActiveAreaId, 
       toggleSkillStatus, 
       addSkill,
+      updateSkill,
       deleteSkill,
       toggleLock,
       moveSkill,
