@@ -15,6 +15,7 @@ export interface Skill {
   manualLock?: number;
   isFinalNode?: number;
   level: number;
+  levelPosition?: number;
 }
 
 export interface Area {
@@ -364,11 +365,16 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
         if (skill.manualLock) return;
         if (skill.level > area.unlockedLevel) return;
 
+        // For the first node of a level (levelPosition = 1), it becomes available when:
+        // - The level is unlocked AND
+        // - All dependencies are mastered (or no dependencies)
+        // For nodes 2-5, they also need their dependencies mastered
         const dependencies = skill.dependencies.map(depId => 
           area.skills.find(s => s.id === depId)
         );
         
-        const allDepsMastered = dependencies.every(dep => dep && dep.status === "mastered");
+        const allDepsMastered = dependencies.length === 0 || 
+          dependencies.every(dep => dep && dep.status === "mastered");
         
         if (allDepsMastered) {
           updatesToMake.push({ skillId: skill.id, newStatus: "available" });

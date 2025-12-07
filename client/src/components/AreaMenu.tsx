@@ -7,7 +7,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
-import { Checkbox } from "./ui/checkbox";
 import { useForm } from "react-hook-form";
 import { useState } from "react";
 
@@ -16,29 +15,29 @@ export function AreaMenu() {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isOpen, setIsOpen] = useState(true);
   
-  const { register, handleSubmit, reset, setValue, watch, getValues } = useForm({
+  const { register, handleSubmit, reset } = useForm({
     defaultValues: {
       title: "",
-      description: "",
-      locked: false,
-      isFinalNode: false
+      description: ""
     }
   });
 
+  const currentLevel = activeArea?.nextLevelToAssign || 1;
+  const skillsInCurrentLevel = activeArea?.skills.filter(s => s.level === currentLevel) || [];
+  const currentLevelNodeCount = skillsInCurrentLevel.length;
+  const isLevelFull = currentLevelNodeCount >= 5;
+
   const onSubmit = (data: any) => {
-    const locked = getValues("locked");
-    const isFinalNode = getValues("isFinalNode");
-    
     if (!activeArea) return;
     
-    const currentLevel = activeArea.nextLevelToAssign;
-    const skillsInCurrentLevel = activeArea.skills.filter(s => s.level === currentLevel);
+    const levelToAssign = activeArea.nextLevelToAssign;
+    const skillsInLevel = activeArea.skills.filter(s => s.level === levelToAssign);
     
     let lastSkill = null;
     let newY = 100;
 
-    if (skillsInCurrentLevel.length > 0) {
-      lastSkill = skillsInCurrentLevel.reduce((max, s) => s.y > max.y ? s : max, skillsInCurrentLevel[0]);
+    if (skillsInLevel.length > 0) {
+      lastSkill = skillsInLevel.reduce((max, s) => s.y > max.y ? s : max, skillsInLevel[0]);
       newY = lastSkill.y + 150;
     } else if (activeArea.skills.length > 0) {
       const lastSkillOverall = activeArea.skills.reduce((max, s) => s.y > max.y ? s : max, activeArea.skills[0]);
@@ -46,17 +45,16 @@ export function AreaMenu() {
       lastSkill = lastSkillOverall;
     }
 
+    // Server enforces: position 1 = available, positions 2-5 = locked
     addSkill(activeAreaId, {
       areaId: activeAreaId,
       title: data.title,
       description: data.description,
       x: 50,
       y: newY,
-      status: locked ? "locked" : "available",
+      status: "available",
       dependencies: lastSkill ? [lastSkill.id] : [],
-      manualLock: locked ? 1 : 0,
-      isFinalNode: isFinalNode ? 1 : 0,
-      level: currentLevel
+      level: levelToAssign
     });
     
     reset();
@@ -134,19 +132,26 @@ export function AreaMenu() {
         })}
       </div>
 
-      <div className="p-2 border-t border-border">
+      <div className="p-2 border-t border-border space-y-2">
+        {isOpen && activeArea && (
+          <div className="text-xs text-muted-foreground px-2 py-1 text-center">
+            Nivel {currentLevel}: {currentLevelNodeCount}/5 nodos
+          </div>
+        )}
         <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
           <DialogTrigger asChild>
             <Button 
               variant="outline" 
               size={isOpen ? "default" : "icon"}
+              disabled={isLevelFull}
               className={cn(
                 "w-full border-dashed border-border bg-transparent text-muted-foreground hover:text-foreground",
-                !isOpen && "aspect-square p-0"
+                !isOpen && "aspect-square p-0",
+                isLevelFull && "opacity-50 cursor-not-allowed"
               )}
             >
               <Plus className={cn("h-4 w-4", isOpen && "mr-2")} /> 
-              {isOpen && "Add Skill"}
+              {isOpen && (isLevelFull ? "Nivel completo" : "Add Skill")}
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-[425px]">
@@ -154,6 +159,15 @@ export function AreaMenu() {
               <DialogTitle>New Skill Node</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 mt-4">
+              <div className="text-sm text-muted-foreground">
+                Nivel {currentLevel} - Posicion {currentLevelNodeCount + 1}/5
+                {currentLevelNodeCount === 4 && (
+                  <span className="ml-2 text-yellow-500">(Nodo Final)</span>
+                )}
+                {currentLevelNodeCount > 0 && currentLevelNodeCount < 4 && (
+                  <span className="ml-2 text-muted-foreground/60">(Iniciara bloqueado)</span>
+                )}
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="title">Skill Name</Label>
                 <Input id="title" {...register("title", { required: true })} placeholder="e.g. Advanced Picking" />
@@ -161,26 +175,6 @@ export function AreaMenu() {
               <div className="space-y-2">
                 <Label htmlFor="description">Description</Label>
                 <Textarea id="description" {...register("description")} placeholder="Short description of goal" />
-              </div>
-              <div className="flex items-center space-x-2 pt-2">
-                <Checkbox 
-                  id="locked" 
-                  checked={watch("locked")}
-                  onCheckedChange={(checked) => setValue("locked", checked as boolean)} 
-                />
-                <Label htmlFor="locked" className="cursor-pointer text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                  Start as Locked
-                </Label>
-              </div>
-              <div className="flex items-center space-x-2 pt-2">
-                <Checkbox 
-                  id="isFinalNode" 
-                  checked={watch("isFinalNode")}
-                  onCheckedChange={(checked) => setValue("isFinalNode", checked as boolean)} 
-                />
-                <Label htmlFor="isFinalNode" className="cursor-pointer text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                  Nodo Final
-                </Label>
               </div>
               <Button type="submit" className="w-full">
                 Initialize Node

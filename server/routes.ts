@@ -73,10 +73,17 @@ export async function registerRoutes(
       const levelPosition = currentCount + 1;
       const isFinalNode = levelPosition === 5 ? 1 : 0;
       
+      // Enforce: positions 2-5 must start as locked (they depend on previous node being mastered)
+      // Position 1 can use client-provided status (or default to available)
+      const enforcedStatus = levelPosition > 1 ? "locked" : validatedSkill.status;
+      const enforcedManualLock = levelPosition > 1 ? 0 : (validatedSkill.manualLock || 0);
+      
       const skillWithPosition = {
         ...validatedSkill,
         levelPosition,
         isFinalNode: isFinalNode as 0 | 1,
+        status: enforcedStatus,
+        manualLock: enforcedManualLock as 0 | 1,
       };
       
       const skill = await storage.createSkill(skillWithPosition);
@@ -89,11 +96,33 @@ export async function registerRoutes(
 
   app.patch("/api/skills/:id", async (req, res) => {
     try {
-      const skill = await storage.updateSkill(req.params.id, req.body);
-      if (!skill) {
+      const existingSkill = await storage.getSkill(req.params.id);
+      if (!existingSkill) {
         res.status(404).json({ message: "Skill not found" });
         return;
       }
+
+      // Prevent bypassing lock system for positions 2-5
+      // Only the auto-unlock system or mastering should change status of locked nodes
+      if (req.body.status === "available" && existingSkill.status === "locked") {
+        // Verify dependencies are mastered before allowing unlock
+        const allSkills = await storage.getSkills(existingSkill.areaId);
+        const dependencies = (existingSkill.dependencies as string[]) || [];
+        
+        if (dependencies.length > 0) {
+          const depsMastered = dependencies.every(depId => {
+            const dep = allSkills.find(s => s.id === depId);
+            return dep && dep.status === "mastered";
+          });
+          
+          if (!depsMastered) {
+            res.status(400).json({ message: "No puedes desbloquear este nodo. Primero domina los nodos anteriores." });
+            return;
+          }
+        }
+      }
+
+      const skill = await storage.updateSkill(req.params.id, req.body);
       res.json(skill);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
