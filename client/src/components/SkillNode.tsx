@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { type Skill, useSkillTree } from "@/lib/skill-context";
 import { cn } from "@/lib/utils";
-import { Check, Lock, Trash2, Unlock, ChevronUp, ChevronDown, Pencil } from "lucide-react";
+import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil } from "lucide-react";
 import { useState, useRef } from "react";
 import {
   Popover,
@@ -236,22 +236,24 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
                Editar
              </Button>
 
-             <Button 
-               variant="outline" 
-               size="sm" 
-               className="h-8 px-3 text-xs"
-               onClick={() => {
-                 if (isProject) {
-                   toggleProjectLock(activeId, skill.id);
-                 } else {
-                   toggleLock(activeId, skill.id);
-                 }
-                 setIsOpen(false);
-               }}
-             >
-               {isLocked ? <Unlock className="mr-2 h-3 w-3" /> : <Lock className="mr-2 h-3 w-3" />}
-               {isLocked ? "Unlock" : "Lock"}
-             </Button>
+             {!isLocked && (
+               <Button 
+                 variant="outline" 
+                 size="sm" 
+                 className="h-8 px-3 text-xs"
+                 onClick={() => {
+                   if (isProject) {
+                     toggleProjectLock(activeId, skill.id);
+                   } else {
+                     toggleLock(activeId, skill.id);
+                   }
+                   setIsOpen(false);
+                 }}
+               >
+                 <Lock className="mr-2 h-3 w-3" />
+                 Lock
+               </Button>
+             )}
 
              <Button 
                variant="secondary" 
