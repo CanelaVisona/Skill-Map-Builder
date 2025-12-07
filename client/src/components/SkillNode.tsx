@@ -30,7 +30,9 @@ interface SkillNodeProps {
 export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNodeProps) {
   const isLocked = skill.status === "locked";
   const isMastered = skill.status === "mastered";
-  const isFinalMastered = skill.isFinalNode === 1 && isMastered;
+  const isFinalNode = skill.isFinalNode === 1;
+  const isFinalMastered = isFinalNode && isMastered;
+  const isFinalNotMastered = isFinalNode && !isMastered;
   
   const { activeAreaId, deleteSkill, toggleLock, moveSkill, updateSkill } = useSkillTree();
   const [isOpen, setIsOpen] = useState(false);
@@ -135,8 +137,11 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
               scale: isMastered ? 1.05 : 1,
             }}
             className={cn(
-              "w-10 h-10 rounded-full border flex items-center justify-center transition-all duration-300 relative",
-              isLocked ? "bg-muted border-muted-foreground/20 text-muted-foreground/50" : "bg-card border-border hover:border-foreground/50",
+              "w-10 h-10 rounded-full border-2 flex items-center justify-center transition-all duration-300 relative",
+              isLocked && !isFinalNotMastered && "bg-muted border-muted-foreground/20 text-muted-foreground/50",
+              isLocked && isFinalNotMastered && "bg-muted border-orange-500 text-muted-foreground/50",
+              !isLocked && !isMastered && !isFinalNotMastered && "bg-card border-border hover:border-foreground/50",
+              !isLocked && !isMastered && isFinalNotMastered && "bg-card border-orange-500 hover:border-orange-400",
               isMastered && !isFinalMastered && "bg-foreground border-foreground text-background shadow-sm",
               isFinalMastered && "bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/30"
             )}
