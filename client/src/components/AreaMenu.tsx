@@ -4,62 +4,12 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Plus, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
-import { Input } from "./ui/input";
-import { Label } from "./ui/label";
-import { Textarea } from "./ui/textarea";
-import { useForm } from "react-hook-form";
 import { useState } from "react";
 
 export function AreaMenu() {
-  const { areas, activeAreaId, setActiveAreaId, addSkill, activeArea } = useSkillTree();
+  const { areas, activeAreaId, setActiveAreaId } = useSkillTree();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isOpen, setIsOpen] = useState(true);
-  
-  const { register, handleSubmit, reset } = useForm({
-    defaultValues: {
-      title: "",
-      description: ""
-    }
-  });
-
-  const currentLevel = activeArea?.nextLevelToAssign || 1;
-  const skillsInCurrentLevel = activeArea?.skills.filter(s => s.level === currentLevel) || [];
-  const currentLevelNodeCount = skillsInCurrentLevel.length;
-  const isLevelFull = currentLevelNodeCount >= 5;
-
-  const onSubmit = (data: any) => {
-    if (!activeArea) return;
-    
-    const levelToAssign = activeArea.nextLevelToAssign;
-    const skillsInLevel = activeArea.skills.filter(s => s.level === levelToAssign);
-    
-    let lastSkill = null;
-    let newY = 100;
-
-    if (skillsInLevel.length > 0) {
-      lastSkill = skillsInLevel.reduce((max, s) => s.y > max.y ? s : max, skillsInLevel[0]);
-      newY = lastSkill.y + 150;
-    } else if (activeArea.skills.length > 0) {
-      const lastSkillOverall = activeArea.skills.reduce((max, s) => s.y > max.y ? s : max, activeArea.skills[0]);
-      newY = lastSkillOverall.y + 150;
-      lastSkill = lastSkillOverall;
-    }
-
-    // Server enforces: position 1 = available, positions 2-5 = locked
-    addSkill(activeAreaId, {
-      areaId: activeAreaId,
-      title: data.title,
-      description: data.description,
-      x: 50,
-      y: newY,
-      status: "available",
-      dependencies: lastSkill ? [lastSkill.id] : [],
-      level: levelToAssign
-    });
-    
-    reset();
-    setIsAddOpen(false);
-  };
 
   return (
     <motion.div 
@@ -147,53 +97,48 @@ export function AreaMenu() {
       </div>
 
       <div className="p-2 border-t border-border space-y-2">
-        {isOpen && activeArea && (
-          <div className="text-xs text-muted-foreground px-2 py-1 text-center">
-            Nivel {currentLevel}: {currentLevelNodeCount}/5 nodos
-          </div>
-        )}
         <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
           <DialogTrigger asChild>
             <Button 
               variant="outline" 
               size={isOpen ? "default" : "icon"}
-              disabled={isLevelFull}
               className={cn(
                 "w-full border-dashed border-border bg-transparent text-muted-foreground hover:text-foreground",
-                !isOpen && "aspect-square p-0",
-                isLevelFull && "opacity-50 cursor-not-allowed"
+                !isOpen && "aspect-square p-0"
               )}
             >
               <Plus className={cn("h-4 w-4", isOpen && "mr-2")} /> 
-              {isOpen && (isLevelFull ? "Nivel completo" : "Add Skill")}
+              {isOpen && "Agregar"}
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-[425px]">
             <DialogHeader>
-              <DialogTitle>New Skill Node</DialogTitle>
+              <DialogTitle>Agregar Nuevo</DialogTitle>
             </DialogHeader>
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 mt-4">
-              <div className="text-sm text-muted-foreground">
-                Nivel {currentLevel} - Posicion {currentLevelNodeCount + 1}/5
-                {currentLevelNodeCount === 4 && (
-                  <span className="ml-2 text-yellow-500">(Nodo Final)</span>
-                )}
-                {currentLevelNodeCount > 0 && currentLevelNodeCount < 4 && (
-                  <span className="ml-2 text-muted-foreground/60">(Iniciara bloqueado)</span>
-                )}
+            <div className="space-y-4 mt-4">
+              <div className="grid grid-cols-2 gap-3">
+                <Button 
+                  variant="outline" 
+                  className="h-24 flex flex-col gap-2"
+                  onClick={() => {
+                    setIsAddOpen(false);
+                  }}
+                >
+                  <Plus className="h-6 w-6" />
+                  <span>Nueva Área</span>
+                </Button>
+                <Button 
+                  variant="outline" 
+                  className="h-24 flex flex-col gap-2"
+                  onClick={() => {
+                    setIsAddOpen(false);
+                  }}
+                >
+                  <Plus className="h-6 w-6" />
+                  <span>Nuevo Proyecto</span>
+                </Button>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="title">Skill Name</Label>
-                <Input id="title" {...register("title", { required: true })} placeholder="e.g. Advanced Picking" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
-                <Textarea id="description" {...register("description")} placeholder="Short description of goal" />
-              </div>
-              <Button type="submit" className="w-full">
-                Initialize Node
-              </Button>
-            </form>
+            </div>
           </DialogContent>
         </Dialog>
       </div>
