@@ -50,6 +50,10 @@ interface SkillTreeContextType {
   deleteSkill: (areaId: string, skillId: string) => void;
   toggleLock: (areaId: string, skillId: string) => void;
   moveSkill: (areaId: string, skillId: string, direction: "up" | "down") => void;
+  updateProjectSkill: (projectId: string, skillId: string, updates: { title?: string; description?: string }) => void;
+  deleteProjectSkill: (projectId: string, skillId: string) => void;
+  toggleProjectLock: (projectId: string, skillId: string) => void;
+  moveProjectSkill: (projectId: string, skillId: string, direction: "up" | "down") => void;
   createArea: (name: string, description: string, icon: string) => Promise<void>;
   deleteArea: (areaId: string) => Promise<void>;
   activeArea: Area | undefined;
@@ -620,6 +624,246 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const toggleProjectLock = async (projectId: string, skillId: string) => {
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+    
+    const skill = project.skills.find(s => s.id === skillId);
+    if (!skill) return;
+
+    const isLocked = skill.status === "locked";
+    const newStatus = isLocked ? "available" : "locked";
+    const newManualLock = isLocked ? 0 : 1;
+
+    try {
+      await fetch(`/api/skills/${skillId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          status: newStatus,
+          manualLock: newManualLock
+        }),
+      });
+
+      setProjects(prev => prev.map(project => {
+        if (project.id !== projectId) return project;
+        return {
+          ...project,
+          skills: project.skills.map(skill => 
+            skill.id === skillId 
+              ? { ...skill, status: newStatus, manualLock: newManualLock } 
+              : skill
+          )
+        };
+      }));
+    } catch (error) {
+      console.error("Error toggling project lock:", error);
+    }
+  };
+
+  const deleteProjectSkill = async (projectId: string, skillId: string) => {
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const skillToDelete = project.skills.find(s => s.id === skillId);
+    if (!skillToDelete) return;
+
+    const children = project.skills.filter(s => s.dependencies.includes(skillId));
+    const newDependencies = skillToDelete.dependencies;
+
+    const wasIsFinalNode = skillToDelete.isFinalNode === 1;
+    let newFinalNodeId: string | null = null;
+    
+    if (wasIsFinalNode) {
+      const sameLevelSkills = project.skills
+        .filter(s => s.level === skillToDelete.level && s.id !== skillId)
+        .sort((a, b) => a.y - b.y);
+      if (sameLevelSkills.length > 0) {
+        newFinalNodeId = sameLevelSkills[sameLevelSkills.length - 1].id;
+      }
+    }
+
+    try {
+      await fetch(`/api/skills/${skillId}`, { method: "DELETE" });
+
+      for (const child of children) {
+        const updatedDeps = child.dependencies
+          .filter(d => d !== skillId)
+          .concat(newDependencies);
+        
+        await fetch(`/api/skills/${child.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dependencies: updatedDeps }),
+        });
+      }
+
+      const nodesToShift = project.skills.filter(s => s.y > skillToDelete.y);
+      for (const node of nodesToShift) {
+        await fetch(`/api/skills/${node.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ y: node.y - 150 }),
+        });
+      }
+
+      if (newFinalNodeId) {
+        await fetch(`/api/skills/${newFinalNodeId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isFinalNode: 1 }),
+        });
+      }
+
+      setProjects(prev => prev.map(project => {
+        if (project.id !== projectId) return project;
+
+        const updatedSkills = project.skills
+          .filter(s => s.id !== skillId)
+          .map(s => {
+            let updated = { ...s };
+            
+            if (children.find(c => c.id === s.id)) {
+              updated.dependencies = s.dependencies
+                .filter(d => d !== skillId)
+                .concat(newDependencies);
+            }
+            
+            if (s.y > skillToDelete.y) {
+              updated.y = s.y - 150;
+            }
+
+            if (s.id === newFinalNodeId) {
+              updated.isFinalNode = 1;
+            }
+            
+            return updated;
+          });
+
+        return { ...project, skills: updatedSkills };
+      }));
+    } catch (error) {
+      console.error("Error deleting project skill:", error);
+    }
+  };
+
+  const updateProjectSkill = async (projectId: string, skillId: string, updates: { title?: string; description?: string }) => {
+    try {
+      await fetch(`/api/skills/${skillId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+
+      setProjects(prev => prev.map(project => {
+        if (project.id !== projectId) return project;
+        return {
+          ...project,
+          skills: project.skills.map(skill => 
+            skill.id === skillId ? { ...skill, ...updates } : skill
+          )
+        };
+      }));
+    } catch (error) {
+      console.error("Error updating project skill:", error);
+    }
+  };
+
+  const moveProjectSkill = async (projectId: string, skillId: string, direction: "up" | "down") => {
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const skill = project.skills.find(s => s.id === skillId);
+    if (!skill) return;
+
+    const sameLevelSkills = [...project.skills]
+      .filter(s => s.level === skill.level)
+      .sort((a, b) => a.y - b.y);
+    
+    const currentIndex = sameLevelSkills.findIndex(s => s.id === skillId);
+    
+    let neighborIndex: number;
+    if (direction === "up") {
+      neighborIndex = currentIndex - 1;
+    } else {
+      neighborIndex = currentIndex + 1;
+    }
+
+    if (neighborIndex < 0 || neighborIndex >= sameLevelSkills.length) return;
+
+    const neighbor = sameLevelSkills[neighborIndex];
+    const currentY = skill.y;
+    const neighborY = neighbor.y;
+
+    const isCurrentFinal = skill.isFinalNode === 1;
+    const isNeighborFinal = neighbor.isFinalNode === 1;
+
+    let swapFinalNode = false;
+    if (isCurrentFinal || isNeighborFinal) {
+      swapFinalNode = true;
+    }
+
+    const currentDeps = skill.dependencies;
+    const neighborDeps = neighbor.dependencies;
+
+    try {
+      const updates: Promise<Response>[] = [
+        fetch(`/api/skills/${skillId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            y: neighborY,
+            dependencies: neighborDeps,
+            ...(swapFinalNode && isCurrentFinal ? { isFinalNode: 0 } : {}),
+            ...(swapFinalNode && isNeighborFinal ? { isFinalNode: 1 } : {})
+          }),
+        }),
+        fetch(`/api/skills/${neighbor.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            y: currentY,
+            dependencies: currentDeps,
+            ...(swapFinalNode && isNeighborFinal ? { isFinalNode: 0 } : {}),
+            ...(swapFinalNode && isCurrentFinal ? { isFinalNode: 1 } : {})
+          }),
+        })
+      ];
+
+      await Promise.all(updates);
+
+      setProjects(prev => prev.map(project => {
+        if (project.id !== projectId) return project;
+        return {
+          ...project,
+          skills: project.skills.map(s => {
+            if (s.id === skillId) {
+              return { 
+                ...s, 
+                y: neighborY,
+                dependencies: neighborDeps,
+                ...(swapFinalNode && isCurrentFinal ? { isFinalNode: 0 } : {}),
+                ...(swapFinalNode && isNeighborFinal ? { isFinalNode: 1 } : {})
+              };
+            }
+            if (s.id === neighbor.id) {
+              return { 
+                ...s, 
+                y: currentY,
+                dependencies: currentDeps,
+                ...(swapFinalNode && isNeighborFinal ? { isFinalNode: 0 } : {}),
+                ...(swapFinalNode && isCurrentFinal ? { isFinalNode: 1 } : {})
+              };
+            }
+            return s;
+          })
+        };
+      }));
+    } catch (error) {
+      console.error("Error moving project skill:", error);
+    }
+  };
+
   const createArea = async (name: string, description: string, icon: string) => {
     try {
       const id = name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
@@ -843,6 +1087,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       deleteSkill,
       toggleLock,
       moveSkill,
+      updateProjectSkill,
+      deleteProjectSkill,
+      toggleProjectLock,
+      moveProjectSkill,
       createArea,
       deleteArea,
       activeArea,

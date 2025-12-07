@@ -34,7 +34,21 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
   const isFinalMastered = isFinalNode && isMastered;
   const isFinalNotMastered = isFinalNode && !isMastered;
   
-  const { activeAreaId, deleteSkill, toggleLock, moveSkill, updateSkill } = useSkillTree();
+  const { 
+    activeAreaId, 
+    activeProjectId,
+    deleteSkill, 
+    toggleLock, 
+    moveSkill, 
+    updateSkill,
+    deleteProjectSkill,
+    toggleProjectLock,
+    moveProjectSkill,
+    updateProjectSkill
+  } = useSkillTree();
+  
+  const isProject = !activeAreaId && !!activeProjectId;
+  const activeId = activeAreaId || activeProjectId;
   const [isOpen, setIsOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editTitle, setEditTitle] = useState(skill.title);
@@ -50,10 +64,17 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
   };
 
   const handleEditSave = () => {
-    updateSkill(activeAreaId, skill.id, { 
-      title: editTitle, 
-      description: editDescription 
-    });
+    if (isProject) {
+      updateProjectSkill(activeId, skill.id, { 
+        title: editTitle, 
+        description: editDescription 
+      });
+    } else {
+      updateSkill(activeId, skill.id, { 
+        title: editTitle, 
+        description: editDescription 
+      });
+    }
     setIsEditDialogOpen(false);
   };
 
@@ -80,7 +101,11 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
       return;
     }
     if (isLocked) {
-      toggleLock(activeAreaId, skill.id);
+      if (isProject) {
+        toggleProjectLock(activeId, skill.id);
+      } else {
+        toggleLock(activeId, skill.id);
+      }
       return;
     }
     onClick();
@@ -176,7 +201,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
               variant="ghost"
               size="icon"
               className="h-8 w-8"
-              onClick={() => moveSkill(activeAreaId, skill.id, "up")}
+              onClick={() => isProject ? moveProjectSkill(activeId, skill.id, "up") : moveSkill(activeId, skill.id, "up")}
               data-testid="button-move-up"
             >
               <ChevronUp className="h-4 w-4" />
@@ -186,7 +211,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
               variant="ghost"
               size="icon"
               className="h-8 w-8"
-              onClick={() => moveSkill(activeAreaId, skill.id, "down")}
+              onClick={() => isProject ? moveProjectSkill(activeId, skill.id, "down") : moveSkill(activeId, skill.id, "down")}
               data-testid="button-move-down"
             >
               <ChevronDown className="h-4 w-4" />
@@ -216,7 +241,11 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
                size="sm" 
                className="h-8 px-3 text-xs"
                onClick={() => {
-                 toggleLock(activeAreaId, skill.id);
+                 if (isProject) {
+                   toggleProjectLock(activeId, skill.id);
+                 } else {
+                   toggleLock(activeId, skill.id);
+                 }
                  setIsOpen(false);
                }}
              >
@@ -229,7 +258,11 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
                size="sm" 
                className="h-8 px-3 text-xs"
                onClick={() => {
-                 deleteSkill(activeAreaId, skill.id);
+                 if (isProject) {
+                   deleteProjectSkill(activeId, skill.id);
+                 } else {
+                   deleteSkill(activeId, skill.id);
+                 }
                  setIsOpen(false);
                }}
              >
