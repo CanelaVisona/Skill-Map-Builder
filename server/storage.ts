@@ -140,10 +140,11 @@ export class DbStorage implements IStorage {
       for (let position = 1; position <= 5; position++) {
         const id = Math.random().toString(36).substr(2, 9);
         const deps: string[] = previousSkillId ? [previousSkillId] : [];
+        const isFirstNode = level === 1 && position === 1;
         const skillData: typeof skills.$inferInsert = {
           id,
           areaId,
-          title: "?",
+          title: isFirstNode ? "inicio" : "?",
           description: "",
           x: 50,
           y: startY + (position - 1) * 150,
@@ -180,10 +181,11 @@ export class DbStorage implements IStorage {
       for (let position = 1; position <= 5; position++) {
         const id = Math.random().toString(36).substr(2, 9);
         const deps: string[] = previousSkillId ? [previousSkillId] : [];
+        const isFirstNode = level === 1 && position === 1;
         const skillData: typeof skills.$inferInsert = {
           id,
           projectId,
-          title: "?",
+          title: isFirstNode ? "inicio" : "?",
           description: "",
           x: 50,
           y: startY + (position - 1) * 150,
