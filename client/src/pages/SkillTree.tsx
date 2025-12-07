@@ -5,11 +5,13 @@ import { SkillConnection } from "@/components/SkillConnection";
 import { motion, AnimatePresence } from "framer-motion";
 
 function SkillCanvas() {
-  const { activeArea, toggleSkillStatus } = useSkillTree();
+  const { activeArea, activeProject, toggleSkillStatus, toggleProjectSkillStatus } = useSkillTree();
 
-  if (!activeArea) return null;
+  const activeItem = activeArea || activeProject;
+  const isProject = !activeArea && !!activeProject;
+  if (!activeItem) return null;
 
-  const visibleSkills = activeArea.skills.filter(s => s.level <= activeArea.unlockedLevel);
+  const visibleSkills = activeItem.skills.filter(s => s.level <= activeItem.unlockedLevel);
 
   // Find the first skill of each level (lowest Y position per level)
   const firstSkillOfLevel = new Set<string>();
@@ -39,10 +41,10 @@ function SkillCanvas() {
           
           <div className="absolute top-0 left-0 z-10 sticky">
             <h2 className="text-2xl font-bold tracking-tight mb-1">
-              {activeArea.name}
+              {activeItem.name}
             </h2>
             <p className="text-muted-foreground max-w-md text-sm leading-relaxed">
-              {activeArea.description}
+              {activeItem.description}
             </p>
           </div>
 
@@ -52,7 +54,7 @@ function SkillCanvas() {
           >
             <AnimatePresence mode="wait">
               <motion.div
-                key={activeArea.id}
+                key={activeItem.id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
@@ -63,6 +65,7 @@ function SkillCanvas() {
                 {Array.from(levelGroups.entries()).flatMap(([level, skills]) => {
                   const sortedByY = [...skills].sort((a, b) => a.y - b.y);
                   const connections = [];
+                  const itemColor = 'color' in activeItem ? (activeItem.color as string) : "text-zinc-800 dark:text-zinc-200";
                   
                   for (let i = 0; i < sortedByY.length - 1; i++) {
                     const parentSkill = sortedByY[i];
@@ -75,7 +78,7 @@ function SkillCanvas() {
                         start={parentSkill}
                         end={childSkill}
                         active={isActive}
-                        areaColor={activeArea.color}
+                        areaColor={itemColor}
                       />
                     );
                   }
@@ -84,15 +87,21 @@ function SkillCanvas() {
                 })}
 
                 {/* Nodes */}
-                {visibleSkills.map(skill => (
-                  <SkillNode
-                    key={skill.id}
-                    skill={skill}
-                    areaColor={activeArea.color}
-                    onClick={() => toggleSkillStatus(activeArea.id, skill.id)}
-                    isFirstOfLevel={firstSkillOfLevel.has(skill.id)}
-                  />
-                ))}
+                {visibleSkills.map(skill => {
+                  const itemColor = 'color' in activeItem ? (activeItem.color as string) : "text-zinc-800 dark:text-zinc-200";
+                  const handleClick = isProject 
+                    ? () => toggleProjectSkillStatus(activeItem.id, skill.id)
+                    : () => toggleSkillStatus(activeItem.id, skill.id);
+                  return (
+                    <SkillNode
+                      key={skill.id}
+                      skill={skill}
+                      areaColor={itemColor}
+                      onClick={handleClick}
+                      isFirstOfLevel={firstSkillOfLevel.has(skill.id)}
+                    />
+                  );
+                })}
               </motion.div>
             </AnimatePresence>
           </div>

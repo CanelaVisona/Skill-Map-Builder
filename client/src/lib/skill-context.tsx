@@ -34,6 +34,9 @@ export interface Project {
   name: string;
   icon: string;
   description: string;
+  unlockedLevel: number;
+  nextLevelToAssign: number;
+  skills: Skill[];
 }
 
 interface SkillTreeContextType {
@@ -41,6 +44,7 @@ interface SkillTreeContextType {
   activeAreaId: string;
   setActiveAreaId: (id: string) => void;
   toggleSkillStatus: (areaId: string, skillId: string) => void;
+  toggleProjectSkillStatus: (projectId: string, skillId: string) => void;
   addSkill: (areaId: string, skill: Omit<Skill, "id">) => void;
   updateSkill: (areaId: string, skillId: string, updates: { title?: string; description?: string }) => void;
   deleteSkill: (areaId: string, skillId: string) => void;
@@ -76,6 +80,16 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
 
   const activeArea = areas.find(a => a.id === activeAreaId);
   const activeProject = projects.find(p => p.id === activeProjectId);
+
+  const handleSetActiveAreaId = (id: string) => {
+    setActiveAreaId(id);
+    setActiveProjectId("");
+  };
+
+  const handleSetActiveProjectId = (id: string) => {
+    setActiveProjectId(id);
+    setActiveAreaId("");
+  };
 
   // Load areas and projects from API
   useEffect(() => {
@@ -218,6 +232,123 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (error) {
       console.error("Error toggling skill status:", error);
+    }
+  };
+
+  const toggleProjectSkillStatus = async (projectId: string, skillId: string) => {
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+    
+    const skill = project.skills.find(s => s.id === skillId);
+    if (!skill) return;
+
+    const nextStatus: Record<SkillStatus, SkillStatus> = {
+      "locked": "locked",
+      "available": "mastered",
+      "mastered": "available"
+    };
+
+    const newStatus = nextStatus[skill.status];
+    const isFinalNodeBeingMastered = skill.isFinalNode === 1 && newStatus === "mastered";
+    const isFinalNodeBeingUnmastered = skill.isFinalNode === 1 && skill.status === "mastered" && newStatus === "available";
+
+    try {
+      await fetch(`/api/skills/${skillId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+
+      if (isFinalNodeBeingMastered) {
+        const newUnlockedLevel = skill.level + 1;
+        
+        const generateResponse = await fetch(`/api/projects/${projectId}/generate-level`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ level: newUnlockedLevel }),
+        });
+        
+        if (!generateResponse.ok) {
+          console.error("Failed to generate new level");
+          setProjects(prev => prev.map(p => {
+            if (p.id !== projectId) return p;
+            return {
+              ...p,
+              skills: p.skills.map(s => 
+                s.id === skillId ? { ...s, status: newStatus } : s
+              )
+            };
+          }));
+          return;
+        }
+        
+        const { updatedProject, createdSkills } = await generateResponse.json();
+        
+        setProjects(prev => prev.map(p => {
+          if (p.id !== projectId) return p;
+          const existingSkillIds = new Set(p.skills.map(s => s.id));
+          const newSkills = createdSkills.filter((s: Skill) => !existingSkillIds.has(s.id));
+          return {
+            ...p,
+            unlockedLevel: updatedProject.unlockedLevel,
+            nextLevelToAssign: updatedProject.nextLevelToAssign,
+            skills: [
+              ...p.skills.map(s => 
+                s.id === skillId ? { ...s, status: newStatus } : s
+              ),
+              ...newSkills
+            ]
+          };
+        }));
+      } else if (isFinalNodeBeingUnmastered) {
+        const revertedLevel = skill.level;
+        
+        const higherLevelSkills = project.skills.filter(s => s.level > revertedLevel);
+        
+        await Promise.all([
+          fetch(`/api/projects/${projectId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+              unlockedLevel: revertedLevel,
+              nextLevelToAssign: revertedLevel
+            }),
+          }),
+          ...higherLevelSkills.map(s => 
+            fetch(`/api/skills/${s.id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ status: "locked" }),
+            })
+          )
+        ]);
+
+        setProjects(prev => prev.map(p => {
+          if (p.id !== projectId) return p;
+          return {
+            ...p,
+            unlockedLevel: revertedLevel,
+            nextLevelToAssign: revertedLevel,
+            skills: p.skills.map(s => {
+              if (s.id === skillId) return { ...s, status: newStatus };
+              if (s.level > revertedLevel) return { ...s, status: "locked" as SkillStatus };
+              return s;
+            })
+          };
+        }));
+      } else {
+        setProjects(prev => prev.map(p => {
+          if (p.id !== projectId) return p;
+          return {
+            ...p,
+            skills: p.skills.map(s => 
+              s.id === skillId ? { ...s, status: newStatus } : s
+            )
+          };
+        }));
+      }
+    } catch (error) {
+      console.error("Error toggling project skill status:", error);
     }
   };
 
@@ -572,7 +703,21 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       }
       
       const newProject = await response.json();
-      setProjects(prev => [...prev, newProject]);
+      
+      const generateResponse = await fetch(`/api/projects/${newProject.id}/generate-level`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ level: 1 }),
+      });
+      
+      if (generateResponse.ok) {
+        const { createdSkills } = await generateResponse.json();
+        setProjects(prev => [...prev, { ...newProject, skills: createdSkills }]);
+      } else {
+        setProjects(prev => [...prev, { ...newProject, skills: [] }]);
+      }
+      
+      handleSetActiveProjectId(newProject.id);
     } catch (error) {
       console.error("Error creating project:", error);
     }
@@ -594,7 +739,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Auto-unlock logic
+  // Auto-unlock logic for areas
   useEffect(() => {
     if (isLoading || areas.length === 0) return;
 
@@ -606,10 +751,6 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
         if (skill.manualLock) return;
         if (skill.level > area.unlockedLevel) return;
 
-        // For the first node of a level (levelPosition = 1), it becomes available when:
-        // - The level is unlocked AND
-        // - All dependencies are mastered (or no dependencies)
-        // For nodes 2-5, they also need their dependencies mastered
         const dependencies = skill.dependencies.map(depId => 
           area.skills.find(s => s.id === depId)
         );
@@ -644,12 +785,59 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [areas, isLoading]);
 
+  // Auto-unlock logic for projects
+  useEffect(() => {
+    if (isLoading || projects.length === 0) return;
+
+    const updatesToMake: Array<{ skillId: string; newStatus: SkillStatus }> = [];
+
+    projects.forEach(project => {
+      project.skills.forEach(skill => {
+        if (skill.status !== "locked") return;
+        if (skill.manualLock) return;
+        if (skill.level > project.unlockedLevel) return;
+
+        const dependencies = skill.dependencies.map(depId => 
+          project.skills.find(s => s.id === depId)
+        );
+        
+        const allDepsMastered = dependencies.length === 0 || 
+          dependencies.every(dep => dep && dep.status === "mastered");
+        
+        if (allDepsMastered) {
+          updatesToMake.push({ skillId: skill.id, newStatus: "available" });
+        }
+      });
+    });
+
+    if (updatesToMake.length > 0) {
+      Promise.all(
+        updatesToMake.map(({ skillId, newStatus }) =>
+          fetch(`/api/skills/${skillId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: newStatus }),
+          })
+        )
+      ).then(() => {
+        setProjects(prev => prev.map(project => ({
+          ...project,
+          skills: project.skills.map(skill => {
+            const update = updatesToMake.find(u => u.skillId === skill.id);
+            return update ? { ...skill, status: update.newStatus } : skill;
+          })
+        })));
+      });
+    }
+  }, [projects, isLoading]);
+
   return (
     <SkillTreeContext.Provider value={{ 
       areas, 
       activeAreaId, 
-      setActiveAreaId, 
-      toggleSkillStatus, 
+      setActiveAreaId: handleSetActiveAreaId, 
+      toggleSkillStatus,
+      toggleProjectSkillStatus,
       addSkill,
       updateSkill,
       deleteSkill,
@@ -661,7 +849,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       isLoading,
       projects,
       activeProjectId,
-      setActiveProjectId,
+      setActiveProjectId: handleSetActiveProjectId,
       activeProject,
       createProject,
       deleteProject
