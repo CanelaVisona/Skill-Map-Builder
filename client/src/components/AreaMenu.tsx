@@ -415,7 +415,7 @@ export function AreaMenu() {
               className="overflow-hidden whitespace-nowrap"
             >
               <h1 className="text-lg font-bold tracking-tight">
-                NEXUS
+                LIFEGAME
               </h1>
             </motion.div>
           )}
