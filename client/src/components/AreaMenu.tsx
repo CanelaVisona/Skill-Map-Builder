@@ -1,13 +1,14 @@
 import { useSkillTree, iconMap } from "@/lib/skill-context";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, PanelLeftClose, PanelLeftOpen, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban } from "lucide-react";
+import { Plus, PanelLeftClose, PanelLeftOpen, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
+import { Popover, PopoverContent, PopoverAnchor } from "./ui/popover";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 type DialogStep = "choose" | "new-area" | "new-project";
 
@@ -65,8 +66,124 @@ const extendedIconMap: Record<string, any> = {
   FolderKanban
 };
 
+interface AreaItemProps {
+  area: { id: string; name: string; icon: string };
+  isActive: boolean;
+  isMenuOpen: boolean;
+  onSelect: () => void;
+  onDelete: () => void;
+}
+
+function AreaItem({ area, isActive, isMenuOpen, onSelect, onDelete }: AreaItemProps) {
+  const [isPopoverOpen, setIsPopoverOpen] = useState(false);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isLongPress = useRef(false);
+  const Icon = extendedIconMap[area.icon] || extendedIconMap.Home;
+
+  const handleTouchStart = () => {
+    isLongPress.current = false;
+    longPressTimer.current = setTimeout(() => {
+      isLongPress.current = true;
+      setIsPopoverOpen(true);
+    }, 1500);
+  };
+
+  const handleTouchEnd = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const handleMouseDown = () => {
+    isLongPress.current = false;
+    longPressTimer.current = setTimeout(() => {
+      isLongPress.current = true;
+      setIsPopoverOpen(true);
+    }, 1500);
+  };
+
+  const handleMouseUp = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const handleClick = (e: React.MouseEvent) => {
+    if (isLongPress.current) {
+      e.preventDefault();
+      e.stopPropagation();
+      isLongPress.current = false;
+      return;
+    }
+    onSelect();
+  };
+
+  return (
+    <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
+      <PopoverAnchor asChild>
+        <button
+          onClick={handleClick}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchEnd}
+          onMouseDown={handleMouseDown}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          className={cn(
+            "w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 group relative overflow-hidden touch-none select-none",
+            isActive 
+              ? "bg-primary/10 text-primary" 
+              : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+            !isMenuOpen && "justify-center px-2"
+          )}
+        >
+          {isActive && isMenuOpen && (
+            <motion.div
+              layoutId="activeIndicator"
+              className="absolute left-0 top-0 bottom-0 w-0.5 bg-primary"
+            />
+          )}
+          
+          <Icon size={18} className={cn("shrink-0", isActive ? "text-primary" : "group-hover:text-foreground")} />
+          
+          {isMenuOpen && (
+            <motion.span 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="font-medium text-sm truncate"
+            >
+              {area.name}
+            </motion.span>
+          )}
+        </button>
+      </PopoverAnchor>
+      <PopoverContent 
+        side="right" 
+        align="start"
+        className="w-48 p-2"
+      >
+        <Button
+          variant="destructive"
+          size="sm"
+          className="w-full"
+          onClick={() => {
+            onDelete();
+            setIsPopoverOpen(false);
+          }}
+          data-testid={`button-delete-area-${area.id}`}
+        >
+          <Trash2 className="mr-2 h-4 w-4" />
+          Eliminar
+        </Button>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export function AreaMenu() {
-  const { areas, activeAreaId, setActiveAreaId, createArea } = useSkillTree();
+  const { areas, activeAreaId, setActiveAreaId, createArea, deleteArea } = useSkillTree();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isOpen, setIsOpen] = useState(true);
   const [dialogStep, setDialogStep] = useState<DialogStep>("choose");
@@ -111,8 +228,6 @@ export function AreaMenu() {
     setItemDescription("");
     setSelectedIcon("Home");
   };
-
-  const SelectedIconComponent = extendedIconMap[selectedIcon] || Home;
 
   const renderForm = (type: "area" | "project") => (
     <div className="space-y-4 mt-4">
@@ -218,43 +333,16 @@ export function AreaMenu() {
       </div>
 
       <div className="flex-1 overflow-y-auto py-2 space-y-1 px-2">
-        {areas.map((area) => {
-          const isActive = area.id === activeAreaId;
-          const Icon = extendedIconMap[area.icon] || extendedIconMap.Home;
-          
-          return (
-            <button
-              key={area.id}
-              onClick={() => setActiveAreaId(area.id)}
-              className={cn(
-                "w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 group relative overflow-hidden",
-                isActive 
-                  ? "bg-primary/10 text-primary" 
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
-                !isOpen && "justify-center px-2"
-              )}
-            >
-              {isActive && isOpen && (
-                <motion.div
-                  layoutId="activeIndicator"
-                  className="absolute left-0 top-0 bottom-0 w-0.5 bg-primary"
-                />
-              )}
-              
-              <Icon size={18} className={cn("shrink-0", isActive ? "text-primary" : "group-hover:text-foreground")} />
-              
-              {isOpen && (
-                <motion.span 
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="font-medium text-sm truncate"
-                >
-                  {area.name}
-                </motion.span>
-              )}
-            </button>
-          );
-        })}
+        {areas.map((area) => (
+          <AreaItem
+            key={area.id}
+            area={area}
+            isActive={area.id === activeAreaId}
+            isMenuOpen={isOpen}
+            onSelect={() => setActiveAreaId(area.id)}
+            onDelete={() => deleteArea(area.id)}
+          />
+        ))}
 
         <div className="my-3 border-t border-border" />
 

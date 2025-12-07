@@ -40,6 +40,7 @@ interface SkillTreeContextType {
   toggleLock: (areaId: string, skillId: string) => void;
   moveSkill: (areaId: string, skillId: string, direction: "up" | "down") => void;
   createArea: (name: string, description: string, icon: string) => Promise<void>;
+  deleteArea: (areaId: string) => Promise<void>;
   activeArea: Area | undefined;
   isLoading: boolean;
 }
@@ -509,6 +510,28 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const deleteArea = async (areaId: string) => {
+    try {
+      const response = await fetch(`/api/areas/${areaId}`, {
+        method: "DELETE",
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to delete area");
+      }
+      
+      setAreas(prev => {
+        const filtered = prev.filter(a => a.id !== areaId);
+        if (activeAreaId === areaId && filtered.length > 0) {
+          setActiveAreaId(filtered[0].id);
+        }
+        return filtered;
+      });
+    } catch (error) {
+      console.error("Error deleting area:", error);
+    }
+  };
+
   // Auto-unlock logic
   useEffect(() => {
     if (isLoading || areas.length === 0) return;
@@ -571,6 +594,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       toggleLock,
       moveSkill,
       createArea,
+      deleteArea,
       activeArea,
       isLoading
     }}>
