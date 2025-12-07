@@ -39,6 +39,7 @@ interface SkillTreeContextType {
   deleteSkill: (areaId: string, skillId: string) => void;
   toggleLock: (areaId: string, skillId: string) => void;
   moveSkill: (areaId: string, skillId: string, direction: "up" | "down") => void;
+  createArea: (name: string, description: string, icon: string) => Promise<void>;
   activeArea: Area | undefined;
   isLoading: boolean;
 }
@@ -466,6 +467,48 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const createArea = async (name: string, description: string, icon: string) => {
+    try {
+      const id = name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+      const response = await fetch("/api/areas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id,
+          name,
+          icon,
+          color: "text-zinc-800 dark:text-zinc-200",
+          description,
+          unlockedLevel: 1,
+          nextLevelToAssign: 1
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to create area");
+      }
+      
+      const newArea = await response.json();
+      
+      const generateResponse = await fetch(`/api/areas/${newArea.id}/generate-level`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ level: 1 }),
+      });
+      
+      if (generateResponse.ok) {
+        const { createdSkills } = await generateResponse.json();
+        setAreas(prev => [...prev, { ...newArea, skills: createdSkills }]);
+      } else {
+        setAreas(prev => [...prev, { ...newArea, skills: [] }]);
+      }
+      
+      setActiveAreaId(newArea.id);
+    } catch (error) {
+      console.error("Error creating area:", error);
+    }
+  };
+
   // Auto-unlock logic
   useEffect(() => {
     if (isLoading || areas.length === 0) return;
@@ -527,6 +570,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       deleteSkill,
       toggleLock,
       moveSkill,
+      createArea,
       activeArea,
       isLoading
     }}>
