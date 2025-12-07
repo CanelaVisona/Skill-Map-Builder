@@ -296,13 +296,14 @@ export function AreaMenu() {
   const [itemName, setItemName] = useState("");
   const [itemDescription, setItemDescription] = useState("");
   const [selectedIcon, setSelectedIcon] = useState("Home");
+  const [manualIconSelected, setManualIconSelected] = useState(false);
 
   useEffect(() => {
-    if (itemName) {
+    if (itemName && !manualIconSelected) {
       const detected = getIconForTitle(itemName);
       setSelectedIcon(detected);
     }
-  }, [itemName]);
+  }, [itemName, manualIconSelected]);
 
   const handleDialogClose = (open: boolean) => {
     setIsAddOpen(open);
@@ -311,6 +312,7 @@ export function AreaMenu() {
       setItemName("");
       setItemDescription("");
       setSelectedIcon("Home");
+      setManualIconSelected(false);
     }
   };
 
@@ -324,6 +326,7 @@ export function AreaMenu() {
     setItemName("");
     setItemDescription("");
     setSelectedIcon("Home");
+    setManualIconSelected(false);
   };
 
   const handleCreateProject = async () => {
@@ -336,6 +339,7 @@ export function AreaMenu() {
     setItemName("");
     setItemDescription("");
     setSelectedIcon("Home");
+    setManualIconSelected(false);
   };
 
   const renderForm = (type: "area" | "project") => (
@@ -347,7 +351,10 @@ export function AreaMenu() {
             <button
               key={name}
               type="button"
-              onClick={() => setSelectedIcon(name)}
+              onClick={() => {
+                setSelectedIcon(name);
+                setManualIconSelected(true);
+              }}
               className={cn(
                 "w-9 h-9 rounded-lg flex items-center justify-center transition-all",
                 selectedIcon === name 
