@@ -13,7 +13,7 @@ function ThemeToggle() {
   
   return (
     <button
-      className="fixed top-4 right-4 z-50 text-muted-foreground hover:text-foreground transition-colors"
+      className="fixed top-4 right-4 z-50 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
       onClick={() => setTheme(currentTheme === "dark" ? "light" : "dark")}
       data-testid="button-theme-toggle"
     >
