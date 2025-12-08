@@ -5,7 +5,9 @@ export type SkillStatus = "locked" | "available" | "mastered";
 
 export interface Skill {
   id: string;
-  areaId: string;
+  areaId?: string;
+  projectId?: string;
+  parentSkillId?: string;
   title: string;
   description: string;
   status: SkillStatus;
@@ -39,6 +41,11 @@ export interface Project {
   skills: Skill[];
 }
 
+interface ParentSkillInfo {
+  id: string;
+  title: string;
+}
+
 interface SkillTreeContextType {
   areas: Area[];
   activeAreaId: string;
@@ -64,6 +71,16 @@ interface SkillTreeContextType {
   activeProject: Project | undefined;
   createProject: (name: string, description: string, icon: string) => Promise<void>;
   deleteProject: (projectId: string) => Promise<void>;
+  activeParentSkillId: string | null;
+  parentSkillStack: ParentSkillInfo[];
+  subSkills: Skill[];
+  enterSubSkillTree: (skillId: string, skillTitle: string) => Promise<void>;
+  exitSubSkillTree: () => void;
+  toggleSubSkillStatus: (skillId: string) => void;
+  updateSubSkill: (skillId: string, updates: { title?: string; description?: string }) => void;
+  deleteSubSkill: (skillId: string) => void;
+  toggleSubSkillLock: (skillId: string) => void;
+  moveSubSkill: (skillId: string, direction: "up" | "down") => void;
 }
 
 const SkillTreeContext = createContext<SkillTreeContextType | undefined>(undefined);
@@ -81,6 +98,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
   const [activeAreaId, setActiveAreaId] = useState<string>("");
   const [activeProjectId, setActiveProjectId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
+  const [activeParentSkillId, setActiveParentSkillId] = useState<string | null>(null);
+  const [parentSkillStack, setParentSkillStack] = useState<ParentSkillInfo[]>([]);
+  const [subSkills, setSubSkills] = useState<Skill[]>([]);
 
   const activeArea = areas.find(a => a.id === activeAreaId);
   const activeProject = projects.find(p => p.id === activeProjectId);
@@ -983,6 +1003,306 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const enterSubSkillTree = async (skillId: string, skillTitle: string) => {
+    try {
+      const response = await fetch(`/api/skills/${skillId}/subskills`);
+      let skills = await response.json();
+      
+      if (skills.length === 0) {
+        const generateResponse = await fetch(`/api/skills/${skillId}/subskills/generate-level`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ level: 1 }),
+        });
+        
+        if (generateResponse.ok) {
+          const { createdSkills } = await generateResponse.json();
+          skills = createdSkills;
+        }
+      }
+      
+      setParentSkillStack(prev => [...prev, { id: skillId, title: skillTitle }]);
+      setActiveParentSkillId(skillId);
+      setSubSkills(skills);
+    } catch (error) {
+      console.error("Error entering sub-skill tree:", error);
+    }
+  };
+
+  const exitSubSkillTree = () => {
+    if (parentSkillStack.length <= 1) {
+      setActiveParentSkillId(null);
+      setParentSkillStack([]);
+      setSubSkills([]);
+    } else {
+      const newStack = parentSkillStack.slice(0, -1);
+      const previousParent = newStack[newStack.length - 1];
+      setParentSkillStack(newStack);
+      setActiveParentSkillId(previousParent.id);
+      fetch(`/api/skills/${previousParent.id}/subskills`)
+        .then(res => res.json())
+        .then(skills => setSubSkills(skills))
+        .catch(err => console.error("Error loading parent sub-skills:", err));
+    }
+  };
+
+  const toggleSubSkillStatus = async (skillId: string) => {
+    const skill = subSkills.find(s => s.id === skillId);
+    if (!skill) return;
+
+    const nextStatus: Record<SkillStatus, SkillStatus> = {
+      "locked": "locked",
+      "available": "mastered",
+      "mastered": "available"
+    };
+
+    const newStatus = nextStatus[skill.status];
+    const isFinalNodeBeingMastered = skill.isFinalNode === 1 && newStatus === "mastered";
+
+    try {
+      await fetch(`/api/skills/${skillId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+
+      if (isFinalNodeBeingMastered && activeParentSkillId) {
+        const newLevel = skill.level + 1;
+        const generateResponse = await fetch(`/api/skills/${activeParentSkillId}/subskills/generate-level`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ level: newLevel }),
+        });
+
+        if (generateResponse.ok) {
+          const { createdSkills } = await generateResponse.json();
+          setSubSkills(prev => {
+            const existingIds = new Set(prev.map(s => s.id));
+            const newSkills = createdSkills.filter((s: Skill) => !existingIds.has(s.id));
+            return [
+              ...prev.map(s => s.id === skillId ? { ...s, status: newStatus } : s),
+              ...newSkills
+            ];
+          });
+          return;
+        }
+      }
+
+      setSubSkills(prev => prev.map(s => 
+        s.id === skillId ? { ...s, status: newStatus } : s
+      ));
+    } catch (error) {
+      console.error("Error toggling sub-skill status:", error);
+    }
+  };
+
+  const updateSubSkill = async (skillId: string, updates: { title?: string; description?: string }) => {
+    try {
+      await fetch(`/api/skills/${skillId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+
+      setSubSkills(prev => prev.map(s => 
+        s.id === skillId ? { ...s, ...updates } : s
+      ));
+    } catch (error) {
+      console.error("Error updating sub-skill:", error);
+    }
+  };
+
+  const deleteSubSkill = async (skillId: string) => {
+    const skillToDelete = subSkills.find(s => s.id === skillId);
+    if (!skillToDelete) return;
+
+    const children = subSkills.filter(s => s.dependencies.includes(skillId));
+    const newDependencies = skillToDelete.dependencies;
+
+    const wasIsFinalNode = skillToDelete.isFinalNode === 1;
+    let newFinalNodeId: string | null = null;
+    
+    if (wasIsFinalNode) {
+      const sameLevelSkills = subSkills
+        .filter(s => s.level === skillToDelete.level && s.id !== skillId)
+        .sort((a, b) => a.y - b.y);
+      if (sameLevelSkills.length > 0) {
+        newFinalNodeId = sameLevelSkills[sameLevelSkills.length - 1].id;
+      }
+    }
+
+    try {
+      await fetch(`/api/skills/${skillId}`, { method: "DELETE" });
+
+      for (const child of children) {
+        const updatedDeps = child.dependencies
+          .filter(d => d !== skillId)
+          .concat(newDependencies);
+        
+        await fetch(`/api/skills/${child.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dependencies: updatedDeps }),
+        });
+      }
+
+      const nodesToShift = subSkills.filter(s => s.y > skillToDelete.y);
+      for (const node of nodesToShift) {
+        await fetch(`/api/skills/${node.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ y: node.y - 150 }),
+        });
+      }
+
+      if (newFinalNodeId) {
+        await fetch(`/api/skills/${newFinalNodeId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isFinalNode: 1 }),
+        });
+      }
+
+      setSubSkills(prev => {
+        return prev
+          .filter(s => s.id !== skillId)
+          .map(s => {
+            let updated = { ...s };
+            
+            if (children.find(c => c.id === s.id)) {
+              updated.dependencies = s.dependencies
+                .filter(d => d !== skillId)
+                .concat(newDependencies);
+            }
+            
+            if (s.y > skillToDelete.y) {
+              updated.y = s.y - 150;
+            }
+
+            if (s.id === newFinalNodeId) {
+              updated.isFinalNode = 1;
+            }
+            
+            return updated;
+          });
+      });
+    } catch (error) {
+      console.error("Error deleting sub-skill:", error);
+    }
+  };
+
+  const toggleSubSkillLock = async (skillId: string) => {
+    const skill = subSkills.find(s => s.id === skillId);
+    if (!skill) return;
+
+    const isLocked = skill.status === "locked";
+    const newStatus = isLocked ? "available" : "locked";
+    const newManualLock = isLocked ? 0 : 1;
+
+    try {
+      await fetch(`/api/skills/${skillId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          status: newStatus,
+          manualLock: newManualLock
+        }),
+      });
+
+      setSubSkills(prev => prev.map(s => 
+        s.id === skillId 
+          ? { ...s, status: newStatus, manualLock: newManualLock } 
+          : s
+      ));
+    } catch (error) {
+      console.error("Error toggling sub-skill lock:", error);
+    }
+  };
+
+  const moveSubSkill = async (skillId: string, direction: "up" | "down") => {
+    const skill = subSkills.find(s => s.id === skillId);
+    if (!skill) return;
+
+    const sameLevelSkills = [...subSkills]
+      .filter(s => s.level === skill.level)
+      .sort((a, b) => a.y - b.y);
+    
+    const currentIndex = sameLevelSkills.findIndex(s => s.id === skillId);
+    
+    let neighborIndex: number;
+    if (direction === "up") {
+      neighborIndex = currentIndex - 1;
+    } else {
+      neighborIndex = currentIndex + 1;
+    }
+
+    if (neighborIndex < 0 || neighborIndex >= sameLevelSkills.length) return;
+
+    const neighbor = sameLevelSkills[neighborIndex];
+    const currentY = skill.y;
+    const neighborY = neighbor.y;
+
+    const isCurrentFinal = skill.isFinalNode === 1;
+    const isNeighborFinal = neighbor.isFinalNode === 1;
+
+    let swapFinalNode = false;
+    if (isCurrentFinal || isNeighborFinal) {
+      swapFinalNode = true;
+    }
+
+    const currentDeps = skill.dependencies;
+    const neighborDeps = neighbor.dependencies;
+
+    try {
+      await Promise.all([
+        fetch(`/api/skills/${skillId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            y: neighborY,
+            dependencies: neighborDeps,
+            ...(swapFinalNode && isCurrentFinal ? { isFinalNode: 0 } : {}),
+            ...(swapFinalNode && isNeighborFinal ? { isFinalNode: 1 } : {})
+          }),
+        }),
+        fetch(`/api/skills/${neighbor.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            y: currentY,
+            dependencies: currentDeps,
+            ...(swapFinalNode && isNeighborFinal ? { isFinalNode: 0 } : {}),
+            ...(swapFinalNode && isCurrentFinal ? { isFinalNode: 1 } : {})
+          }),
+        })
+      ]);
+
+      setSubSkills(prev => prev.map(s => {
+        if (s.id === skillId) {
+          return { 
+            ...s, 
+            y: neighborY,
+            dependencies: neighborDeps,
+            ...(swapFinalNode && isCurrentFinal ? { isFinalNode: 0 } : {}),
+            ...(swapFinalNode && isNeighborFinal ? { isFinalNode: 1 } : {})
+          };
+        }
+        if (s.id === neighbor.id) {
+          return { 
+            ...s, 
+            y: currentY,
+            dependencies: currentDeps,
+            ...(swapFinalNode && isNeighborFinal ? { isFinalNode: 0 } : {}),
+            ...(swapFinalNode && isCurrentFinal ? { isFinalNode: 1 } : {})
+          };
+        }
+        return s;
+      }));
+    } catch (error) {
+      console.error("Error moving sub-skill:", error);
+    }
+  };
+
   // Auto-unlock logic for areas
   useEffect(() => {
     if (isLoading || areas.length === 0) return;
@@ -1100,7 +1420,17 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       setActiveProjectId: handleSetActiveProjectId,
       activeProject,
       createProject,
-      deleteProject
+      deleteProject,
+      activeParentSkillId,
+      parentSkillStack,
+      subSkills,
+      enterSubSkillTree,
+      exitSubSkillTree,
+      toggleSubSkillStatus,
+      updateSubSkill,
+      deleteSubSkill,
+      toggleSubSkillLock,
+      moveSubSkill
     }}>
       {children}
     </SkillTreeContext.Provider>

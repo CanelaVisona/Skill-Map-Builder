@@ -22,6 +22,11 @@ export interface IStorage {
   generateLevelWithSkills(areaId: string, level: number, startY: number): Promise<{ updatedArea: Area; createdSkills: Skill[] }>;
   generateProjectLevelWithSkills(projectId: string, level: number, startY: number): Promise<{ updatedProject: Project; createdSkills: Skill[] }>;
 
+  // Sub-skills
+  getSubSkills(parentSkillId: string): Promise<Skill[]>;
+  countSubSkillsInLevel(parentSkillId: string, level: number): Promise<number>;
+  generateSubSkillLevel(parentSkillId: string, level: number, startY: number): Promise<{ parentSkill: Skill; createdSkills: Skill[] }>;
+
   // Projects
   getProjects(): Promise<Project[]>;
   getProject(id: string): Promise<Project | undefined>;
@@ -74,6 +79,8 @@ export class DbStorage implements IStorage {
     const insertData: typeof skills.$inferInsert = {
       id,
       areaId: skill.areaId,
+      projectId: skill.projectId,
+      parentSkillId: skill.parentSkillId,
       title: skill.title,
       description: skill.description,
       status: skill.status,
@@ -231,6 +238,54 @@ export class DbStorage implements IStorage {
 
   async deleteProject(id: string): Promise<void> {
     await db.delete(projects).where(eq(projects.id, id));
+  }
+
+  // Sub-skills
+  async getSubSkills(parentSkillId: string): Promise<Skill[]> {
+    return await db.select().from(skills).where(eq(skills.parentSkillId, parentSkillId));
+  }
+
+  async countSubSkillsInLevel(parentSkillId: string, level: number): Promise<number> {
+    const result = await db.select().from(skills).where(
+      and(eq(skills.parentSkillId, parentSkillId), eq(skills.level, level))
+    );
+    return result.length;
+  }
+
+  async generateSubSkillLevel(parentSkillId: string, level: number, startY: number): Promise<{ parentSkill: Skill; createdSkills: Skill[] }> {
+    const createdSkills: Skill[] = [];
+    let previousSkillId: string | null = null;
+
+    await db.transaction(async (tx) => {
+      for (let position = 1; position <= 5; position++) {
+        const id = Math.random().toString(36).substr(2, 9);
+        const deps: string[] = previousSkillId ? [previousSkillId] : [];
+        const isFirstNode = level === 1 && position === 1;
+        const skillData: typeof skills.$inferInsert = {
+          id,
+          parentSkillId,
+          title: isFirstNode ? "inicio" : "?",
+          description: "",
+          x: 50,
+          y: startY + (position - 1) * 150,
+          status: position === 1 ? "available" : "locked",
+          dependencies: deps,
+          level,
+          levelPosition: position,
+          isFinalNode: (position === 5 ? 1 : 0) as 0 | 1,
+          manualLock: 0 as 0 | 1,
+        };
+
+        const result = await tx.insert(skills).values(skillData).returning();
+        createdSkills.push(result[0]);
+        previousSkillId = id;
+      }
+    });
+
+    const parentSkillResult = await db.select().from(skills).where(eq(skills.id, parentSkillId));
+    const parentSkill = parentSkillResult[0];
+
+    return { parentSkill, createdSkills };
   }
 }
 

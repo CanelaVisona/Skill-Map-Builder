@@ -37,6 +37,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
   const { 
     activeAreaId, 
     activeProjectId,
+    activeParentSkillId,
     deleteSkill, 
     toggleLock, 
     moveSkill, 
@@ -44,7 +45,12 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
     deleteProjectSkill,
     toggleProjectLock,
     moveProjectSkill,
-    updateProjectSkill
+    updateProjectSkill,
+    deleteSubSkill,
+    toggleSubSkillLock,
+    moveSubSkill,
+    updateSubSkill,
+    enterSubSkillTree
   } = useSkillTree();
   
   const isProject = !activeAreaId && !!activeProjectId;
