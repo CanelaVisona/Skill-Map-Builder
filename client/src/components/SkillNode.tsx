@@ -55,6 +55,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
   
   const isProject = !activeAreaId && !!activeProjectId;
   const activeId = activeAreaId || activeProjectId;
+  const isSubSkillView = !!activeParentSkillId;
   const [isOpen, setIsOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editTitle, setEditTitle] = useState(skill.title);
@@ -70,7 +71,12 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
   };
 
   const handleEditSave = () => {
-    if (isProject) {
+    if (isSubSkillView) {
+      updateSubSkill(skill.id, { 
+        title: editTitle, 
+        description: editDescription 
+      });
+    } else if (isProject) {
       updateProjectSkill(activeId, skill.id, { 
         title: editTitle, 
         description: editDescription 
@@ -107,7 +113,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
       return;
     }
     if (isLocked) {
-      if (isProject) {
+      if (isSubSkillView) {
+        toggleSubSkillLock(skill.id);
+      } else if (isProject) {
         toggleProjectLock(activeId, skill.id);
       } else {
         toggleLock(activeId, skill.id);
@@ -192,7 +200,20 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
             isLocked ? "text-muted-foreground" : "text-foreground",
             isMastered && "text-foreground"
           )}>
-            {skill.title}
+            <span
+              onClick={(e) => {
+                if (!isSubSkillView && !isLocked) {
+                  e.stopPropagation();
+                  enterSubSkillTree(skill.id, skill.title);
+                }
+              }}
+              className={cn(
+                !isSubSkillView && !isLocked && "cursor-pointer hover:underline"
+              )}
+              data-testid={`link-skill-title-${skill.id}`}
+            >
+              {skill.title}
+            </span>
           </div>
         </div>
       </PopoverAnchor>
@@ -207,7 +228,15 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
               variant="ghost"
               size="icon"
               className="h-8 w-8"
-              onClick={() => isProject ? moveProjectSkill(activeId, skill.id, "up") : moveSkill(activeId, skill.id, "up")}
+              onClick={() => {
+                if (isSubSkillView) {
+                  moveSubSkill(skill.id, "up");
+                } else if (isProject) {
+                  moveProjectSkill(activeId, skill.id, "up");
+                } else {
+                  moveSkill(activeId, skill.id, "up");
+                }
+              }}
               data-testid="button-move-up"
             >
               <ChevronUp className="h-4 w-4" />
@@ -217,7 +246,15 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
               variant="ghost"
               size="icon"
               className="h-8 w-8"
-              onClick={() => isProject ? moveProjectSkill(activeId, skill.id, "down") : moveSkill(activeId, skill.id, "down")}
+              onClick={() => {
+                if (isSubSkillView) {
+                  moveSubSkill(skill.id, "down");
+                } else if (isProject) {
+                  moveProjectSkill(activeId, skill.id, "down");
+                } else {
+                  moveSkill(activeId, skill.id, "down");
+                }
+              }}
               data-testid="button-move-down"
             >
               <ChevronDown className="h-4 w-4" />
@@ -248,7 +285,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
                  size="sm" 
                  className="h-8 px-3 text-xs"
                  onClick={() => {
-                   if (isProject) {
+                   if (isSubSkillView) {
+                     toggleSubSkillLock(skill.id);
+                   } else if (isProject) {
                      toggleProjectLock(activeId, skill.id);
                    } else {
                      toggleLock(activeId, skill.id);
@@ -266,7 +305,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
                size="sm" 
                className="h-8 px-3 text-xs"
                onClick={() => {
-                 if (isProject) {
+                 if (isSubSkillView) {
+                   deleteSubSkill(skill.id);
+                 } else if (isProject) {
                    deleteProjectSkill(activeId, skill.id);
                  } else {
                    deleteSkill(activeId, skill.id);
