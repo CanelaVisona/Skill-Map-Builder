@@ -6,35 +6,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-function LevelUpNotification() {
-  const { showLevelUp } = useSkillTree();
-  
-  return (
-    <AnimatePresence>
-      {showLevelUp && (
-        <motion.div
-          className="fixed inset-0 flex items-center justify-center pointer-events-none z-50"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-        >
-          <motion.span
-            className="text-4xl font-bold tracking-widest uppercase text-foreground"
-            initial={{ y: 100, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: -100, opacity: 0 }}
-            transition={{ 
-              duration: 0.5,
-              ease: "easeOut"
-            }}
-          >
-            level up
-          </motion.span>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-}
 
 function SkillCanvas() {
   const { 
@@ -46,7 +17,8 @@ function SkillCanvas() {
     parentSkillStack,
     subSkills,
     exitSubSkillTree,
-    toggleSubSkillStatus
+    toggleSubSkillStatus,
+    showLevelUp
   } = useSkillTree();
 
   const activeItem = activeArea || activeProject;
@@ -132,6 +104,26 @@ function SkillCanvas() {
 
     return (
       <div className="flex-1 relative overflow-hidden bg-background flex flex-col">
+        <AnimatePresence>
+          {showLevelUp && (
+            <motion.div
+              className="absolute inset-0 flex items-center justify-center pointer-events-none z-50"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
+              <motion.span
+                className="text-4xl font-bold tracking-widest uppercase text-foreground"
+                initial={{ y: 100, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: -100, opacity: 0 }}
+                transition={{ duration: 0.5, ease: "easeOut" }}
+              >
+                level up
+              </motion.span>
+            </motion.div>
+          )}
+        </AnimatePresence>
         <div className="flex-1 overflow-y-auto p-8 scroll-smooth">
           <div className="w-full relative max-w-4xl mx-auto mt-10 min-h-full">
             
@@ -242,6 +234,26 @@ function SkillCanvas() {
 
   return (
     <div className="flex-1 relative overflow-hidden bg-background flex flex-col">
+      <AnimatePresence>
+        {showLevelUp && (
+          <motion.div
+            className="absolute inset-0 flex items-center justify-center pointer-events-none z-50"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <motion.span
+              className="text-4xl font-bold tracking-widest uppercase text-foreground"
+              initial={{ y: 100, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: -100, opacity: 0 }}
+              transition={{ duration: 0.5, ease: "easeOut" }}
+            >
+              level up
+            </motion.span>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <div className="flex-1 overflow-y-auto p-8 scroll-smooth">
         <div className="w-full relative max-w-4xl mx-auto mt-10 min-h-full">
           
@@ -323,7 +335,6 @@ export default function SkillTreePage() {
       <div className="flex h-screen w-full bg-background text-foreground overflow-hidden font-body selection:bg-primary/30">
         <AreaMenu />
         <SkillCanvas />
-        <LevelUpNotification />
       </div>
     </SkillTreeProvider>
   );
