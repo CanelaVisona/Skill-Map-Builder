@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { type Skill, useSkillTree } from "@/lib/skill-context";
 import { cn } from "@/lib/utils";
-import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus } from "lucide-react";
+import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus, Star } from "lucide-react";
 import { useState, useRef } from "react";
 import {
   Popover,
@@ -57,7 +57,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
     addProjectSkillBelow,
     addSubSkillBelow,
     updateLevelSubtitle,
-    updateProjectLevelSubtitle
+    updateProjectLevelSubtitle,
+    toggleFinalNode,
+    toggleProjectFinalNode,
+    toggleSubSkillFinalNode
   } = useSkillTree();
   
   const isProject = !activeAreaId && !!activeProjectId;
@@ -345,6 +348,29 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
                data-testid="button-add-skill-below"
              >
                +
+             </Button>
+
+             <Button 
+               variant={isFinalNode ? "default" : "outline"}
+               size="sm" 
+               className={cn(
+                 "h-8 w-8 p-0 text-xs",
+                 isFinalNode && "bg-amber-500 hover:bg-amber-600 border-amber-500"
+               )}
+               onClick={() => {
+                 if (isSubSkillView) {
+                   toggleSubSkillFinalNode(skill.id);
+                 } else if (isProject) {
+                   toggleProjectFinalNode(activeId, skill.id);
+                 } else {
+                   toggleFinalNode(activeId, skill.id);
+                 }
+                 setIsOpen(false);
+               }}
+               data-testid="button-toggle-final"
+               title={isFinalNode ? "Quitar nodo final" : "Marcar como nodo final"}
+             >
+               <Star className={cn("h-3 w-3", isFinalNode && "fill-white")} />
              </Button>
 
              {!isLocked && (

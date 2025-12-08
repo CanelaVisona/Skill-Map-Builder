@@ -88,6 +88,9 @@ interface SkillTreeContextType {
   addSubSkillBelow: (skillId: string) => Promise<void>;
   updateLevelSubtitle: (areaId: string, level: number, subtitle: string) => Promise<void>;
   updateProjectLevelSubtitle: (projectId: string, level: number, subtitle: string) => Promise<void>;
+  toggleFinalNode: (areaId: string, skillId: string) => Promise<void>;
+  toggleProjectFinalNode: (projectId: string, skillId: string) => Promise<void>;
+  toggleSubSkillFinalNode: (skillId: string) => Promise<void>;
 }
 
 const SkillTreeContext = createContext<SkillTreeContextType | undefined>(undefined);
@@ -1678,6 +1681,167 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const toggleFinalNode = async (areaId: string, skillId: string) => {
+    const area = areas.find(a => a.id === areaId);
+    if (!area) return;
+
+    const skill = area.skills.find(s => s.id === skillId);
+    if (!skill) return;
+
+    const isCurrentlyFinal = skill.isFinalNode === 1;
+
+    try {
+      if (isCurrentlyFinal) {
+        await fetch(`/api/skills/${skillId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isFinalNode: 0 }),
+        });
+
+        setAreas(prev => prev.map(a => 
+          a.id === areaId ? {
+            ...a,
+            skills: a.skills.map(s => 
+              s.id === skillId ? { ...s, isFinalNode: 0 } : s
+            )
+          } : a
+        ));
+      } else {
+        const otherFinalNodes = area.skills.filter(s => s.isFinalNode === 1 && s.id !== skillId);
+        
+        await Promise.all([
+          ...otherFinalNodes.map(s => 
+            fetch(`/api/skills/${s.id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ isFinalNode: 0 }),
+            })
+          ),
+          fetch(`/api/skills/${skillId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ isFinalNode: 1 }),
+          })
+        ]);
+
+        setAreas(prev => prev.map(a => 
+          a.id === areaId ? {
+            ...a,
+            skills: a.skills.map(s => ({
+              ...s,
+              isFinalNode: s.id === skillId ? 1 : 0
+            }))
+          } : a
+        ));
+      }
+    } catch (error) {
+      console.error("Error toggling final node:", error);
+    }
+  };
+
+  const toggleProjectFinalNode = async (projectId: string, skillId: string) => {
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const skill = project.skills.find(s => s.id === skillId);
+    if (!skill) return;
+
+    const isCurrentlyFinal = skill.isFinalNode === 1;
+
+    try {
+      if (isCurrentlyFinal) {
+        await fetch(`/api/skills/${skillId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isFinalNode: 0 }),
+        });
+
+        setProjects(prev => prev.map(p => 
+          p.id === projectId ? {
+            ...p,
+            skills: p.skills.map(s => 
+              s.id === skillId ? { ...s, isFinalNode: 0 } : s
+            )
+          } : p
+        ));
+      } else {
+        const otherFinalNodes = project.skills.filter(s => s.isFinalNode === 1 && s.id !== skillId);
+        
+        await Promise.all([
+          ...otherFinalNodes.map(s => 
+            fetch(`/api/skills/${s.id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ isFinalNode: 0 }),
+            })
+          ),
+          fetch(`/api/skills/${skillId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ isFinalNode: 1 }),
+          })
+        ]);
+
+        setProjects(prev => prev.map(p => 
+          p.id === projectId ? {
+            ...p,
+            skills: p.skills.map(s => ({
+              ...s,
+              isFinalNode: s.id === skillId ? 1 : 0
+            }))
+          } : p
+        ));
+      }
+    } catch (error) {
+      console.error("Error toggling project final node:", error);
+    }
+  };
+
+  const toggleSubSkillFinalNode = async (skillId: string) => {
+    const skill = subSkills.find(s => s.id === skillId);
+    if (!skill) return;
+
+    const isCurrentlyFinal = skill.isFinalNode === 1;
+
+    try {
+      if (isCurrentlyFinal) {
+        await fetch(`/api/skills/${skillId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isFinalNode: 0 }),
+        });
+
+        setSubSkills(prev => prev.map(s => 
+          s.id === skillId ? { ...s, isFinalNode: 0 } : s
+        ));
+      } else {
+        const otherFinalNodes = subSkills.filter(s => s.isFinalNode === 1 && s.id !== skillId);
+        
+        await Promise.all([
+          ...otherFinalNodes.map(s => 
+            fetch(`/api/skills/${s.id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ isFinalNode: 0 }),
+            })
+          ),
+          fetch(`/api/skills/${skillId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ isFinalNode: 1 }),
+          })
+        ]);
+
+        setSubSkills(prev => prev.map(s => ({
+          ...s,
+          isFinalNode: s.id === skillId ? 1 : 0
+        })));
+      }
+    } catch (error) {
+      console.error("Error toggling sub-skill final node:", error);
+    }
+  };
+
   return (
     <SkillTreeContext.Provider value={{ 
       areas, 
@@ -1718,7 +1882,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       addProjectSkillBelow,
       addSubSkillBelow,
       updateLevelSubtitle,
-      updateProjectLevelSubtitle
+      updateProjectLevelSubtitle,
+      toggleFinalNode,
+      toggleProjectFinalNode,
+      toggleSubSkillFinalNode
     }}>
       {children}
     </SkillTreeContext.Provider>
