@@ -30,9 +30,7 @@ interface SkillNodeProps {
 export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNodeProps) {
   const isLocked = skill.status === "locked";
   const isMastered = skill.status === "mastered";
-  const isFinalNode = skill.isFinalNode === 1;
-  const isFinalMastered = isFinalNode && isMastered;
-  const isFinalNotMastered = isFinalNode && !isMastered;
+  const hasStar = skill.isFinalNode === 1; // Has the star activated (final final node)
   
   const { 
     activeAreaId, 
@@ -76,6 +74,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
       : (activeArea?.skills || []);
   const skillsInLevel = currentSkills.filter(s => s.level === skill.level);
   const isLevelCompleted = skillsInLevel.length > 0 && skillsInLevel.every(s => s.status === "mastered");
+  
+  // Calculate if this node is the last node of its level (by Y position)
+  const isLastNodeOfLevel = skillsInLevel.length > 0 && 
+    skill.y === Math.max(...skillsInLevel.map(s => s.y));
   
   const [isOpen, setIsOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -240,12 +242,18 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
             }}
             className={cn(
               "w-10 h-10 rounded-full border-2 flex items-center justify-center transition-all duration-300 relative",
-              isLocked && !isFinalNotMastered && "bg-muted border-muted-foreground/20 text-muted-foreground/50",
-              isLocked && isFinalNotMastered && "bg-muted border-amber-400 text-muted-foreground/50",
-              !isLocked && !isMastered && !isFinalNotMastered && "bg-card border-border hover:border-foreground/50",
-              !isLocked && !isMastered && isFinalNotMastered && "bg-card border-amber-400 hover:border-amber-300",
-              isMastered && !isFinalMastered && !isLevelCompleted && "bg-foreground border-foreground text-background shadow-sm",
-              (isFinalMastered || (isMastered && isLevelCompleted)) && "bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/30"
+              // Locked nodes
+              isLocked && !isLastNodeOfLevel && "bg-muted border-muted-foreground/20 text-muted-foreground/50",
+              isLocked && isLastNodeOfLevel && "bg-muted border-amber-400 text-muted-foreground/50",
+              // Available nodes (not locked, not mastered)
+              !isLocked && !isMastered && !isLastNodeOfLevel && "bg-card border-border hover:border-foreground/50",
+              !isLocked && !isMastered && isLastNodeOfLevel && "bg-card border-amber-400 hover:border-amber-300",
+              // Mastered nodes - not last node of level and level not completed
+              isMastered && !isLastNodeOfLevel && !isLevelCompleted && "bg-foreground border-foreground text-background shadow-sm",
+              // Mastered last node of level (always orange, whether level completed or not)
+              isMastered && isLastNodeOfLevel && "bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/30",
+              // Level completed - all nodes turn orange
+              isMastered && isLevelCompleted && "bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/30"
             )}
           >
             {isLocked ? (
@@ -361,28 +369,31 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
                +
              </Button>
 
-             <Button 
-               variant={isFinalNode ? "default" : "outline"}
-               size="sm" 
-               className={cn(
-                 "h-8 w-8 p-0 text-xs",
-                 isFinalNode && "bg-amber-500 hover:bg-amber-600 border-amber-500"
-               )}
-               onClick={() => {
-                 if (isSubSkillView) {
-                   toggleSubSkillFinalNode(skill.id);
-                 } else if (isProject) {
-                   toggleProjectFinalNode(activeId, skill.id);
-                 } else {
-                   toggleFinalNode(activeId, skill.id);
-                 }
-                 setIsOpen(false);
-               }}
-               data-testid="button-toggle-final"
-               title={isFinalNode ? "Quitar nodo final" : "Marcar como nodo final"}
-             >
-               <Star className={cn("h-3 w-3", isFinalNode && "fill-white")} />
-             </Button>
+             {/* Star button - show for last node of level OR if node already has star (to allow removal) */}
+             {(isLastNodeOfLevel || hasStar) && (
+               <Button 
+                 variant={hasStar ? "default" : "outline"}
+                 size="sm" 
+                 className={cn(
+                   "h-8 w-8 p-0 text-xs",
+                   hasStar && "bg-amber-500 hover:bg-amber-600 border-amber-500"
+                 )}
+                 onClick={() => {
+                   if (isSubSkillView) {
+                     toggleSubSkillFinalNode(skill.id);
+                   } else if (isProject) {
+                     toggleProjectFinalNode(activeId, skill.id);
+                   } else {
+                     toggleFinalNode(activeId, skill.id);
+                   }
+                   setIsOpen(false);
+                 }}
+                 data-testid="button-toggle-final"
+                 title={hasStar ? "Quitar nodo final final" : "Marcar como nodo final final"}
+               >
+                 <Star className={cn("h-3 w-3", hasStar && "fill-white")} />
+               </Button>
+             )}
 
              {!isLocked && (
                <Button 
@@ -405,24 +416,27 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
                </Button>
              )}
 
-             <Button 
-               variant="secondary" 
-               size="sm" 
-               className="h-8 px-3 text-xs"
-               onClick={() => {
-                 if (isSubSkillView) {
-                   deleteSubSkill(skill.id);
-                 } else if (isProject) {
-                   deleteProjectSkill(activeId, skill.id);
-                 } else {
-                   deleteSkill(activeId, skill.id);
-                 }
-                 setIsOpen(false);
-               }}
-             >
-               <Trash2 className="mr-2 h-3 w-3" />
-               Delete
-             </Button>
+             {/* Delete button - hide for last node of level (can't delete) */}
+             {!isLastNodeOfLevel && (
+               <Button 
+                 variant="secondary" 
+                 size="sm" 
+                 className="h-8 px-3 text-xs"
+                 onClick={() => {
+                   if (isSubSkillView) {
+                     deleteSubSkill(skill.id);
+                   } else if (isProject) {
+                     deleteProjectSkill(activeId, skill.id);
+                   } else {
+                     deleteSkill(activeId, skill.id);
+                   }
+                   setIsOpen(false);
+                 }}
+               >
+                 <Trash2 className="mr-2 h-3 w-3" />
+                 Delete
+               </Button>
+             )}
           </div>
         </div>
       </PopoverContent>

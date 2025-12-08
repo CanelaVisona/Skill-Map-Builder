@@ -163,9 +163,15 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     };
 
     const newStatus = nextStatus[skill.status];
-    // When isFinalNode === 1 (has star), it should NOT open new levels - it's the final point
-    // When isFinalNode === 0 (no star), it CAN open new levels
-    const canOpenNewLevels = skill.isFinalNode !== 1;
+    
+    // Check if this skill is the last node of its level (by Y position)
+    const skillsInLevel = area.skills.filter(s => s.level === skill.level);
+    const isLastNodeOfLevel = skillsInLevel.length > 0 && 
+      skill.y === Math.max(...skillsInLevel.map(s => s.y));
+    
+    // Last node of level can open new levels, UNLESS it has the star (isFinalNode === 1)
+    const hasStar = skill.isFinalNode === 1;
+    const canOpenNewLevels = isLastNodeOfLevel && !hasStar;
     const isOpeningNewLevel = canOpenNewLevels && newStatus === "mastered";
     const isClosingLevel = canOpenNewLevels && skill.status === "mastered" && newStatus === "available";
 
@@ -286,9 +292,15 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     };
 
     const newStatus = nextStatus[skill.status];
-    // When isFinalNode === 1 (has star), it should NOT open new levels - it's the final point
-    // When isFinalNode === 0 (no star), it CAN open new levels
-    const canOpenNewLevels = skill.isFinalNode !== 1;
+    
+    // Check if this skill is the last node of its level (by Y position)
+    const skillsInLevel = project.skills.filter(s => s.level === skill.level);
+    const isLastNodeOfLevel = skillsInLevel.length > 0 && 
+      skill.y === Math.max(...skillsInLevel.map(s => s.y));
+    
+    // Last node of level can open new levels, UNLESS it has the star (isFinalNode === 1)
+    const hasStar = skill.isFinalNode === 1;
+    const canOpenNewLevels = isLastNodeOfLevel && !hasStar;
     const isOpeningNewLevel = canOpenNewLevels && newStatus === "mastered";
     const isClosingLevel = canOpenNewLevels && skill.status === "mastered" && newStatus === "available";
 
