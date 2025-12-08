@@ -64,37 +64,57 @@ export async function registerRoutes(
       const validatedSkill = insertSkillSchema.parse(req.body);
       const skillLevel = validatedSkill.level ?? 1;
       
-      if (!validatedSkill.areaId) {
-        res.status(400).json({ message: "areaId is required" });
+      // Check if this is an "add below" operation (client provides levelPosition)
+      const isManualInsertion = validatedSkill.levelPosition !== undefined;
+      
+      if (!validatedSkill.areaId && !validatedSkill.projectId && !validatedSkill.parentSkillId) {
+        res.status(400).json({ message: "areaId, projectId, or parentSkillId is required" });
         return;
       }
       
-      const currentCount = await storage.countSkillsInLevel(validatedSkill.areaId, skillLevel);
-      
-      if (currentCount >= 5) {
-        res.status(400).json({ message: "Este nivel ya tiene 5 nodos. Completa el nodo final para desbloquear el siguiente nivel." });
-        return;
+      // Only enforce 5-node limit for automatic additions, not manual insertions
+      if (!isManualInsertion) {
+        let currentCount = 0;
+        if (validatedSkill.areaId) {
+          currentCount = await storage.countSkillsInLevel(validatedSkill.areaId, skillLevel);
+        } else if (validatedSkill.projectId) {
+          currentCount = await storage.countProjectSkillsInLevel(validatedSkill.projectId, skillLevel);
+        } else if (validatedSkill.parentSkillId) {
+          currentCount = await storage.countSubSkillsInLevel(validatedSkill.parentSkillId, skillLevel);
+        }
+        
+        if (currentCount >= 5) {
+          res.status(400).json({ message: "Este nivel ya tiene 5 nodos. Completa el nodo final para desbloquear el siguiente nivel." });
+          return;
+        }
+        
+        const levelPosition = currentCount + 1;
+        const isFinalNode = levelPosition === 5 ? 1 : 0;
+        
+        const enforcedStatus = levelPosition > 1 ? "locked" : validatedSkill.status;
+        const enforcedManualLock = levelPosition > 1 ? 0 : (validatedSkill.manualLock || 0);
+        
+        const skillWithPosition = {
+          ...validatedSkill,
+          level: skillLevel,
+          levelPosition,
+          isFinalNode: isFinalNode as 0 | 1,
+          status: enforcedStatus,
+          manualLock: enforcedManualLock as 0 | 1,
+        };
+        
+        const skill = await storage.createSkill(skillWithPosition);
+        res.status(201).json(skill);
+      } else {
+        // Manual insertion - use client-provided values
+        const skillWithLevel = {
+          ...validatedSkill,
+          level: skillLevel,
+        };
+        
+        const skill = await storage.createSkill(skillWithLevel);
+        res.status(201).json(skill);
       }
-      
-      const levelPosition = currentCount + 1;
-      const isFinalNode = levelPosition === 5 ? 1 : 0;
-      
-      // Enforce: positions 2-5 must start as locked (they depend on previous node being mastered)
-      // Position 1 can use client-provided status (or default to available)
-      const enforcedStatus = levelPosition > 1 ? "locked" : validatedSkill.status;
-      const enforcedManualLock = levelPosition > 1 ? 0 : (validatedSkill.manualLock || 0);
-      
-      const skillWithPosition = {
-        ...validatedSkill,
-        level: skillLevel,
-        levelPosition,
-        isFinalNode: isFinalNode as 0 | 1,
-        status: enforcedStatus,
-        manualLock: enforcedManualLock as 0 | 1,
-      };
-      
-      const skill = await storage.createSkill(skillWithPosition);
-      res.status(201).json(skill);
     } catch (error: any) {
       const validationError = fromError(error);
       res.status(400).json({ message: validationError.toString() });
