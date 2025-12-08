@@ -5,6 +5,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import SkillTreePage from "@/pages/SkillTree";
+import { AuthProvider, useAuth } from "@/lib/auth-context";
+import { LoginForm } from "@/components/LoginForm";
 
 function Router() {
   return (
@@ -15,13 +17,33 @@ function Router() {
   );
 }
 
+function AuthenticatedApp() {
+  const { user, isLoading } = useAuth();
+  
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-muted-foreground">Cargando...</div>
+      </div>
+    );
+  }
+  
+  if (!user) {
+    return <LoginForm />;
+  }
+  
+  return <Router />;
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Toaster />
-        <Router />
-      </TooltipProvider>
+      <AuthProvider>
+        <TooltipProvider>
+          <Toaster />
+          <AuthenticatedApp />
+        </TooltipProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

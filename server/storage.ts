@@ -1,10 +1,22 @@
 import { eq, and } from "drizzle-orm";
+import { randomUUID } from "crypto";
 import { db } from "./db";
-import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, areas, skills, projects } from "@shared/schema";
+import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, areas, skills, projects, users, sessions } from "@shared/schema";
 
 export interface IStorage {
+  // Users
+  createUser(username: string): Promise<User>;
+  getUserByUsername(username: string): Promise<User | undefined>;
+  getUserById(id: string): Promise<User | undefined>;
+
+  // Sessions
+  createSession(userId: string, expiresAt: Date): Promise<Session>;
+  getSession(id: string): Promise<Session | undefined>;
+  deleteSession(id: string): Promise<void>;
+  deleteExpiredSessions(): Promise<void>;
+
   // Areas
-  getAreas(): Promise<Area[]>;
+  getAreas(userId: string): Promise<Area[]>;
   getArea(id: string): Promise<Area | undefined>;
   createArea(area: InsertArea): Promise<Area>;
   updateArea(id: string, area: Partial<InsertArea>): Promise<Area | undefined>;
@@ -28,7 +40,7 @@ export interface IStorage {
   generateSubSkillLevel(parentSkillId: string, level: number, startY: number): Promise<{ parentSkill: Skill; createdSkills: Skill[] }>;
 
   // Projects
-  getProjects(): Promise<Project[]>;
+  getProjects(userId: string): Promise<Project[]>;
   getProject(id: string): Promise<Project | undefined>;
   createProject(project: InsertProject): Promise<Project>;
   updateProject(id: string, project: Partial<InsertProject>): Promise<Project | undefined>;
@@ -36,9 +48,47 @@ export interface IStorage {
 }
 
 export class DbStorage implements IStorage {
+  // Users
+  async createUser(username: string): Promise<User> {
+    const id = randomUUID();
+    const result = await db.insert(users).values({ id, username }).returning();
+    return result[0];
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const result = await db.select().from(users).where(eq(users.username, username));
+    return result[0];
+  }
+
+  async getUserById(id: string): Promise<User | undefined> {
+    const result = await db.select().from(users).where(eq(users.id, id));
+    return result[0];
+  }
+
+  // Sessions
+  async createSession(userId: string, expiresAt: Date): Promise<Session> {
+    const id = randomUUID();
+    const result = await db.insert(sessions).values({ id, userId, expiresAt }).returning();
+    return result[0];
+  }
+
+  async getSession(id: string): Promise<Session | undefined> {
+    const result = await db.select().from(sessions).where(eq(sessions.id, id));
+    return result[0];
+  }
+
+  async deleteSession(id: string): Promise<void> {
+    await db.delete(sessions).where(eq(sessions.id, id));
+  }
+
+  async deleteExpiredSessions(): Promise<void> {
+    const { lt } = await import("drizzle-orm");
+    await db.delete(sessions).where(lt(sessions.expiresAt, new Date()));
+  }
+
   // Areas
-  async getAreas(): Promise<Area[]> {
-    return await db.select().from(areas);
+  async getAreas(userId: string): Promise<Area[]> {
+    return await db.select().from(areas).where(eq(areas.userId, userId));
   }
 
   async getArea(id: string): Promise<Area | undefined> {
@@ -75,7 +125,7 @@ export class DbStorage implements IStorage {
   }
 
   async createSkill(skill: InsertSkill): Promise<Skill> {
-    const id = Math.random().toString(36).substr(2, 9);
+    const id = randomUUID();
     const insertData: typeof skills.$inferInsert = {
       id,
       areaId: skill.areaId,
@@ -145,7 +195,7 @@ export class DbStorage implements IStorage {
 
       // Create 5 skills for the new level
       for (let position = 1; position <= 5; position++) {
-        const id = Math.random().toString(36).substr(2, 9);
+        const id = randomUUID();
         const deps: string[] = previousSkillId ? [previousSkillId] : [];
         const isFirstNode = level === 1 && position === 1;
         const skillData: typeof skills.$inferInsert = {
@@ -186,7 +236,7 @@ export class DbStorage implements IStorage {
         .where(eq(projects.id, projectId));
 
       for (let position = 1; position <= 5; position++) {
-        const id = Math.random().toString(36).substr(2, 9);
+        const id = randomUUID();
         const deps: string[] = previousSkillId ? [previousSkillId] : [];
         const isFirstNode = level === 1 && position === 1;
         const skillData: typeof skills.$inferInsert = {
@@ -217,8 +267,8 @@ export class DbStorage implements IStorage {
   }
 
   // Projects
-  async getProjects(): Promise<Project[]> {
-    return await db.select().from(projects);
+  async getProjects(userId: string): Promise<Project[]> {
+    return await db.select().from(projects).where(eq(projects.userId, userId));
   }
 
   async getProject(id: string): Promise<Project | undefined> {
@@ -258,7 +308,7 @@ export class DbStorage implements IStorage {
 
     await db.transaction(async (tx) => {
       for (let position = 1; position <= 5; position++) {
-        const id = Math.random().toString(36).substr(2, 9);
+        const id = randomUUID();
         const deps: string[] = previousSkillId ? [previousSkillId] : [];
         const isFirstNode = level === 1 && position === 1;
         const skillData: typeof skills.$inferInsert = {

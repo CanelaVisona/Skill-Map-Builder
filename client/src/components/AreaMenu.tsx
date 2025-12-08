@@ -1,7 +1,8 @@
 import { useSkillTree, iconMap, type Project } from "@/lib/skill-context";
+import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, PanelLeftClose, PanelLeftOpen, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2 } from "lucide-react";
+import { Plus, PanelLeftClose, PanelLeftOpen, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut } from "lucide-react";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 import { Popover, PopoverContent, PopoverAnchor } from "./ui/popover";
@@ -290,6 +291,7 @@ function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete }: Proj
 
 export function AreaMenu() {
   const { areas, activeAreaId, setActiveAreaId, createArea, deleteArea, projects, activeProjectId, setActiveProjectId, createProject, deleteProject } = useSkillTree();
+  const { user, logout } = useAuth();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isOpen, setIsOpen] = useState(true);
   const [dialogStep, setDialogStep] = useState<DialogStep>("choose");
@@ -489,6 +491,24 @@ export function AreaMenu() {
       </div>
 
       <div className="p-2 border-t border-border space-y-2">
+        {isOpen && user && (
+          <div className="px-2 py-1 text-xs text-muted-foreground truncate" data-testid="text-current-user">
+            {user.username}
+          </div>
+        )}
+        <Button 
+          variant="ghost" 
+          size={isOpen ? "default" : "icon"}
+          className={cn(
+            "w-full text-muted-foreground hover:text-foreground",
+            !isOpen && "aspect-square p-0"
+          )}
+          onClick={logout}
+          data-testid="button-logout"
+        >
+          <LogOut className={cn("h-4 w-4", isOpen && "mr-2")} />
+          {isOpen && "Cerrar sesión"}
+        </Button>
         <Dialog open={isAddOpen} onOpenChange={handleDialogClose}>
           <DialogTrigger asChild>
             <Button 

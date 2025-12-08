@@ -1,18 +1,136 @@
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertAreaSchema, insertSkillSchema, insertProjectSchema } from "@shared/schema";
 import { fromError } from "zod-validation-error";
+import cookieParser from "cookie-parser";
+
+declare global {
+  namespace Express {
+    interface Request {
+      userId?: string;
+    }
+  }
+}
+
+const SESSION_COOKIE_NAME = "session_id";
+const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+async function sessionMiddleware(req: Request, res: Response, next: NextFunction) {
+  const sessionId = req.cookies?.[SESSION_COOKIE_NAME];
+  
+  if (sessionId) {
+    const session = await storage.getSession(sessionId);
+    if (session && new Date(session.expiresAt) > new Date()) {
+      req.userId = session.userId;
+    }
+  }
+  
+  next();
+}
+
+function requireAuth(req: Request, res: Response, next: NextFunction) {
+  if (!req.userId) {
+    res.status(401).json({ message: "No autenticado" });
+    return;
+  }
+  next();
+}
+
+async function verifySkillOwnership(skillOrId: string | { areaId: string | null; projectId: string | null; parentSkillId: string | null }, userId: string, maxDepth = 10): Promise<boolean> {
+  const skill = typeof skillOrId === "string" 
+    ? await storage.getSkill(skillOrId) 
+    : skillOrId;
+  
+  if (!skill) return false;
+  if (maxDepth <= 0) return false;
+  
+  if (skill.areaId) {
+    const area = await storage.getArea(skill.areaId);
+    return area !== undefined && area.userId === userId;
+  }
+  
+  if (skill.projectId) {
+    const project = await storage.getProject(skill.projectId);
+    return project !== undefined && project.userId === userId;
+  }
+  
+  if (skill.parentSkillId) {
+    return verifySkillOwnership(skill.parentSkillId, userId, maxDepth - 1);
+  }
+  
+  return false;
+}
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
   
-  // Areas
-  app.get("/api/areas", async (req, res) => {
+  app.use(cookieParser());
+  app.use(sessionMiddleware);
+  
+  // Auth routes
+  app.post("/api/login", async (req, res) => {
     try {
-      const areas = await storage.getAreas();
+      const { username } = req.body;
+      
+      if (!username || typeof username !== "string" || username.trim().length === 0) {
+        res.status(400).json({ message: "Nombre de usuario requerido" });
+        return;
+      }
+      
+      const trimmedUsername = username.trim().toLowerCase();
+      
+      let user = await storage.getUserByUsername(trimmedUsername);
+      if (!user) {
+        user = await storage.createUser(trimmedUsername);
+      }
+      
+      const expiresAt = new Date(Date.now() + SESSION_DURATION_MS);
+      const session = await storage.createSession(user.id, expiresAt);
+      
+      res.cookie(SESSION_COOKIE_NAME, session.id, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: SESSION_DURATION_MS,
+      });
+      
+      res.json({ user: { id: user.id, username: user.username } });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
+  app.post("/api/logout", async (req, res) => {
+    const sessionId = req.cookies?.[SESSION_COOKIE_NAME];
+    if (sessionId) {
+      await storage.deleteSession(sessionId);
+    }
+    res.clearCookie(SESSION_COOKIE_NAME);
+    res.json({ message: "Sesión cerrada" });
+  });
+  
+  app.get("/api/me", async (req, res) => {
+    if (!req.userId) {
+      res.json({ user: null });
+      return;
+    }
+    
+    const user = await storage.getUserById(req.userId);
+    if (!user) {
+      res.json({ user: null });
+      return;
+    }
+    
+    res.json({ user: { id: user.id, username: user.username } });
+  });
+  
+  // Areas (protected)
+  app.get("/api/areas", requireAuth, async (req, res) => {
+    try {
+      const areas = await storage.getAreas(req.userId!);
       const areasWithSkills = await Promise.all(
         areas.map(async (area) => {
           const skills = await storage.getSkills(area.id);
@@ -25,9 +143,10 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/areas", async (req, res) => {
+  app.post("/api/areas", requireAuth, async (req, res) => {
     try {
-      const validatedArea = insertAreaSchema.parse(req.body);
+      const areaData = { ...req.body, userId: req.userId };
+      const validatedArea = insertAreaSchema.parse(areaData);
       const area = await storage.createArea(validatedArea);
       res.status(201).json({ ...area, skills: [] });
     } catch (error: any) {
@@ -36,21 +155,35 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/areas/:id", async (req, res) => {
+  app.patch("/api/areas/:id", requireAuth, async (req, res) => {
     try {
-      const area = await storage.updateArea(req.params.id, req.body);
-      if (!area) {
+      const existingArea = await storage.getArea(req.params.id);
+      if (!existingArea) {
         res.status(404).json({ message: "Area not found" });
         return;
       }
+      if (existingArea.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para modificar esta área" });
+        return;
+      }
+      const area = await storage.updateArea(req.params.id, req.body);
       res.json(area);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
   });
 
-  app.delete("/api/areas/:id", async (req, res) => {
+  app.delete("/api/areas/:id", requireAuth, async (req, res) => {
     try {
+      const existingArea = await storage.getArea(req.params.id);
+      if (!existingArea) {
+        res.status(404).json({ message: "Area not found" });
+        return;
+      }
+      if (existingArea.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para eliminar esta área" });
+        return;
+      }
       await storage.deleteArea(req.params.id);
       res.status(204).send();
     } catch (error: any) {
@@ -58,8 +191,8 @@ export async function registerRoutes(
     }
   });
 
-  // Skills
-  app.post("/api/skills", async (req, res) => {
+  // Skills (protected)
+  app.post("/api/skills", requireAuth, async (req, res) => {
     try {
       const validatedSkill = insertSkillSchema.parse(req.body);
       const skillLevel = validatedSkill.level ?? 1;
@@ -69,6 +202,18 @@ export async function registerRoutes(
       
       if (!validatedSkill.areaId && !validatedSkill.projectId && !validatedSkill.parentSkillId) {
         res.status(400).json({ message: "areaId, projectId, or parentSkillId is required" });
+        return;
+      }
+      
+      // Verify ownership of parent resource using recursive check
+      const isOwner = await verifySkillOwnership({
+        areaId: validatedSkill.areaId || null,
+        projectId: validatedSkill.projectId || null,
+        parentSkillId: validatedSkill.parentSkillId || null
+      }, req.userId!);
+      
+      if (!isOwner) {
+        res.status(403).json({ message: "No tienes permiso para agregar skills a este recurso" });
         return;
       }
       
@@ -121,11 +266,18 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/skills/:id", async (req, res) => {
+  app.patch("/api/skills/:id", requireAuth, async (req, res) => {
     try {
       const existingSkill = await storage.getSkill(req.params.id);
       if (!existingSkill) {
         res.status(404).json({ message: "Skill not found" });
+        return;
+      }
+
+      // Verify ownership using recursive check through parent chain
+      const isOwner = await verifySkillOwnership(existingSkill, req.userId!);
+      if (!isOwner) {
+        res.status(403).json({ message: "No tienes permiso para modificar este skill" });
         return;
       }
 
@@ -161,8 +313,21 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/skills/:id", async (req, res) => {
+  app.delete("/api/skills/:id", requireAuth, async (req, res) => {
     try {
+      const existingSkill = await storage.getSkill(req.params.id);
+      if (!existingSkill) {
+        res.status(404).json({ message: "Skill not found" });
+        return;
+      }
+
+      // Verify ownership using recursive check through parent chain
+      const isOwner = await verifySkillOwnership(existingSkill, req.userId!);
+      if (!isOwner) {
+        res.status(403).json({ message: "No tienes permiso para eliminar este skill" });
+        return;
+      }
+
       await storage.deleteSkill(req.params.id);
       res.status(204).send();
     } catch (error: any) {
@@ -171,13 +336,23 @@ export async function registerRoutes(
   });
 
   // Generate 5 placeholder nodes for a new level (transactional, idempotent)
-  app.post("/api/areas/:id/generate-level", async (req, res) => {
+  app.post("/api/areas/:id/generate-level", requireAuth, async (req, res) => {
     try {
       const { level } = req.body;
       const areaId = req.params.id;
       
       if (!level || typeof level !== "number") {
         res.status(400).json({ message: "Level is required and must be a number" });
+        return;
+      }
+      
+      const existingArea = await storage.getArea(areaId);
+      if (!existingArea) {
+        res.status(404).json({ message: "Area not found" });
+        return;
+      }
+      if (existingArea.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para modificar esta área" });
         return;
       }
       
@@ -211,10 +386,10 @@ export async function registerRoutes(
     }
   });
 
-  // Projects
-  app.get("/api/projects", async (req, res) => {
+  // Projects (protected)
+  app.get("/api/projects", requireAuth, async (req, res) => {
     try {
-      const projectsList = await storage.getProjects();
+      const projectsList = await storage.getProjects(req.userId!);
       const projectsWithSkills = await Promise.all(
         projectsList.map(async (project) => {
           const skills = await storage.getProjectSkills(project.id);
@@ -227,9 +402,10 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/projects", async (req, res) => {
+  app.post("/api/projects", requireAuth, async (req, res) => {
     try {
-      const validatedProject = insertProjectSchema.parse(req.body);
+      const projectData = { ...req.body, userId: req.userId };
+      const validatedProject = insertProjectSchema.parse(projectData);
       const project = await storage.createProject(validatedProject);
       res.status(201).json({ ...project, skills: [] });
     } catch (error: any) {
@@ -238,8 +414,17 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/projects/:id", async (req, res) => {
+  app.delete("/api/projects/:id", requireAuth, async (req, res) => {
     try {
+      const existingProject = await storage.getProject(req.params.id);
+      if (!existingProject) {
+        res.status(404).json({ message: "Project not found" });
+        return;
+      }
+      if (existingProject.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para eliminar este proyecto" });
+        return;
+      }
       await storage.deleteProject(req.params.id);
       res.status(204).send();
     } catch (error: any) {
@@ -247,13 +432,23 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/projects/:id/generate-level", async (req, res) => {
+  app.post("/api/projects/:id/generate-level", requireAuth, async (req, res) => {
     try {
       const { level } = req.body;
       const projectId = req.params.id;
       
       if (!level || typeof level !== "number") {
         res.status(400).json({ message: "Level is required and must be a number" });
+        return;
+      }
+      
+      const existingProject = await storage.getProject(projectId);
+      if (!existingProject) {
+        res.status(404).json({ message: "Project not found" });
+        return;
+      }
+      if (existingProject.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para modificar este proyecto" });
         return;
       }
       
@@ -283,10 +478,22 @@ export async function registerRoutes(
     }
   });
 
-  // Skills for projects
-  app.post("/api/projects/:id/skills", async (req, res) => {
+  // Skills for projects (protected)
+  app.post("/api/projects/:id/skills", requireAuth, async (req, res) => {
     try {
       const projectId = req.params.id;
+      
+      // Verify project ownership
+      const existingProject = await storage.getProject(projectId);
+      if (!existingProject) {
+        res.status(404).json({ message: "Project not found" });
+        return;
+      }
+      if (existingProject.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para agregar skills a este proyecto" });
+        return;
+      }
+      
       const validatedSkill = insertSkillSchema.parse({ ...req.body, projectId });
       const skillLevel = validatedSkill.level ?? 1;
       
@@ -320,8 +527,8 @@ export async function registerRoutes(
     }
   });
 
-  // Sub-skills
-  app.get("/api/skills/:id/subskills", async (req, res) => {
+  // Sub-skills (protected)
+  app.get("/api/skills/:id/subskills", requireAuth, async (req, res) => {
     try {
       const parentSkillId = req.params.id;
       const subSkills = await storage.getSubSkills(parentSkillId);
@@ -331,13 +538,20 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/skills/:id/subskills/generate-level", async (req, res) => {
+  app.post("/api/skills/:id/subskills/generate-level", requireAuth, async (req, res) => {
     try {
       const { level } = req.body;
       const parentSkillId = req.params.id;
       
       if (!level || typeof level !== "number") {
         res.status(400).json({ message: "Level is required and must be a number" });
+        return;
+      }
+      
+      // Verify ownership of parent skill using recursive check
+      const isOwner = await verifySkillOwnership(parentSkillId, req.userId!);
+      if (!isOwner) {
+        res.status(403).json({ message: "No tienes permiso para agregar sub-skills a este recurso" });
         return;
       }
       
@@ -364,9 +578,17 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/skills/:id/subskills", async (req, res) => {
+  app.post("/api/skills/:id/subskills", requireAuth, async (req, res) => {
     try {
       const parentSkillId = req.params.id;
+      
+      // Verify ownership of parent skill using recursive check
+      const isOwner = await verifySkillOwnership(parentSkillId, req.userId!);
+      if (!isOwner) {
+        res.status(403).json({ message: "No tienes permiso para agregar sub-skills a este recurso" });
+        return;
+      }
+      
       const validatedSkill = insertSkillSchema.parse({ ...req.body, parentSkillId });
       const skillLevel = validatedSkill.level ?? 1;
       
