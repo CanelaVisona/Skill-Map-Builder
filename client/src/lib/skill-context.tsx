@@ -163,8 +163,11 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     };
 
     const newStatus = nextStatus[skill.status];
-    const isFinalNodeBeingMastered = skill.isFinalNode === 1 && newStatus === "mastered";
-    const isFinalNodeBeingUnmastered = skill.isFinalNode === 1 && skill.status === "mastered" && newStatus === "available";
+    // When isFinalNode === 1 (has star), it should NOT open new levels - it's the final point
+    // When isFinalNode === 0 (no star), it CAN open new levels
+    const canOpenNewLevels = skill.isFinalNode !== 1;
+    const isOpeningNewLevel = canOpenNewLevels && newStatus === "mastered";
+    const isClosingLevel = canOpenNewLevels && skill.status === "mastered" && newStatus === "available";
 
     try {
       await fetch(`/api/skills/${skillId}`, {
@@ -173,7 +176,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({ status: newStatus }),
       });
 
-      if (isFinalNodeBeingMastered) {
+      if (isOpeningNewLevel) {
         const newUnlockedLevel = skill.level + 1;
         
         // Generate 5 placeholder nodes for the new level (this also updates area in a transaction)
@@ -217,7 +220,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
             ]
           };
         }));
-      } else if (isFinalNodeBeingUnmastered) {
+      } else if (isClosingLevel) {
         const revertedLevel = skill.level;
         
         const higherLevelSkills = area.skills.filter(s => s.level > revertedLevel);
@@ -283,8 +286,11 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     };
 
     const newStatus = nextStatus[skill.status];
-    const isFinalNodeBeingMastered = skill.isFinalNode === 1 && newStatus === "mastered";
-    const isFinalNodeBeingUnmastered = skill.isFinalNode === 1 && skill.status === "mastered" && newStatus === "available";
+    // When isFinalNode === 1 (has star), it should NOT open new levels - it's the final point
+    // When isFinalNode === 0 (no star), it CAN open new levels
+    const canOpenNewLevels = skill.isFinalNode !== 1;
+    const isOpeningNewLevel = canOpenNewLevels && newStatus === "mastered";
+    const isClosingLevel = canOpenNewLevels && skill.status === "mastered" && newStatus === "available";
 
     try {
       await fetch(`/api/skills/${skillId}`, {
@@ -293,7 +299,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({ status: newStatus }),
       });
 
-      if (isFinalNodeBeingMastered) {
+      if (isOpeningNewLevel) {
         const newUnlockedLevel = skill.level + 1;
         
         const generateResponse = await fetch(`/api/projects/${projectId}/generate-level`, {
@@ -334,7 +340,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
             ]
           };
         }));
-      } else if (isFinalNodeBeingUnmastered) {
+      } else if (isClosingLevel) {
         const revertedLevel = skill.level;
         
         const higherLevelSkills = project.skills.filter(s => s.level > revertedLevel);
