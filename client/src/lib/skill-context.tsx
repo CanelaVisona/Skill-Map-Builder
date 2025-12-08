@@ -1617,7 +1617,14 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
         const allDepsMastered = dependencies.length === 0 || 
           dependencies.every(dep => dep && dep.status === "mastered");
         
-        if (allDepsMastered) {
+        // Final nodes can only be unlocked if ALL other nodes in the level are mastered
+        if (skill.isFinalNode === 1) {
+          const otherNodesInLevel = area.skills.filter(s => s.level === skill.level && s.id !== skill.id);
+          const allOthersMastered = otherNodesInLevel.every(s => s.status === "mastered");
+          if (allDepsMastered && allOthersMastered) {
+            updatesToMake.push({ skillId: skill.id, newStatus: "available" });
+          }
+        } else if (allDepsMastered) {
           updatesToMake.push({ skillId: skill.id, newStatus: "available" });
         }
       });
@@ -1663,7 +1670,14 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
         const allDepsMastered = dependencies.length === 0 || 
           dependencies.every(dep => dep && dep.status === "mastered");
         
-        if (allDepsMastered) {
+        // Final nodes can only be unlocked if ALL other nodes in the level are mastered
+        if (skill.isFinalNode === 1) {
+          const otherNodesInLevel = project.skills.filter(s => s.level === skill.level && s.id !== skill.id);
+          const allOthersMastered = otherNodesInLevel.every(s => s.status === "mastered");
+          if (allDepsMastered && allOthersMastered) {
+            updatesToMake.push({ skillId: skill.id, newStatus: "available" });
+          }
+        } else if (allDepsMastered) {
           updatesToMake.push({ skillId: skill.id, newStatus: "available" });
         }
       });
