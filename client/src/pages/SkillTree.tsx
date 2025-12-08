@@ -1,4 +1,4 @@
-import { SkillTreeProvider, useSkillTree } from "@/lib/skill-context";
+import { SkillTreeProvider, useSkillTree, type Skill } from "@/lib/skill-context";
 import { AreaMenu } from "@/components/AreaMenu";
 import { SkillNode } from "@/components/SkillNode";
 import { SkillConnection } from "@/components/SkillConnection";
@@ -23,9 +23,62 @@ function SkillCanvas() {
   const isProject = !activeArea && !!activeProject;
   const isSubSkillView = !!activeParentSkillId;
 
+  // Helper function to calculate visible levels dynamically
+  // The lowest level is always visible
+  // Level N is visible only if the final node (highest Y) of the previous level is mastered
+  const calculateVisibleLevels = (skills: Skill[]): Set<number> => {
+    const visibleLevels = new Set<number>();
+    
+    // Group skills by level
+    const levelMap = new Map<number, Skill[]>();
+    skills.forEach(skill => {
+      if (!levelMap.has(skill.level)) {
+        levelMap.set(skill.level, []);
+      }
+      levelMap.get(skill.level)!.push(skill);
+    });
+    
+    // Get sorted levels
+    const sortedLevels = Array.from(levelMap.keys()).sort((a, b) => a - b);
+    
+    if (sortedLevels.length === 0) return visibleLevels;
+    
+    // The first (lowest) level is always visible
+    const firstLevel = sortedLevels[0];
+    visibleLevels.add(firstLevel);
+    
+    // For each subsequent level, check if the final node of the previous level is mastered
+    for (let i = 1; i < sortedLevels.length; i++) {
+      const currentLevel = sortedLevels[i];
+      const previousLevel = sortedLevels[i - 1];
+      
+      const previousLevelSkills = levelMap.get(previousLevel);
+      if (previousLevelSkills && previousLevelSkills.length > 0) {
+        // Find the final node (highest Y position) of previous level
+        const finalNodeOfPreviousLevel = previousLevelSkills.reduce(
+          (max, s) => s.y > max.y ? s : max,
+          previousLevelSkills[0]
+        );
+        
+        // Only show this level if the final node of previous level is mastered
+        if (finalNodeOfPreviousLevel.status === "mastered") {
+          visibleLevels.add(currentLevel);
+        } else {
+          // Stop checking further levels since this level is not visible
+          break;
+        }
+      }
+    }
+    
+    return visibleLevels;
+  };
+
   if (isSubSkillView) {
     const currentParent = parentSkillStack[parentSkillStack.length - 1];
-    const visibleSkills = subSkills;
+    
+    // Apply the same visibility logic to sub-skills
+    const subSkillVisibleLevels = calculateVisibleLevels(subSkills);
+    const visibleSkills = subSkills.filter(s => subSkillVisibleLevels.has(s.level));
 
     const firstSkillOfLevel = new Set<string>();
     const levelGroups = new Map<number, typeof visibleSkills>();
@@ -133,7 +186,8 @@ function SkillCanvas() {
 
   if (!activeItem) return null;
 
-  const visibleSkills = activeItem.skills.filter(s => s.level <= activeItem.unlockedLevel);
+  const visibleLevels = calculateVisibleLevels(activeItem.skills);
+  const visibleSkills = activeItem.skills.filter(s => visibleLevels.has(s.level));
 
   // Find the first skill of each level (lowest Y position per level)
   const firstSkillOfLevel = new Set<string>();
