@@ -1,9 +1,22 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, jsonb, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+export const users = pgTable("users", {
+  id: varchar("id").primaryKey(),
+  username: text("username").notNull().unique(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const sessions = pgTable("sessions", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  expiresAt: timestamp("expires_at").notNull(),
+});
+
 export const areas = pgTable("areas", {
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
   id: varchar("id").primaryKey(),
   name: text("name").notNull(),
   icon: text("icon").notNull(),
@@ -32,6 +45,7 @@ export const skills = pgTable("skills", {
 });
 
 export const projects = pgTable("projects", {
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
   id: varchar("id").primaryKey(),
   name: text("name").notNull(),
   icon: text("icon").notNull(),
@@ -41,10 +55,16 @@ export const projects = pgTable("projects", {
   levelSubtitles: jsonb("level_subtitles").notNull().$type<Record<string, string>>().default({}),
 });
 
+export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
+export const insertSessionSchema = createInsertSchema(sessions).omit({ id: true });
 export const insertAreaSchema = createInsertSchema(areas);
 export const insertSkillSchema = createInsertSchema(skills).omit({ id: true });
 export const insertProjectSchema = createInsertSchema(projects);
 
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type User = typeof users.$inferSelect;
+export type InsertSession = z.infer<typeof insertSessionSchema>;
+export type Session = typeof sessions.$inferSelect;
 export type InsertArea = z.infer<typeof insertAreaSchema>;
 export type Area = typeof areas.$inferSelect;
 export type InsertSkill = z.infer<typeof insertSkillSchema>;
