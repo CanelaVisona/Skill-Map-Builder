@@ -234,7 +234,6 @@ export async function registerRoutes(
         }
         
         const levelPosition = currentCount + 1;
-        const isFinalNode = levelPosition === 5 ? 1 : 0;
         
         const enforcedStatus = levelPosition > 1 ? "locked" : validatedSkill.status;
         const enforcedManualLock = levelPosition > 1 ? 0 : (validatedSkill.manualLock || 0);
@@ -243,7 +242,7 @@ export async function registerRoutes(
           ...validatedSkill,
           level: skillLevel,
           levelPosition,
-          isFinalNode: isFinalNode as 0 | 1,
+          isFinalNode: 0 as 0 | 1,
           status: enforcedStatus,
           manualLock: enforcedManualLock as 0 | 1,
         };
@@ -505,7 +504,6 @@ export async function registerRoutes(
       }
       
       const levelPosition = currentCount + 1;
-      const isFinalNode = levelPosition === 5 ? 1 : 0;
       const enforcedStatus = levelPosition > 1 ? "locked" : validatedSkill.status;
       const enforcedManualLock = levelPosition > 1 ? 0 : (validatedSkill.manualLock || 0);
       
@@ -514,7 +512,7 @@ export async function registerRoutes(
         projectId,
         level: skillLevel,
         levelPosition,
-        isFinalNode: isFinalNode as 0 | 1,
+        isFinalNode: 0 as 0 | 1,
         status: enforcedStatus,
         manualLock: enforcedManualLock as 0 | 1,
       };
@@ -600,7 +598,6 @@ export async function registerRoutes(
       }
       
       const levelPosition = currentCount + 1;
-      const isFinalNode = levelPosition === 5 ? 1 : 0;
       const enforcedStatus = levelPosition > 1 ? "locked" : validatedSkill.status;
       const enforcedManualLock = levelPosition > 1 ? 0 : (validatedSkill.manualLock || 0);
       
@@ -609,7 +606,7 @@ export async function registerRoutes(
         parentSkillId,
         level: skillLevel,
         levelPosition,
-        isFinalNode: isFinalNode as 0 | 1,
+        isFinalNode: 0 as 0 | 1,
         status: enforcedStatus,
         manualLock: enforcedManualLock as 0 | 1,
       };

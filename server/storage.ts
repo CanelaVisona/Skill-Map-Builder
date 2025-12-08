@@ -209,7 +209,7 @@ export class DbStorage implements IStorage {
           dependencies: deps,
           level,
           levelPosition: position,
-          isFinalNode: (position === 5 ? 1 : 0) as 0 | 1,
+          isFinalNode: 0 as 0 | 1,
           manualLock: 0 as 0 | 1,
         };
 
@@ -250,7 +250,7 @@ export class DbStorage implements IStorage {
           dependencies: deps,
           level,
           levelPosition: position,
-          isFinalNode: (position === 5 ? 1 : 0) as 0 | 1,
+          isFinalNode: 0 as 0 | 1,
           manualLock: 0 as 0 | 1,
         };
 
@@ -322,7 +322,7 @@ export class DbStorage implements IStorage {
           dependencies: deps,
           level,
           levelPosition: position,
-          isFinalNode: (position === 5 ? 1 : 0) as 0 | 1,
+          isFinalNode: 0 as 0 | 1,
           manualLock: 0 as 0 | 1,
         };
 
