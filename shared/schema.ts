@@ -11,6 +11,7 @@ export const areas = pgTable("areas", {
   description: text("description").notNull(),
   unlockedLevel: integer("unlocked_level").notNull().default(1),
   nextLevelToAssign: integer("next_level_to_assign").notNull().default(1),
+  levelSubtitles: jsonb("level_subtitles").notNull().$type<Record<string, string>>().default({}),
 });
 
 export const skills = pgTable("skills", {
@@ -37,6 +38,7 @@ export const projects = pgTable("projects", {
   description: text("description").notNull(),
   unlockedLevel: integer("unlocked_level").notNull().default(1),
   nextLevelToAssign: integer("next_level_to_assign").notNull().default(1),
+  levelSubtitles: jsonb("level_subtitles").notNull().$type<Record<string, string>>().default({}),
 });
 
 export const insertAreaSchema = createInsertSchema(areas);

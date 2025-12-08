@@ -28,6 +28,7 @@ export interface Area {
   description: string;
   unlockedLevel: number;
   nextLevelToAssign: number;
+  levelSubtitles: Record<string, string>;
   skills: Skill[];
 }
 
@@ -38,6 +39,7 @@ export interface Project {
   description: string;
   unlockedLevel: number;
   nextLevelToAssign: number;
+  levelSubtitles: Record<string, string>;
   skills: Skill[];
 }
 
@@ -84,6 +86,8 @@ interface SkillTreeContextType {
   addSkillBelow: (areaId: string, skillId: string) => Promise<void>;
   addProjectSkillBelow: (projectId: string, skillId: string) => Promise<void>;
   addSubSkillBelow: (skillId: string) => Promise<void>;
+  updateLevelSubtitle: (areaId: string, level: number, subtitle: string) => Promise<void>;
+  updateProjectLevelSubtitle: (projectId: string, level: number, subtitle: string) => Promise<void>;
 }
 
 const SkillTreeContext = createContext<SkillTreeContextType | undefined>(undefined);
@@ -1632,6 +1636,48 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [projects, isLoading]);
 
+  const updateLevelSubtitle = async (areaId: string, level: number, subtitle: string) => {
+    const area = areas.find(a => a.id === areaId);
+    if (!area) return;
+
+    const updatedSubtitles = { ...area.levelSubtitles, [level.toString()]: subtitle };
+    
+    try {
+      await fetch(`/api/areas/${areaId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ levelSubtitles: updatedSubtitles }),
+      });
+
+      setAreas(prev => prev.map(a => 
+        a.id === areaId ? { ...a, levelSubtitles: updatedSubtitles } : a
+      ));
+    } catch (error) {
+      console.error("Error updating level subtitle:", error);
+    }
+  };
+
+  const updateProjectLevelSubtitle = async (projectId: string, level: number, subtitle: string) => {
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const updatedSubtitles = { ...project.levelSubtitles, [level.toString()]: subtitle };
+    
+    try {
+      await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ levelSubtitles: updatedSubtitles }),
+      });
+
+      setProjects(prev => prev.map(p => 
+        p.id === projectId ? { ...p, levelSubtitles: updatedSubtitles } : p
+      ));
+    } catch (error) {
+      console.error("Error updating project level subtitle:", error);
+    }
+  };
+
   return (
     <SkillTreeContext.Provider value={{ 
       areas, 
@@ -1670,7 +1716,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       moveSubSkill,
       addSkillBelow,
       addProjectSkillBelow,
-      addSubSkillBelow
+      addSubSkillBelow,
+      updateLevelSubtitle,
+      updateProjectLevelSubtitle
     }}>
       {children}
     </SkillTreeContext.Provider>

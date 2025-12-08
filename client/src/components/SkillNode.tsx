@@ -38,6 +38,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
     activeAreaId, 
     activeProjectId,
     activeParentSkillId,
+    activeArea,
+    activeProject,
     deleteSkill, 
     toggleLock, 
     moveSkill, 
@@ -53,7 +55,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
     enterSubSkillTree,
     addSkillBelow,
     addProjectSkillBelow,
-    addSubSkillBelow
+    addSubSkillBelow,
+    updateLevelSubtitle,
+    updateProjectLevelSubtitle
   } = useSkillTree();
   
   const isProject = !activeAreaId && !!activeProjectId;
@@ -65,6 +69,36 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
   const [editDescription, setEditDescription] = useState(skill.description || "");
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPress = useRef(false);
+  
+  const [isSubtitleDialogOpen, setIsSubtitleDialogOpen] = useState(false);
+  const levelSubtitles = isProject ? (activeProject?.levelSubtitles || {}) : (activeArea?.levelSubtitles || {});
+  const currentSubtitle = levelSubtitles[skill.level.toString()] || "";
+  const [editSubtitle, setEditSubtitle] = useState(currentSubtitle);
+  const levelLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleLevelLongPressStart = (e: React.TouchEvent | React.MouseEvent) => {
+    e.stopPropagation();
+    levelLongPressTimer.current = setTimeout(() => {
+      setEditSubtitle(currentSubtitle);
+      setIsSubtitleDialogOpen(true);
+    }, 500);
+  };
+
+  const handleLevelLongPressEnd = () => {
+    if (levelLongPressTimer.current) {
+      clearTimeout(levelLongPressTimer.current);
+      levelLongPressTimer.current = null;
+    }
+  };
+
+  const handleSubtitleSave = () => {
+    if (isProject) {
+      updateProjectLevelSubtitle(activeId, skill.level, editSubtitle);
+    } else {
+      updateLevelSubtitle(activeId, skill.level, editSubtitle);
+    }
+    setIsSubtitleDialogOpen(false);
+  };
 
   const handleEditOpen = () => {
     setEditTitle(skill.title);
@@ -167,8 +201,20 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
         >
           {/* Level Marker */}
           {isFirstOfLevel && (
-            <div className="absolute right-14 top-1/2 -translate-y-1/2 whitespace-nowrap text-xs font-semibold text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-full border border-border">
-              Level {skill.level}
+            <div 
+              className="absolute right-14 top-1/2 -translate-y-1/2 whitespace-nowrap text-xs font-semibold text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-full border border-border cursor-pointer select-none"
+              onTouchStart={handleLevelLongPressStart}
+              onTouchEnd={handleLevelLongPressEnd}
+              onTouchCancel={handleLevelLongPressEnd}
+              onMouseDown={handleLevelLongPressStart}
+              onMouseUp={handleLevelLongPressEnd}
+              onMouseLeave={handleLevelLongPressEnd}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div>Level {skill.level}</div>
+              {currentSubtitle && (
+                <div className="text-[10px] text-muted-foreground/70 text-center">{currentSubtitle}</div>
+              )}
             </div>
           )}
 
@@ -378,6 +424,34 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
             Cancelar
           </Button>
           <Button onClick={handleEditSave} data-testid="button-save-edit">
+            Guardar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={isSubtitleDialogOpen} onOpenChange={setIsSubtitleDialogOpen}>
+      <DialogContent className="sm:max-w-[350px]">
+        <DialogHeader>
+          <DialogTitle>Subtítulo del Nivel {skill.level}</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-4 py-4">
+          <div className="grid gap-2">
+            <Label htmlFor="edit-subtitle">Subtítulo</Label>
+            <Input
+              id="edit-subtitle"
+              value={editSubtitle}
+              onChange={(e) => setEditSubtitle(e.target.value)}
+              placeholder="Ej: Fundamentos, Intermedio..."
+              data-testid="input-edit-subtitle"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setIsSubtitleDialogOpen(false)} data-testid="button-cancel-subtitle">
+            Cancelar
+          </Button>
+          <Button onClick={handleSubtitleSave} data-testid="button-save-subtitle">
             Guardar
           </Button>
         </DialogFooter>
