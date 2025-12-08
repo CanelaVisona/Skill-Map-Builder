@@ -491,24 +491,6 @@ export function AreaMenu() {
       </div>
 
       <div className="p-2 border-t border-border space-y-2">
-        {isOpen && user && (
-          <div className="px-2 py-1 text-xs text-muted-foreground truncate" data-testid="text-current-user">
-            {user.username}
-          </div>
-        )}
-        <Button 
-          variant="ghost" 
-          size={isOpen ? "default" : "icon"}
-          className={cn(
-            "w-full text-muted-foreground hover:text-foreground",
-            !isOpen && "aspect-square p-0"
-          )}
-          onClick={logout}
-          data-testid="button-logout"
-        >
-          <LogOut className={cn("h-4 w-4", isOpen && "mr-2")} />
-          {isOpen && "Cerrar sesión"}
-        </Button>
         <Dialog open={isAddOpen} onOpenChange={handleDialogClose}>
           <DialogTrigger asChild>
             <Button 
@@ -573,6 +555,24 @@ export function AreaMenu() {
             )}
           </DialogContent>
         </Dialog>
+        {isOpen && user && (
+          <div className="px-2 py-1 text-xs text-muted-foreground truncate" data-testid="text-current-user">
+            {user.username}
+          </div>
+        )}
+        <Button 
+          variant="ghost" 
+          size={isOpen ? "default" : "icon"}
+          className={cn(
+            "w-full text-muted-foreground hover:text-foreground",
+            !isOpen && "aspect-square p-0"
+          )}
+          onClick={logout}
+          data-testid="button-logout"
+        >
+          <LogOut className={cn("h-4 w-4", isOpen && "mr-2")} />
+          {isOpen && "Cerrar sesión"}
+        </Button>
       </div>
     </motion.div>
   );
