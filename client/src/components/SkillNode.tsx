@@ -28,8 +28,6 @@ interface SkillNodeProps {
 }
 
 export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNodeProps) {
-  const isLocked = skill.status === "locked";
-  const isMastered = skill.status === "mastered";
   const hasStar = skill.isFinalNode === 1; // Has the star activated (final final node)
   const isInicioNode = skill.title.toLowerCase() === "inicio"; // "inicio" nodes are text-only, not interactive
   
@@ -79,6 +77,17 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
   // Calculate if this node is the last node of its level (by Y position)
   const isLastNodeOfLevel = skillsInLevel.length > 0 && 
     skill.y === Math.max(...skillsInLevel.map(s => s.y));
+  
+  // Calculate effective locked state: final nodes (by position or star) should appear locked
+  // if not all other nodes in level are mastered
+  const isFinalNodeByPosition = isLastNodeOfLevel || hasStar;
+  const otherNodesInLevel = skillsInLevel.filter(s => s.id !== skill.id);
+  const allOthersMastered = otherNodesInLevel.every(s => s.status === "mastered");
+  
+  // Effective states: final nodes show as locked if others aren't mastered
+  const shouldForceLock = isFinalNodeByPosition && skill.status !== "mastered" && !allOthersMastered;
+  const isLocked = skill.status === "locked" || shouldForceLock;
+  const isMastered = skill.status === "mastered";
   
   const [isOpen, setIsOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
