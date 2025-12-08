@@ -31,6 +31,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
   const isLocked = skill.status === "locked";
   const isMastered = skill.status === "mastered";
   const hasStar = skill.isFinalNode === 1; // Has the star activated (final final node)
+  const isInicioNode = skill.title.toLowerCase() === "inicio"; // "inicio" nodes are text-only, not interactive
   
   const { 
     activeAreaId, 
@@ -144,6 +145,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
   };
 
   const handleTouchStart = () => {
+    if (isInicioNode) return; // "inicio" nodes are not interactive
     isLongPress.current = false;
     longPressTimer.current = setTimeout(() => {
       isLongPress.current = true;
@@ -159,6 +161,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
   };
 
   const handleClick = (e: React.MouseEvent) => {
+    if (isInicioNode) return; // "inicio" nodes are not interactive
     if (isLongPress.current) {
       e.preventDefault();
       e.stopPropagation();
@@ -179,6 +182,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
   };
 
   const handleMouseDown = () => {
+    if (isInicioNode) return; // "inicio" nodes are not interactive
     isLongPress.current = false;
     longPressTimer.current = setTimeout(() => {
       isLongPress.current = true;
@@ -205,7 +209,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
     <Popover open={isOpen} onOpenChange={handleOpenChange}>
       <PopoverAnchor asChild>
         <div
-          className="absolute -translate-x-1/2 -translate-y-1/2 z-20 cursor-pointer touch-none select-none"
+          className={cn(
+            "absolute -translate-x-1/2 -translate-y-1/2 z-20 touch-none select-none",
+            isInicioNode ? "cursor-default" : "cursor-pointer"
+          )}
           style={{ left: `${skill.x}%`, top: `${skill.y}px` }}
           onClick={handleClick}
           onTouchStart={handleTouchStart}
@@ -273,13 +280,13 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
           )}>
             <span
               onClick={(e) => {
-                if (!isSubSkillView && !isLocked) {
+                if (!isSubSkillView && !isLocked && !isInicioNode) {
                   e.stopPropagation();
                   enterSubSkillTree(skill.id, skill.title);
                 }
               }}
               className={cn(
-                !isSubSkillView && !isLocked && "cursor-pointer hover:underline"
+                !isSubSkillView && !isLocked && !isInicioNode && "cursor-pointer hover:underline"
               )}
               data-testid={`link-skill-title-${skill.id}`}
             >
