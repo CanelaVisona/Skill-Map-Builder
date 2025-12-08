@@ -40,6 +40,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
     activeParentSkillId,
     activeArea,
     activeProject,
+    subSkills,
     deleteSkill, 
     toggleLock, 
     moveSkill, 
@@ -66,6 +67,16 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
   const isProject = !activeAreaId && !!activeProjectId;
   const activeId = activeAreaId || activeProjectId;
   const isSubSkillView = !!activeParentSkillId;
+  
+  // Calculate if all nodes in this level are mastered
+  const currentSkills = isSubSkillView 
+    ? subSkills 
+    : isProject 
+      ? (activeProject?.skills || []) 
+      : (activeArea?.skills || []);
+  const skillsInLevel = currentSkills.filter(s => s.level === skill.level);
+  const isLevelCompleted = skillsInLevel.length > 0 && skillsInLevel.every(s => s.status === "mastered");
+  
   const [isOpen, setIsOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editTitle, setEditTitle] = useState(skill.title);
@@ -233,8 +244,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
               isLocked && isFinalNotMastered && "bg-muted border-amber-400 text-muted-foreground/50",
               !isLocked && !isMastered && !isFinalNotMastered && "bg-card border-border hover:border-foreground/50",
               !isLocked && !isMastered && isFinalNotMastered && "bg-card border-amber-400 hover:border-amber-300",
-              isMastered && !isFinalMastered && "bg-foreground border-foreground text-background shadow-sm",
-              isFinalMastered && "bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/30"
+              isMastered && !isFinalMastered && !isLevelCompleted && "bg-foreground border-foreground text-background shadow-sm",
+              (isFinalMastered || (isMastered && isLevelCompleted)) && "bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/30"
             )}
           >
             {isLocked ? (
