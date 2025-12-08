@@ -91,6 +91,7 @@ interface SkillTreeContextType {
   toggleFinalNode: (areaId: string, skillId: string) => Promise<void>;
   toggleProjectFinalNode: (projectId: string, skillId: string) => Promise<void>;
   toggleSubSkillFinalNode: (skillId: string) => Promise<void>;
+  showLevelUp: boolean;
 }
 
 const SkillTreeContext = createContext<SkillTreeContextType | undefined>(undefined);
@@ -111,6 +112,12 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
   const [activeParentSkillId, setActiveParentSkillId] = useState<string | null>(null);
   const [parentSkillStack, setParentSkillStack] = useState<ParentSkillInfo[]>([]);
   const [subSkills, setSubSkills] = useState<Skill[]>([]);
+  const [showLevelUp, setShowLevelUp] = useState(false);
+
+  const triggerLevelUp = () => {
+    setShowLevelUp(true);
+    setTimeout(() => setShowLevelUp(false), 2000);
+  };
 
   const activeArea = areas.find(a => a.id === activeAreaId);
   const activeProject = projects.find(p => p.id === activeProjectId);
@@ -183,6 +190,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (isOpeningNewLevel) {
+        triggerLevelUp();
         const newUnlockedLevel = skill.level + 1;
         
         // Generate 5 placeholder nodes for the new level (this also updates area in a transaction)
@@ -312,6 +320,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (isOpeningNewLevel) {
+        triggerLevelUp();
         const newUnlockedLevel = skill.level + 1;
         
         const generateResponse = await fetch(`/api/projects/${projectId}/generate-level`, {
@@ -1903,7 +1912,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       updateProjectLevelSubtitle,
       toggleFinalNode,
       toggleProjectFinalNode,
-      toggleSubSkillFinalNode
+      toggleSubSkillFinalNode,
+      showLevelUp
     }}>
       {children}
     </SkillTreeContext.Provider>
