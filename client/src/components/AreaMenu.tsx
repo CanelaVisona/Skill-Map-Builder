@@ -2,7 +2,8 @@ import { useSkillTree, iconMap, type Project } from "@/lib/skill-context";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, PanelLeftClose, PanelLeftOpen, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut } from "lucide-react";
+import { Plus, PanelLeftClose, PanelLeftOpen, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut, Sun, Moon } from "lucide-react";
+import { useTheme } from "next-themes";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 import { Popover, PopoverContent, PopoverAnchor } from "./ui/popover";
@@ -292,6 +293,7 @@ function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete }: Proj
 export function AreaMenu() {
   const { areas, activeAreaId, setActiveAreaId, createArea, deleteArea, projects, activeProjectId, setActiveProjectId, createProject, deleteProject } = useSkillTree();
   const { user, logout } = useAuth();
+  const { theme, setTheme } = useTheme();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isOpen, setIsOpen] = useState(true);
   const [dialogStep, setDialogStep] = useState<DialogStep>("choose");
@@ -555,6 +557,23 @@ export function AreaMenu() {
             )}
           </DialogContent>
         </Dialog>
+        <Button 
+          variant="ghost" 
+          size={isOpen ? "default" : "icon"}
+          className={cn(
+            "w-full text-muted-foreground hover:text-foreground",
+            !isOpen && "aspect-square p-0"
+          )}
+          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          data-testid="button-theme-toggle"
+        >
+          {theme === "dark" ? (
+            <Sun className={cn("h-4 w-4", isOpen && "mr-2")} />
+          ) : (
+            <Moon className={cn("h-4 w-4", isOpen && "mr-2")} />
+          )}
+          {isOpen && (theme === "dark" ? "Modo claro" : "Modo oscuro")}
+        </Button>
         <Button 
           variant="ghost" 
           size={isOpen ? "default" : "icon"}
