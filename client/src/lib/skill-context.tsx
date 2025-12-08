@@ -163,9 +163,14 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     const skill = area.skills.find(s => s.id === skillId);
     if (!skill) return;
 
-    // Check if this is a final node - can only be confirmed if all other nodes in level are mastered
     const skillsInLevel = area.skills.filter(s => s.level === skill.level);
-    if (skill.isFinalNode === 1 && skill.status !== "mastered") {
+    const isLastNodeOfLevel = skillsInLevel.length > 0 && 
+      skill.y === Math.max(...skillsInLevel.map(s => s.y));
+    
+    // Check if this is a final node (has star OR is last node by position)
+    // Can only be confirmed if all other nodes in level are mastered
+    const isFinalNodeByPosition = isLastNodeOfLevel || skill.isFinalNode === 1;
+    if (isFinalNodeByPosition && skill.status !== "mastered") {
       const otherNodesInLevel = skillsInLevel.filter(s => s.id !== skill.id);
       const allOthersMastered = otherNodesInLevel.every(s => s.status === "mastered");
       if (!allOthersMastered) {
@@ -180,8 +185,6 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     };
 
     const newStatus = nextStatus[skill.status];
-    const isLastNodeOfLevel = skillsInLevel.length > 0 && 
-      skill.y === Math.max(...skillsInLevel.map(s => s.y));
     
     // Last node of level can open new levels, UNLESS it has the star (isFinalNode === 1)
     const hasStar = skill.isFinalNode === 1;
@@ -300,9 +303,14 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     const skill = project.skills.find(s => s.id === skillId);
     if (!skill) return;
 
-    // Check if this is a final node - can only be confirmed if all other nodes in level are mastered
     const skillsInLevel = project.skills.filter(s => s.level === skill.level);
-    if (skill.isFinalNode === 1 && skill.status !== "mastered") {
+    const isLastNodeOfLevel = skillsInLevel.length > 0 && 
+      skill.y === Math.max(...skillsInLevel.map(s => s.y));
+    
+    // Check if this is a final node (has star OR is last node by position)
+    // Can only be confirmed if all other nodes in level are mastered
+    const isFinalNodeByPosition = isLastNodeOfLevel || skill.isFinalNode === 1;
+    if (isFinalNodeByPosition && skill.status !== "mastered") {
       const otherNodesInLevel = skillsInLevel.filter(s => s.id !== skill.id);
       const allOthersMastered = otherNodesInLevel.every(s => s.status === "mastered");
       if (!allOthersMastered) {
@@ -317,8 +325,6 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     };
 
     const newStatus = nextStatus[skill.status];
-    const isLastNodeOfLevel = skillsInLevel.length > 0 && 
-      skill.y === Math.max(...skillsInLevel.map(s => s.y));
     
     // Last node of level can open new levels, UNLESS it has the star (isFinalNode === 1)
     const hasStar = skill.isFinalNode === 1;
@@ -1598,7 +1604,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Auto-unlock logic for areas
+  // Auto-unlock logic for areas (also re-locks final nodes that shouldn't be available)
   useEffect(() => {
     if (isLoading || areas.length === 0) return;
 
@@ -1606,9 +1612,23 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
 
     areas.forEach(area => {
       area.skills.forEach(skill => {
-        if (skill.status !== "locked") return;
         if (skill.manualLock) return;
         if (skill.level > area.unlockedLevel) return;
+
+        const skillsInLevel = area.skills.filter(s => s.level === skill.level);
+        const isLastNodeOfLevel = skillsInLevel.length > 0 && 
+          skill.y === Math.max(...skillsInLevel.map(s => s.y));
+        const isFinalNodeByPosition = isLastNodeOfLevel || skill.isFinalNode === 1;
+        const otherNodesInLevel = skillsInLevel.filter(s => s.id !== skill.id);
+        const allOthersMastered = otherNodesInLevel.every(s => s.status === "mastered");
+
+        // Re-lock final nodes that are "available" but shouldn't be
+        if (skill.status === "available" && isFinalNodeByPosition && !allOthersMastered) {
+          updatesToMake.push({ skillId: skill.id, newStatus: "locked" });
+          return;
+        }
+
+        if (skill.status !== "locked") return;
 
         const dependencies = skill.dependencies.map(depId => 
           area.skills.find(s => s.id === depId)
@@ -1617,10 +1637,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
         const allDepsMastered = dependencies.length === 0 || 
           dependencies.every(dep => dep && dep.status === "mastered");
         
-        // Final nodes can only be unlocked if ALL other nodes in the level are mastered
-        if (skill.isFinalNode === 1) {
-          const otherNodesInLevel = area.skills.filter(s => s.level === skill.level && s.id !== skill.id);
-          const allOthersMastered = otherNodesInLevel.every(s => s.status === "mastered");
+        // Final nodes (has star OR is last node by position) can only be unlocked if ALL other nodes in the level are mastered
+        if (isFinalNodeByPosition) {
           if (allDepsMastered && allOthersMastered) {
             updatesToMake.push({ skillId: skill.id, newStatus: "available" });
           }
@@ -1651,7 +1669,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [areas, isLoading]);
 
-  // Auto-unlock logic for projects
+  // Auto-unlock logic for projects (also re-locks final nodes that shouldn't be available)
   useEffect(() => {
     if (isLoading || projects.length === 0) return;
 
@@ -1659,9 +1677,23 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
 
     projects.forEach(project => {
       project.skills.forEach(skill => {
-        if (skill.status !== "locked") return;
         if (skill.manualLock) return;
         if (skill.level > project.unlockedLevel) return;
+
+        const skillsInLevel = project.skills.filter(s => s.level === skill.level);
+        const isLastNodeOfLevel = skillsInLevel.length > 0 && 
+          skill.y === Math.max(...skillsInLevel.map(s => s.y));
+        const isFinalNodeByPosition = isLastNodeOfLevel || skill.isFinalNode === 1;
+        const otherNodesInLevel = skillsInLevel.filter(s => s.id !== skill.id);
+        const allOthersMastered = otherNodesInLevel.every(s => s.status === "mastered");
+
+        // Re-lock final nodes that are "available" but shouldn't be
+        if (skill.status === "available" && isFinalNodeByPosition && !allOthersMastered) {
+          updatesToMake.push({ skillId: skill.id, newStatus: "locked" });
+          return;
+        }
+
+        if (skill.status !== "locked") return;
 
         const dependencies = skill.dependencies.map(depId => 
           project.skills.find(s => s.id === depId)
@@ -1670,10 +1702,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
         const allDepsMastered = dependencies.length === 0 || 
           dependencies.every(dep => dep && dep.status === "mastered");
         
-        // Final nodes can only be unlocked if ALL other nodes in the level are mastered
-        if (skill.isFinalNode === 1) {
-          const otherNodesInLevel = project.skills.filter(s => s.level === skill.level && s.id !== skill.id);
-          const allOthersMastered = otherNodesInLevel.every(s => s.status === "mastered");
+        // Final nodes (has star OR is last node by position) can only be unlocked if ALL other nodes in the level are mastered
+        if (isFinalNodeByPosition) {
           if (allDepsMastered && allOthersMastered) {
             updatesToMake.push({ skillId: skill.id, newStatus: "available" });
           }
