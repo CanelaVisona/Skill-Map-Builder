@@ -3,8 +3,30 @@ import { AreaMenu } from "@/components/AreaMenu";
 import { SkillNode } from "@/components/SkillNode";
 import { SkillConnection } from "@/components/SkillConnection";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Sun, Moon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useTheme } from "next-themes";
+
+function ThemeToggle() {
+  const { theme, setTheme, resolvedTheme } = useTheme();
+  const currentTheme = resolvedTheme || theme;
+  
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="fixed top-4 right-4 z-50 rounded-full bg-background/80 backdrop-blur-sm border border-border shadow-lg"
+      onClick={() => setTheme(currentTheme === "dark" ? "light" : "dark")}
+      data-testid="button-theme-toggle"
+    >
+      {currentTheme === "dark" ? (
+        <Sun className="h-5 w-5 text-yellow-500" />
+      ) : (
+        <Moon className="h-5 w-5 text-slate-700" />
+      )}
+    </Button>
+  );
+}
 
 
 function SkillCanvas() {
@@ -333,6 +355,7 @@ export default function SkillTreePage() {
   return (
     <SkillTreeProvider>
       <div className="flex h-screen w-full bg-background text-foreground overflow-hidden font-body selection:bg-primary/30">
+        <ThemeToggle />
         <AreaMenu />
         <SkillCanvas />
       </div>
