@@ -435,7 +435,7 @@ export function AreaMenu() {
               className="overflow-hidden whitespace-nowrap"
             >
               <h1 className="text-lg font-bold tracking-tight">
-                LIFEGAME
+                LIFEGAME {user && <span className="font-normal text-muted-foreground">| {user.username}</span>}
               </h1>
             </motion.div>
           )}
@@ -555,11 +555,6 @@ export function AreaMenu() {
             )}
           </DialogContent>
         </Dialog>
-        {isOpen && user && (
-          <div className="px-2 py-1 text-xs text-muted-foreground truncate" data-testid="text-current-user">
-            {user.username}
-          </div>
-        )}
         <Button 
           variant="ghost" 
           size={isOpen ? "default" : "icon"}
