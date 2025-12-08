@@ -17,6 +17,7 @@ export const skills = pgTable("skills", {
   id: varchar("id").primaryKey(),
   areaId: varchar("area_id").references(() => areas.id, { onDelete: "cascade" }),
   projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  parentSkillId: varchar("parent_skill_id"),
   title: text("title").notNull(),
   description: text("description").notNull(),
   status: text("status").notNull(),
