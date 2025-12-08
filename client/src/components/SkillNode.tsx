@@ -285,7 +285,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
              <Button 
                variant="outline" 
                size="sm" 
-               className="h-8 px-3 text-xs"
+               className="h-8 w-8 p-0 text-xs"
                onClick={() => {
                  if (isSubSkillView) {
                    addSubSkillBelow(skill.id);
@@ -298,8 +298,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
                }}
                data-testid="button-add-skill-below"
              >
-               <Plus className="mr-2 h-3 w-3" />
-               Agregar abajo
+               +
              </Button>
 
              {!isLocked && (
