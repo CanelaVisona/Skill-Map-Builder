@@ -81,6 +81,9 @@ interface SkillTreeContextType {
   deleteSubSkill: (skillId: string) => void;
   toggleSubSkillLock: (skillId: string) => void;
   moveSubSkill: (skillId: string, direction: "up" | "down") => void;
+  addSkillBelow: (areaId: string, skillId: string) => Promise<void>;
+  addProjectSkillBelow: (projectId: string, skillId: string) => Promise<void>;
+  addSubSkillBelow: (skillId: string) => Promise<void>;
 }
 
 const SkillTreeContext = createContext<SkillTreeContextType | undefined>(undefined);
@@ -1303,6 +1306,240 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const addSkillBelow = async (areaId: string, skillId: string) => {
+    const area = areas.find(a => a.id === areaId);
+    if (!area) return;
+
+    const clickedSkill = area.skills.find(s => s.id === skillId);
+    if (!clickedSkill) return;
+
+    const sameLevelSkills = area.skills
+      .filter(s => s.level === clickedSkill.level)
+      .sort((a, b) => a.y - b.y);
+
+    const finalNode = sameLevelSkills.find(s => s.isFinalNode === 1);
+    const newY = clickedSkill.y + 150;
+
+    try {
+      const nodesToShift = area.skills.filter(s => s.y > clickedSkill.y);
+      for (const node of nodesToShift) {
+        const newNodeY = node.y + 150;
+        const newLevelPosition = (node.levelPosition || 0) + 1;
+        await fetch(`/api/skills/${node.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ y: newNodeY, levelPosition: newLevelPosition }),
+        });
+      }
+
+      const newSkillData = {
+        areaId,
+        title: "?",
+        description: "",
+        x: clickedSkill.x,
+        y: newY,
+        status: "locked" as SkillStatus,
+        dependencies: [clickedSkill.id],
+        level: clickedSkill.level,
+        levelPosition: (clickedSkill.levelPosition || 0) + 1,
+        isFinalNode: 0,
+        manualLock: 0,
+      };
+
+      const response = await fetch("/api/skills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newSkillData),
+      });
+      const newSkill = await response.json();
+
+      if (finalNode && finalNode.dependencies.includes(clickedSkill.id)) {
+        const updatedDeps = finalNode.dependencies.map(d => d === clickedSkill.id ? newSkill.id : d);
+        await fetch(`/api/skills/${finalNode.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dependencies: updatedDeps }),
+        });
+      }
+
+      setAreas(prev => prev.map(a => {
+        if (a.id !== areaId) return a;
+        return {
+          ...a,
+          skills: [
+            ...a.skills.map(s => {
+              let updated = { ...s };
+              if (s.y > clickedSkill.y) {
+                updated = { ...updated, y: s.y + 150, levelPosition: (s.levelPosition || 0) + 1 };
+              }
+              if (finalNode && s.id === finalNode.id && finalNode.dependencies.includes(clickedSkill.id)) {
+                const updatedDeps = s.dependencies.map(d => d === clickedSkill.id ? newSkill.id : d);
+                updated = { ...updated, dependencies: updatedDeps };
+              }
+              return updated;
+            }),
+            newSkill
+          ]
+        };
+      }));
+    } catch (error) {
+      console.error("Error adding skill below:", error);
+    }
+  };
+
+  const addProjectSkillBelow = async (projectId: string, skillId: string) => {
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const clickedSkill = project.skills.find(s => s.id === skillId);
+    if (!clickedSkill) return;
+
+    const sameLevelSkills = project.skills
+      .filter(s => s.level === clickedSkill.level)
+      .sort((a, b) => a.y - b.y);
+
+    const finalNode = sameLevelSkills.find(s => s.isFinalNode === 1);
+    const newY = clickedSkill.y + 150;
+
+    try {
+      const nodesToShift = project.skills.filter(s => s.y > clickedSkill.y);
+      for (const node of nodesToShift) {
+        const newNodeY = node.y + 150;
+        const newLevelPosition = (node.levelPosition || 0) + 1;
+        await fetch(`/api/skills/${node.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ y: newNodeY, levelPosition: newLevelPosition }),
+        });
+      }
+
+      const newSkillData = {
+        projectId,
+        title: "?",
+        description: "",
+        x: clickedSkill.x,
+        y: newY,
+        status: "locked" as SkillStatus,
+        dependencies: [clickedSkill.id],
+        level: clickedSkill.level,
+        levelPosition: (clickedSkill.levelPosition || 0) + 1,
+        isFinalNode: 0,
+        manualLock: 0,
+      };
+
+      const response = await fetch("/api/skills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newSkillData),
+      });
+      const newSkill = await response.json();
+
+      if (finalNode && finalNode.dependencies.includes(clickedSkill.id)) {
+        const updatedDeps = finalNode.dependencies.map(d => d === clickedSkill.id ? newSkill.id : d);
+        await fetch(`/api/skills/${finalNode.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dependencies: updatedDeps }),
+        });
+      }
+
+      setProjects(prev => prev.map(p => {
+        if (p.id !== projectId) return p;
+        return {
+          ...p,
+          skills: [
+            ...p.skills.map(s => {
+              let updated = { ...s };
+              if (s.y > clickedSkill.y) {
+                updated = { ...updated, y: s.y + 150, levelPosition: (s.levelPosition || 0) + 1 };
+              }
+              if (finalNode && s.id === finalNode.id && finalNode.dependencies.includes(clickedSkill.id)) {
+                const updatedDeps = s.dependencies.map(d => d === clickedSkill.id ? newSkill.id : d);
+                updated = { ...updated, dependencies: updatedDeps };
+              }
+              return updated;
+            }),
+            newSkill
+          ]
+        };
+      }));
+    } catch (error) {
+      console.error("Error adding project skill below:", error);
+    }
+  };
+
+  const addSubSkillBelow = async (skillId: string) => {
+    const clickedSkill = subSkills.find(s => s.id === skillId);
+    if (!clickedSkill || !activeParentSkillId) return;
+
+    const sameLevelSkills = subSkills
+      .filter(s => s.level === clickedSkill.level)
+      .sort((a, b) => a.y - b.y);
+
+    const finalNode = sameLevelSkills.find(s => s.isFinalNode === 1);
+    const newY = clickedSkill.y + 150;
+
+    try {
+      const nodesToShift = subSkills.filter(s => s.y > clickedSkill.y);
+      for (const node of nodesToShift) {
+        const newNodeY = node.y + 150;
+        const newLevelPosition = (node.levelPosition || 0) + 1;
+        await fetch(`/api/skills/${node.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ y: newNodeY, levelPosition: newLevelPosition }),
+        });
+      }
+
+      const newSkillData = {
+        parentSkillId: activeParentSkillId,
+        title: "?",
+        description: "",
+        x: clickedSkill.x,
+        y: newY,
+        status: "locked" as SkillStatus,
+        dependencies: [clickedSkill.id],
+        level: clickedSkill.level,
+        levelPosition: (clickedSkill.levelPosition || 0) + 1,
+        isFinalNode: 0,
+        manualLock: 0,
+      };
+
+      const response = await fetch("/api/skills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newSkillData),
+      });
+      const newSkill = await response.json();
+
+      if (finalNode && finalNode.dependencies.includes(clickedSkill.id)) {
+        const updatedDeps = finalNode.dependencies.map(d => d === clickedSkill.id ? newSkill.id : d);
+        await fetch(`/api/skills/${finalNode.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dependencies: updatedDeps }),
+        });
+      }
+
+      setSubSkills(prev => [
+        ...prev.map(s => {
+          let updated = { ...s };
+          if (s.y > clickedSkill.y) {
+            updated = { ...updated, y: s.y + 150, levelPosition: (s.levelPosition || 0) + 1 };
+          }
+          if (finalNode && s.id === finalNode.id && finalNode.dependencies.includes(clickedSkill.id)) {
+            const updatedDeps = s.dependencies.map(d => d === clickedSkill.id ? newSkill.id : d);
+            updated = { ...updated, dependencies: updatedDeps };
+          }
+          return updated;
+        }),
+        newSkill
+      ]);
+    } catch (error) {
+      console.error("Error adding sub-skill below:", error);
+    }
+  };
+
   // Auto-unlock logic for areas
   useEffect(() => {
     if (isLoading || areas.length === 0) return;
@@ -1430,7 +1667,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       updateSubSkill,
       deleteSubSkill,
       toggleSubSkillLock,
-      moveSubSkill
+      moveSubSkill,
+      addSkillBelow,
+      addProjectSkillBelow,
+      addSubSkillBelow
     }}>
       {children}
     </SkillTreeContext.Provider>

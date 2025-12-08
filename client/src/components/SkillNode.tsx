@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { type Skill, useSkillTree } from "@/lib/skill-context";
 import { cn } from "@/lib/utils";
-import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil } from "lucide-react";
+import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus } from "lucide-react";
 import { useState, useRef } from "react";
 import {
   Popover,
@@ -50,7 +50,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
     toggleSubSkillLock,
     moveSubSkill,
     updateSubSkill,
-    enterSubSkillTree
+    enterSubSkillTree,
+    addSkillBelow,
+    addProjectSkillBelow,
+    addSubSkillBelow
   } = useSkillTree();
   
   const isProject = !activeAreaId && !!activeProjectId;
@@ -267,7 +270,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
             </p>
           </div>
           
-          <div className="pt-2 border-t border-border flex justify-end gap-2">
+          <div className="pt-2 border-t border-border flex flex-wrap justify-end gap-2">
              <Button 
                variant="outline" 
                size="sm" 
@@ -277,6 +280,26 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
              >
                <Pencil className="mr-2 h-3 w-3" />
                Editar
+             </Button>
+
+             <Button 
+               variant="outline" 
+               size="sm" 
+               className="h-8 px-3 text-xs"
+               onClick={() => {
+                 if (isSubSkillView) {
+                   addSubSkillBelow(skill.id);
+                 } else if (isProject) {
+                   addProjectSkillBelow(activeId, skill.id);
+                 } else {
+                   addSkillBelow(activeId, skill.id);
+                 }
+                 setIsOpen(false);
+               }}
+               data-testid="button-add-skill-below"
+             >
+               <Plus className="mr-2 h-3 w-3" />
+               Agregar abajo
              </Button>
 
              {!isLocked && (
