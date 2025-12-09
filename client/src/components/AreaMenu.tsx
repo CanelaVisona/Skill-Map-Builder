@@ -727,11 +727,16 @@ export function AreaMenu() {
         <Dialog open={isAddOpen} onOpenChange={handleDialogClose}>
           <DialogTrigger asChild>
             <button
-              className="p-2 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-              title="Agregar"
+              className="group flex items-center gap-2 px-3 py-2 text-muted-foreground hover:text-foreground transition-all duration-200 rounded-md hover:bg-muted/50"
               data-testid="button-add"
             >
-              <Plus size={16} />
+              <Plus size={18} className="shrink-0" />
+              <span className={cn(
+                "text-sm font-medium overflow-hidden transition-all duration-200",
+                isOpen ? "max-w-[100px] opacity-100" : "max-w-0 opacity-0 group-hover:max-w-[100px] group-hover:opacity-100"
+              )}>
+                Agregar
+              </span>
             </button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-[425px]">
@@ -787,11 +792,16 @@ export function AreaMenu() {
         <Dialog open={isArchivedDialogOpen} onOpenChange={setIsArchivedDialogOpen}>
           <DialogTrigger asChild>
             <button
-              className="p-2 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-              title="Archivados"
+              className="group flex items-center gap-2 px-3 py-2 text-muted-foreground hover:text-foreground transition-all duration-200 rounded-md hover:bg-muted/50"
               data-testid="button-open-archived"
             >
-              <Archive size={16} />
+              <Archive size={18} className="shrink-0" />
+              <span className={cn(
+                "text-sm font-medium overflow-hidden transition-all duration-200",
+                isOpen ? "max-w-[100px] opacity-100" : "max-w-0 opacity-0 group-hover:max-w-[100px] group-hover:opacity-100"
+              )}>
+                Archivados
+              </span>
             </button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-[500px]">
