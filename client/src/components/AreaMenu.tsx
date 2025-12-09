@@ -723,7 +723,7 @@ export function AreaMenu() {
 
       </div>
 
-      <div className="p-2 flex flex-col items-center gap-1">
+      <div className={cn("p-2 flex flex-col gap-1", isOpen ? "items-start" : "items-center")}>
         <Dialog open={isAddOpen} onOpenChange={handleDialogClose}>
           <DialogTrigger asChild>
             <button
