@@ -191,6 +191,57 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/areas/archived", requireAuth, async (req, res) => {
+    try {
+      const archivedAreas = await storage.getArchivedAreas(req.userId!);
+      const areasWithSkills = await Promise.all(
+        archivedAreas.map(async (area) => {
+          const skills = await storage.getSkills(area.id);
+          return { ...area, skills };
+        })
+      );
+      res.json(areasWithSkills);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/areas/:id/archive", requireAuth, async (req, res) => {
+    try {
+      const existingArea = await storage.getArea(req.params.id);
+      if (!existingArea) {
+        res.status(404).json({ message: "Area not found" });
+        return;
+      }
+      if (existingArea.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para archivar esta área" });
+        return;
+      }
+      const area = await storage.archiveArea(req.params.id);
+      res.json(area);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/areas/:id/unarchive", requireAuth, async (req, res) => {
+    try {
+      const existingArea = await storage.getArea(req.params.id);
+      if (!existingArea) {
+        res.status(404).json({ message: "Area not found" });
+        return;
+      }
+      if (existingArea.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para desarchivar esta área" });
+        return;
+      }
+      const area = await storage.unarchiveArea(req.params.id);
+      res.json(area);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Skills (protected)
   app.post("/api/skills", requireAuth, async (req, res) => {
     try {
@@ -438,6 +489,57 @@ export async function registerRoutes(
       }
       await storage.deleteProject(req.params.id);
       res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/projects/archived", requireAuth, async (req, res) => {
+    try {
+      const archivedProjects = await storage.getArchivedProjects(req.userId!);
+      const projectsWithSkills = await Promise.all(
+        archivedProjects.map(async (project) => {
+          const skills = await storage.getProjectSkills(project.id);
+          return { ...project, skills };
+        })
+      );
+      res.json(projectsWithSkills);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/projects/:id/archive", requireAuth, async (req, res) => {
+    try {
+      const existingProject = await storage.getProject(req.params.id);
+      if (!existingProject) {
+        res.status(404).json({ message: "Project not found" });
+        return;
+      }
+      if (existingProject.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para archivar este proyecto" });
+        return;
+      }
+      const project = await storage.archiveProject(req.params.id);
+      res.json(project);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/projects/:id/unarchive", requireAuth, async (req, res) => {
+    try {
+      const existingProject = await storage.getProject(req.params.id);
+      if (!existingProject) {
+        res.status(404).json({ message: "Project not found" });
+        return;
+      }
+      if (existingProject.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para desarchivar este proyecto" });
+        return;
+      }
+      const project = await storage.unarchiveProject(req.params.id);
+      res.json(project);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

@@ -66,6 +66,10 @@ interface SkillTreeContextType {
   moveProjectSkill: (projectId: string, skillId: string, direction: "up" | "down") => void;
   createArea: (name: string, description: string, icon: string) => Promise<void>;
   deleteArea: (areaId: string) => Promise<void>;
+  archiveArea: (areaId: string) => Promise<void>;
+  unarchiveArea: (areaId: string) => Promise<void>;
+  archivedAreas: Area[];
+  loadArchivedAreas: () => Promise<void>;
   activeArea: Area | undefined;
   isLoading: boolean;
   projects: Project[];
@@ -74,6 +78,10 @@ interface SkillTreeContextType {
   activeProject: Project | undefined;
   createProject: (name: string, description: string, icon: string) => Promise<void>;
   deleteProject: (projectId: string) => Promise<void>;
+  archiveProject: (projectId: string) => Promise<void>;
+  unarchiveProject: (projectId: string) => Promise<void>;
+  archivedProjects: Project[];
+  loadArchivedProjects: () => Promise<void>;
   activeParentSkillId: string | null;
   parentSkillStack: ParentSkillInfo[];
   subSkills: Skill[];
@@ -107,6 +115,8 @@ const iconMap: Record<string, any> = {
 export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
   const [areas, setAreas] = useState<Area[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [archivedAreas, setArchivedAreas] = useState<Area[]>([]);
+  const [archivedProjects, setArchivedProjects] = useState<Project[]>([]);
   const [activeAreaId, setActiveAreaId] = useState<string>("");
   const [activeProjectId, setActiveProjectId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
@@ -1006,6 +1016,52 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const archiveArea = async (areaId: string) => {
+    try {
+      const response = await fetch(`/api/areas/${areaId}/archive`, {
+        method: "PATCH",
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to archive area");
+      }
+      
+      setAreas(prev => {
+        const filtered = prev.filter(a => a.id !== areaId);
+        if (activeAreaId === areaId && filtered.length > 0) {
+          setActiveAreaId(filtered[0].id);
+        } else if (activeAreaId === areaId) {
+          setActiveAreaId("");
+        }
+        return filtered;
+      });
+    } catch (error) {
+      console.error("Error archiving area:", error);
+    }
+  };
+
+  const unarchiveArea = async (areaId: string) => {
+    try {
+      const response = await fetch(`/api/areas/${areaId}/unarchive`, {
+        method: "PATCH",
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to unarchive area");
+      }
+      
+      const area = await response.json();
+      const skillsResponse = await fetch(`/api/areas`);
+      const allAreas = await skillsResponse.json();
+      const restoredArea = allAreas.find((a: Area) => a.id === areaId);
+      if (restoredArea) {
+        setAreas(prev => [...prev, restoredArea]);
+      }
+    } catch (error) {
+      console.error("Error unarchiving area:", error);
+    }
+  };
+
   const createProject = async (name: string, description: string, icon: string) => {
     try {
       const id = name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') + '_' + Date.now();
@@ -1058,6 +1114,72 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       setProjects(prev => prev.filter(p => p.id !== projectId));
     } catch (error) {
       console.error("Error deleting project:", error);
+    }
+  };
+
+  const archiveProject = async (projectId: string) => {
+    try {
+      const response = await fetch(`/api/projects/${projectId}/archive`, {
+        method: "PATCH",
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to archive project");
+      }
+      
+      setProjects(prev => {
+        const filtered = prev.filter(p => p.id !== projectId);
+        if (activeProjectId === projectId && filtered.length > 0) {
+          setActiveProjectId(filtered[0].id);
+        } else if (activeProjectId === projectId) {
+          setActiveProjectId("");
+        }
+        return filtered;
+      });
+    } catch (error) {
+      console.error("Error archiving project:", error);
+    }
+  };
+
+  const unarchiveProject = async (projectId: string) => {
+    try {
+      const response = await fetch(`/api/projects/${projectId}/unarchive`, {
+        method: "PATCH",
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to unarchive project");
+      }
+      
+      const projectsResponse = await fetch(`/api/projects`);
+      const allProjects = await projectsResponse.json();
+      const restoredProject = allProjects.find((p: Project) => p.id === projectId);
+      if (restoredProject) {
+        setProjects(prev => [...prev, restoredProject]);
+        setArchivedProjects(prev => prev.filter(p => p.id !== projectId));
+      }
+    } catch (error) {
+      console.error("Error unarchiving project:", error);
+    }
+  };
+
+  const loadArchivedAreas = async () => {
+    try {
+      const response = await fetch("/api/areas/archived");
+      const data = await response.json();
+      setArchivedAreas(data);
+    } catch (error) {
+      console.error("Error loading archived areas:", error);
+    }
+  };
+
+  const loadArchivedProjects = async () => {
+    try {
+      const response = await fetch("/api/projects/archived");
+      const data = await response.json();
+      setArchivedProjects(data);
+    } catch (error) {
+      console.error("Error loading archived projects:", error);
     }
   };
 

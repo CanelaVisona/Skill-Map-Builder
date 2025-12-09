@@ -17,10 +17,13 @@ export interface IStorage {
 
   // Areas
   getAreas(userId: string): Promise<Area[]>;
+  getArchivedAreas(userId: string): Promise<Area[]>;
   getArea(id: string): Promise<Area | undefined>;
   createArea(area: InsertArea): Promise<Area>;
   updateArea(id: string, area: Partial<InsertArea>): Promise<Area | undefined>;
   deleteArea(id: string): Promise<void>;
+  archiveArea(id: string): Promise<Area | undefined>;
+  unarchiveArea(id: string): Promise<Area | undefined>;
 
   // Skills
   getSkills(areaId: string): Promise<Skill[]>;
@@ -41,10 +44,13 @@ export interface IStorage {
 
   // Projects
   getProjects(userId: string): Promise<Project[]>;
+  getArchivedProjects(userId: string): Promise<Project[]>;
   getProject(id: string): Promise<Project | undefined>;
   createProject(project: InsertProject): Promise<Project>;
   updateProject(id: string, project: Partial<InsertProject>): Promise<Project | undefined>;
   deleteProject(id: string): Promise<void>;
+  archiveProject(id: string): Promise<Project | undefined>;
+  unarchiveProject(id: string): Promise<Project | undefined>;
 }
 
 export class DbStorage implements IStorage {
@@ -88,7 +94,15 @@ export class DbStorage implements IStorage {
 
   // Areas
   async getAreas(userId: string): Promise<Area[]> {
-    return await db.select().from(areas).where(eq(areas.userId, userId));
+    return await db.select().from(areas).where(
+      and(eq(areas.userId, userId), eq(areas.archived, 0))
+    );
+  }
+
+  async getArchivedAreas(userId: string): Promise<Area[]> {
+    return await db.select().from(areas).where(
+      and(eq(areas.userId, userId), eq(areas.archived, 1))
+    );
   }
 
   async getArea(id: string): Promise<Area | undefined> {
@@ -97,17 +111,49 @@ export class DbStorage implements IStorage {
   }
 
   async createArea(area: InsertArea): Promise<Area> {
-    const result = await db.insert(areas).values(area).returning();
+    const insertData: typeof areas.$inferInsert = {
+      id: area.id,
+      userId: area.userId,
+      name: area.name,
+      icon: area.icon,
+      color: area.color,
+      description: area.description,
+      unlockedLevel: area.unlockedLevel,
+      nextLevelToAssign: area.nextLevelToAssign,
+      levelSubtitles: area.levelSubtitles as Record<string, string>,
+      archived: (area.archived ?? 0) as 0 | 1,
+    };
+    const result = await db.insert(areas).values(insertData).returning();
     return result[0];
   }
 
   async updateArea(id: string, area: Partial<InsertArea>): Promise<Area | undefined> {
-    const result = await db.update(areas).set(area).where(eq(areas.id, id)).returning();
+    const updateData: Record<string, unknown> = {};
+    if (area.name !== undefined) updateData.name = area.name;
+    if (area.icon !== undefined) updateData.icon = area.icon;
+    if (area.color !== undefined) updateData.color = area.color;
+    if (area.description !== undefined) updateData.description = area.description;
+    if (area.unlockedLevel !== undefined) updateData.unlockedLevel = area.unlockedLevel;
+    if (area.nextLevelToAssign !== undefined) updateData.nextLevelToAssign = area.nextLevelToAssign;
+    if (area.levelSubtitles !== undefined) updateData.levelSubtitles = area.levelSubtitles as Record<string, string>;
+    if (area.archived !== undefined) updateData.archived = area.archived as 0 | 1;
+    
+    const result = await db.update(areas).set(updateData).where(eq(areas.id, id)).returning();
     return result[0];
   }
 
   async deleteArea(id: string): Promise<void> {
     await db.delete(areas).where(eq(areas.id, id));
+  }
+
+  async archiveArea(id: string): Promise<Area | undefined> {
+    const result = await db.update(areas).set({ archived: 1 as 0 | 1 }).where(eq(areas.id, id)).returning();
+    return result[0];
+  }
+
+  async unarchiveArea(id: string): Promise<Area | undefined> {
+    const result = await db.update(areas).set({ archived: 0 as 0 | 1 }).where(eq(areas.id, id)).returning();
+    return result[0];
   }
 
   // Skills
@@ -288,7 +334,15 @@ export class DbStorage implements IStorage {
 
   // Projects
   async getProjects(userId: string): Promise<Project[]> {
-    return await db.select().from(projects).where(eq(projects.userId, userId));
+    return await db.select().from(projects).where(
+      and(eq(projects.userId, userId), eq(projects.archived, 0))
+    );
+  }
+
+  async getArchivedProjects(userId: string): Promise<Project[]> {
+    return await db.select().from(projects).where(
+      and(eq(projects.userId, userId), eq(projects.archived, 1))
+    );
   }
 
   async getProject(id: string): Promise<Project | undefined> {
@@ -297,17 +351,47 @@ export class DbStorage implements IStorage {
   }
 
   async createProject(project: InsertProject): Promise<Project> {
-    const result = await db.insert(projects).values(project).returning();
+    const insertData: typeof projects.$inferInsert = {
+      id: project.id,
+      userId: project.userId,
+      name: project.name,
+      icon: project.icon,
+      description: project.description,
+      unlockedLevel: project.unlockedLevel,
+      nextLevelToAssign: project.nextLevelToAssign,
+      levelSubtitles: project.levelSubtitles as Record<string, string>,
+      archived: (project.archived ?? 0) as 0 | 1,
+    };
+    const result = await db.insert(projects).values(insertData).returning();
     return result[0];
   }
 
   async updateProject(id: string, project: Partial<InsertProject>): Promise<Project | undefined> {
-    const result = await db.update(projects).set(project).where(eq(projects.id, id)).returning();
+    const updateData: Record<string, unknown> = {};
+    if (project.name !== undefined) updateData.name = project.name;
+    if (project.icon !== undefined) updateData.icon = project.icon;
+    if (project.description !== undefined) updateData.description = project.description;
+    if (project.unlockedLevel !== undefined) updateData.unlockedLevel = project.unlockedLevel;
+    if (project.nextLevelToAssign !== undefined) updateData.nextLevelToAssign = project.nextLevelToAssign;
+    if (project.levelSubtitles !== undefined) updateData.levelSubtitles = project.levelSubtitles as Record<string, string>;
+    if (project.archived !== undefined) updateData.archived = project.archived as 0 | 1;
+    
+    const result = await db.update(projects).set(updateData).where(eq(projects.id, id)).returning();
     return result[0];
   }
 
   async deleteProject(id: string): Promise<void> {
     await db.delete(projects).where(eq(projects.id, id));
+  }
+
+  async archiveProject(id: string): Promise<Project | undefined> {
+    const result = await db.update(projects).set({ archived: 1 as 0 | 1 }).where(eq(projects.id, id)).returning();
+    return result[0];
+  }
+
+  async unarchiveProject(id: string): Promise<Project | undefined> {
+    const result = await db.update(projects).set({ archived: 0 as 0 | 1 }).where(eq(projects.id, id)).returning();
+    return result[0];
   }
 
   // Sub-skills
