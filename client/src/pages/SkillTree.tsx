@@ -4,7 +4,7 @@ import { AreaMenu } from "@/components/AreaMenu";
 import { SkillNode } from "@/components/SkillNode";
 import { SkillConnection } from "@/components/SkillConnection";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Eclipse, Scroll, Pencil, X } from "lucide-react";
+import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Bug, Scroll, Pencil, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -153,7 +153,7 @@ function JournalSection({
 
   const emptyMessage = type === "characters" ? "No characters" : type === "places" ? "No places" : "No shadows";
   const countLabel = type === "characters" ? "characters" : type === "places" ? "places" : "shadows";
-  const Icon = type === "characters" ? Users : type === "places" ? MapIcon : Eclipse;
+  const Icon = type === "characters" ? Users : type === "places" ? MapIcon : Bug;
 
   if (isLoading) {
     return <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">Loading...</div>;
@@ -550,7 +550,7 @@ function QuestDiary() {
                 <MapIcon className="h-5 w-5" />
               </TabsTrigger>
               <TabsTrigger value="shadows" className="p-2" data-testid="tab-shadows" title="Shadows">
-                <Eclipse className="h-5 w-5" />
+                <Bug className="h-5 w-5" />
               </TabsTrigger>
             </TabsList>
             
