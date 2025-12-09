@@ -1011,6 +1011,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
         }
         return filtered;
       });
+      
+      setArchivedAreas(prev => prev.filter(a => a.id !== areaId));
     } catch (error) {
       console.error("Error deleting area:", error);
     }
@@ -1056,6 +1058,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       const restoredArea = allAreas.find((a: Area) => a.id === areaId);
       if (restoredArea) {
         setAreas(prev => [...prev, restoredArea]);
+        setArchivedAreas(prev => prev.filter(a => a.id !== areaId));
       }
     } catch (error) {
       console.error("Error unarchiving area:", error);
@@ -1112,6 +1115,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       }
       
       setProjects(prev => prev.filter(p => p.id !== projectId));
+      setArchivedProjects(prev => prev.filter(p => p.id !== projectId));
     } catch (error) {
       console.error("Error deleting project:", error);
     }
