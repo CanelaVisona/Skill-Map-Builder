@@ -2,7 +2,7 @@ import { useSkillTree, iconMap, type Project } from "@/lib/skill-context";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, PanelLeftClose, PanelLeftOpen, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut, Archive, ArchiveRestore } from "lucide-react";
+import { Plus, PanelLeftClose, PanelLeftOpen, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut, Archive, ArchiveRestore, Pencil } from "lucide-react";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "./ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "./ui/alert-dialog";
@@ -75,10 +75,13 @@ interface AreaItemProps {
   onSelect: () => void;
   onDelete: () => void;
   onArchive: () => void;
+  onRename: (newName: string) => void;
 }
 
-function AreaItem({ area, isActive, isMenuOpen, onSelect, onDelete, onArchive }: AreaItemProps) {
+function AreaItem({ area, isActive, isMenuOpen, onSelect, onDelete, onArchive, onRename }: AreaItemProps) {
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
+  const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
+  const [newName, setNewName] = useState(area.name);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPress = useRef(false);
   const Icon = extendedIconMap[area.icon] || extendedIconMap.Home;
@@ -167,6 +170,51 @@ function AreaItem({ area, isActive, isMenuOpen, onSelect, onDelete, onArchive }:
         align="start"
         className="w-48 p-2 space-y-2"
       >
+        <Dialog open={isRenameDialogOpen} onOpenChange={setIsRenameDialogOpen}>
+          <DialogTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              data-testid={`button-rename-area-${area.id}`}
+            >
+              <Pencil className="mr-2 h-4 w-4" />
+              Renombrar
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Renombrar área</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 mt-4">
+              <Input 
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="Nuevo nombre"
+                data-testid="input-rename-area"
+              />
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setIsRenameDialogOpen(false)} className="flex-1">
+                  Cancelar
+                </Button>
+                <Button 
+                  onClick={() => {
+                    if (newName.trim()) {
+                      onRename(newName.trim());
+                      setIsRenameDialogOpen(false);
+                      setIsPopoverOpen(false);
+                    }
+                  }} 
+                  disabled={!newName.trim()}
+                  className="flex-1"
+                  data-testid="button-save-rename-area"
+                >
+                  Guardar
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
         <Button
           variant="outline"
           size="sm"
@@ -225,10 +273,13 @@ interface ProjectItemProps {
   onSelect: () => void;
   onDelete: () => void;
   onArchive: () => void;
+  onRename: (newName: string) => void;
 }
 
-function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete, onArchive }: ProjectItemProps) {
+function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete, onArchive, onRename }: ProjectItemProps) {
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
+  const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
+  const [newName, setNewName] = useState(project.name);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPress = useRef(false);
   const Icon = extendedIconMap[project.icon] || FolderKanban;
@@ -307,6 +358,51 @@ function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete, onArch
         align="start"
         className="w-48 p-2 space-y-2"
       >
+        <Dialog open={isRenameDialogOpen} onOpenChange={setIsRenameDialogOpen}>
+          <DialogTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              data-testid={`button-rename-project-${project.id}`}
+            >
+              <Pencil className="mr-2 h-4 w-4" />
+              Renombrar
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Renombrar proyecto</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 mt-4">
+              <Input 
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="Nuevo nombre"
+                data-testid="input-rename-project"
+              />
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setIsRenameDialogOpen(false)} className="flex-1">
+                  Cancelar
+                </Button>
+                <Button 
+                  onClick={() => {
+                    if (newName.trim()) {
+                      onRename(newName.trim());
+                      setIsRenameDialogOpen(false);
+                      setIsPopoverOpen(false);
+                    }
+                  }} 
+                  disabled={!newName.trim()}
+                  className="flex-1"
+                  data-testid="button-save-rename-project"
+                >
+                  Guardar
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
         <Button
           variant="outline"
           size="sm"
@@ -361,7 +457,8 @@ function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete, onArch
 export function AreaMenu() {
   const { 
     areas, activeAreaId, setActiveAreaId, createArea, deleteArea, archiveArea, unarchiveArea, archivedAreas, loadArchivedAreas,
-    projects, activeProjectId, setActiveProjectId, createProject, deleteProject, archiveProject, unarchiveProject, archivedProjects, loadArchivedProjects 
+    projects, activeProjectId, setActiveProjectId, createProject, deleteProject, archiveProject, unarchiveProject, archivedProjects, loadArchivedProjects,
+    renameArea, renameProject
   } = useSkillTree();
   const { user, logout } = useAuth();
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -567,6 +664,7 @@ export function AreaMenu() {
               onSelect={() => setActiveAreaId(area.id)}
               onDelete={() => deleteArea(area.id)}
               onArchive={() => archiveArea(area.id)}
+              onRename={(name) => renameArea(area.id, name)}
             />
           ))
         )}
@@ -595,6 +693,7 @@ export function AreaMenu() {
               onSelect={() => setActiveProjectId(project.id)}
               onDelete={() => deleteProject(project.id)}
               onArchive={() => archiveProject(project.id)}
+              onRename={(name) => renameProject(project.id, name)}
             />
           ))
         )}

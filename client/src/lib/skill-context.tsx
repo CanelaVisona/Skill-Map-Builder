@@ -101,6 +101,8 @@ interface SkillTreeContextType {
   toggleProjectFinalNode: (projectId: string, skillId: string) => Promise<void>;
   toggleSubSkillFinalNode: (skillId: string) => Promise<void>;
   showLevelUp: boolean;
+  renameArea: (areaId: string, newName: string) => Promise<void>;
+  renameProject: (projectId: string, newName: string) => Promise<void>;
 }
 
 const SkillTreeContext = createContext<SkillTreeContextType | undefined>(undefined);
@@ -1167,6 +1169,46 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const renameArea = async (areaId: string, newName: string) => {
+    try {
+      const response = await fetch(`/api/areas/${areaId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newName }),
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to rename area");
+      }
+      
+      setAreas(prev => prev.map(a => 
+        a.id === areaId ? { ...a, name: newName } : a
+      ));
+    } catch (error) {
+      console.error("Error renaming area:", error);
+    }
+  };
+
+  const renameProject = async (projectId: string, newName: string) => {
+    try {
+      const response = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newName }),
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to rename project");
+      }
+      
+      setProjects(prev => prev.map(p => 
+        p.id === projectId ? { ...p, name: newName } : p
+      ));
+    } catch (error) {
+      console.error("Error renaming project:", error);
+    }
+  };
+
   const loadArchivedAreas = async () => {
     try {
       const response = await fetch("/api/areas/archived");
@@ -2215,6 +2257,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       deleteArea,
       archiveArea,
       unarchiveArea,
+      renameArea,
       archivedAreas,
       loadArchivedAreas,
       activeArea,
@@ -2227,6 +2270,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       deleteProject,
       archiveProject,
       unarchiveProject,
+      renameProject,
       archivedProjects,
       loadArchivedProjects,
       activeParentSkillId,
