@@ -137,7 +137,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
     }
   };
 
-  const handleTitleClick = (e: React.MouseEvent) => {
+  const handleTitleClick = async (e: React.MouseEvent) => {
     if (isTitleLongPress.current) {
       e.preventDefault();
       e.stopPropagation();
@@ -146,7 +146,17 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
     }
     if (!isSubSkillView && !isLocked && !isInicioNode) {
       e.stopPropagation();
-      setIsSubtaskConfirmOpen(true);
+      try {
+        const response = await fetch(`/api/skills/${skill.id}/subskills`);
+        const subskills = await response.json();
+        if (subskills && subskills.length > 0) {
+          enterSubSkillTree(skill.id, skill.title);
+        } else {
+          setIsSubtaskConfirmOpen(true);
+        }
+      } catch {
+        setIsSubtaskConfirmOpen(true);
+      }
     }
   };
 
