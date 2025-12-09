@@ -320,7 +320,7 @@ interface SourceGroup {
 }
 
 function AchievementsSection() {
-  const { areas, projects, mainQuests, sideQuests } = useSkillTree();
+  const { areas, mainQuests, sideQuests } = useSkillTree();
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
   const [selectedSubtasks, setSelectedSubtasks] = useState<Skill[]>([]);
   const [selectedSubtaskId, setSelectedSubtaskId] = useState<string | null>(null);
@@ -352,16 +352,6 @@ function AchievementsSection() {
   
   // From side quests
   sideQuests.forEach(project => {
-    const completedSkills = project.skills
-      .filter(s => s.status === "mastered" && s.title.toLowerCase() !== "inicio")
-      .map(skill => ({ ...skill, sourceName: project.name, sourceSkills: project.skills }));
-    if (completedSkills.length > 0) {
-      sourceGroups.push({ name: project.name, skills: completedSkills });
-    }
-  });
-  
-  // From regular projects
-  projects.forEach(project => {
     const completedSkills = project.skills
       .filter(s => s.status === "mastered" && s.title.toLowerCase() !== "inicio")
       .map(skill => ({ ...skill, sourceName: project.name, sourceSkills: project.skills }));
