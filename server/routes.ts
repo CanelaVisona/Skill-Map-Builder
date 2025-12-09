@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { insertAreaSchema, insertSkillSchema, insertProjectSchema } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import cookieParser from "cookie-parser";
+import crypto from "crypto";
 
 declare global {
   namespace Express {
@@ -93,8 +94,10 @@ export async function registerRoutes(
       if (userAreas.length === 0 && userProjects.length === 0) {
           // Create example area
           const exampleArea = await storage.createArea({
+            id: crypto.randomUUID(),
             name: "Ejemplo: Guitarra",
             icon: "Music",
+            color: "#3B82F6",
             description: "Esta es un área de ejemplo. Mantén presionado para ver opciones.",
             userId: user.id,
           });
