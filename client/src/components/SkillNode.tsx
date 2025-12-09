@@ -89,6 +89,16 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
   const isLocked = skill.status === "locked" || shouldForceLock;
   const isMastered = skill.status === "mastered";
   
+  // Calculate previous skill for feedback label
+  const sortedSkills = [...currentSkills].sort((a, b) => {
+    if (a.level !== b.level) return a.level - b.level;
+    return a.y - b.y;
+  });
+  const currentIndex = sortedSkills.findIndex(s => s.id === skill.id);
+  const previousSkill = currentIndex > 0 ? sortedSkills[currentIndex - 1] : null;
+  const isFirstAfterInicio = previousSkill?.title.toLowerCase() === "inicio";
+  const showFeedbackStep = !isFirstAfterInicio && !isInicioNode;
+  
   const [isOpen, setIsOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editStep, setEditStep] = useState(0);
@@ -563,20 +573,30 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
                   >
                     <ChevronLeft className="h-5 w-5" />
                   </Button>
-                  <Button 
-                    variant="ghost" 
-                    size="icon"
-                    onClick={() => setEditStep(2)}
-                    className="h-10 w-10 bg-muted/50 hover:bg-muted"
-                    data-testid="button-next-step"
-                  >
-                    <ChevronRight className="h-5 w-5" />
-                  </Button>
+                  {showFeedbackStep ? (
+                    <Button 
+                      variant="ghost" 
+                      size="icon"
+                      onClick={() => setEditStep(2)}
+                      className="h-10 w-10 bg-muted/50 hover:bg-muted"
+                      data-testid="button-next-step"
+                    >
+                      <ChevronRight className="h-5 w-5" />
+                    </Button>
+                  ) : (
+                    <Button 
+                      onClick={handleEditSave}
+                      className="border-0"
+                      data-testid="button-save-edit"
+                    >
+                      Guardar
+                    </Button>
+                  )}
                 </div>
               </motion.div>
             )}
 
-            {editStep === 2 && (
+            {editStep === 2 && showFeedbackStep && (
               <motion.div
                 key="step-feedback"
                 initial={{ opacity: 0, x: 20 }}
@@ -585,7 +605,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
                 transition={{ duration: 0.2 }}
                 className="flex-1 flex flex-col"
               >
-                <Label htmlFor="edit-feedback" className="text-xs text-muted-foreground uppercase tracking-wide mb-3">Feedback</Label>
+                <Label htmlFor="edit-feedback" className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
+                  Feedback de {previousSkill?.title}
+                </Label>
                 <Textarea
                   id="edit-feedback"
                   value={editFeedback}
