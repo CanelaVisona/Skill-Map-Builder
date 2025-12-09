@@ -111,31 +111,34 @@ function JournalSection({
   type: "characters" | "places" | "shadows";
   entries: JournalEntry[];
   isLoading: boolean;
-  onAdd: (entry: { name: string; description: string }) => void;
-  onEdit: (id: string, entry: { name: string; description: string }) => void;
+  onAdd: (entry: { name: string; action: string; description: string }) => void;
+  onEdit: (id: string, entry: { name: string; action: string; description: string }) => void;
   onDelete: (id: string) => void;
 }) {
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
+  const [action, setAction] = useState("");
   const [description, setDescription] = useState("");
 
   const handleSubmit = () => {
     if (!name.trim()) return;
     if (editingId) {
-      onEdit(editingId, { name: name.trim(), description: description.trim() });
+      onEdit(editingId, { name: name.trim(), action: action.trim(), description: description.trim() });
       setEditingId(null);
     } else {
-      onAdd({ name: name.trim(), description: description.trim() });
+      onAdd({ name: name.trim(), action: action.trim(), description: description.trim() });
       setIsAdding(false);
     }
     setName("");
+    setAction("");
     setDescription("");
   };
 
   const handleStartEdit = (entry: JournalEntry) => {
     setEditingId(entry.id);
     setName(entry.name);
+    setAction(entry.action || "");
     setDescription(entry.description || "");
     setIsAdding(false);
   };
@@ -144,6 +147,7 @@ function JournalSection({
     setIsAdding(false);
     setEditingId(null);
     setName("");
+    setAction("");
     setDescription("");
   };
 
@@ -163,7 +167,7 @@ function JournalSection({
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => { setIsAdding(true); setEditingId(null); setName(""); setDescription(""); }}
+          onClick={() => { setIsAdding(true); setEditingId(null); setName(""); setAction(""); setDescription(""); }}
           className="h-7 px-2"
           data-testid={`button-add-${type}`}
         >
@@ -180,7 +184,14 @@ function JournalSection({
             data-testid={`input-${type}-name`}
           />
           <Textarea
-            placeholder="Descripción"
+            placeholder="Acción"
+            value={action}
+            onChange={(e) => setAction(e.target.value)}
+            rows={2}
+            data-testid={`input-${type}-action`}
+          />
+          <Textarea
+            placeholder="Descripción narrativa"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={2}
@@ -214,6 +225,9 @@ function JournalSection({
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
                     <h4 className="font-medium text-sm text-foreground">{entry.name}</h4>
+                    {entry.action && (
+                      <p className="text-xs text-foreground/80 mt-1 line-clamp-2">{entry.action}</p>
+                    )}
                     {entry.description && (
                       <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{entry.description}</p>
                     )}
@@ -424,7 +438,7 @@ function QuestDiary() {
   });
 
   const createCharacter = useMutation({
-    mutationFn: async (data: { name: string; description: string }) => {
+    mutationFn: async (data: { name: string; action: string; description: string }) => {
       const res = await fetch("/api/journal/characters", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -436,7 +450,7 @@ function QuestDiary() {
   });
 
   const updateCharacter = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: { name: string; description: string } }) => {
+    mutationFn: async ({ id, data }: { id: string; data: { name: string; action: string; description: string } }) => {
       const res = await fetch(`/api/journal/characters/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -455,7 +469,7 @@ function QuestDiary() {
   });
 
   const createPlace = useMutation({
-    mutationFn: async (data: { name: string; description: string }) => {
+    mutationFn: async (data: { name: string; action: string; description: string }) => {
       const res = await fetch("/api/journal/places", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -467,7 +481,7 @@ function QuestDiary() {
   });
 
   const updatePlace = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: { name: string; description: string } }) => {
+    mutationFn: async ({ id, data }: { id: string; data: { name: string; action: string; description: string } }) => {
       const res = await fetch(`/api/journal/places/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -486,7 +500,7 @@ function QuestDiary() {
   });
 
   const createShadow = useMutation({
-    mutationFn: async (data: { name: string; description: string }) => {
+    mutationFn: async (data: { name: string; action: string; description: string }) => {
       const res = await fetch("/api/journal/shadows", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -498,7 +512,7 @@ function QuestDiary() {
   });
 
   const updateShadow = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: { name: string; description: string } }) => {
+    mutationFn: async ({ id, data }: { id: string; data: { name: string; action: string; description: string } }) => {
       const res = await fetch(`/api/journal/shadows/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },

@@ -63,6 +63,7 @@ export const journalCharacters = pgTable("journal_characters", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
+  action: text("action").notNull().default(""),
   description: text("description").notNull().default(""),
   imageUrl: text("image_url"),
 });
@@ -71,6 +72,7 @@ export const journalPlaces = pgTable("journal_places", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
+  action: text("action").notNull().default(""),
   description: text("description").notNull().default(""),
   imageUrl: text("image_url"),
 });
@@ -79,6 +81,7 @@ export const journalShadows = pgTable("journal_shadows", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
+  action: text("action").notNull().default(""),
   description: text("description").notNull().default(""),
   imageUrl: text("image_url"),
 });
