@@ -151,18 +151,19 @@ function JournalSection({
     setDescription("");
   };
 
-  const emptyMessage = type === "characters" ? "Sin personajes" : type === "places" ? "Sin lugares" : "Sin sombras";
+  const emptyMessage = type === "characters" ? "No characters" : type === "places" ? "No places" : "No shadows";
+  const countLabel = type === "characters" ? "characters" : type === "places" ? "places" : "shadows";
   const Icon = type === "characters" ? Users : type === "places" ? MapPin : Ghost;
 
   if (isLoading) {
-    return <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">Cargando...</div>;
+    return <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">Loading...</div>;
   }
 
   return (
     <div className="h-full flex flex-col">
       <div className="flex items-center justify-between mb-4">
         <span className="text-xs text-muted-foreground uppercase tracking-wide">
-          {entries.length} {type === "characters" ? "personajes" : type === "places" ? "lugares" : "sombras"}
+          {entries.length} {countLabel}
         </span>
         <Button
           variant="ghost"
@@ -184,14 +185,14 @@ function JournalSection({
             data-testid={`input-${type}-name`}
           />
           <Textarea
-            placeholder="Acción"
+            placeholder="Action"
             value={action}
             onChange={(e) => setAction(e.target.value)}
             rows={2}
             data-testid={`input-${type}-action`}
           />
           <Textarea
-            placeholder="Descripción narrativa"
+            placeholder="Narrative description"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={2}
@@ -199,10 +200,10 @@ function JournalSection({
           />
           <div className="flex gap-2">
             <Button size="sm" onClick={handleSubmit} data-testid={`button-save-${type}`}>
-              {editingId ? "Guardar" : "Agregar"}
+              {editingId ? "Save" : "Add"}
             </Button>
             <Button size="sm" variant="ghost" onClick={handleCancel}>
-              Cancelar
+              Cancel
             </Button>
           </div>
         </div>
@@ -309,7 +310,7 @@ function AchievementsSection() {
           {completedSkills.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <Trophy className="h-8 w-8 text-muted-foreground/40 mb-3" />
-              <p className="text-muted-foreground text-sm">Sin tareas completadas</p>
+              <p className="text-muted-foreground text-sm">No completed tasks</p>
             </div>
           ) : (
             <div className="space-y-1">
@@ -334,7 +335,7 @@ function AchievementsSection() {
       
       {hasSubtasks && (
         <div className="w-1/3 flex flex-col border-r border-border px-4">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Subtareas</p>
+          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Subtasks</p>
           <ScrollArea className="flex-1">
             <div className="space-y-1">
               {selectedSubtasks.map((subtask) => (
@@ -407,7 +408,7 @@ function AchievementsSection() {
             </div>
           ) : (
             <div className="h-full flex items-center justify-center text-muted-foreground/40 text-sm">
-              Selecciona una tarea
+              Select a task
             </div>
           )}
         </ScrollArea>
@@ -534,72 +535,70 @@ function QuestDiary() {
     <Dialog open={isDiaryOpen} onOpenChange={(open) => !open && closeDiary()}>
       <DialogContent className="max-w-4xl h-[75vh] p-0 overflow-hidden bg-background border border-border">
         <VisuallyHidden>
-          <DialogTitle>Diario</DialogTitle>
+          <DialogTitle>Journal</DialogTitle>
         </VisuallyHidden>
-        <div className="flex flex-col h-full p-6">
-          <div className="mb-4">
-            <h2 className="text-2xl font-bold tracking-tight">Diario</h2>
-            <p className="text-sm text-muted-foreground mt-1">
-              {activeItem?.name || "Tu aventura"}
-            </p>
-          </div>
-          
-          <Tabs defaultValue="achievements" className="flex-1 flex flex-col">
-            <TabsList className="w-full justify-start mb-4">
-              <TabsTrigger value="achievements" className="gap-2" data-testid="tab-achievements">
-                <Trophy className="h-4 w-4" />
-                Logros
+        <div className="flex h-full">
+          <Tabs defaultValue="achievements" className="flex-1 flex" orientation="vertical">
+            <TabsList className="flex flex-col h-full justify-start gap-1 p-2 rounded-none border-r border-border bg-transparent">
+              <TabsTrigger value="achievements" className="p-2" data-testid="tab-achievements" title="Achievements">
+                <Trophy className="h-5 w-5" />
               </TabsTrigger>
-              <TabsTrigger value="characters" className="gap-2" data-testid="tab-characters">
-                <Users className="h-4 w-4" />
-                Personajes
+              <TabsTrigger value="characters" className="p-2" data-testid="tab-characters" title="Characters">
+                <Users className="h-5 w-5" />
               </TabsTrigger>
-              <TabsTrigger value="places" className="gap-2" data-testid="tab-places">
-                <MapPin className="h-4 w-4" />
-                Lugares
+              <TabsTrigger value="places" className="p-2" data-testid="tab-places" title="Places">
+                <MapPin className="h-5 w-5" />
               </TabsTrigger>
-              <TabsTrigger value="shadows" className="gap-2" data-testid="tab-shadows">
-                <Ghost className="h-4 w-4" />
-                Sombras
+              <TabsTrigger value="shadows" className="p-2" data-testid="tab-shadows" title="Shadows">
+                <Ghost className="h-5 w-5" />
               </TabsTrigger>
             </TabsList>
             
-            <TabsContent value="achievements" className="flex-1 mt-0">
-              <AchievementsSection />
-            </TabsContent>
-            
-            <TabsContent value="characters" className="flex-1 mt-0">
-              <JournalSection
-                type="characters"
-                entries={characters}
-                isLoading={loadingCharacters}
-                onAdd={(data) => createCharacter.mutate(data)}
-                onEdit={(id, data) => updateCharacter.mutate({ id, data })}
-                onDelete={(id) => deleteCharacter.mutate(id)}
-              />
-            </TabsContent>
-            
-            <TabsContent value="places" className="flex-1 mt-0">
-              <JournalSection
-                type="places"
-                entries={places}
-                isLoading={loadingPlaces}
-                onAdd={(data) => createPlace.mutate(data)}
-                onEdit={(id, data) => updatePlace.mutate({ id, data })}
-                onDelete={(id) => deletePlace.mutate(id)}
-              />
-            </TabsContent>
-            
-            <TabsContent value="shadows" className="flex-1 mt-0">
-              <JournalSection
-                type="shadows"
-                entries={shadows}
-                isLoading={loadingShadows}
-                onAdd={(data) => createShadow.mutate(data)}
-                onEdit={(id, data) => updateShadow.mutate({ id, data })}
-                onDelete={(id) => deleteShadow.mutate(id)}
-              />
-            </TabsContent>
+            <div className="flex-1 p-6 overflow-hidden">
+              <div className="mb-4">
+                <h2 className="text-2xl font-bold tracking-tight">Journal</h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {activeItem?.name || "Your adventure"}
+                </p>
+              </div>
+              
+              <TabsContent value="achievements" className="h-[calc(100%-4rem)] mt-0">
+                <AchievementsSection />
+              </TabsContent>
+              
+              <TabsContent value="characters" className="h-[calc(100%-4rem)] mt-0">
+                <JournalSection
+                  type="characters"
+                  entries={characters}
+                  isLoading={loadingCharacters}
+                  onAdd={(data) => createCharacter.mutate(data)}
+                  onEdit={(id, data) => updateCharacter.mutate({ id, data })}
+                  onDelete={(id) => deleteCharacter.mutate(id)}
+                />
+              </TabsContent>
+              
+              <TabsContent value="places" className="h-[calc(100%-4rem)] mt-0">
+                <JournalSection
+                  type="places"
+                  entries={places}
+                  isLoading={loadingPlaces}
+                  onAdd={(data) => createPlace.mutate(data)}
+                  onEdit={(id, data) => updatePlace.mutate({ id, data })}
+                  onDelete={(id) => deletePlace.mutate(id)}
+                />
+              </TabsContent>
+              
+              <TabsContent value="shadows" className="h-[calc(100%-4rem)] mt-0">
+                <JournalSection
+                  type="shadows"
+                  entries={shadows}
+                  isLoading={loadingShadows}
+                  onAdd={(data) => createShadow.mutate(data)}
+                  onEdit={(id, data) => updateShadow.mutate({ id, data })}
+                  onDelete={(id) => deleteShadow.mutate(id)}
+                />
+              </TabsContent>
+            </div>
           </Tabs>
         </div>
       </DialogContent>
