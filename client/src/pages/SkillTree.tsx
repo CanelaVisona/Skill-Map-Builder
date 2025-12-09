@@ -107,6 +107,16 @@ function QuestDiary() {
   const selectedSkill = completedSkills.find(s => s.id === selectedSkillId);
   const selectedSubtask = selectedSubtasks.find(s => s.id === selectedSubtaskId);
   const hasSubtasks = selectedSubtasks.length > 0;
+
+  const findNextSkill = (currentSkill: Skill, allSkills: Skill[]): Skill | undefined => {
+    const sameLevelSkills = allSkills
+      .filter(s => s.level === currentSkill.level && s.y > currentSkill.y)
+      .sort((a, b) => a.y - b.y);
+    return sameLevelSkills[0];
+  };
+
+  const nextSkillForSelected = selectedSkill ? findNextSkill(selectedSkill, skills) : undefined;
+  const nextSubtaskForSelected = selectedSubtask ? findNextSkill(selectedSubtask, selectedSubtasks) : undefined;
   
   const handleSelectSkill = async (skillId: string) => {
     setSelectedSkillId(skillId);
@@ -206,9 +216,9 @@ function QuestDiary() {
                   )}
                   <div className="pt-2">
                     <p className="text-xs text-foreground uppercase tracking-wide mb-2">Feedback</p>
-                    {selectedSubtask.feedback ? (
+                    {nextSubtaskForSelected?.feedback ? (
                       <p className="text-sm text-yellow-500 dark:text-yellow-400 leading-relaxed">
-                        {selectedSubtask.feedback}
+                        {nextSubtaskForSelected.feedback}
                       </p>
                     ) : (
                       <p className="text-sm text-muted-foreground/40 italic leading-relaxed">
@@ -229,9 +239,9 @@ function QuestDiary() {
                   )}
                   <div className="pt-2">
                     <p className="text-xs text-foreground uppercase tracking-wide mb-2">Feedback</p>
-                    {selectedSkill.feedback ? (
+                    {nextSkillForSelected?.feedback ? (
                       <p className="text-sm text-yellow-500 dark:text-yellow-400 leading-relaxed">
-                        {selectedSkill.feedback}
+                        {nextSkillForSelected.feedback}
                       </p>
                     ) : (
                       <p className="text-sm text-muted-foreground/40 italic leading-relaxed">
