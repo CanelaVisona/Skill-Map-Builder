@@ -296,8 +296,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
                 }
               }}
               className={cn(
-                "line-clamp-2",
-                !isSubSkillView && !isLocked && !isInicioNode && "cursor-pointer hover:underline"
+                "line-clamp-2 inline-block transition-transform duration-150",
+                !isSubSkillView && !isLocked && !isInicioNode && "cursor-pointer hover:translate-y-0.5 active:translate-y-1"
               )}
               data-testid={`link-skill-title-${skill.id}`}
             >
