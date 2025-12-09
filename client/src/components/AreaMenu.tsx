@@ -2,7 +2,7 @@ import { useSkillTree, iconMap, type Project } from "@/lib/skill-context";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, PanelLeftClose, PanelLeftOpen, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut, Archive, ArchiveRestore, ChevronDown, ChevronRight } from "lucide-react";
+import { Plus, PanelLeftClose, PanelLeftOpen, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut, Archive, ArchiveRestore } from "lucide-react";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 import { Popover, PopoverContent, PopoverAnchor } from "./ui/popover";
@@ -331,14 +331,16 @@ export function AreaMenu() {
   const [selectedIcon, setSelectedIcon] = useState("Home");
   const [manualIconSelected, setManualIconSelected] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showArchived, setShowArchived] = useState(false);
+  const [isArchivedDialogOpen, setIsArchivedDialogOpen] = useState(false);
+  const [viewingArchivedArea, setViewingArchivedArea] = useState<string | null>(null);
+  const [viewingArchivedProject, setViewingArchivedProject] = useState<string | null>(null);
 
   useEffect(() => {
-    if (showArchived) {
+    if (isArchivedDialogOpen) {
       loadArchivedAreas();
       loadArchivedProjects();
     }
-  }, [showArchived]);
+  }, [isArchivedDialogOpen]);
 
   useEffect(() => {
     if (itemName && !manualIconSelected) {
@@ -556,87 +558,6 @@ export function AreaMenu() {
           ))
         )}
 
-        <div className="my-3 border-t border-border" />
-
-        {isOpen && (
-          <button
-            onClick={() => setShowArchived(!showArchived)}
-            className="w-full flex items-center gap-2 px-3 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors"
-            data-testid="button-toggle-archived"
-          >
-            {showArchived ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-            <Archive size={14} />
-            Archivados
-          </button>
-        )}
-
-        {!isOpen && (
-          <button
-            onClick={() => setShowArchived(!showArchived)}
-            className={cn(
-              "w-full flex items-center justify-center py-2 rounded-md transition-colors",
-              showArchived ? "text-primary" : "text-muted-foreground hover:text-foreground"
-            )}
-            data-testid="button-toggle-archived-collapsed"
-          >
-            <Archive size={18} />
-          </button>
-        )}
-
-        {showArchived && (
-          <div className="space-y-1 mt-2">
-            {archivedAreas.length === 0 && archivedProjects.length === 0 ? (
-              <div className="text-xs text-muted-foreground px-3 py-2 italic">
-                {isOpen ? "Sin elementos archivados" : "—"}
-              </div>
-            ) : (
-              <>
-                {archivedAreas.map((area) => (
-                  <div key={area.id} className="flex items-center gap-2 px-3 py-1.5 text-muted-foreground">
-                    {(() => {
-                      const Icon = extendedIconMap[area.icon] || extendedIconMap.Home;
-                      return <Icon size={16} />;
-                    })()}
-                    {isOpen && (
-                      <>
-                        <span className="text-sm truncate flex-1">{area.name}</span>
-                        <button
-                          onClick={() => unarchiveArea(area.id)}
-                          className="p-1 hover:text-foreground transition-colors"
-                          title="Desarchivar"
-                          data-testid={`button-unarchive-area-${area.id}`}
-                        >
-                          <ArchiveRestore size={14} />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                ))}
-                {archivedProjects.map((project) => (
-                  <div key={project.id} className="flex items-center gap-2 px-3 py-1.5 text-muted-foreground">
-                    {(() => {
-                      const Icon = extendedIconMap[project.icon] || FolderKanban;
-                      return <Icon size={16} />;
-                    })()}
-                    {isOpen && (
-                      <>
-                        <span className="text-sm truncate flex-1">{project.name}</span>
-                        <button
-                          onClick={() => unarchiveProject(project.id)}
-                          className="p-1 hover:text-foreground transition-colors"
-                          title="Desarchivar"
-                          data-testid={`button-unarchive-project-${project.id}`}
-                        >
-                          <ArchiveRestore size={14} />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                ))}
-              </>
-            )}
-          </div>
-        )}
       </div>
 
       <div className="p-2 border-t border-border space-y-2">
@@ -717,6 +638,136 @@ export function AreaMenu() {
           <LogOut className={cn("h-4 w-4", isOpen && "mr-2")} />
           {isOpen && "Cerrar sesión"}
         </Button>
+      </div>
+
+      <div className="p-2 border-t border-border flex justify-center">
+        <Dialog open={isArchivedDialogOpen} onOpenChange={setIsArchivedDialogOpen}>
+          <DialogTrigger asChild>
+            <button
+              className="p-2 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+              title="Archivados"
+              data-testid="button-open-archived"
+            >
+              <Archive size={16} />
+            </button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-[500px]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Archive size={18} />
+                Archivados
+              </DialogTitle>
+            </DialogHeader>
+            <div className="mt-4 space-y-4 max-h-[60vh] overflow-y-auto">
+              {archivedAreas.length === 0 && archivedProjects.length === 0 ? (
+                <div className="text-center text-muted-foreground py-8">
+                  <Archive className="mx-auto h-12 w-12 mb-3 opacity-30" />
+                  <p>No hay elementos archivados</p>
+                </div>
+              ) : (
+                <>
+                  {archivedAreas.length > 0 && (
+                    <div className="space-y-2">
+                      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">Áreas</h3>
+                      {archivedAreas.map((area) => {
+                        const Icon = extendedIconMap[area.icon] || extendedIconMap.Home;
+                        const isViewing = viewingArchivedArea === area.id;
+                        return (
+                          <div 
+                            key={area.id} 
+                            className={cn(
+                              "flex items-center gap-3 p-3 rounded-lg border transition-colors cursor-pointer",
+                              isViewing ? "bg-primary/10 border-primary/30" : "hover:bg-muted/50 border-border"
+                            )}
+                            onClick={() => {
+                              setViewingArchivedArea(isViewing ? null : area.id);
+                              setViewingArchivedProject(null);
+                              if (!isViewing) {
+                                setActiveAreaId(area.id);
+                                setIsArchivedDialogOpen(false);
+                              }
+                            }}
+                            data-testid={`archived-area-${area.id}`}
+                          >
+                            <Icon size={20} className="text-muted-foreground" />
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium truncate">{area.name}</p>
+                              {area.description && (
+                                <p className="text-sm text-muted-foreground truncate">{area.description}</p>
+                              )}
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                unarchiveArea(area.id);
+                              }}
+                              className="shrink-0"
+                              title="Restaurar"
+                              data-testid={`button-unarchive-area-${area.id}`}
+                            >
+                              <ArchiveRestore size={16} />
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {archivedProjects.length > 0 && (
+                    <div className="space-y-2">
+                      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">Proyectos</h3>
+                      {archivedProjects.map((project) => {
+                        const Icon = extendedIconMap[project.icon] || FolderKanban;
+                        const isViewing = viewingArchivedProject === project.id;
+                        return (
+                          <div 
+                            key={project.id} 
+                            className={cn(
+                              "flex items-center gap-3 p-3 rounded-lg border transition-colors cursor-pointer",
+                              isViewing ? "bg-primary/10 border-primary/30" : "hover:bg-muted/50 border-border"
+                            )}
+                            onClick={() => {
+                              setViewingArchivedProject(isViewing ? null : project.id);
+                              setViewingArchivedArea(null);
+                              if (!isViewing) {
+                                setActiveProjectId(project.id);
+                                setIsArchivedDialogOpen(false);
+                              }
+                            }}
+                            data-testid={`archived-project-${project.id}`}
+                          >
+                            <Icon size={20} className="text-muted-foreground" />
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium truncate">{project.name}</p>
+                              {project.description && (
+                                <p className="text-sm text-muted-foreground truncate">{project.description}</p>
+                              )}
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                unarchiveProject(project.id);
+                              }}
+                              className="shrink-0"
+                              title="Restaurar"
+                              data-testid={`button-unarchive-project-${project.id}`}
+                            >
+                              <ArchiveRestore size={16} />
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </motion.div>
   );
