@@ -11,6 +11,56 @@ import { DiaryProvider, useDiary } from "@/lib/diary-context";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
+function calculateVisibleLevels(skills: Skill[]): Set<number> {
+  const visibleLevels = new Set<number>();
+  
+  const levelMap = new Map<number, Skill[]>();
+  skills.forEach(skill => {
+    if (!levelMap.has(skill.level)) {
+      levelMap.set(skill.level, []);
+    }
+    levelMap.get(skill.level)!.push(skill);
+  });
+  
+  const sortedLevels = Array.from(levelMap.keys()).sort((a, b) => a - b);
+  
+  if (sortedLevels.length === 0) return visibleLevels;
+  
+  const firstLevel = sortedLevels[0];
+  visibleLevels.add(firstLevel);
+  
+  const firstLevelSkills = levelMap.get(firstLevel);
+  const firstLevelStarredNode = firstLevelSkills?.find(s => s.isFinalNode === 1);
+  if (firstLevelStarredNode && firstLevelStarredNode.status === "mastered") {
+    return visibleLevels;
+  }
+  
+  for (let i = 1; i < sortedLevels.length; i++) {
+    const currentLevel = sortedLevels[i];
+    const previousLevel = sortedLevels[i - 1];
+    
+    const previousLevelSkills = levelMap.get(previousLevel);
+    if (previousLevelSkills && previousLevelSkills.length > 0) {
+      const starredNode = previousLevelSkills.find(s => s.isFinalNode === 1);
+      const gatingNode = starredNode || previousLevelSkills.reduce(
+        (max, s) => s.y > max.y ? s : max,
+        previousLevelSkills[0]
+      );
+      
+      if (gatingNode.status === "mastered") {
+        if (gatingNode.isFinalNode === 1) {
+          break;
+        }
+        visibleLevels.add(currentLevel);
+      } else {
+        break;
+      }
+    }
+  }
+  
+  return visibleLevels;
+}
+
 function TopRightControls() {
   const { theme, setTheme, resolvedTheme } = useTheme();
   const currentTheme = resolvedTheme || theme;
@@ -63,8 +113,12 @@ function QuestDiary() {
     setSelectedSubtaskId(null);
     try {
       const response = await fetch(`/api/skills/${skillId}/subskills`);
-      const subtasks = await response.json();
-      setSelectedSubtasks(subtasks.filter((s: Skill) => s.title.toLowerCase() !== "inicio"));
+      const allSubtasks = await response.json();
+      const visibleLevels = calculateVisibleLevels(allSubtasks);
+      const visibleSubtasks = allSubtasks.filter((s: Skill) => 
+        visibleLevels.has(s.level) && s.title.toLowerCase() !== "inicio"
+      );
+      setSelectedSubtasks(visibleSubtasks);
     } catch {
       setSelectedSubtasks([]);
     }
@@ -217,69 +271,6 @@ function SkillCanvas() {
   const activeItem = activeArea || activeProject;
   const isProject = !activeArea && !!activeProject;
   const isSubSkillView = !!activeParentSkillId;
-
-  // Helper function to calculate visible levels dynamically
-  // The lowest level is always visible
-  // Level N is visible only if the gating node of the previous level is mastered
-  // If a starred node (isFinalNode=1) is mastered, no further levels are shown
-  const calculateVisibleLevels = (skills: Skill[]): Set<number> => {
-    const visibleLevels = new Set<number>();
-    
-    // Group skills by level
-    const levelMap = new Map<number, Skill[]>();
-    skills.forEach(skill => {
-      if (!levelMap.has(skill.level)) {
-        levelMap.set(skill.level, []);
-      }
-      levelMap.get(skill.level)!.push(skill);
-    });
-    
-    // Get sorted levels
-    const sortedLevels = Array.from(levelMap.keys()).sort((a, b) => a - b);
-    
-    if (sortedLevels.length === 0) return visibleLevels;
-    
-    // The first (lowest) level is always visible
-    const firstLevel = sortedLevels[0];
-    visibleLevels.add(firstLevel);
-    
-    // Check if the first level has a starred node that is mastered - if so, stop
-    const firstLevelSkills = levelMap.get(firstLevel);
-    const firstLevelStarredNode = firstLevelSkills?.find(s => s.isFinalNode === 1);
-    if (firstLevelStarredNode && firstLevelStarredNode.status === "mastered") {
-      return visibleLevels;
-    }
-    
-    // For each subsequent level, check if the gating node of the previous level is mastered
-    for (let i = 1; i < sortedLevels.length; i++) {
-      const currentLevel = sortedLevels[i];
-      const previousLevel = sortedLevels[i - 1];
-      
-      const previousLevelSkills = levelMap.get(previousLevel);
-      if (previousLevelSkills && previousLevelSkills.length > 0) {
-        // Find the gating node: starred node if exists, otherwise highest Y position
-        const starredNode = previousLevelSkills.find(s => s.isFinalNode === 1);
-        const gatingNode = starredNode || previousLevelSkills.reduce(
-          (max, s) => s.y > max.y ? s : max,
-          previousLevelSkills[0]
-        );
-        
-        // Only show this level if the gating node is mastered
-        if (gatingNode.status === "mastered") {
-          // If the gating node is starred and mastered, this is the absolute end
-          if (gatingNode.isFinalNode === 1) {
-            break;
-          }
-          visibleLevels.add(currentLevel);
-        } else {
-          // Stop checking further levels since this level is not visible
-          break;
-        }
-      }
-    }
-    
-    return visibleLevels;
-  };
 
   if (isSubSkillView) {
     const currentParent = parentSkillStack[parentSkillStack.length - 1];
