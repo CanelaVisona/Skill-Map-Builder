@@ -1611,15 +1611,28 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     const updatesToMake: Array<{ skillId: string; newStatus: SkillStatus }> = [];
 
     areas.forEach(area => {
+      const skillsInLevel = new Map<number, typeof area.skills>();
+      area.skills.forEach(skill => {
+        if (!skillsInLevel.has(skill.level)) {
+          skillsInLevel.set(skill.level, []);
+        }
+        skillsInLevel.get(skill.level)!.push(skill);
+      });
+
+      // Sort skills in each level by Y position
+      skillsInLevel.forEach((skills) => {
+        skills.sort((a, b) => a.y - b.y);
+      });
+
       area.skills.forEach(skill => {
         if (skill.manualLock) return;
         if (skill.level > area.unlockedLevel) return;
 
-        const skillsInLevel = area.skills.filter(s => s.level === skill.level);
-        const isLastNodeOfLevel = skillsInLevel.length > 0 && 
-          skill.y === Math.max(...skillsInLevel.map(s => s.y));
+        const levelSkills = skillsInLevel.get(skill.level) || [];
+        const isLastNodeOfLevel = levelSkills.length > 0 && 
+          skill.y === Math.max(...levelSkills.map(s => s.y));
         const isFinalNodeByPosition = isLastNodeOfLevel || skill.isFinalNode === 1;
-        const otherNodesInLevel = skillsInLevel.filter(s => s.id !== skill.id);
+        const otherNodesInLevel = levelSkills.filter(s => s.id !== skill.id);
         const allOthersMastered = otherNodesInLevel.every(s => s.status === "mastered");
 
         // Re-lock final nodes that are "available" but shouldn't be
@@ -1630,19 +1643,21 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
 
         if (skill.status !== "locked") return;
 
-        const dependencies = skill.dependencies.map(depId => 
-          area.skills.find(s => s.id === depId)
-        );
+        // Find the previous skill by Y position in the same level
+        const skillIndex = levelSkills.findIndex(s => s.id === skill.id);
+        const previousSkill = skillIndex > 0 ? levelSkills[skillIndex - 1] : null;
         
-        const allDepsMastered = dependencies.length === 0 || 
-          dependencies.every(dep => dep && dep.status === "mastered");
+        // A skill can be unlocked if:
+        // - It's the first skill in the level (no previous skill), OR
+        // - The previous skill is mastered
+        const canUnlock = !previousSkill || previousSkill.status === "mastered";
         
-        // Final nodes (has star OR is last node by position) can only be unlocked if ALL other nodes in the level are mastered
+        // Final nodes can only be unlocked if ALL other nodes in the level are mastered
         if (isFinalNodeByPosition) {
-          if (allDepsMastered && allOthersMastered) {
+          if (canUnlock && allOthersMastered) {
             updatesToMake.push({ skillId: skill.id, newStatus: "available" });
           }
-        } else if (allDepsMastered) {
+        } else if (canUnlock) {
           updatesToMake.push({ skillId: skill.id, newStatus: "available" });
         }
       });
@@ -1676,15 +1691,28 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     const updatesToMake: Array<{ skillId: string; newStatus: SkillStatus }> = [];
 
     projects.forEach(project => {
+      const skillsInLevel = new Map<number, typeof project.skills>();
+      project.skills.forEach(skill => {
+        if (!skillsInLevel.has(skill.level)) {
+          skillsInLevel.set(skill.level, []);
+        }
+        skillsInLevel.get(skill.level)!.push(skill);
+      });
+
+      // Sort skills in each level by Y position
+      skillsInLevel.forEach((skills) => {
+        skills.sort((a, b) => a.y - b.y);
+      });
+
       project.skills.forEach(skill => {
         if (skill.manualLock) return;
         if (skill.level > project.unlockedLevel) return;
 
-        const skillsInLevel = project.skills.filter(s => s.level === skill.level);
-        const isLastNodeOfLevel = skillsInLevel.length > 0 && 
-          skill.y === Math.max(...skillsInLevel.map(s => s.y));
+        const levelSkills = skillsInLevel.get(skill.level) || [];
+        const isLastNodeOfLevel = levelSkills.length > 0 && 
+          skill.y === Math.max(...levelSkills.map(s => s.y));
         const isFinalNodeByPosition = isLastNodeOfLevel || skill.isFinalNode === 1;
-        const otherNodesInLevel = skillsInLevel.filter(s => s.id !== skill.id);
+        const otherNodesInLevel = levelSkills.filter(s => s.id !== skill.id);
         const allOthersMastered = otherNodesInLevel.every(s => s.status === "mastered");
 
         // Re-lock final nodes that are "available" but shouldn't be
@@ -1695,19 +1723,21 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
 
         if (skill.status !== "locked") return;
 
-        const dependencies = skill.dependencies.map(depId => 
-          project.skills.find(s => s.id === depId)
-        );
+        // Find the previous skill by Y position in the same level
+        const skillIndex = levelSkills.findIndex(s => s.id === skill.id);
+        const previousSkill = skillIndex > 0 ? levelSkills[skillIndex - 1] : null;
         
-        const allDepsMastered = dependencies.length === 0 || 
-          dependencies.every(dep => dep && dep.status === "mastered");
+        // A skill can be unlocked if:
+        // - It's the first skill in the level (no previous skill), OR
+        // - The previous skill is mastered
+        const canUnlock = !previousSkill || previousSkill.status === "mastered";
         
-        // Final nodes (has star OR is last node by position) can only be unlocked if ALL other nodes in the level are mastered
+        // Final nodes can only be unlocked if ALL other nodes in the level are mastered
         if (isFinalNodeByPosition) {
-          if (allDepsMastered && allOthersMastered) {
+          if (canUnlock && allOthersMastered) {
             updatesToMake.push({ skillId: skill.id, newStatus: "available" });
           }
-        } else if (allDepsMastered) {
+        } else if (canUnlock) {
           updatesToMake.push({ skillId: skill.id, newStatus: "available" });
         }
       });
