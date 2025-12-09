@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { SkillTreeProvider, useSkillTree, type Skill } from "@/lib/skill-context";
 import { AreaMenu } from "@/components/AreaMenu";
 import { SkillNode } from "@/components/SkillNode";
@@ -43,67 +44,83 @@ function TopRightControls() {
 function QuestDiary() {
   const { isDiaryOpen, closeDiary } = useDiary();
   const { activeArea, activeProject, subSkills, activeParentSkillId } = useSkillTree();
+  const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
   
   const activeItem = activeArea || activeProject;
   const skills = activeParentSkillId 
     ? subSkills 
     : (activeItem?.skills || []);
   
-  const skillsWithFeedback = skills.filter(s => s.feedback && s.title.toLowerCase() !== "inicio");
+  const completedSkills = skills.filter(s => s.status === "mastered" && s.title.toLowerCase() !== "inicio");
+  const selectedSkill = completedSkills.find(s => s.id === selectedSkillId);
   
   return (
     <Dialog open={isDiaryOpen} onOpenChange={(open) => !open && closeDiary()}>
-      <DialogContent className="max-w-2xl max-h-[80vh] p-0 overflow-hidden bg-background border border-border">
-        <div className="flex flex-col h-full">
-          <div className="p-6 pb-4">
-            <h2 className="text-2xl font-bold tracking-tight">
-              Diario
-            </h2>
-            <p className="text-sm text-muted-foreground mt-1">
-              {activeItem?.name || "Selecciona un área"}
-            </p>
+      <DialogContent className="max-w-3xl h-[70vh] p-0 overflow-hidden bg-background border border-border">
+        <div className="flex h-full">
+          <div className="w-1/2 flex flex-col border-r border-border">
+            <div className="p-6 pb-4">
+              <h2 className="text-2xl font-bold tracking-tight">
+                Diario
+              </h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                {activeItem?.name || "Selecciona un área"}
+              </p>
+            </div>
+            
+            <ScrollArea className="flex-1 px-6 pb-6">
+              {completedSkills.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <BookOpen className="h-8 w-8 text-muted-foreground/40 mb-3" />
+                  <p className="text-muted-foreground text-sm">Sin tareas completadas</p>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {completedSkills.map((skill) => (
+                    <button
+                      key={skill.id}
+                      onClick={() => setSelectedSkillId(skill.id)}
+                      className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                        selectedSkillId === skill.id 
+                          ? "bg-muted text-foreground" 
+                          : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                      }`}
+                      data-testid={`diary-entry-${skill.id}`}
+                    >
+                      {skill.title}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </ScrollArea>
           </div>
           
-          <ScrollArea className="flex-1 px-6 pb-6">
-            {skillsWithFeedback.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <BookOpen className="h-8 w-8 text-muted-foreground/40 mb-3" />
-                <p className="text-muted-foreground">Tu diario está vacío</p>
-                <p className="text-sm text-muted-foreground/60 mt-1">
-                  Agrega notas a tus tareas y aparecerán aquí
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {skillsWithFeedback.map((skill, index) => (
-                  <motion.div 
-                    key={skill.id}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.03 }}
-                    className="group"
-                    data-testid={`diary-entry-${skill.id}`}
-                  >
-                    <div className="space-y-2">
-                      <div>
-                        <h3 className="font-medium text-foreground text-sm">
-                          {skill.title}
-                        </h3>
-                        {skill.description && (
-                          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
-                            {skill.description}
-                          </p>
-                        )}
-                      </div>
-                      <p className="text-sm text-muted-foreground leading-relaxed pl-3 border-l-2 border-border">
-                        {skill.feedback}
-                      </p>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            )}
-          </ScrollArea>
+          <div className="w-1/2 flex flex-col">
+            <ScrollArea className="flex-1 p-6">
+              {selectedSkill ? (
+                <div className="space-y-4">
+                  <h3 className="font-medium text-foreground">
+                    {selectedSkill.title}
+                  </h3>
+                  {selectedSkill.description && (
+                    <p className="text-sm text-muted-foreground">
+                      {selectedSkill.description}
+                    </p>
+                  )}
+                  <div className="pt-2">
+                    <p className="text-xs text-muted-foreground/60 uppercase tracking-wide mb-2">Notas</p>
+                    <p className="text-sm text-foreground leading-relaxed">
+                      {selectedSkill.feedback || "no comments"}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="h-full flex items-center justify-center text-muted-foreground/40 text-sm">
+                  Selecciona una tarea
+                </div>
+              )}
+            </ScrollArea>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
