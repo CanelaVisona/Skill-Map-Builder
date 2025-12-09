@@ -1,21 +1,27 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 
 interface DiaryContextType {
-  isDiaryMode: boolean;
-  toggleDiaryMode: () => void;
+  isDiaryOpen: boolean;
+  openDiary: () => void;
+  closeDiary: () => void;
 }
 
-const DiaryContext = createContext<DiaryContextType>({ isDiaryMode: false, toggleDiaryMode: () => {} });
+const DiaryContext = createContext<DiaryContextType>({ 
+  isDiaryOpen: false, 
+  openDiary: () => {}, 
+  closeDiary: () => {} 
+});
 
-export function useDiaryMode() {
+export function useDiary() {
   return useContext(DiaryContext);
 }
 
 export function DiaryProvider({ children }: { children: ReactNode }) {
-  const [isDiaryMode, setIsDiaryMode] = useState(false);
-  const toggleDiaryMode = () => setIsDiaryMode(prev => !prev);
+  const [isDiaryOpen, setIsDiaryOpen] = useState(false);
+  const openDiary = () => setIsDiaryOpen(true);
+  const closeDiary = () => setIsDiaryOpen(false);
   return (
-    <DiaryContext.Provider value={{ isDiaryMode, toggleDiaryMode }}>
+    <DiaryContext.Provider value={{ isDiaryOpen, openDiary, closeDiary }}>
       {children}
     </DiaryContext.Provider>
   );

@@ -3,15 +3,17 @@ import { AreaMenu } from "@/components/AreaMenu";
 import { SkillNode } from "@/components/SkillNode";
 import { SkillConnection } from "@/components/SkillConnection";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Sun, Moon, BookOpen } from "lucide-react";
+import { ArrowLeft, Sun, Moon, BookOpen, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
-import { DiaryProvider, useDiaryMode } from "@/lib/diary-context";
+import { DiaryProvider, useDiary } from "@/lib/diary-context";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 function TopRightControls() {
   const { theme, setTheme, resolvedTheme } = useTheme();
   const currentTheme = resolvedTheme || theme;
-  const { isDiaryMode, toggleDiaryMode } = useDiaryMode();
+  const { openDiary } = useDiary();
   
   return (
     <div className="fixed top-4 right-4 z-50 flex flex-col gap-3">
@@ -27,14 +29,80 @@ function TopRightControls() {
         )}
       </button>
       <button
-        className={`transition-colors ${isDiaryMode ? "text-amber-500" : "text-muted-foreground/40 hover:text-muted-foreground"}`}
-        onClick={toggleDiaryMode}
+        className="text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+        onClick={openDiary}
         data-testid="button-diary-toggle"
         title="Quest Diary"
       >
         <BookOpen className="h-5 w-5" />
       </button>
     </div>
+  );
+}
+
+function QuestDiary() {
+  const { isDiaryOpen, closeDiary } = useDiary();
+  const { activeArea, activeProject, subSkills, activeParentSkillId } = useSkillTree();
+  
+  const activeItem = activeArea || activeProject;
+  const skills = activeParentSkillId 
+    ? subSkills 
+    : (activeItem?.skills || []);
+  
+  const skillsWithFeedback = skills.filter(s => s.feedback && s.title.toLowerCase() !== "inicio");
+  
+  return (
+    <Dialog open={isDiaryOpen} onOpenChange={(open) => !open && closeDiary()}>
+      <DialogContent className="max-w-2xl h-[80vh] p-0 overflow-hidden bg-amber-50 dark:bg-stone-900 border-amber-200 dark:border-amber-900">
+        <div className="relative h-full flex flex-col">
+          <div className="bg-amber-100 dark:bg-stone-800 border-b border-amber-200 dark:border-amber-900 px-6 py-4 flex items-center justify-between">
+            <h2 className="text-xl font-semibold text-amber-900 dark:text-amber-100 flex items-center gap-2">
+              <BookOpen className="h-5 w-5" />
+              Quest Diary
+            </h2>
+            <span className="text-sm text-amber-700 dark:text-amber-300">
+              {activeItem?.name || "Sin área seleccionada"}
+            </span>
+          </div>
+          
+          <ScrollArea className="flex-1 p-6">
+            {skillsWithFeedback.length === 0 ? (
+              <div className="text-center text-amber-700 dark:text-amber-400 py-12">
+                <BookOpen className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No hay notas en tu diario todavía.</p>
+                <p className="text-sm mt-2 opacity-70">Agrega feedback a tus tareas para verlas aquí.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {skillsWithFeedback.map((skill) => (
+                  <div 
+                    key={skill.id}
+                    className="flex gap-4 p-4 bg-white dark:bg-stone-800 rounded-lg border border-amber-200 dark:border-amber-800 shadow-sm"
+                    data-testid={`diary-entry-${skill.id}`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-medium text-amber-900 dark:text-amber-100 truncate">
+                        {skill.title}
+                      </h3>
+                      {skill.description && (
+                        <p className="text-xs text-amber-700 dark:text-amber-400 mt-1 line-clamp-1">
+                          {skill.description}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0 pl-4 border-l border-amber-200 dark:border-amber-700">
+                      <p className="text-sm text-amber-800 dark:text-amber-200 italic leading-relaxed">
+                        "{skill.feedback}"
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -369,6 +437,7 @@ export default function SkillTreePage() {
           <TopRightControls />
           <AreaMenu />
           <SkillCanvas />
+          <QuestDiary />
         </div>
       </SkillTreeProvider>
     </DiaryProvider>

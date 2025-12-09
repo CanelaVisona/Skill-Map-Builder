@@ -2,7 +2,6 @@ import { motion } from "framer-motion";
 import { type Skill, useSkillTree } from "@/lib/skill-context";
 import { cn } from "@/lib/utils";
 import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus, Star } from "lucide-react";
-import { useDiaryMode } from "@/lib/diary-context";
 import { useState, useRef } from "react";
 import {
   Popover,
@@ -89,8 +88,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
   const shouldForceLock = isFinalNodeByPosition && skill.status !== "mastered" && !allOthersMastered;
   const isLocked = skill.status === "locked" || shouldForceLock;
   const isMastered = skill.status === "mastered";
-  
-  const { isDiaryMode } = useDiaryMode();
   
   const [isOpen, setIsOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -343,22 +340,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
               {skill.title}
             </span>
           </div>
-
-          {/* Feedback Balloon - Quest Diary Mode */}
-          {isDiaryMode && skill.feedback && (
-            <div 
-              className="absolute right-[-220px] top-1/2 -translate-y-1/2 max-w-[200px] z-10"
-              data-testid={`feedback-balloon-${skill.id}`}
-            >
-              <div className="relative bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 rounded-xl px-3 py-2 shadow-sm">
-                <div className="absolute left-[-8px] top-1/2 -translate-y-1/2 w-0 h-0 border-t-[6px] border-t-transparent border-b-[6px] border-b-transparent border-r-[8px] border-r-amber-200 dark:border-r-amber-800"></div>
-                <div className="absolute left-[-6px] top-1/2 -translate-y-1/2 w-0 h-0 border-t-[5px] border-t-transparent border-b-[5px] border-b-transparent border-r-[6px] border-r-amber-50 dark:border-r-amber-950/50"></div>
-                <p className="text-xs text-amber-900 dark:text-amber-100 leading-relaxed italic line-clamp-3">
-                  "{skill.feedback}"
-                </p>
-              </div>
-            </div>
-          )}
         </div>
       </PopoverAnchor>
       <PopoverContent 
