@@ -109,6 +109,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
   const isLongPress = useRef(false);
   
   const [isSubtitleDialogOpen, setIsSubtitleDialogOpen] = useState(false);
+  const [isSubtaskConfirmOpen, setIsSubtaskConfirmOpen] = useState(false);
   const levelSubtitles = isProject ? (activeProject?.levelSubtitles || {}) : (activeArea?.levelSubtitles || {});
   const currentSubtitle = levelSubtitles[skill.level.toString()] || "";
   const [editSubtitle, setEditSubtitle] = useState(currentSubtitle);
@@ -145,8 +146,17 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
     }
     if (!isSubSkillView && !isLocked && !isInicioNode) {
       e.stopPropagation();
-      enterSubSkillTree(skill.id, skill.title);
+      setIsSubtaskConfirmOpen(true);
     }
+  };
+
+  const handleConfirmSubtasks = () => {
+    setIsSubtaskConfirmOpen(false);
+    enterSubSkillTree(skill.id, skill.title);
+  };
+
+  const handleDeclineSubtasks = () => {
+    setIsSubtaskConfirmOpen(false);
   };
 
   const handleLevelLongPressStart = (e: React.TouchEvent | React.MouseEvent) => {
@@ -667,6 +677,25 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
           </Button>
           <Button onClick={handleSubtitleSave} className="flex-1 border-0" data-testid="button-save-subtitle">
             Guardar
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={isSubtaskConfirmOpen} onOpenChange={setIsSubtaskConfirmOpen}>
+      <DialogContent className="sm:max-w-[350px] border-0 shadow-2xl">
+        <DialogHeader>
+          <DialogTitle className="text-lg font-medium">{skill.title}</DialogTitle>
+        </DialogHeader>
+        <div className="py-4">
+          <p className="text-sm text-muted-foreground">¿Esta tarea necesita una red de subtareas?</p>
+        </div>
+        <div className="flex gap-2 pt-2">
+          <Button variant="ghost" onClick={handleDeclineSubtasks} className="flex-1 bg-muted/50 hover:bg-muted" data-testid="button-no-subtasks">
+            No
+          </Button>
+          <Button onClick={handleConfirmSubtasks} className="flex-1 border-0" data-testid="button-yes-subtasks">
+            Sí
           </Button>
         </div>
       </DialogContent>
