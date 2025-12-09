@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 function calculateVisibleLevels(skills: Skill[]): Set<number> {
@@ -376,22 +377,41 @@ function SkillCanvas() {
               <p className="text-muted-foreground max-w-md text-sm leading-relaxed ml-11">
                 Sub-habilidades de {currentParent?.title}
               </p>
-              <button
-                onClick={async () => {
-                  if (confirm("¿Estás seguro de que quieres borrar todas las sub-habilidades?")) {
-                    try {
-                      await deleteSubSkillTree();
-                    } catch (error) {
-                      alert("Error al borrar las sub-habilidades. Por favor, intenta de nuevo.");
-                    }
-                  }
-                }}
-                className="text-muted-foreground/50 hover:text-destructive text-xs ml-11 mt-1 flex items-center gap-1 transition-colors"
-                data-testid="button-delete-subtree"
-              >
-                <Trash2 className="h-3 w-3" />
-                Borrar skill tree
-              </button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <button
+                    className="text-muted-foreground/50 hover:text-destructive text-xs ml-11 mt-1 flex items-center gap-1 transition-colors"
+                    data-testid="button-delete-subtree"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    Borrar skill tree
+                  </button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>¿Eliminar skill tree de "{currentParent?.title}"?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Esta acción no se puede deshacer. Se eliminarán permanentemente todas las sub-habilidades de este nodo.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={async () => {
+                        try {
+                          await deleteSubSkillTree();
+                        } catch (error) {
+                          console.error("Error al borrar las sub-habilidades:", error);
+                          alert("Error al borrar las sub-habilidades. Por favor, intenta de nuevo.");
+                        }
+                      }}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      Eliminar
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
 
             <div 
