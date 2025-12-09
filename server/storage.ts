@@ -197,16 +197,16 @@ export class DbStorage implements IStorage {
       for (let position = 1; position <= 5; position++) {
         const id = randomUUID();
         const deps: string[] = previousSkillId ? [previousSkillId] : [];
-        const isFirstNodeLevel1 = level === 1 && position === 1;
-        const isFirstNodeHigherLevel = level >= 2 && position === 1;
+        const isFirstNode = position === 1;
+        const isLevel1FirstNode = level === 1 && position === 1;
         let nodeTitle = "?";
         let nodeStatus: "locked" | "available" | "mastered" = "locked";
-        if (isFirstNodeLevel1) {
+        if (isLevel1FirstNode) {
           nodeTitle = "inicio";
           nodeStatus = "mastered";
-        } else if (isFirstNodeHigherLevel) {
+        } else if (isFirstNode && level >= 2) {
           nodeTitle = "";
-          nodeStatus = "available";
+          nodeStatus = "mastered";
         }
         const skillData: typeof skills.$inferInsert = {
           id,
@@ -248,16 +248,16 @@ export class DbStorage implements IStorage {
       for (let position = 1; position <= 5; position++) {
         const id = randomUUID();
         const deps: string[] = previousSkillId ? [previousSkillId] : [];
-        const isFirstNodeLevel1 = level === 1 && position === 1;
-        const isFirstNodeHigherLevel = level >= 2 && position === 1;
+        const isFirstNode = position === 1;
+        const isLevel1FirstNode = level === 1 && position === 1;
         let nodeTitle = "?";
         let nodeStatus: "locked" | "available" | "mastered" = "locked";
-        if (isFirstNodeLevel1) {
+        if (isLevel1FirstNode) {
           nodeTitle = "inicio";
           nodeStatus = "mastered";
-        } else if (isFirstNodeHigherLevel) {
+        } else if (isFirstNode && level >= 2) {
           nodeTitle = "";
-          nodeStatus = "available";
+          nodeStatus = "mastered";
         }
         const skillData: typeof skills.$inferInsert = {
           id,
@@ -330,17 +330,17 @@ export class DbStorage implements IStorage {
       for (let position = 1; position <= 5; position++) {
         const id = randomUUID();
         const deps: string[] = previousSkillId ? [previousSkillId] : [];
-        const isFirstNodeLevel1 = level === 1 && position === 1;
-        const isFirstNodeHigherLevel = level >= 2 && position === 1;
+        const isFirstNode = position === 1;
+        const isLevel1FirstNode = level === 1 && position === 1;
         const isLastNode = position === 5;
         let nodeTitle = "?";
         let nodeStatus: "locked" | "available" | "mastered" = "locked";
-        if (isFirstNodeLevel1) {
+        if (isLevel1FirstNode) {
           nodeTitle = "inicio";
           nodeStatus = "mastered";
-        } else if (isFirstNodeHigherLevel) {
+        } else if (isFirstNode && level >= 2) {
           nodeTitle = "";
-          nodeStatus = "available";
+          nodeStatus = "mastered";
         }
         const skillData: typeof skills.$inferInsert = {
           id,
