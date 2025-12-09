@@ -696,19 +696,33 @@ export function AreaMenu() {
                                 <p className="text-sm text-muted-foreground truncate">{area.description}</p>
                               )}
                             </div>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                unarchiveArea(area.id);
-                              }}
-                              className="shrink-0"
-                              title="Restaurar"
-                              data-testid={`button-unarchive-area-${area.id}`}
-                            >
-                              <ArchiveRestore size={16} />
-                            </Button>
+                            <div className="flex gap-1 shrink-0">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  unarchiveArea(area.id);
+                                }}
+                                title="Restaurar"
+                                data-testid={`button-unarchive-area-${area.id}`}
+                              >
+                                <ArchiveRestore size={16} />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  deleteArea(area.id);
+                                }}
+                                className="text-destructive hover:text-destructive"
+                                title="Eliminar"
+                                data-testid={`button-delete-archived-area-${area.id}`}
+                              >
+                                <Trash2 size={16} />
+                              </Button>
+                            </div>
                           </div>
                         );
                       })}
@@ -745,19 +759,33 @@ export function AreaMenu() {
                                 <p className="text-sm text-muted-foreground truncate">{project.description}</p>
                               )}
                             </div>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                unarchiveProject(project.id);
-                              }}
-                              className="shrink-0"
-                              title="Restaurar"
-                              data-testid={`button-unarchive-project-${project.id}`}
-                            >
-                              <ArchiveRestore size={16} />
-                            </Button>
+                            <div className="flex gap-1 shrink-0">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  unarchiveProject(project.id);
+                                }}
+                                title="Restaurar"
+                                data-testid={`button-unarchive-project-${project.id}`}
+                              >
+                                <ArchiveRestore size={16} />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  deleteProject(project.id);
+                                }}
+                                className="text-destructive hover:text-destructive"
+                                title="Eliminar"
+                                data-testid={`button-delete-archived-project-${project.id}`}
+                              >
+                                <Trash2 size={16} />
+                              </Button>
+                            </div>
                           </div>
                         );
                       })}
