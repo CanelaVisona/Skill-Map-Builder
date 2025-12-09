@@ -581,14 +581,20 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
                 transition={{ duration: 0.2 }}
                 className="flex-1 flex flex-col"
               >
-                <Label htmlFor="edit-action" className="text-xs text-muted-foreground uppercase tracking-wide mb-3">ACTION</Label>
-                <Textarea
+                <Label htmlFor="edit-action" className="text-xs text-muted-foreground uppercase tracking-wide mb-3">ACTION (max 10 words)</Label>
+                <Input
                   id="edit-action"
                   value={editAction}
-                  onChange={(e) => setEditAction(e.target.value)}
+                  onChange={(e) => {
+                    const words = e.target.value.split(/\s+/).filter(w => w.length > 0);
+                    if (words.length <= 10) {
+                      setEditAction(e.target.value);
+                    } else {
+                      setEditAction(words.slice(0, 10).join(" "));
+                    }
+                  }}
                   placeholder="Concrete action to take"
-                  rows={4}
-                  className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none flex-1"
+                  className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted text-lg"
                   data-testid="input-edit-action"
                   autoFocus
                 />

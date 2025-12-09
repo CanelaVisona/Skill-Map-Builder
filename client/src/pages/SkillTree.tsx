@@ -184,11 +184,17 @@ function JournalSection({
             onChange={(e) => setName(e.target.value)}
             data-testid={`input-${type}-name`}
           />
-          <Textarea
-            placeholder="Action"
+          <Input
+            placeholder="Action (max 10 words)"
             value={action}
-            onChange={(e) => setAction(e.target.value)}
-            rows={2}
+            onChange={(e) => {
+              const words = e.target.value.split(/\s+/).filter(w => w.length > 0);
+              if (words.length <= 10) {
+                setAction(e.target.value);
+              } else {
+                setAction(words.slice(0, 10).join(" "));
+              }
+            }}
             data-testid={`input-${type}-action`}
           />
           <Textarea
