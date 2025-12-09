@@ -239,18 +239,20 @@ function JournalSection({
             rows={3}
             data-testid={`input-${type}-description`}
           />
-          <div className="flex gap-2">
-            <Input
-              placeholder="Add more info..."
-              value={extraInfo}
-              onChange={(e) => setExtraInfo(e.target.value)}
-              className="flex-1"
-              data-testid={`input-${type}-extra`}
-            />
-            <Button size="sm" variant="outline" onClick={handleAddInfo} disabled={!extraInfo.trim()}>
-              +
-            </Button>
-          </div>
+          {editingId && (
+            <div className="flex gap-2">
+              <Input
+                placeholder="Add more info..."
+                value={extraInfo}
+                onChange={(e) => setExtraInfo(e.target.value)}
+                className="flex-1"
+                data-testid={`input-${type}-extra`}
+              />
+              <Button size="sm" variant="outline" onClick={handleAddInfo} disabled={!extraInfo.trim()}>
+                +
+              </Button>
+            </div>
+          )}
           <div className="flex gap-2">
             <Button size="sm" onClick={handleSubmit} data-testid={`button-save-${type}`}>
               {editingId ? "Save" : "Add"}
