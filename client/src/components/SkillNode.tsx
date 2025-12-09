@@ -487,9 +487,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
         <DialogHeader>
           <DialogTitle>Editar Habilidad</DialogTitle>
         </DialogHeader>
-        <div className="grid gap-4 py-4">
-          <div className="grid gap-2">
-            <Label htmlFor="edit-title">Título (máx. 3 palabras)</Label>
+        <div className="grid gap-6 py-4">
+          <div className="grid gap-1">
+            <Label htmlFor="edit-title" className="text-xs text-muted-foreground">Título (máx. 3 palabras)</Label>
             <Input
               id="edit-title"
               value={editTitle}
@@ -502,34 +502,37 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
                 }
               }}
               placeholder="Nombre de la habilidad"
+              className="border-0 shadow-none px-0 focus-visible:ring-0 bg-transparent"
               data-testid="input-edit-title"
             />
           </div>
-          <div className="grid gap-2">
-            <Label htmlFor="edit-description">Descripción</Label>
+          <div className="grid gap-1">
+            <Label htmlFor="edit-description" className="text-xs text-muted-foreground">Descripción</Label>
             <Textarea
               id="edit-description"
               value={editDescription}
               onChange={(e) => setEditDescription(e.target.value)}
               placeholder="Descripción de la habilidad"
               rows={3}
+              className="border-0 shadow-none px-0 focus-visible:ring-0 bg-transparent resize-none"
               data-testid="input-edit-description"
             />
           </div>
-          <div className="grid gap-2">
-            <Label htmlFor="edit-feedback">Feedback</Label>
+          <div className="grid gap-1">
+            <Label htmlFor="edit-feedback" className="text-xs text-muted-foreground">Feedback</Label>
             <Textarea
               id="edit-feedback"
               value={editFeedback}
               onChange={(e) => setEditFeedback(e.target.value)}
               placeholder="Notas, comentarios o retroalimentación..."
               rows={3}
+              className="border-0 shadow-none px-0 focus-visible:ring-0 bg-transparent resize-none"
               data-testid="input-edit-feedback"
             />
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setIsEditDialogOpen(false)} data-testid="button-cancel-edit">
+          <Button variant="ghost" onClick={() => setIsEditDialogOpen(false)} data-testid="button-cancel-edit">
             Cancelar
           </Button>
           <Button onClick={handleEditSave} data-testid="button-save-edit">
@@ -545,19 +548,20 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
           <DialogTitle>Subtítulo del Nivel {skill.level}</DialogTitle>
         </DialogHeader>
         <div className="grid gap-4 py-4">
-          <div className="grid gap-2">
-            <Label htmlFor="edit-subtitle">Subtítulo</Label>
+          <div className="grid gap-1">
+            <Label htmlFor="edit-subtitle" className="text-xs text-muted-foreground">Subtítulo</Label>
             <Input
               id="edit-subtitle"
               value={editSubtitle}
               onChange={(e) => setEditSubtitle(e.target.value)}
               placeholder="Ej: Fundamentos, Intermedio..."
+              className="border-0 shadow-none px-0 focus-visible:ring-0 bg-transparent"
               data-testid="input-edit-subtitle"
             />
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setIsSubtitleDialogOpen(false)} data-testid="button-cancel-subtitle">
+          <Button variant="ghost" onClick={() => setIsSubtitleDialogOpen(false)} data-testid="button-cancel-subtitle">
             Cancelar
           </Button>
           <Button onClick={handleSubtitleSave} data-testid="button-save-subtitle">
