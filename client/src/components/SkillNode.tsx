@@ -93,6 +93,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editStep, setEditStep] = useState(0);
   const [editTitle, setEditTitle] = useState(skill.title);
+  const [editAction, setEditAction] = useState(skill.action || "");
   const [editDescription, setEditDescription] = useState(skill.description || "");
   const [editFeedback, setEditFeedback] = useState(skill.feedback || "");
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -115,6 +116,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
     titleLongPressTimer.current = setTimeout(() => {
       isTitleLongPress.current = true;
       setEditTitle(skill.title);
+      setEditAction(skill.action || "");
       setEditDescription(skill.description || "");
       setEditStep(0);
       setIsEditDialogOpen(true);
@@ -205,16 +207,19 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
     if (isSubSkillView) {
       updateSubSkill(skill.id, { 
         title: editTitle, 
+        action: editAction,
         description: editDescription
       });
     } else if (isProject) {
       updateProjectSkill(activeId, skill.id, { 
         title: editTitle, 
+        action: editAction,
         description: editDescription
       });
     } else {
       updateSkill(activeId, skill.id, { 
         title: editTitle, 
+        action: editAction,
         description: editDescription
       });
     }
@@ -418,8 +423,13 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
           </div>
           <div className="max-h-[200px] overflow-y-auto custom-scrollbar">
             <h4 className="font-semibold leading-none mb-1.5">{skill.title}</h4>
+            {skill.action && (
+              <p className="text-sm text-foreground/90 leading-relaxed break-words mb-2">
+                {skill.action}
+              </p>
+            )}
             <p className="text-sm text-muted-foreground leading-relaxed break-words">
-              {skill.description || "No description available."}
+              {skill.description || "No narrative available."}
             </p>
             {skill.feedback && (
               <div className="mt-2 pt-2 border-t border-border/50">
@@ -564,22 +574,22 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
 
             {editStep === 1 && (
               <motion.div
-                key="step-description"
+                key="step-action"
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
                 transition={{ duration: 0.2 }}
                 className="flex-1 flex flex-col"
               >
-                <Label htmlFor="edit-description" className="text-xs text-muted-foreground uppercase tracking-wide mb-3">Descripción</Label>
+                <Label htmlFor="edit-action" className="text-xs text-muted-foreground uppercase tracking-wide mb-3">ACTION</Label>
                 <Textarea
-                  id="edit-description"
-                  value={editDescription}
-                  onChange={(e) => setEditDescription(e.target.value)}
-                  placeholder="Descripción de la habilidad"
+                  id="edit-action"
+                  value={editAction}
+                  onChange={(e) => setEditAction(e.target.value)}
+                  placeholder="Concrete action to take"
                   rows={4}
                   className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none flex-1"
-                  data-testid="input-edit-description"
+                  data-testid="input-edit-action"
                   autoFocus
                 />
                 <div className="flex justify-between mt-auto pt-6">
@@ -593,11 +603,54 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
                     <ChevronLeft className="h-5 w-5" />
                   </Button>
                   <Button 
+                    variant="ghost" 
+                    size="icon"
+                    onClick={() => setEditStep(2)}
+                    className="h-10 w-10 bg-muted/50 hover:bg-muted"
+                    data-testid="button-next-step-2"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+
+            {editStep === 2 && (
+              <motion.div
+                key="step-narrative"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+                className="flex-1 flex flex-col"
+              >
+                <Label htmlFor="edit-description" className="text-xs text-muted-foreground uppercase tracking-wide mb-3">NARRATIVE</Label>
+                <Textarea
+                  id="edit-description"
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  placeholder="Narrative description"
+                  rows={4}
+                  className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none flex-1"
+                  data-testid="input-edit-description"
+                  autoFocus
+                />
+                <div className="flex justify-between mt-auto pt-6">
+                  <Button 
+                    variant="ghost" 
+                    size="icon"
+                    onClick={() => setEditStep(1)}
+                    className="h-10 w-10 bg-muted/50 hover:bg-muted"
+                    data-testid="button-prev-step-2"
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </Button>
+                  <Button 
                     onClick={handleEditSave}
                     className="border-0"
                     data-testid="button-save-edit"
                   >
-                    Guardar
+                    Save
                   </Button>
                 </div>
               </motion.div>
