@@ -199,7 +199,7 @@ export class DbStorage implements IStorage {
         const deps: string[] = previousSkillId ? [previousSkillId] : [];
         const isFirstNode = position === 1;
         const isLevel1FirstNode = level === 1 && position === 1;
-        let nodeTitle = "?";
+        let nodeTitle = "Next challenge";
         let nodeStatus: "locked" | "available" | "mastered" = "locked";
         if (isLevel1FirstNode) {
           nodeTitle = "inicio";
@@ -250,7 +250,7 @@ export class DbStorage implements IStorage {
         const deps: string[] = previousSkillId ? [previousSkillId] : [];
         const isFirstNode = position === 1;
         const isLevel1FirstNode = level === 1 && position === 1;
-        let nodeTitle = "?";
+        let nodeTitle = "Next challenge";
         let nodeStatus: "locked" | "available" | "mastered" = "locked";
         if (isLevel1FirstNode) {
           nodeTitle = "inicio";
@@ -333,7 +333,7 @@ export class DbStorage implements IStorage {
         const isFirstNode = position === 1;
         const isLevel1FirstNode = level === 1 && position === 1;
         const isLastNode = position === 5;
-        let nodeTitle = "?";
+        let nodeTitle = "Next challenge";
         let nodeStatus: "locked" | "available" | "mastered" = "locked";
         if (isLevel1FirstNode) {
           nodeTitle = "inicio";

@@ -281,9 +281,11 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
 
           {/* Label */}
           <div className={cn(
-            "absolute left-14 top-1/2 -translate-y-1/2 whitespace-nowrap text-sm font-medium transition-colors",
+            "absolute left-14 top-1/2 -translate-y-1/2 max-w-[180px] font-medium transition-colors",
             isLocked ? "text-muted-foreground" : "text-foreground",
-            isMastered && "text-foreground"
+            isMastered && "text-foreground",
+            skill.title.length > 20 ? "text-xs leading-tight" : "text-sm",
+            skill.title.length > 30 ? "text-[10px]" : ""
           )}>
             <span
               onClick={(e) => {
@@ -293,6 +295,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
                 }
               }}
               className={cn(
+                "line-clamp-2",
                 !isSubSkillView && !isLocked && !isInicioNode && "cursor-pointer hover:underline"
               )}
               data-testid={`link-skill-title-${skill.id}`}
