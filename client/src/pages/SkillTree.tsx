@@ -108,7 +108,7 @@ function QuestDiary() {
                     </p>
                   )}
                   <div className="pt-2">
-                    <p className="text-xs text-muted-foreground/60 uppercase tracking-wide mb-2">Notas</p>
+                    <p className="text-xs text-yellow-500 dark:text-yellow-400 uppercase tracking-wide mb-2">Feedback</p>
                     <p className="text-sm text-foreground leading-relaxed">
                       {selectedSkill.feedback || "no comments"}
                     </p>
