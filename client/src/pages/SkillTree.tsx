@@ -108,7 +108,7 @@ function JournalSection({
   onEdit,
   onDelete 
 }: { 
-  type: "characters" | "places" | "shadows";
+  type: "characters" | "places";
   entries: JournalEntry[];
   isLoading: boolean;
   onAdd: (entry: { name: string; action: string; description: string }) => void;
@@ -410,6 +410,400 @@ function JournalSection({
                         : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                     }`}
                     data-testid={`card-${type}-${entry.id}`}
+                  >
+                    {entry.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+        </div>
+        
+        <div 
+          className="w-1/2 pl-4 cursor-pointer select-none"
+          onTouchStart={handleRightLongPressStart}
+          onTouchEnd={handleRightLongPressEnd}
+          onTouchCancel={handleRightLongPressEnd}
+          onMouseDown={handleRightLongPressStart}
+          onMouseUp={handleRightLongPressEnd}
+          onMouseLeave={handleRightLongPressEnd}
+        >
+          <ScrollArea className="h-full">
+            {viewingEntry ? (
+              <div className="space-y-4">
+                <h3 className="font-medium text-foreground uppercase">{viewingEntry.name}</h3>
+                {viewingEntry.description && (
+                  <p className="text-sm text-muted-foreground whitespace-pre-line">{viewingEntry.description}</p>
+                )}
+              </div>
+            ) : (
+              <div className="h-full flex items-center justify-center text-muted-foreground/40 text-sm">
+                Select an entry
+              </div>
+            )}
+          </ScrollArea>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ShadowsSection({ 
+  entries,
+  isLoading,
+  onAdd,
+  onEdit,
+  onDelete,
+  onMarkDefeated
+}: { 
+  entries: JournalShadow[];
+  isLoading: boolean;
+  onAdd: (entry: { name: string; action: string; description: string }) => void;
+  onEdit: (id: string, entry: { name: string; action: string; description: string }) => void;
+  onDelete: (id: string) => void;
+  onMarkDefeated: (id: string, defeated: 0 | 1) => void;
+}) {
+  const [activeTab, setActiveTab] = useState<"active" | "defeated">("active");
+  const [isAdding, setIsAdding] = useState(false);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [extraInfo, setExtraInfo] = useState("");
+  const [selectedEntry, setSelectedEntry] = useState<JournalShadow | null>(null);
+  const [viewingEntry, setViewingEntry] = useState<JournalShadow | null>(null);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const longPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const activeShadows = entries.filter(e => e.defeated !== 1);
+  const defeatedShadows = entries.filter(e => e.defeated === 1);
+  const currentEntries = activeTab === "active" ? activeShadows : defeatedShadows;
+
+  const handleAddNew = () => {
+    if (!name.trim()) return;
+    onAdd({ name: name.trim().toUpperCase(), action: "", description: description.trim() });
+    setIsAdding(false);
+    setName("");
+    setDescription("");
+  };
+
+  const handleAddExtraInfo = () => {
+    if (!extraInfo.trim() || !selectedEntry) return;
+    const newDescription = selectedEntry.description 
+      ? `${selectedEntry.description}\n${extraInfo.trim()}` 
+      : extraInfo.trim();
+    onEdit(selectedEntry.id, { 
+      name: selectedEntry.name, 
+      action: "", 
+      description: newDescription 
+    });
+    setSelectedEntry(null);
+    setExtraInfo("");
+  };
+
+  const handleSaveEdit = () => {
+    if (!name.trim() || !selectedEntry) return;
+    onEdit(selectedEntry.id, { 
+      name: name.trim().toUpperCase(), 
+      action: "", 
+      description: description.trim() 
+    });
+    setSelectedEntry(null);
+    setIsEditMode(false);
+    setName("");
+    setDescription("");
+  };
+
+  const handleDelete = () => {
+    if (selectedEntry) {
+      onDelete(selectedEntry.id);
+      setSelectedEntry(null);
+      setIsEditMode(false);
+      setShowDeleteConfirm(false);
+      setViewingEntry(null);
+    }
+  };
+
+  const handleToggleDefeated = () => {
+    if (selectedEntry) {
+      const newDefeated = selectedEntry.defeated === 1 ? 0 : 1;
+      onMarkDefeated(selectedEntry.id, newDefeated as 0 | 1);
+      setSelectedEntry(null);
+      setViewingEntry(null);
+    }
+  };
+
+  const handleCloseDialog = () => {
+    setSelectedEntry(null);
+    setIsEditMode(false);
+    setExtraInfo("");
+    setShowDeleteConfirm(false);
+  };
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">Loading...</div>;
+  }
+
+  const handleLeftLongPressStart = () => {
+    if (activeTab === "defeated") return;
+    longPressTimer.current = setTimeout(() => {
+      setIsAdding(true);
+      setName("");
+      setDescription("");
+    }, 500);
+  };
+
+  const handleLeftLongPressEnd = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const handleRightLongPressStart = () => {
+    if (!viewingEntry) return;
+    longPressTimer.current = setTimeout(() => {
+      setSelectedEntry(viewingEntry);
+      setName(viewingEntry.name);
+      setDescription(viewingEntry.description || "");
+      setExtraInfo("");
+      setIsEditMode(false);
+    }, 500);
+  };
+
+  const handleRightLongPressEnd = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  return (
+    <div className="h-full flex flex-col">
+      <div className="mb-4 flex items-center gap-4">
+        <div className="flex gap-2">
+          <button
+            onClick={() => { setActiveTab("active"); setViewingEntry(null); }}
+            className={`text-xs uppercase tracking-wide px-2 py-1 rounded ${
+              activeTab === "active" 
+                ? "bg-muted text-foreground" 
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+            data-testid="tab-shadows-active"
+          >
+            Activos ({activeShadows.length})
+          </button>
+          <button
+            onClick={() => { setActiveTab("defeated"); setViewingEntry(null); }}
+            className={`text-xs uppercase tracking-wide px-2 py-1 rounded ${
+              activeTab === "defeated" 
+                ? "bg-muted text-foreground" 
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+            data-testid="tab-shadows-defeated"
+          >
+            Vencidos ({defeatedShadows.length})
+          </button>
+        </div>
+      </div>
+
+      <Dialog open={isAdding} onOpenChange={(open) => !open && setIsAdding(false)}>
+        <DialogContent className="sm:max-w-md">
+          <VisuallyHidden>
+            <DialogTitle>Add Shadow</DialogTitle>
+          </VisuallyHidden>
+          
+          <div className="space-y-4">
+            <h3 className="font-medium text-foreground">Add Shadow</h3>
+            <Input
+              placeholder="NAME"
+              value={name}
+              onChange={(e) => setName(e.target.value.toUpperCase())}
+              className="uppercase bg-transparent border-none focus-visible:ring-0 px-0"
+              data-testid="input-shadows-name"
+            />
+            <Textarea
+              placeholder="Description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              className="bg-transparent border-none focus-visible:ring-0 resize-none px-0"
+              data-testid="input-shadows-description"
+            />
+            <div className="flex gap-2">
+              <Button size="sm" variant="ghost" onClick={handleAddNew} className="text-muted-foreground" data-testid="button-save-shadows">
+                Add
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setIsAdding(false)} className="text-muted-foreground">
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!selectedEntry} onOpenChange={(open) => !open && handleCloseDialog()}>
+        <DialogContent className="sm:max-w-md">
+          <VisuallyHidden>
+            <DialogTitle>{selectedEntry?.name}</DialogTitle>
+          </VisuallyHidden>
+          
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-medium text-foreground uppercase">{selectedEntry?.name}</h3>
+              <div className="flex gap-1">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setIsEditMode(!isEditMode)}
+                  className="h-8 w-8 p-0 text-muted-foreground"
+                  data-testid="button-edit-mode-shadows"
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="h-8 w-8 p-0 text-muted-foreground"
+                  data-testid="button-delete-shadows"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+
+            {selectedEntry?.description && !isEditMode && (
+              <p className="text-sm text-muted-foreground whitespace-pre-line">{selectedEntry.description}</p>
+            )}
+
+            {!isEditMode ? (
+              <>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Add more info..."
+                    value={extraInfo}
+                    onChange={(e) => setExtraInfo(e.target.value)}
+                    className="flex-1 bg-transparent border-none focus-visible:ring-0 px-0"
+                    data-testid="input-shadows-extra"
+                  />
+                  <Button 
+                    size="sm" 
+                    variant="ghost" 
+                    onClick={handleAddExtraInfo} 
+                    disabled={!extraInfo.trim()}
+                    className="text-muted-foreground"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleToggleDefeated}
+                  className="w-full text-muted-foreground justify-start"
+                  data-testid="button-toggle-defeated"
+                >
+                  {selectedEntry?.defeated === 1 ? "Restaurar a Activo" : "Marcar como Vencido"}
+                </Button>
+              </>
+            ) : (
+              <div className="space-y-3">
+                <Input
+                  placeholder="NAME"
+                  value={name}
+                  onChange={(e) => setName(e.target.value.toUpperCase())}
+                  className="uppercase bg-transparent border-none focus-visible:ring-0 px-0"
+                  data-testid="input-edit-shadows-name"
+                />
+                <Textarea
+                  placeholder="Description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={3}
+                  className="bg-transparent border-none focus-visible:ring-0 resize-none px-0"
+                  data-testid="input-edit-shadows-description"
+                />
+                <div className="flex gap-2">
+                  <Button 
+                    size="sm" 
+                    variant="ghost" 
+                    onClick={handleSaveEdit}
+                    className="text-muted-foreground"
+                  >
+                    Save
+                  </Button>
+                  <Button 
+                    size="sm" 
+                    variant="ghost" 
+                    onClick={() => setIsEditMode(false)}
+                    className="text-muted-foreground"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {showDeleteConfirm && (
+            <div className="pt-4 border-t border-border mt-4">
+              <p className="text-sm text-muted-foreground mb-3">Delete this entry?</p>
+              <div className="flex gap-2">
+                <Button 
+                  size="sm" 
+                  variant="ghost" 
+                  onClick={handleDelete}
+                  className="text-muted-foreground"
+                >
+                  Delete
+                </Button>
+                <Button 
+                  size="sm" 
+                  variant="ghost" 
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="text-muted-foreground"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <div className="flex flex-1 min-h-0">
+        <div 
+          className="w-1/2 border-r border-border pr-4 cursor-pointer select-none"
+          onTouchStart={handleLeftLongPressStart}
+          onTouchEnd={handleLeftLongPressEnd}
+          onTouchCancel={handleLeftLongPressEnd}
+          onMouseDown={handleLeftLongPressStart}
+          onMouseUp={handleLeftLongPressEnd}
+          onMouseLeave={handleLeftLongPressEnd}
+        >
+          <ScrollArea className="h-full">
+            {currentEntries.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Skull className="h-8 w-8 text-muted-foreground/40 mb-3" />
+                <p className="text-muted-foreground text-sm">
+                  {activeTab === "active" ? "No active shadows" : "No defeated shadows"}
+                </p>
+                {activeTab === "active" && (
+                  <p className="text-muted-foreground/50 text-xs mt-2">Hold to add</p>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {currentEntries.map((entry) => (
+                  <button
+                    key={entry.id}
+                    onClick={(e) => { e.stopPropagation(); setViewingEntry(entry); }}
+                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors cursor-pointer select-none ${
+                      viewingEntry?.id === entry.id 
+                        ? "bg-muted text-foreground" 
+                        : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                    }`}
+                    data-testid={`card-shadows-${entry.id}`}
                   >
                     {entry.name}
                   </button>
@@ -783,6 +1177,18 @@ function QuestDiary() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/journal/shadows"] }),
   });
 
+  const markShadowDefeated = useMutation({
+    mutationFn: async ({ id, defeated }: { id: string; defeated: 0 | 1 }) => {
+      const res = await fetch(`/api/journal/shadows/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ defeated }),
+      });
+      return res.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/journal/shadows"] }),
+  });
+
   const deleteShadow = useMutation({
     mutationFn: async (id: string) => {
       await fetch(`/api/journal/shadows/${id}`, { method: "DELETE" });
@@ -845,13 +1251,13 @@ function QuestDiary() {
               </TabsContent>
               
               <TabsContent value="shadows" className="h-[calc(100%-4rem)] mt-0">
-                <JournalSection
-                  type="shadows"
+                <ShadowsSection
                   entries={shadows}
                   isLoading={loadingShadows}
                   onAdd={(data) => createShadow.mutate(data)}
                   onEdit={(id, data) => updateShadow.mutate({ id, data })}
                   onDelete={(id) => deleteShadow.mutate(id)}
+                  onMarkDefeated={(id, defeated) => markShadowDefeated.mutate({ id, defeated })}
                 />
               </TabsContent>
             </div>

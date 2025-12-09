@@ -85,6 +85,7 @@ export const journalShadows = pgTable("journal_shadows", {
   action: text("action").notNull().default(""),
   description: text("description").notNull().default(""),
   imageUrl: text("image_url"),
+  defeated: integer("defeated").$type<0 | 1>().default(0),
 });
 
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
