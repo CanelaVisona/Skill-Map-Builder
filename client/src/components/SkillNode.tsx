@@ -483,13 +483,13 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
     </Popover>
 
     <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[425px] border-0 shadow-2xl">
         <DialogHeader>
-          <DialogTitle>Editar Habilidad</DialogTitle>
+          <DialogTitle className="text-lg font-medium">Editar Habilidad</DialogTitle>
         </DialogHeader>
-        <div className="grid gap-4 py-4">
+        <div className="grid gap-5 py-4">
           <div className="grid gap-2">
-            <Label htmlFor="edit-title">Título (máx. 3 palabras)</Label>
+            <Label htmlFor="edit-title" className="text-xs text-muted-foreground uppercase tracking-wide">Título (máx. 3 palabras)</Label>
             <Input
               id="edit-title"
               value={editTitle}
@@ -502,37 +502,40 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
                 }
               }}
               placeholder="Nombre de la habilidad"
+              className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
               data-testid="input-edit-title"
             />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="edit-description">Descripción</Label>
+            <Label htmlFor="edit-description" className="text-xs text-muted-foreground uppercase tracking-wide">Descripción</Label>
             <Textarea
               id="edit-description"
               value={editDescription}
               onChange={(e) => setEditDescription(e.target.value)}
               placeholder="Descripción de la habilidad"
               rows={3}
+              className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
               data-testid="input-edit-description"
             />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="edit-feedback">Feedback</Label>
+            <Label htmlFor="edit-feedback" className="text-xs text-muted-foreground uppercase tracking-wide">Feedback</Label>
             <Textarea
               id="edit-feedback"
               value={editFeedback}
               onChange={(e) => setEditFeedback(e.target.value)}
               placeholder="Notas, comentarios o retroalimentación..."
               rows={3}
+              className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
               data-testid="input-edit-feedback"
             />
           </div>
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setIsEditDialogOpen(false)} data-testid="button-cancel-edit">
+        <DialogFooter className="gap-2">
+          <Button variant="ghost" onClick={() => setIsEditDialogOpen(false)} className="text-muted-foreground hover:text-foreground" data-testid="button-cancel-edit">
             Cancelar
           </Button>
-          <Button onClick={handleEditSave} data-testid="button-save-edit">
+          <Button onClick={handleEditSave} className="border-0" data-testid="button-save-edit">
             Guardar
           </Button>
         </DialogFooter>
@@ -540,27 +543,28 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
     </Dialog>
 
     <Dialog open={isSubtitleDialogOpen} onOpenChange={setIsSubtitleDialogOpen}>
-      <DialogContent className="sm:max-w-[350px]">
+      <DialogContent className="sm:max-w-[350px] border-0 shadow-2xl">
         <DialogHeader>
-          <DialogTitle>Subtítulo del Nivel {skill.level}</DialogTitle>
+          <DialogTitle className="text-lg font-medium">Subtítulo del Nivel {skill.level}</DialogTitle>
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="grid gap-2">
-            <Label htmlFor="edit-subtitle">Subtítulo</Label>
+            <Label htmlFor="edit-subtitle" className="text-xs text-muted-foreground uppercase tracking-wide">Subtítulo</Label>
             <Input
               id="edit-subtitle"
               value={editSubtitle}
               onChange={(e) => setEditSubtitle(e.target.value)}
               placeholder="Ej: Fundamentos, Intermedio..."
+              className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
               data-testid="input-edit-subtitle"
             />
           </div>
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setIsSubtitleDialogOpen(false)} data-testid="button-cancel-subtitle">
+        <DialogFooter className="gap-2">
+          <Button variant="ghost" onClick={() => setIsSubtitleDialogOpen(false)} className="text-muted-foreground hover:text-foreground" data-testid="button-cancel-subtitle">
             Cancelar
           </Button>
-          <Button onClick={handleSubtitleSave} data-testid="button-save-subtitle">
+          <Button onClick={handleSubtitleSave} className="border-0" data-testid="button-save-subtitle">
             Guardar
           </Button>
         </DialogFooter>
