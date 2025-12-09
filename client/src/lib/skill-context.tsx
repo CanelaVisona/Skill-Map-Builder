@@ -1107,9 +1107,14 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     const skill = subSkills.find(s => s.id === skillId);
     if (!skill) return;
 
-    // Check if this is a final node - can only be confirmed if all other nodes in level are mastered
     const skillsInLevel = subSkills.filter(s => s.level === skill.level);
-    if (skill.isFinalNode === 1 && skill.status !== "mastered") {
+    const isLastNodeOfLevel = skillsInLevel.length > 0 && 
+      skill.y === Math.max(...skillsInLevel.map(s => s.y));
+    
+    // Check if this is a final node (has star OR is last node by position)
+    // Can only be confirmed if all other nodes in level are mastered
+    const isFinalNodeByPosition = isLastNodeOfLevel || skill.isFinalNode === 1;
+    if (isFinalNodeByPosition && skill.status !== "mastered") {
       const otherNodesInLevel = skillsInLevel.filter(s => s.id !== skill.id);
       const allOthersMastered = otherNodesInLevel.every(s => s.status === "mastered");
       if (!allOthersMastered) {
@@ -1124,7 +1129,11 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     };
 
     const newStatus = nextStatus[skill.status];
-    const isFinalNodeBeingMastered = skill.isFinalNode === 1 && newStatus === "mastered";
+    
+    // Last node of level can open new levels, UNLESS it has the star (isFinalNode === 1)
+    const hasStar = skill.isFinalNode === 1;
+    const canOpenNewLevels = isLastNodeOfLevel && !hasStar;
+    const isOpeningNewLevel = canOpenNewLevels && newStatus === "mastered";
 
     try {
       await fetch(`/api/skills/${skillId}`, {
@@ -1133,7 +1142,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({ status: newStatus }),
       });
 
-      if (isFinalNodeBeingMastered && activeParentSkillId) {
+      if (isOpeningNewLevel && activeParentSkillId) {
         const newLevel = skill.level + 1;
         const generateResponse = await fetch(`/api/skills/${activeParentSkillId}/subskills/generate-level`, {
           method: "POST",
