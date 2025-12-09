@@ -723,14 +723,14 @@ export function AreaMenu() {
 
       </div>
 
-      <div className="p-2 border-t border-border space-y-2">
+      <div className="p-2 space-y-2">
         <Dialog open={isAddOpen} onOpenChange={handleDialogClose}>
           <DialogTrigger asChild>
             <Button 
-              variant="outline" 
+              variant="ghost" 
               size={isOpen ? "default" : "icon"}
               className={cn(
-                "w-full border-dashed border-border bg-transparent text-muted-foreground hover:text-foreground",
+                "w-full bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50",
                 !isOpen && "aspect-square p-0"
               )}
             >
