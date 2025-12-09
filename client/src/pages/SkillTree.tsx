@@ -225,33 +225,42 @@ function JournalSection({
         </span>
       </div>
 
-      {isAdding && (
-        <div className="mb-4 p-3 space-y-3">
-          <Input
-            placeholder="NAME"
-            value={name}
-            onChange={(e) => setName(e.target.value.toUpperCase())}
-            className="uppercase bg-transparent border-none border-b border-muted focus-visible:ring-0 rounded-none px-0"
-            data-testid={`input-${type}-name`}
-          />
-          <Textarea
-            placeholder="Description"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={3}
-            className="bg-transparent border-none focus-visible:ring-0 resize-none px-0"
-            data-testid={`input-${type}-description`}
-          />
-          <div className="flex gap-2">
-            <Button size="sm" variant="ghost" onClick={handleAddNew} className="text-muted-foreground" data-testid={`button-save-${type}`}>
-              Add
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setIsAdding(false)} className="text-muted-foreground">
-              Cancel
-            </Button>
+      <Dialog open={isAdding} onOpenChange={(open) => !open && setIsAdding(false)}>
+        <DialogContent className="sm:max-w-md">
+          <VisuallyHidden>
+            <DialogTitle>Add {type === "characters" ? "Character" : type === "places" ? "Place" : "Shadow"}</DialogTitle>
+          </VisuallyHidden>
+          
+          <div className="space-y-4">
+            <h3 className="font-medium text-foreground">
+              Add {type === "characters" ? "Character" : type === "places" ? "Place" : "Shadow"}
+            </h3>
+            <Input
+              placeholder="NAME"
+              value={name}
+              onChange={(e) => setName(e.target.value.toUpperCase())}
+              className="uppercase bg-transparent border-none focus-visible:ring-0 px-0"
+              data-testid={`input-${type}-name`}
+            />
+            <Textarea
+              placeholder="Description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              className="bg-transparent border-none focus-visible:ring-0 resize-none px-0"
+              data-testid={`input-${type}-description`}
+            />
+            <div className="flex gap-2">
+              <Button size="sm" variant="ghost" onClick={handleAddNew} className="text-muted-foreground" data-testid={`button-save-${type}`}>
+                Add
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setIsAdding(false)} className="text-muted-foreground">
+                Cancel
+              </Button>
+            </div>
           </div>
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!selectedEntry} onOpenChange={(open) => !open && handleCloseDialog()}>
         <DialogContent className="sm:max-w-md">
