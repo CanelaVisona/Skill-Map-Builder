@@ -102,6 +102,40 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
   const currentSubtitle = levelSubtitles[skill.level.toString()] || "";
   const [editSubtitle, setEditSubtitle] = useState(currentSubtitle);
   const levelLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const titleLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isTitleLongPress = useRef(false);
+
+  const handleTitleLongPressStart = (e: React.TouchEvent | React.MouseEvent) => {
+    e.stopPropagation();
+    isTitleLongPress.current = false;
+    titleLongPressTimer.current = setTimeout(() => {
+      isTitleLongPress.current = true;
+      setEditTitle(skill.title);
+      setEditDescription(skill.description || "");
+      setEditFeedback(skill.feedback || "");
+      setIsEditDialogOpen(true);
+    }, 500);
+  };
+
+  const handleTitleLongPressEnd = () => {
+    if (titleLongPressTimer.current) {
+      clearTimeout(titleLongPressTimer.current);
+      titleLongPressTimer.current = null;
+    }
+  };
+
+  const handleTitleClick = (e: React.MouseEvent) => {
+    if (isTitleLongPress.current) {
+      e.preventDefault();
+      e.stopPropagation();
+      isTitleLongPress.current = false;
+      return;
+    }
+    if (!isSubSkillView && !isLocked && !isInicioNode) {
+      e.stopPropagation();
+      enterSubSkillTree(skill.id, skill.title);
+    }
+  };
 
   const handleLevelLongPressStart = (e: React.TouchEvent | React.MouseEvent) => {
     e.stopPropagation();
@@ -289,15 +323,17 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
             skill.title === "Next challenge" && "text-muted-foreground/50 font-normal italic"
           )}>
             <span
-              onClick={(e) => {
-                if (!isSubSkillView && !isLocked && !isInicioNode) {
-                  e.stopPropagation();
-                  enterSubSkillTree(skill.id, skill.title);
-                }
-              }}
+              onClick={handleTitleClick}
+              onTouchStart={handleTitleLongPressStart}
+              onTouchEnd={handleTitleLongPressEnd}
+              onTouchCancel={handleTitleLongPressEnd}
+              onMouseDown={handleTitleLongPressStart}
+              onMouseUp={handleTitleLongPressEnd}
+              onMouseLeave={handleTitleLongPressEnd}
               className={cn(
                 "line-clamp-2 inline-block transition-transform duration-150",
-                !isSubSkillView && !isLocked && !isInicioNode && "cursor-pointer hover:translate-y-0.5 active:translate-y-1"
+                !isSubSkillView && !isLocked && !isInicioNode && "cursor-pointer hover:translate-y-0.5 active:translate-y-1",
+                !isInicioNode && "cursor-pointer"
               )}
               data-testid={`link-skill-title-${skill.id}`}
             >
