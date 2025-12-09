@@ -614,7 +614,7 @@ export function AreaMenu() {
     <motion.div 
       initial={{ width: 256 }}
       animate={{ width: isOpen ? 256 : 60 }}
-      className="h-full border-r border-border bg-card/50 backdrop-blur-xl flex flex-col z-30 relative transition-all duration-300 ease-in-out"
+      className="h-full border-r border-border bg-card/50 backdrop-blur-xl flex flex-col z-30 relative transition-all duration-300 ease-in-out overflow-hidden"
     >
       <div className="p-4 flex items-center justify-between border-b border-border h-[60px]">
         <AnimatePresence>
@@ -664,7 +664,7 @@ export function AreaMenu() {
         </Button>
       </div>
 
-      <div className="flex-1 overflow-y-auto py-2 space-y-1 px-2">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden py-2 space-y-1 px-2">
         {isOpen && (
           <div className="px-3 py-1">
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
