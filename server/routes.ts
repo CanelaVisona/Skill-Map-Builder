@@ -126,6 +126,51 @@ export async function registerRoutes(
               description: "Rasgueo básico. Se desbloquea al completar el anterior.",
             });
           }
+          
+          // Create example project (trip)
+          const exampleProject = await storage.createProject({
+            id: crypto.randomUUID(),
+            name: "Ejemplo: Viaje a Barcelona",
+            icon: "Camera",
+            description: "Un proyecto tiene fecha de fin. ¡Planifica tu próximo viaje!",
+            userId: user.id,
+          });
+          
+          // Generate the first level with skills
+          await storage.generateProjectLevelWithSkills(exampleProject.id, 1, 100);
+          
+          // Update project skills with travel content
+          const projectSkills = await storage.getProjectSkills(exampleProject.id);
+          const sortedProjectSkills = projectSkills.sort((a, b) => a.y - b.y);
+          
+          if (sortedProjectSkills[1]) {
+            await storage.updateSkill(sortedProjectSkills[1].id, {
+              title: "Elegir fechas",
+              description: "Define cuándo quieres viajar y cuántos días.",
+              status: "available",
+            });
+          }
+          
+          if (sortedProjectSkills[2]) {
+            await storage.updateSkill(sortedProjectSkills[2].id, {
+              title: "Reservar vuelo",
+              description: "Busca y compara precios de vuelos.",
+            });
+          }
+          
+          if (sortedProjectSkills[3]) {
+            await storage.updateSkill(sortedProjectSkills[3].id, {
+              title: "Reservar hotel",
+              description: "Encuentra alojamiento en la zona que prefieras.",
+            });
+          }
+          
+          if (sortedProjectSkills[4]) {
+            await storage.updateSkill(sortedProjectSkills[4].id, {
+              title: "Armar itinerario",
+              description: "Planifica qué lugares visitar cada día.",
+            });
+          }
       }
       
       const expiresAt = new Date(Date.now() + SESSION_DURATION_MS);
