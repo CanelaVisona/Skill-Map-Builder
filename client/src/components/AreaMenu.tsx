@@ -6,7 +6,7 @@ import { Plus, PanelLeftClose, PanelLeftOpen, Music, Trophy, BookOpen, Home, Dum
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "./ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "./ui/alert-dialog";
-import { Popover, PopoverContent, PopoverAnchor } from "./ui/popover";
+import { Popover, PopoverContent, PopoverAnchor, PopoverTrigger } from "./ui/popover";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
@@ -628,15 +628,14 @@ export function AreaMenu() {
               <h1 className="text-lg font-bold tracking-tight">
                 LIFEGAME {user && (
                   <Popover>
-                    <PopoverAnchor asChild>
+                    <PopoverTrigger asChild>
                       <button 
                         className="font-normal text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                        onClick={(e) => e.stopPropagation()}
                         data-testid="button-username"
                       >
                         | {user.username}
                       </button>
-                    </PopoverAnchor>
+                    </PopoverTrigger>
                     <PopoverContent side="bottom" align="start" className="w-40 p-2">
                       <Button
                         variant="ghost"
