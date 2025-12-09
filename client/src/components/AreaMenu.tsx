@@ -630,11 +630,11 @@ export function AreaMenu() {
                         | {user.username}
                       </button>
                     </PopoverTrigger>
-                    <PopoverContent side="bottom" align="start" className="w-40 p-2">
+                    <PopoverContent side="bottom" align="start" className="w-40 p-2 border-0 shadow-2xl">
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="w-full justify-start text-muted-foreground hover:text-foreground"
+                        className="w-full justify-start bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground"
                         onClick={logout}
                         data-testid="button-logout"
                       >

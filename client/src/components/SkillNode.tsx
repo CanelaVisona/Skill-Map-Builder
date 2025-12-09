@@ -402,9 +402,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
           
           <div className="pt-2 border-t border-border flex flex-wrap justify-end gap-2">
              <Button 
-               variant="outline" 
+               variant="ghost" 
                size="sm" 
-               className="h-8 w-8 p-0 text-xs"
+               className="h-8 w-8 p-0 text-xs bg-muted/50 hover:bg-muted"
                onClick={handleEditOpen}
                data-testid="button-edit-skill"
              >
@@ -412,9 +412,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
              </Button>
 
              <Button 
-               variant="outline" 
+               variant="ghost" 
                size="sm" 
-               className="h-8 w-8 p-0 text-xs"
+               className="h-8 w-8 p-0 text-xs bg-muted/50 hover:bg-muted"
                onClick={() => {
                  if (isSubSkillView) {
                    addSubSkillBelow(skill.id);
@@ -433,11 +433,11 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
              {/* Star button - show for last node of level OR if node already has star (to allow removal) */}
              {(isLastNodeOfLevel || hasStar) && (
                <Button 
-                 variant={hasStar ? "default" : "outline"}
+                 variant="ghost"
                  size="sm" 
                  className={cn(
                    "h-8 w-8 p-0 text-xs",
-                   hasStar && "bg-amber-500 hover:bg-amber-600 border-amber-500"
+                   hasStar ? "bg-amber-500 hover:bg-amber-600 text-white" : "bg-muted/50 hover:bg-muted"
                  )}
                  onClick={() => {
                    if (isSubSkillView) {
@@ -459,9 +459,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
              {/* Delete button - hide for last node of level (can't delete) */}
              {!isLastNodeOfLevel && (
                <Button 
-                 variant="secondary" 
+                 variant="ghost" 
                  size="sm" 
-                 className="h-8 w-8 p-0"
+                 className="h-8 w-8 p-0 bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground"
                  onClick={() => {
                    if (isSubSkillView) {
                      deleteSubSkill(skill.id);
@@ -532,10 +532,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
           </div>
         </div>
         <div className="flex gap-2 pt-2">
-          <Button variant="outline" onClick={() => setIsEditDialogOpen(false)} className="flex-1" data-testid="button-cancel-edit">
+          <Button variant="ghost" onClick={() => setIsEditDialogOpen(false)} className="flex-1 bg-muted/50 hover:bg-muted" data-testid="button-cancel-edit">
             Cancelar
           </Button>
-          <Button onClick={handleEditSave} className="flex-1" data-testid="button-save-edit">
+          <Button onClick={handleEditSave} className="flex-1 border-0" data-testid="button-save-edit">
             Guardar
           </Button>
         </div>
@@ -561,10 +561,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
           </div>
         </div>
         <div className="flex gap-2 pt-2">
-          <Button variant="outline" onClick={() => setIsSubtitleDialogOpen(false)} className="flex-1" data-testid="button-cancel-subtitle">
+          <Button variant="ghost" onClick={() => setIsSubtitleDialogOpen(false)} className="flex-1 bg-muted/50 hover:bg-muted" data-testid="button-cancel-subtitle">
             Cancelar
           </Button>
-          <Button onClick={handleSubtitleSave} className="flex-1" data-testid="button-save-subtitle">
+          <Button onClick={handleSubtitleSave} className="flex-1 border-0" data-testid="button-save-subtitle">
             Guardar
           </Button>
         </div>
