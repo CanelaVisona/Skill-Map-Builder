@@ -4,7 +4,7 @@ import { AreaMenu } from "@/components/AreaMenu";
 import { SkillNode } from "@/components/SkillNode";
 import { SkillConnection } from "@/components/SkillConnection";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, MapPin, Ghost, Trophy, Pencil, X } from "lucide-react";
+import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Ghost, Scroll, Pencil, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -153,7 +153,7 @@ function JournalSection({
 
   const emptyMessage = type === "characters" ? "No characters" : type === "places" ? "No places" : "No shadows";
   const countLabel = type === "characters" ? "characters" : type === "places" ? "places" : "shadows";
-  const Icon = type === "characters" ? Users : type === "places" ? MapPin : Ghost;
+  const Icon = type === "characters" ? Users : type === "places" ? MapIcon : Ghost;
 
   if (isLoading) {
     return <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">Loading...</div>;
@@ -309,7 +309,7 @@ function AchievementsSection() {
         <ScrollArea className="flex-1">
           {completedSkills.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
-              <Trophy className="h-8 w-8 text-muted-foreground/40 mb-3" />
+              <Scroll className="h-8 w-8 text-muted-foreground/40 mb-3" />
               <p className="text-muted-foreground text-sm">No completed tasks</p>
             </div>
           ) : (
@@ -541,13 +541,13 @@ function QuestDiary() {
           <Tabs defaultValue="achievements" className="flex-1 flex" orientation="vertical">
             <TabsList className="flex flex-col h-full justify-start gap-1 p-2 rounded-none border-r border-border bg-transparent">
               <TabsTrigger value="achievements" className="p-2" data-testid="tab-achievements" title="Achievements">
-                <Trophy className="h-5 w-5" />
+                <Scroll className="h-5 w-5" />
               </TabsTrigger>
               <TabsTrigger value="characters" className="p-2" data-testid="tab-characters" title="Characters">
                 <Users className="h-5 w-5" />
               </TabsTrigger>
               <TabsTrigger value="places" className="p-2" data-testid="tab-places" title="Places">
-                <MapPin className="h-5 w-5" />
+                <MapIcon className="h-5 w-5" />
               </TabsTrigger>
               <TabsTrigger value="shadows" className="p-2" data-testid="tab-shadows" title="Shadows">
                 <Ghost className="h-5 w-5" />
