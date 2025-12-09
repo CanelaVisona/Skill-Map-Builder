@@ -2,7 +2,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { type Skill, useSkillTree } from "@/lib/skill-context";
 import { cn } from "@/lib/utils";
 import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus, Star, ChevronRight, ChevronLeft } from "lucide-react";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Popover,
   PopoverContent,
@@ -109,6 +109,15 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
   const levelLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const titleLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTitleLongPress = useRef(false);
+
+  useEffect(() => {
+    return () => {
+      if (feedbackBubbleTimer.current) {
+        clearTimeout(feedbackBubbleTimer.current);
+        feedbackBubbleTimer.current = null;
+      }
+    };
+  }, []);
 
   const handleTitleLongPressStart = (e: React.TouchEvent | React.MouseEvent) => {
     e.stopPropagation();
