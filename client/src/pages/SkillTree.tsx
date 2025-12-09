@@ -297,55 +297,78 @@ interface SkillWithSource extends Skill {
   sourceSkills: Skill[];
 }
 
+interface SourceGroup {
+  name: string;
+  skills: SkillWithSource[];
+}
+
 function AchievementsSection() {
   const { areas, projects, mainQuests, sideQuests } = useSkillTree();
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
   const [selectedSubtasks, setSelectedSubtasks] = useState<Skill[]>([]);
   const [selectedSubtaskId, setSelectedSubtaskId] = useState<string | null>(null);
   const [selectedSourceSkills, setSelectedSourceSkills] = useState<Skill[]>([]);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   
-  // Aggregate completed skills from ALL sources
-  const allCompletedSkills: SkillWithSource[] = [];
+  // Group completed skills by source
+  const sourceGroups: SourceGroup[] = [];
   
   // From areas
   areas.forEach(area => {
-    area.skills
+    const completedSkills = area.skills
       .filter(s => s.status === "mastered" && s.title.toLowerCase() !== "inicio")
-      .forEach(skill => {
-        allCompletedSkills.push({ ...skill, sourceName: area.name, sourceSkills: area.skills });
-      });
+      .map(skill => ({ ...skill, sourceName: area.name, sourceSkills: area.skills }));
+    if (completedSkills.length > 0) {
+      sourceGroups.push({ name: area.name, skills: completedSkills });
+    }
   });
   
-  // From projects (main quests)
+  // From main quests
   mainQuests.forEach(project => {
-    project.skills
+    const completedSkills = project.skills
       .filter(s => s.status === "mastered" && s.title.toLowerCase() !== "inicio")
-      .forEach(skill => {
-        allCompletedSkills.push({ ...skill, sourceName: project.name, sourceSkills: project.skills });
-      });
+      .map(skill => ({ ...skill, sourceName: project.name, sourceSkills: project.skills }));
+    if (completedSkills.length > 0) {
+      sourceGroups.push({ name: project.name, skills: completedSkills });
+    }
   });
   
   // From side quests
   sideQuests.forEach(project => {
-    project.skills
+    const completedSkills = project.skills
       .filter(s => s.status === "mastered" && s.title.toLowerCase() !== "inicio")
-      .forEach(skill => {
-        allCompletedSkills.push({ ...skill, sourceName: project.name, sourceSkills: project.skills });
-      });
+      .map(skill => ({ ...skill, sourceName: project.name, sourceSkills: project.skills }));
+    if (completedSkills.length > 0) {
+      sourceGroups.push({ name: project.name, skills: completedSkills });
+    }
   });
   
   // From regular projects
   projects.forEach(project => {
-    project.skills
+    const completedSkills = project.skills
       .filter(s => s.status === "mastered" && s.title.toLowerCase() !== "inicio")
-      .forEach(skill => {
-        allCompletedSkills.push({ ...skill, sourceName: project.name, sourceSkills: project.skills });
-      });
+      .map(skill => ({ ...skill, sourceName: project.name, sourceSkills: project.skills }));
+    if (completedSkills.length > 0) {
+      sourceGroups.push({ name: project.name, skills: completedSkills });
+    }
   });
   
+  const allCompletedSkills = sourceGroups.flatMap(g => g.skills);
   const selectedSkill = allCompletedSkills.find(s => s.id === selectedSkillId);
   const selectedSubtask = selectedSubtasks.find(s => s.id === selectedSubtaskId);
   const hasSubtasks = selectedSubtasks.length > 0;
+
+  const toggleGroup = (name: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) {
+        next.delete(name);
+      } else {
+        next.add(name);
+      }
+      return next;
+    });
+  };
 
   const findNextSkill = (currentSkill: Skill, allSkills: Skill[]): Skill | undefined => {
     const sameLevelSkills = allSkills
@@ -380,27 +403,44 @@ function AchievementsSection() {
     <div className="flex h-full">
       <div className={`${hasSubtasks ? 'w-1/3' : 'w-1/2'} flex flex-col border-r border-border pr-4`}>
         <ScrollArea className="flex-1">
-          {allCompletedSkills.length === 0 ? (
+          {sourceGroups.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <Scroll className="h-8 w-8 text-muted-foreground/40 mb-3" />
               <p className="text-muted-foreground text-sm">No completed tasks</p>
             </div>
           ) : (
             <div className="space-y-1">
-              {allCompletedSkills.map((skill) => (
-                <button
-                  key={skill.id}
-                  onClick={() => handleSelectSkill(skill)}
-                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                    selectedSkillId === skill.id 
-                      ? "bg-muted text-foreground" 
-                      : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                  }`}
-                  data-testid={`diary-entry-${skill.id}`}
-                >
-                  <div>{skill.title}</div>
-                  <div className="text-xs text-muted-foreground/60">{skill.sourceName}</div>
-                </button>
+              {sourceGroups.map((group) => (
+                <div key={group.name}>
+                  <button
+                    onClick={() => toggleGroup(group.name)}
+                    className="w-full text-left px-3 py-2 rounded-md text-sm font-medium transition-colors hover:bg-muted/50 flex items-center justify-between"
+                    data-testid={`group-${group.name}`}
+                  >
+                    <span>{group.name}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {expandedGroups.has(group.name) ? "▼" : "▶"} {group.skills.length}
+                    </span>
+                  </button>
+                  {expandedGroups.has(group.name) && (
+                    <div className="ml-3 border-l border-border pl-2 space-y-0.5">
+                      {group.skills.map((skill) => (
+                        <button
+                          key={skill.id}
+                          onClick={() => handleSelectSkill(skill)}
+                          className={`w-full text-left px-3 py-1.5 rounded-md text-sm transition-colors ${
+                            selectedSkillId === skill.id 
+                              ? "bg-muted text-foreground" 
+                              : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                          }`}
+                          data-testid={`diary-entry-${skill.id}`}
+                        >
+                          {skill.title}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           )}
@@ -494,9 +534,7 @@ function AchievementsSection() {
 
 function QuestDiary() {
   const { isDiaryOpen, closeDiary } = useDiary();
-  const { activeArea, activeProject } = useSkillTree();
   const queryClient = useQueryClient();
-  const activeItem = activeArea || activeProject;
 
   const { data: characters = [], isLoading: loadingCharacters } = useQuery<JournalCharacter[]>({
     queryKey: ["/api/journal/characters"],
@@ -632,9 +670,6 @@ function QuestDiary() {
             <div className="flex-1 p-6 overflow-hidden">
               <div className="mb-4">
                 <h2 className="text-2xl font-bold tracking-tight">Journal</h2>
-                <p className="text-sm text-muted-foreground mt-1">
-                  {activeItem?.name || "Your adventure"}
-                </p>
               </div>
               
               <TabsContent value="achievements" className="h-[calc(100%-4rem)] mt-0">
