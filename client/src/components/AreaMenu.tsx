@@ -299,6 +299,7 @@ export function AreaMenu() {
   const [itemDescription, setItemDescription] = useState("");
   const [selectedIcon, setSelectedIcon] = useState("Home");
   const [manualIconSelected, setManualIconSelected] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (itemName && !manualIconSelected) {
@@ -319,29 +320,39 @@ export function AreaMenu() {
   };
 
   const handleCreateArea = async () => {
-    if (!itemName.trim()) return;
+    if (!itemName.trim() || isSubmitting) return;
     
-    await createArea(itemName.trim(), itemDescription.trim(), selectedIcon);
-    
-    setIsAddOpen(false);
-    setDialogStep("choose");
-    setItemName("");
-    setItemDescription("");
-    setSelectedIcon("Home");
-    setManualIconSelected(false);
+    setIsSubmitting(true);
+    try {
+      await createArea(itemName.trim(), itemDescription.trim(), selectedIcon);
+      
+      setIsAddOpen(false);
+      setDialogStep("choose");
+      setItemName("");
+      setItemDescription("");
+      setSelectedIcon("Home");
+      setManualIconSelected(false);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleCreateProject = async () => {
-    if (!itemName.trim()) return;
+    if (!itemName.trim() || isSubmitting) return;
     
-    await createProject(itemName.trim(), itemDescription.trim(), selectedIcon);
-    
-    setIsAddOpen(false);
-    setDialogStep("choose");
-    setItemName("");
-    setItemDescription("");
-    setSelectedIcon("Home");
-    setManualIconSelected(false);
+    setIsSubmitting(true);
+    try {
+      await createProject(itemName.trim(), itemDescription.trim(), selectedIcon);
+      
+      setIsAddOpen(false);
+      setDialogStep("choose");
+      setItemName("");
+      setItemDescription("");
+      setSelectedIcon("Home");
+      setManualIconSelected(false);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const renderForm = (type: "area" | "project") => (
@@ -404,16 +415,17 @@ export function AreaMenu() {
             setSelectedIcon("Home");
           }}
           className="flex-1"
+          disabled={isSubmitting}
         >
           Atrás
         </Button>
         <Button 
           onClick={type === "area" ? handleCreateArea : handleCreateProject}
-          disabled={!itemName.trim()}
+          disabled={!itemName.trim() || isSubmitting}
           className="flex-1"
           data-testid={`button-create-${type}`}
         >
-          Hecho
+          {isSubmitting ? "Creando..." : "Hecho"}
         </Button>
       </div>
     </div>
