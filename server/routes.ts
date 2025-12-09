@@ -114,9 +114,15 @@ export async function registerRoutes(
           if (sortedSkills[1]) {
             await storage.updateSkill(sortedSkills[1].id, {
               title: "Acordes Básicos",
-              description: "Aprende C, D, E, G, A. ¡Haz clic para completar!",
+              description: "Aprende C, D, E, G, A. ¡Haz clic en el título para ver subtareas!",
               status: "available",
             });
+            
+            // Create subtasks for "Acordes Básicos"
+            const gSub1 = await storage.createSkill({ parentSkillId: sortedSkills[1].id, title: "inicio", description: "", status: "mastered", x: 50, y: 100, dependencies: [], level: 1, levelPosition: 1 });
+            const gSub2 = await storage.createSkill({ parentSkillId: sortedSkills[1].id, title: "Acorde C", description: "Practica el acorde de Do mayor", status: "available", x: 50, y: 250, dependencies: [gSub1.id], level: 1, levelPosition: 2 });
+            const gSub3 = await storage.createSkill({ parentSkillId: sortedSkills[1].id, title: "Acorde G", description: "Practica el acorde de Sol mayor", status: "locked", x: 50, y: 400, dependencies: [gSub2.id], level: 1, levelPosition: 3 });
+            await storage.createSkill({ parentSkillId: sortedSkills[1].id, title: "Acorde D", description: "Practica el acorde de Re mayor", status: "locked", x: 50, y: 550, dependencies: [gSub3.id], level: 1, levelPosition: 4 });
           }
           
           // Update third skill with example content
@@ -154,8 +160,14 @@ export async function registerRoutes(
           if (sortedProjectSkills[2]) {
             await storage.updateSkill(sortedProjectSkills[2].id, {
               title: "Reservar vuelo",
-              description: "Busca y compara precios de vuelos.",
+              description: "Busca y compara precios. ¡Haz clic en el título para ver subtareas!",
             });
+            
+            // Create subtasks for "Reservar vuelo"
+            const tSub1 = await storage.createSkill({ parentSkillId: sortedProjectSkills[2].id, title: "inicio", description: "", status: "mastered", x: 50, y: 100, dependencies: [], level: 1, levelPosition: 1 });
+            const tSub2 = await storage.createSkill({ parentSkillId: sortedProjectSkills[2].id, title: "Comparar precios", description: "Usa Skyscanner, Google Flights, etc.", status: "available", x: 50, y: 250, dependencies: [tSub1.id], level: 1, levelPosition: 2 });
+            const tSub3 = await storage.createSkill({ parentSkillId: sortedProjectSkills[2].id, title: "Elegir horarios", description: "Decide el mejor horario de vuelo", status: "locked", x: 50, y: 400, dependencies: [tSub2.id], level: 1, levelPosition: 3 });
+            await storage.createSkill({ parentSkillId: sortedProjectSkills[2].id, title: "Completar reserva", description: "Finaliza la compra del vuelo", status: "locked", x: 50, y: 550, dependencies: [tSub3.id], level: 1, levelPosition: 4 });
           }
           
           if (sortedProjectSkills[3]) {
