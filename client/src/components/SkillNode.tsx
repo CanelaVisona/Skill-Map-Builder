@@ -178,14 +178,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
       return;
     }
     if (isLocked) {
-      if (isSubSkillView) {
-        toggleSubSkillLock(skill.id);
-      } else if (isProject) {
-        toggleProjectLock(activeId, skill.id);
-      } else {
-        toggleLock(activeId, skill.id);
-      }
-      return;
+      return; // Locked nodes cannot be clicked - only unlock when previous node is mastered
     }
     onClick();
   };
@@ -408,27 +401,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
                  title={hasStar ? "Quitar nodo final final" : "Marcar como nodo final final"}
                >
                  <Star className={cn("h-3 w-3", hasStar && "fill-white")} />
-               </Button>
-             )}
-
-             {!isLocked && (
-               <Button 
-                 variant="outline" 
-                 size="sm" 
-                 className="h-8 px-3 text-xs"
-                 onClick={() => {
-                   if (isSubSkillView) {
-                     toggleSubSkillLock(skill.id);
-                   } else if (isProject) {
-                     toggleProjectLock(activeId, skill.id);
-                   } else {
-                     toggleLock(activeId, skill.id);
-                   }
-                   setIsOpen(false);
-                 }}
-               >
-                 <Lock className="mr-2 h-3 w-3" />
-                 Lock
                </Button>
              )}
 
