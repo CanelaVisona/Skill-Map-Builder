@@ -1645,22 +1645,28 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
         const otherNodesInLevel = levelSkills.filter(s => s.id !== skill.id);
         const allOthersMastered = otherNodesInLevel.every(s => s.status === "mastered");
 
+        // Find the previous skill by Y position in the same level
+        const skillIndex = levelSkills.findIndex(s => s.id === skill.id);
+        const previousSkill = skillIndex > 0 ? levelSkills[skillIndex - 1] : null;
+        const canUnlock = !previousSkill || previousSkill.status === "mastered";
+
         // Re-lock final nodes that are "available" but shouldn't be
         if (skill.status === "available" && isFinalNodeByPosition && !allOthersMastered) {
           updatesToMake.push({ skillId: skill.id, newStatus: "locked" });
           return;
         }
 
-        if (skill.status !== "locked") return;
+        // Re-lock non-first nodes that are "available" but previous node is not mastered
+        if (skill.status === "available" && previousSkill && previousSkill.status !== "mastered") {
+          updatesToMake.push({ skillId: skill.id, newStatus: "locked" });
+          return;
+        }
 
-        // Find the previous skill by Y position in the same level
-        const skillIndex = levelSkills.findIndex(s => s.id === skill.id);
-        const previousSkill = skillIndex > 0 ? levelSkills[skillIndex - 1] : null;
+        if (skill.status !== "locked") return;
         
         // A skill can be unlocked if:
         // - It's the first skill in the level (no previous skill), OR
         // - The previous skill is mastered
-        const canUnlock = !previousSkill || previousSkill.status === "mastered";
         
         // Final nodes can only be unlocked if ALL other nodes in the level are mastered
         if (isFinalNodeByPosition) {
@@ -1694,7 +1700,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [areas, isLoading]);
 
-  // Auto-unlock logic for projects (also re-locks final nodes that shouldn't be available)
+  // Auto-unlock logic for projects (also re-locks nodes that shouldn't be available)
   useEffect(() => {
     if (isLoading || projects.length === 0) return;
 
@@ -1725,22 +1731,28 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
         const otherNodesInLevel = levelSkills.filter(s => s.id !== skill.id);
         const allOthersMastered = otherNodesInLevel.every(s => s.status === "mastered");
 
+        // Find the previous skill by Y position in the same level
+        const skillIndex = levelSkills.findIndex(s => s.id === skill.id);
+        const previousSkill = skillIndex > 0 ? levelSkills[skillIndex - 1] : null;
+        const canUnlock = !previousSkill || previousSkill.status === "mastered";
+
         // Re-lock final nodes that are "available" but shouldn't be
         if (skill.status === "available" && isFinalNodeByPosition && !allOthersMastered) {
           updatesToMake.push({ skillId: skill.id, newStatus: "locked" });
           return;
         }
 
-        if (skill.status !== "locked") return;
+        // Re-lock non-first nodes that are "available" but previous node is not mastered
+        if (skill.status === "available" && previousSkill && previousSkill.status !== "mastered") {
+          updatesToMake.push({ skillId: skill.id, newStatus: "locked" });
+          return;
+        }
 
-        // Find the previous skill by Y position in the same level
-        const skillIndex = levelSkills.findIndex(s => s.id === skill.id);
-        const previousSkill = skillIndex > 0 ? levelSkills[skillIndex - 1] : null;
+        if (skill.status !== "locked") return;
         
         // A skill can be unlocked if:
         // - It's the first skill in the level (no previous skill), OR
         // - The previous skill is mastered
-        const canUnlock = !previousSkill || previousSkill.status === "mastered";
         
         // Final nodes can only be unlocked if ALL other nodes in the level are mastered
         if (isFinalNodeByPosition) {
@@ -1803,22 +1815,28 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       const otherNodesInLevel = levelSkills.filter(s => s.id !== skill.id);
       const allOthersMastered = otherNodesInLevel.every(s => s.status === "mastered");
 
+      // Find the previous skill by Y position in the same level
+      const skillIndex = levelSkills.findIndex(s => s.id === skill.id);
+      const previousSkill = skillIndex > 0 ? levelSkills[skillIndex - 1] : null;
+      const canUnlock = !previousSkill || previousSkill.status === "mastered";
+
       // Re-lock final nodes that are "available" but shouldn't be
       if (skill.status === "available" && isFinalNodeByPosition && !allOthersMastered) {
         updatesToMake.push({ skillId: skill.id, newStatus: "locked" });
         return;
       }
 
-      if (skill.status !== "locked") return;
+      // Re-lock non-first nodes that are "available" but previous node is not mastered
+      if (skill.status === "available" && previousSkill && previousSkill.status !== "mastered") {
+        updatesToMake.push({ skillId: skill.id, newStatus: "locked" });
+        return;
+      }
 
-      // Find the previous skill by Y position in the same level
-      const skillIndex = levelSkills.findIndex(s => s.id === skill.id);
-      const previousSkill = skillIndex > 0 ? levelSkills[skillIndex - 1] : null;
+      if (skill.status !== "locked") return;
       
       // A skill can be unlocked if:
       // - It's the first skill in the level (no previous skill), OR
       // - The previous skill is mastered
-      const canUnlock = !previousSkill || previousSkill.status === "mastered";
       
       // Final nodes can only be unlocked if ALL other nodes in the level are mastered
       if (isFinalNodeByPosition) {
