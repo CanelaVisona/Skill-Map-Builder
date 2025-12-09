@@ -1,7 +1,7 @@
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { type Skill, useSkillTree } from "@/lib/skill-context";
 import { cn } from "@/lib/utils";
-import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus, Star } from "lucide-react";
+import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus, Star, ChevronRight, ChevronLeft } from "lucide-react";
 import { useState, useRef } from "react";
 import {
   Popover,
@@ -91,6 +91,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
   
   const [isOpen, setIsOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editStep, setEditStep] = useState(0);
   const [editTitle, setEditTitle] = useState(skill.title);
   const [editDescription, setEditDescription] = useState(skill.description || "");
   const [editFeedback, setEditFeedback] = useState(skill.feedback || "");
@@ -113,6 +114,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
       setEditTitle(skill.title);
       setEditDescription(skill.description || "");
       setEditFeedback(skill.feedback || "");
+      setEditStep(0);
       setIsEditDialogOpen(true);
     }, 500);
   };
@@ -165,6 +167,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
     setEditTitle(skill.title);
     setEditDescription(skill.description || "");
     setEditFeedback(skill.feedback || "");
+    setEditStep(0);
     setIsOpen(false);
     setIsEditDialogOpen(true);
   };
@@ -482,62 +485,138 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
       </PopoverContent>
     </Popover>
 
-    <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-      <DialogContent className="sm:max-w-[425px] border-0 shadow-2xl">
-        <DialogHeader>
-          <DialogTitle className="text-lg font-medium">Editar Habilidad</DialogTitle>
-        </DialogHeader>
-        <div className="grid gap-5 py-4">
-          <div className="grid gap-2">
-            <Label htmlFor="edit-title" className="text-xs text-muted-foreground uppercase tracking-wide">Título (máx. 3 palabras)</Label>
-            <Input
-              id="edit-title"
-              value={editTitle}
-              onChange={(e) => {
-                const words = e.target.value.split(/\s+/).filter(w => w.length > 0);
-                if (words.length <= 3) {
-                  setEditTitle(e.target.value);
-                } else {
-                  setEditTitle(words.slice(0, 3).join(" "));
-                }
-              }}
-              placeholder="Nombre de la habilidad"
-              className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
-              data-testid="input-edit-title"
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="edit-description" className="text-xs text-muted-foreground uppercase tracking-wide">Descripción</Label>
-            <Textarea
-              id="edit-description"
-              value={editDescription}
-              onChange={(e) => setEditDescription(e.target.value)}
-              placeholder="Descripción de la habilidad"
-              rows={3}
-              className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
-              data-testid="input-edit-description"
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="edit-feedback" className="text-xs text-muted-foreground uppercase tracking-wide">Feedback</Label>
-            <Textarea
-              id="edit-feedback"
-              value={editFeedback}
-              onChange={(e) => setEditFeedback(e.target.value)}
-              placeholder="Notas, comentarios o retroalimentación..."
-              rows={3}
-              className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
-              data-testid="input-edit-feedback"
-            />
-          </div>
-        </div>
-        <div className="flex gap-2 pt-2">
-          <Button variant="ghost" onClick={() => setIsEditDialogOpen(false)} className="flex-1 bg-muted/50 hover:bg-muted" data-testid="button-cancel-edit">
-            Cancelar
-          </Button>
-          <Button onClick={handleEditSave} className="flex-1 border-0" data-testid="button-save-edit">
-            Guardar
-          </Button>
+    <Dialog open={isEditDialogOpen} onOpenChange={(open) => {
+      if (!open) setEditStep(0);
+      setIsEditDialogOpen(open);
+    }}>
+      <DialogContent className="sm:max-w-[400px] border-0 shadow-2xl">
+        <div className="min-h-[180px] flex flex-col">
+          <AnimatePresence mode="wait">
+            {editStep === 0 && (
+              <motion.div
+                key="step-title"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+                className="flex-1 flex flex-col"
+              >
+                <Label htmlFor="edit-title" className="text-xs text-muted-foreground uppercase tracking-wide mb-3">Título (máx. 3 palabras)</Label>
+                <Input
+                  id="edit-title"
+                  value={editTitle}
+                  onChange={(e) => {
+                    const words = e.target.value.split(/\s+/).filter(w => w.length > 0);
+                    if (words.length <= 3) {
+                      setEditTitle(e.target.value);
+                    } else {
+                      setEditTitle(words.slice(0, 3).join(" "));
+                    }
+                  }}
+                  placeholder="Nombre de la habilidad"
+                  className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted text-lg"
+                  data-testid="input-edit-title"
+                  autoFocus
+                />
+                <div className="flex justify-end mt-auto pt-6">
+                  <Button 
+                    variant="ghost" 
+                    size="icon"
+                    onClick={() => setEditStep(1)}
+                    disabled={!editTitle.trim()}
+                    className="h-10 w-10 bg-muted/50 hover:bg-muted"
+                    data-testid="button-next-step"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+
+            {editStep === 1 && (
+              <motion.div
+                key="step-description"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+                className="flex-1 flex flex-col"
+              >
+                <Label htmlFor="edit-description" className="text-xs text-muted-foreground uppercase tracking-wide mb-3">Descripción</Label>
+                <Textarea
+                  id="edit-description"
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  placeholder="Descripción de la habilidad"
+                  rows={4}
+                  className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none flex-1"
+                  data-testid="input-edit-description"
+                  autoFocus
+                />
+                <div className="flex justify-between mt-auto pt-6">
+                  <Button 
+                    variant="ghost" 
+                    size="icon"
+                    onClick={() => setEditStep(0)}
+                    className="h-10 w-10 bg-muted/50 hover:bg-muted"
+                    data-testid="button-prev-step"
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    size="icon"
+                    onClick={() => setEditStep(2)}
+                    className="h-10 w-10 bg-muted/50 hover:bg-muted"
+                    data-testid="button-next-step"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+
+            {editStep === 2 && (
+              <motion.div
+                key="step-feedback"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+                className="flex-1 flex flex-col"
+              >
+                <Label htmlFor="edit-feedback" className="text-xs text-muted-foreground uppercase tracking-wide mb-3">Feedback</Label>
+                <Textarea
+                  id="edit-feedback"
+                  value={editFeedback}
+                  onChange={(e) => setEditFeedback(e.target.value)}
+                  placeholder="Notas, comentarios o retroalimentación..."
+                  rows={4}
+                  className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none flex-1"
+                  data-testid="input-edit-feedback"
+                  autoFocus
+                />
+                <div className="flex justify-between mt-auto pt-6">
+                  <Button 
+                    variant="ghost" 
+                    size="icon"
+                    onClick={() => setEditStep(1)}
+                    className="h-10 w-10 bg-muted/50 hover:bg-muted"
+                    data-testid="button-prev-step"
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </Button>
+                  <Button 
+                    onClick={handleEditSave}
+                    className="border-0"
+                    data-testid="button-save-edit"
+                  >
+                    Guardar
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </DialogContent>
     </Dialog>
