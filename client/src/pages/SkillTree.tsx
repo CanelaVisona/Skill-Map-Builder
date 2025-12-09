@@ -220,7 +220,8 @@ function SkillCanvas() {
 
   // Helper function to calculate visible levels dynamically
   // The lowest level is always visible
-  // Level N is visible only if the final node (highest Y) of the previous level is mastered
+  // Level N is visible only if the gating node of the previous level is mastered
+  // If a starred node (isFinalNode=1) is mastered, no further levels are shown
   const calculateVisibleLevels = (skills: Skill[]): Set<number> => {
     const visibleLevels = new Set<number>();
     
@@ -242,21 +243,33 @@ function SkillCanvas() {
     const firstLevel = sortedLevels[0];
     visibleLevels.add(firstLevel);
     
-    // For each subsequent level, check if the final node of the previous level is mastered
+    // Check if the first level has a starred node that is mastered - if so, stop
+    const firstLevelSkills = levelMap.get(firstLevel);
+    const firstLevelStarredNode = firstLevelSkills?.find(s => s.isFinalNode === 1);
+    if (firstLevelStarredNode && firstLevelStarredNode.status === "mastered") {
+      return visibleLevels;
+    }
+    
+    // For each subsequent level, check if the gating node of the previous level is mastered
     for (let i = 1; i < sortedLevels.length; i++) {
       const currentLevel = sortedLevels[i];
       const previousLevel = sortedLevels[i - 1];
       
       const previousLevelSkills = levelMap.get(previousLevel);
       if (previousLevelSkills && previousLevelSkills.length > 0) {
-        // Find the final node (highest Y position) of previous level
-        const finalNodeOfPreviousLevel = previousLevelSkills.reduce(
+        // Find the gating node: starred node if exists, otherwise highest Y position
+        const starredNode = previousLevelSkills.find(s => s.isFinalNode === 1);
+        const gatingNode = starredNode || previousLevelSkills.reduce(
           (max, s) => s.y > max.y ? s : max,
           previousLevelSkills[0]
         );
         
-        // Only show this level if the final node of previous level is mastered
-        if (finalNodeOfPreviousLevel.status === "mastered") {
+        // Only show this level if the gating node is mastered
+        if (gatingNode.status === "mastered") {
+          // If the gating node is starred and mastered, this is the absolute end
+          if (gatingNode.isFinalNode === 1) {
+            break;
+          }
           visibleLevels.add(currentLevel);
         } else {
           // Stop checking further levels since this level is not visible
