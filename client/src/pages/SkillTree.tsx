@@ -124,39 +124,6 @@ function JournalSection({
   const [isEditMode, setIsEditMode] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const longPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const entryLongPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handleLongPressStart = () => {
-    longPressTimer.current = setTimeout(() => {
-      setIsAdding(true);
-      setName("");
-      setDescription("");
-    }, 500);
-  };
-
-  const handleLongPressEnd = () => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-  };
-
-  const handleEntryLongPressStart = (entry: JournalEntry) => {
-    entryLongPressTimer.current = setTimeout(() => {
-      setSelectedEntry(entry);
-      setName(entry.name);
-      setDescription(entry.description || "");
-      setExtraInfo("");
-      setIsEditMode(false);
-    }, 500);
-  };
-
-  const handleEntryLongPressEnd = () => {
-    if (entryLongPressTimer.current) {
-      clearTimeout(entryLongPressTimer.current);
-      entryLongPressTimer.current = null;
-    }
-  };
 
   const handleAddNew = () => {
     if (!name.trim()) return;
@@ -217,21 +184,45 @@ function JournalSection({
     return <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">Loading...</div>;
   }
 
+  const handleLeftLongPressStart = () => {
+    longPressTimer.current = setTimeout(() => {
+      setIsAdding(true);
+      setName("");
+      setDescription("");
+    }, 500);
+  };
+
+  const handleLeftLongPressEnd = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const handleRightLongPressStart = () => {
+    if (!viewingEntry) return;
+    longPressTimer.current = setTimeout(() => {
+      setSelectedEntry(viewingEntry);
+      setName(viewingEntry.name);
+      setDescription(viewingEntry.description || "");
+      setExtraInfo("");
+      setIsEditMode(false);
+    }, 500);
+  };
+
+  const handleRightLongPressEnd = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
   return (
     <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between mb-4">
+      <div className="mb-4">
         <span className="text-xs text-muted-foreground uppercase tracking-wide">
           {entries.length} {countLabel}
         </span>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => { setIsAdding(true); setName(""); setDescription(""); }}
-          className="h-7 px-2 text-muted-foreground"
-          data-testid={`button-add-${type}`}
-        >
-          <Plus className="h-4 w-4" />
-        </Button>
       </div>
 
       {isAdding && (
@@ -382,18 +373,18 @@ function JournalSection({
       </Dialog>
 
       <div className="flex flex-1 min-h-0">
-        <div className="w-1/2 border-r border-border pr-4">
+        <div 
+          className="w-1/2 border-r border-border pr-4 cursor-pointer select-none"
+          onTouchStart={handleLeftLongPressStart}
+          onTouchEnd={handleLeftLongPressEnd}
+          onTouchCancel={handleLeftLongPressEnd}
+          onMouseDown={handleLeftLongPressStart}
+          onMouseUp={handleLeftLongPressEnd}
+          onMouseLeave={handleLeftLongPressEnd}
+        >
           <ScrollArea className="h-full">
             {entries.length === 0 ? (
-              <div 
-                className="flex flex-col items-center justify-center py-12 text-center cursor-pointer select-none"
-                onTouchStart={handleLongPressStart}
-                onTouchEnd={handleLongPressEnd}
-                onTouchCancel={handleLongPressEnd}
-                onMouseDown={handleLongPressStart}
-                onMouseUp={handleLongPressEnd}
-                onMouseLeave={handleLongPressEnd}
-              >
+              <div className="flex flex-col items-center justify-center py-12 text-center">
                 <Icon className="h-8 w-8 text-muted-foreground/40 mb-3" />
                 <p className="text-muted-foreground text-sm">{emptyMessage}</p>
                 <p className="text-muted-foreground/50 text-xs mt-2">Hold to add</p>
@@ -403,19 +394,13 @@ function JournalSection({
                 {entries.map((entry) => (
                   <button
                     key={entry.id}
-                    onClick={() => setViewingEntry(entry)}
+                    onClick={(e) => { e.stopPropagation(); setViewingEntry(entry); }}
                     className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors cursor-pointer select-none ${
                       viewingEntry?.id === entry.id 
                         ? "bg-muted text-foreground" 
                         : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                     }`}
                     data-testid={`card-${type}-${entry.id}`}
-                    onTouchStart={() => handleEntryLongPressStart(entry)}
-                    onTouchEnd={handleEntryLongPressEnd}
-                    onTouchCancel={handleEntryLongPressEnd}
-                    onMouseDown={() => handleEntryLongPressStart(entry)}
-                    onMouseUp={handleEntryLongPressEnd}
-                    onMouseLeave={handleEntryLongPressEnd}
                   >
                     {entry.name}
                   </button>
@@ -425,7 +410,15 @@ function JournalSection({
           </ScrollArea>
         </div>
         
-        <div className="w-1/2 pl-4">
+        <div 
+          className="w-1/2 pl-4 cursor-pointer select-none"
+          onTouchStart={handleRightLongPressStart}
+          onTouchEnd={handleRightLongPressEnd}
+          onTouchCancel={handleRightLongPressEnd}
+          onMouseDown={handleRightLongPressStart}
+          onMouseUp={handleRightLongPressEnd}
+          onMouseLeave={handleRightLongPressEnd}
+        >
           <ScrollArea className="h-full">
             {viewingEntry ? (
               <div className="space-y-4">
