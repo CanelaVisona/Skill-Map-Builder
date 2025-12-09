@@ -12,7 +12,7 @@ import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
 import { useState, useEffect, useRef } from "react";
 
-type DialogStep = "choose" | "new-area" | "new-project";
+type DialogStep = "choose" | "new-area" | "new-project" | "new-sidequest";
 
 const iconKeywords: Record<string, string[]> = {
   Music: ["música", "musica", "guitarra", "guitar", "piano", "canto", "instrumento", "song", "canción"],
@@ -368,7 +368,7 @@ function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete, onArch
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Renombrar proyecto</DialogTitle>
+                <DialogTitle>Renombrar Main Quest</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 mt-4">
                 <Input 
@@ -425,7 +425,7 @@ function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete, onArch
               <AlertDialogHeader>
                 <AlertDialogTitle>¿Eliminar "{project.name}"?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Esta acción no se puede deshacer. Se eliminará permanentemente este proyecto y todas sus habilidades.
+                  Esta acción no se puede deshacer. Se eliminará permanentemente este main quest y todas sus habilidades.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -451,7 +451,7 @@ function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete, onArch
 export function AreaMenu() {
   const { 
     areas, activeAreaId, setActiveAreaId, createArea, deleteArea, archiveArea, unarchiveArea, archivedAreas, loadArchivedAreas,
-    projects, activeProjectId, setActiveProjectId, createProject, deleteProject, archiveProject, unarchiveProject, archivedProjects, loadArchivedProjects,
+    mainQuests, sideQuests, activeProjectId, setActiveProjectId, createProject, createSideQuest, deleteProject, archiveProject, unarchiveProject, archivedMainQuests, archivedSideQuests, loadArchivedProjects,
     renameArea, renameProject
   } = useSkillTree();
   const { user, logout } = useAuth();
@@ -528,7 +528,25 @@ export function AreaMenu() {
     }
   };
 
-  const renderForm = (type: "area" | "project") => (
+  const handleCreateSideQuest = async () => {
+    if (!itemName.trim() || isSubmitting) return;
+    
+    setIsSubmitting(true);
+    try {
+      await createSideQuest(itemName.trim(), itemDescription.trim(), selectedIcon);
+      
+      setIsAddOpen(false);
+      setDialogStep("choose");
+      setItemName("");
+      setItemDescription("");
+      setSelectedIcon("Home");
+      setManualIconSelected(false);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const renderForm = (type: "area" | "project" | "sidequest") => (
     <div className="space-y-4 mt-4">
       <div className="space-y-2">
         <Label>Icono</Label>
@@ -561,7 +579,7 @@ export function AreaMenu() {
           id="item-name" 
           value={itemName}
           onChange={(e) => setItemName(e.target.value)}
-          placeholder={type === "area" ? "ej: Guitarra, Cocina..." : "ej: Aprender React, Renovar casa..."}
+          placeholder={type === "area" ? "ej: Guitarra, Cocina..." : type === "project" ? "ej: Lanzar mi app, Renovar casa..." : "ej: Organizar garage, Leer libro..."}
           data-testid="input-item-name"
         />
       </div>
@@ -572,7 +590,7 @@ export function AreaMenu() {
           id="item-description" 
           value={itemDescription}
           onChange={(e) => setItemDescription(e.target.value)}
-          placeholder={type === "area" ? "Describe esta área de desarrollo" : "Describe este proyecto"}
+          placeholder={type === "area" ? "Describe esta área de desarrollo" : type === "project" ? "Describe este main quest" : "Describe este side quest"}
           rows={3}
           data-testid="input-item-description"
         />
@@ -593,7 +611,7 @@ export function AreaMenu() {
           Atrás
         </Button>
         <Button 
-          onClick={type === "area" ? handleCreateArea : handleCreateProject}
+          onClick={type === "area" ? handleCreateArea : type === "project" ? handleCreateProject : handleCreateSideQuest}
           disabled={!itemName.trim() || isSubmitting}
           className="flex-1"
           data-testid={`button-create-${type}`}
@@ -691,17 +709,46 @@ export function AreaMenu() {
         {isOpen && (
           <div className="px-3 py-1">
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              Proyectos
+              Main Quest
             </span>
           </div>
         )}
 
-        {projects.length === 0 ? (
+        {mainQuests.length === 0 ? (
           <div className="text-xs text-muted-foreground px-3 py-2 italic">
-            {isOpen ? "Sin proyectos aún" : "—"}
+            {isOpen ? "Sin main quests aún" : "—"}
           </div>
         ) : (
-          projects.map((project) => (
+          mainQuests.map((project) => (
+            <ProjectItem
+              key={project.id}
+              project={project}
+              isActive={project.id === activeProjectId}
+              isMenuOpen={isOpen}
+              onSelect={() => setActiveProjectId(project.id)}
+              onDelete={() => deleteProject(project.id)}
+              onArchive={() => archiveProject(project.id)}
+              onRename={(name) => renameProject(project.id, name)}
+            />
+          ))
+        )}
+
+        <div className="my-3 border-t border-border" />
+
+        {isOpen && (
+          <div className="px-3 py-1">
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              Side Quest
+            </span>
+          </div>
+        )}
+
+        {sideQuests.length === 0 ? (
+          <div className="text-xs text-muted-foreground px-3 py-2 italic">
+            {isOpen ? "Sin side quests aún" : "—"}
+          </div>
+        ) : (
+          sideQuests.map((project) => (
             <ProjectItem
               key={project.id}
               project={project}
@@ -740,7 +787,7 @@ export function AreaMenu() {
                   <DialogTitle>Agregar Nuevo</DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4 mt-4">
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-3 gap-3">
                     <Button 
                       variant="outline" 
                       className="h-24 flex flex-col gap-2"
@@ -757,7 +804,16 @@ export function AreaMenu() {
                       data-testid="button-new-project"
                     >
                       <FolderKanban className="h-6 w-6" />
-                      <span>Nuevo Proyecto</span>
+                      <span>Main Quest</span>
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      className="h-24 flex flex-col gap-2"
+                      onClick={() => setDialogStep("new-sidequest")}
+                      data-testid="button-new-sidequest"
+                    >
+                      <FolderKanban className="h-6 w-6" />
+                      <span>Side Quest</span>
                     </Button>
                   </div>
                 </div>
@@ -776,9 +832,18 @@ export function AreaMenu() {
             {dialogStep === "new-project" && (
               <>
                 <DialogHeader>
-                  <DialogTitle>Nuevo Proyecto</DialogTitle>
+                  <DialogTitle>Nuevo Main Quest</DialogTitle>
                 </DialogHeader>
                 {renderForm("project")}
+              </>
+            )}
+
+            {dialogStep === "new-sidequest" && (
+              <>
+                <DialogHeader>
+                  <DialogTitle>Nuevo Side Quest</DialogTitle>
+                </DialogHeader>
+                {renderForm("sidequest")}
               </>
             )}
           </DialogContent>
@@ -806,7 +871,7 @@ export function AreaMenu() {
               </DialogTitle>
             </DialogHeader>
             <div className="mt-4 space-y-4 max-h-[60vh] overflow-y-auto">
-              {archivedAreas.length === 0 && archivedProjects.length === 0 ? (
+              {archivedAreas.length === 0 && archivedMainQuests.length === 0 && archivedSideQuests.length === 0 ? (
                 <div className="text-center text-muted-foreground py-8">
                   <Archive className="mx-auto h-12 w-12 mb-3 opacity-30" />
                   <p>No hay elementos archivados</p>
@@ -894,10 +959,10 @@ export function AreaMenu() {
                     </div>
                   )}
 
-                  {archivedProjects.length > 0 && (
+                  {archivedMainQuests.length > 0 && (
                     <div className="space-y-2">
-                      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">Proyectos</h3>
-                      {archivedProjects.map((project) => {
+                      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">Main Quest</h3>
+                      {archivedMainQuests.map((project) => {
                         const Icon = extendedIconMap[project.icon] || FolderKanban;
                         const isViewing = viewingArchivedProject === project.id;
                         return (
@@ -954,7 +1019,88 @@ export function AreaMenu() {
                                   <AlertDialogHeader>
                                     <AlertDialogTitle>¿Eliminar "{project.name}"?</AlertDialogTitle>
                                     <AlertDialogDescription>
-                                      Esta acción no se puede deshacer. Se eliminará permanentemente este proyecto y todas sus habilidades.
+                                      Esta acción no se puede deshacer. Se eliminará permanentemente este main quest y todas sus habilidades.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      onClick={() => deleteProject(project.id)}
+                                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                    >
+                                      Eliminar
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {archivedSideQuests.length > 0 && (
+                    <div className="space-y-2">
+                      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">Side Quest</h3>
+                      {archivedSideQuests.map((project) => {
+                        const Icon = extendedIconMap[project.icon] || FolderKanban;
+                        const isViewing = viewingArchivedProject === project.id;
+                        return (
+                          <div 
+                            key={project.id} 
+                            className={cn(
+                              "flex items-center gap-3 p-3 rounded-lg border transition-colors cursor-pointer",
+                              isViewing ? "bg-primary/10 border-primary/30" : "hover:bg-muted/50 border-border"
+                            )}
+                            onClick={() => {
+                              setViewingArchivedProject(isViewing ? null : project.id);
+                              setViewingArchivedArea(null);
+                              if (!isViewing) {
+                                setActiveProjectId(project.id);
+                                setIsArchivedDialogOpen(false);
+                              }
+                            }}
+                            data-testid={`archived-sidequest-${project.id}`}
+                          >
+                            <Icon size={20} className="text-muted-foreground" />
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium truncate">{project.name}</p>
+                              {project.description && (
+                                <p className="text-sm text-muted-foreground truncate">{project.description}</p>
+                              )}
+                            </div>
+                            <div className="flex gap-1 shrink-0">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  unarchiveProject(project.id);
+                                }}
+                                title="Restaurar"
+                                data-testid={`button-unarchive-sidequest-${project.id}`}
+                              >
+                                <ArchiveRestore size={16} />
+                              </Button>
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="text-destructive hover:text-destructive"
+                                    title="Eliminar"
+                                    data-testid={`button-delete-archived-sidequest-${project.id}`}
+                                  >
+                                    <Trash2 size={16} />
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>¿Eliminar "{project.name}"?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      Esta acción no se puede deshacer. Se eliminará permanentemente este side quest y todas sus habilidades.
                                     </AlertDialogDescription>
                                   </AlertDialogHeader>
                                   <AlertDialogFooter>

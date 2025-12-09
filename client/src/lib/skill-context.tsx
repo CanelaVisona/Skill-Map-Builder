@@ -42,6 +42,7 @@ export interface Project {
   nextLevelToAssign: number;
   levelSubtitles: Record<string, string>;
   skills: Skill[];
+  questType?: "main" | "side";
 }
 
 interface ParentSkillInfo {
@@ -73,6 +74,7 @@ interface SkillTreeContextType {
   activeArea: Area | undefined;
   isLoading: boolean;
   projects: Project[];
+  mainQuests: Project[];
   activeProjectId: string;
   setActiveProjectId: (id: string) => void;
   activeProject: Project | undefined;
@@ -81,6 +83,7 @@ interface SkillTreeContextType {
   archiveProject: (projectId: string) => Promise<void>;
   unarchiveProject: (projectId: string) => Promise<void>;
   archivedProjects: Project[];
+  archivedMainQuests: Project[];
   loadArchivedProjects: () => Promise<void>;
   activeParentSkillId: string | null;
   parentSkillStack: ParentSkillInfo[];
@@ -105,6 +108,9 @@ interface SkillTreeContextType {
   showCompleted: boolean;
   renameArea: (areaId: string, newName: string) => Promise<void>;
   renameProject: (projectId: string, newName: string) => Promise<void>;
+  sideQuests: Project[];
+  archivedSideQuests: Project[];
+  createSideQuest: (name: string, description: string, icon: string) => Promise<void>;
 }
 
 const SkillTreeContext = createContext<SkillTreeContextType | undefined>(undefined);
@@ -142,6 +148,11 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
 
   const activeArea = areas.find(a => a.id === activeAreaId);
   const activeProject = projects.find(p => p.id === activeProjectId);
+  
+  const mainQuests = projects.filter(p => !p.questType || p.questType === "main");
+  const sideQuests = projects.filter(p => p.questType === "side");
+  const archivedMainQuests = archivedProjects.filter(p => !p.questType || p.questType === "main");
+  const archivedSideQuests = archivedProjects.filter(p => p.questType === "side");
 
   const handleSetActiveAreaId = (id: string) => {
     setActiveAreaId(id);
@@ -1119,6 +1130,46 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       handleSetActiveProjectId(newProject.id);
     } catch (error) {
       console.error("Error creating project:", error);
+    }
+  };
+
+  const createSideQuest = async (name: string, description: string, icon: string) => {
+    try {
+      const id = name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') + '_' + Date.now();
+      const response = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id,
+          name,
+          icon,
+          description,
+          questType: "side",
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to create side quest");
+      }
+      
+      const newProject = await response.json();
+      
+      const generateResponse = await fetch(`/api/projects/${newProject.id}/generate-level`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ level: 1 }),
+      });
+      
+      if (generateResponse.ok) {
+        const { createdSkills } = await generateResponse.json();
+        setProjects(prev => [...prev, { ...newProject, skills: createdSkills }]);
+      } else {
+        setProjects(prev => [...prev, { ...newProject, skills: [] }]);
+      }
+      
+      handleSetActiveProjectId(newProject.id);
+    } catch (error) {
+      console.error("Error creating side quest:", error);
     }
   };
 
@@ -2300,6 +2351,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       activeArea,
       isLoading,
       projects,
+      mainQuests,
       activeProjectId,
       setActiveProjectId: handleSetActiveProjectId,
       activeProject,
@@ -2309,6 +2361,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       unarchiveProject,
       renameProject,
       archivedProjects,
+      archivedMainQuests,
       loadArchivedProjects,
       activeParentSkillId,
       parentSkillStack,
@@ -2330,7 +2383,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       toggleProjectFinalNode,
       toggleSubSkillFinalNode,
       showLevelUp,
-      showCompleted
+      showCompleted,
+      sideQuests,
+      archivedSideQuests,
+      createSideQuest
     }}>
       {children}
     </SkillTreeContext.Provider>
