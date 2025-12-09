@@ -53,53 +53,84 @@ function QuestDiary() {
   
   return (
     <Dialog open={isDiaryOpen} onOpenChange={(open) => !open && closeDiary()}>
-      <DialogContent className="max-w-2xl h-[80vh] p-0 overflow-hidden bg-amber-50 dark:bg-stone-900 border-amber-200 dark:border-amber-900">
-        <div className="relative h-full flex flex-col">
-          <div className="bg-amber-100 dark:bg-stone-800 border-b border-amber-200 dark:border-amber-900 px-6 py-4 flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-amber-900 dark:text-amber-100 flex items-center gap-2">
-              <BookOpen className="h-5 w-5" />
-              Quest Diary
-            </h2>
-            <span className="text-sm text-amber-700 dark:text-amber-300">
-              {activeItem?.name || "Sin área seleccionada"}
-            </span>
+      <DialogContent className="max-w-3xl h-[85vh] p-0 overflow-hidden border-0 bg-transparent shadow-2xl">
+        <div className="relative h-full flex rounded-2xl overflow-hidden backdrop-blur-xl bg-gradient-to-br from-stone-50/95 via-amber-50/90 to-orange-50/95 dark:from-stone-950/95 dark:via-stone-900/90 dark:to-stone-950/95 border border-white/20 dark:border-white/10">
+          
+          <div className="absolute top-4 left-4 w-3 h-3 rounded-full bg-red-400/80 shadow-sm" />
+          <div className="absolute top-4 left-9 w-3 h-3 rounded-full bg-amber-400/80 shadow-sm" />
+          <div className="absolute top-4 left-14 w-3 h-3 rounded-full bg-green-400/80 shadow-sm" />
+          
+          <div className="flex-1 flex flex-col min-w-0">
+            <div className="px-8 pt-12 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 shadow-lg shadow-amber-500/25">
+                  <BookOpen className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold bg-gradient-to-r from-amber-600 to-orange-600 dark:from-amber-400 dark:to-orange-400 bg-clip-text text-transparent">
+                    Quest Diary
+                  </h2>
+                  <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
+                    {activeItem?.name || "Selecciona un área"}
+                  </p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="mx-8 h-px bg-gradient-to-r from-transparent via-amber-300/50 dark:via-amber-600/30 to-transparent" />
+            
+            <ScrollArea className="flex-1 px-8 py-6">
+              {skillsWithFeedback.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-center">
+                  <div className="p-4 rounded-2xl bg-gradient-to-br from-stone-100 to-stone-200 dark:from-stone-800 dark:to-stone-900 mb-4">
+                    <BookOpen className="h-10 w-10 text-stone-400 dark:text-stone-500" />
+                  </div>
+                  <p className="text-stone-600 dark:text-stone-300 font-medium">Tu diario está vacío</p>
+                  <p className="text-sm text-stone-500 dark:text-stone-400 mt-1 max-w-xs">
+                    Agrega notas a tus tareas y aparecerán aquí
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {skillsWithFeedback.map((skill, index) => (
+                    <motion.div 
+                      key={skill.id}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                      className="group relative"
+                      data-testid={`diary-entry-${skill.id}`}
+                    >
+                      <div className="absolute -left-3 top-4 w-1.5 h-1.5 rounded-full bg-amber-400 dark:bg-amber-500 opacity-60 group-hover:opacity-100 transition-opacity" />
+                      
+                      <div className="flex gap-6 p-4 rounded-xl bg-white/60 dark:bg-white/5 border border-stone-200/50 dark:border-white/10 hover:bg-white/80 dark:hover:bg-white/10 hover:border-amber-300/50 dark:hover:border-amber-500/30 transition-all duration-200 hover:shadow-lg hover:shadow-amber-500/5">
+                        <div className="flex-shrink-0 w-1/3 min-w-0">
+                          <h3 className="font-semibold text-stone-800 dark:text-stone-100 truncate text-sm">
+                            {skill.title}
+                          </h3>
+                          {skill.description && (
+                            <p className="text-xs text-stone-500 dark:text-stone-400 mt-1 line-clamp-2 leading-relaxed">
+                              {skill.description}
+                            </p>
+                          )}
+                        </div>
+                        
+                        <div className="flex-1 min-w-0 pl-6 border-l border-dashed border-stone-300/50 dark:border-stone-600/50">
+                          <p className="text-sm text-stone-700 dark:text-stone-200 leading-relaxed">
+                            <span className="text-amber-500 dark:text-amber-400 font-serif text-lg leading-none">"</span>
+                            {skill.feedback}
+                            <span className="text-amber-500 dark:text-amber-400 font-serif text-lg leading-none">"</span>
+                          </p>
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              )}
+            </ScrollArea>
           </div>
           
-          <ScrollArea className="flex-1 p-6">
-            {skillsWithFeedback.length === 0 ? (
-              <div className="text-center text-amber-700 dark:text-amber-400 py-12">
-                <BookOpen className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>No hay notas en tu diario todavía.</p>
-                <p className="text-sm mt-2 opacity-70">Agrega feedback a tus tareas para verlas aquí.</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {skillsWithFeedback.map((skill) => (
-                  <div 
-                    key={skill.id}
-                    className="flex gap-4 p-4 bg-white dark:bg-stone-800 rounded-lg border border-amber-200 dark:border-amber-800 shadow-sm"
-                    data-testid={`diary-entry-${skill.id}`}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-medium text-amber-900 dark:text-amber-100 truncate">
-                        {skill.title}
-                      </h3>
-                      {skill.description && (
-                        <p className="text-xs text-amber-700 dark:text-amber-400 mt-1 line-clamp-1">
-                          {skill.description}
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0 pl-4 border-l border-amber-200 dark:border-amber-700">
-                      <p className="text-sm text-amber-800 dark:text-amber-200 italic leading-relaxed">
-                        "{skill.feedback}"
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </ScrollArea>
+          <div className="w-1 bg-gradient-to-b from-amber-200 via-amber-300 to-amber-200 dark:from-amber-900 dark:via-amber-800 dark:to-amber-900 shadow-inner" />
         </div>
       </DialogContent>
     </Dialog>
