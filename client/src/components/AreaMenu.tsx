@@ -180,19 +180,39 @@ function AreaItem({ area, isActive, isMenuOpen, onSelect, onDelete, onArchive }:
           <Archive className="mr-2 h-4 w-4" />
           Archivar
         </Button>
-        <Button
-          variant="destructive"
-          size="sm"
-          className="w-full"
-          onClick={() => {
-            onDelete();
-            setIsPopoverOpen(false);
-          }}
-          data-testid={`button-delete-area-${area.id}`}
-        >
-          <Trash2 className="mr-2 h-4 w-4" />
-          Eliminar
-        </Button>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
+              variant="destructive"
+              size="sm"
+              className="w-full"
+              data-testid={`button-delete-area-${area.id}`}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Eliminar
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>¿Eliminar "{area.name}"?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Esta acción no se puede deshacer. Se eliminará permanentemente esta área y todas sus habilidades.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setIsPopoverOpen(false)}>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  onDelete();
+                  setIsPopoverOpen(false);
+                }}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                Eliminar
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </PopoverContent>
     </Popover>
   );
@@ -300,19 +320,39 @@ function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete, onArch
           <Archive className="mr-2 h-4 w-4" />
           Archivar
         </Button>
-        <Button
-          variant="destructive"
-          size="sm"
-          className="w-full"
-          onClick={() => {
-            onDelete();
-            setIsPopoverOpen(false);
-          }}
-          data-testid={`button-delete-project-${project.id}`}
-        >
-          <Trash2 className="mr-2 h-4 w-4" />
-          Eliminar
-        </Button>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
+              variant="destructive"
+              size="sm"
+              className="w-full"
+              data-testid={`button-delete-project-${project.id}`}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Eliminar
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>¿Eliminar "{project.name}"?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Esta acción no se puede deshacer. Se eliminará permanentemente este proyecto y todas sus habilidades.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setIsPopoverOpen(false)}>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  onDelete();
+                  setIsPopoverOpen(false);
+                }}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                Eliminar
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </PopoverContent>
     </Popover>
   );
