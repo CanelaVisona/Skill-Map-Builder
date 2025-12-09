@@ -459,16 +459,22 @@ export function AreaMenu() {
           </div>
         )}
 
-        {areas.map((area) => (
-          <AreaItem
-            key={area.id}
-            area={area}
-            isActive={area.id === activeAreaId}
-            isMenuOpen={isOpen}
-            onSelect={() => setActiveAreaId(area.id)}
-            onDelete={() => deleteArea(area.id)}
-          />
-        ))}
+        {areas.length === 0 ? (
+          <div className="text-xs text-muted-foreground px-3 py-2 italic">
+            {isOpen ? "Sin áreas aún" : "—"}
+          </div>
+        ) : (
+          areas.map((area) => (
+            <AreaItem
+              key={area.id}
+              area={area}
+              isActive={area.id === activeAreaId}
+              isMenuOpen={isOpen}
+              onSelect={() => setActiveAreaId(area.id)}
+              onDelete={() => deleteArea(area.id)}
+            />
+          ))
+        )}
 
         <div className="my-3 border-t border-border" />
 
