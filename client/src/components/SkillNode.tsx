@@ -89,16 +89,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
   const isLocked = skill.status === "locked" || shouldForceLock;
   const isMastered = skill.status === "mastered";
   
-  // Calculate previous skill for feedback label
-  const sortedSkills = [...currentSkills].sort((a, b) => {
-    if (a.level !== b.level) return a.level - b.level;
-    return a.y - b.y;
-  });
-  const currentIndex = sortedSkills.findIndex(s => s.id === skill.id);
-  const previousSkill = currentIndex > 0 ? sortedSkills[currentIndex - 1] : null;
-  const isFirstAfterInicio = previousSkill?.title.toLowerCase() === "inicio";
-  const showFeedbackStep = !isFirstAfterInicio && !isInicioNode;
-  
   const [isOpen, setIsOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editStep, setEditStep] = useState(0);
@@ -110,6 +100,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
   
   const [isSubtitleDialogOpen, setIsSubtitleDialogOpen] = useState(false);
   const [isSubtaskConfirmOpen, setIsSubtaskConfirmOpen] = useState(false);
+  const [showFeedbackBubble, setShowFeedbackBubble] = useState(false);
+  const [isFeedbackDialogOpen, setIsFeedbackDialogOpen] = useState(false);
+  const feedbackBubbleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const levelSubtitles = isProject ? (activeProject?.levelSubtitles || {}) : (activeArea?.levelSubtitles || {});
   const currentSubtitle = levelSubtitles[skill.level.toString()] || "";
   const [editSubtitle, setEditSubtitle] = useState(currentSubtitle);
@@ -252,7 +245,42 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
     if (isLocked) {
       return; // Locked nodes cannot be clicked - only unlock when previous node is mastered
     }
+    
+    // If marking as mastered, trigger feedback bubble after 1 second
+    if (skill.status === "available") {
+      if (feedbackBubbleTimer.current) {
+        clearTimeout(feedbackBubbleTimer.current);
+      }
+      feedbackBubbleTimer.current = setTimeout(() => {
+        setShowFeedbackBubble(true);
+      }, 1000);
+    } else if (skill.status === "mastered") {
+      // If un-mastering, hide the bubble
+      if (feedbackBubbleTimer.current) {
+        clearTimeout(feedbackBubbleTimer.current);
+      }
+      setShowFeedbackBubble(false);
+    }
+    
     onClick();
+  };
+  
+  const handleFeedbackBubbleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShowFeedbackBubble(false);
+    setEditFeedback(skill.feedback || "");
+    setIsFeedbackDialogOpen(true);
+  };
+  
+  const handleFeedbackSave = () => {
+    if (isSubSkillView) {
+      updateSubSkill(skill.id, { feedback: editFeedback });
+    } else if (isProject) {
+      updateProjectSkill(activeId, skill.id, { feedback: editFeedback });
+    } else {
+      updateSkill(activeId, skill.id, { feedback: editFeedback });
+    }
+    setIsFeedbackDialogOpen(false);
   };
 
   const handleMouseDown = () => {
@@ -373,6 +401,26 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
               {skill.title}
             </span>
           </div>
+
+          {/* Feedback Bubble */}
+          <AnimatePresence>
+            {showFeedbackBubble && isMastered && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8, y: 10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.8, y: 10 }}
+                transition={{ duration: 0.2 }}
+                className="absolute left-14 top-full mt-1 cursor-pointer z-30"
+                onClick={handleFeedbackBubbleClick}
+                data-testid={`button-feedback-bubble-${skill.id}`}
+              >
+                <div className="bg-yellow-400 text-yellow-900 px-3 py-1.5 rounded-full text-xs font-medium shadow-lg hover:bg-yellow-300 transition-colors relative">
+                  ¿Feedback?
+                  <div className="absolute -top-1 left-4 w-2 h-2 bg-yellow-400 rotate-45" />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </PopoverAnchor>
       <PopoverContent 
@@ -593,61 +641,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
                   >
                     <ChevronLeft className="h-5 w-5" />
                   </Button>
-                  {showFeedbackStep ? (
-                    <Button 
-                      variant="ghost" 
-                      size="icon"
-                      onClick={() => setEditStep(2)}
-                      className="h-10 w-10 bg-muted/50 hover:bg-muted"
-                      data-testid="button-next-step"
-                    >
-                      <ChevronRight className="h-5 w-5" />
-                    </Button>
-                  ) : (
-                    <Button 
-                      onClick={handleEditSave}
-                      className="border-0"
-                      data-testid="button-save-edit"
-                    >
-                      Guardar
-                    </Button>
-                  )}
-                </div>
-              </motion.div>
-            )}
-
-            {editStep === 2 && showFeedbackStep && (
-              <motion.div
-                key="step-feedback"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.2 }}
-                className="flex-1 flex flex-col"
-              >
-                <Label htmlFor="edit-feedback" className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
-                  Feedback de {previousSkill?.title}
-                </Label>
-                <Textarea
-                  id="edit-feedback"
-                  value={editFeedback}
-                  onChange={(e) => setEditFeedback(e.target.value)}
-                  placeholder="Notas, comentarios o retroalimentación..."
-                  rows={4}
-                  className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none flex-1"
-                  data-testid="input-edit-feedback"
-                  autoFocus
-                />
-                <div className="flex justify-between mt-auto pt-6">
-                  <Button 
-                    variant="ghost" 
-                    size="icon"
-                    onClick={() => setEditStep(1)}
-                    className="h-10 w-10 bg-muted/50 hover:bg-muted"
-                    data-testid="button-prev-step"
-                  >
-                    <ChevronLeft className="h-5 w-5" />
-                  </Button>
                   <Button 
                     onClick={handleEditSave}
                     className="border-0"
@@ -706,6 +699,33 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
           </Button>
           <Button onClick={handleConfirmSubtasks} className="flex-1 border-0" data-testid="button-yes-subtasks">
             Sí
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={isFeedbackDialogOpen} onOpenChange={setIsFeedbackDialogOpen}>
+      <DialogContent className="sm:max-w-[400px] border-0 shadow-2xl">
+        <DialogHeader>
+          <DialogTitle className="text-lg font-medium">Feedback</DialogTitle>
+        </DialogHeader>
+        <div className="py-4">
+          <Textarea
+            value={editFeedback}
+            onChange={(e) => setEditFeedback(e.target.value)}
+            placeholder="Notas, comentarios o retroalimentación..."
+            rows={4}
+            className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+            data-testid="input-feedback"
+            autoFocus
+          />
+        </div>
+        <div className="flex gap-2 pt-2">
+          <Button variant="ghost" onClick={() => setIsFeedbackDialogOpen(false)} className="flex-1 bg-muted/50 hover:bg-muted" data-testid="button-cancel-feedback">
+            Cancelar
+          </Button>
+          <Button onClick={handleFeedbackSave} className="flex-1 border-0" data-testid="button-save-feedback">
+            Guardar
           </Button>
         </div>
       </DialogContent>
