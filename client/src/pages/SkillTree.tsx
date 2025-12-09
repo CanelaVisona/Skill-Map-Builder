@@ -118,16 +118,18 @@ function JournalSection({
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
-  const [action, setAction] = useState("");
   const [description, setDescription] = useState("");
+  const [extraInfo, setExtraInfo] = useState("");
+  const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const longPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const entryLongPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleLongPressStart = () => {
     longPressTimer.current = setTimeout(() => {
       setIsAdding(true);
       setEditingId(null);
       setName("");
-      setAction("");
       setDescription("");
     }, 500);
   };
@@ -139,34 +141,61 @@ function JournalSection({
     }
   };
 
+  const handleEntryLongPressStart = (entry: JournalEntry) => {
+    entryLongPressTimer.current = setTimeout(() => {
+      setSelectedEntryId(entry.id);
+      setEditingId(entry.id);
+      setName(entry.name);
+      setDescription(entry.description || "");
+      setShowDeleteConfirm(true);
+    }, 500);
+  };
+
+  const handleEntryLongPressEnd = () => {
+    if (entryLongPressTimer.current) {
+      clearTimeout(entryLongPressTimer.current);
+      entryLongPressTimer.current = null;
+    }
+  };
+
   const handleSubmit = () => {
     if (!name.trim()) return;
     if (editingId) {
-      onEdit(editingId, { name: name.trim(), action: action.trim(), description: description.trim() });
+      onEdit(editingId, { name: name.trim().toUpperCase(), action: "", description: description.trim() });
       setEditingId(null);
+      setShowDeleteConfirm(false);
     } else {
-      onAdd({ name: name.trim(), action: action.trim(), description: description.trim() });
+      onAdd({ name: name.trim().toUpperCase(), action: "", description: description.trim() });
       setIsAdding(false);
     }
     setName("");
-    setAction("");
     setDescription("");
+    setSelectedEntryId(null);
   };
 
-  const handleStartEdit = (entry: JournalEntry) => {
-    setEditingId(entry.id);
-    setName(entry.name);
-    setAction(entry.action || "");
-    setDescription(entry.description || "");
-    setIsAdding(false);
+  const handleAddInfo = () => {
+    if (!extraInfo.trim()) return;
+    const newDescription = description ? `${description}\n${extraInfo.trim()}` : extraInfo.trim();
+    setDescription(newDescription);
+    setExtraInfo("");
   };
 
   const handleCancel = () => {
     setIsAdding(false);
     setEditingId(null);
     setName("");
-    setAction("");
     setDescription("");
+    setSelectedEntryId(null);
+    setShowDeleteConfirm(false);
+  };
+
+  const handleDelete = () => {
+    if (selectedEntryId) {
+      onDelete(selectedEntryId);
+      setSelectedEntryId(null);
+      setEditingId(null);
+      setShowDeleteConfirm(false);
+    }
   };
 
   const emptyMessage = type === "characters" ? "No characters" : type === "places" ? "No places" : "No shadows";
@@ -186,7 +215,7 @@ function JournalSection({
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => { setIsAdding(true); setEditingId(null); setName(""); setAction(""); setDescription(""); }}
+          onClick={() => { setIsAdding(true); setEditingId(null); setName(""); setDescription(""); }}
           className="h-7 px-2"
           data-testid={`button-add-${type}`}
         >
@@ -197,35 +226,40 @@ function JournalSection({
       {(isAdding || editingId) && (
         <div className="mb-4 p-3 border border-border rounded-lg space-y-2">
           <Input
-            placeholder="Nombre"
+            placeholder="NAME"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => setName(e.target.value.toUpperCase())}
+            className="uppercase"
             data-testid={`input-${type}-name`}
           />
-          <Input
-            placeholder="Action (max 10 words)"
-            value={action}
-            onChange={(e) => {
-              const words = e.target.value.split(/\s+/).filter(w => w.length > 0);
-              if (words.length <= 10) {
-                setAction(e.target.value);
-              } else {
-                setAction(words.slice(0, 10).join(" "));
-              }
-            }}
-            data-testid={`input-${type}-action`}
-          />
           <Textarea
-            placeholder="Narrative description"
+            placeholder="Description"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            rows={2}
+            rows={3}
             data-testid={`input-${type}-description`}
           />
+          <div className="flex gap-2">
+            <Input
+              placeholder="Add more info..."
+              value={extraInfo}
+              onChange={(e) => setExtraInfo(e.target.value)}
+              className="flex-1"
+              data-testid={`input-${type}-extra`}
+            />
+            <Button size="sm" variant="outline" onClick={handleAddInfo} disabled={!extraInfo.trim()}>
+              +
+            </Button>
+          </div>
           <div className="flex gap-2">
             <Button size="sm" onClick={handleSubmit} data-testid={`button-save-${type}`}>
               {editingId ? "Save" : "Add"}
             </Button>
+            {showDeleteConfirm && (
+              <Button size="sm" variant="destructive" onClick={handleDelete}>
+                Delete
+              </Button>
+            )}
             <Button size="sm" variant="ghost" onClick={handleCancel}>
               Cancel
             </Button>
@@ -253,36 +287,19 @@ function JournalSection({
             {entries.map((entry) => (
               <div
                 key={entry.id}
-                className="p-3 border border-border rounded-lg group"
+                className="p-3 border border-border rounded-lg cursor-pointer select-none"
                 data-testid={`card-${type}-${entry.id}`}
+                onTouchStart={() => handleEntryLongPressStart(entry)}
+                onTouchEnd={handleEntryLongPressEnd}
+                onTouchCancel={handleEntryLongPressEnd}
+                onMouseDown={() => handleEntryLongPressStart(entry)}
+                onMouseUp={handleEntryLongPressEnd}
+                onMouseLeave={handleEntryLongPressEnd}
               >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-medium text-sm text-foreground">{entry.name}</h4>
-                    {entry.action && (
-                      <p className="text-xs text-foreground/80 mt-1 line-clamp-2">{entry.action}</p>
-                    )}
-                    {entry.description && (
-                      <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{entry.description}</p>
-                    )}
-                  </div>
-                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={() => handleStartEdit(entry)}
-                      className="p-1 text-muted-foreground hover:text-foreground"
-                      data-testid={`button-edit-${type}-${entry.id}`}
-                    >
-                      <Pencil className="h-3 w-3" />
-                    </button>
-                    <button
-                      onClick={() => onDelete(entry.id)}
-                      className="p-1 text-muted-foreground hover:text-destructive"
-                      data-testid={`button-delete-${type}-${entry.id}`}
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </div>
-                </div>
+                <h4 className="font-medium text-sm text-foreground uppercase">{entry.name}</h4>
+                {entry.description && (
+                  <p className="text-xs text-muted-foreground mt-1 whitespace-pre-line">{entry.description}</p>
+                )}
               </div>
             ))}
           </div>
