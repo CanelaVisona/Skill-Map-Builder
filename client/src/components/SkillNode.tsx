@@ -531,14 +531,14 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
             />
           </div>
         </div>
-        <DialogFooter className="gap-2">
-          <Button variant="ghost" onClick={() => setIsEditDialogOpen(false)} className="text-muted-foreground hover:text-foreground" data-testid="button-cancel-edit">
+        <div className="flex gap-2 pt-2">
+          <Button variant="outline" onClick={() => setIsEditDialogOpen(false)} className="flex-1" data-testid="button-cancel-edit">
             Cancelar
           </Button>
-          <Button onClick={handleEditSave} className="border-0" data-testid="button-save-edit">
+          <Button onClick={handleEditSave} className="flex-1" data-testid="button-save-edit">
             Guardar
           </Button>
-        </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
 
@@ -560,14 +560,14 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
             />
           </div>
         </div>
-        <DialogFooter className="gap-2">
-          <Button variant="ghost" onClick={() => setIsSubtitleDialogOpen(false)} className="text-muted-foreground hover:text-foreground" data-testid="button-cancel-subtitle">
+        <div className="flex gap-2 pt-2">
+          <Button variant="outline" onClick={() => setIsSubtitleDialogOpen(false)} className="flex-1" data-testid="button-cancel-subtitle">
             Cancelar
           </Button>
-          <Button onClick={handleSubtitleSave} className="border-0" data-testid="button-save-subtitle">
+          <Button onClick={handleSubtitleSave} className="flex-1" data-testid="button-save-subtitle">
             Guardar
           </Button>
-        </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   </>
