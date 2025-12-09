@@ -108,10 +108,16 @@ function QuestDiary() {
                     </p>
                   )}
                   <div className="pt-2">
-                    <p className="text-xs text-yellow-500 dark:text-yellow-400 uppercase tracking-wide mb-2">Feedback</p>
-                    <p className="text-sm text-foreground leading-relaxed">
-                      {selectedSkill.feedback || "no comments"}
-                    </p>
+                    <p className="text-xs text-foreground uppercase tracking-wide mb-2">Feedback</p>
+                    {selectedSkill.feedback ? (
+                      <p className="text-sm text-yellow-500 dark:text-yellow-400 leading-relaxed">
+                        {selectedSkill.feedback}
+                      </p>
+                    ) : (
+                      <p className="text-sm text-muted-foreground/40 italic leading-relaxed">
+                        No comments
+                      </p>
+                    )}
                   </div>
                 </div>
               ) : (
