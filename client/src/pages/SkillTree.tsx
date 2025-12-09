@@ -265,7 +265,8 @@ function SkillCanvas() {
     subSkills,
     exitSubSkillTree,
     toggleSubSkillStatus,
-    showLevelUp
+    showLevelUp,
+    showCompleted
   } = useSkillTree();
 
   const activeItem = activeArea || activeProject;
@@ -317,6 +318,26 @@ function SkillCanvas() {
                 transition={{ duration: 0.5, ease: "easeOut" }}
               >
                 level up
+              </motion.span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        <AnimatePresence>
+          {showCompleted && (
+            <motion.div
+              className="absolute inset-0 flex items-center justify-center pointer-events-none z-50"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
+              <motion.span
+                className="text-4xl font-bold tracking-widest uppercase text-foreground"
+                initial={{ y: 100, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: -100, opacity: 0 }}
+                transition={{ duration: 0.5, ease: "easeOut" }}
+              >
+                completed
               </motion.span>
             </motion.div>
           )}
@@ -447,6 +468,26 @@ function SkillCanvas() {
               transition={{ duration: 0.5, ease: "easeOut" }}
             >
               level up
+            </motion.span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {showCompleted && (
+          <motion.div
+            className="absolute inset-0 flex items-center justify-center pointer-events-none z-50"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <motion.span
+              className="text-4xl font-bold tracking-widest uppercase text-foreground"
+              initial={{ y: 100, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: -100, opacity: 0 }}
+              transition={{ duration: 0.5, ease: "easeOut" }}
+            >
+              completed
             </motion.span>
           </motion.div>
         )}

@@ -101,6 +101,7 @@ interface SkillTreeContextType {
   toggleProjectFinalNode: (projectId: string, skillId: string) => Promise<void>;
   toggleSubSkillFinalNode: (skillId: string) => Promise<void>;
   showLevelUp: boolean;
+  showCompleted: boolean;
   renameArea: (areaId: string, newName: string) => Promise<void>;
   renameProject: (projectId: string, newName: string) => Promise<void>;
 }
@@ -126,10 +127,16 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
   const [parentSkillStack, setParentSkillStack] = useState<ParentSkillInfo[]>([]);
   const [subSkills, setSubSkills] = useState<Skill[]>([]);
   const [showLevelUp, setShowLevelUp] = useState(false);
+  const [showCompleted, setShowCompleted] = useState(false);
 
   const triggerLevelUp = () => {
     setShowLevelUp(true);
     setTimeout(() => setShowLevelUp(false), 2000);
+  };
+
+  const triggerCompleted = () => {
+    setShowCompleted(true);
+    setTimeout(() => setShowCompleted(false), 2000);
   };
 
   const activeArea = areas.find(a => a.id === activeAreaId);
@@ -211,6 +218,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
       });
+
+      if (hasStar && newStatus === "mastered") {
+        triggerCompleted();
+      }
 
       if (isOpeningNewLevel) {
         triggerLevelUp();
@@ -351,6 +362,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
       });
+
+      if (hasStar && newStatus === "mastered") {
+        triggerCompleted();
+      }
 
       if (isOpeningNewLevel) {
         triggerLevelUp();
@@ -1310,6 +1325,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
       });
+
+      if (hasStar && newStatus === "mastered") {
+        triggerCompleted();
+      }
 
       if (isOpeningNewLevel && activeParentSkillId) {
         const newLevel = skill.level + 1;
@@ -2291,7 +2310,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       toggleFinalNode,
       toggleProjectFinalNode,
       toggleSubSkillFinalNode,
-      showLevelUp
+      showLevelUp,
+      showCompleted
     }}>
       {children}
     </SkillTreeContext.Provider>
