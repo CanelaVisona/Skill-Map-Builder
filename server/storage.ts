@@ -399,6 +399,10 @@ export class DbStorage implements IStorage {
     return await db.select().from(skills).where(eq(skills.parentSkillId, parentSkillId));
   }
 
+  async deleteSubSkills(parentSkillId: string): Promise<void> {
+    await db.delete(skills).where(eq(skills.parentSkillId, parentSkillId));
+  }
+
   async countSubSkillsInLevel(parentSkillId: string, level: number): Promise<number> {
     const result = await db.select().from(skills).where(
       and(eq(skills.parentSkillId, parentSkillId), eq(skills.level, level))

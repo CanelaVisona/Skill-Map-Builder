@@ -827,6 +827,23 @@ export async function registerRoutes(
     }
   });
 
+  app.delete("/api/skills/:id/subskills", requireAuth, async (req, res) => {
+    try {
+      const parentSkillId = req.params.id;
+      
+      const isOwner = await verifySkillOwnership(parentSkillId, req.userId!);
+      if (!isOwner) {
+        res.status(403).json({ message: "No tienes permiso para borrar estas sub-skills" });
+        return;
+      }
+      
+      await storage.deleteSubSkills(parentSkillId);
+      res.status(200).json({ message: "Sub-skills deleted successfully" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.post("/api/skills/:id/subskills", requireAuth, async (req, res) => {
     try {
       const parentSkillId = req.params.id;

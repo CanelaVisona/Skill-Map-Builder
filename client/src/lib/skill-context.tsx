@@ -92,6 +92,7 @@ interface SkillTreeContextType {
   deleteSubSkill: (skillId: string) => void;
   toggleSubSkillLock: (skillId: string) => void;
   moveSubSkill: (skillId: string, direction: "up" | "down") => void;
+  deleteSubSkillTree: () => Promise<void>;
   addSkillBelow: (areaId: string, skillId: string) => Promise<void>;
   addProjectSkillBelow: (projectId: string, skillId: string) => Promise<void>;
   addSubSkillBelow: (skillId: string) => Promise<void>;
@@ -1455,6 +1456,23 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const deleteSubSkillTree = async () => {
+    if (!activeParentSkillId) return;
+    
+    try {
+      const response = await fetch(`/api/skills/${activeParentSkillId}/subskills`, { method: "DELETE" });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Error al borrar las sub-habilidades");
+      }
+      setSubSkills([]);
+      exitSubSkillTree();
+    } catch (error) {
+      console.error("Error deleting sub-skill tree:", error);
+      throw error;
+    }
+  };
+
   const toggleSubSkillLock = async (skillId: string) => {
     const skill = subSkills.find(s => s.id === skillId);
     if (!skill) return;
@@ -2300,6 +2318,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       toggleSubSkillStatus,
       updateSubSkill,
       deleteSubSkill,
+      deleteSubSkillTree,
       toggleSubSkillLock,
       moveSubSkill,
       addSkillBelow,

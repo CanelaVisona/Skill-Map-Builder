@@ -4,7 +4,7 @@ import { AreaMenu } from "@/components/AreaMenu";
 import { SkillNode } from "@/components/SkillNode";
 import { SkillConnection } from "@/components/SkillConnection";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Sun, Moon, BookOpen } from "lucide-react";
+import { ArrowLeft, Sun, Moon, BookOpen, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -277,6 +277,7 @@ function SkillCanvas() {
     subSkills,
     exitSubSkillTree,
     toggleSubSkillStatus,
+    deleteSubSkillTree,
     showLevelUp,
     showCompleted
   } = useSkillTree();
@@ -375,6 +376,22 @@ function SkillCanvas() {
               <p className="text-muted-foreground max-w-md text-sm leading-relaxed ml-11">
                 Sub-habilidades de {currentParent?.title}
               </p>
+              <button
+                onClick={async () => {
+                  if (confirm("¿Estás seguro de que quieres borrar todas las sub-habilidades?")) {
+                    try {
+                      await deleteSubSkillTree();
+                    } catch (error) {
+                      alert("Error al borrar las sub-habilidades. Por favor, intenta de nuevo.");
+                    }
+                  }
+                }}
+                className="text-muted-foreground/50 hover:text-destructive text-xs ml-11 mt-1 flex items-center gap-1 transition-colors"
+                data-testid="button-delete-subtree"
+              >
+                <Trash2 className="h-3 w-3" />
+                Borrar skill tree
+              </button>
             </div>
 
             <div 
