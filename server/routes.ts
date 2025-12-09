@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertAreaSchema, insertSkillSchema, insertProjectSchema } from "@shared/schema";
+import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import cookieParser from "cookie-parser";
 import crypto from "crypto";
@@ -884,6 +884,180 @@ export async function registerRoutes(
     } catch (error: any) {
       const validationError = fromError(error);
       res.status(400).json({ message: validationError.toString() });
+    }
+  });
+
+  // Journal - Characters
+  app.get("/api/journal/characters", requireAuth, async (req, res) => {
+    try {
+      const characters = await storage.getJournalCharacters(req.userId!);
+      res.json(characters);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/journal/characters", requireAuth, async (req, res) => {
+    try {
+      const data = { ...req.body, userId: req.userId };
+      const validated = insertJournalCharacterSchema.parse(data);
+      const character = await storage.createJournalCharacter(validated);
+      res.status(201).json(character);
+    } catch (error: any) {
+      const validationError = fromError(error);
+      res.status(400).json({ message: validationError.toString() });
+    }
+  });
+
+  app.patch("/api/journal/characters/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getJournalCharacter(req.params.id);
+      if (!existing) {
+        res.status(404).json({ message: "Character not found" });
+        return;
+      }
+      if (existing.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para modificar este personaje" });
+        return;
+      }
+      const updated = await storage.updateJournalCharacter(req.params.id, req.body);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/journal/characters/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getJournalCharacter(req.params.id);
+      if (!existing) {
+        res.status(404).json({ message: "Character not found" });
+        return;
+      }
+      if (existing.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para eliminar este personaje" });
+        return;
+      }
+      await storage.deleteJournalCharacter(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Journal - Places
+  app.get("/api/journal/places", requireAuth, async (req, res) => {
+    try {
+      const places = await storage.getJournalPlaces(req.userId!);
+      res.json(places);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/journal/places", requireAuth, async (req, res) => {
+    try {
+      const data = { ...req.body, userId: req.userId };
+      const validated = insertJournalPlaceSchema.parse(data);
+      const place = await storage.createJournalPlace(validated);
+      res.status(201).json(place);
+    } catch (error: any) {
+      const validationError = fromError(error);
+      res.status(400).json({ message: validationError.toString() });
+    }
+  });
+
+  app.patch("/api/journal/places/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getJournalPlace(req.params.id);
+      if (!existing) {
+        res.status(404).json({ message: "Place not found" });
+        return;
+      }
+      if (existing.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para modificar este lugar" });
+        return;
+      }
+      const updated = await storage.updateJournalPlace(req.params.id, req.body);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/journal/places/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getJournalPlace(req.params.id);
+      if (!existing) {
+        res.status(404).json({ message: "Place not found" });
+        return;
+      }
+      if (existing.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para eliminar este lugar" });
+        return;
+      }
+      await storage.deleteJournalPlace(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Journal - Shadows
+  app.get("/api/journal/shadows", requireAuth, async (req, res) => {
+    try {
+      const shadows = await storage.getJournalShadows(req.userId!);
+      res.json(shadows);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/journal/shadows", requireAuth, async (req, res) => {
+    try {
+      const data = { ...req.body, userId: req.userId };
+      const validated = insertJournalShadowSchema.parse(data);
+      const shadow = await storage.createJournalShadow(validated);
+      res.status(201).json(shadow);
+    } catch (error: any) {
+      const validationError = fromError(error);
+      res.status(400).json({ message: validationError.toString() });
+    }
+  });
+
+  app.patch("/api/journal/shadows/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getJournalShadow(req.params.id);
+      if (!existing) {
+        res.status(404).json({ message: "Shadow not found" });
+        return;
+      }
+      if (existing.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para modificar esta sombra" });
+        return;
+      }
+      const updated = await storage.updateJournalShadow(req.params.id, req.body);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/journal/shadows/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getJournalShadow(req.params.id);
+      if (!existing) {
+        res.status(404).json({ message: "Shadow not found" });
+        return;
+      }
+      if (existing.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para eliminar esta sombra" });
+        return;
+      }
+      await storage.deleteJournalShadow(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
     }
   });
 

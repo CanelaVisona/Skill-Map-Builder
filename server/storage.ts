@@ -1,7 +1,7 @@
 import { eq, and } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db } from "./db";
-import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, areas, skills, projects, users, sessions } from "@shared/schema";
+import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows } from "@shared/schema";
 
 export interface IStorage {
   // Users
@@ -51,6 +51,27 @@ export interface IStorage {
   deleteProject(id: string): Promise<void>;
   archiveProject(id: string): Promise<Project | undefined>;
   unarchiveProject(id: string): Promise<Project | undefined>;
+
+  // Journal - Characters
+  getJournalCharacters(userId: string): Promise<JournalCharacter[]>;
+  getJournalCharacter(id: string): Promise<JournalCharacter | undefined>;
+  createJournalCharacter(character: InsertJournalCharacter): Promise<JournalCharacter>;
+  updateJournalCharacter(id: string, character: Partial<InsertJournalCharacter>): Promise<JournalCharacter | undefined>;
+  deleteJournalCharacter(id: string): Promise<void>;
+
+  // Journal - Places
+  getJournalPlaces(userId: string): Promise<JournalPlace[]>;
+  getJournalPlace(id: string): Promise<JournalPlace | undefined>;
+  createJournalPlace(place: InsertJournalPlace): Promise<JournalPlace>;
+  updateJournalPlace(id: string, place: Partial<InsertJournalPlace>): Promise<JournalPlace | undefined>;
+  deleteJournalPlace(id: string): Promise<void>;
+
+  // Journal - Shadows
+  getJournalShadows(userId: string): Promise<JournalShadow[]>;
+  getJournalShadow(id: string): Promise<JournalShadow | undefined>;
+  createJournalShadow(shadow: InsertJournalShadow): Promise<JournalShadow>;
+  updateJournalShadow(id: string, shadow: Partial<InsertJournalShadow>): Promise<JournalShadow | undefined>;
+  deleteJournalShadow(id: string): Promise<void>;
 }
 
 export class DbStorage implements IStorage {
@@ -455,6 +476,81 @@ export class DbStorage implements IStorage {
     const parentSkill = parentSkillResult[0];
 
     return { parentSkill, createdSkills };
+  }
+
+  // Journal - Characters
+  async getJournalCharacters(userId: string): Promise<JournalCharacter[]> {
+    return await db.select().from(journalCharacters).where(eq(journalCharacters.userId, userId));
+  }
+
+  async getJournalCharacter(id: string): Promise<JournalCharacter | undefined> {
+    const result = await db.select().from(journalCharacters).where(eq(journalCharacters.id, id));
+    return result[0];
+  }
+
+  async createJournalCharacter(character: InsertJournalCharacter): Promise<JournalCharacter> {
+    const id = randomUUID();
+    const result = await db.insert(journalCharacters).values({ id, ...character }).returning();
+    return result[0];
+  }
+
+  async updateJournalCharacter(id: string, character: Partial<InsertJournalCharacter>): Promise<JournalCharacter | undefined> {
+    const result = await db.update(journalCharacters).set(character).where(eq(journalCharacters.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteJournalCharacter(id: string): Promise<void> {
+    await db.delete(journalCharacters).where(eq(journalCharacters.id, id));
+  }
+
+  // Journal - Places
+  async getJournalPlaces(userId: string): Promise<JournalPlace[]> {
+    return await db.select().from(journalPlaces).where(eq(journalPlaces.userId, userId));
+  }
+
+  async getJournalPlace(id: string): Promise<JournalPlace | undefined> {
+    const result = await db.select().from(journalPlaces).where(eq(journalPlaces.id, id));
+    return result[0];
+  }
+
+  async createJournalPlace(place: InsertJournalPlace): Promise<JournalPlace> {
+    const id = randomUUID();
+    const result = await db.insert(journalPlaces).values({ id, ...place }).returning();
+    return result[0];
+  }
+
+  async updateJournalPlace(id: string, place: Partial<InsertJournalPlace>): Promise<JournalPlace | undefined> {
+    const result = await db.update(journalPlaces).set(place).where(eq(journalPlaces.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteJournalPlace(id: string): Promise<void> {
+    await db.delete(journalPlaces).where(eq(journalPlaces.id, id));
+  }
+
+  // Journal - Shadows
+  async getJournalShadows(userId: string): Promise<JournalShadow[]> {
+    return await db.select().from(journalShadows).where(eq(journalShadows.userId, userId));
+  }
+
+  async getJournalShadow(id: string): Promise<JournalShadow | undefined> {
+    const result = await db.select().from(journalShadows).where(eq(journalShadows.id, id));
+    return result[0];
+  }
+
+  async createJournalShadow(shadow: InsertJournalShadow): Promise<JournalShadow> {
+    const id = randomUUID();
+    const result = await db.insert(journalShadows).values({ id, ...shadow }).returning();
+    return result[0];
+  }
+
+  async updateJournalShadow(id: string, shadow: Partial<InsertJournalShadow>): Promise<JournalShadow | undefined> {
+    const result = await db.update(journalShadows).set(shadow).where(eq(journalShadows.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteJournalShadow(id: string): Promise<void> {
+    await db.delete(journalShadows).where(eq(journalShadows.id, id));
   }
 }
 

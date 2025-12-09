@@ -4,13 +4,19 @@ import { AreaMenu } from "@/components/AreaMenu";
 import { SkillNode } from "@/components/SkillNode";
 import { SkillConnection } from "@/components/SkillConnection";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Sun, Moon, BookOpen, Trash2 } from "lucide-react";
+import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, MapPin, Ghost, Trophy, Pencil, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import type { JournalCharacter, JournalPlace, JournalShadow } from "@shared/schema";
 
 function calculateVisibleLevels(skills: Skill[]): Set<number> {
   const visibleLevels = new Set<number>();
@@ -92,8 +98,153 @@ function TopRightControls() {
   );
 }
 
-function QuestDiary() {
-  const { isDiaryOpen, closeDiary } = useDiary();
+type JournalEntry = JournalCharacter | JournalPlace | JournalShadow;
+
+function JournalSection({ 
+  type, 
+  entries,
+  isLoading,
+  onAdd,
+  onEdit,
+  onDelete 
+}: { 
+  type: "characters" | "places" | "shadows";
+  entries: JournalEntry[];
+  isLoading: boolean;
+  onAdd: (entry: { name: string; description: string }) => void;
+  onEdit: (id: string, entry: { name: string; description: string }) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [isAdding, setIsAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+
+  const handleSubmit = () => {
+    if (!name.trim()) return;
+    if (editingId) {
+      onEdit(editingId, { name: name.trim(), description: description.trim() });
+      setEditingId(null);
+    } else {
+      onAdd({ name: name.trim(), description: description.trim() });
+      setIsAdding(false);
+    }
+    setName("");
+    setDescription("");
+  };
+
+  const handleStartEdit = (entry: JournalEntry) => {
+    setEditingId(entry.id);
+    setName(entry.name);
+    setDescription(entry.description || "");
+    setIsAdding(false);
+  };
+
+  const handleCancel = () => {
+    setIsAdding(false);
+    setEditingId(null);
+    setName("");
+    setDescription("");
+  };
+
+  const emptyMessage = type === "characters" ? "Sin personajes" : type === "places" ? "Sin lugares" : "Sin sombras";
+  const Icon = type === "characters" ? Users : type === "places" ? MapPin : Ghost;
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">Cargando...</div>;
+  }
+
+  return (
+    <div className="h-full flex flex-col">
+      <div className="flex items-center justify-between mb-4">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+          {entries.length} {type === "characters" ? "personajes" : type === "places" ? "lugares" : "sombras"}
+        </span>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => { setIsAdding(true); setEditingId(null); setName(""); setDescription(""); }}
+          className="h-7 px-2"
+          data-testid={`button-add-${type}`}
+        >
+          <Plus className="h-4 w-4" />
+        </Button>
+      </div>
+
+      {(isAdding || editingId) && (
+        <div className="mb-4 p-3 border border-border rounded-lg space-y-2">
+          <Input
+            placeholder="Nombre"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            data-testid={`input-${type}-name`}
+          />
+          <Textarea
+            placeholder="Descripción"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={2}
+            data-testid={`input-${type}-description`}
+          />
+          <div className="flex gap-2">
+            <Button size="sm" onClick={handleSubmit} data-testid={`button-save-${type}`}>
+              {editingId ? "Guardar" : "Agregar"}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={handleCancel}>
+              Cancelar
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <ScrollArea className="flex-1">
+        {entries.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <Icon className="h-8 w-8 text-muted-foreground/40 mb-3" />
+            <p className="text-muted-foreground text-sm">{emptyMessage}</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {entries.map((entry) => (
+              <div
+                key={entry.id}
+                className="p-3 border border-border rounded-lg group"
+                data-testid={`card-${type}-${entry.id}`}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-medium text-sm text-foreground">{entry.name}</h4>
+                    {entry.description && (
+                      <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{entry.description}</p>
+                    )}
+                  </div>
+                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => handleStartEdit(entry)}
+                      className="p-1 text-muted-foreground hover:text-foreground"
+                      data-testid={`button-edit-${type}-${entry.id}`}
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </button>
+                    <button
+                      onClick={() => onDelete(entry.id)}
+                      className="p-1 text-muted-foreground hover:text-destructive"
+                      data-testid={`button-delete-${type}-${entry.id}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </ScrollArea>
+    </div>
+  );
+}
+
+function AchievementsSection() {
   const { activeArea, activeProject, subSkills, activeParentSkillId } = useSkillTree();
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
   const [selectedSubtasks, setSelectedSubtasks] = useState<Skill[]>([]);
@@ -136,130 +287,306 @@ function QuestDiary() {
       setSelectedSubtasks([]);
     }
   };
+
+  return (
+    <div className="flex h-full">
+      <div className={`${hasSubtasks ? 'w-1/3' : 'w-1/2'} flex flex-col border-r border-border pr-4`}>
+        <ScrollArea className="flex-1">
+          {completedSkills.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <Trophy className="h-8 w-8 text-muted-foreground/40 mb-3" />
+              <p className="text-muted-foreground text-sm">Sin tareas completadas</p>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {completedSkills.map((skill) => (
+                <button
+                  key={skill.id}
+                  onClick={() => handleSelectSkill(skill.id)}
+                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                    selectedSkillId === skill.id 
+                      ? "bg-muted text-foreground" 
+                      : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                  }`}
+                  data-testid={`diary-entry-${skill.id}`}
+                >
+                  {skill.title}
+                </button>
+              ))}
+            </div>
+          )}
+        </ScrollArea>
+      </div>
+      
+      {hasSubtasks && (
+        <div className="w-1/3 flex flex-col border-r border-border px-4">
+          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Subtareas</p>
+          <ScrollArea className="flex-1">
+            <div className="space-y-1">
+              {selectedSubtasks.map((subtask) => (
+                <button
+                  key={subtask.id}
+                  onClick={() => setSelectedSubtaskId(subtask.id)}
+                  className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                    selectedSubtaskId === subtask.id
+                      ? "bg-muted text-foreground"
+                      : subtask.status === "mastered"
+                        ? "text-foreground hover:bg-muted/50"
+                        : "text-muted-foreground/50 hover:bg-muted/30"
+                  }`}
+                >
+                  {subtask.title}
+                </button>
+              ))}
+            </div>
+          </ScrollArea>
+        </div>
+      )}
+      
+      <div className={`${hasSubtasks ? 'w-1/3' : 'w-1/2'} flex flex-col pl-4`}>
+        <ScrollArea className="flex-1">
+          {selectedSubtask ? (
+            <div className="space-y-4">
+              <h3 className="font-medium text-foreground">
+                {selectedSubtask.title}
+              </h3>
+              {selectedSubtask.description && (
+                <p className="text-sm text-muted-foreground">
+                  {selectedSubtask.description}
+                </p>
+              )}
+              <div className="pt-2">
+                <p className="text-xs text-foreground uppercase tracking-wide mb-2">Feedback</p>
+                {nextSubtaskForSelected?.feedback ? (
+                  <p className="text-sm text-yellow-500 dark:text-yellow-400 leading-relaxed">
+                    {nextSubtaskForSelected.feedback}
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground/40 italic leading-relaxed">
+                    No comments
+                  </p>
+                )}
+              </div>
+            </div>
+          ) : selectedSkill ? (
+            <div className="space-y-4">
+              <h3 className="font-medium text-foreground">
+                {selectedSkill.title}
+              </h3>
+              {selectedSkill.description && (
+                <p className="text-sm text-muted-foreground">
+                  {selectedSkill.description}
+                </p>
+              )}
+              <div className="pt-2">
+                <p className="text-xs text-foreground uppercase tracking-wide mb-2">Feedback</p>
+                {nextSkillForSelected?.feedback ? (
+                  <p className="text-sm text-yellow-500 dark:text-yellow-400 leading-relaxed">
+                    {nextSkillForSelected.feedback}
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground/40 italic leading-relaxed">
+                    No comments
+                  </p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="h-full flex items-center justify-center text-muted-foreground/40 text-sm">
+              Selecciona una tarea
+            </div>
+          )}
+        </ScrollArea>
+      </div>
+    </div>
+  );
+}
+
+function QuestDiary() {
+  const { isDiaryOpen, closeDiary } = useDiary();
+  const { activeArea, activeProject } = useSkillTree();
+  const queryClient = useQueryClient();
+  const activeItem = activeArea || activeProject;
+
+  const { data: characters = [], isLoading: loadingCharacters } = useQuery<JournalCharacter[]>({
+    queryKey: ["/api/journal/characters"],
+    enabled: isDiaryOpen,
+  });
+
+  const { data: places = [], isLoading: loadingPlaces } = useQuery<JournalPlace[]>({
+    queryKey: ["/api/journal/places"],
+    enabled: isDiaryOpen,
+  });
+
+  const { data: shadows = [], isLoading: loadingShadows } = useQuery<JournalShadow[]>({
+    queryKey: ["/api/journal/shadows"],
+    enabled: isDiaryOpen,
+  });
+
+  const createCharacter = useMutation({
+    mutationFn: async (data: { name: string; description: string }) => {
+      const res = await fetch("/api/journal/characters", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/journal/characters"] }),
+  });
+
+  const updateCharacter = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { name: string; description: string } }) => {
+      const res = await fetch(`/api/journal/characters/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/journal/characters"] }),
+  });
+
+  const deleteCharacter = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/journal/characters/${id}`, { method: "DELETE" });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/journal/characters"] }),
+  });
+
+  const createPlace = useMutation({
+    mutationFn: async (data: { name: string; description: string }) => {
+      const res = await fetch("/api/journal/places", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/journal/places"] }),
+  });
+
+  const updatePlace = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { name: string; description: string } }) => {
+      const res = await fetch(`/api/journal/places/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/journal/places"] }),
+  });
+
+  const deletePlace = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/journal/places/${id}`, { method: "DELETE" });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/journal/places"] }),
+  });
+
+  const createShadow = useMutation({
+    mutationFn: async (data: { name: string; description: string }) => {
+      const res = await fetch("/api/journal/shadows", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/journal/shadows"] }),
+  });
+
+  const updateShadow = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { name: string; description: string } }) => {
+      const res = await fetch(`/api/journal/shadows/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/journal/shadows"] }),
+  });
+
+  const deleteShadow = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/journal/shadows/${id}`, { method: "DELETE" });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/journal/shadows"] }),
+  });
   
   return (
     <Dialog open={isDiaryOpen} onOpenChange={(open) => !open && closeDiary()}>
-      <DialogContent className={`${hasSubtasks ? 'max-w-5xl' : 'max-w-3xl'} h-[70vh] p-0 overflow-hidden bg-background border border-border`}>
-        <div className="flex h-full">
-          <div className={`${hasSubtasks ? 'w-1/3' : 'w-1/2'} flex flex-col border-r border-border`}>
-            <div className="p-6 pb-4">
-              <h2 className="text-2xl font-bold tracking-tight">
-                Diario
-              </h2>
-              <p className="text-sm text-muted-foreground mt-1">
-                {activeItem?.name || "Selecciona un área"}
-              </p>
-            </div>
+      <DialogContent className="max-w-4xl h-[75vh] p-0 overflow-hidden bg-background border border-border">
+        <VisuallyHidden>
+          <DialogTitle>Diario</DialogTitle>
+        </VisuallyHidden>
+        <div className="flex flex-col h-full p-6">
+          <div className="mb-4">
+            <h2 className="text-2xl font-bold tracking-tight">Diario</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              {activeItem?.name || "Tu aventura"}
+            </p>
+          </div>
+          
+          <Tabs defaultValue="achievements" className="flex-1 flex flex-col">
+            <TabsList className="w-full justify-start mb-4">
+              <TabsTrigger value="achievements" className="gap-2" data-testid="tab-achievements">
+                <Trophy className="h-4 w-4" />
+                Logros
+              </TabsTrigger>
+              <TabsTrigger value="characters" className="gap-2" data-testid="tab-characters">
+                <Users className="h-4 w-4" />
+                Personajes
+              </TabsTrigger>
+              <TabsTrigger value="places" className="gap-2" data-testid="tab-places">
+                <MapPin className="h-4 w-4" />
+                Lugares
+              </TabsTrigger>
+              <TabsTrigger value="shadows" className="gap-2" data-testid="tab-shadows">
+                <Ghost className="h-4 w-4" />
+                Sombras
+              </TabsTrigger>
+            </TabsList>
             
-            <ScrollArea className="flex-1 px-6 pb-6">
-              {completedSkills.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <BookOpen className="h-8 w-8 text-muted-foreground/40 mb-3" />
-                  <p className="text-muted-foreground text-sm">Sin tareas completadas</p>
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  {completedSkills.map((skill) => (
-                    <button
-                      key={skill.id}
-                      onClick={() => handleSelectSkill(skill.id)}
-                      className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                        selectedSkillId === skill.id 
-                          ? "bg-muted text-foreground" 
-                          : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                      }`}
-                      data-testid={`diary-entry-${skill.id}`}
-                    >
-                      {skill.title}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </ScrollArea>
-          </div>
-          
-          {hasSubtasks && (
-            <div className="w-1/3 flex flex-col border-r border-border">
-              <div className="p-6 pb-4">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">Subtareas</p>
-              </div>
-              <ScrollArea className="flex-1 px-6 pb-6">
-                <div className="space-y-1">
-                  {selectedSubtasks.map((subtask) => (
-                    <button
-                      key={subtask.id}
-                      onClick={() => setSelectedSubtaskId(subtask.id)}
-                      className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                        selectedSubtaskId === subtask.id
-                          ? "bg-muted text-foreground"
-                          : subtask.status === "mastered"
-                            ? "text-foreground hover:bg-muted/50"
-                            : "text-muted-foreground/50 hover:bg-muted/30"
-                      }`}
-                    >
-                      {subtask.title}
-                    </button>
-                  ))}
-                </div>
-              </ScrollArea>
-            </div>
-          )}
-          
-          <div className={`${hasSubtasks ? 'w-1/3' : 'w-1/2'} flex flex-col`}>
-            <ScrollArea className="flex-1 p-6">
-              {selectedSubtask ? (
-                <div className="space-y-4">
-                  <h3 className="font-medium text-foreground">
-                    {selectedSubtask.title}
-                  </h3>
-                  {selectedSubtask.description && (
-                    <p className="text-sm text-muted-foreground">
-                      {selectedSubtask.description}
-                    </p>
-                  )}
-                  <div className="pt-2">
-                    <p className="text-xs text-foreground uppercase tracking-wide mb-2">Feedback</p>
-                    {nextSubtaskForSelected?.feedback ? (
-                      <p className="text-sm text-yellow-500 dark:text-yellow-400 leading-relaxed">
-                        {nextSubtaskForSelected.feedback}
-                      </p>
-                    ) : (
-                      <p className="text-sm text-muted-foreground/40 italic leading-relaxed">
-                        No comments
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ) : selectedSkill ? (
-                <div className="space-y-4">
-                  <h3 className="font-medium text-foreground">
-                    {selectedSkill.title}
-                  </h3>
-                  {selectedSkill.description && (
-                    <p className="text-sm text-muted-foreground">
-                      {selectedSkill.description}
-                    </p>
-                  )}
-                  <div className="pt-2">
-                    <p className="text-xs text-foreground uppercase tracking-wide mb-2">Feedback</p>
-                    {nextSkillForSelected?.feedback ? (
-                      <p className="text-sm text-yellow-500 dark:text-yellow-400 leading-relaxed">
-                        {nextSkillForSelected.feedback}
-                      </p>
-                    ) : (
-                      <p className="text-sm text-muted-foreground/40 italic leading-relaxed">
-                        No comments
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div className="h-full flex items-center justify-center text-muted-foreground/40 text-sm">
-                  Selecciona una tarea
-                </div>
-              )}
-            </ScrollArea>
-          </div>
+            <TabsContent value="achievements" className="flex-1 mt-0">
+              <AchievementsSection />
+            </TabsContent>
+            
+            <TabsContent value="characters" className="flex-1 mt-0">
+              <JournalSection
+                type="characters"
+                entries={characters}
+                isLoading={loadingCharacters}
+                onAdd={(data) => createCharacter.mutate(data)}
+                onEdit={(id, data) => updateCharacter.mutate({ id, data })}
+                onDelete={(id) => deleteCharacter.mutate(id)}
+              />
+            </TabsContent>
+            
+            <TabsContent value="places" className="flex-1 mt-0">
+              <JournalSection
+                type="places"
+                entries={places}
+                isLoading={loadingPlaces}
+                onAdd={(data) => createPlace.mutate(data)}
+                onEdit={(id, data) => updatePlace.mutate({ id, data })}
+                onDelete={(id) => deletePlace.mutate(id)}
+              />
+            </TabsContent>
+            
+            <TabsContent value="shadows" className="flex-1 mt-0">
+              <JournalSection
+                type="shadows"
+                entries={shadows}
+                isLoading={loadingShadows}
+                onAdd={(data) => createShadow.mutate(data)}
+                onEdit={(id, data) => updateShadow.mutate({ id, data })}
+                onDelete={(id) => deleteShadow.mutate(id)}
+              />
+            </TabsContent>
+          </Tabs>
         </div>
       </DialogContent>
     </Dialog>

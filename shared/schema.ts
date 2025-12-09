@@ -59,11 +59,38 @@ export const projects = pgTable("projects", {
   questType: text("quest_type").$type<"main" | "side">().default("main"),
 });
 
+export const journalCharacters = pgTable("journal_characters", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+  imageUrl: text("image_url"),
+});
+
+export const journalPlaces = pgTable("journal_places", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+  imageUrl: text("image_url"),
+});
+
+export const journalShadows = pgTable("journal_shadows", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+  imageUrl: text("image_url"),
+});
+
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertSessionSchema = createInsertSchema(sessions).omit({ id: true });
 export const insertAreaSchema = createInsertSchema(areas);
 export const insertSkillSchema = createInsertSchema(skills).omit({ id: true });
 export const insertProjectSchema = createInsertSchema(projects);
+export const insertJournalCharacterSchema = createInsertSchema(journalCharacters).omit({ id: true });
+export const insertJournalPlaceSchema = createInsertSchema(journalPlaces).omit({ id: true });
+export const insertJournalShadowSchema = createInsertSchema(journalShadows).omit({ id: true });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
@@ -75,3 +102,9 @@ export type InsertSkill = z.infer<typeof insertSkillSchema>;
 export type Skill = typeof skills.$inferSelect;
 export type InsertProject = z.infer<typeof insertProjectSchema>;
 export type Project = typeof projects.$inferSelect;
+export type InsertJournalCharacter = z.infer<typeof insertJournalCharacterSchema>;
+export type JournalCharacter = typeof journalCharacters.$inferSelect;
+export type InsertJournalPlace = z.infer<typeof insertJournalPlaceSchema>;
+export type JournalPlace = typeof journalPlaces.$inferSelect;
+export type InsertJournalShadow = z.infer<typeof insertJournalShadowSchema>;
+export type JournalShadow = typeof journalShadows.$inferSelect;
