@@ -116,11 +116,11 @@ function JournalSection({
   onDelete: (id: string) => void;
 }) {
   const [isAdding, setIsAdding] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [extraInfo, setExtraInfo] = useState("");
-  const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
+  const [selectedEntry, setSelectedEntry] = useState<JournalEntry | null>(null);
+  const [isEditMode, setIsEditMode] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const longPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const entryLongPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -128,7 +128,6 @@ function JournalSection({
   const handleLongPressStart = () => {
     longPressTimer.current = setTimeout(() => {
       setIsAdding(true);
-      setEditingId(null);
       setName("");
       setDescription("");
     }, 500);
@@ -143,11 +142,11 @@ function JournalSection({
 
   const handleEntryLongPressStart = (entry: JournalEntry) => {
     entryLongPressTimer.current = setTimeout(() => {
-      setSelectedEntryId(entry.id);
-      setEditingId(entry.id);
+      setSelectedEntry(entry);
       setName(entry.name);
       setDescription(entry.description || "");
-      setShowDeleteConfirm(true);
+      setExtraInfo("");
+      setIsEditMode(false);
     }, 500);
   };
 
@@ -158,44 +157,55 @@ function JournalSection({
     }
   };
 
-  const handleSubmit = () => {
+  const handleAddNew = () => {
     if (!name.trim()) return;
-    if (editingId) {
-      onEdit(editingId, { name: name.trim().toUpperCase(), action: "", description: description.trim() });
-      setEditingId(null);
-      setShowDeleteConfirm(false);
-    } else {
-      onAdd({ name: name.trim().toUpperCase(), action: "", description: description.trim() });
-      setIsAdding(false);
-    }
+    onAdd({ name: name.trim().toUpperCase(), action: "", description: description.trim() });
+    setIsAdding(false);
     setName("");
     setDescription("");
-    setSelectedEntryId(null);
   };
 
-  const handleAddInfo = () => {
-    if (!extraInfo.trim()) return;
-    const newDescription = description ? `${description}\n${extraInfo.trim()}` : extraInfo.trim();
-    setDescription(newDescription);
+  const handleAddExtraInfo = () => {
+    if (!extraInfo.trim() || !selectedEntry) return;
+    const newDescription = selectedEntry.description 
+      ? `${selectedEntry.description}\n${extraInfo.trim()}` 
+      : extraInfo.trim();
+    onEdit(selectedEntry.id, { 
+      name: selectedEntry.name, 
+      action: "", 
+      description: newDescription 
+    });
+    setSelectedEntry(null);
     setExtraInfo("");
   };
 
-  const handleCancel = () => {
-    setIsAdding(false);
-    setEditingId(null);
+  const handleSaveEdit = () => {
+    if (!name.trim() || !selectedEntry) return;
+    onEdit(selectedEntry.id, { 
+      name: name.trim().toUpperCase(), 
+      action: "", 
+      description: description.trim() 
+    });
+    setSelectedEntry(null);
+    setIsEditMode(false);
     setName("");
     setDescription("");
-    setSelectedEntryId(null);
-    setShowDeleteConfirm(false);
   };
 
   const handleDelete = () => {
-    if (selectedEntryId) {
-      onDelete(selectedEntryId);
-      setSelectedEntryId(null);
-      setEditingId(null);
+    if (selectedEntry) {
+      onDelete(selectedEntry.id);
+      setSelectedEntry(null);
+      setIsEditMode(false);
       setShowDeleteConfirm(false);
     }
+  };
+
+  const handleCloseDialog = () => {
+    setSelectedEntry(null);
+    setIsEditMode(false);
+    setExtraInfo("");
+    setShowDeleteConfirm(false);
   };
 
   const emptyMessage = type === "characters" ? "No characters" : type === "places" ? "No places" : "No shadows";
@@ -215,21 +225,21 @@ function JournalSection({
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => { setIsAdding(true); setEditingId(null); setName(""); setDescription(""); }}
-          className="h-7 px-2"
+          onClick={() => { setIsAdding(true); setName(""); setDescription(""); }}
+          className="h-7 px-2 text-muted-foreground"
           data-testid={`button-add-${type}`}
         >
           <Plus className="h-4 w-4" />
         </Button>
       </div>
 
-      {(isAdding || editingId) && (
-        <div className="mb-4 p-3 border border-border rounded-lg space-y-2">
+      {isAdding && (
+        <div className="mb-4 p-3 space-y-3">
           <Input
             placeholder="NAME"
             value={name}
             onChange={(e) => setName(e.target.value.toUpperCase())}
-            className="uppercase"
+            className="uppercase bg-transparent border-none border-b border-muted focus-visible:ring-0 rounded-none px-0"
             data-testid={`input-${type}-name`}
           />
           <Textarea
@@ -237,37 +247,138 @@ function JournalSection({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={3}
+            className="bg-transparent border-none focus-visible:ring-0 resize-none px-0"
             data-testid={`input-${type}-description`}
           />
-          {editingId && (
-            <div className="flex gap-2">
-              <Input
-                placeholder="Add more info..."
-                value={extraInfo}
-                onChange={(e) => setExtraInfo(e.target.value)}
-                className="flex-1"
-                data-testid={`input-${type}-extra`}
-              />
-              <Button size="sm" variant="outline" onClick={handleAddInfo} disabled={!extraInfo.trim()}>
-                +
-              </Button>
-            </div>
-          )}
           <div className="flex gap-2">
-            <Button size="sm" onClick={handleSubmit} data-testid={`button-save-${type}`}>
-              {editingId ? "Save" : "Add"}
+            <Button size="sm" variant="ghost" onClick={handleAddNew} className="text-muted-foreground" data-testid={`button-save-${type}`}>
+              Add
             </Button>
-            {showDeleteConfirm && (
-              <Button size="sm" variant="destructive" onClick={handleDelete}>
-                Delete
-              </Button>
-            )}
-            <Button size="sm" variant="ghost" onClick={handleCancel}>
+            <Button size="sm" variant="ghost" onClick={() => setIsAdding(false)} className="text-muted-foreground">
               Cancel
             </Button>
           </div>
         </div>
       )}
+
+      <Dialog open={!!selectedEntry} onOpenChange={(open) => !open && handleCloseDialog()}>
+        <DialogContent className="sm:max-w-md">
+          <VisuallyHidden>
+            <DialogTitle>{selectedEntry?.name}</DialogTitle>
+          </VisuallyHidden>
+          
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-medium text-foreground uppercase">{selectedEntry?.name}</h3>
+              <div className="flex gap-1">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setIsEditMode(!isEditMode)}
+                  className="h-8 w-8 p-0 text-muted-foreground"
+                  data-testid={`button-edit-mode-${type}`}
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="h-8 w-8 p-0 text-muted-foreground"
+                  data-testid={`button-delete-${type}`}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+
+            {selectedEntry?.description && !isEditMode && (
+              <p className="text-sm text-muted-foreground whitespace-pre-line">{selectedEntry.description}</p>
+            )}
+
+            {!isEditMode ? (
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Add more info..."
+                  value={extraInfo}
+                  onChange={(e) => setExtraInfo(e.target.value)}
+                  className="flex-1 bg-transparent border-none focus-visible:ring-0 px-0"
+                  data-testid={`input-${type}-extra`}
+                />
+                <Button 
+                  size="sm" 
+                  variant="ghost" 
+                  onClick={handleAddExtraInfo} 
+                  disabled={!extraInfo.trim()}
+                  className="text-muted-foreground"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <Input
+                  placeholder="NAME"
+                  value={name}
+                  onChange={(e) => setName(e.target.value.toUpperCase())}
+                  className="uppercase bg-transparent border-none focus-visible:ring-0 px-0"
+                  data-testid={`input-edit-${type}-name`}
+                />
+                <Textarea
+                  placeholder="Description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={3}
+                  className="bg-transparent border-none focus-visible:ring-0 resize-none px-0"
+                  data-testid={`input-edit-${type}-description`}
+                />
+                <div className="flex gap-2">
+                  <Button 
+                    size="sm" 
+                    variant="ghost" 
+                    onClick={handleSaveEdit}
+                    className="text-muted-foreground"
+                  >
+                    Save
+                  </Button>
+                  <Button 
+                    size="sm" 
+                    variant="ghost" 
+                    onClick={() => setIsEditMode(false)}
+                    className="text-muted-foreground"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {showDeleteConfirm && (
+            <div className="pt-4 border-t border-border mt-4">
+              <p className="text-sm text-muted-foreground mb-3">Delete this entry?</p>
+              <div className="flex gap-2">
+                <Button 
+                  size="sm" 
+                  variant="ghost" 
+                  onClick={handleDelete}
+                  className="text-muted-foreground"
+                >
+                  Delete
+                </Button>
+                <Button 
+                  size="sm" 
+                  variant="ghost" 
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="text-muted-foreground"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <ScrollArea className="flex-1">
         {entries.length === 0 ? (
