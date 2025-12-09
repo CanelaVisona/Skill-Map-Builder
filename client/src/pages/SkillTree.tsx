@@ -45,6 +45,7 @@ function QuestDiary() {
   const { isDiaryOpen, closeDiary } = useDiary();
   const { activeArea, activeProject, subSkills, activeParentSkillId } = useSkillTree();
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
+  const [selectedSubtasks, setSelectedSubtasks] = useState<Skill[]>([]);
   
   const activeItem = activeArea || activeProject;
   const skills = activeParentSkillId 
@@ -53,12 +54,24 @@ function QuestDiary() {
   
   const completedSkills = skills.filter(s => s.status === "mastered" && s.title.toLowerCase() !== "inicio");
   const selectedSkill = completedSkills.find(s => s.id === selectedSkillId);
+  const hasSubtasks = selectedSubtasks.length > 0;
+  
+  const handleSelectSkill = async (skillId: string) => {
+    setSelectedSkillId(skillId);
+    try {
+      const response = await fetch(`/api/skills/${skillId}/subskills`);
+      const subtasks = await response.json();
+      setSelectedSubtasks(subtasks.filter((s: Skill) => s.title.toLowerCase() !== "inicio"));
+    } catch {
+      setSelectedSubtasks([]);
+    }
+  };
   
   return (
     <Dialog open={isDiaryOpen} onOpenChange={(open) => !open && closeDiary()}>
-      <DialogContent className="max-w-3xl h-[70vh] p-0 overflow-hidden bg-background border border-border">
+      <DialogContent className={`${hasSubtasks ? 'max-w-5xl' : 'max-w-3xl'} h-[70vh] p-0 overflow-hidden bg-background border border-border`}>
         <div className="flex h-full">
-          <div className="w-1/2 flex flex-col border-r border-border">
+          <div className={`${hasSubtasks ? 'w-1/3' : 'w-1/2'} flex flex-col border-r border-border`}>
             <div className="p-6 pb-4">
               <h2 className="text-2xl font-bold tracking-tight">
                 Diario
@@ -79,7 +92,7 @@ function QuestDiary() {
                   {completedSkills.map((skill) => (
                     <button
                       key={skill.id}
-                      onClick={() => setSelectedSkillId(skill.id)}
+                      onClick={() => handleSelectSkill(skill.id)}
                       className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
                         selectedSkillId === skill.id 
                           ? "bg-muted text-foreground" 
@@ -95,7 +108,27 @@ function QuestDiary() {
             </ScrollArea>
           </div>
           
-          <div className="w-1/2 flex flex-col">
+          {hasSubtasks && (
+            <div className="w-1/3 flex flex-col border-r border-border">
+              <div className="p-6 pb-4">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">Subtareas</p>
+              </div>
+              <ScrollArea className="flex-1 px-6 pb-6">
+                <div className="space-y-1">
+                  {selectedSubtasks.map((subtask) => (
+                    <div
+                      key={subtask.id}
+                      className="px-3 py-2 text-sm text-muted-foreground"
+                    >
+                      {subtask.title}
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            </div>
+          )}
+          
+          <div className={`${hasSubtasks ? 'w-1/3' : 'w-1/2'} flex flex-col`}>
             <ScrollArea className="flex-1 p-6">
               {selectedSkill ? (
                 <div className="space-y-4">
