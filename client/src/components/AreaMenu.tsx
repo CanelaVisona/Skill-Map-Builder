@@ -666,22 +666,9 @@ export function AreaMenu() {
             )}
           </DialogContent>
         </Dialog>
-        <Button 
-          variant="ghost" 
-          size={isOpen ? "default" : "icon"}
-          className={cn(
-            "w-full text-muted-foreground hover:text-foreground",
-            !isOpen && "aspect-square p-0"
-          )}
-          onClick={logout}
-          data-testid="button-logout"
-        >
-          <LogOut className={cn("h-4 w-4", isOpen && "mr-2")} />
-          {isOpen && "Cerrar sesión"}
-        </Button>
       </div>
 
-      <div className="p-2 border-t border-border flex justify-center">
+      <div className="p-2 border-t border-border flex items-center justify-between">
         <Dialog open={isArchivedDialogOpen} onOpenChange={setIsArchivedDialogOpen}>
           <DialogTrigger asChild>
             <button
@@ -873,6 +860,14 @@ export function AreaMenu() {
             </div>
           </DialogContent>
         </Dialog>
+        <button
+          onClick={logout}
+          className="p-2 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+          title="Cerrar sesión"
+          data-testid="button-logout"
+        >
+          <LogOut size={16} />
+        </button>
       </div>
     </motion.div>
   );
