@@ -2,7 +2,7 @@ import { useSkillTree, iconMap, type Project } from "@/lib/skill-context";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, PanelLeftClose, PanelLeftOpen, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut } from "lucide-react";
+import { Plus, PanelLeftClose, PanelLeftOpen, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut, Archive, ArchiveRestore, ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
 import { Popover, PopoverContent, PopoverAnchor } from "./ui/popover";
@@ -73,9 +73,10 @@ interface AreaItemProps {
   isMenuOpen: boolean;
   onSelect: () => void;
   onDelete: () => void;
+  onArchive: () => void;
 }
 
-function AreaItem({ area, isActive, isMenuOpen, onSelect, onDelete }: AreaItemProps) {
+function AreaItem({ area, isActive, isMenuOpen, onSelect, onDelete, onArchive }: AreaItemProps) {
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPress = useRef(false);
@@ -163,8 +164,21 @@ function AreaItem({ area, isActive, isMenuOpen, onSelect, onDelete }: AreaItemPr
       <PopoverContent 
         side="right" 
         align="start"
-        className="w-48 p-2"
+        className="w-48 p-2 space-y-2"
       >
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full"
+          onClick={() => {
+            onArchive();
+            setIsPopoverOpen(false);
+          }}
+          data-testid={`button-archive-area-${area.id}`}
+        >
+          <Archive className="mr-2 h-4 w-4" />
+          Archivar
+        </Button>
         <Button
           variant="destructive"
           size="sm"
@@ -189,9 +203,10 @@ interface ProjectItemProps {
   isMenuOpen: boolean;
   onSelect: () => void;
   onDelete: () => void;
+  onArchive: () => void;
 }
 
-function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete }: ProjectItemProps) {
+function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete, onArchive }: ProjectItemProps) {
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPress = useRef(false);
@@ -269,8 +284,21 @@ function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete }: Proj
       <PopoverContent 
         side="right" 
         align="start"
-        className="w-48 p-2"
+        className="w-48 p-2 space-y-2"
       >
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full"
+          onClick={() => {
+            onArchive();
+            setIsPopoverOpen(false);
+          }}
+          data-testid={`button-archive-project-${project.id}`}
+        >
+          <Archive className="mr-2 h-4 w-4" />
+          Archivar
+        </Button>
         <Button
           variant="destructive"
           size="sm"
@@ -290,7 +318,10 @@ function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete }: Proj
 }
 
 export function AreaMenu() {
-  const { areas, activeAreaId, setActiveAreaId, createArea, deleteArea, projects, activeProjectId, setActiveProjectId, createProject, deleteProject } = useSkillTree();
+  const { 
+    areas, activeAreaId, setActiveAreaId, createArea, deleteArea, archiveArea, unarchiveArea, archivedAreas, loadArchivedAreas,
+    projects, activeProjectId, setActiveProjectId, createProject, deleteProject, archiveProject, unarchiveProject, archivedProjects, loadArchivedProjects 
+  } = useSkillTree();
   const { user, logout } = useAuth();
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isOpen, setIsOpen] = useState(true);
@@ -300,6 +331,14 @@ export function AreaMenu() {
   const [selectedIcon, setSelectedIcon] = useState("Home");
   const [manualIconSelected, setManualIconSelected] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+
+  useEffect(() => {
+    if (showArchived) {
+      loadArchivedAreas();
+      loadArchivedProjects();
+    }
+  }, [showArchived]);
 
   useEffect(() => {
     if (itemName && !manualIconSelected) {
@@ -484,6 +523,7 @@ export function AreaMenu() {
               isMenuOpen={isOpen}
               onSelect={() => setActiveAreaId(area.id)}
               onDelete={() => deleteArea(area.id)}
+              onArchive={() => archiveArea(area.id)}
             />
           ))
         )}
@@ -511,8 +551,91 @@ export function AreaMenu() {
               isMenuOpen={isOpen}
               onSelect={() => setActiveProjectId(project.id)}
               onDelete={() => deleteProject(project.id)}
+              onArchive={() => archiveProject(project.id)}
             />
           ))
+        )}
+
+        <div className="my-3 border-t border-border" />
+
+        {isOpen && (
+          <button
+            onClick={() => setShowArchived(!showArchived)}
+            className="w-full flex items-center gap-2 px-3 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors"
+            data-testid="button-toggle-archived"
+          >
+            {showArchived ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            <Archive size={14} />
+            Archivados
+          </button>
+        )}
+
+        {!isOpen && (
+          <button
+            onClick={() => setShowArchived(!showArchived)}
+            className={cn(
+              "w-full flex items-center justify-center py-2 rounded-md transition-colors",
+              showArchived ? "text-primary" : "text-muted-foreground hover:text-foreground"
+            )}
+            data-testid="button-toggle-archived-collapsed"
+          >
+            <Archive size={18} />
+          </button>
+        )}
+
+        {showArchived && (
+          <div className="space-y-1 mt-2">
+            {archivedAreas.length === 0 && archivedProjects.length === 0 ? (
+              <div className="text-xs text-muted-foreground px-3 py-2 italic">
+                {isOpen ? "Sin elementos archivados" : "—"}
+              </div>
+            ) : (
+              <>
+                {archivedAreas.map((area) => (
+                  <div key={area.id} className="flex items-center gap-2 px-3 py-1.5 text-muted-foreground">
+                    {(() => {
+                      const Icon = extendedIconMap[area.icon] || extendedIconMap.Home;
+                      return <Icon size={16} />;
+                    })()}
+                    {isOpen && (
+                      <>
+                        <span className="text-sm truncate flex-1">{area.name}</span>
+                        <button
+                          onClick={() => unarchiveArea(area.id)}
+                          className="p-1 hover:text-foreground transition-colors"
+                          title="Desarchivar"
+                          data-testid={`button-unarchive-area-${area.id}`}
+                        >
+                          <ArchiveRestore size={14} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                ))}
+                {archivedProjects.map((project) => (
+                  <div key={project.id} className="flex items-center gap-2 px-3 py-1.5 text-muted-foreground">
+                    {(() => {
+                      const Icon = extendedIconMap[project.icon] || FolderKanban;
+                      return <Icon size={16} />;
+                    })()}
+                    {isOpen && (
+                      <>
+                        <span className="text-sm truncate flex-1">{project.name}</span>
+                        <button
+                          onClick={() => unarchiveProject(project.id)}
+                          className="p-1 hover:text-foreground transition-colors"
+                          title="Desarchivar"
+                          data-testid={`button-unarchive-project-${project.id}`}
+                        >
+                          <ArchiveRestore size={14} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
         )}
       </div>
 
