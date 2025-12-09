@@ -723,20 +723,16 @@ export function AreaMenu() {
 
       </div>
 
-      <div className="p-2 space-y-2">
+      <div className="p-2 flex items-center justify-center gap-2">
         <Dialog open={isAddOpen} onOpenChange={handleDialogClose}>
           <DialogTrigger asChild>
-            <Button 
-              variant="ghost" 
-              size={isOpen ? "default" : "icon"}
-              className={cn(
-                "w-full bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50",
-                !isOpen && "aspect-square p-0"
-              )}
+            <button
+              className="p-2 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+              title="Agregar"
+              data-testid="button-add"
             >
-              <Plus className={cn("h-4 w-4", isOpen && "mr-2")} /> 
-              {isOpen && "Agregar"}
-            </Button>
+              <Plus size={16} />
+            </button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-[425px]">
             {dialogStep === "choose" && (
@@ -788,9 +784,6 @@ export function AreaMenu() {
             )}
           </DialogContent>
         </Dialog>
-      </div>
-
-      <div className="p-2 border-t border-border flex items-center justify-between">
         <Dialog open={isArchivedDialogOpen} onOpenChange={setIsArchivedDialogOpen}>
           <DialogTrigger asChild>
             <button
