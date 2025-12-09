@@ -425,7 +425,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
                <Button 
                  variant="secondary" 
                  size="sm" 
-                 className="h-8 px-3 text-xs"
+                 className="h-8 w-8 p-0"
                  onClick={() => {
                    if (isSubSkillView) {
                      deleteSubSkill(skill.id);
@@ -436,9 +436,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
                    }
                    setIsOpen(false);
                  }}
+                 data-testid="button-delete"
                >
-                 <Trash2 className="mr-2 h-3 w-3" />
-                 Delete
+                 <Trash2 className="h-3 w-3" />
                </Button>
              )}
           </div>
