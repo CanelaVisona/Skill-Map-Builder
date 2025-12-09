@@ -453,11 +453,18 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="grid gap-2">
-            <Label htmlFor="edit-title">Título</Label>
+            <Label htmlFor="edit-title">Título (máx. 3 palabras)</Label>
             <Input
               id="edit-title"
               value={editTitle}
-              onChange={(e) => setEditTitle(e.target.value)}
+              onChange={(e) => {
+                const words = e.target.value.split(/\s+/).filter(w => w.length > 0);
+                if (words.length <= 3) {
+                  setEditTitle(e.target.value);
+                } else {
+                  setEditTitle(words.slice(0, 3).join(" "));
+                }
+              }}
               placeholder="Nombre de la habilidad"
               data-testid="input-edit-title"
             />
