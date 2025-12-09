@@ -46,6 +46,7 @@ function QuestDiary() {
   const { activeArea, activeProject, subSkills, activeParentSkillId } = useSkillTree();
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
   const [selectedSubtasks, setSelectedSubtasks] = useState<Skill[]>([]);
+  const [selectedSubtaskId, setSelectedSubtaskId] = useState<string | null>(null);
   
   const activeItem = activeArea || activeProject;
   const skills = activeParentSkillId 
@@ -54,10 +55,12 @@ function QuestDiary() {
   
   const completedSkills = skills.filter(s => s.status === "mastered" && s.title.toLowerCase() !== "inicio");
   const selectedSkill = completedSkills.find(s => s.id === selectedSkillId);
+  const selectedSubtask = selectedSubtasks.find(s => s.id === selectedSubtaskId);
   const hasSubtasks = selectedSubtasks.length > 0;
   
   const handleSelectSkill = async (skillId: string) => {
     setSelectedSkillId(skillId);
+    setSelectedSubtaskId(null);
     try {
       const response = await fetch(`/api/skills/${skillId}/subskills`);
       const subtasks = await response.json();
@@ -116,12 +119,19 @@ function QuestDiary() {
               <ScrollArea className="flex-1 px-6 pb-6">
                 <div className="space-y-1">
                   {selectedSubtasks.map((subtask) => (
-                    <div
+                    <button
                       key={subtask.id}
-                      className="px-3 py-2 text-sm text-muted-foreground"
+                      onClick={() => setSelectedSubtaskId(subtask.id)}
+                      className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                        selectedSubtaskId === subtask.id
+                          ? "bg-muted text-foreground"
+                          : subtask.status === "mastered"
+                            ? "text-foreground hover:bg-muted/50"
+                            : "text-muted-foreground/50 hover:bg-muted/30"
+                      }`}
                     >
                       {subtask.title}
-                    </div>
+                    </button>
                   ))}
                 </div>
               </ScrollArea>
@@ -130,7 +140,30 @@ function QuestDiary() {
           
           <div className={`${hasSubtasks ? 'w-1/3' : 'w-1/2'} flex flex-col`}>
             <ScrollArea className="flex-1 p-6">
-              {selectedSkill ? (
+              {selectedSubtask ? (
+                <div className="space-y-4">
+                  <h3 className="font-medium text-foreground">
+                    {selectedSubtask.title}
+                  </h3>
+                  {selectedSubtask.description && (
+                    <p className="text-sm text-muted-foreground">
+                      {selectedSubtask.description}
+                    </p>
+                  )}
+                  <div className="pt-2">
+                    <p className="text-xs text-foreground uppercase tracking-wide mb-2">Feedback</p>
+                    {selectedSubtask.feedback ? (
+                      <p className="text-sm text-yellow-500 dark:text-yellow-400 leading-relaxed">
+                        {selectedSubtask.feedback}
+                      </p>
+                    ) : (
+                      <p className="text-sm text-muted-foreground/40 italic leading-relaxed">
+                        No comments
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ) : selectedSkill ? (
                 <div className="space-y-4">
                   <h3 className="font-medium text-foreground">
                     {selectedSkill.title}
