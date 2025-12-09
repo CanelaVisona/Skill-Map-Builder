@@ -3,26 +3,38 @@ import { AreaMenu } from "@/components/AreaMenu";
 import { SkillNode } from "@/components/SkillNode";
 import { SkillConnection } from "@/components/SkillConnection";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Sun, Moon } from "lucide-react";
+import { ArrowLeft, Sun, Moon, BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
+import { DiaryProvider, useDiaryMode } from "@/lib/diary-context";
 
-function ThemeToggle() {
+function TopRightControls() {
   const { theme, setTheme, resolvedTheme } = useTheme();
   const currentTheme = resolvedTheme || theme;
+  const { isDiaryMode, toggleDiaryMode } = useDiaryMode();
   
   return (
-    <button
-      className="fixed top-4 right-4 z-50 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-      onClick={() => setTheme(currentTheme === "dark" ? "light" : "dark")}
-      data-testid="button-theme-toggle"
-    >
-      {currentTheme === "dark" ? (
-        <Sun className="h-5 w-5" />
-      ) : (
-        <Moon className="h-5 w-5" />
-      )}
-    </button>
+    <div className="fixed top-4 right-4 z-50 flex flex-col gap-3">
+      <button
+        className="text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+        onClick={() => setTheme(currentTheme === "dark" ? "light" : "dark")}
+        data-testid="button-theme-toggle"
+      >
+        {currentTheme === "dark" ? (
+          <Sun className="h-5 w-5" />
+        ) : (
+          <Moon className="h-5 w-5" />
+        )}
+      </button>
+      <button
+        className={`transition-colors ${isDiaryMode ? "text-amber-500" : "text-muted-foreground/40 hover:text-muted-foreground"}`}
+        onClick={toggleDiaryMode}
+        data-testid="button-diary-toggle"
+        title="Quest Diary"
+      >
+        <BookOpen className="h-5 w-5" />
+      </button>
+    </div>
   );
 }
 
@@ -351,12 +363,14 @@ function SkillCanvas() {
 
 export default function SkillTreePage() {
   return (
-    <SkillTreeProvider>
-      <div className="flex h-screen w-full bg-background text-foreground overflow-hidden font-body selection:bg-primary/30">
-        <ThemeToggle />
-        <AreaMenu />
-        <SkillCanvas />
-      </div>
-    </SkillTreeProvider>
+    <DiaryProvider>
+      <SkillTreeProvider>
+        <div className="flex h-screen w-full bg-background text-foreground overflow-hidden font-body selection:bg-primary/30">
+          <TopRightControls />
+          <AreaMenu />
+          <SkillCanvas />
+        </div>
+      </SkillTreeProvider>
+    </DiaryProvider>
   );
 }
