@@ -168,99 +168,96 @@ function AreaItem({ area, isActive, isMenuOpen, onSelect, onDelete, onArchive, o
       <PopoverContent 
         side="right" 
         align="start"
-        className="w-48 p-2 space-y-2"
+        className="w-44 p-1.5 rounded-xl border border-border/50 bg-popover/95 backdrop-blur-lg shadow-xl"
       >
-        <Dialog open={isRenameDialogOpen} onOpenChange={setIsRenameDialogOpen}>
-          <DialogTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full"
-              data-testid={`button-rename-area-${area.id}`}
-            >
-              <Pencil className="mr-2 h-4 w-4" />
-              Renombrar
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Renombrar área</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 mt-4">
-              <Input 
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="Nuevo nombre"
-                data-testid="input-rename-area"
-              />
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setIsRenameDialogOpen(false)} className="flex-1">
-                  Cancelar
-                </Button>
-                <Button 
-                  onClick={() => {
-                    if (newName.trim()) {
-                      onRename(newName.trim());
-                      setIsRenameDialogOpen(false);
-                      setIsPopoverOpen(false);
-                    }
-                  }} 
-                  disabled={!newName.trim()}
-                  className="flex-1"
-                  data-testid="button-save-rename-area"
-                >
-                  Guardar
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full"
-          onClick={() => {
-            onArchive();
-            setIsPopoverOpen(false);
-          }}
-          data-testid={`button-archive-area-${area.id}`}
-        >
-          <Archive className="mr-2 h-4 w-4" />
-          Archivar
-        </Button>
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="destructive"
-              size="sm"
-              className="w-full"
-              data-testid={`button-delete-area-${area.id}`}
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Eliminar
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>¿Eliminar "{area.name}"?</AlertDialogTitle>
-              <AlertDialogDescription>
-                Esta acción no se puede deshacer. Se eliminará permanentemente esta área y todas sus habilidades.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => setIsPopoverOpen(false)}>Cancelar</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={() => {
-                  onDelete();
-                  setIsPopoverOpen(false);
-                }}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+        <div className="flex flex-col">
+          <Dialog open={isRenameDialogOpen} onOpenChange={setIsRenameDialogOpen}>
+            <DialogTrigger asChild>
+              <button
+                className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-foreground/80 hover:text-foreground hover:bg-muted/60 transition-colors"
+                data-testid={`button-rename-area-${area.id}`}
               >
+                <Pencil className="h-4 w-4 text-muted-foreground" />
+                Renombrar
+              </button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Renombrar área</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 mt-4">
+                <Input 
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="Nuevo nombre"
+                  data-testid="input-rename-area"
+                />
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => setIsRenameDialogOpen(false)} className="flex-1">
+                    Cancelar
+                  </Button>
+                  <Button 
+                    onClick={() => {
+                      if (newName.trim()) {
+                        onRename(newName.trim());
+                        setIsRenameDialogOpen(false);
+                        setIsPopoverOpen(false);
+                      }
+                    }} 
+                    disabled={!newName.trim()}
+                    className="flex-1"
+                    data-testid="button-save-rename-area"
+                  >
+                    Guardar
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+          <button
+            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-foreground/80 hover:text-foreground hover:bg-muted/60 transition-colors"
+            onClick={() => {
+              onArchive();
+              setIsPopoverOpen(false);
+            }}
+            data-testid={`button-archive-area-${area.id}`}
+          >
+            <Archive className="h-4 w-4 text-muted-foreground" />
+            Archivar
+          </button>
+          <div className="my-1 border-t border-border/30" />
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <button
+                className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-destructive/80 hover:text-destructive hover:bg-destructive/10 transition-colors"
+                data-testid={`button-delete-area-${area.id}`}
+              >
+                <Trash2 className="h-4 w-4" />
                 Eliminar
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+              </button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>¿Eliminar "{area.name}"?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Esta acción no se puede deshacer. Se eliminará permanentemente esta área y todas sus habilidades.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel onClick={() => setIsPopoverOpen(false)}>Cancelar</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    onDelete();
+                    setIsPopoverOpen(false);
+                  }}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  Eliminar
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
       </PopoverContent>
     </Popover>
   );
@@ -356,99 +353,96 @@ function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete, onArch
       <PopoverContent 
         side="right" 
         align="start"
-        className="w-48 p-2 space-y-2"
+        className="w-44 p-1.5 rounded-xl border border-border/50 bg-popover/95 backdrop-blur-lg shadow-xl"
       >
-        <Dialog open={isRenameDialogOpen} onOpenChange={setIsRenameDialogOpen}>
-          <DialogTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full"
-              data-testid={`button-rename-project-${project.id}`}
-            >
-              <Pencil className="mr-2 h-4 w-4" />
-              Renombrar
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Renombrar proyecto</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 mt-4">
-              <Input 
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="Nuevo nombre"
-                data-testid="input-rename-project"
-              />
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setIsRenameDialogOpen(false)} className="flex-1">
-                  Cancelar
-                </Button>
-                <Button 
-                  onClick={() => {
-                    if (newName.trim()) {
-                      onRename(newName.trim());
-                      setIsRenameDialogOpen(false);
-                      setIsPopoverOpen(false);
-                    }
-                  }} 
-                  disabled={!newName.trim()}
-                  className="flex-1"
-                  data-testid="button-save-rename-project"
-                >
-                  Guardar
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full"
-          onClick={() => {
-            onArchive();
-            setIsPopoverOpen(false);
-          }}
-          data-testid={`button-archive-project-${project.id}`}
-        >
-          <Archive className="mr-2 h-4 w-4" />
-          Archivar
-        </Button>
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="destructive"
-              size="sm"
-              className="w-full"
-              data-testid={`button-delete-project-${project.id}`}
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Eliminar
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>¿Eliminar "{project.name}"?</AlertDialogTitle>
-              <AlertDialogDescription>
-                Esta acción no se puede deshacer. Se eliminará permanentemente este proyecto y todas sus habilidades.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => setIsPopoverOpen(false)}>Cancelar</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={() => {
-                  onDelete();
-                  setIsPopoverOpen(false);
-                }}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+        <div className="flex flex-col">
+          <Dialog open={isRenameDialogOpen} onOpenChange={setIsRenameDialogOpen}>
+            <DialogTrigger asChild>
+              <button
+                className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-foreground/80 hover:text-foreground hover:bg-muted/60 transition-colors"
+                data-testid={`button-rename-project-${project.id}`}
               >
+                <Pencil className="h-4 w-4 text-muted-foreground" />
+                Renombrar
+              </button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Renombrar proyecto</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 mt-4">
+                <Input 
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="Nuevo nombre"
+                  data-testid="input-rename-project"
+                />
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => setIsRenameDialogOpen(false)} className="flex-1">
+                    Cancelar
+                  </Button>
+                  <Button 
+                    onClick={() => {
+                      if (newName.trim()) {
+                        onRename(newName.trim());
+                        setIsRenameDialogOpen(false);
+                        setIsPopoverOpen(false);
+                      }
+                    }} 
+                    disabled={!newName.trim()}
+                    className="flex-1"
+                    data-testid="button-save-rename-project"
+                  >
+                    Guardar
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+          <button
+            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-foreground/80 hover:text-foreground hover:bg-muted/60 transition-colors"
+            onClick={() => {
+              onArchive();
+              setIsPopoverOpen(false);
+            }}
+            data-testid={`button-archive-project-${project.id}`}
+          >
+            <Archive className="h-4 w-4 text-muted-foreground" />
+            Archivar
+          </button>
+          <div className="my-1 border-t border-border/30" />
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <button
+                className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-destructive/80 hover:text-destructive hover:bg-destructive/10 transition-colors"
+                data-testid={`button-delete-project-${project.id}`}
+              >
+                <Trash2 className="h-4 w-4" />
                 Eliminar
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+              </button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>¿Eliminar "{project.name}"?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Esta acción no se puede deshacer. Se eliminará permanentemente este proyecto y todas sus habilidades.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel onClick={() => setIsPopoverOpen(false)}>Cancelar</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    onDelete();
+                    setIsPopoverOpen(false);
+                  }}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  Eliminar
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
       </PopoverContent>
     </Popover>
   );
