@@ -626,7 +626,31 @@ export function AreaMenu() {
               className="overflow-hidden whitespace-nowrap"
             >
               <h1 className="text-lg font-bold tracking-tight">
-                LIFEGAME {user && <span className="font-normal text-muted-foreground">| {user.username}</span>}
+                LIFEGAME {user && (
+                  <Popover>
+                    <PopoverAnchor asChild>
+                      <button 
+                        className="font-normal text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                        onClick={(e) => e.stopPropagation()}
+                        data-testid="button-username"
+                      >
+                        | {user.username}
+                      </button>
+                    </PopoverAnchor>
+                    <PopoverContent side="bottom" align="start" className="w-40 p-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="w-full justify-start text-muted-foreground hover:text-foreground"
+                        onClick={logout}
+                        data-testid="button-logout"
+                      >
+                        <LogOut className="mr-2 h-4 w-4" />
+                        Cerrar sesión
+                      </Button>
+                    </PopoverContent>
+                  </Popover>
+                )}
               </h1>
             </motion.div>
           )}
@@ -959,14 +983,6 @@ export function AreaMenu() {
             </div>
           </DialogContent>
         </Dialog>
-        <button
-          onClick={logout}
-          className="p-2 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-          title="Cerrar sesión"
-          data-testid="button-logout"
-        >
-          <LogOut size={16} />
-        </button>
       </div>
     </motion.div>
   );
