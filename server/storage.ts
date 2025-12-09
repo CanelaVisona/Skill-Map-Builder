@@ -311,6 +311,7 @@ export class DbStorage implements IStorage {
         const id = randomUUID();
         const deps: string[] = previousSkillId ? [previousSkillId] : [];
         const isFirstNode = level === 1 && position === 1;
+        const isLastNode = position === 5;
         const skillData: typeof skills.$inferInsert = {
           id,
           parentSkillId,
@@ -322,7 +323,7 @@ export class DbStorage implements IStorage {
           dependencies: deps,
           level,
           levelPosition: position,
-          isFinalNode: 0 as 0 | 1,
+          isFinalNode: isLastNode ? 1 as 0 | 1 : 0 as 0 | 1,
           manualLock: 0 as 0 | 1,
         };
 
