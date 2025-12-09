@@ -360,11 +360,23 @@ export async function registerRoutes(
       const existingLevelSkills = allSkills.filter(s => s.level === level);
       
       if (existingLevelSkills.length > 0) {
-        // Level already has nodes - update area's unlockedLevel and return existing data
+        // Level already has nodes - update area's unlockedLevel
         const updatedArea = await storage.updateArea(areaId, { 
           unlockedLevel: level, 
           nextLevelToAssign: level 
         });
+        
+        // For level 2+, ensure first node is mastered with empty title
+        if (level >= 2) {
+          const sortedSkills = [...existingLevelSkills].sort((a, b) => a.y - b.y);
+          const firstNode = sortedSkills[0];
+          if (firstNode && (firstNode.status !== "mastered" || firstNode.title !== "")) {
+            await storage.updateSkill(firstNode.id, { status: "mastered", title: "" });
+            firstNode.status = "mastered";
+            firstNode.title = "";
+          }
+        }
+        
         res.status(200).json({ updatedArea, createdSkills: existingLevelSkills });
         return;
       }
@@ -459,6 +471,18 @@ export async function registerRoutes(
           unlockedLevel: level, 
           nextLevelToAssign: level 
         });
+        
+        // For level 2+, ensure first node is mastered with empty title
+        if (level >= 2) {
+          const sortedSkills = [...existingLevelSkills].sort((a, b) => a.y - b.y);
+          const firstNode = sortedSkills[0];
+          if (firstNode && (firstNode.status !== "mastered" || firstNode.title !== "")) {
+            await storage.updateSkill(firstNode.id, { status: "mastered", title: "" });
+            firstNode.status = "mastered";
+            firstNode.title = "";
+          }
+        }
+        
         res.status(200).json({ updatedProject, createdSkills: existingLevelSkills });
         return;
       }
@@ -557,6 +581,17 @@ export async function registerRoutes(
       const existingLevelSkills = allSubSkills.filter(s => s.level === level);
       
       if (existingLevelSkills.length > 0) {
+        // For level 2+, ensure first node is mastered with empty title
+        if (level >= 2) {
+          const sortedSkills = [...existingLevelSkills].sort((a, b) => a.y - b.y);
+          const firstNode = sortedSkills[0];
+          if (firstNode && (firstNode.status !== "mastered" || firstNode.title !== "")) {
+            await storage.updateSkill(firstNode.id, { status: "mastered", title: "" });
+            firstNode.status = "mastered";
+            firstNode.title = "";
+          }
+        }
+        
         const parentSkill = await storage.getSkill(parentSkillId);
         res.status(200).json({ parentSkill, createdSkills: existingLevelSkills });
         return;
