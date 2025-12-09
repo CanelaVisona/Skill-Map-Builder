@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { SkillTreeProvider, useSkillTree, type Skill } from "@/lib/skill-context";
 import { AreaMenu } from "@/components/AreaMenu";
 import { SkillNode } from "@/components/SkillNode";
@@ -120,6 +120,24 @@ function JournalSection({
   const [name, setName] = useState("");
   const [action, setAction] = useState("");
   const [description, setDescription] = useState("");
+  const longPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleLongPressStart = () => {
+    longPressTimer.current = setTimeout(() => {
+      setIsAdding(true);
+      setEditingId(null);
+      setName("");
+      setAction("");
+      setDescription("");
+    }, 500);
+  };
+
+  const handleLongPressEnd = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
 
   const handleSubmit = () => {
     if (!name.trim()) return;
@@ -217,9 +235,18 @@ function JournalSection({
 
       <ScrollArea className="flex-1">
         {entries.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-center">
+          <div 
+            className="flex flex-col items-center justify-center py-12 text-center cursor-pointer select-none"
+            onTouchStart={handleLongPressStart}
+            onTouchEnd={handleLongPressEnd}
+            onTouchCancel={handleLongPressEnd}
+            onMouseDown={handleLongPressStart}
+            onMouseUp={handleLongPressEnd}
+            onMouseLeave={handleLongPressEnd}
+          >
             <Icon className="h-8 w-8 text-muted-foreground/40 mb-3" />
             <p className="text-muted-foreground text-sm">{emptyMessage}</p>
+            <p className="text-muted-foreground/50 text-xs mt-2">Hold to add</p>
           </div>
         ) : (
           <div className="space-y-2">
