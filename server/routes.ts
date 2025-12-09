@@ -83,16 +83,14 @@ export async function registerRoutes(
       const trimmedUsername = username.trim().toLowerCase();
       
       let user = await storage.getUserByUsername(trimmedUsername);
-      let isNewUser = false;
       if (!user) {
         user = await storage.createUser(trimmedUsername);
-        isNewUser = true;
       }
       
-      // Create example area for new users
-      if (isNewUser) {
-        const userAreas = await storage.getAreas(user.id);
-        if (userAreas.length === 0) {
+      // Create example area for users with no areas/projects
+      const userAreas = await storage.getAreas(user.id);
+      const userProjects = await storage.getProjects(user.id);
+      if (userAreas.length === 0 && userProjects.length === 0) {
           // Create example area
           const exampleArea = await storage.createArea({
             name: "Ejemplo: Guitarra",
@@ -125,7 +123,6 @@ export async function registerRoutes(
               description: "Rasgueo básico. Se desbloquea al completar el anterior.",
             });
           }
-        }
       }
       
       const expiresAt = new Date(Date.now() + SESSION_DURATION_MS);
