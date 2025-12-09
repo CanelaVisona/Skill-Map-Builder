@@ -265,19 +265,58 @@ function JournalSection({
   );
 }
 
+interface SkillWithSource extends Skill {
+  sourceName: string;
+  sourceSkills: Skill[];
+}
+
 function AchievementsSection() {
-  const { activeArea, activeProject, subSkills, activeParentSkillId } = useSkillTree();
+  const { areas, projects, mainQuests, sideQuests } = useSkillTree();
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
   const [selectedSubtasks, setSelectedSubtasks] = useState<Skill[]>([]);
   const [selectedSubtaskId, setSelectedSubtaskId] = useState<string | null>(null);
+  const [selectedSourceSkills, setSelectedSourceSkills] = useState<Skill[]>([]);
   
-  const activeItem = activeArea || activeProject;
-  const skills = activeParentSkillId 
-    ? subSkills 
-    : (activeItem?.skills || []);
+  // Aggregate completed skills from ALL sources
+  const allCompletedSkills: SkillWithSource[] = [];
   
-  const completedSkills = skills.filter(s => s.status === "mastered" && s.title.toLowerCase() !== "inicio");
-  const selectedSkill = completedSkills.find(s => s.id === selectedSkillId);
+  // From areas
+  areas.forEach(area => {
+    area.skills
+      .filter(s => s.status === "mastered" && s.title.toLowerCase() !== "inicio")
+      .forEach(skill => {
+        allCompletedSkills.push({ ...skill, sourceName: area.name, sourceSkills: area.skills });
+      });
+  });
+  
+  // From projects (main quests)
+  mainQuests.forEach(project => {
+    project.skills
+      .filter(s => s.status === "mastered" && s.title.toLowerCase() !== "inicio")
+      .forEach(skill => {
+        allCompletedSkills.push({ ...skill, sourceName: project.name, sourceSkills: project.skills });
+      });
+  });
+  
+  // From side quests
+  sideQuests.forEach(project => {
+    project.skills
+      .filter(s => s.status === "mastered" && s.title.toLowerCase() !== "inicio")
+      .forEach(skill => {
+        allCompletedSkills.push({ ...skill, sourceName: project.name, sourceSkills: project.skills });
+      });
+  });
+  
+  // From regular projects
+  projects.forEach(project => {
+    project.skills
+      .filter(s => s.status === "mastered" && s.title.toLowerCase() !== "inicio")
+      .forEach(skill => {
+        allCompletedSkills.push({ ...skill, sourceName: project.name, sourceSkills: project.skills });
+      });
+  });
+  
+  const selectedSkill = allCompletedSkills.find(s => s.id === selectedSkillId);
   const selectedSubtask = selectedSubtasks.find(s => s.id === selectedSubtaskId);
   const hasSubtasks = selectedSubtasks.length > 0;
 
@@ -288,14 +327,15 @@ function AchievementsSection() {
     return sameLevelSkills[0];
   };
 
-  const nextSkillForSelected = selectedSkill ? findNextSkill(selectedSkill, skills) : undefined;
+  const nextSkillForSelected = selectedSkill ? findNextSkill(selectedSkill, selectedSourceSkills) : undefined;
   const nextSubtaskForSelected = selectedSubtask ? findNextSkill(selectedSubtask, selectedSubtasks) : undefined;
   
-  const handleSelectSkill = async (skillId: string) => {
-    setSelectedSkillId(skillId);
+  const handleSelectSkill = async (skill: SkillWithSource) => {
+    setSelectedSkillId(skill.id);
     setSelectedSubtaskId(null);
+    setSelectedSourceSkills(skill.sourceSkills);
     try {
-      const response = await fetch(`/api/skills/${skillId}/subskills`);
+      const response = await fetch(`/api/skills/${skill.id}/subskills`);
       const allSubtasks = await response.json();
       const visibleLevels = calculateVisibleLevels(allSubtasks);
       const visibleSubtasks = allSubtasks.filter((s: Skill) => {
@@ -313,17 +353,17 @@ function AchievementsSection() {
     <div className="flex h-full">
       <div className={`${hasSubtasks ? 'w-1/3' : 'w-1/2'} flex flex-col border-r border-border pr-4`}>
         <ScrollArea className="flex-1">
-          {completedSkills.length === 0 ? (
+          {allCompletedSkills.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <Scroll className="h-8 w-8 text-muted-foreground/40 mb-3" />
               <p className="text-muted-foreground text-sm">No completed tasks</p>
             </div>
           ) : (
             <div className="space-y-1">
-              {completedSkills.map((skill) => (
+              {allCompletedSkills.map((skill) => (
                 <button
                   key={skill.id}
-                  onClick={() => handleSelectSkill(skill.id)}
+                  onClick={() => handleSelectSkill(skill)}
                   className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
                     selectedSkillId === skill.id 
                       ? "bg-muted text-foreground" 
@@ -331,7 +371,8 @@ function AchievementsSection() {
                   }`}
                   data-testid={`diary-entry-${skill.id}`}
                 >
-                  {skill.title}
+                  <div>{skill.title}</div>
+                  <div className="text-xs text-muted-foreground/60">{skill.sourceName}</div>
                 </button>
               ))}
             </div>
@@ -394,6 +435,7 @@ function AchievementsSection() {
               <h3 className="font-medium text-foreground">
                 {selectedSkill.title}
               </h3>
+              <p className="text-xs text-muted-foreground/60">{selectedSkill.sourceName}</p>
               {selectedSkill.description && (
                 <p className="text-sm text-muted-foreground">
                   {selectedSkill.description}
