@@ -1764,6 +1764,80 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [projects, isLoading]);
 
+  // Auto-unlock logic for sub-skills
+  useEffect(() => {
+    if (subSkills.length === 0) return;
+
+    const updatesToMake: Array<{ skillId: string; newStatus: SkillStatus }> = [];
+
+    const skillsInLevel = new Map<number, typeof subSkills>();
+    subSkills.forEach(skill => {
+      if (!skillsInLevel.has(skill.level)) {
+        skillsInLevel.set(skill.level, []);
+      }
+      skillsInLevel.get(skill.level)!.push(skill);
+    });
+
+    // Sort skills in each level by Y position
+    skillsInLevel.forEach((skills) => {
+      skills.sort((a, b) => a.y - b.y);
+    });
+
+    subSkills.forEach(skill => {
+      if (skill.manualLock) return;
+
+      const levelSkills = skillsInLevel.get(skill.level) || [];
+      const isLastNodeOfLevel = levelSkills.length > 0 && 
+        skill.y === Math.max(...levelSkills.map(s => s.y));
+      const isFinalNodeByPosition = isLastNodeOfLevel || skill.isFinalNode === 1;
+      const otherNodesInLevel = levelSkills.filter(s => s.id !== skill.id);
+      const allOthersMastered = otherNodesInLevel.every(s => s.status === "mastered");
+
+      // Re-lock final nodes that are "available" but shouldn't be
+      if (skill.status === "available" && isFinalNodeByPosition && !allOthersMastered) {
+        updatesToMake.push({ skillId: skill.id, newStatus: "locked" });
+        return;
+      }
+
+      if (skill.status !== "locked") return;
+
+      // Find the previous skill by Y position in the same level
+      const skillIndex = levelSkills.findIndex(s => s.id === skill.id);
+      const previousSkill = skillIndex > 0 ? levelSkills[skillIndex - 1] : null;
+      
+      // A skill can be unlocked if:
+      // - It's the first skill in the level (no previous skill), OR
+      // - The previous skill is mastered
+      const canUnlock = !previousSkill || previousSkill.status === "mastered";
+      
+      // Final nodes can only be unlocked if ALL other nodes in the level are mastered
+      if (isFinalNodeByPosition) {
+        if (canUnlock && allOthersMastered) {
+          updatesToMake.push({ skillId: skill.id, newStatus: "available" });
+        }
+      } else if (canUnlock) {
+        updatesToMake.push({ skillId: skill.id, newStatus: "available" });
+      }
+    });
+
+    if (updatesToMake.length > 0) {
+      Promise.all(
+        updatesToMake.map(({ skillId, newStatus }) =>
+          fetch(`/api/skills/${skillId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: newStatus }),
+          })
+        )
+      ).then(() => {
+        setSubSkills(prev => prev.map(skill => {
+          const update = updatesToMake.find(u => u.skillId === skill.id);
+          return update ? { ...skill, status: update.newStatus } : skill;
+        }));
+      });
+    }
+  }, [subSkills]);
+
   const updateLevelSubtitle = async (areaId: string, level: number, subtitle: string) => {
     const area = areas.find(a => a.id === areaId);
     if (!area) return;
