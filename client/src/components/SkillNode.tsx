@@ -285,7 +285,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
             isLocked ? "text-muted-foreground" : "text-foreground",
             isMastered && "text-foreground",
             skill.title.length > 20 ? "text-xs leading-tight" : "text-sm",
-            skill.title.length > 30 ? "text-[10px]" : ""
+            skill.title.length > 30 ? "text-[10px]" : "",
+            skill.title === "Next challenge" && "text-muted-foreground/50 font-normal italic"
           )}>
             <span
               onClick={(e) => {
