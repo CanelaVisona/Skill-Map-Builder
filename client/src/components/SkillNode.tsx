@@ -93,6 +93,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editTitle, setEditTitle] = useState(skill.title);
   const [editDescription, setEditDescription] = useState(skill.description || "");
+  const [editFeedback, setEditFeedback] = useState(skill.feedback || "");
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPress = useRef(false);
   
@@ -129,6 +130,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
   const handleEditOpen = () => {
     setEditTitle(skill.title);
     setEditDescription(skill.description || "");
+    setEditFeedback(skill.feedback || "");
     setIsOpen(false);
     setIsEditDialogOpen(true);
   };
@@ -137,17 +139,20 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
     if (isSubSkillView) {
       updateSubSkill(skill.id, { 
         title: editTitle, 
-        description: editDescription 
+        description: editDescription,
+        feedback: editFeedback
       });
     } else if (isProject) {
       updateProjectSkill(activeId, skill.id, { 
         title: editTitle, 
-        description: editDescription 
+        description: editDescription,
+        feedback: editFeedback
       });
     } else {
       updateSkill(activeId, skill.id, { 
         title: editTitle, 
-        description: editDescription 
+        description: editDescription,
+        feedback: editFeedback
       });
     }
     setIsEditDialogOpen(false);
@@ -345,6 +350,14 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
             <p className="text-sm text-muted-foreground leading-relaxed break-words">
               {skill.description || "No description available."}
             </p>
+            {skill.feedback && (
+              <div className="mt-2 pt-2 border-t border-border/50">
+                <p className="text-xs text-muted-foreground font-medium mb-1">Feedback:</p>
+                <p className="text-sm text-foreground/80 leading-relaxed break-words italic">
+                  {skill.feedback}
+                </p>
+              </div>
+            )}
           </div>
           
           <div className="pt-2 border-t border-border flex flex-wrap justify-end gap-2">
@@ -453,8 +466,19 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
               value={editDescription}
               onChange={(e) => setEditDescription(e.target.value)}
               placeholder="Descripción de la habilidad"
-              rows={4}
+              rows={3}
               data-testid="input-edit-description"
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="edit-feedback">Feedback</Label>
+            <Textarea
+              id="edit-feedback"
+              value={editFeedback}
+              onChange={(e) => setEditFeedback(e.target.value)}
+              placeholder="Notas, comentarios o retroalimentación..."
+              rows={3}
+              data-testid="input-edit-feedback"
             />
           </div>
         </div>

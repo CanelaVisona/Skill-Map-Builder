@@ -34,6 +34,7 @@ export const skills = pgTable("skills", {
   parentSkillId: varchar("parent_skill_id"),
   title: text("title").notNull(),
   description: text("description").notNull(),
+  feedback: text("feedback").default(""),
   status: text("status").notNull(),
   x: integer("x").notNull(),
   y: integer("y").notNull(),
