@@ -120,6 +120,7 @@ function JournalSection({
   const [description, setDescription] = useState("");
   const [extraInfo, setExtraInfo] = useState("");
   const [selectedEntry, setSelectedEntry] = useState<JournalEntry | null>(null);
+  const [viewingEntry, setViewingEntry] = useState<JournalEntry | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const longPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -380,44 +381,67 @@ function JournalSection({
         </DialogContent>
       </Dialog>
 
-      <ScrollArea className="flex-1">
-        {entries.length === 0 ? (
-          <div 
-            className="flex flex-col items-center justify-center py-12 text-center cursor-pointer select-none"
-            onTouchStart={handleLongPressStart}
-            onTouchEnd={handleLongPressEnd}
-            onTouchCancel={handleLongPressEnd}
-            onMouseDown={handleLongPressStart}
-            onMouseUp={handleLongPressEnd}
-            onMouseLeave={handleLongPressEnd}
-          >
-            <Icon className="h-8 w-8 text-muted-foreground/40 mb-3" />
-            <p className="text-muted-foreground text-sm">{emptyMessage}</p>
-            <p className="text-muted-foreground/50 text-xs mt-2">Hold to add</p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {entries.map((entry) => (
-              <div
-                key={entry.id}
-                className="p-3 border border-border rounded-lg cursor-pointer select-none"
-                data-testid={`card-${type}-${entry.id}`}
-                onTouchStart={() => handleEntryLongPressStart(entry)}
-                onTouchEnd={handleEntryLongPressEnd}
-                onTouchCancel={handleEntryLongPressEnd}
-                onMouseDown={() => handleEntryLongPressStart(entry)}
-                onMouseUp={handleEntryLongPressEnd}
-                onMouseLeave={handleEntryLongPressEnd}
+      <div className="flex flex-1 min-h-0">
+        <div className="w-1/2 border-r border-border pr-4">
+          <ScrollArea className="h-full">
+            {entries.length === 0 ? (
+              <div 
+                className="flex flex-col items-center justify-center py-12 text-center cursor-pointer select-none"
+                onTouchStart={handleLongPressStart}
+                onTouchEnd={handleLongPressEnd}
+                onTouchCancel={handleLongPressEnd}
+                onMouseDown={handleLongPressStart}
+                onMouseUp={handleLongPressEnd}
+                onMouseLeave={handleLongPressEnd}
               >
-                <h4 className="font-medium text-sm text-foreground uppercase">{entry.name}</h4>
-                {entry.description && (
-                  <p className="text-xs text-muted-foreground mt-1 whitespace-pre-line">{entry.description}</p>
+                <Icon className="h-8 w-8 text-muted-foreground/40 mb-3" />
+                <p className="text-muted-foreground text-sm">{emptyMessage}</p>
+                <p className="text-muted-foreground/50 text-xs mt-2">Hold to add</p>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {entries.map((entry) => (
+                  <button
+                    key={entry.id}
+                    onClick={() => setViewingEntry(entry)}
+                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors cursor-pointer select-none ${
+                      viewingEntry?.id === entry.id 
+                        ? "bg-muted text-foreground" 
+                        : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                    }`}
+                    data-testid={`card-${type}-${entry.id}`}
+                    onTouchStart={() => handleEntryLongPressStart(entry)}
+                    onTouchEnd={handleEntryLongPressEnd}
+                    onTouchCancel={handleEntryLongPressEnd}
+                    onMouseDown={() => handleEntryLongPressStart(entry)}
+                    onMouseUp={handleEntryLongPressEnd}
+                    onMouseLeave={handleEntryLongPressEnd}
+                  >
+                    {entry.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+        </div>
+        
+        <div className="w-1/2 pl-4">
+          <ScrollArea className="h-full">
+            {viewingEntry ? (
+              <div className="space-y-4">
+                <h3 className="font-medium text-foreground uppercase">{viewingEntry.name}</h3>
+                {viewingEntry.description && (
+                  <p className="text-sm text-muted-foreground whitespace-pre-line">{viewingEntry.description}</p>
                 )}
               </div>
-            ))}
-          </div>
-        )}
-      </ScrollArea>
+            ) : (
+              <div className="h-full flex items-center justify-center text-muted-foreground/40 text-sm">
+                Select an entry
+              </div>
+            )}
+          </ScrollArea>
+        </div>
+      </div>
     </div>
   );
 }
