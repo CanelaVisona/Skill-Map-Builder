@@ -83,8 +83,49 @@ export async function registerRoutes(
       const trimmedUsername = username.trim().toLowerCase();
       
       let user = await storage.getUserByUsername(trimmedUsername);
+      let isNewUser = false;
       if (!user) {
         user = await storage.createUser(trimmedUsername);
+        isNewUser = true;
+      }
+      
+      // Create example area for new users
+      if (isNewUser) {
+        const userAreas = await storage.getAreas(user.id);
+        if (userAreas.length === 0) {
+          // Create example area
+          const exampleArea = await storage.createArea({
+            name: "Ejemplo: Guitarra",
+            icon: "Music",
+            description: "Esta es un área de ejemplo. Mantén presionado para ver opciones.",
+            userId: user.id,
+          });
+          
+          // Generate the first level with 5 skills
+          await storage.generateLevelWithSkills(exampleArea.id, 1, 100);
+          
+          // Update the first few skills with example content
+          const exampleSkills = await storage.getSkills(exampleArea.id);
+          const sortedSkills = exampleSkills.sort((a, b) => a.y - b.y);
+          
+          // First skill is already "inicio" and mastered
+          // Update second skill to be available with example content
+          if (sortedSkills[1]) {
+            await storage.updateSkill(sortedSkills[1].id, {
+              title: "Acordes Básicos",
+              description: "Aprende C, D, E, G, A. ¡Haz clic para completar!",
+              status: "available",
+            });
+          }
+          
+          // Update third skill with example content
+          if (sortedSkills[2]) {
+            await storage.updateSkill(sortedSkills[2].id, {
+              title: "Ritmo 4/4",
+              description: "Rasgueo básico. Se desbloquea al completar el anterior.",
+            });
+          }
+        }
       }
       
       const expiresAt = new Date(Date.now() + SESSION_DURATION_MS);
