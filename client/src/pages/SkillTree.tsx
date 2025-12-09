@@ -125,9 +125,11 @@ function QuestDiary() {
       const response = await fetch(`/api/skills/${skillId}/subskills`);
       const allSubtasks = await response.json();
       const visibleLevels = calculateVisibleLevels(allSubtasks);
-      const visibleSubtasks = allSubtasks.filter((s: Skill) => 
-        visibleLevels.has(s.level) && s.title.toLowerCase() !== "inicio"
-      );
+      const visibleSubtasks = allSubtasks.filter((s: Skill) => {
+        const title = s.title.toLowerCase();
+        const isPlaceholder = title === "inicio" || title.includes("next challenge") || title.includes("next challange");
+        return visibleLevels.has(s.level) && !isPlaceholder;
+      });
       setSelectedSubtasks(visibleSubtasks);
     } catch {
       setSelectedSubtasks([]);
