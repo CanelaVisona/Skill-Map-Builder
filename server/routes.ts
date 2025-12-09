@@ -133,6 +133,22 @@ export async function registerRoutes(
             });
           }
           
+          // Update fourth skill
+          if (sortedSkills[3]) {
+            await storage.updateSkill(sortedSkills[3].id, {
+              title: "Cambios de Acordes",
+              description: "Practica transiciones fluidas entre acordes.",
+            });
+          }
+          
+          // Update fifth skill
+          if (sortedSkills[4]) {
+            await storage.updateSkill(sortedSkills[4].id, {
+              title: "Primera Canción",
+              description: "Toca tu primera canción completa.",
+            });
+          }
+          
           // Create example project (trip)
           const exampleProject = await storage.createProject({
             id: crypto.randomUUID(),
