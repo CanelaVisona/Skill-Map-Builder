@@ -57,7 +57,7 @@ const tourSteps: Step[] = [
   {
     id: "welcome",
     title: "¡Bienvenido a tu Skill Tree!",
-    description: "Esta herramienta te ayuda a visualizar y seguir tu progreso en diferentes áreas. Vamos a hacer un recorrido rápido.",
+    description: "\"IF YOU HAVE A PROBLEM, YOU HAVE A QUEST. LET'S PLAY\"\n\nEsta herramienta te ayuda a visualizar y seguir tu progreso en diferentes áreas.",
     icon: <Sparkles className="h-6 w-6 text-yellow-500" />
   },
   {
