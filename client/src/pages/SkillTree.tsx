@@ -1050,14 +1050,26 @@ function AchievementsSection() {
               )}
               <div className="pt-2">
                 <p className="text-xs text-foreground uppercase tracking-wide mb-2">Feedback</p>
-                {nextSkillForSelected?.feedback ? (
+                {selectedSkill.feedback ? (
                   <p className="text-sm text-yellow-500 dark:text-yellow-400 leading-relaxed">
-                    {nextSkillForSelected.feedback}
+                    {selectedSkill.feedback}
                   </p>
                 ) : (
                   <p className="text-sm text-muted-foreground/40 italic leading-relaxed">
                     No comments
                   </p>
+                )}
+                {selectedSubtasks.filter(s => s.feedback).length > 0 && (
+                  <div className="mt-4 space-y-3">
+                    {selectedSubtasks.filter(s => s.feedback).map((subtask) => (
+                      <div key={subtask.id} className="border-t border-dotted border-muted-foreground/30 pt-3">
+                        <p className="text-xs text-muted-foreground mb-1">{subtask.title}</p>
+                        <p className="text-sm text-yellow-500 dark:text-yellow-400 leading-relaxed">
+                          {subtask.feedback}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
             </div>
