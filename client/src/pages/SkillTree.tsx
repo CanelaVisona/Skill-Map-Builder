@@ -1166,18 +1166,14 @@ function AchievementsSection() {
                   {selectedSubtask.description}
                 </p>
               )}
-              <div className="pt-2">
-                <p className="text-xs text-foreground uppercase tracking-wide mb-2">Feedback</p>
-                {selectedSubtask.feedback ? (
+              {selectedSubtask.feedback && (
+                <div className="pt-2">
+                  <p className="text-xs text-foreground uppercase tracking-wide mb-2">Feedback</p>
                   <p className="text-sm text-yellow-500 dark:text-yellow-400 leading-relaxed">
                     {selectedSubtask.feedback}
                   </p>
-                ) : (
-                  <p className="text-sm text-muted-foreground/40 italic leading-relaxed">
-                    Sin comentarios
-                  </p>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           ) : selectedSkill ? (
             <div className="space-y-4">
@@ -1190,36 +1186,28 @@ function AchievementsSection() {
                   {selectedSkill.description}
                 </p>
               )}
-              <div className="pt-2">
-                <p className="text-xs text-foreground uppercase tracking-wide mb-2">Feedback</p>
-                {selectedSkill.feedback ? (
-                  <p className="text-sm text-yellow-500 dark:text-yellow-400 leading-relaxed">
-                    {selectedSkill.feedback}
-                  </p>
-                ) : (
-                  <p className="text-sm text-muted-foreground/40 italic leading-relaxed">
-                    Sin comentarios
-                  </p>
-                )}
-                {selectedSubtasks.length > 0 && (
-                  <div className="mt-4 space-y-3">
-                    {selectedSubtasks.map((subtask) => (
-                      <div key={subtask.id} className="border-t border-dotted border-muted-foreground/30 pt-3">
-                        <p className="text-xs text-muted-foreground mb-1">{subtask.title}</p>
-                        {subtask.feedback ? (
+              {(selectedSkill.feedback || selectedSubtasks.some(s => s.feedback)) && (
+                <div className="pt-2">
+                  <p className="text-xs text-foreground uppercase tracking-wide mb-2">Feedback</p>
+                  {selectedSkill.feedback && (
+                    <p className="text-sm text-yellow-500 dark:text-yellow-400 leading-relaxed">
+                      {selectedSkill.feedback}
+                    </p>
+                  )}
+                  {selectedSubtasks.filter(s => s.feedback).length > 0 && (
+                    <div className={selectedSkill.feedback ? "mt-4 space-y-3" : "space-y-3"}>
+                      {selectedSubtasks.filter(s => s.feedback).map((subtask) => (
+                        <div key={subtask.id} className="border-t border-dotted border-muted-foreground/30 pt-3">
+                          <p className="text-xs text-muted-foreground mb-1">{subtask.title}</p>
                           <p className="text-sm text-yellow-500 dark:text-yellow-400 leading-relaxed">
                             {subtask.feedback}
                           </p>
-                        ) : (
-                          <p className="text-sm text-muted-foreground/40 italic leading-relaxed">
-                            Sin comentarios
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             <div className="h-full flex items-center justify-center text-muted-foreground/40 text-sm">
