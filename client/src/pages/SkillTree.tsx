@@ -1056,17 +1056,23 @@ function AchievementsSection() {
                   </p>
                 ) : (
                   <p className="text-sm text-muted-foreground/40 italic leading-relaxed">
-                    No comments
+                    Sin comentarios
                   </p>
                 )}
-                {selectedSubtasks.filter(s => s.feedback).length > 0 && (
+                {selectedSubtasks.length > 0 && (
                   <div className="mt-4 space-y-3">
-                    {selectedSubtasks.filter(s => s.feedback).map((subtask) => (
+                    {selectedSubtasks.map((subtask) => (
                       <div key={subtask.id} className="border-t border-dotted border-muted-foreground/30 pt-3">
                         <p className="text-xs text-muted-foreground mb-1">{subtask.title}</p>
-                        <p className="text-sm text-yellow-500 dark:text-yellow-400 leading-relaxed">
-                          {subtask.feedback}
-                        </p>
+                        {subtask.feedback ? (
+                          <p className="text-sm text-yellow-500 dark:text-yellow-400 leading-relaxed">
+                            {subtask.feedback}
+                          </p>
+                        ) : (
+                          <p className="text-sm text-muted-foreground/40 italic leading-relaxed">
+                            Sin comentarios
+                          </p>
+                        )}
                       </div>
                     ))}
                   </div>
