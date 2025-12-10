@@ -223,27 +223,31 @@ function JournalSection({
 
   return (
     <div className="h-full flex flex-col">
-      <div className="mb-4">
-        <span className="text-xs text-muted-foreground uppercase tracking-wide">
+      <div className="mb-3 pb-2 border-b border-zinc-700/50">
+        <span className="text-xs text-zinc-500 uppercase tracking-wider">
           {entries.length} {countLabel}
         </span>
+        <div className="h-px w-8 bg-gradient-to-r from-zinc-600 to-transparent mt-1" />
       </div>
 
       <Dialog open={isAdding} onOpenChange={(open) => !open && setIsAdding(false)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md bg-zinc-900 border border-zinc-700">
           <VisuallyHidden>
             <DialogTitle>Add {type === "characters" ? "Character" : type === "places" ? "Place" : "Shadow"}</DialogTitle>
           </VisuallyHidden>
           
           <div className="space-y-4">
-            <h3 className="font-medium text-foreground">
-              Add {type === "characters" ? "Character" : type === "places" ? "Place" : "Shadow"}
-            </h3>
+            <div className="border-b border-zinc-700/50 pb-2">
+              <h3 className="font-medium text-zinc-100">
+                Add {type === "characters" ? "Character" : type === "places" ? "Place" : "Shadow"}
+              </h3>
+              <div className="h-px w-8 bg-gradient-to-r from-zinc-500 to-transparent mt-1" />
+            </div>
             <Input
               placeholder="NAME"
               value={name}
               onChange={(e) => setName(e.target.value.toUpperCase())}
-              className="uppercase bg-transparent border-none focus-visible:ring-0 px-0"
+              className="uppercase bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500"
               data-testid={`input-${type}-name`}
             />
             <Textarea
@@ -251,14 +255,14 @@ function JournalSection({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
-              className="bg-transparent border-none focus-visible:ring-0 resize-none px-0"
+              className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 resize-none"
               data-testid={`input-${type}-description`}
             />
-            <div className="flex gap-2">
-              <Button size="sm" variant="ghost" onClick={handleAddNew} className="text-muted-foreground" data-testid={`button-save-${type}`}>
+            <div className="flex gap-2 pt-2">
+              <Button size="sm" onClick={handleAddNew} className="bg-zinc-700 hover:bg-zinc-600 text-zinc-200" data-testid={`button-save-${type}`}>
                 Add
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setIsAdding(false)} className="text-muted-foreground">
+              <Button size="sm" variant="ghost" onClick={() => setIsAdding(false)} className="text-zinc-400 hover:text-zinc-300">
                 Cancel
               </Button>
             </div>
@@ -267,20 +271,23 @@ function JournalSection({
       </Dialog>
 
       <Dialog open={!!selectedEntry} onOpenChange={(open) => !open && handleCloseDialog()}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md bg-zinc-900 border border-zinc-700">
           <VisuallyHidden>
             <DialogTitle>{selectedEntry?.name}</DialogTitle>
           </VisuallyHidden>
           
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-medium text-foreground uppercase">{selectedEntry?.name}</h3>
+            <div className="flex items-center justify-between border-b border-zinc-700/50 pb-2">
+              <div>
+                <h3 className="font-medium text-zinc-100 uppercase">{selectedEntry?.name}</h3>
+                <div className="h-px w-8 bg-gradient-to-r from-zinc-500 to-transparent mt-1" />
+              </div>
               <div className="flex gap-1">
                 <Button
                   size="sm"
                   variant="ghost"
                   onClick={() => setIsEditMode(!isEditMode)}
-                  className="h-8 w-8 p-0 text-muted-foreground"
+                  className="h-8 w-8 p-0 text-zinc-400 hover:text-zinc-200"
                   data-testid={`button-edit-mode-${type}`}
                 >
                   <Pencil className="h-4 w-4" />
@@ -289,7 +296,7 @@ function JournalSection({
                   size="sm"
                   variant="ghost"
                   onClick={() => setShowDeleteConfirm(true)}
-                  className="h-8 w-8 p-0 text-muted-foreground"
+                  className="h-8 w-8 p-0 text-zinc-400 hover:text-zinc-200"
                   data-testid={`button-delete-${type}`}
                 >
                   <Trash2 className="h-4 w-4" />
@@ -298,7 +305,7 @@ function JournalSection({
             </div>
 
             {selectedEntry?.description && !isEditMode && (
-              <p className="text-sm text-muted-foreground whitespace-pre-line">{selectedEntry.description}</p>
+              <p className="text-sm text-zinc-400 whitespace-pre-line leading-relaxed">{selectedEntry.description}</p>
             )}
 
             {!isEditMode ? (
@@ -307,7 +314,7 @@ function JournalSection({
                   placeholder="Add more info..."
                   value={extraInfo}
                   onChange={(e) => setExtraInfo(e.target.value)}
-                  className="flex-1 bg-transparent border-none focus-visible:ring-0 px-0"
+                  className="flex-1 bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500"
                   data-testid={`input-${type}-extra`}
                 />
                 <Button 
@@ -315,7 +322,7 @@ function JournalSection({
                   variant="ghost" 
                   onClick={handleAddExtraInfo} 
                   disabled={!extraInfo.trim()}
-                  className="text-muted-foreground"
+                  className="text-zinc-400 hover:text-zinc-200"
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
@@ -326,7 +333,7 @@ function JournalSection({
                   placeholder="NAME"
                   value={name}
                   onChange={(e) => setName(e.target.value.toUpperCase())}
-                  className="uppercase bg-transparent border-none focus-visible:ring-0 px-0"
+                  className="uppercase bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500"
                   data-testid={`input-edit-${type}-name`}
                 />
                 <Textarea
@@ -334,15 +341,14 @@ function JournalSection({
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   rows={3}
-                  className="bg-transparent border-none focus-visible:ring-0 resize-none px-0"
+                  className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 resize-none"
                   data-testid={`input-edit-${type}-description`}
                 />
                 <div className="flex gap-2">
                   <Button 
                     size="sm" 
-                    variant="ghost" 
                     onClick={handleSaveEdit}
-                    className="text-muted-foreground"
+                    className="bg-zinc-700 hover:bg-zinc-600 text-zinc-200"
                   >
                     Save
                   </Button>
@@ -350,7 +356,7 @@ function JournalSection({
                     size="sm" 
                     variant="ghost" 
                     onClick={() => setIsEditMode(false)}
-                    className="text-muted-foreground"
+                    className="text-zinc-400 hover:text-zinc-300"
                   >
                     Cancel
                   </Button>
@@ -360,14 +366,13 @@ function JournalSection({
           </div>
 
           {showDeleteConfirm && (
-            <div className="pt-4 border-t border-border mt-4">
-              <p className="text-sm text-muted-foreground mb-3">Delete this entry?</p>
+            <div className="pt-4 border-t border-zinc-700 mt-4">
+              <p className="text-sm text-zinc-400 mb-3">Delete this entry?</p>
               <div className="flex gap-2">
                 <Button 
                   size="sm" 
-                  variant="ghost" 
                   onClick={handleDelete}
-                  className="text-muted-foreground"
+                  className="bg-red-900/50 hover:bg-red-900 text-red-200"
                 >
                   Delete
                 </Button>
@@ -375,7 +380,7 @@ function JournalSection({
                   size="sm" 
                   variant="ghost" 
                   onClick={() => setShowDeleteConfirm(false)}
-                  className="text-muted-foreground"
+                  className="text-zinc-400 hover:text-zinc-300"
                 >
                   Cancel
                 </Button>
@@ -385,9 +390,9 @@ function JournalSection({
         </DialogContent>
       </Dialog>
 
-      <div className="flex flex-1 min-h-0">
+      <div className="flex flex-1 min-h-0 gap-2">
         <div 
-          className="w-1/2 border-r border-border pr-4 cursor-pointer select-none"
+          className="w-1/2 bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]"
           onTouchStart={handleLeftLongPressStart}
           onTouchEnd={handleLeftLongPressEnd}
           onTouchCancel={handleLeftLongPressEnd}
@@ -398,25 +403,29 @@ function JournalSection({
           <ScrollArea className="h-full">
             {entries.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
-                <Icon className="h-8 w-8 text-muted-foreground/40 mb-3" />
-                <p className="text-muted-foreground text-sm">{emptyMessage}</p>
-                <p className="text-muted-foreground/50 text-xs mt-2">Hold to add</p>
+                <Icon className="h-8 w-8 text-zinc-600 mb-3" />
+                <p className="text-zinc-500 text-sm">{emptyMessage}</p>
+                <p className="text-zinc-600 text-xs mt-2">Mantené presionado para agregar</p>
               </div>
             ) : (
-              <div className="space-y-1">
-                {entries.map((entry) => (
-                  <button
-                    key={entry.id}
-                    onClick={(e) => { e.stopPropagation(); setViewingEntry(entry); }}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors cursor-pointer select-none ${
-                      viewingEntry?.id === entry.id 
-                        ? "bg-muted text-foreground" 
-                        : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                    }`}
-                    data-testid={`card-${type}-${entry.id}`}
-                  >
-                    {entry.name}
-                  </button>
+              <div className="space-y-0.5">
+                {entries.map((entry, index) => (
+                  <div key={entry.id}>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setViewingEntry(entry); }}
+                      className={`w-full text-left px-3 py-2 rounded text-sm transition-all cursor-pointer select-none ${
+                        viewingEntry?.id === entry.id 
+                          ? "bg-zinc-700 text-zinc-100 shadow-sm" 
+                          : "text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200"
+                      }`}
+                      data-testid={`card-${type}-${entry.id}`}
+                    >
+                      {entry.name}
+                    </button>
+                    {index < entries.length - 1 && (
+                      <div className="h-px bg-zinc-700/30 mx-2" />
+                    )}
+                  </div>
                 ))}
               </div>
             )}
@@ -424,7 +433,7 @@ function JournalSection({
         </div>
         
         <div 
-          className="w-1/2 pl-4 cursor-pointer select-none"
+          className="w-1/2 bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
           onTouchStart={handleRightLongPressStart}
           onTouchEnd={handleRightLongPressEnd}
           onTouchCancel={handleRightLongPressEnd}
@@ -435,14 +444,17 @@ function JournalSection({
           <ScrollArea className="h-full">
             {viewingEntry ? (
               <div className="space-y-4">
-                <h3 className="font-medium text-foreground uppercase">{viewingEntry.name}</h3>
+                <div className="border-b border-zinc-700/50 pb-2">
+                  <h3 className="font-medium text-zinc-100 uppercase tracking-wide">{viewingEntry.name}</h3>
+                  <div className="h-px w-12 bg-gradient-to-r from-zinc-500 to-transparent mt-2" />
+                </div>
                 {viewingEntry.description && (
-                  <p className="text-sm text-muted-foreground whitespace-pre-line">{viewingEntry.description}</p>
+                  <p className="text-sm text-zinc-400 whitespace-pre-line leading-relaxed">{viewingEntry.description}</p>
                 )}
               </div>
             ) : (
-              <div className="h-full flex items-center justify-center text-muted-foreground/40 text-sm">
-                Select an entry
+              <div className="h-full flex items-center justify-center text-zinc-600 text-sm">
+                Seleccioná una entrada
               </div>
             )}
           </ScrollArea>
@@ -579,20 +591,29 @@ function ShadowsSection({
 
   return (
     <div className="h-full flex flex-col">
+      <div className="mb-3 pb-2 border-b border-zinc-700/50">
+        <span className="text-xs text-zinc-500 uppercase tracking-wider">
+          {currentEntries.length} shadows
+        </span>
+        <div className="h-px w-8 bg-gradient-to-r from-zinc-600 to-transparent mt-1" />
+      </div>
       
       <Dialog open={isAdding} onOpenChange={(open) => !open && setIsAdding(false)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md bg-zinc-900 border border-zinc-700">
           <VisuallyHidden>
             <DialogTitle>Add Shadow</DialogTitle>
           </VisuallyHidden>
           
           <div className="space-y-4">
-            <h3 className="font-medium text-foreground">Add Shadow</h3>
+            <div className="border-b border-zinc-700/50 pb-2">
+              <h3 className="font-medium text-zinc-100">Add Shadow</h3>
+              <div className="h-px w-8 bg-gradient-to-r from-zinc-500 to-transparent mt-1" />
+            </div>
             <Input
               placeholder="NAME"
               value={name}
               onChange={(e) => setName(e.target.value.toUpperCase())}
-              className="uppercase bg-transparent border-none focus-visible:ring-0 px-0"
+              className="uppercase bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500"
               data-testid="input-shadows-name"
             />
             <Textarea
@@ -600,14 +621,14 @@ function ShadowsSection({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
-              className="bg-transparent border-none focus-visible:ring-0 resize-none px-0"
+              className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 resize-none"
               data-testid="input-shadows-description"
             />
-            <div className="flex gap-2">
-              <Button size="sm" variant="ghost" onClick={handleAddNew} className="text-muted-foreground" data-testid="button-save-shadows">
+            <div className="flex gap-2 pt-2">
+              <Button size="sm" onClick={handleAddNew} className="bg-zinc-700 hover:bg-zinc-600 text-zinc-200" data-testid="button-save-shadows">
                 Add
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setIsAdding(false)} className="text-muted-foreground">
+              <Button size="sm" variant="ghost" onClick={() => setIsAdding(false)} className="text-zinc-400 hover:text-zinc-300">
                 Cancel
               </Button>
             </div>
@@ -616,20 +637,23 @@ function ShadowsSection({
       </Dialog>
 
       <Dialog open={!!selectedEntry} onOpenChange={(open) => !open && handleCloseDialog()}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md bg-zinc-900 border border-zinc-700">
           <VisuallyHidden>
             <DialogTitle>{selectedEntry?.name}</DialogTitle>
           </VisuallyHidden>
           
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-medium text-foreground uppercase">{selectedEntry?.name}</h3>
+            <div className="flex items-center justify-between border-b border-zinc-700/50 pb-2">
+              <div>
+                <h3 className="font-medium text-zinc-100 uppercase">{selectedEntry?.name}</h3>
+                <div className="h-px w-8 bg-gradient-to-r from-zinc-500 to-transparent mt-1" />
+              </div>
               <div className="flex gap-1">
                 <Button
                   size="sm"
                   variant="ghost"
                   onClick={() => setIsEditMode(!isEditMode)}
-                  className="h-8 w-8 p-0 text-muted-foreground"
+                  className="h-8 w-8 p-0 text-zinc-400 hover:text-zinc-200"
                   data-testid="button-edit-mode-shadows"
                 >
                   <Pencil className="h-4 w-4" />
@@ -638,7 +662,7 @@ function ShadowsSection({
                   size="sm"
                   variant="ghost"
                   onClick={() => setShowDeleteConfirm(true)}
-                  className="h-8 w-8 p-0 text-muted-foreground"
+                  className="h-8 w-8 p-0 text-zinc-400 hover:text-zinc-200"
                   data-testid="button-delete-shadows"
                 >
                   <Trash2 className="h-4 w-4" />
@@ -647,37 +671,35 @@ function ShadowsSection({
             </div>
 
             {selectedEntry?.description && !isEditMode && (
-              <p className="text-sm text-muted-foreground whitespace-pre-line">{selectedEntry.description}</p>
+              <p className="text-sm text-zinc-400 whitespace-pre-line leading-relaxed">{selectedEntry.description}</p>
             )}
 
             {!isEditMode ? (
-              <>
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="Add more info..."
-                    value={extraInfo}
-                    onChange={(e) => setExtraInfo(e.target.value)}
-                    className="flex-1 bg-transparent border-none focus-visible:ring-0 px-0"
-                    data-testid="input-shadows-extra"
-                  />
-                  <Button 
-                    size="sm" 
-                    variant="ghost" 
-                    onClick={handleAddExtraInfo} 
-                    disabled={!extraInfo.trim()}
-                    className="text-muted-foreground"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
-                              </>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Add more info..."
+                  value={extraInfo}
+                  onChange={(e) => setExtraInfo(e.target.value)}
+                  className="flex-1 bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500"
+                  data-testid="input-shadows-extra"
+                />
+                <Button 
+                  size="sm" 
+                  variant="ghost" 
+                  onClick={handleAddExtraInfo} 
+                  disabled={!extraInfo.trim()}
+                  className="text-zinc-400 hover:text-zinc-200"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
             ) : (
               <div className="space-y-3">
                 <Input
                   placeholder="NAME"
                   value={name}
                   onChange={(e) => setName(e.target.value.toUpperCase())}
-                  className="uppercase bg-transparent border-none focus-visible:ring-0 px-0"
+                  className="uppercase bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500"
                   data-testid="input-edit-shadows-name"
                 />
                 <Textarea
@@ -685,15 +707,14 @@ function ShadowsSection({
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   rows={3}
-                  className="bg-transparent border-none focus-visible:ring-0 resize-none px-0"
+                  className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 resize-none"
                   data-testid="input-edit-shadows-description"
                 />
                 <div className="flex gap-2">
                   <Button 
                     size="sm" 
-                    variant="ghost" 
                     onClick={handleSaveEdit}
-                    className="text-muted-foreground"
+                    className="bg-zinc-700 hover:bg-zinc-600 text-zinc-200"
                   >
                     Save
                   </Button>
@@ -701,7 +722,7 @@ function ShadowsSection({
                     size="sm" 
                     variant="ghost" 
                     onClick={() => setIsEditMode(false)}
-                    className="text-muted-foreground"
+                    className="text-zinc-400 hover:text-zinc-300"
                   >
                     Cancel
                   </Button>
@@ -711,14 +732,13 @@ function ShadowsSection({
           </div>
 
           {showDeleteConfirm && (
-            <div className="pt-4 border-t border-border mt-4">
-              <p className="text-sm text-muted-foreground mb-3">Delete this entry?</p>
+            <div className="pt-4 border-t border-zinc-700 mt-4">
+              <p className="text-sm text-zinc-400 mb-3">Delete this entry?</p>
               <div className="flex gap-2">
                 <Button 
                   size="sm" 
-                  variant="ghost" 
                   onClick={handleDelete}
-                  className="text-muted-foreground"
+                  className="bg-red-900/50 hover:bg-red-900 text-red-200"
                 >
                   Delete
                 </Button>
@@ -726,7 +746,7 @@ function ShadowsSection({
                   size="sm" 
                   variant="ghost" 
                   onClick={() => setShowDeleteConfirm(false)}
-                  className="text-muted-foreground"
+                  className="text-zinc-400 hover:text-zinc-300"
                 >
                   Cancel
                 </Button>
@@ -736,9 +756,9 @@ function ShadowsSection({
         </DialogContent>
       </Dialog>
 
-      <div className="flex flex-1 min-h-0">
+      <div className="flex flex-1 min-h-0 gap-2">
         <div 
-          className="w-1/2 border-r border-border pr-4 cursor-pointer select-none"
+          className="w-1/2 bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]"
           onTouchStart={handleLeftLongPressStart}
           onTouchEnd={handleLeftLongPressEnd}
           onTouchCancel={handleLeftLongPressEnd}
@@ -749,27 +769,31 @@ function ShadowsSection({
           <ScrollArea className="h-full">
             {currentEntries.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
-                <Skull className="h-8 w-8 text-muted-foreground/40 mb-3" />
-                <p className="text-muted-foreground text-sm">
+                <Skull className="h-8 w-8 text-zinc-600 mb-3" />
+                <p className="text-zinc-500 text-sm">
                   No hay sombras aún
                 </p>
-                <p className="text-muted-foreground/50 text-xs mt-2">Mantén presionado para agregar</p>
+                <p className="text-zinc-600 text-xs mt-2">Mantené presionado para agregar</p>
               </div>
             ) : (
-              <div className="space-y-1">
-                {currentEntries.map((entry) => (
-                  <button
-                    key={entry.id}
-                    onClick={(e) => { e.stopPropagation(); setViewingEntry(entry); }}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors cursor-pointer select-none ${
-                      viewingEntry?.id === entry.id 
-                        ? "bg-muted text-foreground" 
-                        : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                    }`}
-                    data-testid={`card-shadows-${entry.id}`}
-                  >
-                    {entry.name}
-                  </button>
+              <div className="space-y-0.5">
+                {currentEntries.map((entry, index) => (
+                  <div key={entry.id}>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setViewingEntry(entry); }}
+                      className={`w-full text-left px-3 py-2 rounded text-sm transition-all cursor-pointer select-none ${
+                        viewingEntry?.id === entry.id 
+                          ? "bg-zinc-700 text-zinc-100 shadow-sm" 
+                          : "text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200"
+                      }`}
+                      data-testid={`card-shadows-${entry.id}`}
+                    >
+                      {entry.name}
+                    </button>
+                    {index < currentEntries.length - 1 && (
+                      <div className="h-px bg-zinc-700/30 mx-2" />
+                    )}
+                  </div>
                 ))}
               </div>
             )}
@@ -777,7 +801,7 @@ function ShadowsSection({
         </div>
         
         <div 
-          className="w-1/2 pl-4 cursor-pointer select-none"
+          className="w-1/2 bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
           onTouchStart={handleRightLongPressStart}
           onTouchEnd={handleRightLongPressEnd}
           onTouchCancel={handleRightLongPressEnd}
@@ -788,14 +812,17 @@ function ShadowsSection({
           <ScrollArea className="h-full">
             {viewingEntry ? (
               <div className="space-y-4">
-                <h3 className="font-medium text-foreground uppercase">{viewingEntry.name}</h3>
+                <div className="border-b border-zinc-700/50 pb-2">
+                  <h3 className="font-medium text-zinc-100 uppercase tracking-wide">{viewingEntry.name}</h3>
+                  <div className="h-px w-12 bg-gradient-to-r from-zinc-500 to-transparent mt-2" />
+                </div>
                 {viewingEntry.description && (
-                  <p className="text-sm text-muted-foreground whitespace-pre-line">{viewingEntry.description}</p>
+                  <p className="text-sm text-zinc-400 whitespace-pre-line leading-relaxed">{viewingEntry.description}</p>
                 )}
               </div>
             ) : (
-              <div className="h-full flex items-center justify-center text-muted-foreground/40 text-sm">
-                Select an entry
+              <div className="h-full flex items-center justify-center text-zinc-600 text-sm">
+                Seleccioná una entrada
               </div>
             )}
           </ScrollArea>
@@ -1346,33 +1373,36 @@ function QuestDiary() {
   
   return (
     <Dialog open={isDiaryOpen} onOpenChange={(open) => !open && closeDiary()}>
-      <DialogContent className="max-w-4xl h-[75vh] p-0 overflow-hidden bg-background border border-border">
+      <DialogContent className="max-w-4xl h-[75vh] p-0 overflow-hidden bg-zinc-900 border-2 border-zinc-700 shadow-2xl">
         <VisuallyHidden>
           <DialogTitle>Journal</DialogTitle>
         </VisuallyHidden>
         <div className="flex h-full">
           <Tabs defaultValue="achievements" className="flex-1 flex" orientation="vertical">
-            <TabsList className="flex flex-col h-full justify-start gap-1 p-2 rounded-none border-r border-border bg-transparent">
-              <TabsTrigger value="achievements" className="p-2" data-testid="tab-achievements" title="Achievements">
+            <TabsList className="flex flex-col h-full justify-start gap-0.5 p-1.5 rounded-none border-r-2 border-zinc-700 bg-zinc-800/50 shadow-[inset_-4px_0_8px_rgba(0,0,0,0.3)]">
+              <TabsTrigger value="achievements" className="p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-achievements" title="Achievements">
                 <Scroll className="h-5 w-5" />
               </TabsTrigger>
-              <TabsTrigger value="characters" className="p-2" data-testid="tab-characters" title="Characters">
+              <div className="h-px bg-zinc-700/50 my-1 mx-1" />
+              <TabsTrigger value="characters" className="p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-characters" title="Characters">
                 <Users className="h-5 w-5" />
               </TabsTrigger>
-              <TabsTrigger value="places" className="p-2" data-testid="tab-places" title="Places">
+              <TabsTrigger value="places" className="p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-places" title="Places">
                 <MapIcon className="h-5 w-5" />
               </TabsTrigger>
-              <TabsTrigger value="shadows" className="p-2" data-testid="tab-shadows" title="Shadows">
+              <TabsTrigger value="shadows" className="p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-shadows" title="Shadows">
                 <Skull className="h-5 w-5" />
               </TabsTrigger>
-              <TabsTrigger value="profile" className="p-2" data-testid="tab-profile" title="Mi Perfil">
+              <div className="h-px bg-zinc-700/50 my-1 mx-1" />
+              <TabsTrigger value="profile" className="p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-profile" title="Mi Perfil">
                 <User className="h-5 w-5" />
               </TabsTrigger>
             </TabsList>
             
-            <div className="flex-1 p-6 overflow-hidden">
-              <div className="mb-4">
-                <h2 className="text-2xl font-bold tracking-tight">Journal</h2>
+            <div className="flex-1 p-6 overflow-hidden bg-zinc-900">
+              <div className="mb-4 pb-3 border-b border-zinc-700">
+                <h2 className="text-xl font-bold tracking-tight text-zinc-100">Journal</h2>
+                <div className="h-0.5 w-16 bg-gradient-to-r from-zinc-500 to-transparent mt-2" />
               </div>
               
               <TabsContent value="achievements" className="h-[calc(100%-4rem)] mt-0 overflow-hidden">
