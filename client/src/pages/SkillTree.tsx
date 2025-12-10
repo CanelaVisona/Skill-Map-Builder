@@ -849,10 +849,10 @@ function ProfileSection() {
   });
 
   const tabs = [
-    { id: "mission", label: "🎯 Misión", icon: "🎯", title: "MI MISIÓN", value: profileMission, setValue: setProfileMission, placeholder: "¿Cuál es tu propósito? ¿Qué quieres lograr en la vida?" },
-    { id: "values", label: "⭐ Valores", icon: "⭐", title: "MIS VALORES", value: profileValues, setValue: setProfileValues, placeholder: "¿Qué principios guían tus decisiones?" },
-    { id: "likes", label: "❤️ Gustos", icon: "❤️", title: "LO QUE ME GUSTA", value: profileLikes, setValue: setProfileLikes, placeholder: "¿Qué actividades disfrutas? ¿Qué te hace feliz?" },
-    { id: "about", label: "📝 Sobre mí", icon: "📝", title: "SOBRE MÍ", value: profileAbout, setValue: setProfileAbout, placeholder: "Describe quién eres, tu historia, tus sueños..." },
+    { id: "mission", label: "Misión", title: "MI MISIÓN", value: profileMission, placeholder: "¿Cuál es tu propósito? ¿Qué quieres lograr en la vida?" },
+    { id: "values", label: "Valores", title: "MIS VALORES", value: profileValues, placeholder: "¿Qué principios guían tus decisiones?" },
+    { id: "likes", label: "Gustos", title: "LO QUE ME GUSTA", value: profileLikes, placeholder: "¿Qué actividades disfrutas? ¿Qué te hace feliz?" },
+    { id: "about", label: "Sobre mí", title: "SOBRE MÍ", value: profileAbout, placeholder: "Describe quién eres, tu historia, tus sueños..." },
   ];
 
   const currentTab = tabs.find(t => t.id === activeTab) || tabs[0];
@@ -888,32 +888,29 @@ function ProfileSection() {
   return (
     <div className="h-full flex flex-col">
       <Dialog open={isEditing} onOpenChange={(open) => !open && setIsEditing(false)}>
-        <DialogContent className="sm:max-w-md border-2 border-amber-500/30 bg-gradient-to-b from-background to-amber-950/10">
+        <DialogContent className="sm:max-w-md bg-zinc-900 border border-zinc-700">
           <VisuallyHidden>
             <DialogTitle>{currentTab.title}</DialogTitle>
           </VisuallyHidden>
           
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 border-b border-amber-500/20 pb-3">
-              <span className="text-2xl">{currentTab.icon}</span>
-              <h3 className="font-bold text-foreground uppercase tracking-wide">{currentTab.title}</h3>
-            </div>
+          <div className="space-y-3">
+            <h3 className="text-sm font-medium text-zinc-300 border-b border-zinc-700 pb-2">{currentTab.title}</h3>
             
             <Textarea
               placeholder={currentTab.placeholder}
               value={editValue}
               onChange={(e) => setEditValue(e.target.value)}
               rows={6}
-              className="bg-transparent border border-amber-500/20 focus-visible:ring-amber-500/50 resize-none"
+              className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 focus-visible:ring-zinc-600 resize-none text-sm"
               data-testid={`input-profile-${activeTab}`}
               autoFocus
             />
             
-            <div className="flex gap-2 pt-2">
+            <div className="flex gap-2 pt-1">
               <Button 
                 size="sm" 
                 onClick={handleSave} 
-                className="bg-amber-600 hover:bg-amber-700 text-white"
+                className="bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-xs"
                 data-testid="button-save-profile"
               >
                 Guardar
@@ -922,7 +919,7 @@ function ProfileSection() {
                 size="sm" 
                 variant="ghost" 
                 onClick={() => setIsEditing(false)} 
-                className="text-muted-foreground"
+                className="text-zinc-400 hover:text-zinc-300 text-xs"
               >
                 Cancelar
               </Button>
@@ -931,15 +928,15 @@ function ProfileSection() {
         </DialogContent>
       </Dialog>
 
-      <div className="flex gap-1 mb-4 overflow-x-auto pb-2">
+      <div className="flex border-b border-zinc-700 mb-3">
         {tabs.map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`px-3 py-1.5 text-sm rounded-full whitespace-nowrap transition-colors ${
+            className={`px-3 py-1.5 text-xs transition-colors border-b-2 -mb-[1px] ${
               activeTab === tab.id 
-                ? "bg-amber-600 text-white" 
-                : "bg-muted text-muted-foreground hover:bg-amber-600/20"
+                ? "border-zinc-400 text-zinc-200" 
+                : "border-transparent text-zinc-500 hover:text-zinc-400"
             }`}
           >
             {tab.label}
@@ -948,7 +945,7 @@ function ProfileSection() {
       </div>
 
       <div 
-        className="flex-1 border border-amber-500/20 rounded-lg bg-gradient-to-b from-background to-amber-950/5"
+        className="flex-1 flex"
         onTouchStart={handleLongPressStart}
         onTouchEnd={handleLongPressEnd}
         onTouchCancel={handleLongPressEnd}
@@ -956,17 +953,16 @@ function ProfileSection() {
         onMouseUp={handleLongPressEnd}
         onMouseLeave={handleLongPressEnd}
       >
-        <div className="p-4 h-full">
-          <div className="flex items-center gap-2 border-b border-amber-500/20 pb-2 mb-3">
-            <span className="text-lg">{currentTab.icon}</span>
-            <h4 className="font-bold text-sm uppercase tracking-wide text-amber-600">{currentTab.title}</h4>
+        <div className="flex-1 flex flex-col">
+          <div className="text-xs text-zinc-500 border-b border-zinc-800 pb-1 mb-2">
+            {currentTab.title}
           </div>
           
-          <ScrollArea className="h-[calc(100%-40px)]">
+          <ScrollArea className="flex-1">
             {currentTab.value ? (
-              <p className="text-sm whitespace-pre-line">{currentTab.value}</p>
+              <p className="text-sm text-zinc-300 whitespace-pre-line leading-relaxed">{currentTab.value}</p>
             ) : (
-              <p className="text-muted-foreground/50 italic text-sm">
+              <p className="text-zinc-600 italic text-sm">
                 Mantené presionado para agregar información...
               </p>
             )}
