@@ -200,26 +200,26 @@ export async function registerRoutes(
             });
           }
           
-          // Create example journal entries
+          // Create example journal entries (gamified)
           await storage.createJournalCharacter({
             userId: user.id,
-            name: "MI MENTOR",
-            action: "Escuchar y aprender",
-            description: "Alguien que me inspira y me guía. Puede ser real o imaginario. Aquí puedo escribir qué admiro de esta persona y qué quiero aprender."
+            name: "🧙 EL SABIO GUÍA",
+            action: "Invocar sabiduría +10 XP",
+            description: "Este NPC aliado te da buffs de conocimiento. Puede ser un mentor real o imaginario que te ayuda a subir de nivel. Registra sus enseñanzas y desbloquea nuevas habilidades."
           });
           
           await storage.createJournalPlace({
             userId: user.id,
-            name: "MI ESPACIO DE PAZ",
-            action: "Respirar y recargar energía",
-            description: "Un lugar donde me siento en calma. Puede ser físico o mental. Describo cómo es, qué sensaciones me produce y por qué es especial para mí."
+            name: "🏰 ZONA SEGURA",
+            action: "Regenerar HP y Mana",
+            description: "Tu punto de guardado favorito. Un lugar donde recuperas energía antes de la próxima batalla. Describe este santuario donde recargas tus stats."
           });
           
           await storage.createJournalShadow({
             userId: user.id,
-            name: "EL PERFECCIONISMO",
-            action: "Reconocer y soltar",
-            description: "Una sombra es algo que me limita o me frena. Aquí puedo explorar mis miedos, dudas o patrones negativos. Escribir sobre ellos me ayuda a entenderlos y eventualmente vencerlos."
+            name: "👹 BOSS: LA PROCRASTINACIÓN",
+            action: "Estudiar patrones de ataque",
+            description: "Este jefe final aparece cuando menos lo esperas. Conocer sus debilidades es clave para derrotarlo. Documenta sus ataques y estrategias para vencerlo."
           });
       }
       

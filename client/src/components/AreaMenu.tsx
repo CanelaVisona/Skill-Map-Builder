@@ -663,10 +663,7 @@ export function AreaMenu() {
                   </Popover>
                 )}
               </h1>
-              <p className="text-[9px] text-muted-foreground/70 italic leading-tight mt-0.5">
-                IF YOU HAVE A PROBLEM, YOU HAVE A QUEST. LET'S PLAY
-              </p>
-            </motion.div>
+                          </motion.div>
           )}
         </AnimatePresence>
         <Button 
