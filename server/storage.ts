@@ -217,7 +217,9 @@ export class DbStorage implements IStorage {
     const updateData: Record<string, unknown> = {};
     if (skill.areaId !== undefined) updateData.areaId = skill.areaId;
     if (skill.title !== undefined) updateData.title = skill.title;
+    if (skill.action !== undefined) updateData.action = skill.action;
     if (skill.description !== undefined) updateData.description = skill.description;
+    if (skill.feedback !== undefined) updateData.feedback = skill.feedback;
     if (skill.status !== undefined) updateData.status = skill.status;
     if (skill.x !== undefined) updateData.x = skill.x;
     if (skill.y !== undefined) updateData.y = skill.y;
