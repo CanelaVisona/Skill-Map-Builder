@@ -1023,8 +1023,8 @@ function AchievementsSection() {
         </div>
       )}
       
-      <div className={`${hasSubtasks ? 'w-1/3' : 'w-1/2'} flex flex-col min-h-0 pl-4`}>
-        <ScrollArea className="flex-1 min-h-0">
+      <div className={`${hasSubtasks ? 'w-1/3' : 'w-1/2'} flex flex-col min-h-0 pl-4 overflow-hidden`}>
+        <div className="flex-1 overflow-y-auto pr-2">
           {selectedSubtask ? (
             <div className="space-y-4">
               <h3 className="font-medium text-foreground">
@@ -1095,7 +1095,7 @@ function AchievementsSection() {
               Select a task
             </div>
           )}
-        </ScrollArea>
+        </div>
       </div>
     </div>
   );
@@ -1253,7 +1253,7 @@ function QuestDiary() {
                 <h2 className="text-2xl font-bold tracking-tight">Journal</h2>
               </div>
               
-              <TabsContent value="achievements" className="h-[calc(100%-4rem)] mt-0">
+              <TabsContent value="achievements" className="h-[calc(100%-4rem)] mt-0 overflow-hidden">
                 <AchievementsSection />
               </TabsContent>
               
