@@ -806,13 +806,14 @@ function ShadowsSection({
 }
 
 function ProfileSection() {
-  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [profileMission, setProfileMission] = useState("");
   const [profileValues, setProfileValues] = useState("");
   const [profileLikes, setProfileLikes] = useState("");
   const [profileAbout, setProfileAbout] = useState("");
+  const [activeTab, setActiveTab] = useState("mission");
   const [isEditing, setIsEditing] = useState(false);
+  const longPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data: profile, isLoading } = useQuery<{ user: { profileMission: string; profileValues: string; profileLikes: string; profileAbout: string } }>({
     queryKey: ["/api/me"],
@@ -850,87 +851,90 @@ function ProfileSection() {
     updateProfile.mutate({ profileMission, profileValues, profileLikes, profileAbout });
   };
 
+  const handleLongPressStart = () => {
+    longPressTimer.current = setTimeout(() => {
+      setIsEditing(true);
+    }, 500);
+  };
+
+  const handleLongPressEnd = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
   if (isLoading) {
     return <div className="text-muted-foreground text-sm">Cargando...</div>;
   }
 
+  const tabs = [
+    { id: "mission", label: "🎯 Misión", value: profileMission, setValue: setProfileMission, placeholder: "¿Cuál es tu propósito? ¿Qué quieres lograr en la vida?" },
+    { id: "values", label: "⭐ Valores", value: profileValues, setValue: setProfileValues, placeholder: "¿Qué principios guían tus decisiones?" },
+    { id: "likes", label: "❤️ Gustos", value: profileLikes, setValue: setProfileLikes, placeholder: "¿Qué actividades disfrutas? ¿Qué te hace feliz?" },
+    { id: "about", label: "📝 Sobre mí", value: profileAbout, setValue: setProfileAbout, placeholder: "Describe quién eres, tu historia, tus sueños..." },
+  ];
+
+  const currentTab = tabs.find(t => t.id === activeTab) || tabs[0];
+
   return (
-    <ScrollArea className="h-full">
-      <div className="space-y-6 pr-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Mi Perfil de Jugador</h3>
-          {!isEditing ? (
-            <Button variant="ghost" size="sm" onClick={() => setIsEditing(true)}>
-              <Pencil className="h-4 w-4 mr-1" /> Editar
-            </Button>
-          ) : (
-            <div className="flex gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setIsEditing(false)}>Cancelar</Button>
-              <Button size="sm" onClick={handleSave}>Guardar</Button>
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-4">
-          <div>
-            <label className="text-sm font-medium text-muted-foreground">🎯 Mi Misión</label>
-            {isEditing ? (
-              <Textarea
-                value={profileMission}
-                onChange={(e) => setProfileMission(e.target.value)}
-                placeholder="¿Cuál es tu propósito? ¿Qué quieres lograr en la vida?"
-                className="mt-1"
-              />
-            ) : (
-              <p className="text-sm mt-1 whitespace-pre-line">{profileMission || <span className="text-muted-foreground/50 italic">Sin definir</span>}</p>
-            )}
+    <div className="h-full flex flex-col">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-semibold">Yo</h3>
+        {isEditing && (
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setIsEditing(false)}>Cancelar</Button>
+            <Button size="sm" onClick={handleSave}>Guardar</Button>
           </div>
-
-          <div>
-            <label className="text-sm font-medium text-muted-foreground">⭐ Mis Valores</label>
-            {isEditing ? (
-              <Textarea
-                value={profileValues}
-                onChange={(e) => setProfileValues(e.target.value)}
-                placeholder="¿Qué principios guían tus decisiones? Ej: honestidad, creatividad, familia..."
-                className="mt-1"
-              />
-            ) : (
-              <p className="text-sm mt-1 whitespace-pre-line">{profileValues || <span className="text-muted-foreground/50 italic">Sin definir</span>}</p>
-            )}
-          </div>
-
-          <div>
-            <label className="text-sm font-medium text-muted-foreground">❤️ Lo que me gusta</label>
-            {isEditing ? (
-              <Textarea
-                value={profileLikes}
-                onChange={(e) => setProfileLikes(e.target.value)}
-                placeholder="¿Qué actividades disfrutas? ¿Qué te hace feliz?"
-                className="mt-1"
-              />
-            ) : (
-              <p className="text-sm mt-1 whitespace-pre-line">{profileLikes || <span className="text-muted-foreground/50 italic">Sin definir</span>}</p>
-            )}
-          </div>
-
-          <div>
-            <label className="text-sm font-medium text-muted-foreground">📝 Sobre mí</label>
-            {isEditing ? (
-              <Textarea
-                value={profileAbout}
-                onChange={(e) => setProfileAbout(e.target.value)}
-                placeholder="Describe quién eres, tu historia, tus sueños..."
-                className="mt-1"
-                rows={4}
-              />
-            ) : (
-              <p className="text-sm mt-1 whitespace-pre-line">{profileAbout || <span className="text-muted-foreground/50 italic">Sin definir</span>}</p>
-            )}
-          </div>
-        </div>
+        )}
       </div>
-    </ScrollArea>
+
+      <div className="flex gap-1 mb-4 overflow-x-auto pb-2">
+        {tabs.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`px-3 py-1.5 text-sm rounded-full whitespace-nowrap transition-colors ${
+              activeTab === tab.id 
+                ? "bg-foreground text-background" 
+                : "bg-muted text-muted-foreground hover:bg-muted/80"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      <div 
+        className="flex-1"
+        onTouchStart={handleLongPressStart}
+        onTouchEnd={handleLongPressEnd}
+        onTouchCancel={handleLongPressEnd}
+        onMouseDown={handleLongPressStart}
+        onMouseUp={handleLongPressEnd}
+        onMouseLeave={handleLongPressEnd}
+      >
+        {isEditing ? (
+          <Textarea
+            value={currentTab.value}
+            onChange={(e) => currentTab.setValue(e.target.value)}
+            placeholder={currentTab.placeholder}
+            className="h-full min-h-[200px] resize-none"
+            autoFocus
+          />
+        ) : (
+          <div className="h-full p-4 bg-muted/30 rounded-lg cursor-pointer">
+            {currentTab.value ? (
+              <p className="text-sm whitespace-pre-line">{currentTab.value}</p>
+            ) : (
+              <p className="text-muted-foreground/50 italic text-sm">
+                Mantené presionado para agregar información
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
