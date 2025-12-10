@@ -111,6 +111,9 @@ interface SkillTreeContextType {
   sideQuests: Project[];
   archivedSideQuests: Project[];
   createSideQuest: (name: string, description: string, icon: string) => Promise<void>;
+  popupQuests: Project[];
+  archivedPopupQuests: Project[];
+  createPopupQuest: (name: string, description: string, icon: string) => Promise<void>;
 }
 
 const SkillTreeContext = createContext<SkillTreeContextType | undefined>(undefined);
