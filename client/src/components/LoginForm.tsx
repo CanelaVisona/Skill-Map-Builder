@@ -29,14 +29,16 @@ export function LoginForm() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4">
+      <div className="text-center mb-6">
+        <h1 className="text-4xl font-bold tracking-tight" data-testid="text-login-title">LIFEGAME</h1>
+        <p className="text-sm text-muted-foreground italic mt-3" data-testid="text-motto">
+          "IF YOU HAVE A PROBLEM, YOU HAVE A QUEST. LET'S PLAY"
+        </p>
+      </div>
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <CardTitle className="text-3xl font-bold" data-testid="text-login-title">LIFEGAME</CardTitle>
-          <p className="text-sm text-muted-foreground italic mt-2" data-testid="text-motto">
-            "IF YOU HAVE A PROBLEM, YOU HAVE A QUEST. LET'S PLAY"
-          </p>
-          <CardDescription className="mt-4" data-testid="text-login-description">
+          <CardDescription data-testid="text-login-description">
             Ingresa tu nombre de usuario para continuar
           </CardDescription>
         </CardHeader>
