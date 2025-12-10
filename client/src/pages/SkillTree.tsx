@@ -1024,7 +1024,7 @@ function AchievementsSection() {
       )}
       
       <div className={`${hasSubtasks ? 'w-1/3' : 'w-1/2'} h-full pl-4 overflow-hidden`}>
-        <div className="h-full overflow-y-auto overscroll-contain touch-pan-y pr-2" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="h-full overflow-y-auto overscroll-contain touch-pan-y pr-2 minimal-scrollbar">
           {selectedSubtask ? (
             <div className="space-y-4">
               <h3 className="font-medium text-foreground">
