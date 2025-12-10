@@ -200,26 +200,26 @@ export async function registerRoutes(
             });
           }
           
-          // Create example journal entries (gamified)
+          // Create example journal entries (gamified but realistic)
           await storage.createJournalCharacter({
             userId: user.id,
-            name: "🧙 EL SABIO GUÍA",
-            action: "Invocar sabiduría +10 XP",
-            description: "Este NPC aliado te da buffs de conocimiento. Puede ser un mentor real o imaginario que te ayuda a subir de nivel. Registra sus enseñanzas y desbloquea nuevas habilidades."
+            name: "MAMÁ",
+            action: "",
+            description: "NPC aliado. Siempre tiene items de curación disponibles. Misión secundaria: llamarla una vez por semana."
           });
           
           await storage.createJournalPlace({
             userId: user.id,
-            name: "🏰 ZONA SEGURA",
-            action: "Regenerar HP y Mana",
-            description: "Tu punto de guardado favorito. Un lugar donde recuperas energía antes de la próxima batalla. Describe este santuario donde recargas tus stats."
+            name: "CAFÉ DE LA ESQUINA",
+            action: "",
+            description: "Zona segura. Ideal para farmear concentración. El café con leche otorga +20 energía por 2 horas."
           });
           
           await storage.createJournalShadow({
             userId: user.id,
-            name: "👹 BOSS: LA PROCRASTINACIÓN",
-            action: "Estudiar patrones de ataque",
-            description: "Este jefe final aparece cuando menos lo esperas. Conocer sus debilidades es clave para derrotarlo. Documenta sus ataques y estrategias para vencerlo."
+            name: "PROCRASTINACIÓN",
+            action: "",
+            description: "Boss recurrente. Aparece cuando hay deadlines cerca. Debilidad: dividir tareas en pasos pequeños. Drop rate de culpa: 80%."
           });
       }
       
