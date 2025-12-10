@@ -863,10 +863,17 @@ function AchievementsSection() {
   // Group completed skills by source
   const sourceGroups: SourceGroup[] = [];
   
+  // Sort function to order skills like in the skill tree
+  const sortByPosition = (a: Skill, b: Skill) => {
+    if (a.level !== b.level) return a.level - b.level;
+    return a.y - b.y;
+  };
+
   // From areas
   areas.forEach(area => {
     const completedSkills = area.skills
       .filter(s => s.status === "mastered" && s.title.toLowerCase() !== "inicio")
+      .sort(sortByPosition)
       .map(skill => ({ ...skill, sourceName: area.name, sourceSkills: area.skills }));
     if (completedSkills.length > 0) {
       sourceGroups.push({ name: area.name, skills: completedSkills });
@@ -877,6 +884,7 @@ function AchievementsSection() {
   mainQuests.forEach(project => {
     const completedSkills = project.skills
       .filter(s => s.status === "mastered" && s.title.toLowerCase() !== "inicio")
+      .sort(sortByPosition)
       .map(skill => ({ ...skill, sourceName: project.name, sourceSkills: project.skills }));
     if (completedSkills.length > 0) {
       sourceGroups.push({ name: project.name, skills: completedSkills });
@@ -887,6 +895,7 @@ function AchievementsSection() {
   sideQuests.forEach(project => {
     const completedSkills = project.skills
       .filter(s => s.status === "mastered" && s.title.toLowerCase() !== "inicio")
+      .sort(sortByPosition)
       .map(skill => ({ ...skill, sourceName: project.name, sourceSkills: project.skills }));
     if (completedSkills.length > 0) {
       sourceGroups.push({ name: project.name, skills: completedSkills });
@@ -928,11 +937,13 @@ function AchievementsSection() {
       const response = await fetch(`/api/skills/${skill.id}/subskills`);
       const allSubtasks = await response.json();
       const visibleLevels = calculateVisibleLevels(allSubtasks);
-      const visibleSubtasks = allSubtasks.filter((s: Skill) => {
-        const title = s.title.toLowerCase();
-        const isPlaceholder = title === "inicio" || title.includes("next challenge") || title.includes("next challange");
-        return visibleLevels.has(s.level) && !isPlaceholder;
-      });
+      const visibleSubtasks = allSubtasks
+        .filter((s: Skill) => {
+          const title = s.title.toLowerCase();
+          const isPlaceholder = title === "inicio" || title.includes("next challenge") || title.includes("next challange");
+          return visibleLevels.has(s.level) && !isPlaceholder;
+        })
+        .sort(sortByPosition);
       setSelectedSubtasks(visibleSubtasks);
     } catch {
       setSelectedSubtasks([]);
@@ -940,9 +951,9 @@ function AchievementsSection() {
   };
 
   return (
-    <div className="flex h-full">
-      <div className={`${hasSubtasks ? 'w-1/3' : 'w-1/2'} flex flex-col border-r border-border pr-4`}>
-        <ScrollArea className="flex-1">
+    <div className="flex h-full min-h-0">
+      <div className={`${hasSubtasks ? 'w-1/3' : 'w-1/2'} flex flex-col min-h-0 border-r border-border pr-4`}>
+        <ScrollArea className="flex-1 min-h-0">
           {sourceGroups.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <Scroll className="h-8 w-8 text-muted-foreground/40 mb-3" />
@@ -988,9 +999,9 @@ function AchievementsSection() {
       </div>
       
       {hasSubtasks && (
-        <div className="w-1/3 flex flex-col border-r border-border px-4">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Subtasks</p>
-          <ScrollArea className="flex-1">
+        <div className="w-1/3 flex flex-col min-h-0 border-r border-border px-4">
+          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2 flex-shrink-0">Subtasks</p>
+          <ScrollArea className="flex-1 min-h-0">
             <div className="space-y-1">
               {selectedSubtasks.map((subtask) => (
                 <button
@@ -1012,8 +1023,8 @@ function AchievementsSection() {
         </div>
       )}
       
-      <div className={`${hasSubtasks ? 'w-1/3' : 'w-1/2'} flex flex-col pl-4`}>
-        <ScrollArea className="flex-1">
+      <div className={`${hasSubtasks ? 'w-1/3' : 'w-1/2'} flex flex-col min-h-0 pl-4`}>
+        <ScrollArea className="flex-1 min-h-0">
           {selectedSubtask ? (
             <div className="space-y-4">
               <h3 className="font-medium text-foreground">
