@@ -1753,7 +1753,15 @@ function SkillCanvas() {
 }
 
 export default function SkillTreePage() {
-  const { showOnboarding, openGuide, closeGuide } = useOnboarding();
+  const { user } = useAuth();
+  const { showOnboarding, openGuide, closeGuide, markComplete } = useOnboarding(user?.id?.toString());
+  
+  const handleCompleteOnboarding = () => {
+    if (user?.id) {
+      markComplete(user.id.toString());
+    }
+    closeGuide();
+  };
   
   return (
     <DiaryProvider>
@@ -1763,7 +1771,7 @@ export default function SkillTreePage() {
           <AreaMenu />
           <SkillCanvas />
           <QuestDiary />
-          <OnboardingGuide isOpen={showOnboarding} onComplete={closeGuide} />
+          <OnboardingGuide isOpen={showOnboarding} onComplete={handleCompleteOnboarding} />
         </div>
       </SkillTreeProvider>
     </DiaryProvider>

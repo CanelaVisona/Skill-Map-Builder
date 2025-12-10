@@ -3,28 +3,36 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, ChevronRight, ChevronLeft, HelpCircle, Sparkles, BookOpen, Target, CheckCircle2 } from "lucide-react";
 import { Button } from "./ui/button";
 
-const ONBOARDING_KEY = "skilltree-onboarding-complete";
+const ONBOARDING_KEY_PREFIX = "skilltree-onboarding-complete-";
 
-export function useOnboarding() {
+export function useOnboarding(userId?: string) {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [isFirstTime, setIsFirstTime] = useState(false);
   
   useEffect(() => {
-    const completed = localStorage.getItem(ONBOARDING_KEY);
+    if (!userId) return;
+    const key = ONBOARDING_KEY_PREFIX + userId;
+    const completed = localStorage.getItem(key);
     if (!completed) {
       setIsFirstTime(true);
       setShowOnboarding(true);
     }
-  }, []);
+  }, [userId]);
   
   const openGuide = () => setShowOnboarding(true);
   const closeGuide = () => setShowOnboarding(false);
+  
+  const markComplete = (userId: string) => {
+    const key = ONBOARDING_KEY_PREFIX + userId;
+    localStorage.setItem(key, "true");
+  };
   
   return {
     showOnboarding,
     isFirstTime,
     openGuide,
-    closeGuide
+    closeGuide,
+    markComplete
   };
 }
 
