@@ -269,10 +269,7 @@ export function OnboardingGuide({ onComplete, isOpen }: OnboardingGuideProps) {
   
   return (
     <div className="fixed inset-0 z-[10000]">
-      <div 
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={handleSkip}
-      />
+      <div className="absolute inset-0 bg-black/70" />
       
       {targetRect && !isCenter && (
         <div
