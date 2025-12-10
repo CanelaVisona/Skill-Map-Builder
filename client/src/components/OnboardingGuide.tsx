@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, ChevronRight, ChevronLeft, HelpCircle, Sparkles, BookOpen, Target, FolderKanban, CheckCircle2, ListTodo } from "lucide-react";
+import { X, ChevronRight, ChevronLeft, HelpCircle, Sparkles, BookOpen, Target, CheckCircle2 } from "lucide-react";
 import { Button } from "./ui/button";
 
 const ONBOARDING_KEY = "skilltree-onboarding-complete";
@@ -46,88 +46,48 @@ interface OnboardingGuideProps {
   isOpen: boolean;
 }
 
-type TourStep = {
+type Step = {
   id: string;
-  targetSelector: string;
   title: string;
   description: string;
-  position: "top" | "bottom" | "left" | "right" | "center";
   icon: React.ReactNode;
 };
 
-const tourSteps: TourStep[] = [
+const tourSteps: Step[] = [
   {
     id: "welcome",
-    targetSelector: "",
     title: "¡Bienvenido a tu Skill Tree!",
     description: "Esta herramienta te ayuda a visualizar y seguir tu progreso en diferentes áreas. Vamos a hacer un recorrido rápido.",
-    position: "center",
     icon: <Sparkles className="h-6 w-6 text-yellow-500" />
   },
   {
-    id: "add-button",
-    targetSelector: "[data-onboarding='add-button']",
+    id: "quests",
     title: "Main Quest y Side Quest",
-    description: "Aquí creas tus misiones. Main Quest son áreas de desarrollo continuo (Música, Trabajo). Side Quest son proyectos con objetivo específico.",
-    position: "right",
+    description: "Usa el botón + en la barra lateral para crear misiones. Main Quest son áreas de desarrollo continuo. Side Quest son proyectos con objetivo específico.",
     icon: <Target className="h-6 w-6 text-green-500" />
   },
   {
-    id: "skill-node",
-    targetSelector: "[data-onboarding='skill-node']",
-    title: "Nodos y SubQuests",
-    description: "Cada nodo es una tarea. Toca para completarla. Mantén presionado para opciones: editar título, agregar feedback, o crear SubQuests.",
-    position: "bottom",
+    id: "nodes",
+    title: "Nodos de habilidad",
+    description: "Cada círculo es una tarea. Toca para completarla. Mantén presionado para ver opciones: editar, agregar feedback, o crear SubQuests.",
     icon: <CheckCircle2 className="h-6 w-6 text-emerald-500" />
   },
   {
     id: "diary",
-    targetSelector: "[data-onboarding='diary-button']",
     title: "Quest Diary",
-    description: "Tu diario personal. Aquí ves tus logros con feedback, y puedes agregar personajes, lugares y sombras derrotadas.",
-    position: "left",
+    description: "Toca el icono del libro (arriba a la derecha) para abrir tu diario. Ahí verás tus logros y puedes agregar personajes, lugares y sombras.",
     icon: <BookOpen className="h-6 w-6 text-amber-500" />
   }
 ];
 
 export function OnboardingGuide({ onComplete, isOpen }: OnboardingGuideProps) {
   const [currentStep, setCurrentStep] = useState(0);
-  const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
   
   useEffect(() => {
     if (isOpen) {
       setCurrentStep(0);
-      setTargetRect(null);
     }
   }, [isOpen]);
-  
-  const updateTargetPosition = useCallback(() => {
-    const step = tourSteps[currentStep];
-    if (step.targetSelector && step.position !== "center") {
-      const element = document.querySelector(step.targetSelector);
-      if (element) {
-        setTargetRect(element.getBoundingClientRect());
-      } else {
-        setTargetRect(null);
-      }
-    } else {
-      setTargetRect(null);
-    }
-  }, [currentStep]);
-  
-  useEffect(() => {
-    if (!isOpen) return;
-    
-    updateTargetPosition();
-    
-    window.addEventListener("resize", updateTargetPosition);
-    window.addEventListener("scroll", updateTargetPosition, true);
-    
-    return () => {
-      window.removeEventListener("resize", updateTargetPosition);
-      window.removeEventListener("scroll", updateTargetPosition, true);
-    };
-  }, [isOpen, currentStep, updateTargetPosition]);
   
   const handleNext = () => {
     if (currentStep < tourSteps.length - 1) {
@@ -155,135 +115,13 @@ export function OnboardingGuide({ onComplete, isOpen }: OnboardingGuideProps) {
   if (!isOpen) return null;
   
   const step = tourSteps[currentStep];
-  const isCenter = step.position === "center" || !targetRect;
-  
-  const getTooltipStyle = (): React.CSSProperties => {
-    if (isCenter || !targetRect) {
-      return {
-        position: "fixed",
-        top: "50%",
-        left: "50%",
-        transform: "translate(-50%, -50%)",
-        zIndex: 10001
-      };
-    }
-    
-    const padding = 16;
-    const tooltipWidth = 320;
-    const tooltipHeight = 200;
-    
-    switch (step.position) {
-      case "right":
-        return {
-          position: "fixed",
-          top: Math.max(padding, Math.min(targetRect.top, window.innerHeight - tooltipHeight - padding)),
-          left: targetRect.right + padding,
-          zIndex: 10001
-        };
-      case "left":
-        return {
-          position: "fixed",
-          top: Math.max(padding, Math.min(targetRect.top, window.innerHeight - tooltipHeight - padding)),
-          left: Math.max(padding, targetRect.left - tooltipWidth - padding),
-          zIndex: 10001
-        };
-      case "bottom":
-        return {
-          position: "fixed",
-          top: targetRect.bottom + padding,
-          left: Math.max(padding, Math.min(targetRect.left, window.innerWidth - tooltipWidth - padding)),
-          zIndex: 10001
-        };
-      case "top":
-        return {
-          position: "fixed",
-          top: Math.max(padding, targetRect.top - tooltipHeight - padding),
-          left: Math.max(padding, Math.min(targetRect.left, window.innerWidth - tooltipWidth - padding)),
-          zIndex: 10001
-        };
-      default:
-        return {
-          position: "fixed",
-          top: "50%",
-          left: "50%",
-          transform: "translate(-50%, -50%)",
-          zIndex: 10001
-        };
-    }
-  };
-  
-  const getArrowStyle = (): React.CSSProperties | null => {
-    if (isCenter || !targetRect) return null;
-    
-    const arrowSize = 12;
-    
-    switch (step.position) {
-      case "right":
-        return {
-          position: "absolute",
-          left: -arrowSize,
-          top: 24,
-          width: 0,
-          height: 0,
-          borderTop: `${arrowSize}px solid transparent`,
-          borderBottom: `${arrowSize}px solid transparent`,
-          borderRight: `${arrowSize}px solid hsl(var(--card))`
-        };
-      case "left":
-        return {
-          position: "absolute",
-          right: -arrowSize,
-          top: 24,
-          width: 0,
-          height: 0,
-          borderTop: `${arrowSize}px solid transparent`,
-          borderBottom: `${arrowSize}px solid transparent`,
-          borderLeft: `${arrowSize}px solid hsl(var(--card))`
-        };
-      case "bottom":
-        return {
-          position: "absolute",
-          top: -arrowSize,
-          left: 24,
-          width: 0,
-          height: 0,
-          borderLeft: `${arrowSize}px solid transparent`,
-          borderRight: `${arrowSize}px solid transparent`,
-          borderBottom: `${arrowSize}px solid hsl(var(--card))`
-        };
-      case "top":
-        return {
-          position: "absolute",
-          bottom: -arrowSize,
-          left: 24,
-          width: 0,
-          height: 0,
-          borderLeft: `${arrowSize}px solid transparent`,
-          borderRight: `${arrowSize}px solid transparent`,
-          borderTop: `${arrowSize}px solid hsl(var(--card))`
-        };
-      default:
-        return null;
-    }
-  };
   
   return (
-    <div className="fixed inset-0 z-[10000] pointer-events-none">
-      <div className="absolute inset-0 bg-black/50 pointer-events-auto" />
-      
-      {targetRect && !isCenter && (
-        <div
-          className="absolute border-2 border-primary rounded-lg transition-all duration-300 animate-pulse"
-          style={{
-            top: targetRect.top - 4,
-            left: targetRect.left - 4,
-            width: targetRect.width + 8,
-            height: targetRect.height + 8,
-            boxShadow: "0 0 15px 3px hsl(var(--primary))",
-            zIndex: 10002
-          }}
-        />
-      )}
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center">
+      <div 
+        className="absolute inset-0 bg-black/50"
+        onClick={handleSkip}
+      />
       
       <AnimatePresence mode="wait">
         <motion.div
@@ -292,13 +130,8 @@ export function OnboardingGuide({ onComplete, isOpen }: OnboardingGuideProps) {
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
           transition={{ duration: 0.2 }}
-          style={getTooltipStyle()}
-          className="bg-card border border-border rounded-xl shadow-2xl w-80 max-w-[calc(100vw-32px)] pointer-events-auto"
+          className="relative bg-card border border-border rounded-xl shadow-2xl w-80 max-w-[calc(100vw-32px)] z-10"
         >
-          {getArrowStyle() && (
-            <div style={getArrowStyle() as React.CSSProperties} />
-          )}
-          
           <div className="p-5">
             <div className="flex items-start justify-between mb-3">
               <div className="flex items-center gap-3">
