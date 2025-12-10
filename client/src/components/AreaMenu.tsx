@@ -635,9 +635,9 @@ export function AreaMenu() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="overflow-hidden whitespace-nowrap"
+              className="overflow-hidden"
             >
-              <h1 className="text-lg font-bold tracking-tight">
+              <h1 className="text-lg font-bold tracking-tight whitespace-nowrap">
                 LIFEGAME {user && (
                   <Popover>
                     <PopoverTrigger asChild>
@@ -663,6 +663,9 @@ export function AreaMenu() {
                   </Popover>
                 )}
               </h1>
+              <p className="text-[9px] text-muted-foreground/70 italic leading-tight mt-0.5">
+                IF YOU HAVE A PROBLEM, YOU HAVE A QUEST. LET'S PLAY
+              </p>
             </motion.div>
           )}
         </AnimatePresence>
