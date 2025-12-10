@@ -951,9 +951,9 @@ function AchievementsSection() {
   };
 
   return (
-    <div className="flex h-full min-h-0">
-      <div className={`${hasSubtasks ? 'w-1/3' : 'w-1/2'} flex flex-col min-h-0 border-r border-border pr-4`}>
-        <ScrollArea className="flex-1 min-h-0">
+    <div className="flex h-full overflow-hidden">
+      <div className={`${hasSubtasks ? 'w-1/3' : 'w-1/2'} h-full overflow-hidden border-r border-border pr-4`}>
+        <ScrollArea className="h-full">
           {sourceGroups.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <Scroll className="h-8 w-8 text-muted-foreground/40 mb-3" />
@@ -999,7 +999,7 @@ function AchievementsSection() {
       </div>
       
       {hasSubtasks && (
-        <div className="w-1/3 flex flex-col min-h-0 border-r border-border px-4">
+        <div className="w-1/3 h-full overflow-hidden border-r border-border px-4 flex flex-col">
           <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2 flex-shrink-0">Subtasks</p>
           <ScrollArea className="flex-1 min-h-0">
             <div className="space-y-1">
@@ -1023,8 +1023,8 @@ function AchievementsSection() {
         </div>
       )}
       
-      <div className={`${hasSubtasks ? 'w-1/3' : 'w-1/2'} flex flex-col min-h-0 pl-4 overflow-hidden`}>
-        <div className="flex-1 overflow-y-auto pr-2">
+      <div className={`${hasSubtasks ? 'w-1/3' : 'w-1/2'} h-full pl-4 overflow-hidden`}>
+        <div className="h-full overflow-y-auto overscroll-contain touch-pan-y pr-2" style={{ WebkitOverflowScrolling: 'touch' }}>
           {selectedSubtask ? (
             <div className="space-y-4">
               <h3 className="font-medium text-foreground">
