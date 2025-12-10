@@ -260,7 +260,44 @@ export async function registerRoutes(
       return;
     }
     
-    res.json({ user: { id: user.id, username: user.username } });
+    res.json({ 
+      user: { 
+        id: user.id, 
+        username: user.username,
+        profileMission: user.profileMission || "",
+        profileValues: user.profileValues || "",
+        profileLikes: user.profileLikes || "",
+        profileAbout: user.profileAbout || ""
+      } 
+    });
+  });
+
+  app.put("/api/profile", requireAuth, async (req, res) => {
+    try {
+      const { profileMission, profileValues, profileLikes, profileAbout } = req.body;
+      const updatedUser = await storage.updateUserProfile(req.userId!, {
+        profileMission,
+        profileValues,
+        profileLikes,
+        profileAbout
+      });
+      if (!updatedUser) {
+        res.status(404).json({ message: "Usuario no encontrado" });
+        return;
+      }
+      res.json({ 
+        user: { 
+          id: updatedUser.id, 
+          username: updatedUser.username,
+          profileMission: updatedUser.profileMission || "",
+          profileValues: updatedUser.profileValues || "",
+          profileLikes: updatedUser.profileLikes || "",
+          profileAbout: updatedUser.profileAbout || ""
+        } 
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
   });
   
   // Areas (protected)

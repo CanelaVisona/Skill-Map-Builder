@@ -1,10 +1,10 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { SkillTreeProvider, useSkillTree, type Skill } from "@/lib/skill-context";
 import { AreaMenu } from "@/components/AreaMenu";
 import { SkillNode } from "@/components/SkillNode";
 import { SkillConnection } from "@/components/SkillConnection";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X } from "lucide-react";
+import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { JournalCharacter, JournalPlace, JournalShadow } from "@shared/schema";
 import { OnboardingGuide, HelpButton, useOnboarding } from "@/components/OnboardingGuide";
+import { useAuth } from "@/lib/auth-context";
 
 function calculateVisibleLevels(skills: Skill[]): Set<number> {
   const visibleLevels = new Set<number>();
@@ -804,6 +805,135 @@ function ShadowsSection({
   );
 }
 
+function ProfileSection() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const [profileMission, setProfileMission] = useState("");
+  const [profileValues, setProfileValues] = useState("");
+  const [profileLikes, setProfileLikes] = useState("");
+  const [profileAbout, setProfileAbout] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
+
+  const { data: profile, isLoading } = useQuery<{ user: { profileMission: string; profileValues: string; profileLikes: string; profileAbout: string } }>({
+    queryKey: ["/api/me"],
+    queryFn: async () => {
+      const res = await fetch("/api/me");
+      return res.json();
+    },
+  });
+
+  useEffect(() => {
+    if (profile?.user) {
+      setProfileMission(profile.user.profileMission || "");
+      setProfileValues(profile.user.profileValues || "");
+      setProfileLikes(profile.user.profileLikes || "");
+      setProfileAbout(profile.user.profileAbout || "");
+    }
+  }, [profile]);
+
+  const updateProfile = useMutation({
+    mutationFn: async (data: { profileMission: string; profileValues: string; profileLikes: string; profileAbout: string }) => {
+      const res = await fetch("/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/me"] });
+      setIsEditing(false);
+    },
+  });
+
+  const handleSave = () => {
+    updateProfile.mutate({ profileMission, profileValues, profileLikes, profileAbout });
+  };
+
+  if (isLoading) {
+    return <div className="text-muted-foreground text-sm">Cargando...</div>;
+  }
+
+  return (
+    <ScrollArea className="h-full">
+      <div className="space-y-6 pr-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold">Mi Perfil de Jugador</h3>
+          {!isEditing ? (
+            <Button variant="ghost" size="sm" onClick={() => setIsEditing(true)}>
+              <Pencil className="h-4 w-4 mr-1" /> Editar
+            </Button>
+          ) : (
+            <div className="flex gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setIsEditing(false)}>Cancelar</Button>
+              <Button size="sm" onClick={handleSave}>Guardar</Button>
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="text-sm font-medium text-muted-foreground">🎯 Mi Misión</label>
+            {isEditing ? (
+              <Textarea
+                value={profileMission}
+                onChange={(e) => setProfileMission(e.target.value)}
+                placeholder="¿Cuál es tu propósito? ¿Qué quieres lograr en la vida?"
+                className="mt-1"
+              />
+            ) : (
+              <p className="text-sm mt-1 whitespace-pre-line">{profileMission || <span className="text-muted-foreground/50 italic">Sin definir</span>}</p>
+            )}
+          </div>
+
+          <div>
+            <label className="text-sm font-medium text-muted-foreground">⭐ Mis Valores</label>
+            {isEditing ? (
+              <Textarea
+                value={profileValues}
+                onChange={(e) => setProfileValues(e.target.value)}
+                placeholder="¿Qué principios guían tus decisiones? Ej: honestidad, creatividad, familia..."
+                className="mt-1"
+              />
+            ) : (
+              <p className="text-sm mt-1 whitespace-pre-line">{profileValues || <span className="text-muted-foreground/50 italic">Sin definir</span>}</p>
+            )}
+          </div>
+
+          <div>
+            <label className="text-sm font-medium text-muted-foreground">❤️ Lo que me gusta</label>
+            {isEditing ? (
+              <Textarea
+                value={profileLikes}
+                onChange={(e) => setProfileLikes(e.target.value)}
+                placeholder="¿Qué actividades disfrutas? ¿Qué te hace feliz?"
+                className="mt-1"
+              />
+            ) : (
+              <p className="text-sm mt-1 whitespace-pre-line">{profileLikes || <span className="text-muted-foreground/50 italic">Sin definir</span>}</p>
+            )}
+          </div>
+
+          <div>
+            <label className="text-sm font-medium text-muted-foreground">📝 Sobre mí</label>
+            {isEditing ? (
+              <Textarea
+                value={profileAbout}
+                onChange={(e) => setProfileAbout(e.target.value)}
+                placeholder="Describe quién eres, tu historia, tus sueños..."
+                className="mt-1"
+                rows={4}
+              />
+            ) : (
+              <p className="text-sm mt-1 whitespace-pre-line">{profileAbout || <span className="text-muted-foreground/50 italic">Sin definir</span>}</p>
+            )}
+          </div>
+        </div>
+      </div>
+    </ScrollArea>
+  );
+}
+
 interface SkillWithSource extends Skill {
   sourceName: string;
   sourceSkills: Skill[];
@@ -1208,6 +1338,9 @@ function QuestDiary() {
               <TabsTrigger value="shadows" className="p-2" data-testid="tab-shadows" title="Shadows">
                 <Skull className="h-5 w-5" />
               </TabsTrigger>
+              <TabsTrigger value="profile" className="p-2" data-testid="tab-profile" title="Mi Perfil">
+                <User className="h-5 w-5" />
+              </TabsTrigger>
             </TabsList>
             
             <div className="flex-1 p-6 overflow-hidden">
@@ -1250,6 +1383,10 @@ function QuestDiary() {
                   onDelete={(id) => deleteShadow.mutate(id)}
                   onMarkDefeated={(id, defeated) => markShadowDefeated.mutate({ id, defeated })}
                 />
+              </TabsContent>
+              
+              <TabsContent value="profile" className="h-[calc(100%-4rem)] mt-0">
+                <ProfileSection />
               </TabsContent>
             </div>
           </Tabs>

@@ -7,6 +7,10 @@ export const users = pgTable("users", {
   id: varchar("id").primaryKey(),
   username: text("username").notNull().unique(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  profileMission: text("profile_mission").default(""),
+  profileValues: text("profile_values").default(""),
+  profileLikes: text("profile_likes").default(""),
+  profileAbout: text("profile_about").default(""),
 });
 
 export const sessions = pgTable("sessions", {

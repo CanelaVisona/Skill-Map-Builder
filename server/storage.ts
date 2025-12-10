@@ -8,6 +8,7 @@ export interface IStorage {
   createUser(username: string): Promise<User>;
   getUserByUsername(username: string): Promise<User | undefined>;
   getUserById(id: string): Promise<User | undefined>;
+  updateUserProfile(userId: string, profile: { profileMission?: string; profileValues?: string; profileLikes?: string; profileAbout?: string }): Promise<User | undefined>;
 
   // Sessions
   createSession(userId: string, expiresAt: Date): Promise<Session>;
@@ -89,6 +90,11 @@ export class DbStorage implements IStorage {
 
   async getUserById(id: string): Promise<User | undefined> {
     const result = await db.select().from(users).where(eq(users.id, id));
+    return result[0];
+  }
+
+  async updateUserProfile(userId: string, profile: { profileMission?: string; profileValues?: string; profileLikes?: string; profileAbout?: string }): Promise<User | undefined> {
+    const result = await db.update(users).set(profile).where(eq(users.id, userId)).returning();
     return result[0];
   }
 
