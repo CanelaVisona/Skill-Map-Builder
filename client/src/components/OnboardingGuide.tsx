@@ -69,7 +69,7 @@ const tourSteps: Step[] = [
   {
     id: "nodes",
     title: "Nodos de habilidad",
-    description: "Cada círculo es una tarea. Toca para completarla. Mantén presionado para ver opciones: editar, agregar feedback, o crear SubQuests.",
+    description: "Cada círculo es una tarea. Toca para completarla. Mantén presionado el nombre del nodo para editar título y descripción. Mantén presionado el círculo para más opciones.",
     icon: <CheckCircle2 className="h-6 w-6 text-emerald-500" />
   },
   {
