@@ -199,6 +199,28 @@ export async function registerRoutes(
               description: "Planifica qué lugares visitar cada día.",
             });
           }
+          
+          // Create example journal entries
+          await storage.createJournalCharacter({
+            userId: user.id,
+            name: "MI MENTOR",
+            action: "Escuchar y aprender",
+            description: "Alguien que me inspira y me guía. Puede ser real o imaginario. Aquí puedo escribir qué admiro de esta persona y qué quiero aprender."
+          });
+          
+          await storage.createJournalPlace({
+            userId: user.id,
+            name: "MI ESPACIO DE PAZ",
+            action: "Respirar y recargar energía",
+            description: "Un lugar donde me siento en calma. Puede ser físico o mental. Describo cómo es, qué sensaciones me produce y por qué es especial para mí."
+          });
+          
+          await storage.createJournalShadow({
+            userId: user.id,
+            name: "EL PERFECCIONISMO",
+            action: "Reconocer y soltar",
+            description: "Una sombra es algo que me limita o me frena. Aquí puedo explorar mis miedos, dudas o patrones negativos. Escribir sobre ellos me ayuda a entenderlos y eventualmente vencerlos."
+          });
       }
       
       const expiresAt = new Date(Date.now() + SESSION_DURATION_MS);

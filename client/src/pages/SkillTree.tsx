@@ -17,6 +17,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { JournalCharacter, JournalPlace, JournalShadow } from "@shared/schema";
+import { OnboardingGuide, HelpButton, useOnboarding } from "@/components/OnboardingGuide";
 
 function calculateVisibleLevels(skills: Skill[]): Set<number> {
   const visibleLevels = new Set<number>();
@@ -68,7 +69,7 @@ function calculateVisibleLevels(skills: Skill[]): Set<number> {
   return visibleLevels;
 }
 
-function TopRightControls() {
+function TopRightControls({ onOpenGuide }: { onOpenGuide: () => void }) {
   const { theme, setTheme, resolvedTheme } = useTheme();
   const currentTheme = resolvedTheme || theme;
   const { openDiary } = useDiary();
@@ -94,6 +95,7 @@ function TopRightControls() {
       >
         <BookOpen className="h-5 w-5" />
       </button>
+      <HelpButton onClick={onOpenGuide} />
     </div>
   );
 }
@@ -1648,14 +1650,17 @@ function SkillCanvas() {
 }
 
 export default function SkillTreePage() {
+  const { showOnboarding, openGuide, closeGuide } = useOnboarding();
+  
   return (
     <DiaryProvider>
       <SkillTreeProvider>
         <div className="flex h-screen w-full bg-background text-foreground overflow-hidden font-body selection:bg-primary/30">
-          <TopRightControls />
+          <TopRightControls onOpenGuide={openGuide} />
           <AreaMenu />
           <SkillCanvas />
           <QuestDiary />
+          <OnboardingGuide isOpen={showOnboarding} onComplete={closeGuide} />
         </div>
       </SkillTreeProvider>
     </DiaryProvider>
