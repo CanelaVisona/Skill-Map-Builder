@@ -1026,13 +1026,13 @@ function AchievementsSection() {
               )}
               <div className="pt-2">
                 <p className="text-xs text-foreground uppercase tracking-wide mb-2">Feedback</p>
-                {nextSubtaskForSelected?.feedback ? (
+                {selectedSubtask.feedback ? (
                   <p className="text-sm text-yellow-500 dark:text-yellow-400 leading-relaxed">
-                    {nextSubtaskForSelected.feedback}
+                    {selectedSubtask.feedback}
                   </p>
                 ) : (
                   <p className="text-sm text-muted-foreground/40 italic leading-relaxed">
-                    No comments
+                    Sin comentarios
                   </p>
                 )}
               </div>
