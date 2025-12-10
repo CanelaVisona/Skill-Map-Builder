@@ -1364,11 +1364,11 @@ function SkillCanvas() {
                   <ArrowLeft className="h-5 w-5" />
                 </Button>
                 <h2 className="text-2xl font-bold tracking-tight">
-                  {currentParent?.title || "Sub-Skills"}
+                  {currentParent?.title || "SubQuests"}
                 </h2>
               </div>
               <p className="text-muted-foreground max-w-md text-sm leading-relaxed ml-11">
-                Sub-habilidades de {currentParent?.title}
+                Completa cada paso para avanzar
               </p>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
