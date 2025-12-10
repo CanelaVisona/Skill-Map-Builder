@@ -112,7 +112,6 @@ export function OnboardingGuide({ onComplete, isOpen }: OnboardingGuideProps) {
   };
   
   const handleComplete = () => {
-    localStorage.setItem(ONBOARDING_KEY, "true");
     onComplete();
   };
   

@@ -813,6 +813,7 @@ function ProfileSection() {
   const [profileAbout, setProfileAbout] = useState("");
   const [activeTab, setActiveTab] = useState("mission");
   const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState("");
   const longPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data: profile, isLoading } = useQuery<{ user: { profileMission: string; profileValues: string; profileLikes: string; profileAbout: string } }>({
@@ -847,12 +848,28 @@ function ProfileSection() {
     },
   });
 
+  const tabs = [
+    { id: "mission", label: "🎯 Misión", icon: "🎯", title: "MI MISIÓN", value: profileMission, setValue: setProfileMission, placeholder: "¿Cuál es tu propósito? ¿Qué quieres lograr en la vida?" },
+    { id: "values", label: "⭐ Valores", icon: "⭐", title: "MIS VALORES", value: profileValues, setValue: setProfileValues, placeholder: "¿Qué principios guían tus decisiones?" },
+    { id: "likes", label: "❤️ Gustos", icon: "❤️", title: "LO QUE ME GUSTA", value: profileLikes, setValue: setProfileLikes, placeholder: "¿Qué actividades disfrutas? ¿Qué te hace feliz?" },
+    { id: "about", label: "📝 Sobre mí", icon: "📝", title: "SOBRE MÍ", value: profileAbout, setValue: setProfileAbout, placeholder: "Describe quién eres, tu historia, tus sueños..." },
+  ];
+
+  const currentTab = tabs.find(t => t.id === activeTab) || tabs[0];
+
   const handleSave = () => {
-    updateProfile.mutate({ profileMission, profileValues, profileLikes, profileAbout });
+    const updates = {
+      profileMission: activeTab === "mission" ? editValue : profileMission,
+      profileValues: activeTab === "values" ? editValue : profileValues,
+      profileLikes: activeTab === "likes" ? editValue : profileLikes,
+      profileAbout: activeTab === "about" ? editValue : profileAbout,
+    };
+    updateProfile.mutate(updates);
   };
 
   const handleLongPressStart = () => {
     longPressTimer.current = setTimeout(() => {
+      setEditValue(currentTab.value);
       setIsEditing(true);
     }, 500);
   };
@@ -868,26 +885,51 @@ function ProfileSection() {
     return <div className="text-muted-foreground text-sm">Cargando...</div>;
   }
 
-  const tabs = [
-    { id: "mission", label: "🎯 Misión", value: profileMission, setValue: setProfileMission, placeholder: "¿Cuál es tu propósito? ¿Qué quieres lograr en la vida?" },
-    { id: "values", label: "⭐ Valores", value: profileValues, setValue: setProfileValues, placeholder: "¿Qué principios guían tus decisiones?" },
-    { id: "likes", label: "❤️ Gustos", value: profileLikes, setValue: setProfileLikes, placeholder: "¿Qué actividades disfrutas? ¿Qué te hace feliz?" },
-    { id: "about", label: "📝 Sobre mí", value: profileAbout, setValue: setProfileAbout, placeholder: "Describe quién eres, tu historia, tus sueños..." },
-  ];
-
-  const currentTab = tabs.find(t => t.id === activeTab) || tabs[0];
-
   return (
     <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold">Yo</h3>
-        {isEditing && (
-          <div className="flex gap-2">
-            <Button variant="ghost" size="sm" onClick={() => setIsEditing(false)}>Cancelar</Button>
-            <Button size="sm" onClick={handleSave}>Guardar</Button>
+      <Dialog open={isEditing} onOpenChange={(open) => !open && setIsEditing(false)}>
+        <DialogContent className="sm:max-w-md border-2 border-amber-500/30 bg-gradient-to-b from-background to-amber-950/10">
+          <VisuallyHidden>
+            <DialogTitle>{currentTab.title}</DialogTitle>
+          </VisuallyHidden>
+          
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 border-b border-amber-500/20 pb-3">
+              <span className="text-2xl">{currentTab.icon}</span>
+              <h3 className="font-bold text-foreground uppercase tracking-wide">{currentTab.title}</h3>
+            </div>
+            
+            <Textarea
+              placeholder={currentTab.placeholder}
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              rows={6}
+              className="bg-transparent border border-amber-500/20 focus-visible:ring-amber-500/50 resize-none"
+              data-testid={`input-profile-${activeTab}`}
+              autoFocus
+            />
+            
+            <div className="flex gap-2 pt-2">
+              <Button 
+                size="sm" 
+                onClick={handleSave} 
+                className="bg-amber-600 hover:bg-amber-700 text-white"
+                data-testid="button-save-profile"
+              >
+                Guardar
+              </Button>
+              <Button 
+                size="sm" 
+                variant="ghost" 
+                onClick={() => setIsEditing(false)} 
+                className="text-muted-foreground"
+              >
+                Cancelar
+              </Button>
+            </div>
           </div>
-        )}
-      </div>
+        </DialogContent>
+      </Dialog>
 
       <div className="flex gap-1 mb-4 overflow-x-auto pb-2">
         {tabs.map(tab => (
@@ -896,8 +938,8 @@ function ProfileSection() {
             onClick={() => setActiveTab(tab.id)}
             className={`px-3 py-1.5 text-sm rounded-full whitespace-nowrap transition-colors ${
               activeTab === tab.id 
-                ? "bg-foreground text-background" 
-                : "bg-muted text-muted-foreground hover:bg-muted/80"
+                ? "bg-amber-600 text-white" 
+                : "bg-muted text-muted-foreground hover:bg-amber-600/20"
             }`}
           >
             {tab.label}
@@ -906,7 +948,7 @@ function ProfileSection() {
       </div>
 
       <div 
-        className="flex-1"
+        className="flex-1 border border-amber-500/20 rounded-lg bg-gradient-to-b from-background to-amber-950/5"
         onTouchStart={handleLongPressStart}
         onTouchEnd={handleLongPressEnd}
         onTouchCancel={handleLongPressEnd}
@@ -914,25 +956,22 @@ function ProfileSection() {
         onMouseUp={handleLongPressEnd}
         onMouseLeave={handleLongPressEnd}
       >
-        {isEditing ? (
-          <Textarea
-            value={currentTab.value}
-            onChange={(e) => currentTab.setValue(e.target.value)}
-            placeholder={currentTab.placeholder}
-            className="h-full min-h-[200px] resize-none"
-            autoFocus
-          />
-        ) : (
-          <div className="h-full p-4 bg-muted/30 rounded-lg cursor-pointer">
+        <div className="p-4 h-full">
+          <div className="flex items-center gap-2 border-b border-amber-500/20 pb-2 mb-3">
+            <span className="text-lg">{currentTab.icon}</span>
+            <h4 className="font-bold text-sm uppercase tracking-wide text-amber-600">{currentTab.title}</h4>
+          </div>
+          
+          <ScrollArea className="h-[calc(100%-40px)]">
             {currentTab.value ? (
               <p className="text-sm whitespace-pre-line">{currentTab.value}</p>
             ) : (
               <p className="text-muted-foreground/50 italic text-sm">
-                Mantené presionado para agregar información
+                Mantené presionado para agregar información...
               </p>
             )}
-          </div>
-        )}
+          </ScrollArea>
+        </div>
       </div>
     </div>
   );
