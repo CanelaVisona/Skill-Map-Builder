@@ -92,6 +92,20 @@ export const journalShadows = pgTable("journal_shadows", {
   defeated: integer("defeated").$type<0 | 1>().default(0),
 });
 
+export const profileValues = pgTable("profile_values", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+});
+
+export const profileLikes = pgTable("profile_likes", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+});
+
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertSessionSchema = createInsertSchema(sessions).omit({ id: true });
 export const insertAreaSchema = createInsertSchema(areas);
@@ -100,6 +114,8 @@ export const insertProjectSchema = createInsertSchema(projects);
 export const insertJournalCharacterSchema = createInsertSchema(journalCharacters).omit({ id: true });
 export const insertJournalPlaceSchema = createInsertSchema(journalPlaces).omit({ id: true });
 export const insertJournalShadowSchema = createInsertSchema(journalShadows).omit({ id: true });
+export const insertProfileValueSchema = createInsertSchema(profileValues).omit({ id: true });
+export const insertProfileLikeSchema = createInsertSchema(profileLikes).omit({ id: true });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
@@ -117,3 +133,7 @@ export type InsertJournalPlace = z.infer<typeof insertJournalPlaceSchema>;
 export type JournalPlace = typeof journalPlaces.$inferSelect;
 export type InsertJournalShadow = z.infer<typeof insertJournalShadowSchema>;
 export type JournalShadow = typeof journalShadows.$inferSelect;
+export type InsertProfileValue = z.infer<typeof insertProfileValueSchema>;
+export type ProfileValue = typeof profileValues.$inferSelect;
+export type InsertProfileLike = z.infer<typeof insertProfileLikeSchema>;
+export type ProfileLike = typeof profileLikes.$inferSelect;

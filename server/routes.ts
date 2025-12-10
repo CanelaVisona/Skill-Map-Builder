@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema } from "@shared/schema";
+import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertProfileValueSchema, insertProfileLikeSchema } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import cookieParser from "cookie-parser";
 import crypto from "crypto";
@@ -1114,6 +1114,122 @@ export async function registerRoutes(
         return;
       }
       await storage.deleteJournalShadow(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Profile - Values
+  app.get("/api/profile/values", requireAuth, async (req, res) => {
+    try {
+      const values = await storage.getProfileValues(req.userId!);
+      res.json(values);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/profile/values", requireAuth, async (req, res) => {
+    try {
+      const data = { ...req.body, userId: req.userId };
+      const validated = insertProfileValueSchema.parse(data);
+      const value = await storage.createProfileValue(validated);
+      res.status(201).json(value);
+    } catch (error: any) {
+      const validationError = fromError(error);
+      res.status(400).json({ message: validationError.toString() });
+    }
+  });
+
+  app.patch("/api/profile/values/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getProfileValue(req.params.id);
+      if (!existing) {
+        res.status(404).json({ message: "Value not found" });
+        return;
+      }
+      if (existing.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para modificar este valor" });
+        return;
+      }
+      const updated = await storage.updateProfileValue(req.params.id, req.body);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/profile/values/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getProfileValue(req.params.id);
+      if (!existing) {
+        res.status(404).json({ message: "Value not found" });
+        return;
+      }
+      if (existing.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para eliminar este valor" });
+        return;
+      }
+      await storage.deleteProfileValue(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Profile - Likes
+  app.get("/api/profile/likes", requireAuth, async (req, res) => {
+    try {
+      const likes = await storage.getProfileLikes(req.userId!);
+      res.json(likes);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/profile/likes", requireAuth, async (req, res) => {
+    try {
+      const data = { ...req.body, userId: req.userId };
+      const validated = insertProfileLikeSchema.parse(data);
+      const like = await storage.createProfileLike(validated);
+      res.status(201).json(like);
+    } catch (error: any) {
+      const validationError = fromError(error);
+      res.status(400).json({ message: validationError.toString() });
+    }
+  });
+
+  app.patch("/api/profile/likes/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getProfileLike(req.params.id);
+      if (!existing) {
+        res.status(404).json({ message: "Like not found" });
+        return;
+      }
+      if (existing.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para modificar este gusto" });
+        return;
+      }
+      const updated = await storage.updateProfileLike(req.params.id, req.body);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/profile/likes/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getProfileLike(req.params.id);
+      if (!existing) {
+        res.status(404).json({ message: "Like not found" });
+        return;
+      }
+      if (existing.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para eliminar este gusto" });
+        return;
+      }
+      await storage.deleteProfileLike(req.params.id);
       res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ message: error.message });

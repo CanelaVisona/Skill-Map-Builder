@@ -1,7 +1,7 @@
 import { eq, and } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db } from "./db";
-import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows } from "@shared/schema";
+import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, profileValues, profileLikes } from "@shared/schema";
 
 export interface IStorage {
   // Users
@@ -73,6 +73,20 @@ export interface IStorage {
   createJournalShadow(shadow: InsertJournalShadow): Promise<JournalShadow>;
   updateJournalShadow(id: string, shadow: Partial<InsertJournalShadow>): Promise<JournalShadow | undefined>;
   deleteJournalShadow(id: string): Promise<void>;
+
+  // Profile - Values
+  getProfileValues(userId: string): Promise<ProfileValue[]>;
+  getProfileValue(id: string): Promise<ProfileValue | undefined>;
+  createProfileValue(value: InsertProfileValue): Promise<ProfileValue>;
+  updateProfileValue(id: string, value: Partial<InsertProfileValue>): Promise<ProfileValue | undefined>;
+  deleteProfileValue(id: string): Promise<void>;
+
+  // Profile - Likes
+  getProfileLikes(userId: string): Promise<ProfileLike[]>;
+  getProfileLike(id: string): Promise<ProfileLike | undefined>;
+  createProfileLike(like: InsertProfileLike): Promise<ProfileLike>;
+  updateProfileLike(id: string, like: Partial<InsertProfileLike>): Promise<ProfileLike | undefined>;
+  deleteProfileLike(id: string): Promise<void>;
 }
 
 export class DbStorage implements IStorage {
@@ -559,6 +573,56 @@ export class DbStorage implements IStorage {
 
   async deleteJournalShadow(id: string): Promise<void> {
     await db.delete(journalShadows).where(eq(journalShadows.id, id));
+  }
+
+  // Profile - Values
+  async getProfileValues(userId: string): Promise<ProfileValue[]> {
+    return await db.select().from(profileValues).where(eq(profileValues.userId, userId));
+  }
+
+  async getProfileValue(id: string): Promise<ProfileValue | undefined> {
+    const result = await db.select().from(profileValues).where(eq(profileValues.id, id));
+    return result[0];
+  }
+
+  async createProfileValue(value: InsertProfileValue): Promise<ProfileValue> {
+    const id = randomUUID();
+    const result = await db.insert(profileValues).values({ id, ...value }).returning();
+    return result[0];
+  }
+
+  async updateProfileValue(id: string, value: Partial<InsertProfileValue>): Promise<ProfileValue | undefined> {
+    const result = await db.update(profileValues).set(value).where(eq(profileValues.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteProfileValue(id: string): Promise<void> {
+    await db.delete(profileValues).where(eq(profileValues.id, id));
+  }
+
+  // Profile - Likes
+  async getProfileLikes(userId: string): Promise<ProfileLike[]> {
+    return await db.select().from(profileLikes).where(eq(profileLikes.userId, userId));
+  }
+
+  async getProfileLike(id: string): Promise<ProfileLike | undefined> {
+    const result = await db.select().from(profileLikes).where(eq(profileLikes.id, id));
+    return result[0];
+  }
+
+  async createProfileLike(like: InsertProfileLike): Promise<ProfileLike> {
+    const id = randomUUID();
+    const result = await db.insert(profileLikes).values({ id, ...like }).returning();
+    return result[0];
+  }
+
+  async updateProfileLike(id: string, like: Partial<InsertProfileLike>): Promise<ProfileLike | undefined> {
+    const result = await db.update(profileLikes).set(like).where(eq(profileLikes.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteProfileLike(id: string): Promise<void> {
+    await db.delete(profileLikes).where(eq(profileLikes.id, id));
   }
 }
 

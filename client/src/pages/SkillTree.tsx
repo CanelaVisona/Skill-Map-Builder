@@ -832,18 +832,33 @@ function ShadowsSection({
   );
 }
 
+interface ProfileEntry {
+  id: string;
+  name: string;
+  description: string;
+}
+
 function ProfileSection() {
   const queryClient = useQueryClient();
   const [profileMission, setProfileMission] = useState("");
-  const [profileValues, setProfileValues] = useState("");
-  const [profileLikes, setProfileLikes] = useState("");
   const [profileAbout, setProfileAbout] = useState("");
   const [activeTab, setActiveTab] = useState("mission");
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState("");
+  
+  // For list-based entries (values and likes)
+  const [isAdding, setIsAdding] = useState(false);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [selectedEntry, setSelectedEntry] = useState<ProfileEntry | null>(null);
+  const [viewingEntry, setViewingEntry] = useState<ProfileEntry | null>(null);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [extraInfo, setExtraInfo] = useState("");
+  
   const longPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const { data: profile, isLoading } = useQuery<{ user: { profileMission: string; profileValues: string; profileLikes: string; profileAbout: string } }>({
+  const { data: profile, isLoading: profileLoading } = useQuery<{ user: { profileMission: string; profileAbout: string } }>({
     queryKey: ["/api/me"],
     queryFn: async () => {
       const res = await fetch("/api/me");
@@ -851,17 +866,31 @@ function ProfileSection() {
     },
   });
 
+  const { data: profileValues = [], isLoading: valuesLoading } = useQuery<ProfileEntry[]>({
+    queryKey: ["/api/profile/values"],
+    queryFn: async () => {
+      const res = await fetch("/api/profile/values");
+      return res.json();
+    },
+  });
+
+  const { data: profileLikes = [], isLoading: likesLoading } = useQuery<ProfileEntry[]>({
+    queryKey: ["/api/profile/likes"],
+    queryFn: async () => {
+      const res = await fetch("/api/profile/likes");
+      return res.json();
+    },
+  });
+
   useEffect(() => {
     if (profile?.user) {
       setProfileMission(profile.user.profileMission || "");
-      setProfileValues(profile.user.profileValues || "");
-      setProfileLikes(profile.user.profileLikes || "");
       setProfileAbout(profile.user.profileAbout || "");
     }
   }, [profile]);
 
   const updateProfile = useMutation({
-    mutationFn: async (data: { profileMission: string; profileValues: string; profileLikes: string; profileAbout: string }) => {
+    mutationFn: async (data: { profileMission?: string; profileAbout?: string }) => {
       const res = await fetch("/api/profile", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -875,45 +904,213 @@ function ProfileSection() {
     },
   });
 
+  const createValue = useMutation({
+    mutationFn: async (data: { name: string; description: string }) => {
+      const res = await fetch("/api/profile/values", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/profile/values"] });
+      setIsAdding(false);
+      setName("");
+      setDescription("");
+    },
+  });
+
+  const updateValue = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { name?: string; description?: string } }) => {
+      const res = await fetch(`/api/profile/values/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/profile/values"] });
+      setSelectedEntry(null);
+      setIsEditMode(false);
+    },
+  });
+
+  const deleteValue = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/profile/values/${id}`, { method: "DELETE" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/profile/values"] });
+      setSelectedEntry(null);
+      setShowDeleteConfirm(false);
+    },
+  });
+
+  const createLike = useMutation({
+    mutationFn: async (data: { name: string; description: string }) => {
+      const res = await fetch("/api/profile/likes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/profile/likes"] });
+      setIsAdding(false);
+      setName("");
+      setDescription("");
+    },
+  });
+
+  const updateLike = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { name?: string; description?: string } }) => {
+      const res = await fetch(`/api/profile/likes/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/profile/likes"] });
+      setSelectedEntry(null);
+      setIsEditMode(false);
+    },
+  });
+
+  const deleteLike = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/profile/likes/${id}`, { method: "DELETE" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/profile/likes"] });
+      setSelectedEntry(null);
+      setShowDeleteConfirm(false);
+    },
+  });
+
   const tabs = [
-    { id: "mission", label: "Misión", title: "MI MISIÓN", value: profileMission, placeholder: "¿Cuál es tu propósito? ¿Qué quieres lograr en la vida?" },
-    { id: "values", label: "Valores", title: "MIS VALORES", value: profileValues, placeholder: "¿Qué principios guían tus decisiones?" },
-    { id: "likes", label: "Gustos", title: "LO QUE ME GUSTA", value: profileLikes, placeholder: "¿Qué actividades disfrutas? ¿Qué te hace feliz?" },
-    { id: "about", label: "Sobre mí", title: "SOBRE MÍ", value: profileAbout, placeholder: "Describe quién eres, tu historia, tus sueños..." },
+    { id: "mission", label: "Misión", title: "MI MISIÓN", isText: true },
+    { id: "values", label: "Valores", title: "MIS VALORES", isText: false },
+    { id: "likes", label: "Gustos", title: "LO QUE ME GUSTA", isText: false },
+    { id: "about", label: "Sobre mí", title: "SOBRE MÍ", isText: true },
   ];
 
   const currentTab = tabs.find(t => t.id === activeTab) || tabs[0];
+  const currentEntries = activeTab === "values" ? profileValues : activeTab === "likes" ? profileLikes : [];
+  const currentTextValue = activeTab === "mission" ? profileMission : activeTab === "about" ? profileAbout : "";
 
-  const handleSave = () => {
-    const updates = {
-      profileMission: activeTab === "mission" ? editValue : profileMission,
-      profileValues: activeTab === "values" ? editValue : profileValues,
-      profileLikes: activeTab === "likes" ? editValue : profileLikes,
-      profileAbout: activeTab === "about" ? editValue : profileAbout,
-    };
+  const handleTextSave = () => {
+    const updates = activeTab === "mission" 
+      ? { profileMission: editValue }
+      : { profileAbout: editValue };
     updateProfile.mutate(updates);
   };
 
-  const handleLongPressStart = () => {
+  const handleAddNew = () => {
+    if (!name.trim()) return;
+    if (activeTab === "values") {
+      createValue.mutate({ name: name.trim(), description: description.trim() });
+    } else if (activeTab === "likes") {
+      createLike.mutate({ name: name.trim(), description: description.trim() });
+    }
+  };
+
+  const handleSaveEdit = () => {
+    if (!selectedEntry || !name.trim()) return;
+    if (activeTab === "values") {
+      updateValue.mutate({ id: selectedEntry.id, data: { name: name.trim(), description: description.trim() } });
+    } else if (activeTab === "likes") {
+      updateLike.mutate({ id: selectedEntry.id, data: { name: name.trim(), description: description.trim() } });
+    }
+  };
+
+  const handleDelete = () => {
+    if (!selectedEntry) return;
+    if (activeTab === "values") {
+      deleteValue.mutate(selectedEntry.id);
+    } else if (activeTab === "likes") {
+      deleteLike.mutate(selectedEntry.id);
+    }
+  };
+
+  const handleAddExtraInfo = () => {
+    if (!selectedEntry || !extraInfo.trim()) return;
+    const newDesc = selectedEntry.description 
+      ? `${selectedEntry.description}\n${extraInfo.trim()}`
+      : extraInfo.trim();
+    if (activeTab === "values") {
+      updateValue.mutate({ id: selectedEntry.id, data: { description: newDesc } });
+    } else if (activeTab === "likes") {
+      updateLike.mutate({ id: selectedEntry.id, data: { description: newDesc } });
+    }
+    setExtraInfo("");
+  };
+
+  const handleCloseDialog = () => {
+    setSelectedEntry(null);
+    setIsEditMode(false);
+    setShowDeleteConfirm(false);
+    setName("");
+    setDescription("");
+    setExtraInfo("");
+  };
+
+  const handleTextLongPressStart = () => {
     longPressTimer.current = setTimeout(() => {
-      setEditValue(currentTab.value);
+      setEditValue(currentTextValue);
       setIsEditing(true);
     }, 500);
   };
 
-  const handleLongPressEnd = () => {
+  const handleTextLongPressEnd = () => {
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current);
       longPressTimer.current = null;
     }
   };
 
-  if (isLoading) {
-    return <div className="text-muted-foreground text-sm">Cargando...</div>;
+  const handleLeftLongPressStart = () => {
+    longPressTimer.current = setTimeout(() => {
+      setName("");
+      setDescription("");
+      setIsAdding(true);
+    }, 500);
+  };
+
+  const handleLeftLongPressEnd = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const handleRightLongPressStart = () => {
+    if (!viewingEntry) return;
+    longPressTimer.current = setTimeout(() => {
+      setSelectedEntry(viewingEntry);
+      setName(viewingEntry.name);
+      setDescription(viewingEntry.description);
+    }, 500);
+  };
+
+  const handleRightLongPressEnd = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  if (profileLoading || valuesLoading || likesLoading) {
+    return <div className="text-zinc-500 text-sm">Cargando...</div>;
   }
 
   return (
     <div className="h-full flex flex-col">
+      {/* Text editing dialog for mission/about */}
       <Dialog open={isEditing} onOpenChange={(open) => !open && setIsEditing(false)}>
         <DialogContent className="sm:max-w-md bg-zinc-900 border border-zinc-700">
           <VisuallyHidden>
@@ -921,33 +1118,26 @@ function ProfileSection() {
           </VisuallyHidden>
           
           <div className="space-y-3">
-            <h3 className="text-sm font-medium text-zinc-300 border-b border-zinc-700 pb-2">{currentTab.title}</h3>
+            <div className="border-b border-zinc-700/50 pb-2">
+              <h3 className="text-sm font-medium text-zinc-100">{currentTab.title}</h3>
+              <div className="h-px w-8 bg-gradient-to-r from-zinc-500 to-transparent mt-1" />
+            </div>
             
             <Textarea
-              placeholder={currentTab.placeholder}
+              placeholder={activeTab === "mission" ? "¿Cuál es tu propósito?" : "Describe quién eres..."}
               value={editValue}
               onChange={(e) => setEditValue(e.target.value)}
               rows={6}
-              className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 focus-visible:ring-zinc-600 resize-none text-sm"
+              className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 resize-none text-sm"
               data-testid={`input-profile-${activeTab}`}
               autoFocus
             />
             
             <div className="flex gap-2 pt-1">
-              <Button 
-                size="sm" 
-                onClick={handleSave} 
-                className="bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-xs"
-                data-testid="button-save-profile"
-              >
+              <Button size="sm" onClick={handleTextSave} className="bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-xs">
                 Guardar
               </Button>
-              <Button 
-                size="sm" 
-                variant="ghost" 
-                onClick={() => setIsEditing(false)} 
-                className="text-zinc-400 hover:text-zinc-300 text-xs"
-              >
+              <Button size="sm" variant="ghost" onClick={() => setIsEditing(false)} className="text-zinc-400 hover:text-zinc-300 text-xs">
                 Cancelar
               </Button>
             </div>
@@ -955,11 +1145,132 @@ function ProfileSection() {
         </DialogContent>
       </Dialog>
 
+      {/* Add entry dialog for values/likes */}
+      <Dialog open={isAdding} onOpenChange={(open) => !open && setIsAdding(false)}>
+        <DialogContent className="sm:max-w-md bg-zinc-900 border border-zinc-700">
+          <VisuallyHidden>
+            <DialogTitle>Agregar {activeTab === "values" ? "Valor" : "Gusto"}</DialogTitle>
+          </VisuallyHidden>
+          
+          <div className="space-y-4">
+            <div className="border-b border-zinc-700/50 pb-2">
+              <h3 className="font-medium text-zinc-100">Agregar {activeTab === "values" ? "Valor" : "Gusto"}</h3>
+              <div className="h-px w-8 bg-gradient-to-r from-zinc-500 to-transparent mt-1" />
+            </div>
+            <Input
+              placeholder="NOMBRE"
+              value={name}
+              onChange={(e) => setName(e.target.value.toUpperCase())}
+              className="uppercase bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500"
+              data-testid={`input-profile-${activeTab}-name`}
+            />
+            <Textarea
+              placeholder="Descripción"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 resize-none"
+              data-testid={`input-profile-${activeTab}-description`}
+            />
+            <div className="flex gap-2 pt-2">
+              <Button size="sm" onClick={handleAddNew} className="bg-zinc-700 hover:bg-zinc-600 text-zinc-200">
+                Agregar
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setIsAdding(false)} className="text-zinc-400 hover:text-zinc-300">
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit entry dialog for values/likes */}
+      <Dialog open={!!selectedEntry} onOpenChange={(open) => !open && handleCloseDialog()}>
+        <DialogContent className="sm:max-w-md bg-zinc-900 border border-zinc-700">
+          <VisuallyHidden>
+            <DialogTitle>{selectedEntry?.name}</DialogTitle>
+          </VisuallyHidden>
+          
+          <div className="space-y-4">
+            <div className="flex items-center justify-between border-b border-zinc-700/50 pb-2">
+              <div>
+                <h3 className="font-medium text-zinc-100 uppercase">{selectedEntry?.name}</h3>
+                <div className="h-px w-8 bg-gradient-to-r from-zinc-500 to-transparent mt-1" />
+              </div>
+              <div className="flex gap-1">
+                <Button size="sm" variant="ghost" onClick={() => setIsEditMode(!isEditMode)} className="h-8 w-8 p-0 text-zinc-400 hover:text-zinc-200">
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setShowDeleteConfirm(true)} className="h-8 w-8 p-0 text-zinc-400 hover:text-zinc-200">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+
+            {selectedEntry?.description && !isEditMode && (
+              <p className="text-sm text-zinc-400 whitespace-pre-line leading-relaxed">{selectedEntry.description}</p>
+            )}
+
+            {!isEditMode ? (
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Agregar más info..."
+                  value={extraInfo}
+                  onChange={(e) => setExtraInfo(e.target.value)}
+                  className="flex-1 bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500"
+                />
+                <Button size="sm" variant="ghost" onClick={handleAddExtraInfo} disabled={!extraInfo.trim()} className="text-zinc-400 hover:text-zinc-200">
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <Input
+                  placeholder="NOMBRE"
+                  value={name}
+                  onChange={(e) => setName(e.target.value.toUpperCase())}
+                  className="uppercase bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500"
+                />
+                <Textarea
+                  placeholder="Descripción"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={3}
+                  className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 resize-none"
+                />
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={handleSaveEdit} className="bg-zinc-700 hover:bg-zinc-600 text-zinc-200">
+                    Guardar
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setIsEditMode(false)} className="text-zinc-400 hover:text-zinc-300">
+                    Cancelar
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {showDeleteConfirm && (
+            <div className="pt-4 border-t border-zinc-700 mt-4">
+              <p className="text-sm text-zinc-400 mb-3">¿Eliminar esta entrada?</p>
+              <div className="flex gap-2">
+                <Button size="sm" onClick={handleDelete} className="bg-red-900/50 hover:bg-red-900 text-red-200">
+                  Eliminar
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setShowDeleteConfirm(false)} className="text-zinc-400 hover:text-zinc-300">
+                  Cancelar
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       <div className="flex border-b border-zinc-700 mb-3">
         {tabs.map(tab => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => { setActiveTab(tab.id); setViewingEntry(null); }}
             className={`px-3 py-1.5 text-xs transition-colors border-b-2 -mb-[1px] ${
               activeTab === tab.id 
                 ? "border-zinc-400 text-zinc-200" 
@@ -971,31 +1282,118 @@ function ProfileSection() {
         ))}
       </div>
 
-      <div 
-        className="flex-1 flex"
-        onTouchStart={handleLongPressStart}
-        onTouchEnd={handleLongPressEnd}
-        onTouchCancel={handleLongPressEnd}
-        onMouseDown={handleLongPressStart}
-        onMouseUp={handleLongPressEnd}
-        onMouseLeave={handleLongPressEnd}
-      >
-        <div className="flex-1 flex flex-col">
-          <div className="text-xs text-zinc-500 border-b border-zinc-800 pb-1 mb-2">
-            {currentTab.title}
+      {/* Text-based tabs (mission/about) */}
+      {currentTab.isText && (
+        <div 
+          className="flex-1 flex cursor-pointer select-none"
+          onTouchStart={handleTextLongPressStart}
+          onTouchEnd={handleTextLongPressEnd}
+          onTouchCancel={handleTextLongPressEnd}
+          onMouseDown={handleTextLongPressStart}
+          onMouseUp={handleTextLongPressEnd}
+          onMouseLeave={handleTextLongPressEnd}
+        >
+          <div className="flex-1 flex flex-col">
+            <div className="text-xs text-zinc-500 border-b border-zinc-800 pb-1 mb-2">
+              {currentTab.title}
+            </div>
+            
+            <ScrollArea className="flex-1">
+              {currentTextValue ? (
+                <p className="text-sm text-zinc-300 whitespace-pre-line leading-relaxed">{currentTextValue}</p>
+              ) : (
+                <p className="text-zinc-600 italic text-sm">
+                  Mantené presionado para agregar información...
+                </p>
+              )}
+            </ScrollArea>
           </div>
-          
-          <ScrollArea className="flex-1">
-            {currentTab.value ? (
-              <p className="text-sm text-zinc-300 whitespace-pre-line leading-relaxed">{currentTab.value}</p>
-            ) : (
-              <p className="text-zinc-600 italic text-sm">
-                Mantené presionado para agregar información...
-              </p>
-            )}
-          </ScrollArea>
         </div>
-      </div>
+      )}
+
+      {/* List-based tabs (values/likes) */}
+      {!currentTab.isText && (
+        <>
+          <div className="mb-3 pb-2 border-b border-zinc-700/50">
+            <span className="text-xs text-zinc-500 uppercase tracking-wider">
+              {currentEntries.length} {activeTab === "values" ? "valores" : "gustos"}
+            </span>
+            <div className="h-px w-8 bg-gradient-to-r from-zinc-600 to-transparent mt-1" />
+          </div>
+
+          <div className="flex flex-1 min-h-0 gap-2">
+            <div 
+              className="w-1/2 bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]"
+              onTouchStart={handleLeftLongPressStart}
+              onTouchEnd={handleLeftLongPressEnd}
+              onTouchCancel={handleLeftLongPressEnd}
+              onMouseDown={handleLeftLongPressStart}
+              onMouseUp={handleLeftLongPressEnd}
+              onMouseLeave={handleLeftLongPressEnd}
+            >
+              <ScrollArea className="h-full">
+                {currentEntries.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <p className="text-zinc-500 text-sm">
+                      No hay {activeTab === "values" ? "valores" : "gustos"} aún
+                    </p>
+                    <p className="text-zinc-600 text-xs mt-2">Mantené presionado para agregar</p>
+                  </div>
+                ) : (
+                  <div className="space-y-0.5">
+                    {currentEntries.map((entry, index) => (
+                      <div key={entry.id}>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setViewingEntry(entry); }}
+                          className={`w-full text-left px-3 py-2 rounded text-sm transition-all cursor-pointer select-none ${
+                            viewingEntry?.id === entry.id 
+                              ? "bg-zinc-700 text-zinc-100 shadow-sm" 
+                              : "text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200"
+                          }`}
+                          data-testid={`card-profile-${activeTab}-${entry.id}`}
+                        >
+                          {entry.name}
+                        </button>
+                        {index < currentEntries.length - 1 && (
+                          <div className="h-px bg-zinc-700/30 mx-2" />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </ScrollArea>
+            </div>
+            
+            <div 
+              className="w-1/2 bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
+              onTouchStart={handleRightLongPressStart}
+              onTouchEnd={handleRightLongPressEnd}
+              onTouchCancel={handleRightLongPressEnd}
+              onMouseDown={handleRightLongPressStart}
+              onMouseUp={handleRightLongPressEnd}
+              onMouseLeave={handleRightLongPressEnd}
+            >
+              <ScrollArea className="h-full">
+                {viewingEntry ? (
+                  <div className="space-y-4">
+                    <div className="border-b border-zinc-700/50 pb-2">
+                      <h3 className="font-medium text-zinc-100 uppercase tracking-wide">{viewingEntry.name}</h3>
+                      <div className="h-px w-12 bg-gradient-to-r from-zinc-500 to-transparent mt-2" />
+                    </div>
+                    {viewingEntry.description && (
+                      <p className="text-sm text-zinc-400 whitespace-pre-line leading-relaxed">{viewingEntry.description}</p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-zinc-600 text-sm">
+                    Seleccioná una entrada
+                  </div>
+                )}
+              </ScrollArea>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
