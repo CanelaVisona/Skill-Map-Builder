@@ -25,9 +25,10 @@ interface SkillNodeProps {
   areaColor: string;
   onClick: () => void;
   isFirstOfLevel?: boolean;
+  isOnboardingTarget?: boolean;
 }
 
-export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNodeProps) {
+export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboardingTarget }: SkillNodeProps) {
   const hasStar = skill.isFinalNode === 1; // Has the star activated (final final node)
   const isInicioNode = skill.title.toLowerCase() === "inicio"; // "inicio" nodes are text-only, not interactive
   
@@ -297,6 +298,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel }: SkillNo
           onMouseDown={handleMouseDown}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
+          {...(isOnboardingTarget ? { "data-onboarding": "skill-node" } : {})}
         >
           {/* Level Marker */}
           {isFirstOfLevel && (

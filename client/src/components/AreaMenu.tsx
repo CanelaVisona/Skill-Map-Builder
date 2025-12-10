@@ -707,7 +707,7 @@ export function AreaMenu() {
         <div className="my-3 border-t border-border" />
 
         {isOpen && (
-          <div className="px-3 py-1">
+          <div className="px-3 py-1" data-onboarding="main-quests">
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
               Main Quest
             </span>
@@ -715,11 +715,11 @@ export function AreaMenu() {
         )}
 
         {mainQuests.length === 0 ? (
-          <div className="text-xs text-muted-foreground px-3 py-2 italic">
+          <div className="text-xs text-muted-foreground px-3 py-2 italic" data-onboarding="main-quests">
             {isOpen ? "Sin main quests aún" : "—"}
           </div>
         ) : (
-          mainQuests.map((project) => (
+          mainQuests.map((project, index) => (
             <ProjectItem
               key={project.id}
               project={project}
@@ -736,7 +736,7 @@ export function AreaMenu() {
         <div className="my-3 border-t border-border" />
 
         {isOpen && (
-          <div className="px-3 py-1">
+          <div className="px-3 py-1" data-onboarding="side-quests">
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
               Side Quest
             </span>
@@ -744,11 +744,11 @@ export function AreaMenu() {
         )}
 
         {sideQuests.length === 0 ? (
-          <div className="text-xs text-muted-foreground px-3 py-2 italic">
+          <div className="text-xs text-muted-foreground px-3 py-2 italic" data-onboarding="side-quests">
             {isOpen ? "Sin side quests aún" : "—"}
           </div>
         ) : (
-          sideQuests.map((project) => (
+          sideQuests.map((project, index) => (
             <ProjectItem
               key={project.id}
               project={project}
@@ -770,6 +770,7 @@ export function AreaMenu() {
             <button
               className="group flex items-center gap-2 px-3 py-2 text-muted-foreground hover:text-foreground transition-all duration-200 rounded-md hover:bg-muted/50"
               data-testid="button-add"
+              data-onboarding="add-button"
             >
               <Plus size={18} className="shrink-0" />
               <span className={cn(

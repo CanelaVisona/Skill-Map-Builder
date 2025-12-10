@@ -91,6 +91,7 @@ function TopRightControls({ onOpenGuide }: { onOpenGuide: () => void }) {
         className="text-muted-foreground/40 hover:text-muted-foreground transition-colors"
         onClick={openDiary}
         data-testid="button-diary-toggle"
+        data-onboarding="diary-button"
         title="Quest Diary"
       >
         <BookOpen className="h-5 w-5" />
@@ -1484,7 +1485,7 @@ function SkillCanvas() {
                     return connections;
                   })}
 
-                  {visibleSkills.map(skill => {
+                  {visibleSkills.map((skill, index) => {
                     const itemColor = "text-zinc-800 dark:text-zinc-200";
                     const handleClick = () => toggleSubSkillStatus(skill.id);
                     return (
@@ -1494,6 +1495,7 @@ function SkillCanvas() {
                         areaColor={itemColor}
                         onClick={handleClick}
                         isFirstOfLevel={firstSkillOfLevel.has(skill.id)}
+                        isOnboardingTarget={index === 0}
                       />
                     );
                   })}
@@ -1625,7 +1627,7 @@ function SkillCanvas() {
                 })}
 
                 {/* Nodes */}
-                {visibleSkills.map(skill => {
+                {visibleSkills.map((skill, index) => {
                   const itemColor = 'color' in activeItem ? (activeItem.color as string) : "text-zinc-800 dark:text-zinc-200";
                   const handleClick = isProject 
                     ? () => toggleProjectSkillStatus(activeItem.id, skill.id)
@@ -1637,6 +1639,7 @@ function SkillCanvas() {
                       areaColor={itemColor}
                       onClick={handleClick}
                       isFirstOfLevel={firstSkillOfLevel.has(skill.id)}
+                      isOnboardingTarget={index === 0}
                     />
                   );
                 })}

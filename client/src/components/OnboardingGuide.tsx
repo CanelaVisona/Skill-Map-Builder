@@ -1,257 +1,9 @@
-import React, { useState, useEffect } from "react";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { 
-  Sparkles, 
-  Target, 
-  BookOpen, 
-  ChevronRight, 
-  ChevronLeft, 
-  MousePointer2,
-  CheckCircle2,
-  Edit3,
-  Layers,
-  HelpCircle,
-  X
-} from "lucide-react";
+import { X, ChevronRight, ChevronLeft, HelpCircle, Sparkles, BookOpen, Target, FolderKanban, CheckCircle2, ListTodo } from "lucide-react";
+import { Button } from "./ui/button";
 
-const ONBOARDING_KEY = "skill-tree-onboarding-completed";
-
-interface OnboardingGuideProps {
-  onComplete: () => void;
-  isOpen: boolean;
-}
-
-const welcomeSteps = [
-  {
-    icon: Sparkles,
-    title: "¡Bienvenido a tu Skill Tree!",
-    description: "Una herramienta visual para organizar tu crecimiento personal. Aquí podrás crear árboles de habilidades, proyectos y un diario de reflexiones.",
-    color: "from-purple-500 to-pink-500"
-  },
-  {
-    icon: Target,
-    title: "Áreas de Habilidades",
-    description: "Las Áreas son para habilidades continuas que quieres desarrollar a largo plazo. Por ejemplo: tocar guitarra, aprender idiomas, o mejorar tu salud.",
-    color: "from-blue-500 to-cyan-500"
-  },
-  {
-    icon: Layers,
-    title: "Proyectos",
-    description: "Los Proyectos son para metas con un fin específico. Por ejemplo: planificar un viaje, organizar un evento, o completar un curso.",
-    color: "from-green-500 to-emerald-500"
-  },
-  {
-    icon: BookOpen,
-    title: "Tu Diario Personal",
-    description: "El Diario tiene 4 secciones: Logros (tareas completadas), Personajes (personas importantes), Lugares (espacios significativos) y Sombras (desafíos a superar).",
-    color: "from-amber-500 to-orange-500"
-  }
-];
-
-const tourSteps = [
-  {
-    icon: MousePointer2,
-    title: "Crear un Área o Proyecto",
-    description: "Toca el botón '+' en el menú lateral para crear una nueva área de habilidades o un proyecto.",
-    tip: "Las áreas tienen un ícono de infinito ∞, los proyectos tienen un ícono de bandera."
-  },
-  {
-    icon: CheckCircle2,
-    title: "Completar Nodos",
-    description: "Toca un nodo para marcarlo como completado. Los nodos se desbloquean en orden: primero completa los anteriores.",
-    tip: "Los nodos bloqueados aparecen en gris, los disponibles en color, y los completados tienen un check."
-  },
-  {
-    icon: Edit3,
-    title: "Modificar un Nodo",
-    description: "Mantén presionado un nodo para abrir el menú de edición. Ahí puedes cambiar el título, descripción, y escribir feedback.",
-    tip: "El feedback es tu reflexión personal sobre lo que aprendiste o lograste."
-  },
-  {
-    icon: Layers,
-    title: "Subtareas",
-    description: "Toca el título de un nodo (el texto) para ver sus subtareas. Cada nodo puede tener su propio árbol de pasos.",
-    tip: "Las subtareas te ayudan a dividir grandes metas en pasos pequeños y manejables."
-  },
-  {
-    icon: BookOpen,
-    title: "Abrir el Diario",
-    description: "Toca el ícono del libro en la esquina superior derecha para abrir tu diario personal.",
-    tip: "En 'Logros' verás todas las tareas que completaste, junto con tus feedbacks."
-  }
-];
-
-export function OnboardingGuide({ onComplete, isOpen }: OnboardingGuideProps) {
-  const [currentStep, setCurrentStep] = useState(0);
-  const [phase, setPhase] = useState<"welcome" | "tour">("welcome");
-  
-  useEffect(() => {
-    if (isOpen) {
-      setCurrentStep(0);
-      setPhase("welcome");
-    }
-  }, [isOpen]);
-  
-  const totalWelcomeSteps = welcomeSteps.length;
-  const totalTourSteps = tourSteps.length;
-  
-  const handleNext = () => {
-    if (phase === "welcome") {
-      if (currentStep < totalWelcomeSteps - 1) {
-        setCurrentStep(prev => prev + 1);
-      } else {
-        setPhase("tour");
-        setCurrentStep(0);
-      }
-    } else {
-      if (currentStep < totalTourSteps - 1) {
-        setCurrentStep(prev => prev + 1);
-      } else {
-        handleComplete();
-      }
-    }
-  };
-  
-  const handlePrev = () => {
-    if (currentStep > 0) {
-      setCurrentStep(prev => prev - 1);
-    } else if (phase === "tour") {
-      setPhase("welcome");
-      setCurrentStep(totalWelcomeSteps - 1);
-    }
-  };
-  
-  const handleComplete = () => {
-    localStorage.setItem(ONBOARDING_KEY, "true");
-    onComplete();
-  };
-  
-  const handleSkip = () => {
-    handleComplete();
-  };
-  
-  const currentData = phase === "welcome" ? welcomeSteps[currentStep] : tourSteps[currentStep];
-  const Icon = currentData.icon;
-  const progress = phase === "welcome" 
-    ? ((currentStep + 1) / totalWelcomeSteps) * 50 
-    : 50 + ((currentStep + 1) / totalTourSteps) * 50;
-  
-  return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && handleSkip()}>
-      <DialogContent className="max-w-md p-0 overflow-hidden bg-background border border-border">
-        <DialogTitle className="sr-only">Guía de bienvenida</DialogTitle>
-        
-        <div className="relative">
-          <div className="h-1 bg-muted">
-            <motion.div 
-              className="h-full bg-primary"
-              initial={{ width: 0 }}
-              animate={{ width: `${progress}%` }}
-              transition={{ duration: 0.3 }}
-            />
-          </div>
-          
-          <button 
-            onClick={handleSkip}
-            className="absolute top-4 right-4 text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <X className="h-5 w-5" />
-          </button>
-          
-          <div className="p-8">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={`${phase}-${currentStep}`}
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.2 }}
-                className="space-y-6"
-              >
-                <div className="flex justify-center">
-                  <div className={`p-4 rounded-2xl bg-gradient-to-br ${phase === "welcome" ? (currentData as typeof welcomeSteps[0]).color : "from-violet-500 to-purple-500"}`}>
-                    <Icon className="h-10 w-10 text-white" />
-                  </div>
-                </div>
-                
-                <div className="text-center space-y-3">
-                  <h2 className="text-xl font-semibold text-foreground">
-                    {currentData.title}
-                  </h2>
-                  <p className="text-muted-foreground leading-relaxed">
-                    {currentData.description}
-                  </p>
-                  {phase === "tour" && (currentData as typeof tourSteps[0]).tip && (
-                    <div className="mt-4 p-3 bg-muted/50 rounded-lg border border-border">
-                      <p className="text-sm text-muted-foreground">
-                        💡 {(currentData as typeof tourSteps[0]).tip}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </motion.div>
-            </AnimatePresence>
-            
-            <div className="flex items-center justify-between mt-8">
-              <Button
-                variant="ghost"
-                onClick={handlePrev}
-                disabled={phase === "welcome" && currentStep === 0}
-                className="gap-1"
-              >
-                <ChevronLeft className="h-4 w-4" />
-                Anterior
-              </Button>
-              
-              <div className="flex gap-1">
-                {(phase === "welcome" ? welcomeSteps : tourSteps).map((_, i) => (
-                  <div
-                    key={i}
-                    className={`h-1.5 w-1.5 rounded-full transition-colors ${
-                      i === currentStep ? "bg-primary" : "bg-muted-foreground/30"
-                    }`}
-                  />
-                ))}
-              </div>
-              
-              <Button onClick={handleNext} className="gap-1">
-                {phase === "tour" && currentStep === totalTourSteps - 1 ? (
-                  "¡Empezar!"
-                ) : (
-                  <>
-                    Siguiente
-                    <ChevronRight className="h-4 w-4" />
-                  </>
-                )}
-              </Button>
-            </div>
-          </div>
-          
-          <div className="px-8 pb-6">
-            <p className="text-xs text-center text-muted-foreground">
-              {phase === "welcome" ? "Introducción" : "Tutorial"} • Paso {currentStep + 1} de {phase === "welcome" ? totalWelcomeSteps : totalTourSteps}
-            </p>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-export function HelpButton({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className="text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-      data-testid="button-help"
-      title="Ver guía"
-    >
-      <HelpCircle className="h-5 w-5" />
-    </button>
-  );
-}
+const ONBOARDING_KEY = "skilltree-onboarding-complete";
 
 export function useOnboarding() {
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -274,4 +26,340 @@ export function useOnboarding() {
     openGuide,
     closeGuide
   };
+}
+
+export function HelpButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      className="text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+      onClick={onClick}
+      data-testid="button-help"
+      title="Guía de inicio"
+    >
+      <HelpCircle className="h-5 w-5" />
+    </button>
+  );
+}
+
+interface OnboardingGuideProps {
+  onComplete: () => void;
+  isOpen: boolean;
+}
+
+type TourStep = {
+  id: string;
+  targetSelector: string;
+  title: string;
+  description: string;
+  position: "top" | "bottom" | "left" | "right" | "center";
+  icon: React.ReactNode;
+};
+
+const tourSteps: TourStep[] = [
+  {
+    id: "welcome",
+    targetSelector: "",
+    title: "¡Bienvenido a tu Skill Tree!",
+    description: "Esta herramienta te ayuda a visualizar y seguir tu progreso en diferentes áreas. Vamos a hacer un recorrido rápido.",
+    position: "center",
+    icon: <Sparkles className="h-6 w-6 text-yellow-500" />
+  },
+  {
+    id: "add-button",
+    targetSelector: "[data-onboarding='add-button']",
+    title: "Main Quest y Side Quest",
+    description: "Aquí creas tus misiones. Main Quest son áreas de desarrollo continuo (Música, Trabajo). Side Quest son proyectos con objetivo específico.",
+    position: "right",
+    icon: <Target className="h-6 w-6 text-green-500" />
+  },
+  {
+    id: "skill-node",
+    targetSelector: "[data-onboarding='skill-node']",
+    title: "Nodos y SubQuests",
+    description: "Cada nodo es una tarea. Toca para completarla. Mantén presionado para opciones: editar título, agregar feedback, o crear SubQuests.",
+    position: "bottom",
+    icon: <CheckCircle2 className="h-6 w-6 text-emerald-500" />
+  },
+  {
+    id: "diary",
+    targetSelector: "[data-onboarding='diary-button']",
+    title: "Quest Diary",
+    description: "Tu diario personal. Aquí ves tus logros con feedback, y puedes agregar personajes, lugares y sombras derrotadas.",
+    position: "left",
+    icon: <BookOpen className="h-6 w-6 text-amber-500" />
+  }
+];
+
+export function OnboardingGuide({ onComplete, isOpen }: OnboardingGuideProps) {
+  const [currentStep, setCurrentStep] = useState(0);
+  const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
+  
+  useEffect(() => {
+    if (isOpen) {
+      setCurrentStep(0);
+      setTargetRect(null);
+    }
+  }, [isOpen]);
+  
+  const updateTargetPosition = useCallback(() => {
+    const step = tourSteps[currentStep];
+    if (step.targetSelector && step.position !== "center") {
+      const element = document.querySelector(step.targetSelector);
+      if (element) {
+        setTargetRect(element.getBoundingClientRect());
+      } else {
+        setTargetRect(null);
+      }
+    } else {
+      setTargetRect(null);
+    }
+  }, [currentStep]);
+  
+  useEffect(() => {
+    if (!isOpen) return;
+    
+    updateTargetPosition();
+    
+    window.addEventListener("resize", updateTargetPosition);
+    window.addEventListener("scroll", updateTargetPosition, true);
+    
+    return () => {
+      window.removeEventListener("resize", updateTargetPosition);
+      window.removeEventListener("scroll", updateTargetPosition, true);
+    };
+  }, [isOpen, currentStep, updateTargetPosition]);
+  
+  const handleNext = () => {
+    if (currentStep < tourSteps.length - 1) {
+      setCurrentStep(prev => prev + 1);
+    } else {
+      handleComplete();
+    }
+  };
+  
+  const handlePrev = () => {
+    if (currentStep > 0) {
+      setCurrentStep(prev => prev - 1);
+    }
+  };
+  
+  const handleComplete = () => {
+    localStorage.setItem(ONBOARDING_KEY, "true");
+    onComplete();
+  };
+  
+  const handleSkip = () => {
+    handleComplete();
+  };
+  
+  if (!isOpen) return null;
+  
+  const step = tourSteps[currentStep];
+  const isCenter = step.position === "center" || !targetRect;
+  
+  const getTooltipStyle = (): React.CSSProperties => {
+    if (isCenter || !targetRect) {
+      return {
+        position: "fixed",
+        top: "50%",
+        left: "50%",
+        transform: "translate(-50%, -50%)",
+        zIndex: 10001
+      };
+    }
+    
+    const padding = 16;
+    const tooltipWidth = 320;
+    const tooltipHeight = 200;
+    
+    switch (step.position) {
+      case "right":
+        return {
+          position: "fixed",
+          top: Math.max(padding, Math.min(targetRect.top, window.innerHeight - tooltipHeight - padding)),
+          left: targetRect.right + padding,
+          zIndex: 10001
+        };
+      case "left":
+        return {
+          position: "fixed",
+          top: Math.max(padding, Math.min(targetRect.top, window.innerHeight - tooltipHeight - padding)),
+          left: Math.max(padding, targetRect.left - tooltipWidth - padding),
+          zIndex: 10001
+        };
+      case "bottom":
+        return {
+          position: "fixed",
+          top: targetRect.bottom + padding,
+          left: Math.max(padding, Math.min(targetRect.left, window.innerWidth - tooltipWidth - padding)),
+          zIndex: 10001
+        };
+      case "top":
+        return {
+          position: "fixed",
+          top: Math.max(padding, targetRect.top - tooltipHeight - padding),
+          left: Math.max(padding, Math.min(targetRect.left, window.innerWidth - tooltipWidth - padding)),
+          zIndex: 10001
+        };
+      default:
+        return {
+          position: "fixed",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          zIndex: 10001
+        };
+    }
+  };
+  
+  const getArrowStyle = (): React.CSSProperties | null => {
+    if (isCenter || !targetRect) return null;
+    
+    const arrowSize = 12;
+    
+    switch (step.position) {
+      case "right":
+        return {
+          position: "absolute",
+          left: -arrowSize,
+          top: 24,
+          width: 0,
+          height: 0,
+          borderTop: `${arrowSize}px solid transparent`,
+          borderBottom: `${arrowSize}px solid transparent`,
+          borderRight: `${arrowSize}px solid hsl(var(--card))`
+        };
+      case "left":
+        return {
+          position: "absolute",
+          right: -arrowSize,
+          top: 24,
+          width: 0,
+          height: 0,
+          borderTop: `${arrowSize}px solid transparent`,
+          borderBottom: `${arrowSize}px solid transparent`,
+          borderLeft: `${arrowSize}px solid hsl(var(--card))`
+        };
+      case "bottom":
+        return {
+          position: "absolute",
+          top: -arrowSize,
+          left: 24,
+          width: 0,
+          height: 0,
+          borderLeft: `${arrowSize}px solid transparent`,
+          borderRight: `${arrowSize}px solid transparent`,
+          borderBottom: `${arrowSize}px solid hsl(var(--card))`
+        };
+      case "top":
+        return {
+          position: "absolute",
+          bottom: -arrowSize,
+          left: 24,
+          width: 0,
+          height: 0,
+          borderLeft: `${arrowSize}px solid transparent`,
+          borderRight: `${arrowSize}px solid transparent`,
+          borderTop: `${arrowSize}px solid hsl(var(--card))`
+        };
+      default:
+        return null;
+    }
+  };
+  
+  return (
+    <div className="fixed inset-0 z-[10000]">
+      <div 
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        onClick={handleSkip}
+      />
+      
+      {targetRect && !isCenter && (
+        <div
+          className="absolute border-2 border-primary rounded-lg transition-all duration-300 pointer-events-none"
+          style={{
+            top: targetRect.top - 4,
+            left: targetRect.left - 4,
+            width: targetRect.width + 8,
+            height: targetRect.height + 8,
+            boxShadow: "0 0 0 9999px rgba(0,0,0,0.5), 0 0 20px rgba(var(--primary), 0.3)",
+            zIndex: 10000
+          }}
+        />
+      )}
+      
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={currentStep}
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          transition={{ duration: 0.2 }}
+          style={getTooltipStyle()}
+          className="bg-card border border-border rounded-xl shadow-2xl w-80 max-w-[calc(100vw-32px)]"
+        >
+          {getArrowStyle() && (
+            <div style={getArrowStyle() as React.CSSProperties} />
+          )}
+          
+          <div className="p-5">
+            <div className="flex items-start justify-between mb-3">
+              <div className="flex items-center gap-3">
+                {step.icon}
+                <h3 className="font-bold text-lg">{step.title}</h3>
+              </div>
+              <button
+                onClick={handleSkip}
+                className="text-muted-foreground hover:text-foreground transition-colors -mt-1 -mr-1"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <p className="text-muted-foreground text-sm leading-relaxed mb-5">
+              {step.description}
+            </p>
+            
+            <div className="flex items-center justify-between">
+              <div className="flex gap-1.5">
+                {tourSteps.map((_, index) => (
+                  <div
+                    key={index}
+                    className={`h-1.5 rounded-full transition-all ${
+                      index === currentStep 
+                        ? "w-4 bg-primary" 
+                        : index < currentStep 
+                          ? "w-1.5 bg-primary/50" 
+                          : "w-1.5 bg-muted"
+                    }`}
+                  />
+                ))}
+              </div>
+              
+              <div className="flex gap-2">
+                {currentStep > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handlePrev}
+                    className="h-8 px-3"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  onClick={handleNext}
+                  className="h-8 px-4"
+                >
+                  {currentStep === tourSteps.length - 1 ? "¡Empezar!" : "Siguiente"}
+                  {currentStep < tourSteps.length - 1 && <ChevronRight className="h-4 w-4 ml-1" />}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      </AnimatePresence>
+    </div>
+  );
 }
