@@ -268,19 +268,19 @@ export function OnboardingGuide({ onComplete, isOpen }: OnboardingGuideProps) {
   };
   
   return (
-    <div className="fixed inset-0 z-[10000]">
-      <div className="absolute inset-0 bg-black/70" />
+    <div className="fixed inset-0 z-[10000] pointer-events-none">
+      <div className="absolute inset-0 bg-black/50 pointer-events-auto" />
       
       {targetRect && !isCenter && (
         <div
-          className="absolute border-2 border-primary rounded-lg transition-all duration-300 pointer-events-none"
+          className="absolute border-2 border-primary rounded-lg transition-all duration-300 animate-pulse"
           style={{
             top: targetRect.top - 4,
             left: targetRect.left - 4,
             width: targetRect.width + 8,
             height: targetRect.height + 8,
-            boxShadow: "0 0 0 9999px rgba(0,0,0,0.5), 0 0 20px rgba(var(--primary), 0.3)",
-            zIndex: 10000
+            boxShadow: "0 0 15px 3px hsl(var(--primary))",
+            zIndex: 10002
           }}
         />
       )}
@@ -293,7 +293,7 @@ export function OnboardingGuide({ onComplete, isOpen }: OnboardingGuideProps) {
           exit={{ opacity: 0, scale: 0.95 }}
           transition={{ duration: 0.2 }}
           style={getTooltipStyle()}
-          className="bg-card border border-border rounded-xl shadow-2xl w-80 max-w-[calc(100vw-32px)]"
+          className="bg-card border border-border rounded-xl shadow-2xl w-80 max-w-[calc(100vw-32px)] pointer-events-auto"
         >
           {getArrowStyle() && (
             <div style={getArrowStyle() as React.CSSProperties} />
