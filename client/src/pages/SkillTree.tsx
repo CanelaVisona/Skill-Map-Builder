@@ -466,8 +466,7 @@ function ShadowsSection({
   onDelete: (id: string) => void;
   onMarkDefeated: (id: string, defeated: 0 | 1) => void;
 }) {
-  const [activeTab, setActiveTab] = useState<"active" | "defeated">("active");
-  const [isAdding, setIsAdding] = useState(false);
+    const [isAdding, setIsAdding] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [extraInfo, setExtraInfo] = useState("");
@@ -477,9 +476,7 @@ function ShadowsSection({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const longPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const activeShadows = entries.filter(e => e.defeated !== 1);
-  const defeatedShadows = entries.filter(e => e.defeated === 1);
-  const currentEntries = activeTab === "active" ? activeShadows : defeatedShadows;
+  const currentEntries = entries;
 
   const handleAddNew = () => {
     if (!name.trim()) return;
@@ -547,8 +544,7 @@ function ShadowsSection({
   }
 
   const handleLeftLongPressStart = () => {
-    if (activeTab === "defeated") return;
-    longPressTimer.current = setTimeout(() => {
+        longPressTimer.current = setTimeout(() => {
       setIsAdding(true);
       setName("");
       setDescription("");
@@ -582,33 +578,7 @@ function ShadowsSection({
 
   return (
     <div className="h-full flex flex-col">
-      <div className="mb-4 flex items-center gap-4">
-        <div className="flex gap-2">
-          <button
-            onClick={() => { setActiveTab("active"); setViewingEntry(null); }}
-            className={`text-xs uppercase tracking-wide px-2 py-1 rounded ${
-              activeTab === "active" 
-                ? "bg-muted text-foreground" 
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-            data-testid="tab-shadows-active"
-          >
-            Activos ({activeShadows.length})
-          </button>
-          <button
-            onClick={() => { setActiveTab("defeated"); setViewingEntry(null); }}
-            className={`text-xs uppercase tracking-wide px-2 py-1 rounded ${
-              activeTab === "defeated" 
-                ? "bg-muted text-foreground" 
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-            data-testid="tab-shadows-defeated"
-          >
-            Vencidos ({defeatedShadows.length})
-          </button>
-        </div>
-      </div>
-
+      
       <Dialog open={isAdding} onOpenChange={(open) => !open && setIsAdding(false)}>
         <DialogContent className="sm:max-w-md">
           <VisuallyHidden>
@@ -699,16 +669,7 @@ function ShadowsSection({
                     <Plus className="h-4 w-4" />
                   </Button>
                 </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={handleToggleDefeated}
-                  className="w-full text-muted-foreground justify-start"
-                  data-testid="button-toggle-defeated"
-                >
-                  {selectedEntry?.defeated === 1 ? "Restaurar a Activo" : "Marcar como Vencido"}
-                </Button>
-              </>
+                              </>
             ) : (
               <div className="space-y-3">
                 <Input
@@ -789,11 +750,9 @@ function ShadowsSection({
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <Skull className="h-8 w-8 text-muted-foreground/40 mb-3" />
                 <p className="text-muted-foreground text-sm">
-                  {activeTab === "active" ? "No active shadows" : "No defeated shadows"}
+                  No hay sombras aún
                 </p>
-                {activeTab === "active" && (
-                  <p className="text-muted-foreground/50 text-xs mt-2">Hold to add</p>
-                )}
+                <p className="text-muted-foreground/50 text-xs mt-2">Mantén presionado para agregar</p>
               </div>
             ) : (
               <div className="space-y-1">
