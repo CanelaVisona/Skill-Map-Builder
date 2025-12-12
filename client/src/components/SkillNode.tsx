@@ -94,7 +94,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editStep, setEditStep] = useState(0);
   const [editTitle, setEditTitle] = useState(skill.title);
-  const [editAction, setEditAction] = useState("");
+  const [editAction, setEditAction] = useState(skill.description?.split("\n\nWhen: ")[0] || "");
+  const [editWhen, setEditWhen] = useState(skill.description?.split("\n\nWhen: ")[1] || "");
   const [editDescription, setEditDescription] = useState(skill.description || "");
   const [editFeedback, setEditFeedback] = useState(skill.feedback || "");
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -117,7 +118,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     titleLongPressTimer.current = setTimeout(() => {
       isTitleLongPress.current = true;
       setEditTitle(skill.title);
-      setEditDescription(skill.description || "");
+      const descParts = (skill.description || "").split("\n\nWhen: ");
+      setEditAction(descParts[0] || "");
+      setEditWhen(descParts[1] || "");
       setEditFeedback(skill.feedback || "");
       setEditStep(0);
       setIsEditDialogOpen(true);
@@ -205,22 +208,26 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   };
 
   const handleEditSave = () => {
+    const combinedDescription = editWhen.trim() 
+      ? `${editAction}\n\nWhen: ${editWhen}` 
+      : editAction;
+    
     if (isSubSkillView) {
       updateSubSkill(skill.id, { 
         title: editTitle, 
-        description: editDescription,
+        description: combinedDescription,
         feedback: editFeedback
       });
     } else if (isProject) {
       updateProjectSkill(activeId, skill.id, { 
         title: editTitle, 
-        description: editDescription,
+        description: combinedDescription,
         feedback: editFeedback
       });
     } else {
       updateSkill(activeId, skill.id, { 
         title: editTitle, 
-        description: editDescription,
+        description: combinedDescription,
         feedback: editFeedback
       });
     }
@@ -535,20 +542,33 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
                 transition={{ duration: 0.2 }}
-                className="flex-1 flex flex-col"
+                className="flex-1 flex flex-col gap-4"
               >
-                <Label htmlFor="edit-action" className="text-xs text-muted-foreground uppercase tracking-wide mb-3">ACTION: What can you do to advance in this quest?</Label>
-                <Textarea
-                  id="edit-action"
-                  value={editDescription}
-                  onChange={(e) => setEditDescription(e.target.value)}
-                  placeholder="Describe your next action..."
-                  rows={3}
-                  className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none text-lg"
-                  data-testid="input-edit-action"
-                  autoFocus
-                />
-                <div className="flex justify-end mt-auto pt-6">
+                <div>
+                  <Label htmlFor="edit-action" className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block">ACTION: What can you do to advance in this quest?</Label>
+                  <Textarea
+                    id="edit-action"
+                    value={editAction}
+                    onChange={(e) => setEditAction(e.target.value)}
+                    placeholder="Describe your next action..."
+                    rows={2}
+                    className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+                    data-testid="input-edit-action"
+                    autoFocus
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-when" className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block">When exactly?</Label>
+                  <Input
+                    id="edit-when"
+                    value={editWhen}
+                    onChange={(e) => setEditWhen(e.target.value)}
+                    placeholder="Specify when..."
+                    className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
+                    data-testid="input-edit-when"
+                  />
+                </div>
+                <div className="flex justify-end mt-auto pt-4">
                   <Button 
                     variant="ghost" 
                     size="icon"
