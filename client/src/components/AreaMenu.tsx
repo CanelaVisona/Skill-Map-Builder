@@ -2,7 +2,7 @@ import { useSkillTree, iconMap, type Project } from "@/lib/skill-context";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, PanelLeftClose, PanelLeftOpen, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut, Archive, ArchiveRestore, Pencil } from "lucide-react";
+import { Plus, PanelLeftClose, PanelLeftOpen, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut, Archive, ArchiveRestore, Pencil, Zap, ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "./ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "./ui/alert-dialog";
@@ -12,7 +12,7 @@ import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
 import { useState, useEffect, useRef } from "react";
 
-type DialogStep = "choose" | "new-area" | "new-project" | "new-sidequest";
+type DialogStep = "choose" | "new-area" | "new-project" | "new-sidequest" | "new-emergent";
 
 const iconKeywords: Record<string, string[]> = {
   Music: ["música", "musica", "guitarra", "guitar", "piano", "canto", "instrumento", "song", "canción"],
@@ -451,7 +451,7 @@ function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete, onArch
 export function AreaMenu() {
   const { 
     areas, activeAreaId, setActiveAreaId, createArea, deleteArea, archiveArea, unarchiveArea, archivedAreas, loadArchivedAreas,
-    mainQuests, sideQuests, activeProjectId, setActiveProjectId, createProject, createSideQuest, deleteProject, archiveProject, unarchiveProject, archivedMainQuests, archivedSideQuests, loadArchivedProjects,
+    mainQuests, sideQuests, emergentQuests, activeProjectId, setActiveProjectId, createProject, createSideQuest, createEmergentQuest, deleteProject, archiveProject, unarchiveProject, archivedMainQuests, archivedSideQuests, archivedEmergentQuests, loadArchivedProjects,
     renameArea, renameProject
   } = useSkillTree();
   const { user, logout } = useAuth();
@@ -466,6 +466,16 @@ export function AreaMenu() {
   const [isArchivedDialogOpen, setIsArchivedDialogOpen] = useState(false);
   const [viewingArchivedArea, setViewingArchivedArea] = useState<string | null>(null);
   const [viewingArchivedProject, setViewingArchivedProject] = useState<string | null>(null);
+  const [emergentExpanded, setEmergentExpanded] = useState(true);
+  
+  // Emergent Quest multi-step form state
+  const [emergentStep, setEmergentStep] = useState(1);
+  const [emergentWhatHappened, setEmergentWhatHappened] = useState("");
+  const [emergentConsequences, setEmergentConsequences] = useState("");
+  const [emergentWhyMatters, setEmergentWhyMatters] = useState("");
+  const [emergentObjective, setEmergentObjective] = useState("");
+  const [emergentAction, setEmergentAction] = useState("");
+  const [emergentNodeTitle, setEmergentNodeTitle] = useState("");
 
   useEffect(() => {
     if (isArchivedDialogOpen) {
@@ -489,6 +499,14 @@ export function AreaMenu() {
       setItemDescription("");
       setSelectedIcon("Home");
       setManualIconSelected(false);
+      // Reset emergent form state
+      setEmergentStep(1);
+      setEmergentWhatHappened("");
+      setEmergentConsequences("");
+      setEmergentWhyMatters("");
+      setEmergentObjective("");
+      setEmergentAction("");
+      setEmergentNodeTitle("");
     }
   };
 
@@ -541,6 +559,34 @@ export function AreaMenu() {
       setItemDescription("");
       setSelectedIcon("Home");
       setManualIconSelected(false);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleCreateEmergentQuest = async () => {
+    if (!emergentObjective.trim() || !emergentNodeTitle.trim() || isSubmitting) return;
+    
+    setIsSubmitting(true);
+    try {
+      const description = `${emergentWhatHappened}\n\n${emergentConsequences}\n\n${emergentWhyMatters}`;
+      await createEmergentQuest(
+        emergentObjective.trim(), 
+        description.trim(), 
+        "Zap", 
+        emergentNodeTitle.trim(), 
+        emergentAction.trim()
+      );
+      
+      setIsAddOpen(false);
+      setDialogStep("choose");
+      setEmergentStep(1);
+      setEmergentWhatHappened("");
+      setEmergentConsequences("");
+      setEmergentWhyMatters("");
+      setEmergentObjective("");
+      setEmergentAction("");
+      setEmergentNodeTitle("");
     } finally {
       setIsSubmitting(false);
     }
@@ -762,6 +808,35 @@ export function AreaMenu() {
           ))
         )}
 
+        {emergentQuests.length > 0 && (
+          <div className="mt-2 ml-2">
+            {isOpen && (
+              <button
+                onClick={() => setEmergentExpanded(!emergentExpanded)}
+                className="flex items-center gap-1 px-2 py-1 text-xs text-amber-500/80 hover:text-amber-400 transition-colors"
+                data-testid="button-toggle-emergent"
+              >
+                {emergentExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                <Zap size={12} />
+                <span className="font-medium">Emergent</span>
+                <span className="text-muted-foreground">({emergentQuests.length})</span>
+              </button>
+            )}
+            {emergentExpanded && emergentQuests.map((project) => (
+              <ProjectItem
+                key={project.id}
+                project={project}
+                isActive={project.id === activeProjectId}
+                isMenuOpen={isOpen}
+                onSelect={() => setActiveProjectId(project.id)}
+                onDelete={() => deleteProject(project.id)}
+                onArchive={() => archiveProject(project.id)}
+                onRename={(name) => renameProject(project.id, name)}
+              />
+            ))}
+          </div>
+        )}
+
       </div>
 
       <div className={cn("p-2 flex flex-col gap-1", isOpen ? "items-start" : "items-center")}>
@@ -788,7 +863,7 @@ export function AreaMenu() {
                   <DialogTitle>Agregar Nuevo</DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4 mt-4">
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-2 gap-3">
                     <Button 
                       variant="outline" 
                       className="h-24 flex flex-col gap-2"
@@ -815,6 +890,15 @@ export function AreaMenu() {
                     >
                       <FolderKanban className="h-6 w-6" />
                       <span>Side Quest</span>
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      className="h-24 flex flex-col gap-2 border-amber-500/50 hover:border-amber-500 hover:bg-amber-500/10"
+                      onClick={() => setDialogStep("new-emergent")}
+                      data-testid="button-new-emergent"
+                    >
+                      <Zap className="h-6 w-6 text-amber-500" />
+                      <span>Emergent Quest</span>
                     </Button>
                   </div>
                 </div>
@@ -847,6 +931,148 @@ export function AreaMenu() {
                 {renderForm("sidequest")}
               </>
             )}
+
+            {dialogStep === "new-emergent" && (
+              <div className="bg-zinc-900 -m-6 p-6 rounded-lg">
+                <DialogHeader>
+                  <DialogTitle className="text-amber-400 flex items-center gap-2">
+                    <Zap className="h-5 w-5" />
+                    Nuevo Emergent Quest
+                  </DialogTitle>
+                  <DialogDescription className="text-zinc-400">
+                    Paso {emergentStep} de 6
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="mt-6 space-y-4">
+                  {emergentStep === 1 && (
+                    <div className="space-y-3">
+                      <Label className="text-zinc-200 text-lg">¿Qué pasó?</Label>
+                      <Textarea 
+                        value={emergentWhatHappened}
+                        onChange={(e) => setEmergentWhatHappened(e.target.value)}
+                        placeholder="Describe el evento o situación que surgió..."
+                        rows={4}
+                        className="bg-zinc-800 border-zinc-700 text-zinc-100 placeholder:text-zinc-500"
+                        data-testid="input-emergent-what-happened"
+                      />
+                    </div>
+                  )}
+                  {emergentStep === 2 && (
+                    <div className="space-y-3">
+                      <Label className="text-zinc-200 text-lg">¿Qué consecuencias trae?</Label>
+                      <Textarea 
+                        value={emergentConsequences}
+                        onChange={(e) => setEmergentConsequences(e.target.value)}
+                        placeholder="¿Qué impacto tiene esto en tu vida?"
+                        rows={4}
+                        className="bg-zinc-800 border-zinc-700 text-zinc-100 placeholder:text-zinc-500"
+                        data-testid="input-emergent-consequences"
+                      />
+                    </div>
+                  )}
+                  {emergentStep === 3 && (
+                    <div className="space-y-3">
+                      <Label className="text-zinc-200 text-lg">¿Por qué te importa?</Label>
+                      <Textarea 
+                        value={emergentWhyMatters}
+                        onChange={(e) => setEmergentWhyMatters(e.target.value)}
+                        placeholder="¿Por qué es importante para vos resolver esto?"
+                        rows={4}
+                        className="bg-zinc-800 border-zinc-700 text-zinc-100 placeholder:text-zinc-500"
+                        data-testid="input-emergent-why-matters"
+                      />
+                    </div>
+                  )}
+                  {emergentStep === 4 && (
+                    <div className="space-y-3">
+                      <Label className="text-zinc-200 text-lg">¿Cuál es tu objetivo?</Label>
+                      <Input 
+                        value={emergentObjective}
+                        onChange={(e) => setEmergentObjective(e.target.value)}
+                        placeholder="Define el objetivo de esta quest..."
+                        className="bg-zinc-800 border-zinc-700 text-zinc-100 placeholder:text-zinc-500"
+                        data-testid="input-emergent-objective"
+                      />
+                      <p className="text-xs text-zinc-500">Este será el nombre de tu quest</p>
+                    </div>
+                  )}
+                  {emergentStep === 5 && (
+                    <div className="space-y-3">
+                      <Label className="text-zinc-200 text-lg">¿Qué podés hacer al respecto?</Label>
+                      <Textarea 
+                        value={emergentAction}
+                        onChange={(e) => setEmergentAction(e.target.value)}
+                        placeholder="Describe la primera acción concreta que podés tomar..."
+                        rows={4}
+                        className="bg-zinc-800 border-zinc-700 text-zinc-100 placeholder:text-zinc-500"
+                        data-testid="input-emergent-action"
+                      />
+                    </div>
+                  )}
+                  {emergentStep === 6 && (
+                    <div className="space-y-3">
+                      <Label className="text-zinc-200 text-lg">¿Lo podés abreviar en tres palabras?</Label>
+                      <Input 
+                        value={emergentNodeTitle}
+                        onChange={(e) => setEmergentNodeTitle(e.target.value)}
+                        placeholder="ej: Llamar al mecánico"
+                        className="bg-zinc-800 border-zinc-700 text-zinc-100 placeholder:text-zinc-500"
+                        data-testid="input-emergent-node-title"
+                      />
+                      <p className="text-xs text-zinc-500">Este será el título de tu primer nodo</p>
+                    </div>
+                  )}
+                  
+                  <div className="flex gap-2 pt-4">
+                    <Button 
+                      variant="outline" 
+                      onClick={() => {
+                        if (emergentStep === 1) {
+                          setDialogStep("choose");
+                          setEmergentStep(1);
+                          setEmergentWhatHappened("");
+                          setEmergentConsequences("");
+                          setEmergentWhyMatters("");
+                          setEmergentObjective("");
+                          setEmergentAction("");
+                          setEmergentNodeTitle("");
+                        } else {
+                          setEmergentStep(s => s - 1);
+                        }
+                      }}
+                      className="flex-1 bg-zinc-800 border-zinc-700 text-zinc-300 hover:bg-zinc-700"
+                      disabled={isSubmitting}
+                    >
+                      {emergentStep === 1 ? "Cancelar" : "Atrás"}
+                    </Button>
+                    {emergentStep < 6 ? (
+                      <Button 
+                        onClick={() => setEmergentStep(s => s + 1)}
+                        className="flex-1 bg-amber-600 hover:bg-amber-500 text-white"
+                        disabled={
+                          (emergentStep === 1 && !emergentWhatHappened.trim()) ||
+                          (emergentStep === 2 && !emergentConsequences.trim()) ||
+                          (emergentStep === 3 && !emergentWhyMatters.trim()) ||
+                          (emergentStep === 4 && !emergentObjective.trim()) ||
+                          (emergentStep === 5 && !emergentAction.trim())
+                        }
+                      >
+                        Siguiente
+                      </Button>
+                    ) : (
+                      <Button 
+                        onClick={handleCreateEmergentQuest}
+                        disabled={!emergentNodeTitle.trim() || isSubmitting}
+                        className="flex-1 bg-amber-600 hover:bg-amber-500 text-white"
+                        data-testid="button-create-emergent"
+                      >
+                        {isSubmitting ? "Creando..." : "Crear Quest"}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </DialogContent>
         </Dialog>
         <Dialog open={isArchivedDialogOpen} onOpenChange={setIsArchivedDialogOpen}>
@@ -872,7 +1098,7 @@ export function AreaMenu() {
               </DialogTitle>
             </DialogHeader>
             <div className="mt-4 space-y-4 max-h-[60vh] overflow-y-auto">
-              {archivedAreas.length === 0 && archivedMainQuests.length === 0 && archivedSideQuests.length === 0 ? (
+              {archivedAreas.length === 0 && archivedMainQuests.length === 0 && archivedSideQuests.length === 0 && archivedEmergentQuests.length === 0 ? (
                 <div className="text-center text-muted-foreground py-8">
                   <Archive className="mx-auto h-12 w-12 mb-3 opacity-30" />
                   <p>No hay elementos archivados</p>
@@ -1102,6 +1328,89 @@ export function AreaMenu() {
                                     <AlertDialogTitle>¿Eliminar "{project.name}"?</AlertDialogTitle>
                                     <AlertDialogDescription>
                                       Esta acción no se puede deshacer. Se eliminará permanentemente este side quest y todas sus habilidades.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      onClick={() => deleteProject(project.id)}
+                                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                    >
+                                      Eliminar
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {archivedEmergentQuests.length > 0 && (
+                    <div className="space-y-2">
+                      <h3 className="text-xs font-semibold text-amber-500/80 uppercase tracking-wider px-1 flex items-center gap-1">
+                        <Zap size={12} />
+                        Emergent Quest
+                      </h3>
+                      {archivedEmergentQuests.map((project) => {
+                        const isViewing = viewingArchivedProject === project.id;
+                        return (
+                          <div 
+                            key={project.id} 
+                            className={cn(
+                              "flex items-center gap-3 p-3 rounded-lg border transition-colors cursor-pointer",
+                              isViewing ? "bg-amber-500/10 border-amber-500/30" : "hover:bg-muted/50 border-border"
+                            )}
+                            onClick={() => {
+                              setViewingArchivedProject(isViewing ? null : project.id);
+                              setViewingArchivedArea(null);
+                              if (!isViewing) {
+                                setActiveProjectId(project.id);
+                                setIsArchivedDialogOpen(false);
+                              }
+                            }}
+                            data-testid={`archived-emergent-${project.id}`}
+                          >
+                            <Zap size={20} className="text-amber-500" />
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium truncate">{project.name}</p>
+                              {project.description && (
+                                <p className="text-sm text-muted-foreground truncate">{project.description}</p>
+                              )}
+                            </div>
+                            <div className="flex gap-1 shrink-0">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  unarchiveProject(project.id);
+                                }}
+                                title="Restaurar"
+                                data-testid={`button-unarchive-emergent-${project.id}`}
+                              >
+                                <ArchiveRestore size={16} />
+                              </Button>
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="text-destructive hover:text-destructive"
+                                    title="Eliminar"
+                                    data-testid={`button-delete-archived-emergent-${project.id}`}
+                                  >
+                                    <Trash2 size={16} />
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>¿Eliminar "{project.name}"?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      Esta acción no se puede deshacer. Se eliminará permanentemente este emergent quest y todas sus habilidades.
                                     </AlertDialogDescription>
                                   </AlertDialogHeader>
                                   <AlertDialogFooter>
