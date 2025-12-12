@@ -535,47 +535,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
           <AnimatePresence mode="wait">
             {editStep === 0 && (
               <motion.div
-                key="step-title"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.2 }}
-                className="flex-1 flex flex-col"
-              >
-                <Label htmlFor="edit-title" className="text-xs text-muted-foreground uppercase tracking-wide mb-3">Título (máx. 3 palabras)</Label>
-                <Input
-                  id="edit-title"
-                  value={editTitle}
-                  onChange={(e) => {
-                    const words = e.target.value.split(/\s+/).filter(w => w.length > 0);
-                    if (words.length <= 3) {
-                      setEditTitle(e.target.value);
-                    } else {
-                      setEditTitle(words.slice(0, 3).join(" "));
-                    }
-                  }}
-                  placeholder="Nombre de la habilidad"
-                  className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted text-lg"
-                  data-testid="input-edit-title"
-                  autoFocus
-                />
-                <div className="flex justify-end mt-auto pt-6">
-                  <Button 
-                    variant="ghost" 
-                    size="icon"
-                    onClick={() => setEditStep(1)}
-                    disabled={!editTitle.trim()}
-                    className="h-10 w-10 bg-muted/50 hover:bg-muted"
-                    data-testid="button-next-step"
-                  >
-                    <ChevronRight className="h-5 w-5" />
-                  </Button>
-                </div>
-              </motion.div>
-            )}
-
-            {editStep === 1 && (
-              <motion.div
                 key="step-action"
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
@@ -583,7 +542,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 transition={{ duration: 0.2 }}
                 className="flex-1 flex flex-col"
               >
-                <Label htmlFor="edit-action" className="text-xs text-muted-foreground uppercase tracking-wide mb-3">ACTION (max 10 words)</Label>
+            <Label htmlFor="edit-action" className="text-xs text-muted-foreground uppercase tracking-wide mb-3">What can you do to advance in this quest? (10 words)</Label>
                 <Input
                   id="edit-action"
                   value={editAction}
@@ -623,6 +582,49 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               </motion.div>
             )}
 
+            {editStep === 1 && (
+              <motion.div
+                key="step-title"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+                className="flex-1 flex flex-col"
+              >
+
+                <Label htmlFor="edit-title" className="text-xs text-muted-foreground uppercase tracking-wide mb-3">Título (máx. 3 palabras)</Label>
+                    <Input
+                      id="edit-title"
+                      value={editTitle}
+                      onChange={(e) => {
+                        const words = e.target.value.split(/\s+/).filter(w => w.length > 0);
+                        if (words.length <= 3) {
+                          setEditTitle(e.target.value);
+                        } else {
+                          setEditTitle(words.slice(0, 3).join(" "));
+                        }
+                      }}
+                      placeholder="Nombre de la habilidad"
+                      className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted text-lg"
+                      data-testid="input-edit-title"
+                      autoFocus
+                    />
+                <div className="flex justify-end mt-auto pt-6">
+                  <Button 
+                    variant="ghost" 
+                    size="icon"
+                    onClick={() => setEditStep(2)}
+                    disabled={!editTitle.trim()}
+                    className="h-10 w-10 bg-muted/50 hover:bg-muted"
+                    data-testid="button-next-step"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+
+              
             {editStep === 2 && (
               <motion.div
                 key="step-narrative"
