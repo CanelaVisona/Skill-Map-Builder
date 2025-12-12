@@ -42,7 +42,7 @@ export interface Project {
   nextLevelToAssign: number;
   levelSubtitles: Record<string, string>;
   skills: Skill[];
-  questType?: "main" | "side";
+  questType?: "main" | "side" | "emergent";
 }
 
 interface ParentSkillInfo {

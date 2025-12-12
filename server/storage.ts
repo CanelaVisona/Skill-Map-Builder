@@ -404,6 +404,7 @@ export class DbStorage implements IStorage {
       nextLevelToAssign: project.nextLevelToAssign,
       levelSubtitles: project.levelSubtitles as Record<string, string>,
       archived: (project.archived ?? 0) as 0 | 1,
+      questType: (project.questType ?? "main") as "main" | "side" | "emergent",
     };
     const result = await db.insert(projects).values(insertData).returning();
     return result[0];
