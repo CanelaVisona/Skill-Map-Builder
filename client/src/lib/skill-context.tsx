@@ -111,9 +111,9 @@ interface SkillTreeContextType {
   sideQuests: Project[];
   archivedSideQuests: Project[];
   createSideQuest: (name: string, description: string, icon: string) => Promise<void>;
-  popupQuests: Project[];
-  archivedPopupQuests: Project[];
-  createPopupQuest: (name: string, description: string, icon: string) => Promise<void>;
+  emergentQuests: Project[];
+  archivedEmergentQuests: Project[];
+  createEmergentQuest: (name: string, description: string, icon: string, firstNodeTitle: string, firstNodeAction: string) => Promise<void>;
 }
 
 const SkillTreeContext = createContext<SkillTreeContextType | undefined>(undefined);
@@ -154,8 +154,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
   
   const mainQuests = projects.filter(p => !p.questType || p.questType === "main");
   const sideQuests = projects.filter(p => p.questType === "side");
+  const emergentQuests = projects.filter(p => p.questType === "emergent");
   const archivedMainQuests = archivedProjects.filter(p => !p.questType || p.questType === "main");
   const archivedSideQuests = archivedProjects.filter(p => p.questType === "side");
+  const archivedEmergentQuests = archivedProjects.filter(p => p.questType === "emergent");
 
   const handleSetActiveAreaId = (id: string) => {
     setActiveAreaId(id);
@@ -1173,6 +1175,60 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       handleSetActiveProjectId(newProject.id);
     } catch (error) {
       console.error("Error creating side quest:", error);
+    }
+  };
+
+  const createEmergentQuest = async (name: string, description: string, icon: string, firstNodeTitle: string, firstNodeAction: string) => {
+    try {
+      const id = name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') + '_' + Date.now();
+      const response = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id,
+          name,
+          icon,
+          description,
+          questType: "emergent",
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to create emergent quest");
+      }
+      
+      const newProject = await response.json();
+      
+      const generateResponse = await fetch(`/api/projects/${newProject.id}/generate-level`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ level: 1 }),
+      });
+      
+      if (generateResponse.ok) {
+        const { createdSkills } = await generateResponse.json();
+        // Update first skill node with the provided title and action
+        if (createdSkills.length > 0) {
+          const firstSkillId = createdSkills[0].id;
+          await fetch(`/api/skills/${firstSkillId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+              title: firstNodeTitle,
+              description: firstNodeAction 
+            }),
+          });
+          createdSkills[0].title = firstNodeTitle;
+          createdSkills[0].description = firstNodeAction;
+        }
+        setProjects(prev => [...prev, { ...newProject, skills: createdSkills }]);
+      } else {
+        setProjects(prev => [...prev, { ...newProject, skills: [] }]);
+      }
+      
+      handleSetActiveProjectId(newProject.id);
+    } catch (error) {
+      console.error("Error creating emergent quest:", error);
     }
   };
 
@@ -2389,7 +2445,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       showCompleted,
       sideQuests,
       archivedSideQuests,
-      createSideQuest
+      createSideQuest,
+      emergentQuests,
+      archivedEmergentQuests,
+      createEmergentQuest
     }}>
       {children}
     </SkillTreeContext.Provider>

@@ -61,7 +61,7 @@ export const projects = pgTable("projects", {
   nextLevelToAssign: integer("next_level_to_assign").notNull().default(1),
   levelSubtitles: jsonb("level_subtitles").notNull().$type<Record<string, string>>().default({}),
   archived: integer("archived").$type<0 | 1>().default(0),
-  questType: text("quest_type").$type<"main" | "side" | "popup">().default("main"),
+  questType: text("quest_type").$type<"main" | "side" | "emergent">().default("main"),
 });
 
 export const journalCharacters = pgTable("journal_characters", {
