@@ -4,7 +4,7 @@ import { AreaMenu } from "@/components/AreaMenu";
 import { SkillNode } from "@/components/SkillNode";
 import { SkillConnection } from "@/components/SkillConnection";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User } from "lucide-react";
+import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -16,6 +16,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import type { JournalCharacter, JournalPlace, JournalShadow } from "@shared/schema";
 import { OnboardingGuide, HelpButton, useOnboarding } from "@/components/OnboardingGuide";
 import { useAuth } from "@/lib/auth-context";
@@ -1865,8 +1866,61 @@ function SkillCanvas() {
     toggleSubSkillStatus,
     deleteSubSkillTree,
     showLevelUp,
-    showCompleted
+    showCompleted,
+    addSkill
   } = useSkillTree();
+  
+  const [isStuckDialogOpen, setIsStuckDialogOpen] = useState(false);
+  const [stuckStep, setStuckStep] = useState(0);
+  const [stuckProblem, setStuckProblem] = useState("");
+  const [stuckSkill, setStuckSkill] = useState("");
+  const [stuckAction, setStuckAction] = useState("");
+  const [stuckTitle, setStuckTitle] = useState("");
+
+  const handleStuckDialogClose = (open: boolean) => {
+    if (!open) {
+      setStuckStep(0);
+      setStuckProblem("");
+      setStuckSkill("");
+      setStuckAction("");
+      setStuckTitle("");
+    }
+    setIsStuckDialogOpen(open);
+  };
+
+  const handleCreateStuckNode = async () => {
+    const activeItem = activeArea || activeProject;
+    if (!activeItem) return;
+    
+    const skills = activeItem.skills;
+    const maxY = skills.length > 0 ? Math.max(...skills.map(s => s.y)) : 0;
+    const maxLevel = skills.length > 0 ? Math.max(...skills.map(s => s.level)) : 0;
+    
+    const newSkill: Omit<Skill, "id"> = {
+      areaId: activeArea ? activeArea.id : undefined,
+      projectId: activeProject ? activeProject.id : undefined,
+      parentSkillId: undefined,
+      title: stuckTitle,
+      description: stuckAction,
+      feedback: `Problema: ${stuckProblem}\n\nHabilidad necesaria: ${stuckSkill}`,
+      status: "available" as const,
+      x: 50,
+      y: maxY + 80,
+      dependencies: [],
+      manualLock: 0 as 0 | 1,
+      isFinalNode: 0 as 0 | 1,
+      level: maxLevel,
+      levelPosition: 1
+    };
+    
+    if (activeArea) {
+      await addSkill(activeArea.id, newSkill);
+    } else if (activeProject) {
+      await addSkill(activeProject.id, newSkill);
+    }
+    
+    handleStuckDialogClose(false);
+  };
 
   const activeItem = activeArea || activeProject;
   const isProject = !activeArea && !!activeProject;
@@ -2137,7 +2191,165 @@ function SkillCanvas() {
             <p className="text-muted-foreground max-w-md text-sm leading-relaxed">
               {activeItem.description}
             </p>
+            <button
+              onClick={() => setIsStuckDialogOpen(true)}
+              className="text-xs text-muted-foreground/60 hover:text-muted-foreground mt-2 transition-colors"
+              data-testid="button-stuck"
+            >
+              Estoy trabada
+            </button>
           </div>
+
+          <Dialog open={isStuckDialogOpen} onOpenChange={handleStuckDialogClose}>
+            <DialogContent className="sm:max-w-[400px] border-0 shadow-2xl">
+              <div className="min-h-[200px] flex flex-col">
+                <AnimatePresence mode="wait">
+                  {stuckStep === 0 && (
+                    <motion.div
+                      key="stuck-step-0"
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -20 }}
+                      transition={{ duration: 0.2 }}
+                      className="flex-1 flex flex-col"
+                    >
+                      <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
+                        ¿Dónde está el problema concreto?
+                      </Label>
+                      <Textarea
+                        value={stuckProblem}
+                        onChange={(e) => setStuckProblem(e.target.value)}
+                        placeholder="Describe el problema..."
+                        rows={3}
+                        className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+                        data-testid="input-stuck-problem"
+                        autoFocus
+                      />
+                      <div className="flex justify-end mt-auto pt-6">
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          onClick={() => setStuckStep(1)}
+                          className="h-10 w-10 bg-muted/50 hover:bg-muted"
+                          data-testid="button-stuck-next-1"
+                        >
+                          <ChevronRight className="h-5 w-5" />
+                        </Button>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {stuckStep === 1 && (
+                    <motion.div
+                      key="stuck-step-1"
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -20 }}
+                      transition={{ duration: 0.2 }}
+                      className="flex-1 flex flex-col"
+                    >
+                      <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
+                        Entonces, ¿qué habilidad necesito desarrollar ahora?
+                      </Label>
+                      <Textarea
+                        value={stuckSkill}
+                        onChange={(e) => setStuckSkill(e.target.value)}
+                        placeholder="La habilidad que necesitas..."
+                        rows={3}
+                        className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+                        data-testid="input-stuck-skill"
+                        autoFocus
+                      />
+                      <div className="flex justify-between mt-auto pt-6">
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          onClick={() => setStuckStep(0)}
+                          className="h-10 w-10 bg-muted/50 hover:bg-muted"
+                          data-testid="button-stuck-prev-1"
+                        >
+                          <ChevronLeft className="h-5 w-5" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          onClick={() => setStuckStep(2)}
+                          className="h-10 w-10 bg-muted/50 hover:bg-muted"
+                          data-testid="button-stuck-next-2"
+                        >
+                          <ChevronRight className="h-5 w-5" />
+                        </Button>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {stuckStep === 2 && (
+                    <motion.div
+                      key="stuck-step-2"
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -20 }}
+                      transition={{ duration: 0.2 }}
+                      className="flex-1 flex flex-col gap-4"
+                    >
+                      <div>
+                        <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block">
+                          ¿Qué acción concreta entrena esa habilidad?
+                        </Label>
+                        <Textarea
+                          value={stuckAction}
+                          onChange={(e) => setStuckAction(e.target.value)}
+                          placeholder="La acción que entrena la habilidad..."
+                          rows={2}
+                          className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+                          data-testid="input-stuck-action"
+                          autoFocus
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block">
+                          Escribilo en tres palabras
+                        </Label>
+                        <Input
+                          value={stuckTitle}
+                          onChange={(e) => {
+                            const words = e.target.value.split(/\s+/).filter(w => w.length > 0);
+                            if (words.length <= 3) {
+                              setStuckTitle(e.target.value);
+                            } else {
+                              setStuckTitle(words.slice(0, 3).join(" "));
+                            }
+                          }}
+                          placeholder="Título del nodo..."
+                          className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
+                          data-testid="input-stuck-title"
+                        />
+                      </div>
+                      <div className="flex justify-between mt-auto pt-4">
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          onClick={() => setStuckStep(1)}
+                          className="h-10 w-10 bg-muted/50 hover:bg-muted"
+                          data-testid="button-stuck-prev-2"
+                        >
+                          <ChevronLeft className="h-5 w-5" />
+                        </Button>
+                        <Button 
+                          onClick={handleCreateStuckNode}
+                          disabled={!stuckTitle.trim()}
+                          className="border-0"
+                          data-testid="button-create-stuck-node"
+                        >
+                          Crear nodo
+                        </Button>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </DialogContent>
+          </Dialog>
 
           <div 
             className="relative w-full mt-20 transition-all duration-500 ease-in-out"
