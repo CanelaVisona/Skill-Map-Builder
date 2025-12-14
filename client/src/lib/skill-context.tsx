@@ -268,11 +268,30 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
         
         const { updatedArea, createdSkills } = await generateResponse.json();
         
+        // Find the first node of the new level (lowest Y position) and mark it as mastered
+        let firstNodeOfNewLevel: Skill | null = null;
+        if (createdSkills.length > 0) {
+          firstNodeOfNewLevel = createdSkills.reduce((min: Skill, s: Skill) => s.y < min.y ? s : min, createdSkills[0]);
+          if (firstNodeOfNewLevel) {
+            await fetch(`/api/skills/${firstNodeOfNewLevel.id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ status: "mastered" }),
+            });
+          }
+        }
+        
         // Merge skills - avoid duplicates by checking existing skill IDs
         setAreas(prev => prev.map(a => {
           if (a.id !== areaId) return a;
           const existingSkillIds = new Set(a.skills.map(s => s.id));
-          const newSkills = createdSkills.filter((s: Skill) => !existingSkillIds.has(s.id));
+          const newSkills = createdSkills.filter((s: Skill) => !existingSkillIds.has(s.id)).map((s: Skill) => {
+            // Mark the first node of new level as mastered in local state
+            if (firstNodeOfNewLevel && s.id === firstNodeOfNewLevel.id) {
+              return { ...s, status: "mastered" as SkillStatus };
+            }
+            return s;
+          });
           return {
             ...a,
             unlockedLevel: updatedArea.unlockedLevel,
@@ -410,10 +429,29 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
         
         const { updatedProject, createdSkills } = await generateResponse.json();
         
+        // Find the first node of the new level (lowest Y position) and mark it as mastered
+        let firstNodeOfNewLevel: Skill | null = null;
+        if (createdSkills.length > 0) {
+          firstNodeOfNewLevel = createdSkills.reduce((min: Skill, s: Skill) => s.y < min.y ? s : min, createdSkills[0]);
+          if (firstNodeOfNewLevel) {
+            await fetch(`/api/skills/${firstNodeOfNewLevel.id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ status: "mastered" }),
+            });
+          }
+        }
+        
         setProjects(prev => prev.map(p => {
           if (p.id !== projectId) return p;
           const existingSkillIds = new Set(p.skills.map(s => s.id));
-          const newSkills = createdSkills.filter((s: Skill) => !existingSkillIds.has(s.id));
+          const newSkills = createdSkills.filter((s: Skill) => !existingSkillIds.has(s.id)).map((s: Skill) => {
+            // Mark the first node of new level as mastered in local state
+            if (firstNodeOfNewLevel && s.id === firstNodeOfNewLevel.id) {
+              return { ...s, status: "mastered" as SkillStatus };
+            }
+            return s;
+          });
           return {
             ...p,
             unlockedLevel: updatedProject.unlockedLevel,
