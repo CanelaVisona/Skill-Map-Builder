@@ -1867,7 +1867,9 @@ function SkillCanvas() {
     deleteSubSkillTree,
     showLevelUp,
     showCompleted,
-    addSkill
+    addSkill,
+    updateSkill,
+    updateProjectSkill
   } = useSkillTree();
   
   const [isStuckDialogOpen, setIsStuckDialogOpen] = useState(false);
@@ -1893,8 +1895,31 @@ function SkillCanvas() {
     if (!activeItem) return;
     
     const skills = activeItem.skills;
-    const maxY = skills.length > 0 ? Math.max(...skills.map(s => s.y)) : 0;
-    const maxLevel = skills.length > 0 ? Math.max(...skills.map(s => s.level)) : 0;
+    
+    // Sort skills by level then by Y position (skill tree order)
+    const sortedSkills = [...skills].sort((a, b) => {
+      if (a.level !== b.level) return a.level - b.level;
+      return a.y - b.y;
+    });
+    
+    // Find the first "next challenge" node
+    let targetSkill = sortedSkills.find(s => 
+      s.title.toLowerCase() === "next challenge" || 
+      s.title.toLowerCase() === "next challange"
+    );
+    
+    // If no "next challenge" found, find the first node of the next available level
+    if (!targetSkill) {
+      const currentMaxLevel = skills.length > 0 ? Math.max(...skills.map(s => s.level)) : 0;
+      // Find first node of the highest level
+      targetSkill = sortedSkills.find(s => s.level === currentMaxLevel);
+    }
+    
+    // Use target skill position or create at end
+    const targetX = targetSkill ? targetSkill.x : 50;
+    const targetY = targetSkill ? targetSkill.y : (skills.length > 0 ? Math.max(...skills.map(s => s.y)) + 80 : 100);
+    const targetLevel = targetSkill ? targetSkill.level : (skills.length > 0 ? Math.max(...skills.map(s => s.level)) : 1);
+    const targetLevelPosition = targetSkill ? targetSkill.levelPosition : 1;
     
     const newSkill: Omit<Skill, "id"> = {
       areaId: activeArea ? activeArea.id : undefined,
@@ -1904,19 +1929,33 @@ function SkillCanvas() {
       description: stuckAction,
       feedback: `Problema: ${stuckProblem}\n\nHabilidad necesaria: ${stuckSkill}`,
       status: "available" as const,
-      x: 50,
-      y: maxY + 80,
+      x: targetX,
+      y: targetY,
       dependencies: [],
       manualLock: 0 as 0 | 1,
       isFinalNode: 0 as 0 | 1,
-      level: maxLevel,
-      levelPosition: 1
+      level: targetLevel,
+      levelPosition: targetLevelPosition
     };
     
-    if (activeArea) {
-      await addSkill(activeArea.id, newSkill);
-    } else if (activeProject) {
-      await addSkill(activeProject.id, newSkill);
+    // If we found a "next challenge" node, update it instead of creating new
+    if (targetSkill && (targetSkill.title.toLowerCase() === "next challenge" || targetSkill.title.toLowerCase() === "next challange")) {
+      const updates = {
+        title: stuckTitle,
+        description: stuckAction,
+        feedback: `Problema: ${stuckProblem}\n\nHabilidad necesaria: ${stuckSkill}`
+      };
+      if (activeArea) {
+        updateSkill(activeArea.id, targetSkill.id, updates);
+      } else if (activeProject) {
+        updateProjectSkill(activeProject.id, targetSkill.id, updates);
+      }
+    } else {
+      if (activeArea) {
+        await addSkill(activeArea.id, newSkill);
+      } else if (activeProject) {
+        await addSkill(activeProject.id, newSkill);
+      }
     }
     
     handleStuckDialogClose(false);
