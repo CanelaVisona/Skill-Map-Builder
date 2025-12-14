@@ -1954,8 +1954,8 @@ function SkillCanvas() {
       levelPosition: targetLevelPosition
     };
     
-    // If we found a "next challenge" node, update it instead of creating new
-    if (targetSkill && (targetSkill.title.toLowerCase() === "next challenge" || targetSkill.title.toLowerCase() === "next challange")) {
+    // Always update the target skill (whether it's "next challenge" or first node of next level)
+    if (targetSkill) {
       const updates = {
         title: stuckTitle,
         description: stuckAction,
@@ -1967,6 +1967,7 @@ function SkillCanvas() {
         updateProjectSkill(activeProject.id, targetSkill.id, updates);
       }
     } else {
+      // Only create new if no target skill exists at all
       if (activeArea) {
         await addSkill(activeArea.id, newSkill);
       } else if (activeProject) {
