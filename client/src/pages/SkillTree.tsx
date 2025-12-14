@@ -1902,17 +1902,33 @@ function SkillCanvas() {
       return a.y - b.y;
     });
     
-    // Find the first "next challenge" node
+    // Find the first "next challenge" node in the visible levels
     let targetSkill = sortedSkills.find(s => 
       s.title.toLowerCase() === "next challenge" || 
       s.title.toLowerCase() === "next challange"
     );
     
-    // If no "next challenge" found, find the first node of the next available level
+    // If no "next challenge" found, find the first node of the next level after current visible
     if (!targetSkill) {
-      const currentMaxLevel = skills.length > 0 ? Math.max(...skills.map(s => s.level)) : 0;
-      // Find first node of the highest level
-      targetSkill = sortedSkills.find(s => s.level === currentMaxLevel);
+      // Get visible levels
+      const visibleLevels = calculateVisibleLevels(skills);
+      const visibleLevelArray = Array.from(visibleLevels).sort((a, b) => a - b);
+      const maxVisibleLevel = visibleLevelArray.length > 0 ? Math.max(...visibleLevelArray) : 0;
+      
+      // Find the first node of the next level (maxVisibleLevel + 1)
+      const nextLevel = maxVisibleLevel + 1;
+      const nextLevelSkills = sortedSkills.filter(s => s.level === nextLevel);
+      
+      if (nextLevelSkills.length > 0) {
+        // Get the first node of next level (lowest Y position)
+        targetSkill = nextLevelSkills.reduce((min, s) => s.y < min.y ? s : min, nextLevelSkills[0]);
+      } else {
+        // No next level exists, use first node of the highest visible level
+        const highestLevelSkills = sortedSkills.filter(s => s.level === maxVisibleLevel);
+        if (highestLevelSkills.length > 0) {
+          targetSkill = highestLevelSkills.reduce((min, s) => s.y < min.y ? s : min, highestLevelSkills[0]);
+        }
+      }
     }
     
     // Use target skill position or create at end
