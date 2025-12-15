@@ -1,8 +1,9 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { type Skill, useSkillTree } from "@/lib/skill-context";
 import { cn } from "@/lib/utils";
-import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus, Star, ChevronRight, ChevronLeft } from "lucide-react";
+import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus, Star, ChevronRight, ChevronLeft, Wrench, Lightbulb } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Popover,
   PopoverContent,
@@ -19,6 +20,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 interface SkillNodeProps {
   skill: Skill;
@@ -111,6 +113,56 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const titleLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTitleLongPress = useRef(false);
 
+  // Tools & Learnings form state
+  const queryClient = useQueryClient();
+  const [feedbackActiveTab, setFeedbackActiveTab] = useState<"thoughts" | "tools" | "learnings">("thoughts");
+  const [toolTitle, setToolTitle] = useState("");
+  const [toolSentence, setToolSentence] = useState("");
+  const [learningTitle, setLearningTitle] = useState("");
+  const [learningSentence, setLearningSentence] = useState("");
+  const [showPlusOne, setShowPlusOne] = useState<{ visible: boolean; type: "tools" | "learnings" }>({ visible: false, type: "tools" });
+
+  const createLearning = useMutation({
+    mutationFn: async (data: { title: string; sentence: string }) => {
+      const res = await fetch("/api/journal/learnings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/journal/learnings"] }),
+  });
+
+  const createTool = useMutation({
+    mutationFn: async (data: { title: string; sentence: string }) => {
+      const res = await fetch("/api/journal/tools", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/journal/tools"] }),
+  });
+
+  const handleAddTool = () => {
+    if (!toolTitle.trim()) return;
+    createTool.mutate({ title: toolTitle.trim(), sentence: toolSentence.trim() });
+    setToolTitle("");
+    setToolSentence("");
+    setShowPlusOne({ visible: true, type: "tools" });
+    setTimeout(() => setShowPlusOne({ visible: false, type: "tools" }), 1000);
+  };
+
+  const handleAddLearning = () => {
+    if (!learningTitle.trim()) return;
+    createLearning.mutate({ title: learningTitle.trim(), sentence: learningSentence.trim() });
+    setLearningTitle("");
+    setLearningSentence("");
+    setShowPlusOne({ visible: true, type: "learnings" });
+    setTimeout(() => setShowPlusOne({ visible: false, type: "learnings" }), 1000);
+  };
 
   const handleTitleLongPressStart = (e: React.TouchEvent | React.MouseEvent) => {
     e.stopPropagation();
@@ -725,30 +777,137 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       </DialogContent>
     </Dialog>
 
-    <Dialog open={isFeedbackDialogOpen} onOpenChange={setIsFeedbackDialogOpen}>
+    <Dialog open={isFeedbackDialogOpen} onOpenChange={(open) => {
+      if (!open) setFeedbackActiveTab("thoughts");
+      setIsFeedbackDialogOpen(open);
+    }}>
       <DialogContent className="sm:max-w-[400px] border-0 shadow-2xl">
         <DialogHeader>
           <DialogTitle className="text-lg font-medium">Feedback</DialogTitle>
         </DialogHeader>
-        <div className="py-4">
-          <Textarea
-            value={editFeedback}
-            onChange={(e) => setEditFeedback(e.target.value)}
-            placeholder="Notas, comentarios o retroalimentación..."
-            rows={4}
-            className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
-            data-testid="input-feedback"
-            autoFocus
-          />
-        </div>
-        <div className="flex gap-2 pt-2">
-          <Button variant="ghost" onClick={() => setIsFeedbackDialogOpen(false)} className="flex-1 bg-muted/50 hover:bg-muted" data-testid="button-cancel-feedback">
-            Cancelar
-          </Button>
-          <Button onClick={handleFeedbackSave} className="flex-1 border-0" data-testid="button-save-feedback">
-            Guardar
-          </Button>
-        </div>
+        
+        <Tabs value={feedbackActiveTab} onValueChange={(v) => setFeedbackActiveTab(v as "thoughts" | "tools" | "learnings")} className="w-full">
+          <TabsList className="w-full grid grid-cols-3 bg-muted/50">
+            <TabsTrigger value="thoughts" className="text-xs" data-testid="feedback-tab-thoughts">
+              <Pencil className="h-3 w-3 mr-1" />
+              Thoughts
+            </TabsTrigger>
+            <TabsTrigger value="tools" className="text-xs" data-testid="feedback-tab-tools">
+              <Wrench className="h-3 w-3 mr-1" />
+              Tools
+            </TabsTrigger>
+            <TabsTrigger value="learnings" className="text-xs" data-testid="feedback-tab-learnings">
+              <Lightbulb className="h-3 w-3 mr-1" />
+              Learnings
+            </TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="thoughts" className="mt-4">
+            <Textarea
+              value={editFeedback}
+              onChange={(e) => setEditFeedback(e.target.value)}
+              placeholder="Notas, comentarios o retroalimentación..."
+              rows={4}
+              className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+              data-testid="input-feedback"
+              autoFocus
+            />
+            <div className="flex gap-2 pt-4">
+              <Button variant="ghost" onClick={() => setIsFeedbackDialogOpen(false)} className="flex-1 bg-muted/50 hover:bg-muted" data-testid="button-cancel-feedback">
+                Cancelar
+              </Button>
+              <Button onClick={handleFeedbackSave} className="flex-1 border-0" data-testid="button-save-feedback">
+                Guardar
+              </Button>
+            </div>
+          </TabsContent>
+          
+          <TabsContent value="tools" className="mt-4 space-y-3">
+            <Input
+              placeholder="TITLE"
+              value={toolTitle}
+              onChange={(e) => setToolTitle(e.target.value.toUpperCase())}
+              className="uppercase border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
+              data-testid="input-tool-title"
+            />
+            <Input
+              placeholder="Description"
+              value={toolSentence}
+              onChange={(e) => setToolSentence(e.target.value)}
+              className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
+              data-testid="input-tool-sentence"
+            />
+            <div className="relative inline-block pt-2">
+              <AnimatePresence>
+                {showPlusOne.visible && showPlusOne.type === "tools" && (
+                  <motion.span
+                    initial={{ opacity: 1, y: 0 }}
+                    animate={{ opacity: 0, y: -20 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.8 }}
+                    className="absolute -top-4 left-1/2 -translate-x-1/2 text-foreground font-medium text-sm pointer-events-none"
+                  >
+                    +1
+                  </motion.span>
+                )}
+              </AnimatePresence>
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={handleAddTool}
+                disabled={!toolTitle.trim()}
+                className="bg-muted/50 hover:bg-muted"
+                data-testid="button-new-tool"
+              >
+                <Plus className="h-3 w-3 mr-1" />
+                New Tool
+              </Button>
+            </div>
+          </TabsContent>
+          
+          <TabsContent value="learnings" className="mt-4 space-y-3">
+            <Input
+              placeholder="TITLE"
+              value={learningTitle}
+              onChange={(e) => setLearningTitle(e.target.value.toUpperCase())}
+              className="uppercase border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
+              data-testid="input-learning-title"
+            />
+            <Input
+              placeholder="Description"
+              value={learningSentence}
+              onChange={(e) => setLearningSentence(e.target.value)}
+              className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
+              data-testid="input-learning-sentence"
+            />
+            <div className="relative inline-block pt-2">
+              <AnimatePresence>
+                {showPlusOne.visible && showPlusOne.type === "learnings" && (
+                  <motion.span
+                    initial={{ opacity: 1, y: 0 }}
+                    animate={{ opacity: 0, y: -20 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.8 }}
+                    className="absolute -top-4 left-1/2 -translate-x-1/2 text-foreground font-medium text-sm pointer-events-none"
+                  >
+                    +1
+                  </motion.span>
+                )}
+              </AnimatePresence>
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={handleAddLearning}
+                disabled={!learningTitle.trim()}
+                className="bg-muted/50 hover:bg-muted"
+                data-testid="button-new-learning"
+              >
+                <Plus className="h-3 w-3 mr-1" />
+                New Learning
+              </Button>
+            </div>
+          </TabsContent>
+        </Tabs>
       </DialogContent>
     </Dialog>
 
