@@ -950,15 +950,15 @@ function FeedbackSection({
   const [activeSubTab, setActiveSubTab] = useState<"tools" | "learnings">("tools");
   const [title, setTitle] = useState("");
   const [sentence, setSentence] = useState("");
-  const [showPlusOne, setShowPlusOne] = useState<{ visible: boolean; type: "tool" | "learning" }>({ visible: false, type: "tool" });
+  const [showPlusOne, setShowPlusOne] = useState<{ visible: boolean; type: "tools" | "learnings" }>({ visible: false, type: "tools" });
 
   const handleAddTool = () => {
     if (!title.trim()) return;
     onAddTool({ title: title.trim(), sentence: sentence.trim() });
     setTitle("");
     setSentence("");
-    setShowPlusOne({ visible: true, type: "tool" });
-    setTimeout(() => setShowPlusOne({ visible: false, type: "tool" }), 1000);
+    setShowPlusOne({ visible: true, type: "tools" });
+    setTimeout(() => setShowPlusOne({ visible: false, type: "tools" }), 1000);
   };
 
   const handleAddLearning = () => {
@@ -966,8 +966,8 @@ function FeedbackSection({
     onAddLearning({ title: title.trim(), sentence: sentence.trim() });
     setTitle("");
     setSentence("");
-    setShowPlusOne({ visible: true, type: "learning" });
-    setTimeout(() => setShowPlusOne({ visible: false, type: "learning" }), 1000);
+    setShowPlusOne({ visible: true, type: "learnings" });
+    setTimeout(() => setShowPlusOne({ visible: false, type: "learnings" }), 1000);
   };
 
   return (
