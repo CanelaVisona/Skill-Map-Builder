@@ -2559,9 +2559,19 @@ function SkillCanvas() {
         <div className="w-full relative max-w-4xl mx-auto mt-10 min-h-full">
           
           <div className="absolute top-0 left-0 z-10 sticky">
-            <h2 className="text-2xl font-bold tracking-tight mb-1">
-              {activeItem.name}
-            </h2>
+            <div className="flex items-baseline gap-2">
+              <h2 className="text-2xl font-bold tracking-tight">
+                {activeItem.name}
+              </h2>
+              {(isProject ? activeProject?.skills : activeArea?.skills)?.some(
+                s => s.isFinalNode === 1 && s.status === "mastered"
+              ) && (
+                <span className="text-sm text-zinc-600 dark:text-zinc-400">
+                  Completed
+                </span>
+              )}
+            </div>
+            <div className="mb-1" />
             <p className="text-muted-foreground max-w-md text-sm leading-relaxed">
               {activeItem.description}
             </p>
