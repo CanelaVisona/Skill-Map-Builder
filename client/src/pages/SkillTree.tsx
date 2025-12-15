@@ -4,7 +4,7 @@ import { AreaMenu } from "@/components/AreaMenu";
 import { SkillNode } from "@/components/SkillNode";
 import { SkillConnection } from "@/components/SkillConnection";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -17,7 +17,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import type { JournalCharacter, JournalPlace, JournalShadow } from "@shared/schema";
+import type { JournalCharacter, JournalPlace, JournalShadow, JournalLearning, JournalTool } from "@shared/schema";
 import { OnboardingGuide, HelpButton, useOnboarding } from "@/components/OnboardingGuide";
 import { useAuth } from "@/lib/auth-context";
 
@@ -827,6 +827,206 @@ function ShadowsSection({
               </div>
             )}
           </ScrollArea>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LearningsSection({ 
+  entries,
+  isLoading,
+  onDelete 
+}: { 
+  entries: JournalLearning[];
+  isLoading: boolean;
+  onDelete: (id: string) => void;
+}) {
+  const [viewingEntry, setViewingEntry] = useState<JournalLearning | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const longPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">Loading...</div>;
+  }
+
+  const handleLeftLongPressStart = (entry: JournalLearning) => {
+    longPressTimer.current = setTimeout(() => {
+      setViewingEntry(entry);
+      setShowDeleteConfirm(true);
+    }, 500);
+  };
+
+  const handleLeftLongPressEnd = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const handleDelete = () => {
+    if (viewingEntry) {
+      onDelete(viewingEntry.id);
+      setViewingEntry(null);
+      setShowDeleteConfirm(false);
+    }
+  };
+
+  return (
+    <div className="h-full flex flex-col">
+      <div className="mb-3 pb-2 border-b border-zinc-700/50">
+        <span className="text-xs text-zinc-500 uppercase tracking-wider">
+          {entries.length} learnings
+        </span>
+        <div className="h-px w-8 bg-gradient-to-r from-zinc-600 to-transparent mt-1" />
+      </div>
+
+      <Dialog open={showDeleteConfirm} onOpenChange={(open) => !open && setShowDeleteConfirm(false)}>
+        <DialogContent className="sm:max-w-md bg-zinc-900 border border-zinc-700">
+          <VisuallyHidden>
+            <DialogTitle>Delete Learning</DialogTitle>
+          </VisuallyHidden>
+          <div className="space-y-4">
+            <p className="text-sm text-zinc-400">Delete "{viewingEntry?.title}"?</p>
+            <div className="flex gap-2">
+              <Button size="sm" variant="destructive" onClick={handleDelete} data-testid="button-confirm-delete-learning">
+                Delete
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setShowDeleteConfirm(false)} className="text-zinc-400">
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <ScrollArea className="flex-1">
+        {entries.length === 0 ? (
+          <div className="flex items-center justify-center py-12 text-zinc-600 text-sm">
+            No learnings yet
+          </div>
+        ) : (
+          <div className="space-y-2 pr-2">
+            {entries.map((entry) => (
+              <div
+                key={entry.id}
+                className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700/50 cursor-pointer hover:bg-zinc-800"
+                onTouchStart={() => handleLeftLongPressStart(entry)}
+                onTouchEnd={handleLeftLongPressEnd}
+                onTouchCancel={handleLeftLongPressEnd}
+                onMouseDown={() => handleLeftLongPressStart(entry)}
+                onMouseUp={handleLeftLongPressEnd}
+                onMouseLeave={handleLeftLongPressEnd}
+                data-testid={`learning-entry-${entry.id}`}
+              >
+                <h4 className="font-medium text-zinc-200 uppercase text-sm">{entry.title}</h4>
+                {entry.sentence && (
+                  <p className="text-xs text-zinc-400 mt-1">{entry.sentence}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </ScrollArea>
+    </div>
+  );
+}
+
+function FeedbackSection({ 
+  learnings,
+  tools,
+  isLoadingLearnings,
+  isLoadingTools,
+  onAddLearning,
+  onAddTool
+}: { 
+  learnings: JournalLearning[];
+  tools: JournalTool[];
+  isLoadingLearnings: boolean;
+  isLoadingTools: boolean;
+  onAddLearning: (data: { title: string; sentence: string }) => void;
+  onAddTool: (data: { title: string; sentence: string }) => void;
+}) {
+  const [activeSubTab, setActiveSubTab] = useState<"tools" | "learnings">("tools");
+  const [title, setTitle] = useState("");
+  const [sentence, setSentence] = useState("");
+  const [showPlusOne, setShowPlusOne] = useState<{ visible: boolean; type: "tool" | "learning" }>({ visible: false, type: "tool" });
+
+  const handleAddTool = () => {
+    if (!title.trim()) return;
+    onAddTool({ title: title.trim(), sentence: sentence.trim() });
+    setTitle("");
+    setSentence("");
+    setShowPlusOne({ visible: true, type: "tool" });
+    setTimeout(() => setShowPlusOne({ visible: false, type: "tool" }), 1000);
+  };
+
+  const handleAddLearning = () => {
+    if (!title.trim()) return;
+    onAddLearning({ title: title.trim(), sentence: sentence.trim() });
+    setTitle("");
+    setSentence("");
+    setShowPlusOne({ visible: true, type: "learning" });
+    setTimeout(() => setShowPlusOne({ visible: false, type: "learning" }), 1000);
+  };
+
+  return (
+    <div className="h-full flex flex-col">
+      <div className="flex gap-4 mb-4 border-b border-zinc-700/50 pb-2">
+        <button
+          onClick={() => { setActiveSubTab("tools"); setTitle(""); setSentence(""); }}
+          className={`text-sm font-medium transition-colors ${activeSubTab === "tools" ? "text-zinc-100" : "text-zinc-500 hover:text-zinc-300"}`}
+          data-testid="subtab-tools"
+        >
+          Tools ({tools.length})
+        </button>
+        <button
+          onClick={() => { setActiveSubTab("learnings"); setTitle(""); setSentence(""); }}
+          className={`text-sm font-medium transition-colors ${activeSubTab === "learnings" ? "text-zinc-100" : "text-zinc-500 hover:text-zinc-300"}`}
+          data-testid="subtab-learnings"
+        >
+          Learnings ({learnings.length})
+        </button>
+      </div>
+
+      <div className="space-y-4">
+        <Input
+          placeholder="TITLE"
+          value={title}
+          onChange={(e) => setTitle(e.target.value.toUpperCase())}
+          className="uppercase bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500"
+          data-testid={`input-feedback-${activeSubTab}-title`}
+        />
+        <Input
+          placeholder="Sentence"
+          value={sentence}
+          onChange={(e) => setSentence(e.target.value)}
+          className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500"
+          data-testid={`input-feedback-${activeSubTab}-sentence`}
+        />
+        
+        <div className="relative inline-block">
+          <AnimatePresence>
+            {showPlusOne.visible && showPlusOne.type === activeSubTab && (
+              <motion.span
+                initial={{ opacity: 1, y: 0 }}
+                animate={{ opacity: 0, y: -20 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.8 }}
+                className="absolute -top-6 left-1/2 -translate-x-1/2 text-zinc-300 font-medium text-sm pointer-events-none"
+              >
+                +1
+              </motion.span>
+            )}
+          </AnimatePresence>
+          <button
+            onClick={activeSubTab === "tools" ? handleAddTool : handleAddLearning}
+            disabled={!title.trim()}
+            className="text-zinc-500 hover:text-zinc-300 disabled:text-zinc-700 disabled:cursor-not-allowed text-sm font-medium transition-colors"
+            data-testid={`button-new-${activeSubTab === "tools" ? "tool" : "learning"}`}
+          >
+            New {activeSubTab === "tools" ? "Tool" : "Learning"}
+          </button>
         </div>
       </div>
     </div>
@@ -1665,6 +1865,16 @@ function QuestDiary() {
     enabled: isDiaryOpen,
   });
 
+  const { data: learnings = [], isLoading: loadingLearnings } = useQuery<JournalLearning[]>({
+    queryKey: ["/api/journal/learnings"],
+    enabled: isDiaryOpen,
+  });
+
+  const { data: tools = [], isLoading: loadingTools } = useQuery<JournalTool[]>({
+    queryKey: ["/api/journal/tools"],
+    enabled: isDiaryOpen,
+  });
+
   const createCharacter = useMutation({
     mutationFn: async (data: { name: string; action: string; description: string }) => {
       const res = await fetch("/api/journal/characters", {
@@ -1769,6 +1979,37 @@ function QuestDiary() {
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/journal/shadows"] }),
   });
+
+  const createLearning = useMutation({
+    mutationFn: async (data: { title: string; sentence: string }) => {
+      const res = await fetch("/api/journal/learnings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/journal/learnings"] }),
+  });
+
+  const deleteLearning = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/journal/learnings/${id}`, { method: "DELETE" });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/journal/learnings"] }),
+  });
+
+  const createTool = useMutation({
+    mutationFn: async (data: { title: string; sentence: string }) => {
+      const res = await fetch("/api/journal/tools", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/journal/tools"] }),
+  });
   
   return (
     <Dialog open={isDiaryOpen} onOpenChange={(open) => !open && closeDiary()}>
@@ -1792,7 +2033,13 @@ function QuestDiary() {
               <TabsTrigger value="shadows" className="p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-shadows" title="Shadows">
                 <Skull className="h-5 w-5" />
               </TabsTrigger>
+              <TabsTrigger value="learnings" className="p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-learnings" title="Learnings">
+                <Lightbulb className="h-5 w-5" />
+              </TabsTrigger>
               <div className="h-px bg-zinc-700/50 my-1 mx-1" />
+              <TabsTrigger value="feedback" className="p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-feedback" title="Feedback">
+                <MessageSquare className="h-5 w-5" />
+              </TabsTrigger>
               <TabsTrigger value="profile" className="p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-profile" title="Mi Perfil">
                 <User className="h-5 w-5" />
               </TabsTrigger>
@@ -1838,6 +2085,25 @@ function QuestDiary() {
                   onEdit={(id, data) => updateShadow.mutate({ id, data })}
                   onDelete={(id) => deleteShadow.mutate(id)}
                   onMarkDefeated={(id, defeated) => markShadowDefeated.mutate({ id, defeated })}
+                />
+              </TabsContent>
+              
+              <TabsContent value="learnings" className="h-[calc(100%-4rem)] mt-0">
+                <LearningsSection
+                  entries={learnings}
+                  isLoading={loadingLearnings}
+                  onDelete={(id) => deleteLearning.mutate(id)}
+                />
+              </TabsContent>
+              
+              <TabsContent value="feedback" className="h-[calc(100%-4rem)] mt-0">
+                <FeedbackSection
+                  learnings={learnings}
+                  tools={tools}
+                  isLoadingLearnings={loadingLearnings}
+                  isLoadingTools={loadingTools}
+                  onAddLearning={(data) => createLearning.mutate(data)}
+                  onAddTool={(data) => createTool.mutate(data)}
                 />
               </TabsContent>
               
