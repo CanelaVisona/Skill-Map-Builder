@@ -130,7 +130,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
           const response = await fetch(`/api/skills/${skill.id}/subskills`);
           const subskills = await response.json();
           if (Array.isArray(subskills) && subskills.length > 0) {
-            const hasIncomplete = subskills.some(s => s.status !== "mastered" || !s.isFinalNode);
+            const hasIncomplete = subskills.some(s => s.status !== "mastered");
             setHasIncompleteSubtasks(hasIncomplete);
           } else {
             setHasIncompleteSubtasks(false);
@@ -141,7 +141,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       }
     };
     checkSubtasks();
-  }, [skill.id]);
+  }, [skill.id, skill.status, activeParentSkillId]);
 
   const hasUnlockedWithIncompleteSubtasks = !isLocked && !isMastered && hasIncompleteSubtasks;
 
