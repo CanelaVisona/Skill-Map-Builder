@@ -122,6 +122,12 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [learningSentence, setLearningSentence] = useState("");
   const [showPlusOne, setShowPlusOne] = useState<{ visible: boolean; type: "tools" | "learnings" }>({ visible: false, type: "tools" });
   const [hasIncompleteSubtasks, setHasIncompleteSubtasks] = useState(false);
+  
+  // XP Dialog state
+  const [isXpDialogOpen, setIsXpDialogOpen] = useState(false);
+  const [xpValue, setXpValue] = useState("");
+  const [showXpAnimation, setShowXpAnimation] = useState(false);
+  const [animatedXpValue, setAnimatedXpValue] = useState("");
 
   useEffect(() => {
     const checkSubtasks = async () => {
@@ -192,14 +198,18 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     isTitleLongPress.current = false;
     titleLongPressTimer.current = setTimeout(() => {
       isTitleLongPress.current = true;
-      setEditTitle(skill.title);
-      const descParts = (skill.description || "").split("\n\nWhen: ");
-      setEditAction(descParts[0] || "");
-      setEditWhen(descParts[1] || "");
-      setEditFeedback(skill.feedback || "");
-      setEditStep(0);
-      setIsEditDialogOpen(true);
+      setXpValue("");
+      setIsXpDialogOpen(true);
     }, 500);
+  };
+  
+  const handleXpConfirm = () => {
+    if (xpValue && parseInt(xpValue) > 0) {
+      setAnimatedXpValue(xpValue);
+      setIsXpDialogOpen(false);
+      setShowXpAnimation(true);
+      setTimeout(() => setShowXpAnimation(false), 1500);
+    }
   };
 
   const handleTitleLongPressEnd = () => {
@@ -943,6 +953,67 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
         </Tabs>
       </DialogContent>
     </Dialog>
+
+    {/* XP Dialog */}
+    <Dialog open={isXpDialogOpen} onOpenChange={setIsXpDialogOpen}>
+      <DialogContent className="sm:max-w-[300px]">
+        <DialogHeader>
+          <DialogTitle className="text-center text-sm font-medium">
+            ¿Cantidad de experiencia que le voy a dar a este nodo?
+          </DialogTitle>
+        </DialogHeader>
+        <div className="flex items-center justify-center gap-2 py-4">
+          <Input
+            type="number"
+            value={xpValue}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (val.length <= 3) {
+                setXpValue(val);
+              }
+            }}
+            className="w-24 text-center text-lg font-bold"
+            placeholder="0"
+            max={999}
+            min={1}
+            data-testid="input-xp-value"
+          />
+          <span className="text-lg font-medium text-muted-foreground">xp</span>
+        </div>
+        <DialogFooter>
+          <Button 
+            onClick={handleXpConfirm} 
+            disabled={!xpValue || parseInt(xpValue) <= 0}
+            className="w-full"
+            data-testid="button-confirm-xp"
+          >
+            Confirmar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    {/* Floating XP Animation */}
+    <AnimatePresence>
+      {showXpAnimation && (
+        <motion.div
+          className="fixed inset-0 flex items-center justify-center pointer-events-none z-50"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+        >
+          <motion.span
+            className="text-2xl font-bold tracking-wide text-foreground"
+            initial={{ y: 50, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -80, opacity: 0 }}
+            transition={{ duration: 0.8, ease: "easeOut" }}
+          >
+            +{animatedXpValue}
+          </motion.span>
+        </motion.div>
+      )}
+    </AnimatePresence>
 
   </>
   );
