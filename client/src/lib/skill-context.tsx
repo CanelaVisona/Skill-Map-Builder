@@ -102,6 +102,9 @@ interface SkillTreeContextType {
   duplicateSkill: (areaId: string, skill: Skill) => Promise<void>;
   duplicateProjectSkill: (projectId: string, skill: Skill) => Promise<void>;
   duplicateSubSkill: (skill: Skill) => Promise<void>;
+  moveSkillToLevel: (areaId: string, skillId: string, direction: "left" | "right") => Promise<void>;
+  moveProjectSkillToLevel: (projectId: string, skillId: string, direction: "left" | "right") => Promise<void>;
+  moveSubSkillToLevel: (skillId: string, direction: "left" | "right") => Promise<void>;
   updateLevelSubtitle: (areaId: string, level: number, subtitle: string) => Promise<void>;
   updateProjectLevelSubtitle: (projectId: string, level: number, subtitle: string) => Promise<void>;
   toggleFinalNode: (areaId: string, skillId: string) => Promise<void>;
@@ -2203,6 +2206,164 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const moveSkillToLevel = async (areaId: string, skillId: string, direction: "left" | "right") => {
+    const area = areas.find(a => a.id === areaId);
+    if (!area) return;
+
+    const skill = area.skills.find(s => s.id === skillId);
+    if (!skill) return;
+
+    const newLevel = direction === "left" ? skill.level - 1 : skill.level + 1;
+    if (newLevel < 1) return;
+
+    const targetLevelSkills = area.skills
+      .filter(s => s.level === newLevel)
+      .sort((a, b) => a.y - b.y);
+
+    const newY = targetLevelSkills.length > 0 
+      ? Math.max(...targetLevelSkills.map(s => s.y)) + 150 
+      : 100;
+
+    try {
+      await fetch(`/api/skills/${skillId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          level: newLevel, 
+          y: newY,
+          levelPosition: targetLevelSkills.length + 1,
+          dependencies: [],
+          isFinalNode: 0
+        }),
+      });
+
+      setAreas(prev => prev.map(a => {
+        if (a.id !== areaId) return a;
+        return {
+          ...a,
+          skills: a.skills.map(s => {
+            if (s.id === skillId) {
+              return { 
+                ...s, 
+                level: newLevel, 
+                y: newY,
+                levelPosition: targetLevelSkills.length + 1,
+                dependencies: [],
+                isFinalNode: 0
+              };
+            }
+            return s;
+          })
+        };
+      }));
+    } catch (error) {
+      console.error("Error moving skill to level:", error);
+    }
+  };
+
+  const moveProjectSkillToLevel = async (projectId: string, skillId: string, direction: "left" | "right") => {
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const skill = project.skills.find(s => s.id === skillId);
+    if (!skill) return;
+
+    const newLevel = direction === "left" ? skill.level - 1 : skill.level + 1;
+    if (newLevel < 1) return;
+
+    const targetLevelSkills = project.skills
+      .filter(s => s.level === newLevel)
+      .sort((a, b) => a.y - b.y);
+
+    const newY = targetLevelSkills.length > 0 
+      ? Math.max(...targetLevelSkills.map(s => s.y)) + 150 
+      : 100;
+
+    try {
+      await fetch(`/api/skills/${skillId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          level: newLevel, 
+          y: newY,
+          levelPosition: targetLevelSkills.length + 1,
+          dependencies: [],
+          isFinalNode: 0
+        }),
+      });
+
+      setProjects(prev => prev.map(p => {
+        if (p.id !== projectId) return p;
+        return {
+          ...p,
+          skills: p.skills.map(s => {
+            if (s.id === skillId) {
+              return { 
+                ...s, 
+                level: newLevel, 
+                y: newY,
+                levelPosition: targetLevelSkills.length + 1,
+                dependencies: [],
+                isFinalNode: 0
+              };
+            }
+            return s;
+          })
+        };
+      }));
+    } catch (error) {
+      console.error("Error moving project skill to level:", error);
+    }
+  };
+
+  const moveSubSkillToLevel = async (skillId: string, direction: "left" | "right") => {
+    if (!activeParentSkillId) return;
+
+    const skill = subSkills.find(s => s.id === skillId);
+    if (!skill) return;
+
+    const newLevel = direction === "left" ? skill.level - 1 : skill.level + 1;
+    if (newLevel < 1) return;
+
+    const targetLevelSkills = subSkills
+      .filter(s => s.level === newLevel)
+      .sort((a, b) => a.y - b.y);
+
+    const newY = targetLevelSkills.length > 0 
+      ? Math.max(...targetLevelSkills.map(s => s.y)) + 150 
+      : 100;
+
+    try {
+      await fetch(`/api/skills/${skillId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          level: newLevel, 
+          y: newY,
+          levelPosition: targetLevelSkills.length + 1,
+          dependencies: [],
+          isFinalNode: 0
+        }),
+      });
+
+      setSubSkills(prev => prev.map(s => {
+        if (s.id === skillId) {
+          return { 
+            ...s, 
+            level: newLevel, 
+            y: newY,
+            levelPosition: targetLevelSkills.length + 1,
+            dependencies: [],
+            isFinalNode: 0
+          };
+        }
+        return s;
+      }));
+    } catch (error) {
+      console.error("Error moving sub-skill to level:", error);
+    }
+  };
+
   // Auto-unlock logic for areas (also re-locks final nodes that shouldn't be available)
   useEffect(() => {
     if (isLoading || areas.length === 0) return;
@@ -2745,6 +2906,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       duplicateSkill,
       duplicateProjectSkill,
       duplicateSubSkill,
+      moveSkillToLevel,
+      moveProjectSkillToLevel,
+      moveSubSkillToLevel,
       updateLevelSubtitle,
       updateProjectLevelSubtitle,
       toggleFinalNode,
