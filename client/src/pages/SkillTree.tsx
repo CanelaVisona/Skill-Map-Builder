@@ -391,9 +391,9 @@ function JournalSection({
         </DialogContent>
       </Dialog>
 
-      <div className="flex flex-1 min-h-0 gap-2">
+      <div className="flex flex-1 min-h-0 h-full gap-2">
         <div 
-          className="w-1/2 bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]"
+          className="w-1/2 h-full overflow-hidden bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]"
           onTouchStart={handleLeftLongPressStart}
           onTouchEnd={handleLeftLongPressEnd}
           onTouchCancel={handleLeftLongPressEnd}
@@ -401,7 +401,7 @@ function JournalSection({
           onMouseUp={handleLeftLongPressEnd}
           onMouseLeave={handleLeftLongPressEnd}
         >
-          <ScrollArea className="h-full">
+          <ScrollArea className="h-full max-h-full">
             {entries.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <Icon className="h-8 w-8 text-zinc-600 mb-3" />
@@ -757,9 +757,9 @@ function ShadowsSection({
         </DialogContent>
       </Dialog>
 
-      <div className="flex flex-1 min-h-0 gap-2">
+      <div className="flex flex-1 min-h-0 h-full gap-2">
         <div 
-          className="w-1/2 bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]"
+          className="w-1/2 h-full overflow-hidden bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]"
           onTouchStart={handleLeftLongPressStart}
           onTouchEnd={handleLeftLongPressEnd}
           onTouchCancel={handleLeftLongPressEnd}
@@ -767,7 +767,7 @@ function ShadowsSection({
           onMouseUp={handleLeftLongPressEnd}
           onMouseLeave={handleLeftLongPressEnd}
         >
-          <ScrollArea className="h-full">
+          <ScrollArea className="h-full max-h-full">
             {currentEntries.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <Skull className="h-8 w-8 text-zinc-600 mb-3" />
@@ -886,9 +886,9 @@ function ToolsSection({
         <div className="h-px w-8 bg-gradient-to-r from-zinc-600 to-transparent mt-1" />
       </div>
 
-      <div className="flex flex-1 min-h-0 gap-2">
+      <div className="flex flex-1 min-h-0 h-full gap-2">
         <div 
-          className="w-1/2 bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]"
+          className="w-1/2 h-full overflow-hidden bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]"
           onTouchStart={handleLeftLongPressStart}
           onTouchEnd={handleLeftLongPressEnd}
           onTouchCancel={handleLeftLongPressEnd}
@@ -896,7 +896,7 @@ function ToolsSection({
           onMouseUp={handleLeftLongPressEnd}
           onMouseLeave={handleLeftLongPressEnd}
         >
-          <ScrollArea className="h-full">
+          <ScrollArea className="h-full max-h-full">
             {entries.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <Wrench className="h-8 w-8 text-zinc-600 mb-3" />
@@ -1012,9 +1012,9 @@ function LearningsSection({
         <div className="h-px w-8 bg-gradient-to-r from-zinc-600 to-transparent mt-1" />
       </div>
 
-      <div className="flex flex-1 min-h-0 gap-2">
+      <div className="flex flex-1 min-h-0 h-full gap-2">
         <div 
-          className="w-1/2 bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]"
+          className="w-1/2 h-full overflow-hidden bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]"
           onTouchStart={handleLeftLongPressStart}
           onTouchEnd={handleLeftLongPressEnd}
           onTouchCancel={handleLeftLongPressEnd}
@@ -1022,7 +1022,7 @@ function LearningsSection({
           onMouseUp={handleLeftLongPressEnd}
           onMouseLeave={handleLeftLongPressEnd}
         >
-          <ScrollArea className="h-full">
+          <ScrollArea className="h-full max-h-full">
             {entries.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <Lightbulb className="h-8 w-8 text-zinc-600 mb-3" />
