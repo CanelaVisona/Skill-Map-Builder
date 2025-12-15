@@ -106,6 +106,20 @@ export const profileLikes = pgTable("profile_likes", {
   description: text("description").notNull().default(""),
 });
 
+export const journalLearnings = pgTable("journal_learnings", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  sentence: text("sentence").notNull().default(""),
+});
+
+export const journalTools = pgTable("journal_tools", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  sentence: text("sentence").notNull().default(""),
+});
+
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertSessionSchema = createInsertSchema(sessions).omit({ id: true });
 export const insertAreaSchema = createInsertSchema(areas);
@@ -116,6 +130,8 @@ export const insertJournalPlaceSchema = createInsertSchema(journalPlaces).omit({
 export const insertJournalShadowSchema = createInsertSchema(journalShadows).omit({ id: true });
 export const insertProfileValueSchema = createInsertSchema(profileValues).omit({ id: true });
 export const insertProfileLikeSchema = createInsertSchema(profileLikes).omit({ id: true });
+export const insertJournalLearningSchema = createInsertSchema(journalLearnings).omit({ id: true });
+export const insertJournalToolSchema = createInsertSchema(journalTools).omit({ id: true });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
@@ -137,3 +153,7 @@ export type InsertProfileValue = z.infer<typeof insertProfileValueSchema>;
 export type ProfileValue = typeof profileValues.$inferSelect;
 export type InsertProfileLike = z.infer<typeof insertProfileLikeSchema>;
 export type ProfileLike = typeof profileLikes.$inferSelect;
+export type InsertJournalLearning = z.infer<typeof insertJournalLearningSchema>;
+export type JournalLearning = typeof journalLearnings.$inferSelect;
+export type InsertJournalTool = z.infer<typeof insertJournalToolSchema>;
+export type JournalTool = typeof journalTools.$inferSelect;
