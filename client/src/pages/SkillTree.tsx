@@ -843,7 +843,6 @@ function ToolsSection({
   onDelete: (id: string) => void;
 }) {
   const [viewingEntry, setViewingEntry] = useState<JournalTool | null>(null);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const longPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   if (isLoading) {
@@ -853,7 +852,6 @@ function ToolsSection({
   const handleLeftLongPressStart = (entry: JournalTool) => {
     longPressTimer.current = setTimeout(() => {
       setViewingEntry(entry);
-      setShowDeleteConfirm(true);
     }, 500);
   };
 
@@ -864,11 +862,18 @@ function ToolsSection({
     }
   };
 
-  const handleDelete = () => {
-    if (viewingEntry) {
+  const handleRightLongPressStart = () => {
+    if (!viewingEntry) return;
+    longPressTimer.current = setTimeout(() => {
       onDelete(viewingEntry.id);
       setViewingEntry(null);
-      setShowDeleteConfirm(false);
+    }, 500);
+  };
+
+  const handleRightLongPressEnd = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
     }
   };
 
@@ -881,53 +886,75 @@ function ToolsSection({
         <div className="h-px w-8 bg-gradient-to-r from-zinc-600 to-transparent mt-1" />
       </div>
 
-      <Dialog open={showDeleteConfirm} onOpenChange={(open) => !open && setShowDeleteConfirm(false)}>
-        <DialogContent className="sm:max-w-md bg-zinc-900 border border-zinc-700">
-          <VisuallyHidden>
-            <DialogTitle>Delete Tool</DialogTitle>
-          </VisuallyHidden>
-          <div className="space-y-4">
-            <p className="text-sm text-zinc-400">Delete "{viewingEntry?.title}"?</p>
-            <div className="flex gap-2">
-              <Button size="sm" variant="destructive" onClick={handleDelete} data-testid="button-confirm-delete-tool">
-                Delete
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setShowDeleteConfirm(false)} className="text-zinc-400">
-                Cancel
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <ScrollArea className="flex-1">
-        {entries.length === 0 ? (
-          <div className="flex items-center justify-center py-12 text-zinc-600 text-sm">
-            No tools yet
-          </div>
-        ) : (
-          <div className="space-y-2 pr-2">
-            {entries.map((entry) => (
-              <div
-                key={entry.id}
-                className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700/50 cursor-pointer hover:bg-zinc-800"
-                onTouchStart={() => handleLeftLongPressStart(entry)}
-                onTouchEnd={handleLeftLongPressEnd}
-                onTouchCancel={handleLeftLongPressEnd}
-                onMouseDown={() => handleLeftLongPressStart(entry)}
-                onMouseUp={handleLeftLongPressEnd}
-                onMouseLeave={handleLeftLongPressEnd}
-                data-testid={`tool-entry-${entry.id}`}
-              >
-                <h4 className="font-medium text-zinc-200 uppercase text-sm">{entry.title}</h4>
-                {entry.sentence && (
-                  <p className="text-xs text-zinc-400 mt-1">{entry.sentence}</p>
+      <div className="flex flex-1 min-h-0 gap-2">
+        <div 
+          className="w-1/2 bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]"
+          onTouchStart={handleLeftLongPressStart}
+          onTouchEnd={handleLeftLongPressEnd}
+          onTouchCancel={handleLeftLongPressEnd}
+          onMouseDown={handleLeftLongPressStart}
+          onMouseUp={handleLeftLongPressEnd}
+          onMouseLeave={handleLeftLongPressEnd}
+        >
+          <ScrollArea className="h-full">
+            {entries.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Wrench className="h-8 w-8 text-zinc-600 mb-3" />
+                <p className="text-zinc-500 text-sm">No tools yet</p>
+              </div>
+            ) : (
+              <div className="space-y-0.5">
+                {entries.map((entry, index) => (
+                  <div key={entry.id}>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setViewingEntry(entry); }}
+                      className={`w-full text-left px-3 py-2 rounded text-sm transition-all cursor-pointer select-none ${
+                        viewingEntry?.id === entry.id 
+                          ? "bg-zinc-700 text-zinc-100 shadow-sm" 
+                          : "text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200"
+                      }`}
+                      data-testid={`card-tools-${entry.id}`}
+                    >
+                      {entry.title}
+                    </button>
+                    {index < entries.length - 1 && (
+                      <div className="h-px bg-zinc-700/30 mx-2" />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+        </div>
+        
+        <div 
+          className="w-1/2 bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
+          onTouchStart={handleRightLongPressStart}
+          onTouchEnd={handleRightLongPressEnd}
+          onTouchCancel={handleRightLongPressEnd}
+          onMouseDown={handleRightLongPressStart}
+          onMouseUp={handleRightLongPressEnd}
+          onMouseLeave={handleRightLongPressEnd}
+        >
+          <ScrollArea className="h-full">
+            {viewingEntry ? (
+              <div className="space-y-4">
+                <div className="border-b border-zinc-700/50 pb-2">
+                  <h3 className="font-medium text-zinc-100 uppercase tracking-wide">{viewingEntry.title}</h3>
+                  <div className="h-px w-12 bg-gradient-to-r from-zinc-500 to-transparent mt-2" />
+                </div>
+                {viewingEntry.sentence && (
+                  <p className="text-sm text-zinc-400 whitespace-pre-line leading-relaxed">{viewingEntry.sentence}</p>
                 )}
               </div>
-            ))}
-          </div>
-        )}
-      </ScrollArea>
+            ) : (
+              <div className="h-full flex items-center justify-center text-zinc-600 text-sm">
+                Seleccioná una entrada
+              </div>
+            )}
+          </ScrollArea>
+        </div>
+      </div>
     </div>
   );
 }
@@ -942,7 +969,6 @@ function LearningsSection({
   onDelete: (id: string) => void;
 }) {
   const [viewingEntry, setViewingEntry] = useState<JournalLearning | null>(null);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const longPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   if (isLoading) {
@@ -952,7 +978,6 @@ function LearningsSection({
   const handleLeftLongPressStart = (entry: JournalLearning) => {
     longPressTimer.current = setTimeout(() => {
       setViewingEntry(entry);
-      setShowDeleteConfirm(true);
     }, 500);
   };
 
@@ -963,11 +988,18 @@ function LearningsSection({
     }
   };
 
-  const handleDelete = () => {
-    if (viewingEntry) {
+  const handleRightLongPressStart = () => {
+    if (!viewingEntry) return;
+    longPressTimer.current = setTimeout(() => {
       onDelete(viewingEntry.id);
       setViewingEntry(null);
-      setShowDeleteConfirm(false);
+    }, 500);
+  };
+
+  const handleRightLongPressEnd = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
     }
   };
 
@@ -980,53 +1012,75 @@ function LearningsSection({
         <div className="h-px w-8 bg-gradient-to-r from-zinc-600 to-transparent mt-1" />
       </div>
 
-      <Dialog open={showDeleteConfirm} onOpenChange={(open) => !open && setShowDeleteConfirm(false)}>
-        <DialogContent className="sm:max-w-md bg-zinc-900 border border-zinc-700">
-          <VisuallyHidden>
-            <DialogTitle>Delete Learning</DialogTitle>
-          </VisuallyHidden>
-          <div className="space-y-4">
-            <p className="text-sm text-zinc-400">Delete "{viewingEntry?.title}"?</p>
-            <div className="flex gap-2">
-              <Button size="sm" variant="destructive" onClick={handleDelete} data-testid="button-confirm-delete-learning">
-                Delete
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setShowDeleteConfirm(false)} className="text-zinc-400">
-                Cancel
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <ScrollArea className="flex-1">
-        {entries.length === 0 ? (
-          <div className="flex items-center justify-center py-12 text-zinc-600 text-sm">
-            No learnings yet
-          </div>
-        ) : (
-          <div className="space-y-2 pr-2">
-            {entries.map((entry) => (
-              <div
-                key={entry.id}
-                className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700/50 cursor-pointer hover:bg-zinc-800"
-                onTouchStart={() => handleLeftLongPressStart(entry)}
-                onTouchEnd={handleLeftLongPressEnd}
-                onTouchCancel={handleLeftLongPressEnd}
-                onMouseDown={() => handleLeftLongPressStart(entry)}
-                onMouseUp={handleLeftLongPressEnd}
-                onMouseLeave={handleLeftLongPressEnd}
-                data-testid={`learning-entry-${entry.id}`}
-              >
-                <h4 className="font-medium text-zinc-200 uppercase text-sm">{entry.title}</h4>
-                {entry.sentence && (
-                  <p className="text-xs text-zinc-400 mt-1">{entry.sentence}</p>
+      <div className="flex flex-1 min-h-0 gap-2">
+        <div 
+          className="w-1/2 bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]"
+          onTouchStart={handleLeftLongPressStart}
+          onTouchEnd={handleLeftLongPressEnd}
+          onTouchCancel={handleLeftLongPressEnd}
+          onMouseDown={handleLeftLongPressStart}
+          onMouseUp={handleLeftLongPressEnd}
+          onMouseLeave={handleLeftLongPressEnd}
+        >
+          <ScrollArea className="h-full">
+            {entries.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Lightbulb className="h-8 w-8 text-zinc-600 mb-3" />
+                <p className="text-zinc-500 text-sm">No learnings yet</p>
+              </div>
+            ) : (
+              <div className="space-y-0.5">
+                {entries.map((entry, index) => (
+                  <div key={entry.id}>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setViewingEntry(entry); }}
+                      className={`w-full text-left px-3 py-2 rounded text-sm transition-all cursor-pointer select-none ${
+                        viewingEntry?.id === entry.id 
+                          ? "bg-zinc-700 text-zinc-100 shadow-sm" 
+                          : "text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200"
+                      }`}
+                      data-testid={`card-learnings-${entry.id}`}
+                    >
+                      {entry.title}
+                    </button>
+                    {index < entries.length - 1 && (
+                      <div className="h-px bg-zinc-700/30 mx-2" />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+        </div>
+        
+        <div 
+          className="w-1/2 bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
+          onTouchStart={handleRightLongPressStart}
+          onTouchEnd={handleRightLongPressEnd}
+          onTouchCancel={handleRightLongPressEnd}
+          onMouseDown={handleRightLongPressStart}
+          onMouseUp={handleRightLongPressEnd}
+          onMouseLeave={handleRightLongPressEnd}
+        >
+          <ScrollArea className="h-full">
+            {viewingEntry ? (
+              <div className="space-y-4">
+                <div className="border-b border-zinc-700/50 pb-2">
+                  <h3 className="font-medium text-zinc-100 uppercase tracking-wide">{viewingEntry.title}</h3>
+                  <div className="h-px w-12 bg-gradient-to-r from-zinc-500 to-transparent mt-2" />
+                </div>
+                {viewingEntry.sentence && (
+                  <p className="text-sm text-zinc-400 whitespace-pre-line leading-relaxed">{viewingEntry.sentence}</p>
                 )}
               </div>
-            ))}
-          </div>
-        )}
-      </ScrollArea>
+            ) : (
+              <div className="h-full flex items-center justify-center text-zinc-600 text-sm">
+                Seleccioná una entrada
+              </div>
+            )}
+          </ScrollArea>
+        </div>
+      </div>
     </div>
   );
 }
