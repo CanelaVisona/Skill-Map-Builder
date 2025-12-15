@@ -1086,7 +1086,7 @@ export function AreaMenu() {
                 "text-sm font-medium overflow-hidden transition-all duration-200",
                 isOpen ? "max-w-[100px] opacity-100" : "max-w-0 opacity-0 group-hover:max-w-[100px] group-hover:opacity-100"
               )}>
-                Archivados
+                Completados
               </span>
             </button>
           </DialogTrigger>
@@ -1094,14 +1094,14 @@ export function AreaMenu() {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Archive size={18} />
-                Archivados
+                Quests Completados
               </DialogTitle>
             </DialogHeader>
             <div className="mt-4 space-y-4 max-h-[60vh] overflow-y-auto">
               {archivedAreas.length === 0 && archivedMainQuests.length === 0 && archivedSideQuests.length === 0 && archivedEmergentQuests.length === 0 ? (
                 <div className="text-center text-muted-foreground py-8">
                   <Archive className="mx-auto h-12 w-12 mb-3 opacity-30" />
-                  <p>No hay elementos archivados</p>
+                  <p>No hay quests completados</p>
                 </div>
               ) : (
                 <>

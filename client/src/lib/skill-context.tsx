@@ -389,6 +389,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
 
       if (hasStar && newStatus === "mastered") {
         triggerCompleted();
+        await archiveProject(projectId);
       }
 
       if (isOpeningNewLevel) {
