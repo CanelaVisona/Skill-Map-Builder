@@ -4,7 +4,7 @@ import { AreaMenu } from "@/components/AreaMenu";
 import { SkillNode } from "@/components/SkillNode";
 import { SkillConnection } from "@/components/SkillConnection";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, MessageSquare } from "lucide-react";
+import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -928,107 +928,6 @@ function LearningsSection({
           </div>
         )}
       </ScrollArea>
-    </div>
-  );
-}
-
-function FeedbackSection({ 
-  learnings,
-  tools,
-  isLoadingLearnings,
-  isLoadingTools,
-  onAddLearning,
-  onAddTool
-}: { 
-  learnings: JournalLearning[];
-  tools: JournalTool[];
-  isLoadingLearnings: boolean;
-  isLoadingTools: boolean;
-  onAddLearning: (data: { title: string; sentence: string }) => void;
-  onAddTool: (data: { title: string; sentence: string }) => void;
-}) {
-  const [activeSubTab, setActiveSubTab] = useState<"tools" | "learnings">("tools");
-  const [title, setTitle] = useState("");
-  const [sentence, setSentence] = useState("");
-  const [showPlusOne, setShowPlusOne] = useState<{ visible: boolean; type: "tools" | "learnings" }>({ visible: false, type: "tools" });
-
-  const handleAddTool = () => {
-    if (!title.trim()) return;
-    onAddTool({ title: title.trim(), sentence: sentence.trim() });
-    setTitle("");
-    setSentence("");
-    setShowPlusOne({ visible: true, type: "tools" });
-    setTimeout(() => setShowPlusOne({ visible: false, type: "tools" }), 1000);
-  };
-
-  const handleAddLearning = () => {
-    if (!title.trim()) return;
-    onAddLearning({ title: title.trim(), sentence: sentence.trim() });
-    setTitle("");
-    setSentence("");
-    setShowPlusOne({ visible: true, type: "learnings" });
-    setTimeout(() => setShowPlusOne({ visible: false, type: "learnings" }), 1000);
-  };
-
-  return (
-    <div className="h-full flex flex-col">
-      <div className="flex gap-4 mb-4 border-b border-zinc-700/50 pb-2">
-        <button
-          onClick={() => { setActiveSubTab("tools"); setTitle(""); setSentence(""); }}
-          className={`text-sm font-medium transition-colors ${activeSubTab === "tools" ? "text-zinc-100" : "text-zinc-500 hover:text-zinc-300"}`}
-          data-testid="subtab-tools"
-        >
-          Tools ({tools.length})
-        </button>
-        <button
-          onClick={() => { setActiveSubTab("learnings"); setTitle(""); setSentence(""); }}
-          className={`text-sm font-medium transition-colors ${activeSubTab === "learnings" ? "text-zinc-100" : "text-zinc-500 hover:text-zinc-300"}`}
-          data-testid="subtab-learnings"
-        >
-          Learnings ({learnings.length})
-        </button>
-      </div>
-
-      <div className="space-y-4">
-        <Input
-          placeholder="TITLE"
-          value={title}
-          onChange={(e) => setTitle(e.target.value.toUpperCase())}
-          className="uppercase bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500"
-          data-testid={`input-feedback-${activeSubTab}-title`}
-        />
-        <Input
-          placeholder="Sentence"
-          value={sentence}
-          onChange={(e) => setSentence(e.target.value)}
-          className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500"
-          data-testid={`input-feedback-${activeSubTab}-sentence`}
-        />
-        
-        <div className="relative inline-block">
-          <AnimatePresence>
-            {showPlusOne.visible && showPlusOne.type === activeSubTab && (
-              <motion.span
-                initial={{ opacity: 1, y: 0 }}
-                animate={{ opacity: 0, y: -20 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.8 }}
-                className="absolute -top-6 left-1/2 -translate-x-1/2 text-zinc-300 font-medium text-sm pointer-events-none"
-              >
-                +1
-              </motion.span>
-            )}
-          </AnimatePresence>
-          <button
-            onClick={activeSubTab === "tools" ? handleAddTool : handleAddLearning}
-            disabled={!title.trim()}
-            className="text-zinc-500 hover:text-zinc-300 disabled:text-zinc-700 disabled:cursor-not-allowed text-sm font-medium transition-colors"
-            data-testid={`button-new-${activeSubTab === "tools" ? "tool" : "learning"}`}
-          >
-            New {activeSubTab === "tools" ? "Tool" : "Learning"}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
@@ -2037,9 +1936,6 @@ function QuestDiary() {
                 <Lightbulb className="h-5 w-5" />
               </TabsTrigger>
               <div className="h-px bg-zinc-700/50 my-1 mx-1" />
-              <TabsTrigger value="feedback" className="p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-feedback" title="Feedback">
-                <MessageSquare className="h-5 w-5" />
-              </TabsTrigger>
               <TabsTrigger value="profile" className="p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-profile" title="Mi Perfil">
                 <User className="h-5 w-5" />
               </TabsTrigger>
@@ -2093,17 +1989,6 @@ function QuestDiary() {
                   entries={learnings}
                   isLoading={loadingLearnings}
                   onDelete={(id) => deleteLearning.mutate(id)}
-                />
-              </TabsContent>
-              
-              <TabsContent value="feedback" className="h-[calc(100%-4rem)] mt-0">
-                <FeedbackSection
-                  learnings={learnings}
-                  tools={tools}
-                  isLoadingLearnings={loadingLearnings}
-                  isLoadingTools={loadingTools}
-                  onAddLearning={(data) => createLearning.mutate(data)}
-                  onAddTool={(data) => createTool.mutate(data)}
                 />
               </TabsContent>
               
