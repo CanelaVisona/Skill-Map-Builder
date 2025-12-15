@@ -1461,7 +1461,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
           await fetch(`/api/skills/${activeParentSkillId}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ status: "available" }),
+            body: JSON.stringify({ status: "available", fromSubtaskCompletion: true }),
           });
           
           // Update local state for areas

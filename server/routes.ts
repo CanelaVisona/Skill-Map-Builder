@@ -506,7 +506,8 @@ export async function registerRoutes(
 
       // Prevent bypassing lock system for positions 2-5
       // Only the auto-unlock system or mastering should change status of locked nodes
-      if (req.body.status === "available" && existingSkill.status === "locked") {
+      // Exception: fromSubtaskCompletion bypasses this check (when subtasks are completed)
+      if (req.body.status === "available" && existingSkill.status === "locked" && !req.body.fromSubtaskCompletion) {
         // Verify dependencies are mastered before allowing unlock
         let allSkills: typeof existingSkill[] = [];
         if (existingSkill.areaId) {
