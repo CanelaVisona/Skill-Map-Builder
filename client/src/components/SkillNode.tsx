@@ -123,11 +123,25 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [showPlusOne, setShowPlusOne] = useState<{ visible: boolean; type: "tools" | "learnings" }>({ visible: false, type: "tools" });
   const [hasIncompleteSubtasks, setHasIncompleteSubtasks] = useState(false);
   
-  // XP Dialog state
-  const [isXpDialogOpen, setIsXpDialogOpen] = useState(false);
+  // XP state
   const [xpValue, setXpValue] = useState("");
   const [showXpAnimation, setShowXpAnimation] = useState(false);
   const [animatedXpValue, setAnimatedXpValue] = useState("");
+  const pendingXpValue = useRef<string>("");
+  const prevStatus = useRef<string>(skill.status);
+
+  // Show XP animation when skill becomes mastered
+  useEffect(() => {
+    if (prevStatus.current !== "mastered" && skill.status === "mastered" && pendingXpValue.current) {
+      setAnimatedXpValue(pendingXpValue.current);
+      setShowXpAnimation(true);
+      setTimeout(() => {
+        setShowXpAnimation(false);
+        pendingXpValue.current = "";
+      }, 1500);
+    }
+    prevStatus.current = skill.status;
+  }, [skill.status]);
 
   useEffect(() => {
     const checkSubtasks = async () => {
@@ -302,6 +316,11 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     const combinedDescription = editWhen.trim() 
       ? `${editAction}\n\nWhen: ${editWhen}` 
       : editAction;
+    
+    // Store XP value for animation when node becomes mastered
+    if (xpValue && parseInt(xpValue) > 0) {
+      pendingXpValue.current = xpValue;
+    }
     
     if (isSubSkillView) {
       updateSubSkill(skill.id, { 
@@ -727,49 +746,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
             {editStep === 2 && (
               <motion.div
-                key="step-thoughts"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.2 }}
-                className="flex-1 flex flex-col"
-              >
-                <Label htmlFor="edit-thoughts" className="text-xs text-muted-foreground uppercase tracking-wide mb-3">THOUGHTS</Label>
-                <Textarea
-                  id="edit-thoughts"
-                  value={editFeedback}
-                  onChange={(e) => setEditFeedback(e.target.value)}
-                  placeholder="Your thoughts..."
-                  rows={4}
-                  className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none flex-1"
-                  data-testid="input-edit-thoughts"
-                  autoFocus
-                />
-                <div className="flex justify-between mt-auto pt-6">
-                  <Button 
-                    variant="ghost" 
-                    size="icon"
-                    onClick={() => setEditStep(1)}
-                    className="h-10 w-10 bg-muted/50 hover:bg-muted"
-                    data-testid="button-prev-step-2"
-                  >
-                    <ChevronLeft className="h-5 w-5" />
-                  </Button>
-                  <Button 
-                    variant="ghost" 
-                    size="icon"
-                    onClick={() => setEditStep(3)}
-                    className="h-10 w-10 bg-muted/50 hover:bg-muted"
-                    data-testid="button-next-step-3"
-                  >
-                    <ChevronRight className="h-5 w-5" />
-                  </Button>
-                </div>
-              </motion.div>
-            )}
-
-            {editStep === 3 && (
-              <motion.div
                 key="step-xp"
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
@@ -802,25 +778,18 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                   <Button 
                     variant="ghost" 
                     size="icon"
-                    onClick={() => setEditStep(2)}
+                    onClick={() => setEditStep(1)}
                     className="h-10 w-10 bg-muted/50 hover:bg-muted"
-                    data-testid="button-prev-step-3"
+                    data-testid="button-prev-step-2"
                   >
                     <ChevronLeft className="h-5 w-5" />
                   </Button>
                   <Button 
-                    onClick={() => {
-                      handleEditSave();
-                      if (xpValue && parseInt(xpValue) > 0) {
-                        setAnimatedXpValue(xpValue);
-                        setShowXpAnimation(true);
-                        setTimeout(() => setShowXpAnimation(false), 1500);
-                      }
-                    }}
+                    onClick={handleEditSave}
                     className="border-0"
                     data-testid="button-save-edit"
                   >
-                    Confirmar
+                    Guardar
                   </Button>
                 </div>
               </motion.div>
