@@ -150,7 +150,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
   };
 
   const activeArea = areas.find(a => a.id === activeAreaId);
-  const activeProject = projects.find(p => p.id === activeProjectId);
+  const activeProject = projects.find(p => p.id === activeProjectId) || archivedProjects.find(p => p.id === activeProjectId);
   
   const mainQuests = projects.filter(p => !p.questType || p.questType === "main");
   const sideQuests = projects.filter(p => p.questType === "side");
