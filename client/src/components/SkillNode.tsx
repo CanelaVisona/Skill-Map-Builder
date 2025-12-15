@@ -198,15 +198,21 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     isTitleLongPress.current = false;
     titleLongPressTimer.current = setTimeout(() => {
       isTitleLongPress.current = true;
+      setEditTitle(skill.title);
+      const descParts = (skill.description || "").split("\n\nWhen: ");
+      setEditAction(descParts[0] || "");
+      setEditWhen(descParts[1] || "");
+      setEditFeedback(skill.feedback || "");
       setXpValue("");
-      setIsXpDialogOpen(true);
+      setEditStep(0);
+      setIsEditDialogOpen(true);
     }, 500);
   };
   
   const handleXpConfirm = () => {
     if (xpValue && parseInt(xpValue) > 0) {
       setAnimatedXpValue(xpValue);
-      setIsXpDialogOpen(false);
+      setIsEditDialogOpen(false);
       setShowXpAnimation(true);
       setTimeout(() => setShowXpAnimation(false), 1500);
     }
@@ -750,11 +756,71 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                     <ChevronLeft className="h-5 w-5" />
                   </Button>
                   <Button 
-                    onClick={handleEditSave}
+                    variant="ghost" 
+                    size="icon"
+                    onClick={() => setEditStep(3)}
+                    className="h-10 w-10 bg-muted/50 hover:bg-muted"
+                    data-testid="button-next-step-3"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+
+            {editStep === 3 && (
+              <motion.div
+                key="step-xp"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+                className="flex-1 flex flex-col"
+              >
+                <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3">EXPERIENCIA</Label>
+                <p className="text-sm text-muted-foreground mb-4">¿Cantidad de experiencia que le voy a dar a este nodo?</p>
+                <div className="flex items-center justify-center gap-2 py-4">
+                  <Input
+                    type="number"
+                    value={xpValue}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val.length <= 3) {
+                        setXpValue(val);
+                      }
+                    }}
+                    className="w-24 text-center text-lg font-bold border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
+                    placeholder="0"
+                    max={999}
+                    min={1}
+                    data-testid="input-xp-value"
+                    autoFocus
+                  />
+                  <span className="text-lg font-medium text-muted-foreground">xp</span>
+                </div>
+                <div className="flex justify-between mt-auto pt-6">
+                  <Button 
+                    variant="ghost" 
+                    size="icon"
+                    onClick={() => setEditStep(2)}
+                    className="h-10 w-10 bg-muted/50 hover:bg-muted"
+                    data-testid="button-prev-step-3"
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </Button>
+                  <Button 
+                    onClick={() => {
+                      handleEditSave();
+                      if (xpValue && parseInt(xpValue) > 0) {
+                        setAnimatedXpValue(xpValue);
+                        setShowXpAnimation(true);
+                        setTimeout(() => setShowXpAnimation(false), 1500);
+                      }
+                    }}
                     className="border-0"
                     data-testid="button-save-edit"
                   >
-                    Save
+                    Confirmar
                   </Button>
                 </div>
               </motion.div>
@@ -951,45 +1017,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             </div>
           </TabsContent>
         </Tabs>
-      </DialogContent>
-    </Dialog>
-
-    {/* XP Dialog */}
-    <Dialog open={isXpDialogOpen} onOpenChange={setIsXpDialogOpen}>
-      <DialogContent className="sm:max-w-[300px]">
-        <DialogHeader>
-          <DialogTitle className="text-center text-sm font-medium">
-            ¿Cantidad de experiencia que le voy a dar a este nodo?
-          </DialogTitle>
-        </DialogHeader>
-        <div className="flex items-center justify-center gap-2 py-4">
-          <Input
-            type="number"
-            value={xpValue}
-            onChange={(e) => {
-              const val = e.target.value;
-              if (val.length <= 3) {
-                setXpValue(val);
-              }
-            }}
-            className="w-24 text-center text-lg font-bold"
-            placeholder="0"
-            max={999}
-            min={1}
-            data-testid="input-xp-value"
-          />
-          <span className="text-lg font-medium text-muted-foreground">xp</span>
-        </div>
-        <DialogFooter>
-          <Button 
-            onClick={handleXpConfirm} 
-            disabled={!xpValue || parseInt(xpValue) <= 0}
-            className="w-full"
-            data-testid="button-confirm-xp"
-          >
-            Confirmar
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
 
