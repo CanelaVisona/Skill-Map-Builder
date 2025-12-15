@@ -434,7 +434,7 @@ function JournalSection({
         </div>
         
         <div 
-          className="w-1/2 h-full bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
+          className="w-1/2 h-full flex flex-col bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
           onTouchStart={handleRightLongPressStart}
           onTouchEnd={handleRightLongPressEnd}
           onTouchCancel={handleRightLongPressEnd}
@@ -443,17 +443,17 @@ function JournalSection({
           onMouseLeave={handleRightLongPressEnd}
         >
           {viewingEntry ? (
-            <div className="h-full flex flex-col">
+            <>
               <div className="border-b border-zinc-700/50 pb-2 mb-4 flex-shrink-0">
                 <h3 className="font-medium text-zinc-100 uppercase tracking-wide">{viewingEntry.name}</h3>
                 <div className="h-px w-12 bg-gradient-to-r from-zinc-500 to-transparent mt-2" />
               </div>
-              <div className="flex-1 overflow-y-auto minimal-scrollbar" style={{ maxHeight: 'calc(100% - 60px)' }}>
+              <div className="flex-1 min-h-0 overflow-y-auto minimal-scrollbar">
                 {viewingEntry.description && (
                   <p className="text-sm text-zinc-400 whitespace-pre-line leading-relaxed">{viewingEntry.description}</p>
                 )}
               </div>
-            </div>
+            </>
           ) : (
             <div className="h-full flex items-center justify-center text-zinc-600 text-sm">
               Seleccioná una entrada
@@ -802,7 +802,7 @@ function ShadowsSection({
         </div>
         
         <div 
-          className="w-1/2 h-full bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
+          className="w-1/2 h-full flex flex-col bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
           onTouchStart={handleRightLongPressStart}
           onTouchEnd={handleRightLongPressEnd}
           onTouchCancel={handleRightLongPressEnd}
@@ -811,17 +811,17 @@ function ShadowsSection({
           onMouseLeave={handleRightLongPressEnd}
         >
           {viewingEntry ? (
-            <div className="h-full flex flex-col">
+            <>
               <div className="border-b border-zinc-700/50 pb-2 mb-4 flex-shrink-0">
                 <h3 className="font-medium text-zinc-100 uppercase tracking-wide">{viewingEntry.name}</h3>
                 <div className="h-px w-12 bg-gradient-to-r from-zinc-500 to-transparent mt-2" />
               </div>
-              <div className="flex-1 overflow-y-auto minimal-scrollbar" style={{ maxHeight: 'calc(100% - 60px)' }}>
+              <div className="flex-1 min-h-0 overflow-y-auto minimal-scrollbar">
                 {viewingEntry.description && (
                   <p className="text-sm text-zinc-400 whitespace-pre-line leading-relaxed">{viewingEntry.description}</p>
                 )}
               </div>
-            </div>
+            </>
           ) : (
             <div className="h-full flex items-center justify-center text-zinc-600 text-sm">
               Seleccioná una entrada
@@ -928,7 +928,7 @@ function ToolsSection({
         </div>
         
         <div 
-          className="w-1/2 h-full bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
+          className="w-1/2 h-full flex flex-col bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
           onTouchStart={handleRightLongPressStart}
           onTouchEnd={handleRightLongPressEnd}
           onTouchCancel={handleRightLongPressEnd}
@@ -937,17 +937,17 @@ function ToolsSection({
           onMouseLeave={handleRightLongPressEnd}
         >
           {viewingEntry ? (
-            <div className="h-full flex flex-col">
+            <>
               <div className="border-b border-zinc-700/50 pb-2 mb-4 flex-shrink-0">
                 <h3 className="font-medium text-zinc-100 uppercase tracking-wide">{viewingEntry.title}</h3>
                 <div className="h-px w-12 bg-gradient-to-r from-zinc-500 to-transparent mt-2" />
               </div>
-              <div className="flex-1 overflow-y-auto minimal-scrollbar" style={{ maxHeight: 'calc(100% - 60px)' }}>
+              <div className="flex-1 min-h-0 overflow-y-auto minimal-scrollbar">
                 {viewingEntry.sentence && (
                   <p className="text-sm text-zinc-400 whitespace-pre-line leading-relaxed">{viewingEntry.sentence}</p>
                 )}
               </div>
-            </div>
+            </>
           ) : (
             <div className="h-full flex items-center justify-center text-zinc-600 text-sm">
               Seleccioná una entrada
@@ -1054,7 +1054,7 @@ function LearningsSection({
         </div>
         
         <div 
-          className="w-1/2 h-full bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
+          className="w-1/2 h-full flex flex-col bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
           onTouchStart={handleRightLongPressStart}
           onTouchEnd={handleRightLongPressEnd}
           onTouchCancel={handleRightLongPressEnd}
@@ -1063,17 +1063,17 @@ function LearningsSection({
           onMouseLeave={handleRightLongPressEnd}
         >
           {viewingEntry ? (
-            <div className="h-full flex flex-col">
+            <>
               <div className="border-b border-zinc-700/50 pb-2 mb-4 flex-shrink-0">
                 <h3 className="font-medium text-zinc-100 uppercase tracking-wide">{viewingEntry.title}</h3>
                 <div className="h-px w-12 bg-gradient-to-r from-zinc-500 to-transparent mt-2" />
               </div>
-              <div className="flex-1 overflow-y-auto minimal-scrollbar" style={{ maxHeight: 'calc(100% - 60px)' }}>
+              <div className="flex-1 min-h-0 overflow-y-auto minimal-scrollbar">
                 {viewingEntry.sentence && (
                   <p className="text-sm text-zinc-400 whitespace-pre-line leading-relaxed">{viewingEntry.sentence}</p>
                 )}
               </div>
-            </div>
+            </>
           ) : (
             <div className="h-full flex items-center justify-center text-zinc-600 text-sm">
               Seleccioná una entrada
