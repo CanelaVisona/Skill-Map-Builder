@@ -1005,7 +1005,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             exit={{ y: -80, opacity: 0 }}
             transition={{ duration: 0.8, ease: "easeOut" }}
           >
-            +{animatedXpValue}
+            +{animatedXpValue}xp
           </motion.span>
         </motion.div>
       )}
