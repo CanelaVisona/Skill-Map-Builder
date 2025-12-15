@@ -121,6 +121,29 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [learningTitle, setLearningTitle] = useState("");
   const [learningSentence, setLearningSentence] = useState("");
   const [showPlusOne, setShowPlusOne] = useState<{ visible: boolean; type: "tools" | "learnings" }>({ visible: false, type: "tools" });
+  const [hasIncompleteSubtasks, setHasIncompleteSubtasks] = useState(false);
+
+  useEffect(() => {
+    const checkSubtasks = async () => {
+      if (!isInicioNode) {
+        try {
+          const response = await fetch(`/api/skills/${skill.id}/subskills`);
+          const subskills = await response.json();
+          if (Array.isArray(subskills) && subskills.length > 0) {
+            const hasIncomplete = subskills.some(s => s.status !== "mastered" || !s.isFinalNode);
+            setHasIncompleteSubtasks(hasIncomplete);
+          } else {
+            setHasIncompleteSubtasks(false);
+          }
+        } catch {
+          setHasIncompleteSubtasks(false);
+        }
+      }
+    };
+    checkSubtasks();
+  }, [skill.id]);
+
+  const hasUnlockedWithIncompleteSubtasks = !isLocked && !isMastered && hasIncompleteSubtasks;
 
   const createLearning = useMutation({
     mutationFn: async (data: { title: string; sentence: string }) => {
@@ -193,7 +216,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       isTitleLongPress.current = false;
       return;
     }
-    if (!isSubSkillView && !isLocked && !isInicioNode) {
+    if (!isSubSkillView && !isInicioNode) {
       e.stopPropagation();
       try {
         const response = await fetch(`/api/skills/${skill.id}/subskills`);
@@ -400,7 +423,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               isMastered && isLevelCompleted && "bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/30"
             )}
           >
-            {isLocked ? (
+            {hasUnlockedWithIncompleteSubtasks ? (
+              <Lock size={14} className="text-white" />
+            ) : isLocked ? (
               <Lock size={14} />
             ) : isMastered ? (
               <Check size={18} strokeWidth={3} />
