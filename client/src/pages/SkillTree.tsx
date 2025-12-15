@@ -434,7 +434,7 @@ function JournalSection({
         </div>
         
         <div 
-          className="w-1/2 bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
+          className="w-1/2 h-full overflow-hidden bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
           onTouchStart={handleRightLongPressStart}
           onTouchEnd={handleRightLongPressEnd}
           onTouchCancel={handleRightLongPressEnd}
@@ -442,7 +442,7 @@ function JournalSection({
           onMouseUp={handleRightLongPressEnd}
           onMouseLeave={handleRightLongPressEnd}
         >
-          <ScrollArea className="h-full">
+          <ScrollArea className="h-full max-h-full">
             {viewingEntry ? (
               <div className="space-y-4">
                 <div className="border-b border-zinc-700/50 pb-2">
@@ -802,7 +802,7 @@ function ShadowsSection({
         </div>
         
         <div 
-          className="w-1/2 bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
+          className="w-1/2 h-full overflow-hidden bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
           onTouchStart={handleRightLongPressStart}
           onTouchEnd={handleRightLongPressEnd}
           onTouchCancel={handleRightLongPressEnd}
@@ -810,7 +810,7 @@ function ShadowsSection({
           onMouseUp={handleRightLongPressEnd}
           onMouseLeave={handleRightLongPressEnd}
         >
-          <ScrollArea className="h-full">
+          <ScrollArea className="h-full max-h-full">
             {viewingEntry ? (
               <div className="space-y-4">
                 <div className="border-b border-zinc-700/50 pb-2">
@@ -928,7 +928,7 @@ function ToolsSection({
         </div>
         
         <div 
-          className="w-1/2 bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
+          className="w-1/2 h-full overflow-hidden bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
           onTouchStart={handleRightLongPressStart}
           onTouchEnd={handleRightLongPressEnd}
           onTouchCancel={handleRightLongPressEnd}
@@ -936,7 +936,7 @@ function ToolsSection({
           onMouseUp={handleRightLongPressEnd}
           onMouseLeave={handleRightLongPressEnd}
         >
-          <ScrollArea className="h-full">
+          <ScrollArea className="h-full max-h-full">
             {viewingEntry ? (
               <div className="space-y-4">
                 <div className="border-b border-zinc-700/50 pb-2">
@@ -1054,7 +1054,7 @@ function LearningsSection({
         </div>
         
         <div 
-          className="w-1/2 bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
+          className="w-1/2 h-full overflow-hidden bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
           onTouchStart={handleRightLongPressStart}
           onTouchEnd={handleRightLongPressEnd}
           onTouchCancel={handleRightLongPressEnd}
@@ -1062,7 +1062,7 @@ function LearningsSection({
           onMouseUp={handleRightLongPressEnd}
           onMouseLeave={handleRightLongPressEnd}
         >
-          <ScrollArea className="h-full">
+          <ScrollArea className="h-full max-h-full">
             {viewingEntry ? (
               <div className="space-y-4">
                 <div className="border-b border-zinc-700/50 pb-2">
