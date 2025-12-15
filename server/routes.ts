@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertProfileValueSchema, insertProfileLikeSchema } from "@shared/schema";
+import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import cookieParser from "cookie-parser";
 import crypto from "crypto";
@@ -1114,6 +1114,68 @@ export async function registerRoutes(
         return;
       }
       await storage.deleteJournalShadow(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Journal - Learnings
+  app.get("/api/journal/learnings", requireAuth, async (req, res) => {
+    try {
+      const learnings = await storage.getJournalLearnings(req.userId!);
+      res.json(learnings);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/journal/learnings", requireAuth, async (req, res) => {
+    try {
+      const data = { ...req.body, userId: req.userId };
+      const validated = insertJournalLearningSchema.parse(data);
+      const learning = await storage.createJournalLearning(validated);
+      res.status(201).json(learning);
+    } catch (error: any) {
+      const validationError = fromError(error);
+      res.status(400).json({ message: validationError.toString() });
+    }
+  });
+
+  app.delete("/api/journal/learnings/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteJournalLearning(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Journal - Tools
+  app.get("/api/journal/tools", requireAuth, async (req, res) => {
+    try {
+      const tools = await storage.getJournalTools(req.userId!);
+      res.json(tools);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/journal/tools", requireAuth, async (req, res) => {
+    try {
+      const data = { ...req.body, userId: req.userId };
+      const validated = insertJournalToolSchema.parse(data);
+      const tool = await storage.createJournalTool(validated);
+      res.status(201).json(tool);
+    } catch (error: any) {
+      const validationError = fromError(error);
+      res.status(400).json({ message: validationError.toString() });
+    }
+  });
+
+  app.delete("/api/journal/tools/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteJournalTool(req.params.id);
       res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ message: error.message });

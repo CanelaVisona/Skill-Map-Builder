@@ -1,7 +1,7 @@
 import { eq, and } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db } from "./db";
-import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, profileValues, profileLikes } from "@shared/schema";
+import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, profileValues, profileLikes, journalLearnings, journalTools } from "@shared/schema";
 
 export interface IStorage {
   // Users
@@ -87,6 +87,16 @@ export interface IStorage {
   createProfileLike(like: InsertProfileLike): Promise<ProfileLike>;
   updateProfileLike(id: string, like: Partial<InsertProfileLike>): Promise<ProfileLike | undefined>;
   deleteProfileLike(id: string): Promise<void>;
+
+  // Journal - Learnings
+  getJournalLearnings(userId: string): Promise<JournalLearning[]>;
+  createJournalLearning(learning: InsertJournalLearning): Promise<JournalLearning>;
+  deleteJournalLearning(id: string): Promise<void>;
+
+  // Journal - Tools
+  getJournalTools(userId: string): Promise<JournalTool[]>;
+  createJournalTool(tool: InsertJournalTool): Promise<JournalTool>;
+  deleteJournalTool(id: string): Promise<void>;
 }
 
 export class DbStorage implements IStorage {
@@ -624,6 +634,36 @@ export class DbStorage implements IStorage {
 
   async deleteProfileLike(id: string): Promise<void> {
     await db.delete(profileLikes).where(eq(profileLikes.id, id));
+  }
+
+  // Journal - Learnings
+  async getJournalLearnings(userId: string): Promise<JournalLearning[]> {
+    return await db.select().from(journalLearnings).where(eq(journalLearnings.userId, userId));
+  }
+
+  async createJournalLearning(learning: InsertJournalLearning): Promise<JournalLearning> {
+    const id = randomUUID();
+    const result = await db.insert(journalLearnings).values({ id, ...learning }).returning();
+    return result[0];
+  }
+
+  async deleteJournalLearning(id: string): Promise<void> {
+    await db.delete(journalLearnings).where(eq(journalLearnings.id, id));
+  }
+
+  // Journal - Tools
+  async getJournalTools(userId: string): Promise<JournalTool[]> {
+    return await db.select().from(journalTools).where(eq(journalTools.userId, userId));
+  }
+
+  async createJournalTool(tool: InsertJournalTool): Promise<JournalTool> {
+    const id = randomUUID();
+    const result = await db.insert(journalTools).values({ id, ...tool }).returning();
+    return result[0];
+  }
+
+  async deleteJournalTool(id: string): Promise<void> {
+    await db.delete(journalTools).where(eq(journalTools.id, id));
   }
 }
 
