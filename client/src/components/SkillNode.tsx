@@ -8,6 +8,7 @@ import {
   Popover,
   PopoverContent,
   PopoverAnchor,
+  PopoverTrigger,
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import {
@@ -57,6 +58,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     addSkillBelow,
     addProjectSkillBelow,
     addSubSkillBelow,
+    duplicateSkill,
+    duplicateProjectSkill,
+    duplicateSubSkill,
     updateLevelSubtitle,
     updateProjectLevelSubtitle,
     toggleFinalNode,
@@ -129,6 +133,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [animatedXpValue, setAnimatedXpValue] = useState("");
   const pendingXpValue = useRef<string>("");
   const prevStatus = useRef<string>(skill.status);
+  
+  // Add options popup state
+  const [isAddOptionsOpen, setIsAddOptionsOpen] = useState(false);
 
   // Show XP animation when skill becomes mastered
   useEffect(() => {
@@ -569,24 +576,65 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                <span>Feedback</span>
              </Button>
 
-             <Button 
-               variant="ghost" 
-               size="sm" 
-               className="h-8 w-8 p-0 text-xs bg-muted/50 hover:bg-muted"
-               onClick={() => {
-                 if (isSubSkillView) {
-                   addSubSkillBelow(skill.id);
-                 } else if (isProject) {
-                   addProjectSkillBelow(activeId, skill.id);
-                 } else {
-                   addSkillBelow(activeId, skill.id);
-                 }
-                 setIsOpen(false);
-               }}
-               data-testid="button-add-skill-below"
-             >
-               +
-             </Button>
+             <Popover open={isAddOptionsOpen} onOpenChange={setIsAddOptionsOpen}>
+               <PopoverTrigger asChild>
+                 <Button 
+                   variant="ghost" 
+                   size="sm" 
+                   className="h-8 w-8 p-0 text-xs bg-muted/50 hover:bg-muted"
+                   data-testid="button-add-skill-below"
+                 >
+                   +
+                 </Button>
+               </PopoverTrigger>
+               <PopoverContent 
+                 className="w-auto p-1 border-0 bg-background/95 backdrop-blur-sm" 
+                 align="center" 
+                 side="top"
+                 sideOffset={4}
+               >
+                 <div className="flex flex-col gap-0.5">
+                   <Button
+                     variant="ghost"
+                     size="sm"
+                     className="h-7 px-3 text-xs justify-start font-normal hover:bg-muted/50"
+                     onClick={() => {
+                       if (isSubSkillView) {
+                         addSubSkillBelow(skill.id, "Next challenge");
+                       } else if (isProject) {
+                         addProjectSkillBelow(activeId, skill.id, "Next challenge");
+                       } else {
+                         addSkillBelow(activeId, skill.id, "Next challenge");
+                       }
+                       setIsAddOptionsOpen(false);
+                       setIsOpen(false);
+                     }}
+                     data-testid="button-add-new"
+                   >
+                     Agregar
+                   </Button>
+                   <Button
+                     variant="ghost"
+                     size="sm"
+                     className="h-7 px-3 text-xs justify-start font-normal hover:bg-muted/50"
+                     onClick={() => {
+                       if (isSubSkillView) {
+                         duplicateSubSkill(skill);
+                       } else if (isProject) {
+                         duplicateProjectSkill(activeId, skill);
+                       } else {
+                         duplicateSkill(activeId, skill);
+                       }
+                       setIsAddOptionsOpen(false);
+                       setIsOpen(false);
+                     }}
+                     data-testid="button-duplicate"
+                   >
+                     Duplicar
+                   </Button>
+                 </div>
+               </PopoverContent>
+             </Popover>
 
              {/* Star button - show for last node of level OR if node already has star (to allow removal) */}
              {(isLastNodeOfLevel || hasStar) && (

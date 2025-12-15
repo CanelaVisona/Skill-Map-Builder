@@ -96,9 +96,12 @@ interface SkillTreeContextType {
   toggleSubSkillLock: (skillId: string) => void;
   moveSubSkill: (skillId: string, direction: "up" | "down") => void;
   deleteSubSkillTree: () => Promise<void>;
-  addSkillBelow: (areaId: string, skillId: string) => Promise<void>;
-  addProjectSkillBelow: (projectId: string, skillId: string) => Promise<void>;
-  addSubSkillBelow: (skillId: string) => Promise<void>;
+  addSkillBelow: (areaId: string, skillId: string, title?: string) => Promise<void>;
+  addProjectSkillBelow: (projectId: string, skillId: string, title?: string) => Promise<void>;
+  addSubSkillBelow: (skillId: string, title?: string) => Promise<void>;
+  duplicateSkill: (areaId: string, skill: Skill) => Promise<void>;
+  duplicateProjectSkill: (projectId: string, skill: Skill) => Promise<void>;
+  duplicateSubSkill: (skill: Skill) => Promise<void>;
   updateLevelSubtitle: (areaId: string, level: number, subtitle: string) => Promise<void>;
   updateProjectLevelSubtitle: (projectId: string, level: number, subtitle: string) => Promise<void>;
   toggleFinalNode: (areaId: string, skillId: string) => Promise<void>;
@@ -1736,7 +1739,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const addSkillBelow = async (areaId: string, skillId: string) => {
+  const addSkillBelow = async (areaId: string, skillId: string, title: string = "?") => {
     const area = areas.find(a => a.id === areaId);
     if (!area) return;
 
@@ -1764,7 +1767,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
 
       const newSkillData = {
         areaId,
-        title: "?",
+        title,
         description: "",
         x: clickedSkill.x,
         y: newY,
@@ -1817,7 +1820,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const addProjectSkillBelow = async (projectId: string, skillId: string) => {
+  const addProjectSkillBelow = async (projectId: string, skillId: string, title: string = "?") => {
     const project = projects.find(p => p.id === projectId);
     if (!project) return;
 
@@ -1845,7 +1848,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
 
       const newSkillData = {
         projectId,
-        title: "?",
+        title,
         description: "",
         x: clickedSkill.x,
         y: newY,
@@ -1898,7 +1901,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const addSubSkillBelow = async (skillId: string) => {
+  const addSubSkillBelow = async (skillId: string, title: string = "?") => {
     const clickedSkill = subSkills.find(s => s.id === skillId);
     if (!clickedSkill || !activeParentSkillId) return;
 
@@ -1923,7 +1926,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
 
       const newSkillData = {
         parentSkillId: activeParentSkillId,
-        title: "?",
+        title,
         description: "",
         x: clickedSkill.x,
         y: newY,
@@ -1967,6 +1970,236 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       ]);
     } catch (error) {
       console.error("Error adding sub-skill below:", error);
+    }
+  };
+
+  const duplicateSkill = async (areaId: string, skill: Skill) => {
+    const area = areas.find(a => a.id === areaId);
+    if (!area) return;
+
+    const sameLevelSkills = area.skills
+      .filter(s => s.level === skill.level)
+      .sort((a, b) => a.y - b.y);
+
+    const finalNode = sameLevelSkills.find(s => s.isFinalNode === 1);
+    const newY = skill.y + 150;
+
+    try {
+      const nodesToShift = area.skills.filter(s => s.y > skill.y);
+      for (const node of nodesToShift) {
+        const newNodeY = node.y + 150;
+        const newLevelPosition = (node.levelPosition || 0) + 1;
+        await fetch(`/api/skills/${node.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ y: newNodeY, levelPosition: newLevelPosition }),
+        });
+      }
+
+      const newSkillData = {
+        areaId,
+        title: skill.title,
+        description: skill.description,
+        feedback: skill.feedback,
+        x: skill.x,
+        y: newY,
+        status: "locked" as SkillStatus,
+        dependencies: [skill.id],
+        level: skill.level,
+        levelPosition: (skill.levelPosition || 0) + 1,
+        isFinalNode: 0,
+        manualLock: 0,
+      };
+
+      const response = await fetch("/api/skills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newSkillData),
+      });
+      const newSkill = await response.json();
+
+      if (finalNode && finalNode.dependencies.includes(skill.id)) {
+        const updatedDeps = finalNode.dependencies.map(d => d === skill.id ? newSkill.id : d);
+        await fetch(`/api/skills/${finalNode.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dependencies: updatedDeps }),
+        });
+      }
+
+      setAreas(prev => prev.map(a => {
+        if (a.id !== areaId) return a;
+        return {
+          ...a,
+          skills: [
+            ...a.skills.map(s => {
+              let updated = { ...s };
+              if (s.y > skill.y) {
+                updated = { ...updated, y: s.y + 150, levelPosition: (s.levelPosition || 0) + 1 };
+              }
+              if (finalNode && s.id === finalNode.id && finalNode.dependencies.includes(skill.id)) {
+                const updatedDeps = s.dependencies.map(d => d === skill.id ? newSkill.id : d);
+                updated = { ...updated, dependencies: updatedDeps };
+              }
+              return updated;
+            }),
+            newSkill
+          ]
+        };
+      }));
+    } catch (error) {
+      console.error("Error duplicating skill:", error);
+    }
+  };
+
+  const duplicateProjectSkill = async (projectId: string, skill: Skill) => {
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const sameLevelSkills = project.skills
+      .filter(s => s.level === skill.level)
+      .sort((a, b) => a.y - b.y);
+
+    const finalNode = sameLevelSkills.find(s => s.isFinalNode === 1);
+    const newY = skill.y + 150;
+
+    try {
+      const nodesToShift = project.skills.filter(s => s.y > skill.y);
+      for (const node of nodesToShift) {
+        const newNodeY = node.y + 150;
+        const newLevelPosition = (node.levelPosition || 0) + 1;
+        await fetch(`/api/skills/${node.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ y: newNodeY, levelPosition: newLevelPosition }),
+        });
+      }
+
+      const newSkillData = {
+        projectId,
+        title: skill.title,
+        description: skill.description,
+        feedback: skill.feedback,
+        x: skill.x,
+        y: newY,
+        status: "locked" as SkillStatus,
+        dependencies: [skill.id],
+        level: skill.level,
+        levelPosition: (skill.levelPosition || 0) + 1,
+        isFinalNode: 0,
+        manualLock: 0,
+      };
+
+      const response = await fetch("/api/skills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newSkillData),
+      });
+      const newSkill = await response.json();
+
+      if (finalNode && finalNode.dependencies.includes(skill.id)) {
+        const updatedDeps = finalNode.dependencies.map(d => d === skill.id ? newSkill.id : d);
+        await fetch(`/api/skills/${finalNode.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dependencies: updatedDeps }),
+        });
+      }
+
+      setProjects(prev => prev.map(p => {
+        if (p.id !== projectId) return p;
+        return {
+          ...p,
+          skills: [
+            ...p.skills.map(s => {
+              let updated = { ...s };
+              if (s.y > skill.y) {
+                updated = { ...updated, y: s.y + 150, levelPosition: (s.levelPosition || 0) + 1 };
+              }
+              if (finalNode && s.id === finalNode.id && finalNode.dependencies.includes(skill.id)) {
+                const updatedDeps = s.dependencies.map(d => d === skill.id ? newSkill.id : d);
+                updated = { ...updated, dependencies: updatedDeps };
+              }
+              return updated;
+            }),
+            newSkill
+          ]
+        };
+      }));
+    } catch (error) {
+      console.error("Error duplicating project skill:", error);
+    }
+  };
+
+  const duplicateSubSkill = async (skill: Skill) => {
+    if (!activeParentSkillId) return;
+
+    const sameLevelSkills = subSkills
+      .filter(s => s.level === skill.level)
+      .sort((a, b) => a.y - b.y);
+
+    const finalNode = sameLevelSkills.find(s => s.isFinalNode === 1);
+    const newY = skill.y + 150;
+
+    try {
+      const nodesToShift = subSkills.filter(s => s.y > skill.y);
+      for (const node of nodesToShift) {
+        const newNodeY = node.y + 150;
+        const newLevelPosition = (node.levelPosition || 0) + 1;
+        await fetch(`/api/skills/${node.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ y: newNodeY, levelPosition: newLevelPosition }),
+        });
+      }
+
+      const newSkillData = {
+        parentSkillId: activeParentSkillId,
+        title: skill.title,
+        description: skill.description,
+        feedback: skill.feedback,
+        x: skill.x,
+        y: newY,
+        status: "locked" as SkillStatus,
+        dependencies: [skill.id],
+        level: skill.level,
+        levelPosition: (skill.levelPosition || 0) + 1,
+        isFinalNode: 0,
+        manualLock: 0,
+      };
+
+      const response = await fetch("/api/skills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newSkillData),
+      });
+      const newSkill = await response.json();
+
+      if (finalNode && finalNode.dependencies.includes(skill.id)) {
+        const updatedDeps = finalNode.dependencies.map(d => d === skill.id ? newSkill.id : d);
+        await fetch(`/api/skills/${finalNode.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dependencies: updatedDeps }),
+        });
+      }
+
+      setSubSkills(prev => [
+        ...prev.map(s => {
+          let updated = { ...s };
+          if (s.y > skill.y) {
+            updated = { ...updated, y: s.y + 150, levelPosition: (s.levelPosition || 0) + 1 };
+          }
+          if (finalNode && s.id === finalNode.id && finalNode.dependencies.includes(skill.id)) {
+            const updatedDeps = s.dependencies.map(d => d === skill.id ? newSkill.id : d);
+            updated = { ...updated, dependencies: updatedDeps };
+          }
+          return updated;
+        }),
+        newSkill
+      ]);
+    } catch (error) {
+      console.error("Error duplicating sub-skill:", error);
     }
   };
 
@@ -2509,6 +2742,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       addSkillBelow,
       addProjectSkillBelow,
       addSubSkillBelow,
+      duplicateSkill,
+      duplicateProjectSkill,
+      duplicateSubSkill,
       updateLevelSubtitle,
       updateProjectLevelSubtitle,
       toggleFinalNode,
