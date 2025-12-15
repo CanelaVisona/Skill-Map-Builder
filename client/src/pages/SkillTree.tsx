@@ -833,6 +833,105 @@ function ShadowsSection({
   );
 }
 
+function ToolsSection({ 
+  entries,
+  isLoading,
+  onDelete 
+}: { 
+  entries: JournalTool[];
+  isLoading: boolean;
+  onDelete: (id: string) => void;
+}) {
+  const [viewingEntry, setViewingEntry] = useState<JournalTool | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const longPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">Loading...</div>;
+  }
+
+  const handleLeftLongPressStart = (entry: JournalTool) => {
+    longPressTimer.current = setTimeout(() => {
+      setViewingEntry(entry);
+      setShowDeleteConfirm(true);
+    }, 500);
+  };
+
+  const handleLeftLongPressEnd = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const handleDelete = () => {
+    if (viewingEntry) {
+      onDelete(viewingEntry.id);
+      setViewingEntry(null);
+      setShowDeleteConfirm(false);
+    }
+  };
+
+  return (
+    <div className="h-full flex flex-col">
+      <div className="mb-3 pb-2 border-b border-zinc-700/50">
+        <span className="text-xs text-zinc-500 uppercase tracking-wider">
+          {entries.length} tools
+        </span>
+        <div className="h-px w-8 bg-gradient-to-r from-zinc-600 to-transparent mt-1" />
+      </div>
+
+      <Dialog open={showDeleteConfirm} onOpenChange={(open) => !open && setShowDeleteConfirm(false)}>
+        <DialogContent className="sm:max-w-md bg-zinc-900 border border-zinc-700">
+          <VisuallyHidden>
+            <DialogTitle>Delete Tool</DialogTitle>
+          </VisuallyHidden>
+          <div className="space-y-4">
+            <p className="text-sm text-zinc-400">Delete "{viewingEntry?.title}"?</p>
+            <div className="flex gap-2">
+              <Button size="sm" variant="destructive" onClick={handleDelete} data-testid="button-confirm-delete-tool">
+                Delete
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setShowDeleteConfirm(false)} className="text-zinc-400">
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <ScrollArea className="flex-1">
+        {entries.length === 0 ? (
+          <div className="flex items-center justify-center py-12 text-zinc-600 text-sm">
+            No tools yet
+          </div>
+        ) : (
+          <div className="space-y-2 pr-2">
+            {entries.map((entry) => (
+              <div
+                key={entry.id}
+                className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700/50 cursor-pointer hover:bg-zinc-800"
+                onTouchStart={() => handleLeftLongPressStart(entry)}
+                onTouchEnd={handleLeftLongPressEnd}
+                onTouchCancel={handleLeftLongPressEnd}
+                onMouseDown={() => handleLeftLongPressStart(entry)}
+                onMouseUp={handleLeftLongPressEnd}
+                onMouseLeave={handleLeftLongPressEnd}
+                data-testid={`tool-entry-${entry.id}`}
+              >
+                <h4 className="font-medium text-zinc-200 uppercase text-sm">{entry.title}</h4>
+                {entry.sentence && (
+                  <p className="text-xs text-zinc-400 mt-1">{entry.sentence}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </ScrollArea>
+    </div>
+  );
+}
+
 function LearningsSection({ 
   entries,
   isLoading,
@@ -1935,6 +2034,9 @@ function QuestDiary() {
               <TabsTrigger value="learnings" className="p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-learnings" title="Learnings">
                 <Lightbulb className="h-5 w-5" />
               </TabsTrigger>
+              <TabsTrigger value="tools" className="p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-tools" title="Tools">
+                <Wrench className="h-5 w-5" />
+              </TabsTrigger>
               <div className="h-px bg-zinc-700/50 my-1 mx-1" />
               <TabsTrigger value="profile" className="p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-profile" title="Mi Perfil">
                 <User className="h-5 w-5" />
@@ -1989,6 +2091,17 @@ function QuestDiary() {
                   entries={learnings}
                   isLoading={loadingLearnings}
                   onDelete={(id) => deleteLearning.mutate(id)}
+                />
+              </TabsContent>
+              
+              <TabsContent value="tools" className="h-[calc(100%-4rem)] mt-0">
+                <ToolsSection
+                  entries={tools}
+                  isLoading={loadingTools}
+                  onDelete={(id) => {
+                    fetch(`/api/journal/tools/${id}`, { method: "DELETE" });
+                    queryClient.invalidateQueries({ queryKey: ["/api/journal/tools"] });
+                  }}
                 />
               </TabsContent>
               

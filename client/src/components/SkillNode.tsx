@@ -822,35 +822,39 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             </div>
           </TabsContent>
           
-          <TabsContent value="tools" className="mt-4 space-y-3">
-            <Input
-              placeholder="TITLE"
-              value={toolTitle}
-              onChange={(e) => setToolTitle(e.target.value.toUpperCase())}
-              className="uppercase border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
-              data-testid="input-tool-title"
-            />
-            <Input
-              placeholder="Description"
-              value={toolSentence}
-              onChange={(e) => setToolSentence(e.target.value)}
-              className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
-              data-testid="input-tool-sentence"
-            />
-            <div className="relative inline-block pt-2">
-              <AnimatePresence>
-                {showPlusOne.visible && showPlusOne.type === "tools" && (
-                  <motion.span
-                    initial={{ opacity: 1, y: 0 }}
-                    animate={{ opacity: 0, y: -20 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.8 }}
-                    className="absolute -top-4 left-1/2 -translate-x-1/2 text-foreground font-medium text-sm pointer-events-none"
-                  >
-                    +1
-                  </motion.span>
-                )}
-              </AnimatePresence>
+          <TabsContent value="tools" className="mt-4 space-y-3 flex flex-col">
+            <div className="flex-1">
+              <Input
+                placeholder="TITLE"
+                value={toolTitle}
+                onChange={(e) => setToolTitle(e.target.value.toUpperCase())}
+                className="uppercase border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
+                data-testid="input-tool-title"
+              />
+              <Input
+                placeholder="Description"
+                value={toolSentence}
+                onChange={(e) => setToolSentence(e.target.value)}
+                className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted mt-2"
+                data-testid="input-tool-sentence"
+              />
+            </div>
+            <div className="flex justify-end items-center gap-2 pt-2">
+              <div className="relative">
+                <AnimatePresence>
+                  {showPlusOne.visible && showPlusOne.type === "tools" && (
+                    <motion.span
+                      initial={{ opacity: 1, y: 0 }}
+                      animate={{ opacity: 0, y: -20 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.8 }}
+                      className="absolute -top-6 -right-2 text-foreground font-medium text-sm pointer-events-none"
+                    >
+                      +1
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </div>
               <Button 
                 variant="ghost" 
                 size="sm"
@@ -865,35 +869,39 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             </div>
           </TabsContent>
           
-          <TabsContent value="learnings" className="mt-4 space-y-3">
-            <Input
-              placeholder="TITLE"
-              value={learningTitle}
-              onChange={(e) => setLearningTitle(e.target.value.toUpperCase())}
-              className="uppercase border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
-              data-testid="input-learning-title"
-            />
-            <Input
-              placeholder="Description"
-              value={learningSentence}
-              onChange={(e) => setLearningSentence(e.target.value)}
-              className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
-              data-testid="input-learning-sentence"
-            />
-            <div className="relative inline-block pt-2">
-              <AnimatePresence>
-                {showPlusOne.visible && showPlusOne.type === "learnings" && (
-                  <motion.span
-                    initial={{ opacity: 1, y: 0 }}
-                    animate={{ opacity: 0, y: -20 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.8 }}
-                    className="absolute -top-4 left-1/2 -translate-x-1/2 text-foreground font-medium text-sm pointer-events-none"
-                  >
-                    +1
-                  </motion.span>
-                )}
-              </AnimatePresence>
+          <TabsContent value="learnings" className="mt-4 space-y-3 flex flex-col">
+            <div className="flex-1">
+              <Input
+                placeholder="TITLE"
+                value={learningTitle}
+                onChange={(e) => setLearningTitle(e.target.value.toUpperCase())}
+                className="uppercase border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
+                data-testid="input-learning-title"
+              />
+              <Input
+                placeholder="Description"
+                value={learningSentence}
+                onChange={(e) => setLearningSentence(e.target.value)}
+                className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted mt-2"
+                data-testid="input-learning-sentence"
+              />
+            </div>
+            <div className="flex justify-end items-center gap-2 pt-2">
+              <div className="relative">
+                <AnimatePresence>
+                  {showPlusOne.visible && showPlusOne.type === "learnings" && (
+                    <motion.span
+                      initial={{ opacity: 1, y: 0 }}
+                      animate={{ opacity: 0, y: -20 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.8 }}
+                      className="absolute -top-6 -right-2 text-foreground font-medium text-sm pointer-events-none"
+                    >
+                      +1
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </div>
               <Button 
                 variant="ghost" 
                 size="sm"
