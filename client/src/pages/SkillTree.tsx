@@ -434,7 +434,7 @@ function JournalSection({
         </div>
         
         <div 
-          className="w-1/2 h-full overflow-hidden bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
+          className="w-1/2 h-full overflow-y-auto minimal-scrollbar bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
           onTouchStart={handleRightLongPressStart}
           onTouchEnd={handleRightLongPressEnd}
           onTouchCancel={handleRightLongPressEnd}
@@ -442,23 +442,21 @@ function JournalSection({
           onMouseUp={handleRightLongPressEnd}
           onMouseLeave={handleRightLongPressEnd}
         >
-          <ScrollArea className="h-full max-h-full">
-            {viewingEntry ? (
-              <div className="space-y-4">
-                <div className="border-b border-zinc-700/50 pb-2">
-                  <h3 className="font-medium text-zinc-100 uppercase tracking-wide">{viewingEntry.name}</h3>
-                  <div className="h-px w-12 bg-gradient-to-r from-zinc-500 to-transparent mt-2" />
-                </div>
-                {viewingEntry.description && (
-                  <p className="text-sm text-zinc-400 whitespace-pre-line leading-relaxed">{viewingEntry.description}</p>
-                )}
+          {viewingEntry ? (
+            <div className="space-y-4">
+              <div className="border-b border-zinc-700/50 pb-2">
+                <h3 className="font-medium text-zinc-100 uppercase tracking-wide">{viewingEntry.name}</h3>
+                <div className="h-px w-12 bg-gradient-to-r from-zinc-500 to-transparent mt-2" />
               </div>
-            ) : (
-              <div className="h-full flex items-center justify-center text-zinc-600 text-sm">
-                Seleccioná una entrada
-              </div>
-            )}
-          </ScrollArea>
+              {viewingEntry.description && (
+                <p className="text-sm text-zinc-400 whitespace-pre-line leading-relaxed">{viewingEntry.description}</p>
+              )}
+            </div>
+          ) : (
+            <div className="h-full flex items-center justify-center text-zinc-600 text-sm">
+              Seleccioná una entrada
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -802,7 +800,7 @@ function ShadowsSection({
         </div>
         
         <div 
-          className="w-1/2 h-full overflow-hidden bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
+          className="w-1/2 h-full overflow-y-auto minimal-scrollbar bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
           onTouchStart={handleRightLongPressStart}
           onTouchEnd={handleRightLongPressEnd}
           onTouchCancel={handleRightLongPressEnd}
@@ -810,23 +808,21 @@ function ShadowsSection({
           onMouseUp={handleRightLongPressEnd}
           onMouseLeave={handleRightLongPressEnd}
         >
-          <ScrollArea className="h-full max-h-full">
-            {viewingEntry ? (
-              <div className="space-y-4">
-                <div className="border-b border-zinc-700/50 pb-2">
-                  <h3 className="font-medium text-zinc-100 uppercase tracking-wide">{viewingEntry.name}</h3>
-                  <div className="h-px w-12 bg-gradient-to-r from-zinc-500 to-transparent mt-2" />
-                </div>
-                {viewingEntry.description && (
-                  <p className="text-sm text-zinc-400 whitespace-pre-line leading-relaxed">{viewingEntry.description}</p>
-                )}
+          {viewingEntry ? (
+            <div className="space-y-4">
+              <div className="border-b border-zinc-700/50 pb-2">
+                <h3 className="font-medium text-zinc-100 uppercase tracking-wide">{viewingEntry.name}</h3>
+                <div className="h-px w-12 bg-gradient-to-r from-zinc-500 to-transparent mt-2" />
               </div>
-            ) : (
-              <div className="h-full flex items-center justify-center text-zinc-600 text-sm">
-                Seleccioná una entrada
-              </div>
-            )}
-          </ScrollArea>
+              {viewingEntry.description && (
+                <p className="text-sm text-zinc-400 whitespace-pre-line leading-relaxed">{viewingEntry.description}</p>
+              )}
+            </div>
+          ) : (
+            <div className="h-full flex items-center justify-center text-zinc-600 text-sm">
+              Seleccioná una entrada
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -928,7 +924,7 @@ function ToolsSection({
         </div>
         
         <div 
-          className="w-1/2 h-full overflow-hidden bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
+          className="w-1/2 h-full overflow-y-auto minimal-scrollbar bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
           onTouchStart={handleRightLongPressStart}
           onTouchEnd={handleRightLongPressEnd}
           onTouchCancel={handleRightLongPressEnd}
@@ -936,23 +932,21 @@ function ToolsSection({
           onMouseUp={handleRightLongPressEnd}
           onMouseLeave={handleRightLongPressEnd}
         >
-          <ScrollArea className="h-full max-h-full">
-            {viewingEntry ? (
-              <div className="space-y-4">
-                <div className="border-b border-zinc-700/50 pb-2">
-                  <h3 className="font-medium text-zinc-100 uppercase tracking-wide">{viewingEntry.title}</h3>
-                  <div className="h-px w-12 bg-gradient-to-r from-zinc-500 to-transparent mt-2" />
-                </div>
-                {viewingEntry.sentence && (
-                  <p className="text-sm text-zinc-400 whitespace-pre-line leading-relaxed">{viewingEntry.sentence}</p>
-                )}
+          {viewingEntry ? (
+            <div className="space-y-4">
+              <div className="border-b border-zinc-700/50 pb-2">
+                <h3 className="font-medium text-zinc-100 uppercase tracking-wide">{viewingEntry.title}</h3>
+                <div className="h-px w-12 bg-gradient-to-r from-zinc-500 to-transparent mt-2" />
               </div>
-            ) : (
-              <div className="h-full flex items-center justify-center text-zinc-600 text-sm">
-                Seleccioná una entrada
-              </div>
-            )}
-          </ScrollArea>
+              {viewingEntry.sentence && (
+                <p className="text-sm text-zinc-400 whitespace-pre-line leading-relaxed">{viewingEntry.sentence}</p>
+              )}
+            </div>
+          ) : (
+            <div className="h-full flex items-center justify-center text-zinc-600 text-sm">
+              Seleccioná una entrada
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -1054,7 +1048,7 @@ function LearningsSection({
         </div>
         
         <div 
-          className="w-1/2 h-full overflow-hidden bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
+          className="w-1/2 h-full overflow-y-auto minimal-scrollbar bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
           onTouchStart={handleRightLongPressStart}
           onTouchEnd={handleRightLongPressEnd}
           onTouchCancel={handleRightLongPressEnd}
@@ -1062,23 +1056,21 @@ function LearningsSection({
           onMouseUp={handleRightLongPressEnd}
           onMouseLeave={handleRightLongPressEnd}
         >
-          <ScrollArea className="h-full max-h-full">
-            {viewingEntry ? (
-              <div className="space-y-4">
-                <div className="border-b border-zinc-700/50 pb-2">
-                  <h3 className="font-medium text-zinc-100 uppercase tracking-wide">{viewingEntry.title}</h3>
-                  <div className="h-px w-12 bg-gradient-to-r from-zinc-500 to-transparent mt-2" />
-                </div>
-                {viewingEntry.sentence && (
-                  <p className="text-sm text-zinc-400 whitespace-pre-line leading-relaxed">{viewingEntry.sentence}</p>
-                )}
+          {viewingEntry ? (
+            <div className="space-y-4">
+              <div className="border-b border-zinc-700/50 pb-2">
+                <h3 className="font-medium text-zinc-100 uppercase tracking-wide">{viewingEntry.title}</h3>
+                <div className="h-px w-12 bg-gradient-to-r from-zinc-500 to-transparent mt-2" />
               </div>
-            ) : (
-              <div className="h-full flex items-center justify-center text-zinc-600 text-sm">
-                Seleccioná una entrada
-              </div>
-            )}
-          </ScrollArea>
+              {viewingEntry.sentence && (
+                <p className="text-sm text-zinc-400 whitespace-pre-line leading-relaxed">{viewingEntry.sentence}</p>
+              )}
+            </div>
+          ) : (
+            <div className="h-full flex items-center justify-center text-zinc-600 text-sm">
+              Seleccioná una entrada
+            </div>
+          )}
         </div>
       </div>
     </div>
