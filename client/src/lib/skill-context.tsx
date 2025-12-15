@@ -2222,6 +2222,38 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [subSkills]);
 
+  // Auto-unlock parent skill when ALL subtasks are mastered
+  useEffect(() => {
+    if (!activeParentSkillId || subSkills.length === 0) return;
+    
+    const allSubtasksMastered = subSkills.every(s => s.status === "mastered");
+    
+    if (allSubtasksMastered) {
+      // Unlock the parent skill
+      fetch(`/api/skills/${activeParentSkillId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "available", fromSubtaskCompletion: true }),
+      }).then(() => {
+        // Update local state for areas
+        setAreas(prev => prev.map(area => ({
+          ...area,
+          skills: area.skills.map(s => 
+            s.id === activeParentSkillId ? { ...s, status: "available" as SkillStatus } : s
+          )
+        })));
+        
+        // Update local state for projects
+        setProjects(prev => prev.map(project => ({
+          ...project,
+          skills: project.skills.map(s => 
+            s.id === activeParentSkillId ? { ...s, status: "available" as SkillStatus } : s
+          )
+        })));
+      }).catch(err => console.error("Error unlocking parent skill:", err));
+    }
+  }, [subSkills, activeParentSkillId]);
+
   const updateLevelSubtitle = async (areaId: string, level: number, subtitle: string) => {
     const area = areas.find(a => a.id === areaId);
     if (!area) return;
