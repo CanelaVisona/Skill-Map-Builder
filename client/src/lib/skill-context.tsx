@@ -1455,6 +1455,31 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
 
       if (hasStar && newStatus === "mastered") {
         triggerCompleted();
+        
+        // Unlock the parent skill when final node is mastered
+        if (activeParentSkillId) {
+          await fetch(`/api/skills/${activeParentSkillId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: "available" }),
+          });
+          
+          // Update local state for areas
+          setAreas(prev => prev.map(area => ({
+            ...area,
+            skills: area.skills.map(s => 
+              s.id === activeParentSkillId ? { ...s, status: "available" as SkillStatus } : s
+            )
+          })));
+          
+          // Update local state for projects
+          setProjects(prev => prev.map(project => ({
+            ...project,
+            skills: project.skills.map(s => 
+              s.id === activeParentSkillId ? { ...s, status: "available" as SkillStatus } : s
+            )
+          })));
+        }
       }
 
       if (isOpeningNewLevel && activeParentSkillId) {
