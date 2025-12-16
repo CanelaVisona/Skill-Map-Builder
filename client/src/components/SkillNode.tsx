@@ -128,7 +128,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [hasIncompleteSubtasks, setHasIncompleteSubtasks] = useState(false);
   
   // XP state
-  const [xpValue, setXpValue] = useState("");
+  const [xpValue, setXpValue] = useState(skill.experiencePoints ? skill.experiencePoints.toString() : "");
   const [showXpAnimation, setShowXpAnimation] = useState(false);
   const [animatedXpValue, setAnimatedXpValue] = useState("");
   const pendingXpValue = useRef<string>("");
@@ -329,23 +329,28 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       pendingXpValue.current = xpValue;
     }
     
+    const xpNumber = xpValue ? parseInt(xpValue) : 0;
+    
     if (isSubSkillView) {
       updateSubSkill(skill.id, { 
         title: editTitle, 
         description: combinedDescription,
-        feedback: editFeedback
+        feedback: editFeedback,
+        experiencePoints: xpNumber
       });
     } else if (isProject) {
       updateProjectSkill(activeId, skill.id, { 
         title: editTitle, 
         description: combinedDescription,
-        feedback: editFeedback
+        feedback: editFeedback,
+        experiencePoints: xpNumber
       });
     } else {
       updateSkill(activeId, skill.id, { 
         title: editTitle, 
         description: combinedDescription,
-        feedback: editFeedback
+        feedback: editFeedback,
+        experiencePoints: xpNumber
       });
     }
     setIsEditDialogOpen(false);
@@ -502,6 +507,15 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             >
               {skill.title}
             </span>
+            {/* XP subtitle - only show when not mastered and has XP */}
+            {!isMastered && skill.experiencePoints && skill.experiencePoints > 0 && (
+              <div 
+                className="text-muted-foreground/70 text-center"
+                style={{ fontSize: '0.5em' }}
+              >
+                +{skill.experiencePoints}xp
+              </div>
+            )}
           </div>
 
         </div>

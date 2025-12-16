@@ -49,6 +49,7 @@ export const skills = pgTable("skills", {
   isFinalNode: integer("is_final_node").$type<0 | 1>().default(0),
   level: integer("level").notNull().default(1),
   levelPosition: integer("level_position").notNull().default(1),
+  experiencePoints: integer("experience_points").default(0),
 });
 
 export const projects = pgTable("projects", {
