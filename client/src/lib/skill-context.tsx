@@ -226,10 +226,11 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
 
     const newStatus = nextStatus[skill.status];
     
-    // Last node of level can open new levels
+    // Last node of level can open new levels, UNLESS it has the star (isFinalNode === 1)
     const hasStar = skill.isFinalNode === 1;
-    const isOpeningNewLevel = isLastNodeOfLevel && newStatus === "mastered";
-    const isClosingLevel = isLastNodeOfLevel && skill.status === "mastered" && newStatus === "available";
+    const canOpenNewLevels = isLastNodeOfLevel && !hasStar;
+    const isOpeningNewLevel = canOpenNewLevels && newStatus === "mastered";
+    const isClosingLevel = canOpenNewLevels && skill.status === "mastered" && newStatus === "available";
 
     try {
       await fetch(`/api/skills/${skillId}`, {
