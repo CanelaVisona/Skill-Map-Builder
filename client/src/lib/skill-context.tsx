@@ -695,12 +695,21 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
         .sort((a, b) => a.y - b.y);
       
       const firstNode = nextLevelSkills[0];
-      const secondNode = nextLevelSkills[1];
-      const newY = nextLevelSkills.length > 0 
-        ? (secondNode ? (firstNode.y + secondNode.y) / 2 : firstNode.y + 150)
-        : 100;
+      const nodesToShift = nextLevelSkills.slice(1);
+      const newY = firstNode ? firstNode.y + 150 : 100;
       
       try {
+        for (const node of nodesToShift) {
+          await fetch(`/api/skills/${node.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+              y: node.y + 150,
+              levelPosition: (node.levelPosition || 0) + 1
+            }),
+          });
+        }
+
         await fetch(`/api/skills/${skillId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -726,6 +735,13 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
                   levelPosition: 2,
                   dependencies: firstNode ? [firstNode.id] : [],
                   isFinalNode: 0
+                };
+              }
+              if (nodesToShift.some(n => n.id === s.id)) {
+                return {
+                  ...s,
+                  y: s.y + 150,
+                  levelPosition: (s.levelPosition || 0) + 1
                 };
               }
               return s;
@@ -1040,12 +1056,21 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
         .sort((a, b) => a.y - b.y);
       
       const firstNode = nextLevelSkills[0];
-      const secondNode = nextLevelSkills[1];
-      const newY = nextLevelSkills.length > 0 
-        ? (secondNode ? (firstNode.y + secondNode.y) / 2 : firstNode.y + 150)
-        : 100;
+      const nodesToShift = nextLevelSkills.slice(1);
+      const newY = firstNode ? firstNode.y + 150 : 100;
       
       try {
+        for (const node of nodesToShift) {
+          await fetch(`/api/skills/${node.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+              y: node.y + 150,
+              levelPosition: (node.levelPosition || 0) + 1
+            }),
+          });
+        }
+
         await fetch(`/api/skills/${skillId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -1071,6 +1096,13 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
                   levelPosition: 2,
                   dependencies: firstNode ? [firstNode.id] : [],
                   isFinalNode: 0
+                };
+              }
+              if (nodesToShift.some(n => n.id === s.id)) {
+                return {
+                  ...s,
+                  y: s.y + 150,
+                  levelPosition: (s.levelPosition || 0) + 1
                 };
               }
               return s;
@@ -1887,12 +1919,21 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
         .sort((a, b) => a.y - b.y);
       
       const firstNode = nextLevelSkills[0];
-      const secondNode = nextLevelSkills[1];
-      const newY = nextLevelSkills.length > 0 
-        ? (secondNode ? (firstNode.y + secondNode.y) / 2 : firstNode.y + 150)
-        : 100;
+      const nodesToShift = nextLevelSkills.slice(1);
+      const newY = firstNode ? firstNode.y + 150 : 100;
       
       try {
+        for (const node of nodesToShift) {
+          await fetch(`/api/skills/${node.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+              y: node.y + 150,
+              levelPosition: (node.levelPosition || 0) + 1
+            }),
+          });
+        }
+
         await fetch(`/api/skills/${skillId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -1914,6 +1955,13 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
               levelPosition: 2,
               dependencies: firstNode ? [firstNode.id] : [],
               isFinalNode: 0
+            };
+          }
+          if (nodesToShift.some(n => n.id === s.id)) {
+            return {
+              ...s,
+              y: s.y + 150,
+              levelPosition: (s.levelPosition || 0) + 1
             };
           }
           return s;
