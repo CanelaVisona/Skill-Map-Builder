@@ -507,12 +507,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             >
               {skill.title}
             </span>
-            {/* XP subtitle - only show when not mastered and has XP */}
+            {/* XP subtitle - only show when not mastered and has XP > 0 */}
             {!isMastered && skill.experiencePoints && skill.experiencePoints > 0 && (
-              <div 
-                className="text-muted-foreground/70 text-center"
-                style={{ fontSize: '0.5em' }}
-              >
+              <div className="text-muted-foreground/70 text-center text-[0.65em]">
                 +{skill.experiencePoints}xp
               </div>
             )}
