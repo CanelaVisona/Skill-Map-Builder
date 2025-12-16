@@ -606,11 +606,14 @@ export async function registerRoutes(
         return;
       }
       
-      // Get last skill to calculate starting Y position
-      let startY = 100;
-      if (allSkills.length > 0) {
-        const lastSkill = allSkills.reduce((max, s) => s.y > max.y ? s : max, allSkills[0]);
-        startY = lastSkill.y + 150;
+      // Get last skill to calculate starting Y position (allow override from request)
+      let startY = req.body.startY;
+      if (!startY) {
+        startY = 100;
+        if (allSkills.length > 0) {
+          const lastSkill = allSkills.reduce((max, s) => s.y > max.y ? s : max, allSkills[0]);
+          startY = lastSkill.y + 150;
+        }
       }
       
       // Use transactional method that updates area and creates all skills atomically
@@ -763,10 +766,14 @@ export async function registerRoutes(
         return;
       }
       
-      let startY = 100;
-      if (allSkills.length > 0) {
-        const lastSkill = allSkills.reduce((max, s) => s.y > max.y ? s : max, allSkills[0]);
-        startY = lastSkill.y + 150;
+      // Get last skill to calculate starting Y position (allow override from request)
+      let startY = req.body.startY;
+      if (!startY) {
+        startY = 100;
+        if (allSkills.length > 0) {
+          const lastSkill = allSkills.reduce((max, s) => s.y > max.y ? s : max, allSkills[0]);
+          startY = lastSkill.y + 150;
+        }
       }
       
       const { updatedProject, createdSkills } = await storage.generateProjectLevelWithSkills(projectId, level, startY);

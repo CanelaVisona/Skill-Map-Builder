@@ -705,13 +705,17 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
           });
         }
 
+        // Calculate Y position based on where level 1 ends (previous node becomes last)
+        const previousNodeY = previousNode?.y || 100;
+        const level2StartY = previousNodeY + 150;
+
         let createdSkills: any[] = [];
         let updatedAreaData: any = null;
         if (nextLevelSkills.length === 0) {
           const generateResponse = await fetch(`/api/areas/${areaId}/generate-level`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ level: nextLevel }),
+            body: JSON.stringify({ level: nextLevel, startY: level2StartY }),
           });
           
           if (generateResponse.ok) {
@@ -731,7 +735,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
 
         const firstNode = nextLevelSkills[0];
         const nodesToShift = nextLevelSkills.slice(1);
-        const newY = firstNode ? firstNode.y + 150 : 100;
+        const newY = firstNode ? firstNode.y + 150 : level2StartY;
 
         for (const node of nodesToShift) {
           await fetch(`/api/skills/${node.id}`, {
@@ -1107,13 +1111,17 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
           });
         }
 
+        // Calculate Y position based on where previous level ends
+        const previousNodeY = previousNode?.y || 100;
+        const level2StartY = previousNodeY + 150;
+
         let createdSkills: any[] = [];
         let updatedProjectData: any = null;
         if (nextLevelSkills.length === 0) {
           const generateResponse = await fetch(`/api/projects/${projectId}/generate-level`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ level: nextLevel }),
+            body: JSON.stringify({ level: nextLevel, startY: level2StartY }),
           });
           
           if (generateResponse.ok) {
@@ -1133,7 +1141,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
 
         const firstNode = nextLevelSkills[0];
         const nodesToShift = nextLevelSkills.slice(1);
-        const newY = firstNode ? firstNode.y + 150 : 100;
+        const newY = firstNode ? firstNode.y + 150 : level2StartY;
 
         for (const node of nodesToShift) {
           await fetch(`/api/skills/${node.id}`, {
