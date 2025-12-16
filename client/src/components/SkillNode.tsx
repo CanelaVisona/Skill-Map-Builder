@@ -61,9 +61,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     duplicateSkill,
     duplicateProjectSkill,
     duplicateSubSkill,
-    moveSkillToLevel,
-    moveProjectSkillToLevel,
-    moveSubSkillToLevel,
     updateLevelSubtitle,
     updateProjectLevelSubtitle,
     toggleFinalNode,
@@ -550,46 +547,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               data-testid="button-move-down"
             >
               <ChevronDown className="h-4 w-4" />
-            </Button>
-          </div>
-          <div className="flex items-center justify-between gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              disabled={skill.level <= 1}
-              onClick={() => {
-                if (isSubSkillView) {
-                  moveSubSkillToLevel(skill.id, "left");
-                } else if (isProject) {
-                  moveProjectSkillToLevel(activeId, skill.id, "left");
-                } else {
-                  moveSkillToLevel(activeId, skill.id, "left");
-                }
-                setIsOpen(false);
-              }}
-              data-testid="button-move-level-left"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <span className="text-xs text-muted-foreground">Nivel</span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={() => {
-                if (isSubSkillView) {
-                  moveSubSkillToLevel(skill.id, "right");
-                } else if (isProject) {
-                  moveProjectSkillToLevel(activeId, skill.id, "right");
-                } else {
-                  moveSkillToLevel(activeId, skill.id, "right");
-                }
-                setIsOpen(false);
-              }}
-              data-testid="button-move-level-right"
-            >
-              <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
           <div className="max-h-[200px] overflow-y-auto custom-scrollbar">
