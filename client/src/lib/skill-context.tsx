@@ -690,15 +690,40 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     
     if (direction === "down" && isLastInLevel) {
       const nextLevel = skill.level + 1;
-      const nextLevelSkills = area.skills
+      let nextLevelSkills = area.skills
         .filter(s => s.level === nextLevel)
         .sort((a, b) => a.y - b.y);
       
-      const firstNode = nextLevelSkills[0];
-      const nodesToShift = nextLevelSkills.slice(1);
-      const newY = firstNode ? firstNode.y + 150 : 100;
+      const previousNode = sameLevelSkills[currentIndex - 1];
       
       try {
+        if (previousNode && previousNode.title.toLowerCase() !== "inicio") {
+          await fetch(`/api/skills/${previousNode.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ isFinalNode: 1 }),
+          });
+        }
+
+        let createdSkills: any[] = [];
+        if (nextLevelSkills.length === 0) {
+          const generateResponse = await fetch(`/api/areas/${areaId}/generate-level`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ level: nextLevel }),
+          });
+          
+          if (generateResponse.ok) {
+            const result = await generateResponse.json();
+            createdSkills = result.createdSkills || [];
+            nextLevelSkills = createdSkills.sort((a: any, b: any) => a.y - b.y);
+          }
+        }
+
+        const firstNode = nextLevelSkills[0];
+        const nodesToShift = nextLevelSkills.slice(1);
+        const newY = firstNode ? firstNode.y + 150 : 100;
+
         for (const node of nodesToShift) {
           await fetch(`/api/skills/${node.id}`, {
             method: "PATCH",
@@ -726,26 +751,32 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
           if (a.id !== areaId) return a;
           return {
             ...a,
-            skills: a.skills.map(s => {
-              if (s.id === skillId) {
-                return { 
-                  ...s, 
-                  level: nextLevel, 
-                  y: newY,
-                  levelPosition: 2,
-                  dependencies: firstNode ? [firstNode.id] : [],
-                  isFinalNode: 0
-                };
-              }
-              if (nodesToShift.some(n => n.id === s.id)) {
-                return {
-                  ...s,
-                  y: s.y + 150,
-                  levelPosition: (s.levelPosition || 0) + 1
-                };
-              }
-              return s;
-            })
+            skills: [
+              ...a.skills.map(s => {
+                if (s.id === skillId) {
+                  return { 
+                    ...s, 
+                    level: nextLevel, 
+                    y: newY,
+                    levelPosition: 2,
+                    dependencies: firstNode ? [firstNode.id] : [],
+                    isFinalNode: 0
+                  };
+                }
+                if (previousNode && s.id === previousNode.id) {
+                  return { ...s, isFinalNode: 1 };
+                }
+                if (nodesToShift.some(n => n.id === s.id)) {
+                  return {
+                    ...s,
+                    y: s.y + 150,
+                    levelPosition: (s.levelPosition || 0) + 1
+                  };
+                }
+                return s;
+              }),
+              ...createdSkills
+            ]
           };
         }));
       } catch (error) {
@@ -1051,15 +1082,40 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     
     if (direction === "down" && isLastInLevel) {
       const nextLevel = skill.level + 1;
-      const nextLevelSkills = project.skills
+      let nextLevelSkills = project.skills
         .filter(s => s.level === nextLevel)
         .sort((a, b) => a.y - b.y);
       
-      const firstNode = nextLevelSkills[0];
-      const nodesToShift = nextLevelSkills.slice(1);
-      const newY = firstNode ? firstNode.y + 150 : 100;
+      const previousNode = sameLevelSkills[currentIndex - 1];
       
       try {
+        if (previousNode && previousNode.title.toLowerCase() !== "inicio") {
+          await fetch(`/api/skills/${previousNode.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ isFinalNode: 1 }),
+          });
+        }
+
+        let createdSkills: any[] = [];
+        if (nextLevelSkills.length === 0) {
+          const generateResponse = await fetch(`/api/projects/${projectId}/generate-level`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ level: nextLevel }),
+          });
+          
+          if (generateResponse.ok) {
+            const result = await generateResponse.json();
+            createdSkills = result.createdSkills || [];
+            nextLevelSkills = createdSkills.sort((a: any, b: any) => a.y - b.y);
+          }
+        }
+
+        const firstNode = nextLevelSkills[0];
+        const nodesToShift = nextLevelSkills.slice(1);
+        const newY = firstNode ? firstNode.y + 150 : 100;
+
         for (const node of nodesToShift) {
           await fetch(`/api/skills/${node.id}`, {
             method: "PATCH",
@@ -1087,26 +1143,32 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
           if (p.id !== projectId) return p;
           return {
             ...p,
-            skills: p.skills.map(s => {
-              if (s.id === skillId) {
-                return { 
-                  ...s, 
-                  level: nextLevel, 
-                  y: newY,
-                  levelPosition: 2,
-                  dependencies: firstNode ? [firstNode.id] : [],
-                  isFinalNode: 0
-                };
-              }
-              if (nodesToShift.some(n => n.id === s.id)) {
-                return {
-                  ...s,
-                  y: s.y + 150,
-                  levelPosition: (s.levelPosition || 0) + 1
-                };
-              }
-              return s;
-            })
+            skills: [
+              ...p.skills.map(s => {
+                if (s.id === skillId) {
+                  return { 
+                    ...s, 
+                    level: nextLevel, 
+                    y: newY,
+                    levelPosition: 2,
+                    dependencies: firstNode ? [firstNode.id] : [],
+                    isFinalNode: 0
+                  };
+                }
+                if (previousNode && s.id === previousNode.id) {
+                  return { ...s, isFinalNode: 1 };
+                }
+                if (nodesToShift.some(n => n.id === s.id)) {
+                  return {
+                    ...s,
+                    y: s.y + 150,
+                    levelPosition: (s.levelPosition || 0) + 1
+                  };
+                }
+                return s;
+              }),
+              ...createdSkills
+            ]
           };
         }));
       } catch (error) {
@@ -1918,11 +1980,21 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
         .filter(s => s.level === nextLevel)
         .sort((a, b) => a.y - b.y);
       
-      const firstNode = nextLevelSkills[0];
-      const nodesToShift = nextLevelSkills.slice(1);
-      const newY = firstNode ? firstNode.y + 150 : 100;
+      const previousNode = sameLevelSkills[currentIndex - 1];
       
       try {
+        if (previousNode && previousNode.title.toLowerCase() !== "inicio") {
+          await fetch(`/api/skills/${previousNode.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ isFinalNode: 1 }),
+          });
+        }
+
+        const firstNode = nextLevelSkills[0];
+        const nodesToShift = nextLevelSkills.slice(1);
+        const newY = firstNode ? firstNode.y + 150 : 100;
+
         for (const node of nodesToShift) {
           await fetch(`/api/skills/${node.id}`, {
             method: "PATCH",
@@ -1956,6 +2028,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
               dependencies: firstNode ? [firstNode.id] : [],
               isFinalNode: 0
             };
+          }
+          if (previousNode && s.id === previousNode.id) {
+            return { ...s, isFinalNode: 1 };
           }
           if (nodesToShift.some(n => n.id === s.id)) {
             return {
