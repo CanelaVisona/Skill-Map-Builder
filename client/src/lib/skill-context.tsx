@@ -695,7 +695,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
         .sort((a, b) => a.y - b.y);
       
       const newY = nextLevelSkills.length > 0 
-        ? Math.max(...nextLevelSkills.map(s => s.y)) + 150 
+        ? Math.min(...nextLevelSkills.map(s => s.y)) - 150 
         : 100;
       
       try {
@@ -705,7 +705,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
           body: JSON.stringify({ 
             level: nextLevel, 
             y: newY,
-            levelPosition: nextLevelSkills.length + 1,
+            levelPosition: 1,
             dependencies: [],
             isFinalNode: 0
           }),
@@ -721,7 +721,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
                   ...s, 
                   level: nextLevel, 
                   y: newY,
-                  levelPosition: nextLevelSkills.length + 1,
+                  levelPosition: 1,
                   dependencies: [],
                   isFinalNode: 0
                 };
@@ -1038,7 +1038,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
         .sort((a, b) => a.y - b.y);
       
       const newY = nextLevelSkills.length > 0 
-        ? Math.max(...nextLevelSkills.map(s => s.y)) + 150 
+        ? Math.min(...nextLevelSkills.map(s => s.y)) - 150 
         : 100;
       
       try {
@@ -1048,7 +1048,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
           body: JSON.stringify({ 
             level: nextLevel, 
             y: newY,
-            levelPosition: nextLevelSkills.length + 1,
+            levelPosition: 1,
             dependencies: [],
             isFinalNode: 0
           }),
@@ -1064,7 +1064,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
                   ...s, 
                   level: nextLevel, 
                   y: newY,
-                  levelPosition: nextLevelSkills.length + 1,
+                  levelPosition: 1,
                   dependencies: [],
                   isFinalNode: 0
                 };
@@ -1883,7 +1883,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
         .sort((a, b) => a.y - b.y);
       
       const newY = nextLevelSkills.length > 0 
-        ? Math.max(...nextLevelSkills.map(s => s.y)) + 150 
+        ? Math.min(...nextLevelSkills.map(s => s.y)) - 150 
         : 100;
       
       try {
@@ -1893,7 +1893,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
           body: JSON.stringify({ 
             level: nextLevel, 
             y: newY,
-            levelPosition: nextLevelSkills.length + 1,
+            levelPosition: 1,
             dependencies: [],
             isFinalNode: 0
           }),
@@ -1905,7 +1905,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
               ...s, 
               level: nextLevel, 
               y: newY,
-              levelPosition: nextLevelSkills.length + 1,
+              levelPosition: 1,
               dependencies: [],
               isFinalNode: 0
             };
