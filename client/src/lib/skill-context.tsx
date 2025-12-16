@@ -706,6 +706,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
         }
 
         let createdSkills: any[] = [];
+        let updatedAreaData: any = null;
         if (nextLevelSkills.length === 0) {
           const generateResponse = await fetch(`/api/areas/${areaId}/generate-level`, {
             method: "POST",
@@ -716,8 +717,16 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
           if (generateResponse.ok) {
             const result = await generateResponse.json();
             createdSkills = result.createdSkills || [];
+            updatedAreaData = result.updatedArea;
             nextLevelSkills = createdSkills.sort((a: any, b: any) => a.y - b.y);
           }
+        } else if (area.unlockedLevel < nextLevel) {
+          await fetch(`/api/areas/${areaId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ unlockedLevel: nextLevel }),
+          });
+          updatedAreaData = { ...area, unlockedLevel: nextLevel };
         }
 
         const firstNode = nextLevelSkills[0];
@@ -751,6 +760,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
           if (a.id !== areaId) return a;
           return {
             ...a,
+            ...(updatedAreaData ? { unlockedLevel: updatedAreaData.unlockedLevel } : {}),
             skills: [
               ...a.skills.map(s => {
                 if (s.id === skillId) {
@@ -1098,6 +1108,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
         }
 
         let createdSkills: any[] = [];
+        let updatedProjectData: any = null;
         if (nextLevelSkills.length === 0) {
           const generateResponse = await fetch(`/api/projects/${projectId}/generate-level`, {
             method: "POST",
@@ -1108,8 +1119,16 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
           if (generateResponse.ok) {
             const result = await generateResponse.json();
             createdSkills = result.createdSkills || [];
+            updatedProjectData = result.updatedProject;
             nextLevelSkills = createdSkills.sort((a: any, b: any) => a.y - b.y);
           }
+        } else if (project.unlockedLevel < nextLevel) {
+          await fetch(`/api/projects/${projectId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ unlockedLevel: nextLevel }),
+          });
+          updatedProjectData = { ...project, unlockedLevel: nextLevel };
         }
 
         const firstNode = nextLevelSkills[0];
@@ -1143,6 +1162,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
           if (p.id !== projectId) return p;
           return {
             ...p,
+            ...(updatedProjectData ? { unlockedLevel: updatedProjectData.unlockedLevel } : {}),
             skills: [
               ...p.skills.map(s => {
                 if (s.id === skillId) {
