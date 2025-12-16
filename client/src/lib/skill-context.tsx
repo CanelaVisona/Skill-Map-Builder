@@ -676,176 +676,12 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
 
     const skill = area.skills.find(s => s.id === skillId);
     if (!skill) return;
-    
-    if (skill.title.toLowerCase() === "inicio") return;
 
     const sameLevelSkills = [...area.skills]
       .filter(s => s.level === skill.level)
       .sort((a, b) => a.y - b.y);
     
     const currentIndex = sameLevelSkills.findIndex(s => s.id === skillId);
-    const isLastInLevel = currentIndex === sameLevelSkills.length - 1;
-    const isFirstNonInicio = currentIndex === 0 || 
-      (currentIndex === 1 && sameLevelSkills[0].title.toLowerCase() === "inicio");
-    
-    if (direction === "down" && isLastInLevel) {
-      const nextLevel = skill.level + 1;
-      let nextLevelSkills = area.skills
-        .filter(s => s.level === nextLevel)
-        .sort((a, b) => a.y - b.y);
-      
-      const previousNode = sameLevelSkills[currentIndex - 1];
-      
-      try {
-        if (previousNode && previousNode.title.toLowerCase() !== "inicio") {
-          await fetch(`/api/skills/${previousNode.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ isFinalNode: 1 }),
-          });
-        }
-
-        // Calculate Y position based on where level 1 ends (previous node becomes last)
-        const previousNodeY = previousNode?.y || 100;
-        const level2StartY = previousNodeY + 150;
-
-        let createdSkills: any[] = [];
-        let updatedAreaData: any = null;
-        if (nextLevelSkills.length === 0) {
-          const generateResponse = await fetch(`/api/areas/${areaId}/generate-level`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ level: nextLevel, startY: level2StartY }),
-          });
-          
-          if (generateResponse.ok) {
-            const result = await generateResponse.json();
-            createdSkills = result.createdSkills || [];
-            updatedAreaData = result.updatedArea;
-            nextLevelSkills = createdSkills.sort((a: any, b: any) => a.y - b.y);
-          }
-        } else if (area.unlockedLevel < nextLevel) {
-          await fetch(`/api/areas/${areaId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ unlockedLevel: nextLevel }),
-          });
-          updatedAreaData = { ...area, unlockedLevel: nextLevel };
-        }
-
-        const firstNode = nextLevelSkills[0];
-        const nodesToShift = nextLevelSkills.slice(1);
-        const newY = firstNode ? firstNode.y + 150 : level2StartY;
-
-        for (const node of nodesToShift) {
-          await fetch(`/api/skills/${node.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ 
-              y: node.y + 150,
-              levelPosition: (node.levelPosition || 0) + 1
-            }),
-          });
-        }
-
-        await fetch(`/api/skills/${skillId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
-            level: nextLevel, 
-            y: newY,
-            levelPosition: 2,
-            dependencies: firstNode ? [firstNode.id] : [],
-            isFinalNode: 0
-          }),
-        });
-
-        setAreas(prev => prev.map(a => {
-          if (a.id !== areaId) return a;
-          return {
-            ...a,
-            ...(updatedAreaData ? { unlockedLevel: updatedAreaData.unlockedLevel } : {}),
-            skills: [
-              ...a.skills.map(s => {
-                if (s.id === skillId) {
-                  return { 
-                    ...s, 
-                    level: nextLevel, 
-                    y: newY,
-                    levelPosition: 2,
-                    dependencies: firstNode ? [firstNode.id] : [],
-                    isFinalNode: 0
-                  };
-                }
-                if (previousNode && s.id === previousNode.id) {
-                  return { ...s, isFinalNode: 1 };
-                }
-                if (nodesToShift.some(n => n.id === s.id)) {
-                  return {
-                    ...s,
-                    y: s.y + 150,
-                    levelPosition: (s.levelPosition || 0) + 1
-                  };
-                }
-                return s;
-              }),
-              ...createdSkills
-            ]
-          };
-        }));
-      } catch (error) {
-        console.error("Error moving skill to next level:", error);
-      }
-      return;
-    }
-    
-    if (direction === "up" && isFirstNonInicio && skill.level > 1) {
-      const prevLevel = skill.level - 1;
-      const prevLevelSkills = area.skills
-        .filter(s => s.level === prevLevel)
-        .sort((a, b) => a.y - b.y);
-      
-      const newY = prevLevelSkills.length > 0 
-        ? Math.max(...prevLevelSkills.map(s => s.y)) + 150 
-        : 100;
-      
-      try {
-        await fetch(`/api/skills/${skillId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
-            level: prevLevel, 
-            y: newY,
-            levelPosition: prevLevelSkills.length + 1,
-            dependencies: [],
-            isFinalNode: 0
-          }),
-        });
-
-        setAreas(prev => prev.map(a => {
-          if (a.id !== areaId) return a;
-          return {
-            ...a,
-            skills: a.skills.map(s => {
-              if (s.id === skillId) {
-                return { 
-                  ...s, 
-                  level: prevLevel, 
-                  y: newY,
-                  levelPosition: prevLevelSkills.length + 1,
-                  dependencies: [],
-                  isFinalNode: 0
-                };
-              }
-              return s;
-            })
-          };
-        }));
-      } catch (error) {
-        console.error("Error moving skill to previous level:", error);
-      }
-      return;
-    }
     
     let neighborIndex: number;
     if (direction === "up") {
@@ -857,8 +693,6 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     if (neighborIndex < 0 || neighborIndex >= sameLevelSkills.length) return;
 
     const neighbor = sameLevelSkills[neighborIndex];
-    if (neighbor.title.toLowerCase() === "inicio") return;
-    
     const currentY = skill.y;
     const neighborY = neighbor.y;
 
@@ -1082,176 +916,12 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
 
     const skill = project.skills.find(s => s.id === skillId);
     if (!skill) return;
-    
-    if (skill.title.toLowerCase() === "inicio") return;
 
     const sameLevelSkills = [...project.skills]
       .filter(s => s.level === skill.level)
       .sort((a, b) => a.y - b.y);
     
     const currentIndex = sameLevelSkills.findIndex(s => s.id === skillId);
-    const isLastInLevel = currentIndex === sameLevelSkills.length - 1;
-    const isFirstNonInicio = currentIndex === 0 || 
-      (currentIndex === 1 && sameLevelSkills[0].title.toLowerCase() === "inicio");
-    
-    if (direction === "down" && isLastInLevel) {
-      const nextLevel = skill.level + 1;
-      let nextLevelSkills = project.skills
-        .filter(s => s.level === nextLevel)
-        .sort((a, b) => a.y - b.y);
-      
-      const previousNode = sameLevelSkills[currentIndex - 1];
-      
-      try {
-        if (previousNode && previousNode.title.toLowerCase() !== "inicio") {
-          await fetch(`/api/skills/${previousNode.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ isFinalNode: 1 }),
-          });
-        }
-
-        // Calculate Y position based on where previous level ends
-        const previousNodeY = previousNode?.y || 100;
-        const level2StartY = previousNodeY + 150;
-
-        let createdSkills: any[] = [];
-        let updatedProjectData: any = null;
-        if (nextLevelSkills.length === 0) {
-          const generateResponse = await fetch(`/api/projects/${projectId}/generate-level`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ level: nextLevel, startY: level2StartY }),
-          });
-          
-          if (generateResponse.ok) {
-            const result = await generateResponse.json();
-            createdSkills = result.createdSkills || [];
-            updatedProjectData = result.updatedProject;
-            nextLevelSkills = createdSkills.sort((a: any, b: any) => a.y - b.y);
-          }
-        } else if (project.unlockedLevel < nextLevel) {
-          await fetch(`/api/projects/${projectId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ unlockedLevel: nextLevel }),
-          });
-          updatedProjectData = { ...project, unlockedLevel: nextLevel };
-        }
-
-        const firstNode = nextLevelSkills[0];
-        const nodesToShift = nextLevelSkills.slice(1);
-        const newY = firstNode ? firstNode.y + 150 : level2StartY;
-
-        for (const node of nodesToShift) {
-          await fetch(`/api/skills/${node.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ 
-              y: node.y + 150,
-              levelPosition: (node.levelPosition || 0) + 1
-            }),
-          });
-        }
-
-        await fetch(`/api/skills/${skillId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
-            level: nextLevel, 
-            y: newY,
-            levelPosition: 2,
-            dependencies: firstNode ? [firstNode.id] : [],
-            isFinalNode: 0
-          }),
-        });
-
-        setProjects(prev => prev.map(p => {
-          if (p.id !== projectId) return p;
-          return {
-            ...p,
-            ...(updatedProjectData ? { unlockedLevel: updatedProjectData.unlockedLevel } : {}),
-            skills: [
-              ...p.skills.map(s => {
-                if (s.id === skillId) {
-                  return { 
-                    ...s, 
-                    level: nextLevel, 
-                    y: newY,
-                    levelPosition: 2,
-                    dependencies: firstNode ? [firstNode.id] : [],
-                    isFinalNode: 0
-                  };
-                }
-                if (previousNode && s.id === previousNode.id) {
-                  return { ...s, isFinalNode: 1 };
-                }
-                if (nodesToShift.some(n => n.id === s.id)) {
-                  return {
-                    ...s,
-                    y: s.y + 150,
-                    levelPosition: (s.levelPosition || 0) + 1
-                  };
-                }
-                return s;
-              }),
-              ...createdSkills
-            ]
-          };
-        }));
-      } catch (error) {
-        console.error("Error moving project skill to next level:", error);
-      }
-      return;
-    }
-    
-    if (direction === "up" && isFirstNonInicio && skill.level > 1) {
-      const prevLevel = skill.level - 1;
-      const prevLevelSkills = project.skills
-        .filter(s => s.level === prevLevel)
-        .sort((a, b) => a.y - b.y);
-      
-      const newY = prevLevelSkills.length > 0 
-        ? Math.max(...prevLevelSkills.map(s => s.y)) + 150 
-        : 100;
-      
-      try {
-        await fetch(`/api/skills/${skillId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
-            level: prevLevel, 
-            y: newY,
-            levelPosition: prevLevelSkills.length + 1,
-            dependencies: [],
-            isFinalNode: 0
-          }),
-        });
-
-        setProjects(prev => prev.map(p => {
-          if (p.id !== projectId) return p;
-          return {
-            ...p,
-            skills: p.skills.map(s => {
-              if (s.id === skillId) {
-                return { 
-                  ...s, 
-                  level: prevLevel, 
-                  y: newY,
-                  levelPosition: prevLevelSkills.length + 1,
-                  dependencies: [],
-                  isFinalNode: 0
-                };
-              }
-              return s;
-            })
-          };
-        }));
-      } catch (error) {
-        console.error("Error moving project skill to previous level:", error);
-      }
-      return;
-    }
     
     let neighborIndex: number;
     if (direction === "up") {
@@ -1263,8 +933,6 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     if (neighborIndex < 0 || neighborIndex >= sameLevelSkills.length) return;
 
     const neighbor = sameLevelSkills[neighborIndex];
-    if (neighbor.title.toLowerCase() === "inicio") return;
-    
     const currentY = skill.y;
     const neighborY = neighbor.y;
 
@@ -1990,132 +1658,12 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
   const moveSubSkill = async (skillId: string, direction: "up" | "down") => {
     const skill = subSkills.find(s => s.id === skillId);
     if (!skill) return;
-    
-    if (skill.title.toLowerCase() === "inicio") return;
 
     const sameLevelSkills = [...subSkills]
       .filter(s => s.level === skill.level)
       .sort((a, b) => a.y - b.y);
     
     const currentIndex = sameLevelSkills.findIndex(s => s.id === skillId);
-    const isLastInLevel = currentIndex === sameLevelSkills.length - 1;
-    const isFirstNonInicio = currentIndex === 0 || 
-      (currentIndex === 1 && sameLevelSkills[0].title.toLowerCase() === "inicio");
-    
-    if (direction === "down" && isLastInLevel) {
-      const nextLevel = skill.level + 1;
-      const nextLevelSkills = subSkills
-        .filter(s => s.level === nextLevel)
-        .sort((a, b) => a.y - b.y);
-      
-      const previousNode = sameLevelSkills[currentIndex - 1];
-      
-      try {
-        if (previousNode && previousNode.title.toLowerCase() !== "inicio") {
-          await fetch(`/api/skills/${previousNode.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ isFinalNode: 1 }),
-          });
-        }
-
-        const firstNode = nextLevelSkills[0];
-        const nodesToShift = nextLevelSkills.slice(1);
-        const newY = firstNode ? firstNode.y + 150 : 100;
-
-        for (const node of nodesToShift) {
-          await fetch(`/api/skills/${node.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ 
-              y: node.y + 150,
-              levelPosition: (node.levelPosition || 0) + 1
-            }),
-          });
-        }
-
-        await fetch(`/api/skills/${skillId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
-            level: nextLevel, 
-            y: newY,
-            levelPosition: 2,
-            dependencies: firstNode ? [firstNode.id] : [],
-            isFinalNode: 0
-          }),
-        });
-
-        setSubSkills(prev => prev.map(s => {
-          if (s.id === skillId) {
-            return { 
-              ...s, 
-              level: nextLevel, 
-              y: newY,
-              levelPosition: 2,
-              dependencies: firstNode ? [firstNode.id] : [],
-              isFinalNode: 0
-            };
-          }
-          if (previousNode && s.id === previousNode.id) {
-            return { ...s, isFinalNode: 1 };
-          }
-          if (nodesToShift.some(n => n.id === s.id)) {
-            return {
-              ...s,
-              y: s.y + 150,
-              levelPosition: (s.levelPosition || 0) + 1
-            };
-          }
-          return s;
-        }));
-      } catch (error) {
-        console.error("Error moving sub-skill to next level:", error);
-      }
-      return;
-    }
-    
-    if (direction === "up" && isFirstNonInicio && skill.level > 1) {
-      const prevLevel = skill.level - 1;
-      const prevLevelSkills = subSkills
-        .filter(s => s.level === prevLevel)
-        .sort((a, b) => a.y - b.y);
-      
-      const newY = prevLevelSkills.length > 0 
-        ? Math.max(...prevLevelSkills.map(s => s.y)) + 150 
-        : 100;
-      
-      try {
-        await fetch(`/api/skills/${skillId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
-            level: prevLevel, 
-            y: newY,
-            levelPosition: prevLevelSkills.length + 1,
-            dependencies: [],
-            isFinalNode: 0
-          }),
-        });
-
-        setSubSkills(prev => prev.map(s => {
-          if (s.id === skillId) {
-            return { 
-              ...s, 
-              level: prevLevel, 
-              y: newY,
-              levelPosition: prevLevelSkills.length + 1,
-              dependencies: [],
-              isFinalNode: 0
-            };
-          }
-          return s;
-        }));
-      } catch (error) {
-        console.error("Error moving sub-skill to previous level:", error);
-      }
-      return;
-    }
     
     let neighborIndex: number;
     if (direction === "up") {
@@ -2127,8 +1675,6 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     if (neighborIndex < 0 || neighborIndex >= sameLevelSkills.length) return;
 
     const neighbor = sameLevelSkills[neighborIndex];
-    if (neighbor.title.toLowerCase() === "inicio") return;
-    
     const currentY = skill.y;
     const neighborY = neighbor.y;
 
