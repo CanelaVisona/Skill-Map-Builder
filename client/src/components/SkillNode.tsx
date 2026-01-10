@@ -762,16 +762,17 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 transition={{ duration: 0.2 }}
                 className="flex-1 flex flex-col"
               >
-                <Label htmlFor="edit-title" className="text-xs text-muted-foreground uppercase tracking-wide mb-3">NAME: Name this move (3 words max)</Label>
+                <Label htmlFor="edit-title" className="text-xs text-muted-foreground uppercase tracking-wide mb-3">NAME: Name this move (8 words max)</Label>
                 <Input
                   id="edit-title"
                   value={editTitle}
                   onChange={(e) => {
-                    const words = e.target.value.split(/\s+/).filter(w => w.length > 0);
-                    if (words.length <= 3) {
-                      setEditTitle(e.target.value);
+                    const val = e.target.value;
+                    const words = val.split(/\s+/).filter(w => w.length > 0);
+                    if (words.length <= 8) {
+                      setEditTitle(val);
                     } else {
-                      setEditTitle(words.slice(0, 3).join(" "));
+                      setEditTitle(words.slice(0, 8).join(" "));
                     }
                   }}
                   placeholder="Name your move..."
