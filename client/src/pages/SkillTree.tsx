@@ -1246,14 +1246,17 @@ function ProfileSection() {
   });
 
   const tabs = [
-    { id: "mission", label: "Misión", title: "MI MISIÓN", isText: true },
+    { id: "mission", label: "Misión", title: "MI MISIÓN", isText: false },
     { id: "values", label: "Valores", title: "MIS VALORES", isText: false },
     { id: "likes", label: "Gustos", title: "LO QUE ME GUSTA", isText: false },
-    { id: "about", label: "Sobre mí", title: "SOBRE MÍ", isText: true },
+    { id: "about", label: "Sobre mí", title: "SOBRE MÍ", isText: false },
   ];
 
   const currentTab = tabs.find(t => t.id === activeTab) || tabs[0];
-  const currentEntries = activeTab === "values" ? profileValues : activeTab === "likes" ? profileLikes : [];
+  const currentEntries = activeTab === "values" ? profileValues : 
+                        activeTab === "likes" ? profileLikes : 
+                        activeTab === "mission" ? profileValues : // We need new state for mission/about lists if we follow same pattern
+                        profileLikes; 
   const currentTextValue = activeTab === "mission" ? profileMission : activeTab === "about" ? profileAbout : "";
 
   const handleTextSave = () => {
