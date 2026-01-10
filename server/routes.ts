@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema } from "@shared/schema";
+import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import cookieParser from "cookie-parser";
 import crypto from "crypto";
@@ -1293,6 +1293,122 @@ export async function registerRoutes(
         return;
       }
       await storage.deleteProfileLike(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Profile - Missions
+  app.get("/api/profile/missions", requireAuth, async (req, res) => {
+    try {
+      const missions = await storage.getProfileMissions(req.userId!);
+      res.json(missions);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/profile/missions", requireAuth, async (req, res) => {
+    try {
+      const data = { ...req.body, userId: req.userId };
+      const validated = insertProfileMissionSchema.parse(data);
+      const mission = await storage.createProfileMission(validated);
+      res.status(201).json(mission);
+    } catch (error: any) {
+      const validationError = fromError(error);
+      res.status(400).json({ message: validationError.toString() });
+    }
+  });
+
+  app.patch("/api/profile/missions/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getProfileMission(req.params.id);
+      if (!existing) {
+        res.status(404).json({ message: "Mission not found" });
+        return;
+      }
+      if (existing.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para modificar esta misión" });
+        return;
+      }
+      const updated = await storage.updateProfileMission(req.params.id, req.body);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/profile/missions/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getProfileMission(req.params.id);
+      if (!existing) {
+        res.status(404).json({ message: "Mission not found" });
+        return;
+      }
+      if (existing.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para eliminar esta misión" });
+        return;
+      }
+      await storage.deleteProfileMission(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Profile - About
+  app.get("/api/profile/about", requireAuth, async (req, res) => {
+    try {
+      const entries = await storage.getProfileAboutEntries(req.userId!);
+      res.json(entries);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/profile/about", requireAuth, async (req, res) => {
+    try {
+      const data = { ...req.body, userId: req.userId };
+      const validated = insertProfileAboutEntrySchema.parse(data);
+      const entry = await storage.createProfileAboutEntry(validated);
+      res.status(201).json(entry);
+    } catch (error: any) {
+      const validationError = fromError(error);
+      res.status(400).json({ message: validationError.toString() });
+    }
+  });
+
+  app.patch("/api/profile/about/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getProfileAboutEntry(req.params.id);
+      if (!existing) {
+        res.status(404).json({ message: "About entry not found" });
+        return;
+      }
+      if (existing.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para modificar esta entrada" });
+        return;
+      }
+      const updated = await storage.updateProfileAboutEntry(req.params.id, req.body);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/profile/about/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getProfileAboutEntry(req.params.id);
+      if (!existing) {
+        res.status(404).json({ message: "About entry not found" });
+        return;
+      }
+      if (existing.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para eliminar esta entrada" });
+        return;
+      }
+      await storage.deleteProfileAboutEntry(req.params.id);
       res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ message: error.message });

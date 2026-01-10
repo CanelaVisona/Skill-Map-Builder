@@ -152,8 +152,27 @@ export type InsertJournalShadow = z.infer<typeof insertJournalShadowSchema>;
 export type JournalShadow = typeof journalShadows.$inferSelect;
 export type InsertProfileValue = z.infer<typeof insertProfileValueSchema>;
 export type ProfileValue = typeof profileValues.$inferSelect;
-export type InsertProfileLike = z.infer<typeof insertProfileLikeSchema>;
-export type ProfileLike = typeof profileLikes.$inferSelect;
+export const profileMissions = pgTable("profile_missions", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+});
+
+export const profileAboutEntries = pgTable("profile_about_entries", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+});
+
+export const insertProfileMissionSchema = createInsertSchema(profileMissions).omit({ id: true });
+export const insertProfileAboutEntrySchema = createInsertSchema(profileAboutEntries).omit({ id: true });
+
+export type InsertProfileMission = z.infer<typeof insertProfileMissionSchema>;
+export type ProfileMission = typeof profileMissions.$inferSelect;
+export type InsertProfileAboutEntry = z.infer<typeof insertProfileAboutEntrySchema>;
+export type ProfileAboutEntry = typeof profileAboutEntries.$inferSelect;
 export type InsertJournalLearning = z.infer<typeof insertJournalLearningSchema>;
 export type JournalLearning = typeof journalLearnings.$inferSelect;
 export type InsertJournalTool = z.infer<typeof insertJournalToolSchema>;
