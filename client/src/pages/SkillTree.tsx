@@ -1245,26 +1245,122 @@ function ProfileSection() {
     },
   });
 
+  const { data: profileMissions = [], isLoading: missionsLoading } = useQuery<ProfileEntry[]>({
+    queryKey: ["/api/profile/missions"],
+    queryFn: async () => {
+      const res = await fetch("/api/profile/missions");
+      return res.json();
+    },
+  });
+
+  const { data: profileAboutEntries = [], isLoading: aboutEntriesLoading } = useQuery<ProfileEntry[]>({
+    queryKey: ["/api/profile/about"],
+    queryFn: async () => {
+      const res = await fetch("/api/profile/about");
+      return res.json();
+    },
+  });
+
+  const createMission = useMutation({
+    mutationFn: async (data: { name: string; description: string }) => {
+      const res = await fetch("/api/profile/missions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/profile/missions"] });
+      setIsAdding(false);
+      setName("");
+      setDescription("");
+    },
+  });
+
+  const updateMission = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { name?: string; description?: string } }) => {
+      const res = await fetch(`/api/profile/missions/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/profile/missions"] });
+      setSelectedEntry(null);
+      setIsEditMode(false);
+    },
+  });
+
+  const deleteMission = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/profile/missions/${id}`, { method: "DELETE" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/profile/missions"] });
+      setSelectedEntry(null);
+      setShowDeleteConfirm(false);
+    },
+  });
+
+  const createAboutEntry = useMutation({
+    mutationFn: async (data: { name: string; description: string }) => {
+      const res = await fetch("/api/profile/about", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/profile/about"] });
+      setIsAdding(false);
+      setName("");
+      setDescription("");
+    },
+  });
+
+  const updateAboutEntry = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { name?: string; description?: string } }) => {
+      const res = await fetch(`/api/profile/about/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/profile/about"] });
+      setSelectedEntry(null);
+      setIsEditMode(false);
+    },
+  });
+
+  const deleteAboutEntry = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/profile/about/${id}`, { method: "DELETE" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/profile/about"] });
+      setSelectedEntry(null);
+      setShowDeleteConfirm(false);
+    },
+  });
+
   const tabs = [
-    { id: "mission", label: "Misión", title: "MI MISIÓN", isText: false },
-    { id: "values", label: "Valores", title: "MIS VALORES", isText: false },
-    { id: "likes", label: "Gustos", title: "LO QUE ME GUSTA", isText: false },
-    { id: "about", label: "Sobre mí", title: "SOBRE MÍ", isText: false },
+    { id: "mission", label: "Misión", title: "MI MISIÓN" },
+    { id: "values", label: "Valores", title: "MIS VALORES" },
+    { id: "likes", label: "Gustos", title: "LO QUE ME GUSTA" },
+    { id: "about", label: "Sobre mí", title: "SOBRE MÍ" },
   ];
 
   const currentTab = tabs.find(t => t.id === activeTab) || tabs[0];
   const currentEntries = activeTab === "values" ? profileValues : 
                         activeTab === "likes" ? profileLikes : 
-                        activeTab === "mission" ? profileValues : // We need new state for mission/about lists if we follow same pattern
-                        profileLikes; 
-  const currentTextValue = activeTab === "mission" ? profileMission : activeTab === "about" ? profileAbout : "";
-
-  const handleTextSave = () => {
-    const updates = activeTab === "mission" 
-      ? { profileMission: editValue }
-      : { profileAbout: editValue };
-    updateProfile.mutate(updates);
-  };
+                        activeTab === "mission" ? profileMissions : 
+                        profileAboutEntries; 
 
   const handleAddNew = () => {
     if (!name.trim()) return;
@@ -1272,6 +1368,10 @@ function ProfileSection() {
       createValue.mutate({ name: name.trim(), description: description.trim() });
     } else if (activeTab === "likes") {
       createLike.mutate({ name: name.trim(), description: description.trim() });
+    } else if (activeTab === "mission") {
+      createMission.mutate({ name: name.trim(), description: description.trim() });
+    } else if (activeTab === "about") {
+      createAboutEntry.mutate({ name: name.trim(), description: description.trim() });
     }
   };
 
@@ -1281,6 +1381,10 @@ function ProfileSection() {
       updateValue.mutate({ id: selectedEntry.id, data: { name: name.trim(), description: description.trim() } });
     } else if (activeTab === "likes") {
       updateLike.mutate({ id: selectedEntry.id, data: { name: name.trim(), description: description.trim() } });
+    } else if (activeTab === "mission") {
+      updateMission.mutate({ id: selectedEntry.id, data: { name: name.trim(), description: description.trim() } });
+    } else if (activeTab === "about") {
+      updateAboutEntry.mutate({ id: selectedEntry.id, data: { name: name.trim(), description: description.trim() } });
     }
   };
 
@@ -1290,6 +1394,10 @@ function ProfileSection() {
       deleteValue.mutate(selectedEntry.id);
     } else if (activeTab === "likes") {
       deleteLike.mutate(selectedEntry.id);
+    } else if (activeTab === "mission") {
+      deleteMission.mutate(selectedEntry.id);
+    } else if (activeTab === "about") {
+      deleteAboutEntry.mutate(selectedEntry.id);
     }
   };
 
@@ -1302,6 +1410,10 @@ function ProfileSection() {
       updateValue.mutate({ id: selectedEntry.id, data: { description: newDesc } });
     } else if (activeTab === "likes") {
       updateLike.mutate({ id: selectedEntry.id, data: { description: newDesc } });
+    } else if (activeTab === "mission") {
+      updateMission.mutate({ id: selectedEntry.id, data: { description: newDesc } });
+    } else if (activeTab === "about") {
+      updateAboutEntry.mutate({ id: selectedEntry.id, data: { description: newDesc } });
     }
     setExtraInfo("");
   };
@@ -1316,10 +1428,8 @@ function ProfileSection() {
   };
 
   const handleTextLongPressStart = () => {
-    longPressTimer.current = setTimeout(() => {
-      setEditValue(currentTextValue);
-      setIsEditing(true);
-    }, 500);
+    setEditValue(currentTab.id === "mission" ? profileMission : profileAbout);
+    setIsEditing(true);
   };
 
   const handleTextLongPressEnd = () => {
@@ -1360,57 +1470,42 @@ function ProfileSection() {
     }
   };
 
-  if (profileLoading || valuesLoading || likesLoading) {
+  const getTabLabel = (id: string) => {
+    switch (id) {
+      case "mission": return "Misión";
+      case "values": return "Valor";
+      case "likes": return "Gusto";
+      case "about": return "Sobre mí";
+      default: return "Entrada";
+    }
+  };
+
+  const getTabPlural = (id: string) => {
+    switch (id) {
+      case "mission": return "misiones";
+      case "values": return "valores";
+      case "likes": return "gustos";
+      case "about": return "entradas";
+      default: return "entradas";
+    }
+  };
+
+  if (profileLoading || valuesLoading || likesLoading || missionsLoading || aboutEntriesLoading) {
     return <div className="text-zinc-500 text-sm">Cargando...</div>;
   }
 
   return (
     <div className="h-full flex flex-col">
-      {/* Text editing dialog for mission/about */}
-      <Dialog open={isEditing} onOpenChange={(open) => !open && setIsEditing(false)}>
-        <DialogContent className="sm:max-w-md bg-zinc-900 border border-zinc-700">
-          <VisuallyHidden>
-            <DialogTitle>{currentTab.title}</DialogTitle>
-          </VisuallyHidden>
-          
-          <div className="space-y-3">
-            <div className="border-b border-zinc-700/50 pb-2">
-              <h3 className="text-sm font-medium text-zinc-100">{currentTab.title}</h3>
-              <div className="h-px w-8 bg-gradient-to-r from-zinc-500 to-transparent mt-1" />
-            </div>
-            
-            <Textarea
-              placeholder={activeTab === "mission" ? "¿Cuál es tu propósito?" : "Describe quién eres..."}
-              value={editValue}
-              onChange={(e) => setEditValue(e.target.value)}
-              rows={6}
-              className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 resize-none text-sm"
-              data-testid={`input-profile-${activeTab}`}
-              autoFocus
-            />
-            
-            <div className="flex gap-2 pt-1">
-              <Button size="sm" onClick={handleTextSave} className="bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-xs">
-                Guardar
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setIsEditing(false)} className="text-zinc-400 hover:text-zinc-300 text-xs">
-                Cancelar
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Add entry dialog for values/likes */}
+      {/* Add entry dialog for mission/values/likes/about */}
       <Dialog open={isAdding} onOpenChange={(open) => !open && setIsAdding(false)}>
         <DialogContent className="sm:max-w-md bg-zinc-900 border border-zinc-700">
           <VisuallyHidden>
-            <DialogTitle>Agregar {activeTab === "values" ? "Valor" : "Gusto"}</DialogTitle>
+            <DialogTitle>Agregar {getTabLabel(activeTab)}</DialogTitle>
           </VisuallyHidden>
           
           <div className="space-y-4">
             <div className="border-b border-zinc-700/50 pb-2">
-              <h3 className="font-medium text-zinc-100">Agregar {activeTab === "values" ? "Valor" : "Gusto"}</h3>
+              <h3 className="font-medium text-zinc-100">Agregar {getTabLabel(activeTab)}</h3>
               <div className="h-px w-8 bg-gradient-to-r from-zinc-500 to-transparent mt-1" />
             </div>
             <Input
@@ -1538,118 +1633,84 @@ function ProfileSection() {
         ))}
       </div>
 
-      {/* Text-based tabs (mission/about) */}
-      {currentTab.isText && (
+      <div className="mb-3 pb-2 border-b border-zinc-700/50">
+        <span className="text-xs text-zinc-500 uppercase tracking-wider">
+          {currentEntries.length} {getTabPlural(activeTab)}
+        </span>
+        <div className="h-px w-8 bg-gradient-to-r from-zinc-600 to-transparent mt-1" />
+      </div>
+
+      <div className="flex flex-1 min-h-0 gap-2">
         <div 
-          className="flex-1 flex cursor-pointer select-none"
-          onTouchStart={handleTextLongPressStart}
-          onTouchEnd={handleTextLongPressEnd}
-          onTouchCancel={handleTextLongPressEnd}
-          onMouseDown={handleTextLongPressStart}
-          onMouseUp={handleTextLongPressEnd}
-          onMouseLeave={handleTextLongPressEnd}
+          className="w-1/2 bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]"
+          onTouchStart={handleLeftLongPressStart}
+          onTouchEnd={handleLeftLongPressEnd}
+          onTouchCancel={handleLeftLongPressEnd}
+          onMouseDown={handleLeftLongPressStart}
+          onMouseUp={handleLeftLongPressEnd}
+          onMouseLeave={handleLeftLongPressEnd}
         >
-          <div className="flex-1 flex flex-col">
-            <div className="text-xs text-zinc-500 border-b border-zinc-800 pb-1 mb-2">
-              {currentTab.title}
-            </div>
-            
-            <ScrollArea className="flex-1">
-              {currentTextValue ? (
-                <p className="text-sm text-zinc-300 whitespace-pre-line leading-relaxed">{currentTextValue}</p>
-              ) : (
-                <p className="text-zinc-600 italic text-sm">
-                  Mantené presionado para agregar información...
+          <ScrollArea className="h-full">
+            {currentEntries.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <p className="text-zinc-500 text-sm">
+                  No hay {getTabPlural(activeTab)} aún
                 </p>
-              )}
-            </ScrollArea>
-          </div>
-        </div>
-      )}
-
-      {/* List-based tabs (values/likes) */}
-      {!currentTab.isText && (
-        <>
-          <div className="mb-3 pb-2 border-b border-zinc-700/50">
-            <span className="text-xs text-zinc-500 uppercase tracking-wider">
-              {currentEntries.length} {activeTab === "values" ? "valores" : "gustos"}
-            </span>
-            <div className="h-px w-8 bg-gradient-to-r from-zinc-600 to-transparent mt-1" />
-          </div>
-
-          <div className="flex flex-1 min-h-0 gap-2">
-            <div 
-              className="w-1/2 bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]"
-              onTouchStart={handleLeftLongPressStart}
-              onTouchEnd={handleLeftLongPressEnd}
-              onTouchCancel={handleLeftLongPressEnd}
-              onMouseDown={handleLeftLongPressStart}
-              onMouseUp={handleLeftLongPressEnd}
-              onMouseLeave={handleLeftLongPressEnd}
-            >
-              <ScrollArea className="h-full">
-                {currentEntries.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-12 text-center">
-                    <p className="text-zinc-500 text-sm">
-                      No hay {activeTab === "values" ? "valores" : "gustos"} aún
-                    </p>
-                    <p className="text-zinc-600 text-xs mt-2">Mantené presionado para agregar</p>
-                  </div>
-                ) : (
-                  <div className="space-y-0.5">
-                    {currentEntries.map((entry, index) => (
-                      <div key={entry.id}>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setViewingEntry(entry); }}
-                          className={`w-full text-left px-3 py-2 rounded text-sm transition-all cursor-pointer select-none ${
-                            viewingEntry?.id === entry.id 
-                              ? "bg-zinc-700 text-zinc-100 shadow-sm" 
-                              : "text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200"
-                          }`}
-                          data-testid={`card-profile-${activeTab}-${entry.id}`}
-                        >
-                          {entry.name}
-                        </button>
-                        {index < currentEntries.length - 1 && (
-                          <div className="h-px bg-zinc-700/30 mx-2" />
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </ScrollArea>
-            </div>
-            
-            <div 
-              className="w-1/2 bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
-              onTouchStart={handleRightLongPressStart}
-              onTouchEnd={handleRightLongPressEnd}
-              onTouchCancel={handleRightLongPressEnd}
-              onMouseDown={handleRightLongPressStart}
-              onMouseUp={handleRightLongPressEnd}
-              onMouseLeave={handleRightLongPressEnd}
-            >
-              <ScrollArea className="h-full">
-                {viewingEntry ? (
-                  <div className="space-y-4">
-                    <div className="border-b border-zinc-700/50 pb-2">
-                      <h3 className="font-medium text-zinc-100 uppercase tracking-wide">{viewingEntry.name}</h3>
-                      <div className="h-px w-12 bg-gradient-to-r from-zinc-500 to-transparent mt-2" />
-                    </div>
-                    {viewingEntry.description && (
-                      <p className="text-sm text-zinc-400 whitespace-pre-line leading-relaxed">{viewingEntry.description}</p>
+                <p className="text-zinc-600 text-xs mt-2">Mantené presionado para agregar</p>
+              </div>
+            ) : (
+              <div className="space-y-0.5">
+                {currentEntries.map((entry, index) => (
+                  <div key={entry.id}>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setViewingEntry(entry); }}
+                      className={`w-full text-left px-3 py-2 rounded text-sm transition-all cursor-pointer select-none ${
+                        viewingEntry?.id === entry.id 
+                          ? "bg-zinc-700 text-zinc-100 shadow-sm" 
+                          : "text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200"
+                      }`}
+                      data-testid={`card-profile-${activeTab}-${entry.id}`}
+                    >
+                      {entry.name}
+                    </button>
+                    {index < currentEntries.length - 1 && (
+                      <div className="h-px bg-zinc-700/30 mx-2" />
                     )}
                   </div>
-                ) : (
-                  <div className="h-full flex items-center justify-center text-zinc-600 text-sm">
-                    Seleccioná una entrada
-                  </div>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+        </div>
+        
+        <div 
+          className="w-1/2 bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
+          onTouchStart={handleRightLongPressStart}
+          onTouchEnd={handleRightLongPressEnd}
+          onTouchCancel={handleRightLongPressEnd}
+          onMouseDown={handleRightLongPressStart}
+          onMouseUp={handleRightLongPressEnd}
+          onMouseLeave={handleRightLongPressEnd}
+        >
+          <ScrollArea className="h-full">
+            {viewingEntry ? (
+              <div className="space-y-4">
+                <div className="border-b border-zinc-700/50 pb-2">
+                  <h3 className="font-medium text-zinc-100 uppercase tracking-wide">{viewingEntry.name}</h3>
+                  <div className="h-px w-12 bg-gradient-to-r from-zinc-500 to-transparent mt-2" />
+                </div>
+                {viewingEntry.description && (
+                  <p className="text-sm text-zinc-400 whitespace-pre-line leading-relaxed">{viewingEntry.description}</p>
                 )}
-              </ScrollArea>
-            </div>
-          </div>
-        </>
-      )}
+              </div>
+            ) : (
+              <div className="h-full flex items-center justify-center text-zinc-600 text-sm">
+                Seleccioná una entrada
+              </div>
+            )}
+          </ScrollArea>
+        </div>
+      </div>
     </div>
   );
 }
