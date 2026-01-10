@@ -722,7 +722,7 @@ export function AreaMenu() {
         </Button>
       </div>
 
-      <div className="flex-1 overflow-y-auto overflow-x-hidden py-2 space-y-1 px-2">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden py-2 space-y-1 px-2 scrollbar-hide">
         {isOpen && (
           <div className="px-3 py-1">
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
