@@ -1,7 +1,7 @@
 import { eq, and } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db } from "./db";
-import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, profileValues, profileLikes, journalLearnings, journalTools } from "@shared/schema";
+import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, profileValues, profileLikes, profileMissions, profileAboutEntries, journalLearnings, journalTools } from "@shared/schema";
 
 export interface IStorage {
   // Users
@@ -87,6 +87,20 @@ export interface IStorage {
   createProfileLike(like: InsertProfileLike): Promise<ProfileLike>;
   updateProfileLike(id: string, like: Partial<InsertProfileLike>): Promise<ProfileLike | undefined>;
   deleteProfileLike(id: string): Promise<void>;
+
+  // Profile - Missions
+  getProfileMissions(userId: string): Promise<ProfileMission[]>;
+  getProfileMissionEntry(id: string): Promise<ProfileMission | undefined>;
+  createProfileMission(mission: InsertProfileMission): Promise<ProfileMission>;
+  updateProfileMission(id: string, mission: Partial<InsertProfileMission>): Promise<ProfileMission | undefined>;
+  deleteProfileMission(id: string): Promise<void>;
+
+  // Profile - About Entries
+  getProfileAboutEntries(userId: string): Promise<ProfileAboutEntry[]>;
+  getProfileAboutEntry(id: string): Promise<ProfileAboutEntry | undefined>;
+  createProfileAboutEntry(entry: InsertProfileAboutEntry): Promise<ProfileAboutEntry>;
+  updateProfileAboutEntry(id: string, entry: Partial<InsertProfileAboutEntry>): Promise<ProfileAboutEntry | undefined>;
+  deleteProfileAboutEntry(id: string): Promise<void>;
 
   // Journal - Learnings
   getJournalLearnings(userId: string): Promise<JournalLearning[]>;
@@ -634,6 +648,56 @@ export class DbStorage implements IStorage {
 
   async deleteProfileLike(id: string): Promise<void> {
     await db.delete(profileLikes).where(eq(profileLikes.id, id));
+  }
+
+  // Profile - Missions
+  async getProfileMissions(userId: string): Promise<ProfileMission[]> {
+    return await db.select().from(profileMissions).where(eq(profileMissions.userId, userId));
+  }
+
+  async getProfileMissionEntry(id: string): Promise<ProfileMission | undefined> {
+    const result = await db.select().from(profileMissions).where(eq(profileMissions.id, id));
+    return result[0];
+  }
+
+  async createProfileMission(mission: InsertProfileMission): Promise<ProfileMission> {
+    const id = randomUUID();
+    const result = await db.insert(profileMissions).values({ id, ...mission }).returning();
+    return result[0];
+  }
+
+  async updateProfileMission(id: string, mission: Partial<InsertProfileMission>): Promise<ProfileMission | undefined> {
+    const result = await db.update(profileMissions).set(mission).where(eq(profileMissions.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteProfileMission(id: string): Promise<void> {
+    await db.delete(profileMissions).where(eq(profileMissions.id, id));
+  }
+
+  // Profile - About Entries
+  async getProfileAboutEntries(userId: string): Promise<ProfileAboutEntry[]> {
+    return await db.select().from(profileAboutEntries).where(eq(profileAboutEntries.userId, userId));
+  }
+
+  async getProfileAboutEntry(id: string): Promise<ProfileAboutEntry | undefined> {
+    const result = await db.select().from(profileAboutEntries).where(eq(profileAboutEntries.id, id));
+    return result[0];
+  }
+
+  async createProfileAboutEntry(entry: InsertProfileAboutEntry): Promise<ProfileAboutEntry> {
+    const id = randomUUID();
+    const result = await db.insert(profileAboutEntries).values({ id, ...entry }).returning();
+    return result[0];
+  }
+
+  async updateProfileAboutEntry(id: string, entry: Partial<InsertProfileAboutEntry>): Promise<ProfileAboutEntry | undefined> {
+    const result = await db.update(profileAboutEntries).set(entry).where(eq(profileAboutEntries.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteProfileAboutEntry(id: string): Promise<void> {
+    await db.delete(profileAboutEntries).where(eq(profileAboutEntries.id, id));
   }
 
   // Journal - Learnings

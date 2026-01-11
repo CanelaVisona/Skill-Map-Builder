@@ -1323,7 +1323,7 @@ export async function registerRoutes(
 
   app.patch("/api/profile/missions/:id", requireAuth, async (req, res) => {
     try {
-      const existing = await storage.getProfileMission(req.params.id);
+      const existing = await storage.getProfileMissionEntry(req.params.id);
       if (!existing) {
         res.status(404).json({ message: "Mission not found" });
         return;
@@ -1341,7 +1341,7 @@ export async function registerRoutes(
 
   app.delete("/api/profile/missions/:id", requireAuth, async (req, res) => {
     try {
-      const existing = await storage.getProfileMission(req.params.id);
+      const existing = await storage.getProfileMissionEntry(req.params.id);
       if (!existing) {
         res.status(404).json({ message: "Mission not found" });
         return;
