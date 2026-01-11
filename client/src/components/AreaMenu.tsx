@@ -138,7 +138,7 @@ function AreaItem({ area, isActive, isMenuOpen, onSelect, onDelete, onArchive, o
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
           className={cn(
-            "w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 group relative overflow-hidden touch-none select-none",
+            "w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 group relative overflow-hidden touch-pan-y select-none",
             isActive 
               ? "bg-primary/10 text-primary" 
               : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
@@ -329,7 +329,7 @@ function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete, onArch
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
           className={cn(
-            "w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 group relative overflow-hidden touch-none select-none",
+            "w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 group relative overflow-hidden touch-pan-y select-none",
             isActive 
               ? "bg-primary/10 text-foreground" 
               : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
@@ -722,7 +722,7 @@ export function AreaMenu() {
         </Button>
       </div>
 
-      <div className="flex-1 overflow-y-auto overflow-x-hidden py-2 space-y-1 px-2 scrollbar-hide">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden py-2 space-y-1 px-2 scrollbar-hide overscroll-contain">
         {isOpen && (
           <div className="px-3 py-1">
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
