@@ -153,15 +153,16 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     setTimeout(() => setShowCompleted(false), 2000);
   };
 
-  const activeArea = areas.find(a => a.id === activeAreaId);
-  const activeProject = projects.find(p => p.id === activeProjectId) || archivedProjects.find(p => p.id === activeProjectId);
+  const activeArea = Array.isArray(areas) ? areas.find(a => a.id === activeAreaId) : undefined;
+  const activeProject = (Array.isArray(projects) ? projects.find(p => p.id === activeProjectId) : undefined) || 
+                       (Array.isArray(archivedProjects) ? archivedProjects.find(p => p.id === activeProjectId) : undefined);
   
-  const mainQuests = projects.filter(p => !p.questType || p.questType === "main");
-  const sideQuests = projects.filter(p => p.questType === "side");
-  const emergentQuests = projects.filter(p => p.questType === "emergent");
-  const archivedMainQuests = archivedProjects.filter(p => !p.questType || p.questType === "main");
-  const archivedSideQuests = archivedProjects.filter(p => p.questType === "side");
-  const archivedEmergentQuests = archivedProjects.filter(p => p.questType === "emergent");
+  const mainQuests = Array.isArray(projects) ? projects.filter(p => !p.questType || p.questType === "main") : [];
+  const sideQuests = Array.isArray(projects) ? projects.filter(p => p.questType === "side") : [];
+  const emergentQuests = Array.isArray(projects) ? projects.filter(p => p.questType === "emergent") : [];
+  const archivedMainQuests = Array.isArray(archivedProjects) ? archivedProjects.filter(p => !p.questType || p.questType === "main") : [];
+  const archivedSideQuests = Array.isArray(archivedProjects) ? archivedProjects.filter(p => p.questType === "side") : [];
+  const archivedEmergentQuests = Array.isArray(archivedProjects) ? archivedProjects.filter(p => p.questType === "emergent") : [];
 
   const handleSetActiveAreaId = (id: string) => {
     setActiveAreaId(id);
@@ -183,10 +184,21 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
         ]);
         const areasData = await areasResponse.json();
         const projectsData = await projectsResponse.json();
-        setAreas(areasData);
-        setProjects(projectsData);
-        if (areasData.length > 0 && !activeAreaId) {
-          setActiveAreaId(areasData[0].id);
+        
+        // Handle authentication errors
+        if (Array.isArray(areasData)) {
+          setAreas(areasData);
+          if (areasData.length > 0 && !activeAreaId) {
+            setActiveAreaId(areasData[0].id);
+          }
+        } else {
+          setAreas([]);
+        }
+        
+        if (Array.isArray(projectsData)) {
+          setProjects(projectsData);
+        } else {
+          setProjects([]);
         }
       } catch (error) {
         console.error("Error loading data:", error);
