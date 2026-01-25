@@ -223,13 +223,15 @@ function JournalSection({
   };
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="mb-3 pb-2 border-b border-zinc-700/50">
+    <div className="h-full min-h-0 flex flex-col">
+      <div className="flex-shrink-0 mb-3 pb-2 border-b border-zinc-700/50">
         <span className="text-xs text-zinc-500 uppercase tracking-wider">
           {entries.length} {countLabel}
         </span>
         <div className="h-px w-8 bg-gradient-to-r from-zinc-600 to-transparent mt-1" />
       </div>
+
+      <div className="flex-1 min-h-0 flex flex-col">
 
       <Dialog open={isAdding} onOpenChange={(open) => !open && setIsAdding(false)}>
         <DialogContent className="sm:max-w-md bg-zinc-900 border border-zinc-700">
@@ -391,17 +393,18 @@ function JournalSection({
         </DialogContent>
       </Dialog>
 
-      <div className="flex flex-1 min-h-0 h-full gap-2">
-        <div 
-          className="w-1/2 h-full overflow-hidden bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]"
-          onTouchStart={handleLeftLongPressStart}
-          onTouchEnd={handleLeftLongPressEnd}
-          onTouchCancel={handleLeftLongPressEnd}
-          onMouseDown={handleLeftLongPressStart}
-          onMouseUp={handleLeftLongPressEnd}
-          onMouseLeave={handleLeftLongPressEnd}
-        >
-          <ScrollArea className="h-full max-h-full">
+      <div className="flex-1 min-h-0 flex flex-col">
+        <div className="flex flex-1 min-h-0 gap-4">
+          <div 
+            className="w-1/2 flex flex-col bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer min-h-0"
+            onTouchStart={handleLeftLongPressStart}
+            onTouchEnd={handleLeftLongPressEnd}
+            onTouchCancel={handleLeftLongPressEnd}
+            onMouseDown={handleLeftLongPressStart}
+            onMouseUp={handleLeftLongPressEnd}
+            onMouseLeave={handleLeftLongPressEnd}
+          >
+            <div className="flex-1 min-h-0 w-full overflow-y-auto pr-2 minimal-scrollbar">
             {entries.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <Icon className="h-8 w-8 text-zinc-600 mb-3" />
@@ -430,11 +433,11 @@ function JournalSection({
                 ))}
               </div>
             )}
-          </ScrollArea>
+          </div>
         </div>
         
         <div 
-          className="w-1/2 h-full flex flex-col bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
+          className="w-1/2 flex flex-col bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer min-h-0"
           onTouchStart={handleRightLongPressStart}
           onTouchEnd={handleRightLongPressEnd}
           onTouchCancel={handleRightLongPressEnd}
@@ -460,6 +463,8 @@ function JournalSection({
             </div>
           )}
         </div>
+      </div>
+      </div>
       </div>
     </div>
   );
@@ -757,9 +762,9 @@ function ShadowsSection({
         </DialogContent>
       </Dialog>
 
-      <div className="flex flex-1 min-h-0 h-full gap-2">
+      <div className="flex flex-1 min-h-0 gap-4">
         <div 
-          className="w-1/2 h-full overflow-hidden bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]"
+          className="w-1/2 flex flex-col bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer min-h-0"
           onTouchStart={handleLeftLongPressStart}
           onTouchEnd={handleLeftLongPressEnd}
           onTouchCancel={handleLeftLongPressEnd}
@@ -767,7 +772,7 @@ function ShadowsSection({
           onMouseUp={handleLeftLongPressEnd}
           onMouseLeave={handleLeftLongPressEnd}
         >
-          <ScrollArea className="h-full max-h-full">
+          <ScrollArea className="h-full">
             {currentEntries.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <Skull className="h-8 w-8 text-zinc-600 mb-3" />
@@ -802,7 +807,7 @@ function ShadowsSection({
         </div>
         
         <div 
-          className="w-1/2 h-full flex flex-col bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
+          className="w-1/2 flex flex-col bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer min-h-0"
           onTouchStart={handleRightLongPressStart}
           onTouchEnd={handleRightLongPressEnd}
           onTouchCancel={handleRightLongPressEnd}
@@ -886,11 +891,11 @@ function ToolsSection({
         <div className="h-px w-8 bg-gradient-to-r from-zinc-600 to-transparent mt-1" />
       </div>
 
-      <div className="flex flex-1 min-h-0 h-full gap-2">
+      <div className="flex flex-1 min-h-0 gap-4">
         <div 
-          className="w-1/2 h-full overflow-hidden bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]"
+          className="w-1/2 flex flex-col bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer min-h-0"
         >
-          <ScrollArea className="h-full max-h-full">
+          <ScrollArea className="h-full">
             {entries.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <Wrench className="h-8 w-8 text-zinc-600 mb-3" />
@@ -1012,11 +1017,11 @@ function LearningsSection({
         <div className="h-px w-8 bg-gradient-to-r from-zinc-600 to-transparent mt-1" />
       </div>
 
-      <div className="flex flex-1 min-h-0 h-full gap-2">
+      <div className="flex flex-1 min-h-0 gap-4">
         <div 
-          className="w-1/2 h-full overflow-hidden bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]"
+          className="w-1/2 flex flex-col bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer min-h-0"
         >
-          <ScrollArea className="h-full max-h-full">
+          <ScrollArea className="h-full">
             {entries.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <Lightbulb className="h-8 w-8 text-zinc-600 mb-3" />
@@ -1684,7 +1689,7 @@ function ProfileSection() {
         </div>
         
         <div 
-          className="w-1/2 bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
+          className="w-1/2 h-full bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
           onTouchStart={handleRightLongPressStart}
           onTouchEnd={handleRightLongPressEnd}
           onTouchCancel={handleRightLongPressEnd}
@@ -1827,13 +1832,14 @@ function AchievementsSection() {
     <div className="flex h-full overflow-hidden">
       <div className={`${hasSubtasks ? 'w-1/3' : 'w-1/2'} h-full overflow-hidden border-r border-border pr-4`}>
         <ScrollArea className="h-full">
-          {sourceGroups.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <Scroll className="h-8 w-8 text-muted-foreground/40 mb-3" />
-              <p className="text-muted-foreground text-sm">No completed tasks</p>
-            </div>
-          ) : (
-            <div className="space-y-1">
+          <div className="flex flex-col min-h-0">
+            {sourceGroups.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Scroll className="h-8 w-8 text-muted-foreground/40 mb-3" />
+                <p className="text-muted-foreground text-sm">No completed tasks</p>
+              </div>
+            ) : (
+              <div className="space-y-1">
               {sourceGroups.map((group) => (
                 <div key={group.name}>
                   <button
@@ -1847,7 +1853,7 @@ function AchievementsSection() {
                     </span>
                   </button>
                   {expandedGroups.has(group.name) && (
-                    <div className="ml-3 border-l border-border pl-2 space-y-0.5">
+                    <div className="ml-3 border-l border-border pl-2 space-y-0.5 flex flex-col">
                       {group.skills.map((skill) => (
                         <button
                           key={skill.id}
@@ -1868,6 +1874,7 @@ function AchievementsSection() {
               ))}
             </div>
           )}
+          </div>
         </ScrollArea>
       </div>
       
@@ -2133,8 +2140,8 @@ function QuestDiary() {
         <VisuallyHidden>
           <DialogTitle>Journal</DialogTitle>
         </VisuallyHidden>
-        <div className="flex h-full">
-          <Tabs defaultValue="achievements" className="flex-1 flex" orientation="vertical">
+        <div className="flex h-full min-h-0">
+          <Tabs defaultValue="achievements" className="flex-1 flex min-h-0" orientation="vertical">
             <TabsList className="flex flex-col h-full justify-start gap-0.5 p-1.5 rounded-none border-r-2 border-zinc-700 bg-zinc-800/50 shadow-[inset_-4px_0_8px_rgba(0,0,0,0.3)]">
               <TabsTrigger value="achievements" className="p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-achievements" title="Achievements">
                 <Scroll className="h-5 w-5" />
@@ -2161,17 +2168,17 @@ function QuestDiary() {
               </TabsTrigger>
             </TabsList>
             
-            <div className="flex-1 p-6 overflow-hidden bg-zinc-900">
+            <div className="flex-1 p-6 bg-zinc-900 flex flex-col min-h-0">
               <div className="mb-4 pb-3 border-b border-zinc-700">
                 <h2 className="text-xl font-bold tracking-tight text-zinc-100">Journal</h2>
                 <div className="h-0.5 w-16 bg-gradient-to-r from-zinc-500 to-transparent mt-2" />
               </div>
               
-              <TabsContent value="achievements" className="h-[calc(100%-4rem)] mt-0 overflow-hidden">
+              <TabsContent value="achievements" className="flex-1 min-h-0 mt-0">
                 <AchievementsSection />
               </TabsContent>
               
-              <TabsContent value="characters" className="h-[calc(100%-4rem)] mt-0">
+              <TabsContent value="characters" className="flex-1 min-h-0 mt-0">
                 <JournalSection
                   type="characters"
                   entries={characters}
@@ -2182,7 +2189,7 @@ function QuestDiary() {
                 />
               </TabsContent>
               
-              <TabsContent value="places" className="h-[calc(100%-4rem)] mt-0">
+              <TabsContent value="places" className="flex-1 min-h-0 mt-0">
                 <JournalSection
                   type="places"
                   entries={places}
@@ -2193,7 +2200,7 @@ function QuestDiary() {
                 />
               </TabsContent>
               
-              <TabsContent value="shadows" className="h-[calc(100%-4rem)] mt-0">
+              <TabsContent value="shadows" className="flex-1 min-h-0 mt-0">
                 <ShadowsSection
                   entries={shadows}
                   isLoading={loadingShadows}
@@ -2204,7 +2211,7 @@ function QuestDiary() {
                 />
               </TabsContent>
               
-              <TabsContent value="learnings" className="h-[calc(100%-4rem)] mt-0">
+              <TabsContent value="learnings" className="flex-1 min-h-0 mt-0">
                 <LearningsSection
                   entries={learnings}
                   isLoading={loadingLearnings}
@@ -2212,7 +2219,7 @@ function QuestDiary() {
                 />
               </TabsContent>
               
-              <TabsContent value="tools" className="h-[calc(100%-4rem)] mt-0">
+              <TabsContent value="tools" className="flex-1 min-h-0 mt-0">
                 <ToolsSection
                   entries={tools}
                   isLoading={loadingTools}
@@ -2223,7 +2230,7 @@ function QuestDiary() {
                 />
               </TabsContent>
               
-              <TabsContent value="profile" className="h-[calc(100%-4rem)] mt-0">
+              <TabsContent value="profile" className="flex-1 min-h-0 mt-0">
                 <ProfileSection />
               </TabsContent>
             </div>
