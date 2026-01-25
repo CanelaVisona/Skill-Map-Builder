@@ -889,12 +889,6 @@ function ToolsSection({
       <div className="flex flex-1 min-h-0 h-full gap-2">
         <div 
           className="w-1/2 h-full overflow-hidden bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]"
-          onTouchStart={handleLeftLongPressStart}
-          onTouchEnd={handleLeftLongPressEnd}
-          onTouchCancel={handleLeftLongPressEnd}
-          onMouseDown={handleLeftLongPressStart}
-          onMouseUp={handleLeftLongPressEnd}
-          onMouseLeave={handleLeftLongPressEnd}
         >
           <ScrollArea className="h-full max-h-full">
             {entries.length === 0 ? (
@@ -908,6 +902,12 @@ function ToolsSection({
                   <div key={entry.id}>
                     <button
                       onClick={(e) => { e.stopPropagation(); setViewingEntry(entry); }}
+                      onTouchStart={() => handleLeftLongPressStart(entry)}
+                      onTouchEnd={handleLeftLongPressEnd}
+                      onTouchCancel={handleLeftLongPressEnd}
+                      onMouseDown={() => handleLeftLongPressStart(entry)}
+                      onMouseUp={handleLeftLongPressEnd}
+                      onMouseLeave={handleLeftLongPressEnd}
                       className={`w-full text-left px-3 py-2 rounded text-sm transition-all cursor-pointer select-none ${
                         viewingEntry?.id === entry.id 
                           ? "bg-zinc-700 text-zinc-100 shadow-sm" 
@@ -1015,12 +1015,6 @@ function LearningsSection({
       <div className="flex flex-1 min-h-0 h-full gap-2">
         <div 
           className="w-1/2 h-full overflow-hidden bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]"
-          onTouchStart={handleLeftLongPressStart}
-          onTouchEnd={handleLeftLongPressEnd}
-          onTouchCancel={handleLeftLongPressEnd}
-          onMouseDown={handleLeftLongPressStart}
-          onMouseUp={handleLeftLongPressEnd}
-          onMouseLeave={handleLeftLongPressEnd}
         >
           <ScrollArea className="h-full max-h-full">
             {entries.length === 0 ? (
@@ -1034,6 +1028,12 @@ function LearningsSection({
                   <div key={entry.id}>
                     <button
                       onClick={(e) => { e.stopPropagation(); setViewingEntry(entry); }}
+                      onTouchStart={() => handleLeftLongPressStart(entry)}
+                      onTouchEnd={handleLeftLongPressEnd}
+                      onTouchCancel={handleLeftLongPressEnd}
+                      onMouseDown={() => handleLeftLongPressStart(entry)}
+                      onMouseUp={handleLeftLongPressEnd}
+                      onMouseLeave={handleLeftLongPressEnd}
                       className={`w-full text-left px-3 py-2 rounded text-sm transition-all cursor-pointer select-none ${
                         viewingEntry?.id === entry.id 
                           ? "bg-zinc-700 text-zinc-100 shadow-sm" 
