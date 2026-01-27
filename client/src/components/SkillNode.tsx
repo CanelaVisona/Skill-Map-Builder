@@ -452,16 +452,33 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
           <motion.div
             initial={false}
             animate={{
-              scale: isMastered ? 1.05 : 1,
+              scale: isMastered ? 1.05 : skill.status === "available" ? [1, 1.3, 1] : 1,
+              boxShadow: skill.status === "available" ? [
+                "0 0 0px 1px rgba(255, 255, 255, 1)",
+                "0 0 0px 1.5px rgba(255, 255, 255, 1)",
+                "0 0 0px 1px rgba(255, 255, 255, 1)"
+              ] : "none",
+            }}
+            transition={{
+              scale: skill.status === "available" ? {
+                duration: 2,
+                repeat: Infinity,
+                repeatType: "loop"
+              } : { duration: 0.3 },
+              boxShadow: skill.status === "available" ? {
+                duration: 2,
+                repeat: Infinity,
+                repeatType: "loop"
+              } : { duration: 0 }
             }}
             className={cn(
-              "w-10 h-10 rounded-full border-2 flex items-center justify-center transition-all duration-300 relative",
+              "w-10 h-10 rounded-full border-2 flex items-center justify-center relative",
               // Locked nodes
               isLocked && !isLastNodeOfLevel && "bg-muted border-muted-foreground/20 text-muted-foreground/50",
               isLocked && isLastNodeOfLevel && "bg-muted border-amber-400 text-muted-foreground/50",
               // Available nodes (not locked, not mastered)
-              !isLocked && !isMastered && !isLastNodeOfLevel && "bg-card border-border hover:border-foreground/50",
-              !isLocked && !isMastered && isLastNodeOfLevel && "bg-card border-amber-400 hover:border-amber-300",
+              !isLocked && !isMastered && !isLastNodeOfLevel && "bg-card border-border",
+              !isLocked && !isMastered && isLastNodeOfLevel && "bg-card border-amber-400",
               // Mastered nodes - not last node of level and level not completed
               isMastered && !isLastNodeOfLevel && !isLevelCompleted && "bg-foreground border-foreground text-background shadow-sm",
               // Mastered last node of level (always orange, whether level completed or not)
@@ -483,12 +500,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
           {/* Label */}
           <div className={cn(
-            "absolute left-14 top-1/2 -translate-y-1/2 max-w-[180px] font-medium transition-colors",
+            "absolute left-14 top-1/2 -translate-y-1/2 font-medium transition-colors text-sm",
             isLocked ? "text-muted-foreground" : "text-foreground",
             isMastered && "text-foreground",
-            skill.title.length > 20 ? "text-xs leading-tight" : "text-sm",
-            skill.title.length > 30 ? "text-[10px]" : "",
-            skill.title === "Next challenge" && "text-muted-foreground/50 font-normal italic"
+            (skill.title === "Next challenge" || skill.title === "Next objetive quest") && "text-muted-foreground/30"
           )}>
             <span
               onClick={handleTitleClick}
@@ -499,7 +514,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               onMouseUp={handleTitleLongPressEnd}
               onMouseLeave={handleTitleLongPressEnd}
               className={cn(
-                "line-clamp-2 inline-block transition-transform duration-150",
+                "whitespace-nowrap block transition-transform duration-150",
                 !isSubSkillView && !isLocked && !isInicioNode && "cursor-pointer hover:translate-y-0.5 active:translate-y-1",
                 !isInicioNode && "cursor-pointer"
               )}
@@ -583,8 +598,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                onClick={handleFeedbackOpen}
                data-testid="button-feedback-skill"
              >
-               <Pencil className="h-3 w-3" />
-               <span>Feedback</span>
+               <span>Explore</span>
              </Button>
 
              <Popover open={isAddOptionsOpen} onOpenChange={setIsAddOptionsOpen}>

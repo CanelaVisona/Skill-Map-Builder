@@ -109,7 +109,9 @@ interface SkillTreeContextType {
   toggleProjectFinalNode: (projectId: string, skillId: string) => Promise<void>;
   toggleSubSkillFinalNode: (skillId: string) => Promise<void>;
   showLevelUp: boolean;
+  levelUpNumber: number;
   showCompleted: boolean;
+  showQuestUpdated: boolean;
   renameArea: (areaId: string, newName: string) => Promise<void>;
   renameProject: (projectId: string, newName: string) => Promise<void>;
   sideQuests: Project[];
@@ -141,9 +143,12 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
   const [parentSkillStack, setParentSkillStack] = useState<ParentSkillInfo[]>([]);
   const [subSkills, setSubSkills] = useState<Skill[]>([]);
   const [showLevelUp, setShowLevelUp] = useState(false);
+  const [levelUpNumber, setLevelUpNumber] = useState(0);
   const [showCompleted, setShowCompleted] = useState(false);
+  const [showQuestUpdated, setShowQuestUpdated] = useState(false);
 
-  const triggerLevelUp = () => {
+  const triggerLevelUp = (level: number) => {
+    setLevelUpNumber(level);
     setShowLevelUp(true);
     setTimeout(() => setShowLevelUp(false), 2000);
   };
@@ -151,6 +156,11 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
   const triggerCompleted = () => {
     setShowCompleted(true);
     setTimeout(() => setShowCompleted(false), 2000);
+  };
+
+  const triggerQuestUpdated = () => {
+    setShowQuestUpdated(true);
+    setTimeout(() => setShowQuestUpdated(false), 2000);
   };
 
   const activeArea = Array.isArray(areas) ? areas.find(a => a.id === activeAreaId) : undefined;
@@ -254,11 +264,14 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
 
       if (hasStar && newStatus === "mastered") {
         triggerCompleted();
+      } else if (newStatus === "mastered") {
+        triggerQuestUpdated();
       }
 
       if (isOpeningNewLevel) {
-        triggerLevelUp();
         const newUnlockedLevel = skill.level + 1;
+        // Delay the level up trigger to show quest updated first
+        setTimeout(() => triggerLevelUp(newUnlockedLevel), 2500);
         
         // Generate 5 placeholder nodes for the new level (this also updates area in a transaction)
         // This endpoint is idempotent - if nodes exist, it returns them without creating duplicates
@@ -406,11 +419,14 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       if (hasStar && newStatus === "mastered") {
         triggerCompleted();
         await archiveProject(projectId);
+      } else if (newStatus === "mastered") {
+        triggerQuestUpdated();
       }
 
       if (isOpeningNewLevel) {
-        triggerLevelUp();
         const newUnlockedLevel = skill.level + 1;
+        // Delay the level up trigger to show quest updated first
+        setTimeout(() => triggerLevelUp(newUnlockedLevel), 2500);
         
         const generateResponse = await fetch(`/api/projects/${projectId}/generate-level`, {
           method: "POST",
@@ -1496,6 +1512,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
             )
           })));
         }
+      } else if (newStatus === "mastered") {
+        triggerQuestUpdated();
       }
 
       if (isOpeningNewLevel && activeParentSkillId) {
@@ -2764,7 +2782,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       toggleProjectFinalNode,
       toggleSubSkillFinalNode,
       showLevelUp,
+      levelUpNumber,
       showCompleted,
+      showQuestUpdated,
       sideQuests,
       archivedSideQuests,
       createSideQuest,

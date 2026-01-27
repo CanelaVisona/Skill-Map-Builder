@@ -4,7 +4,7 @@ import { AreaMenu } from "@/components/AreaMenu";
 import { SkillNode } from "@/components/SkillNode";
 import { SkillConnection } from "@/components/SkillConnection";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench } from "lucide-react";
+import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -1012,7 +1012,7 @@ function LearningsSection({
     <div className="h-full flex flex-col">
       <div className="mb-3 pb-2 border-b border-zinc-700/50">
         <span className="text-xs text-zinc-500 uppercase tracking-wider">
-          {entries.length} learnings
+          {entries.length} discoveries
         </span>
         <div className="h-px w-8 bg-gradient-to-r from-zinc-600 to-transparent mt-1" />
       </div>
@@ -1749,34 +1749,52 @@ function AchievementsSection() {
 
   // From areas
   areas.forEach(area => {
-    const completedSkills = area.skills
-      .filter(s => s.status === "mastered" && s.title.toLowerCase() !== "inicio")
+    const allSkillsToShow = area.skills
+      .filter(s => {
+        const titleLower = s.title.toLowerCase();
+        const isPlaceholder = titleLower === "inicio" || titleLower.includes("next challenge") || titleLower.includes("next challange") || titleLower.includes("next objective quest");
+        const isCompleted = s.status === "mastered";
+        const isIncompleteWithName = s.status !== "mastered" && s.title && s.title !== "?";
+        return !isPlaceholder && (isCompleted || isIncompleteWithName);
+      })
       .sort(sortByPosition)
       .map(skill => ({ ...skill, sourceName: area.name, sourceSkills: area.skills }));
-    if (completedSkills.length > 0) {
-      sourceGroups.push({ name: area.name, skills: completedSkills });
+    if (allSkillsToShow.length > 0) {
+      sourceGroups.push({ name: area.name, skills: allSkillsToShow });
     }
   });
   
   // From main quests
   mainQuests.forEach(project => {
-    const completedSkills = project.skills
-      .filter(s => s.status === "mastered" && s.title.toLowerCase() !== "inicio")
+    const allSkillsToShow = project.skills
+      .filter(s => {
+        const titleLower = s.title.toLowerCase();
+        const isPlaceholder = titleLower === "inicio" || titleLower.includes("next challenge") || titleLower.includes("next challange") || titleLower.includes("next objective quest");
+        const isCompleted = s.status === "mastered";
+        const isIncompleteWithName = s.status !== "mastered" && s.title && s.title !== "?";
+        return !isPlaceholder && (isCompleted || isIncompleteWithName);
+      })
       .sort(sortByPosition)
       .map(skill => ({ ...skill, sourceName: project.name, sourceSkills: project.skills }));
-    if (completedSkills.length > 0) {
-      sourceGroups.push({ name: project.name, skills: completedSkills });
+    if (allSkillsToShow.length > 0) {
+      sourceGroups.push({ name: project.name, skills: allSkillsToShow });
     }
   });
   
   // From side quests
   sideQuests.forEach(project => {
-    const completedSkills = project.skills
-      .filter(s => s.status === "mastered" && s.title.toLowerCase() !== "inicio")
+    const allSkillsToShow = project.skills
+      .filter(s => {
+        const titleLower = s.title.toLowerCase();
+        const isPlaceholder = titleLower === "inicio" || titleLower.includes("next challenge") || titleLower.includes("next challange") || titleLower.includes("next objective quest");
+        const isCompleted = s.status === "mastered";
+        const isIncompleteWithName = s.status !== "mastered" && s.title && s.title !== "?";
+        return !isPlaceholder && (isCompleted || isIncompleteWithName);
+      })
       .sort(sortByPosition)
       .map(skill => ({ ...skill, sourceName: project.name, sourceSkills: project.skills }));
-    if (completedSkills.length > 0) {
-      sourceGroups.push({ name: project.name, skills: completedSkills });
+    if (allSkillsToShow.length > 0) {
+      sourceGroups.push({ name: project.name, skills: allSkillsToShow });
     }
   });
   
@@ -1854,20 +1872,25 @@ function AchievementsSection() {
                   </button>
                   {expandedGroups.has(group.name) && (
                     <div className="ml-3 border-l border-border pl-2 space-y-0.5 flex flex-col">
-                      {group.skills.map((skill) => (
-                        <button
-                          key={skill.id}
-                          onClick={() => handleSelectSkill(skill)}
-                          className={`w-full text-left px-3 py-1.5 rounded-md text-sm transition-colors ${
-                            selectedSkillId === skill.id 
-                              ? "bg-muted text-foreground" 
-                              : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                          }`}
-                          data-testid={`diary-entry-${skill.id}`}
-                        >
-                          {skill.title}
-                        </button>
-                      ))}
+                      {group.skills.map((skill) => {
+                        const isCompleted = skill.status === "mastered";
+                        return (
+                          <button
+                            key={skill.id}
+                            onClick={() => handleSelectSkill(skill)}
+                            className={`w-full text-left px-3 py-1.5 rounded-md text-sm transition-colors ${
+                              selectedSkillId === skill.id 
+                                ? "bg-muted text-foreground" 
+                                : isCompleted
+                                  ? "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                                  : "text-yellow-600 dark:text-yellow-500 hover:bg-muted/50 hover:text-yellow-500"
+                            }`}
+                            data-testid={`diary-entry-${skill.id}`}
+                          >
+                            {!isCompleted && "○ "}{skill.title}
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -2156,8 +2179,8 @@ function QuestDiary() {
               <TabsTrigger value="shadows" className="p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-shadows" title="Shadows">
                 <Skull className="h-5 w-5" />
               </TabsTrigger>
-              <TabsTrigger value="learnings" className="p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-learnings" title="Learnings">
-                <Lightbulb className="h-5 w-5" />
+              <TabsTrigger value="discovery" className="p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-discovery" title="Discovery">
+                <Globe className="h-5 w-5" />
               </TabsTrigger>
               <TabsTrigger value="tools" className="p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-tools" title="Tools">
                 <Wrench className="h-5 w-5" />
@@ -2211,7 +2234,7 @@ function QuestDiary() {
                 />
               </TabsContent>
               
-              <TabsContent value="learnings" className="flex-1 min-h-0 mt-0">
+              <TabsContent value="discovery" className="flex-1 min-h-0 mt-0">
                 <LearningsSection
                   entries={learnings}
                   isLoading={loadingLearnings}
@@ -2255,7 +2278,9 @@ function SkillCanvas() {
     toggleSubSkillStatus,
     deleteSubSkillTree,
     showLevelUp,
+    levelUpNumber,
     showCompleted,
+    showQuestUpdated,
     addSkill,
     updateSkill,
     updateProjectSkill
@@ -2415,7 +2440,7 @@ function SkillCanvas() {
                 exit={{ y: -100, opacity: 0 }}
                 transition={{ duration: 0.5, ease: "easeOut" }}
               >
-                level up
+                Level {levelUpNumber}
               </motion.span>
             </motion.div>
           )}
@@ -2436,6 +2461,26 @@ function SkillCanvas() {
                 transition={{ duration: 0.5, ease: "easeOut" }}
               >
                 completed
+              </motion.span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        <AnimatePresence>
+          {showQuestUpdated && (
+            <motion.div
+              className="absolute inset-0 flex items-center justify-center pointer-events-none z-50"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
+              <motion.span
+                className="text-4xl font-bold tracking-widest uppercase text-amber-500"
+                initial={{ y: 100, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: -100, opacity: 0 }}
+                transition={{ duration: 0.5, ease: "easeOut" }}
+              >
+                Quest updated!
               </motion.span>
             </motion.div>
           )}
@@ -2601,7 +2646,7 @@ function SkillCanvas() {
               exit={{ y: -100, opacity: 0 }}
               transition={{ duration: 0.5, ease: "easeOut" }}
             >
-              level up
+              Level {levelUpNumber}
             </motion.span>
           </motion.div>
         )}
@@ -2622,6 +2667,26 @@ function SkillCanvas() {
               transition={{ duration: 0.5, ease: "easeOut" }}
             >
               completed
+            </motion.span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {showQuestUpdated && (
+          <motion.div
+            className="absolute inset-0 flex items-center justify-center pointer-events-none z-50"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <motion.span
+              className="text-4xl font-bold tracking-widest uppercase text-amber-500"
+              initial={{ y: 100, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: -100, opacity: 0 }}
+              transition={{ duration: 0.5, ease: "easeOut" }}
+            >
+              Quest updated!
             </motion.span>
           </motion.div>
         )}
