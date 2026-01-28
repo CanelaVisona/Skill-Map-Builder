@@ -59,10 +59,12 @@ interface SkillTreeContextType {
   toggleProjectSkillStatus: (projectId: string, skillId: string) => void;
   addSkill: (areaId: string, skill: Omit<Skill, "id">) => void;
   updateSkill: (areaId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number }) => void;
+  createLockedSkill: (areaId: string, level: number, title: string) => Promise<void>;
   deleteSkill: (areaId: string, skillId: string) => void;
   toggleLock: (areaId: string, skillId: string) => void;
   moveSkill: (areaId: string, skillId: string, direction: "up" | "down") => void;
   updateProjectSkill: (projectId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number }) => void;
+  createLockedProjectSkill: (projectId: string, level: number, title: string) => Promise<void>;
   deleteProjectSkill: (projectId: string, skillId: string) => void;
   toggleProjectLock: (projectId: string, skillId: string) => void;
   moveProjectSkill: (projectId: string, skillId: string, direction: "up" | "down") => void;
@@ -699,6 +701,44 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const createLockedSkill = async (areaId: string, level: number, title: string) => {
+    try {
+      const area = areas.find(a => a.id === areaId);
+      if (!area) return;
+
+      const newSkill: Skill = {
+        id: `locked_${areaId}_${level}_${Date.now()}`,
+        areaId,
+        projectId: undefined,
+        parentSkillId: undefined,
+        title,
+        description: "",
+        feedback: "",
+        status: "locked",
+        x: 50,
+        y: 200 + (area.skills.filter(s => s.level === level).length * 150),
+        dependencies: [],
+        manualLock: 0,
+        isFinalNode: 0,
+        level,
+        levelPosition: area.skills.filter(s => s.level === level).length + 1,
+        experiencePoints: 0
+      };
+
+      await fetch(`/api/skills`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newSkill),
+      });
+
+      setAreas(prev => prev.map(a => 
+        a.id === areaId ? { ...a, skills: [...a.skills, newSkill] } : a
+      ));
+    } catch (error) {
+      console.error("Error creating locked skill:", error);
+    }
+  };
+
   const moveSkill = async (areaId: string, skillId: string, direction: "up" | "down") => {
     const area = areas.find(a => a.id === areaId);
     if (!area) return;
@@ -936,6 +976,44 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       }));
     } catch (error) {
       console.error("Error updating project skill:", error);
+    }
+  };
+
+  const createLockedProjectSkill = async (projectId: string, level: number, title: string) => {
+    try {
+      const project = projects.find(p => p.id === projectId);
+      if (!project) return;
+
+      const newSkill: Skill = {
+        id: `locked_${projectId}_${level}_${Date.now()}`,
+        areaId: undefined,
+        projectId,
+        parentSkillId: undefined,
+        title,
+        description: "",
+        feedback: "",
+        status: "locked",
+        x: 50,
+        y: 200 + (project.skills.filter(s => s.level === level).length * 150),
+        dependencies: [],
+        manualLock: 0,
+        isFinalNode: 0,
+        level,
+        levelPosition: project.skills.filter(s => s.level === level).length + 1,
+        experiencePoints: 0
+      };
+
+      await fetch(`/api/skills`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newSkill),
+      });
+
+      setProjects(prev => prev.map(p => 
+        p.id === projectId ? { ...p, skills: [...p.skills, newSkill] } : p
+      ));
+    } catch (error) {
+      console.error("Error creating locked project skill:", error);
     }
   };
 
@@ -2730,10 +2808,12 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       toggleProjectSkillStatus,
       addSkill,
       updateSkill,
+      createLockedSkill,
       deleteSkill,
       toggleLock,
       moveSkill,
       updateProjectSkill,
+      createLockedProjectSkill,
       deleteProjectSkill,
       toggleProjectLock,
       moveProjectSkill,

@@ -450,7 +450,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
           {/* Node Circle */}
           <motion.div
-            initial={false}
+            initial={{
+              scale: skill.status === "available" ? 1 : (isMastered ? 1.05 : 1),
+              boxShadow: skill.status === "available" ? "0 0 0px 1px rgba(255, 255, 255, 1)" : "none",
+            }}
             animate={{
               scale: isMastered ? 1.05 : skill.status === "available" ? [1, 1.3, 1] : 1,
               boxShadow: skill.status === "available" ? [

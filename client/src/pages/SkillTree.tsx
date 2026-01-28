@@ -3,6 +3,7 @@ import { SkillTreeProvider, useSkillTree, type Skill } from "@/lib/skill-context
 import { AreaMenu } from "@/components/AreaMenu";
 import { SkillNode } from "@/components/SkillNode";
 import { SkillConnection } from "@/components/SkillConnection";
+import { SkillDesigner } from "@/components/SkillDesigner";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -71,7 +72,7 @@ function calculateVisibleLevels(skills: Skill[]): Set<number> {
   return visibleLevels;
 }
 
-function TopRightControls({ onOpenGuide }: { onOpenGuide: () => void }) {
+function TopRightControls({ onOpenGuide, onOpenDesigner }: { onOpenGuide: () => void; onOpenDesigner: () => void }) {
   const { theme, setTheme, resolvedTheme } = useTheme();
   const currentTheme = resolvedTheme || theme;
   const { openDiary } = useDiary();
@@ -98,7 +99,13 @@ function TopRightControls({ onOpenGuide }: { onOpenGuide: () => void }) {
       >
         <BookOpen className="h-5 w-5" />
       </button>
-      <HelpButton onClick={onOpenGuide} />
+      <button
+        className="text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+        onClick={onOpenDesigner}
+        title="Skill Designer"
+      >
+        <Wrench className="h-5 w-5" />
+      </button>
     </div>
   );
 }
@@ -1752,7 +1759,7 @@ function AchievementsSection() {
     const allSkillsToShow = area.skills
       .filter(s => {
         const titleLower = s.title.toLowerCase();
-        const isPlaceholder = titleLower === "inicio" || titleLower.includes("next challenge") || titleLower.includes("next challange") || titleLower.includes("next objective quest");
+        const isPlaceholder = titleLower === "inicio" || titleLower.includes("next challenge") || titleLower.includes("next challange") || titleLower.includes("next objective quest") || titleLower.includes("objective quest");
         const isCompleted = s.status === "mastered";
         const isIncompleteWithName = s.status !== "mastered" && s.title && s.title !== "?";
         return !isPlaceholder && (isCompleted || isIncompleteWithName);
@@ -1769,7 +1776,7 @@ function AchievementsSection() {
     const allSkillsToShow = project.skills
       .filter(s => {
         const titleLower = s.title.toLowerCase();
-        const isPlaceholder = titleLower === "inicio" || titleLower.includes("next challenge") || titleLower.includes("next challange") || titleLower.includes("next objective quest");
+        const isPlaceholder = titleLower === "inicio" || titleLower.includes("next challenge") || titleLower.includes("next challange") || titleLower.includes("next objective quest") || titleLower.includes("objective quest");
         const isCompleted = s.status === "mastered";
         const isIncompleteWithName = s.status !== "mastered" && s.title && s.title !== "?";
         return !isPlaceholder && (isCompleted || isIncompleteWithName);
@@ -1786,7 +1793,7 @@ function AchievementsSection() {
     const allSkillsToShow = project.skills
       .filter(s => {
         const titleLower = s.title.toLowerCase();
-        const isPlaceholder = titleLower === "inicio" || titleLower.includes("next challenge") || titleLower.includes("next challange") || titleLower.includes("next objective quest");
+        const isPlaceholder = titleLower === "inicio" || titleLower.includes("next challenge") || titleLower.includes("next challange") || titleLower.includes("next objective quest") || titleLower.includes("objective quest");
         const isCompleted = s.status === "mastered";
         const isIncompleteWithName = s.status !== "mastered" && s.title && s.title !== "?";
         return !isPlaceholder && (isCompleted || isIncompleteWithName);
@@ -1836,7 +1843,7 @@ function AchievementsSection() {
       const visibleSubtasks = allSubtasks
         .filter((s: Skill) => {
           const title = s.title.toLowerCase();
-          const isPlaceholder = title === "inicio" || title.includes("next challenge") || title.includes("next challange");
+          const isPlaceholder = title === "inicio" || title.includes("next challenge") || title.includes("next challange") || title.includes("objective quest");
           return visibleLevels.has(s.level) && !isPlaceholder;
         })
         .sort(sortByPosition);
@@ -2316,13 +2323,14 @@ function SkillCanvas() {
       return a.y - b.y;
     });
     
-    // Find the first "next challenge" node in the visible levels
+    // Find the first "objective quest" node in the visible levels
     let targetSkill = sortedSkills.find(s => 
+      s.title.toLowerCase() === "objective quest" || 
       s.title.toLowerCase() === "next challenge" || 
       s.title.toLowerCase() === "next challange"
     );
     
-    // If no "next challenge" found, find the first node of the next level after current visible
+    // If no "objective quest" found, find the first node of the next level after current visible
     if (!targetSkill) {
       // Get visible levels
       const visibleLevels = calculateVisibleLevels(skills);
@@ -2368,7 +2376,7 @@ function SkillCanvas() {
       levelPosition: targetLevelPosition
     };
     
-    // Always update the target skill (whether it's "next challenge" or first node of next level)
+    // Always update the target skill (whether it's "objective quest" or first node of next level)
     if (targetSkill) {
       const updates = {
         title: stuckTitle,
@@ -2938,6 +2946,7 @@ function SkillCanvas() {
 export default function SkillTreePage() {
   const { user } = useAuth();
   const { showOnboarding, openGuide, closeGuide, markComplete } = useOnboarding(user?.id?.toString());
+  const [isDesignerOpen, setIsDesignerOpen] = useState(false);
   
   const handleCompleteOnboarding = () => {
     if (user?.id) {
@@ -2950,7 +2959,8 @@ export default function SkillTreePage() {
     <DiaryProvider>
       <SkillTreeProvider>
         <div className="flex h-screen w-full bg-background text-foreground overflow-hidden font-body selection:bg-primary/30">
-          <TopRightControls onOpenGuide={openGuide} />
+          <TopRightControls onOpenGuide={openGuide} onOpenDesigner={() => setIsDesignerOpen(true)} />
+          <SkillDesigner open={isDesignerOpen} onOpenChange={setIsDesignerOpen} />
           <AreaMenu />
           <SkillCanvas />
           <QuestDiary />
