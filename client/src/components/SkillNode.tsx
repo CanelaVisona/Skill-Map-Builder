@@ -442,9 +442,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               onClick={(e) => e.stopPropagation()}
             >
               <div>Level {skill.level}</div>
-              {currentSubtitle && (
-                <div className="text-[10px] text-muted-foreground/70 text-center">{currentSubtitle}</div>
-              )}
             </div>
           )}
 
@@ -503,10 +500,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
           {/* Label */}
           <div className={cn(
-            "absolute left-14 top-1/2 -translate-y-1/2 font-medium transition-colors text-sm",
+            "absolute left-14 top-1/2 -translate-y-1/2 font-medium transition-colors text-sm flex items-center gap-2",
             isLocked ? "text-muted-foreground" : "text-foreground",
             isMastered && "text-foreground",
-            (skill.title === "Next challenge" || skill.title === "Next objetive quest") && "text-muted-foreground/30"
+            (skill.title === "Next challenge" || skill.title === "Next objetive quest" || skill.title === "Objective quest") && "text-muted-foreground/60"
           )}>
             <span
               onClick={handleTitleClick}
@@ -525,6 +522,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             >
               {skill.title}
             </span>
+            {!isLocked && !isMastered && (
+              <span className="text-2xl font-bold text-amber-400">!</span>
+            )}
             {/* XP subtitle - only show when not mastered and has XP > 0 */}
             {!isMastered && typeof skill.experiencePoints === 'number' && skill.experiencePoints > 0 && (
               <div className="text-muted-foreground/70 text-center text-[0.8em]">

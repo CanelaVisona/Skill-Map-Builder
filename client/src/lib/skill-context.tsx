@@ -243,6 +243,23 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
+    // Check if next node has a title (except for final nodes)
+    if (skill.status === "available" && !isLastNodeOfLevel && !isFinalNodeByPosition) {
+      const nodesSortedByY = skillsInLevel.sort((a, b) => a.y - b.y);
+      const currentNodeIndex = nodesSortedByY.findIndex(s => s.id === skill.id);
+      const nextNode = nodesSortedByY[currentNodeIndex + 1];
+      
+      if (nextNode) {
+        const hasValidTitle = nextNode.title && 
+          !nextNode.title.toLowerCase().includes("challenge") && 
+          !nextNode.title.toLowerCase().includes("objective quest");
+        
+        if (!hasValidTitle) {
+          return; // Block the action
+        }
+      }
+    }
+
     const nextStatus: Record<SkillStatus, SkillStatus> = {
       "locked": "locked",
       "available": "mastered",
@@ -394,6 +411,23 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       const allOthersMastered = otherNodesInLevel.every(s => s.status === "mastered");
       if (!allOthersMastered) {
         return;
+      }
+    }
+
+    // Check if next node has a title (except for final nodes)
+    if (skill.status === "available" && !isLastNodeOfLevel && !isFinalNodeByPosition) {
+      const nodesSortedByY = skillsInLevel.sort((a, b) => a.y - b.y);
+      const currentNodeIndex = nodesSortedByY.findIndex(s => s.id === skill.id);
+      const nextNode = nodesSortedByY[currentNodeIndex + 1];
+      
+      if (nextNode) {
+        const hasValidTitle = nextNode.title && 
+          !nextNode.title.toLowerCase().includes("challenge") && 
+          !nextNode.title.toLowerCase().includes("objective quest");
+        
+        if (!hasValidTitle) {
+          return; // Block the action
+        }
       }
     }
 
@@ -1540,6 +1574,23 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       const allOthersMastered = otherNodesInLevel.every(s => s.status === "mastered");
       if (!allOthersMastered) {
         return;
+      }
+    }
+
+    // Check if next node has a title (except for final nodes)
+    if (skill.status === "available" && !isLastNodeOfLevel && !isFinalNodeByPosition) {
+      const nodesSortedByY = skillsInLevel.sort((a, b) => a.y - b.y);
+      const currentNodeIndex = nodesSortedByY.findIndex(s => s.id === skill.id);
+      const nextNode = nodesSortedByY[currentNodeIndex + 1];
+      
+      if (nextNode) {
+        const hasValidTitle = nextNode.title && 
+          !nextNode.title.toLowerCase().includes("challenge") && 
+          !nextNode.title.toLowerCase().includes("objective quest");
+        
+        if (!hasValidTitle) {
+          return; // Block the action
+        }
       }
     }
 

@@ -91,9 +91,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Diseñador de Habilidades</DialogTitle>
-          </DialogHeader>
+          <DialogHeader></DialogHeader>
 
           <Accordion type="single" collapsible className="w-full">
             {/* Areas */}
@@ -151,8 +149,8 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                       onTouchEnd={handleNodeLongPressEnd}
                                     >
                                       <div className="flex items-center gap-2">
-                                        <div className={cn("text-sm font-medium", skill.status === "available" && "text-yellow-500 dark:text-yellow-400")}>{!skill.title || skill.title.toLowerCase().includes("challenge") || skill.title.toLowerCase().includes("objective quest") ? "-" : skill.title}</div>
-                                        {skill.status === "available" && <span className="text-lg font-bold text-yellow-500 dark:text-yellow-400">!</span>}
+                                        <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{!skill.title || skill.title.toLowerCase().includes("challenge") || skill.title.toLowerCase().includes("objective quest") ? "-" : skill.title}</div>
+                                        {skill.status === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
                                       </div>
                                       <div className="text-xs text-muted-foreground">
                                         {skill.status === "mastered" && "✓ Completado"}
@@ -243,8 +241,8 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                         onTouchEnd={handleNodeLongPressEnd}
                                       >
                                         <div className="flex items-center gap-2">
-                                          <div className={cn("text-sm font-medium", skill.status === "available" && "text-yellow-500 dark:text-yellow-400")}>{!skill.title || skill.title.toLowerCase().includes("challenge") || skill.title.toLowerCase().includes("objective quest") ? "-" : skill.title}</div>
-                                          {skill.status === "available" && <span className="text-lg font-bold text-yellow-500 dark:text-yellow-400">!</span>}
+                                          <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{!skill.title || skill.title.toLowerCase().includes("challenge") || skill.title.toLowerCase().includes("objective quest") ? "-" : skill.title}</div>
+                                          {skill.status === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
                                         </div>
                                         <div className="text-xs text-muted-foreground">
                                           {skill.status === "mastered" && "✓ Completado"}
@@ -333,8 +331,8 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                         onTouchEnd={handleNodeLongPressEnd}
                                       >
                                         <div className="flex items-center gap-2">
-                                          <div className={cn("text-sm font-medium", skill.status === "available" && "text-yellow-500 dark:text-yellow-400")}>{!skill.title || skill.title.toLowerCase().includes("challenge") || skill.title.toLowerCase().includes("objective quest") ? "-" : skill.title}</div>
-                                          {skill.status === "available" && <span className="text-lg font-bold text-yellow-500 dark:text-yellow-400">!</span>}
+                                          <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{!skill.title || skill.title.toLowerCase().includes("challenge") || skill.title.toLowerCase().includes("objective quest") ? "-" : skill.title}</div>
+                                          {skill.status === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
                                         </div>
                                         <div className="text-xs text-muted-foreground">
                                           {skill.status === "mastered" && "✓ Completado"}
@@ -425,8 +423,8 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                         onTouchEnd={handleNodeLongPressEnd}
                                       >
                                         <div className="flex items-center gap-2">
-                                          <div className={cn("text-sm font-medium", skill.status === "available" && "text-yellow-500 dark:text-yellow-400")}>{!skill.title || skill.title.toLowerCase().includes("challenge") || skill.title.toLowerCase().includes("objective quest") ? "-" : skill.title}</div>
-                                          {skill.status === "available" && <span className="text-lg font-bold text-yellow-500 dark:text-yellow-400">!</span>}
+                                          <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{!skill.title || skill.title.toLowerCase().includes("challenge") || skill.title.toLowerCase().includes("objective quest") ? "-" : skill.title}</div>
+                                          {skill.status === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
                                         </div>
                                         <div className="text-xs text-muted-foreground">
                                           {skill.status === "mastered" && "✓ Completado"}

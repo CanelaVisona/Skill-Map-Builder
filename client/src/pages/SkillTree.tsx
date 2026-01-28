@@ -104,7 +104,7 @@ function TopRightControls({ onOpenGuide, onOpenDesigner }: { onOpenGuide: () => 
         onClick={onOpenDesigner}
         title="Skill Designer"
       >
-        <Wrench className="h-5 w-5" />
+        <Scroll className="h-5 w-5" />
       </button>
     </div>
   );
@@ -2915,6 +2915,59 @@ function SkillCanvas() {
                   }
                   
                   return connections;
+                })}
+
+                {/* Level Quest Labels */}
+                {Array.from(levelGroups.entries()).map(([level, skills]) => {
+                  const sortedByY = [...skills].sort((a, b) => a.y - b.y);
+                  if (sortedByY.length === 0) return null;
+                  
+                  const firstSkill = sortedByY[0];
+                  const lastSkill = sortedByY[sortedByY.length - 1];
+                  const midY = (firstSkill.y + lastSkill.y) / 2;
+                  
+                  // Check if all skills in level are mastered
+                  const levelCompleted = skills.every(s => s.status === "mastered");
+                  
+                  // Get level subtitle
+                  const levelSubtitles = isProject ? (activeProject?.levelSubtitles || {}) : (activeArea?.levelSubtitles || {});
+                  const subtitle = levelSubtitles[level.toString()] || "";
+                  
+                  // Si no hay subtítulo, no mostrar nada
+                  if (!subtitle) return null;
+                  
+                  const questText = levelCompleted ? "Completed Quest:" : "New Quest:";
+                  const displayText = `${questText} ${subtitle}`;
+                  
+                  const isNewQuest = !levelCompleted;
+                  
+                  return (
+                    <motion.div
+                      key={`quest-label-${level}-${activeItem.id}`}
+                      initial={isNewQuest ? { opacity: 0, y: -80, scale: 0.3 } : { opacity: 1, y: 0, scale: 1 }}
+                      whileInView={isNewQuest ? { opacity: 1, y: 0, scale: 1 } : undefined}
+                      transition={isNewQuest ? { 
+                        duration: 1.2, 
+                        ease: [0.34, 1.56, 0.64, 1], // ease-out exagerado
+                        delay: 0.1
+                      } : undefined}
+                      viewport={isNewQuest ? { once: false, amount: 0.5 } : undefined}
+                      className={`absolute -translate-y-1/2 whitespace-nowrap text-sm font-bold flex items-end ${
+                        isNewQuest 
+                          ? "text-amber-400 drop-shadow-lg" 
+                          : "text-muted-foreground"
+                      }`}
+                      style={{ 
+                        top: `${midY}px`, 
+                        left: "20px",
+                        ...(isNewQuest && {
+                          textShadow: "0 0 20px rgba(251, 191, 36, 0.6), 0 0 40px rgba(251, 191, 36, 0.3)"
+                        })
+                      }}
+                    >
+                      {displayText}
+                    </motion.div>
+                  );
                 })}
 
                 {/* Nodes */}
