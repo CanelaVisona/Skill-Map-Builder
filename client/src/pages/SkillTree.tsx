@@ -2924,10 +2924,23 @@ function SkillCanvas() {
                   
                   const firstSkill = sortedByY[0];
                   const lastSkill = sortedByY[sortedByY.length - 1];
-                  const midY = (firstSkill.y + lastSkill.y) / 2;
                   
                   // Check if all skills in level are mastered
                   const levelCompleted = skills.every(s => s.status === "mastered");
+                  
+                  // Find the first available (not mastered) node, or use first node if all are mastered
+                  const firstAvailableSkill = sortedByY.find(s => s.status !== "mastered") || firstSkill;
+                  
+                  // Calculate midY: if level is completed, use middle position; otherwise use first available node
+                  const midY = levelCompleted ? (firstSkill.y + lastSkill.y) / 2 : firstAvailableSkill.y;
+                  
+                  // Determine quest text based on the level position of the first available node
+                  let questText = "Completed Quest:";
+                  if (!levelCompleted) {
+                    // If the first available node is the second node of the level (levelPosition === 2), show "New Quest"
+                    // Otherwise show "Updated Quest" for subsequent nodes
+                    questText = firstAvailableSkill.levelPosition === 2 ? "New Quest:" : "Updated Quest:";
+                  }
                   
                   // Get level subtitle
                   const levelSubtitles = isProject ? (activeProject?.levelSubtitles || {}) : (activeArea?.levelSubtitles || {});
@@ -2936,36 +2949,47 @@ function SkillCanvas() {
                   // Si no hay subtítulo, no mostrar nada
                   if (!subtitle) return null;
                   
-                  const questText = levelCompleted ? "Completed Quest:" : "New Quest:";
-                  const displayText = `${questText} ${subtitle}`;
-                  
-                  const isNewQuest = !levelCompleted;
+                  const isNewOrUpdatedQuest = !levelCompleted;
                   
                   return (
                     <motion.div
                       key={`quest-label-${level}-${activeItem.id}`}
-                      initial={isNewQuest ? { opacity: 0, y: -80, scale: 0.3 } : { opacity: 1, y: 0, scale: 1 }}
-                      whileInView={isNewQuest ? { opacity: 1, y: 0, scale: 1 } : undefined}
-                      transition={isNewQuest ? { 
-                        duration: 1.2, 
-                        ease: [0.34, 1.56, 0.64, 1], // ease-out exagerado
-                        delay: 0.1
+                      initial={{ opacity: 0 }}
+                      whileInView={isNewOrUpdatedQuest ? { opacity: 1 } : undefined}
+                      transition={isNewOrUpdatedQuest ? { 
+                        duration: 0.8,
+                        ease: "easeIn"
                       } : undefined}
-                      viewport={isNewQuest ? { once: false, amount: 0.5 } : undefined}
-                      className={`absolute -translate-y-1/2 whitespace-nowrap text-sm font-bold flex items-end ${
-                        isNewQuest 
-                          ? "text-amber-400 drop-shadow-lg" 
-                          : "text-muted-foreground"
-                      }`}
+                      viewport={isNewOrUpdatedQuest ? { once: false, amount: 0.5 } : undefined}
+                      className="absolute -translate-y-1/2 whitespace-nowrap flex flex-col items-start z-30 md:left-[20px] left-[calc(100vw-120px)]"
                       style={{ 
-                        top: `${midY}px`, 
-                        left: "20px",
-                        ...(isNewQuest && {
-                          textShadow: "0 0 20px rgba(251, 191, 36, 0.6), 0 0 40px rgba(251, 191, 36, 0.3)"
-                        })
+                        top: `${midY}px`,
                       }}
                     >
-                      {displayText}
+                      <div 
+                        className={`text-xs font-bold tracking-wider uppercase ${isNewOrUpdatedQuest ? 'text-amber-400' : 'text-muted-foreground'}`}
+                        style={{
+                          ...(isNewOrUpdatedQuest && {
+                            textShadow: "0 0 20px rgba(251, 191, 36, 0.8), 0 0 40px rgba(251, 191, 36, 0.5), 0 0 60px rgba(251, 191, 36, 0.3)",
+                          }),
+                          letterSpacing: "0.15em",
+                          fontSize: "clamp(0.5rem, 2vw, 0.75rem)"
+                        }}
+                      >
+                        {questText.replace(":", "")}
+                      </div>
+                      <div 
+                        className={`font-bold mt-1 ${isNewOrUpdatedQuest ? 'text-amber-300' : 'text-muted-foreground'}`}
+                        style={{
+                          ...(isNewOrUpdatedQuest && {
+                            textShadow: "0 0 15px rgba(251, 191, 36, 0.6), 0 0 30px rgba(251, 191, 36, 0.3)",
+                          }),
+                          letterSpacing: "0.05em",
+                          fontSize: "clamp(0.875rem, 3vw, 1.125rem)"
+                        }}
+                      >
+                        {subtitle}
+                      </div>
                     </motion.div>
                   );
                 })}

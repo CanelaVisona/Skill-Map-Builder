@@ -95,6 +95,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const shouldForceLock = isFinalNodeByPosition && skill.status !== "mastered" && !allOthersMastered;
   const isLocked = skill.status === "locked" || shouldForceLock;
   const isMastered = skill.status === "mastered";
+
+  // Detect if node has default name
+  const hasDefaultName = skill.title === "Next challenge" || skill.title === "Next objetive quest" || skill.title === "Objective quest";
   
   const [isOpen, setIsOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -473,9 +476,12 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             }}
             className={cn(
               "w-10 h-10 rounded-full border-2 flex items-center justify-center relative",
-              // Locked nodes
-              isLocked && !isLastNodeOfLevel && "bg-muted border-muted-foreground/20 text-muted-foreground/50",
-              isLocked && isLastNodeOfLevel && "bg-muted border-amber-400 text-muted-foreground/50",
+              // Locked nodes - with default names have less opacity
+              isLocked && !isLastNodeOfLevel && hasDefaultName && "bg-muted border-muted-foreground/10 text-muted-foreground/30",
+              // Locked nodes - with custom names have more opacity
+              isLocked && !isLastNodeOfLevel && !hasDefaultName && "bg-muted border-muted-foreground/70 text-muted-foreground/90",
+              isLocked && isLastNodeOfLevel && hasDefaultName && "bg-muted border-amber-400/30 text-muted-foreground/30",
+              isLocked && isLastNodeOfLevel && !hasDefaultName && "bg-muted border-amber-400 text-muted-foreground/90",
               // Available nodes (not locked, not mastered)
               !isLocked && !isMastered && !isLastNodeOfLevel && "bg-card border-border",
               !isLocked && !isMastered && isLastNodeOfLevel && "bg-card border-amber-400",
