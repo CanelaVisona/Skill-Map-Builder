@@ -2497,9 +2497,9 @@ function SkillCanvas() {
           )}
         </AnimatePresence>
         <div className="flex-1 overflow-y-auto p-8 scroll-smooth">
-          <div className="w-full relative max-w-4xl mx-auto mt-10 min-h-full">
+          <div className="w-full relative max-w-4xl mx-auto mt-2 min-h-full">
             
-            <div className="absolute top-0 left-0 z-10 sticky">
+            <div className="absolute top-0 left-0 z-10">
               <div className="flex items-center gap-3 mb-2">
                 <Button
                   variant="ghost"
@@ -2703,9 +2703,9 @@ function SkillCanvas() {
         )}
       </AnimatePresence>
       <div className="flex-1 overflow-y-auto p-8 scroll-smooth">
-        <div className="w-full relative max-w-4xl mx-auto mt-10 min-h-full">
+        <div className="w-full relative max-w-4xl mx-auto mt-2 min-h-full">
           
-          <div className="absolute top-0 left-0 z-10 sticky">
+          <div className="absolute top-0 left-0 z-10 -mt-32">
             <div className="flex items-baseline gap-2">
               <h2 className="text-2xl font-bold tracking-tight">
                 {activeItem.name}
@@ -2883,7 +2883,7 @@ function SkillCanvas() {
           </Dialog>
 
           <div 
-            className="relative w-full mt-20 transition-all duration-500 ease-in-out"
+            className="relative w-full mt-40 transition-all duration-500 ease-in-out"
             style={{ height: `${containerHeight}px`, minHeight: "600px" }}
           >
             <AnimatePresence mode="wait">
