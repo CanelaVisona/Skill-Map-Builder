@@ -1,5 +1,6 @@
 import { useSkillTree, iconMap, type Project } from "@/lib/skill-context";
 import { useAuth } from "@/lib/auth-context";
+import { useMenu } from "@/lib/menu-context";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, PanelLeftClose, PanelLeftOpen, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut, Archive, ArchiveRestore, Pencil, Zap, ChevronDown, ChevronRight } from "lucide-react";
@@ -455,8 +456,8 @@ export function AreaMenu() {
     renameArea, renameProject
   } = useSkillTree();
   const { user, logout } = useAuth();
+  const { isMenuOpen: isOpen, setIsMenuOpen: setIsOpen } = useMenu();
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [isOpen, setIsOpen] = useState(true);
   const [dialogStep, setDialogStep] = useState<DialogStep>("choose");
   const [itemName, setItemName] = useState("");
   const [itemDescription, setItemDescription] = useState("");
@@ -669,14 +670,16 @@ export function AreaMenu() {
   );
 
   return (
-    <motion.div 
-      initial={{ width: 256 }}
-      animate={{ width: isOpen ? 256 : 60 }}
-      className="h-full border-r border-border bg-card/50 backdrop-blur-xl flex flex-col z-30 relative transition-all duration-300 ease-in-out overflow-hidden"
-    >
-      <div className="p-4 flex items-center justify-between border-b border-border h-[60px]">
-        <AnimatePresence>
-          {isOpen && (
+    <>
+      {isOpen ? (
+        <motion.div 
+          initial={{ width: 0 }}
+          animate={{ width: 256 }}
+          exit={{ width: 0 }}
+          transition={{ duration: 0.4, ease: "easeInOut" }}
+          className="h-full border-r border-border bg-card/50 backdrop-blur-xl flex flex-col z-30 relative overflow-hidden"
+        >
+          <div className="p-4 flex items-center justify-between border-b border-border h-[60px]">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -709,46 +712,42 @@ export function AreaMenu() {
                   </Popover>
                 )}
               </h1>
-                          </motion.div>
-          )}
-        </AnimatePresence>
-        <Button 
-          variant="ghost" 
-          size="icon" 
-          onClick={() => setIsOpen(!isOpen)}
-          className="ml-auto"
-        >
-          {isOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
-        </Button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto overflow-x-hidden py-2 space-y-1 px-2 scrollbar-hide overscroll-contain">
-        {isOpen && (
-          <div className="px-3 py-1">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              Áreas
-            </span>
+            </motion.div>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={() => setIsOpen(!isOpen)}
+              className="ml-auto"
+            >
+              <PanelLeftClose size={18} />
+            </Button>
           </div>
-        )}
 
-        {areas.length === 0 ? (
-          <div className="text-xs text-muted-foreground px-3 py-2 italic">
-            {isOpen ? "Sin áreas aún" : "—"}
-          </div>
-        ) : (
-          areas.map((area) => (
-            <AreaItem
-              key={area.id}
-              area={area}
-              isActive={area.id === activeAreaId}
-              isMenuOpen={isOpen}
-              onSelect={() => setActiveAreaId(area.id)}
-              onDelete={() => deleteArea(area.id)}
-              onArchive={() => archiveArea(area.id)}
-              onRename={(name) => renameArea(area.id, name)}
-            />
-          ))
-        )}
+          <div className="flex-1 overflow-y-auto overflow-x-hidden py-2 space-y-1 px-2 scrollbar-hide overscroll-contain">
+            <div className="px-3 py-1">
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Áreas
+              </span>
+            </div>
+
+            {areas.length === 0 ? (
+              <div className="text-xs text-muted-foreground px-3 py-2 italic">
+                Sin áreas aún
+              </div>
+            ) : (
+              areas.map((area) => (
+                <AreaItem
+                  key={area.id}
+                  area={area}
+                  isActive={area.id === activeAreaId}
+                  isMenuOpen={isOpen}
+                  onSelect={() => setActiveAreaId(area.id)}
+                  onDelete={() => deleteArea(area.id)}
+                  onArchive={() => archiveArea(area.id)}
+                  onRename={(name) => renameArea(area.id, name)}
+                />
+              ))
+            )}
 
         <div className="my-3 border-t border-border" />
 
@@ -836,31 +835,30 @@ export function AreaMenu() {
             ))}
           </div>
         )}
+          </div>
 
-      </div>
-
-      <div className={cn("p-2 flex flex-col gap-1", isOpen ? "items-start" : "items-center")}>
-        <Dialog open={isAddOpen} onOpenChange={handleDialogClose}>
-          <DialogTrigger asChild>
-            <button
-              className="group flex items-center gap-2 px-3 py-2 text-muted-foreground hover:text-foreground transition-all duration-200 rounded-md hover:bg-muted/50"
-              data-testid="button-add"
-              data-onboarding="add-button"
-            >
-              <Plus size={18} className="shrink-0" />
-              <span className={cn(
-                "text-sm font-medium overflow-hidden transition-all duration-200",
-                isOpen ? "max-w-[100px] opacity-100" : "max-w-0 opacity-0 group-hover:max-w-[100px] group-hover:opacity-100"
-              )}>
-                Agregar
-              </span>
-            </button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[425px]">
-            {dialogStep === "choose" && (
-              <>
-                <DialogHeader>
-                  <DialogTitle>Agregar Nuevo</DialogTitle>
+        <div className={cn("p-2 flex flex-col gap-1", isOpen ? "items-start" : "items-center")}>
+          <Dialog open={isAddOpen} onOpenChange={handleDialogClose}>
+            <DialogTrigger asChild>
+              <button
+                className="group flex items-center gap-2 px-3 py-2 text-muted-foreground hover:text-foreground transition-all duration-200 rounded-md hover:bg-muted/50"
+                data-testid="button-add"
+                data-onboarding="add-button"
+              >
+                <Plus size={18} className="shrink-0" />
+                <span className={cn(
+                  "text-sm font-medium overflow-hidden transition-all duration-200",
+                  isOpen ? "max-w-[100px] opacity-100" : "max-w-0 opacity-0 group-hover:max-w-[100px] group-hover:opacity-100"
+                )}>
+                  Agregar
+                    </span>
+                  </button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[425px]">
+                  {dialogStep === "choose" && (
+                    <>
+                      <DialogHeader>
+                        <DialogTitle>Agregar Nuevo</DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4 mt-4">
                   <div className="grid grid-cols-2 gap-3">
@@ -1435,7 +1433,26 @@ export function AreaMenu() {
             </div>
           </DialogContent>
         </Dialog>
-      </div>
-    </motion.div>
+        </div>
+        </motion.div>
+      ) : (
+        <motion.div
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: -20 }}
+          transition={{ duration: 0.4, ease: "easeInOut" }}
+          className="fixed left-4 top-4 z-30"
+        >
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={() => setIsOpen(!isOpen)}
+            className="rounded-lg border border-border bg-card/50 backdrop-blur-xl hover:bg-muted/50 transition-all duration-300"
+          >
+            <PanelLeftOpen size={18} />
+          </Button>
+        </motion.div>
+      )}
+    </>
   );
 }

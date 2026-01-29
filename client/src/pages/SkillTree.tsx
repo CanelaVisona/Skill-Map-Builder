@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { SkillTreeProvider, useSkillTree, type Skill } from "@/lib/skill-context";
+import { MenuProvider, useMenu } from "@/lib/menu-context";
 import { AreaMenu } from "@/components/AreaMenu";
 import { SkillNode } from "@/components/SkillNode";
 import { SkillConnection } from "@/components/SkillConnection";
@@ -21,6 +22,7 @@ import { Label } from "@/components/ui/label";
 import type { JournalCharacter, JournalPlace, JournalShadow, JournalLearning, JournalTool } from "@shared/schema";
 import { OnboardingGuide, HelpButton, useOnboarding } from "@/components/OnboardingGuide";
 import { useAuth } from "@/lib/auth-context";
+import { cn } from "@/lib/utils";
 
 function calculateVisibleLevels(skills: Skill[]): Set<number> {
   const visibleLevels = new Set<number>();
@@ -2292,6 +2294,7 @@ function SkillCanvas() {
     updateSkill,
     updateProjectSkill
   } = useSkillTree();
+  const { isMenuOpen } = useMenu();
   
   const [isStuckDialogOpen, setIsStuckDialogOpen] = useState(false);
   const [stuckStep, setStuckStep] = useState(0);
@@ -2961,7 +2964,12 @@ function SkillCanvas() {
                         ease: "easeIn"
                       } : undefined}
                       viewport={isNewOrUpdatedQuest ? { once: false, amount: 0.5 } : undefined}
-                      className="absolute -translate-y-1/2 whitespace-nowrap flex flex-col items-start z-30 md:left-[20px] left-[calc(100vw-120px)]"
+                      className={cn(
+                        "absolute -translate-y-1/2 whitespace-nowrap flex flex-col items-start z-30 left-[20px]",
+                        "md:block",
+                        !isMenuOpen && "block",
+                        isMenuOpen && "md:block hidden"
+                      )}
                       style={{ 
                         top: `${midY}px`,
                       }}
@@ -3035,15 +3043,17 @@ export default function SkillTreePage() {
   return (
     <DiaryProvider>
       <SkillTreeProvider>
-        <div className="flex h-screen w-full bg-background text-foreground overflow-hidden font-body selection:bg-primary/30">
-          <TopRightControls onOpenGuide={openGuide} onOpenDesigner={() => setIsDesignerOpen(true)} />
-          <SkillDesigner open={isDesignerOpen} onOpenChange={setIsDesignerOpen} />
-          <AreaMenu />
-          <SkillCanvas />
-          <QuestDiary />
-          <OnboardingGuide isOpen={showOnboarding} onComplete={handleCompleteOnboarding} />
-        </div>
-      </SkillTreeProvider>
+        <MenuProvider>
+          <div className="flex h-screen w-full bg-background text-foreground overflow-hidden font-body selection:bg-primary/30">
+            <TopRightControls onOpenGuide={openGuide} onOpenDesigner={() => setIsDesignerOpen(true)} />
+            <SkillDesigner open={isDesignerOpen} onOpenChange={setIsDesignerOpen} />
+            <AreaMenu />
+            <SkillCanvas />
+            <QuestDiary />
+            <OnboardingGuide isOpen={showOnboarding} onComplete={handleCompleteOnboarding} />
+          </div>
+        </MenuProvider>
+        </SkillTreeProvider>
     </DiaryProvider>
   );
 }
