@@ -2957,7 +2957,7 @@ function SkillCanvas() {
                   // Calculate max width: leave some space before the node position
                   // Nodes are positioned at skill.x%, so we need to convert that to pixels
                   // Approximate max-width based on first available skill's X position
-                  const maxWidthPercent = Math.max(firstAvailableSkill.x - 5, 30); // Leave 5% margin before node
+                  const maxWidthPercent = Math.max(firstAvailableSkill.x - 15, 30); // Leave 15% margin before node
                   
                   return (
                     <motion.div
