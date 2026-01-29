@@ -2954,6 +2954,11 @@ function SkillCanvas() {
                   
                   const isNewOrUpdatedQuest = !levelCompleted;
                   
+                  // Calculate max width: leave some space before the node position
+                  // Nodes are positioned at skill.x%, so we need to convert that to pixels
+                  // Approximate max-width based on first available skill's X position
+                  const maxWidthPercent = Math.max(firstAvailableSkill.x - 5, 30); // Leave 5% margin before node
+                  
                   return (
                     <motion.div
                       key={`quest-label-${level}-${activeItem.id}`}
@@ -2965,15 +2970,17 @@ function SkillCanvas() {
                       } : undefined}
                       viewport={isNewOrUpdatedQuest ? { once: false, amount: 0.5 } : undefined}
                       className={cn(
-                        "absolute -translate-y-1/2 whitespace-nowrap flex flex-col items-start z-30",
+                        "absolute -translate-y-1/2 flex flex-col items-start z-30",
+                        "md:whitespace-nowrap",
                         "md:left-[20px]",
-                        "left-[-160px]",
+                        "left-[8px]",
                         "md:block",
                         !isMenuOpen && "block",
                         isMenuOpen && "md:block hidden"
                       )}
                       style={{ 
                         top: `${midY}px`,
+                        maxWidth: `${maxWidthPercent}%`,
                       }}
                     >
                       <div 
