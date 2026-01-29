@@ -2965,7 +2965,9 @@ function SkillCanvas() {
                       } : undefined}
                       viewport={isNewOrUpdatedQuest ? { once: false, amount: 0.5 } : undefined}
                       className={cn(
-                        "absolute -translate-y-1/2 whitespace-nowrap flex flex-col items-start z-30 left-[20px]",
+                        "absolute -translate-y-1/2 whitespace-nowrap flex flex-col items-start z-30",
+                        "md:left-[20px]",
+                        "left-[-160px]",
                         "md:block",
                         !isMenuOpen && "block",
                         isMenuOpen && "md:block hidden"
