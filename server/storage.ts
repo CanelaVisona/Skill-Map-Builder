@@ -1,13 +1,15 @@
 import { eq, and } from "drizzle-orm";
 import { randomUUID } from "crypto";
+import * as bcrypt from "bcryptjs";
 import { db } from "./db";
 import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, profileValues, profileLikes, profileMissions, profileAboutEntries, journalLearnings, journalTools } from "@shared/schema";
 
 export interface IStorage {
   // Users
-  createUser(username: string): Promise<User>;
+  createUser(username: string, password: string): Promise<User>;
   getUserByUsername(username: string): Promise<User | undefined>;
   getUserById(id: string): Promise<User | undefined>;
+  verifyUserPassword(username: string, password: string): Promise<User | undefined>;
   updateUserProfile(userId: string, profile: { profileMission?: string; profileValues?: string; profileLikes?: string; profileAbout?: string }): Promise<User | undefined>;
 
   // Sessions
@@ -115,15 +117,24 @@ export interface IStorage {
 
 export class DbStorage implements IStorage {
   // Users
-  async createUser(username: string): Promise<User> {
+  async createUser(username: string, password: string): Promise<User> {
     const id = randomUUID();
-    const result = await db.insert(users).values({ id, username }).returning();
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const result = await db.insert(users).values({ id, username, password: hashedPassword }).returning();
     return result[0];
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
     const result = await db.select().from(users).where(eq(users.username, username));
     return result[0];
+  }
+
+  async verifyUserPassword(username: string, password: string): Promise<User | undefined> {
+    const user = await this.getUserByUsername(username);
+    if (!user) return undefined;
+    
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    return isPasswordValid ? user : undefined;
   }
 
   async getUserById(id: string): Promise<User | undefined> {

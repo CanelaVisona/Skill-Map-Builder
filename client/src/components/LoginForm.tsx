@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 
 export function LoginForm() {
   const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const { login } = useAuth();
@@ -19,12 +20,17 @@ export function LoginForm() {
       return;
     }
     
+    if (!password.trim()) {
+      setError("Por favor ingresa una contraseña");
+      return;
+    }
+    
     setIsSubmitting(true);
-    const success = await login(username.trim());
+    const success = await login(username.trim(), password);
     setIsSubmitting(false);
     
     if (!success) {
-      setError("Error al iniciar sesión. Intenta de nuevo.");
+      setError("Nombre de usuario o contraseña incorrectos");
     }
   };
 
@@ -39,7 +45,7 @@ export function LoginForm() {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <CardDescription data-testid="text-login-description">
-            Ingresa tu nombre de usuario para continuar
+            Ingresa tus credenciales para continuar
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -53,6 +59,16 @@ export function LoginForm() {
                 disabled={isSubmitting}
                 autoFocus
                 data-testid="input-username"
+              />
+            </div>
+            <div className="space-y-2">
+              <Input
+                type="password"
+                placeholder="Contraseña"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={isSubmitting}
+                data-testid="input-password"
               />
               {error && (
                 <p className="text-sm text-destructive" data-testid="text-login-error">{error}</p>

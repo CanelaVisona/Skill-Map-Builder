@@ -74,10 +74,15 @@ export async function registerRoutes(
   // Auth routes
   app.post("/api/login", async (req, res) => {
     try {
-      const { username } = req.body;
+      const { username, password } = req.body;
       
       if (!username || typeof username !== "string" || username.trim().length === 0) {
         res.status(400).json({ message: "Nombre de usuario requerido" });
+        return;
+      }
+      
+      if (!password || typeof password !== "string" || password.length === 0) {
+        res.status(400).json({ message: "Contraseña requerida" });
         return;
       }
       
@@ -85,7 +90,16 @@ export async function registerRoutes(
       
       let user = await storage.getUserByUsername(trimmedUsername);
       if (!user) {
-        user = await storage.createUser(trimmedUsername);
+        // New user - create with password
+        user = await storage.createUser(trimmedUsername, password);
+      } else {
+        // Existing user - verify password
+        const verifiedUser = await storage.verifyUserPassword(trimmedUsername, password);
+        if (!verifiedUser) {
+          res.status(401).json({ message: "Contraseña incorrecta" });
+          return;
+        }
+        user = verifiedUser;
       }
       
       // Create example area for users with no areas/projects

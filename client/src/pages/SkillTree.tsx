@@ -2445,7 +2445,7 @@ function SkillCanvas() {
               exit={{ opacity: 0 }}
             >
               <motion.span
-                className="text-4xl font-bold tracking-widest uppercase text-foreground"
+                className="text-4xl font-bold tracking-widest uppercase text-foreground shadow-lg"
                 initial={{ y: 100, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 exit={{ y: -100, opacity: 0 }}
@@ -2485,7 +2485,7 @@ function SkillCanvas() {
               exit={{ opacity: 0 }}
             >
               <motion.span
-                className="text-4xl font-bold tracking-widest uppercase text-amber-500"
+                className="text-4xl font-bold tracking-widest uppercase text-amber-500 shadow-lg"
                 initial={{ y: 100, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 exit={{ y: -100, opacity: 0 }}
@@ -2651,7 +2651,7 @@ function SkillCanvas() {
             exit={{ opacity: 0 }}
           >
             <motion.span
-              className="text-4xl font-bold tracking-widest uppercase text-foreground"
+              className="text-4xl font-bold tracking-widest uppercase text-foreground shadow-lg"
               initial={{ y: 100, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: -100, opacity: 0 }}
@@ -2691,7 +2691,7 @@ function SkillCanvas() {
             exit={{ opacity: 0 }}
           >
             <motion.span
-              className="text-4xl font-bold tracking-widest uppercase text-amber-500"
+              className="text-4xl font-bold tracking-widest uppercase text-amber-500 shadow-lg"
               initial={{ y: 100, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: -100, opacity: 0 }}
