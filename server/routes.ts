@@ -93,13 +93,29 @@ export async function registerRoutes(
         // New user - create with password
         user = await storage.createUser(trimmedUsername, password);
       } else {
-        // Existing user - verify password
-        const verifiedUser = await storage.verifyUserPassword(trimmedUsername, password);
-        if (!verifiedUser) {
-          res.status(401).json({ message: "Contraseña incorrecta" });
-          return;
+        // Existing user - check if they have password
+        if (!user.password) {
+          // User exists but has no password - set one now
+          const updatedUser = await storage.setUserPassword(user.id, password);
+          if (!updatedUser) {
+            res.status(500).json({ message: "Error al actualizar contraseña" });
+            return;
+          }
+          user = updatedUser;
+        } else {
+          // Verify password
+          const verifiedUser = await storage.verifyUserPassword(trimmedUsername, password);
+          if (!verifiedUser) {
+            res.status(401).json({ message: "Contraseña incorrecta" });
+            return;
+          }
+          user = verifiedUser;
         }
-        user = verifiedUser;
+      }
+
+      if (!user) {
+        res.status(500).json({ message: "Error al crear usuario" });
+        return;
       }
       
       // Create example area for users with no areas/projects

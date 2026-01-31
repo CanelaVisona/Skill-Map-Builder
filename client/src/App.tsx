@@ -7,7 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import SkillTreePage from "@/pages/SkillTree";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
-import { LoginForm } from "@/components/LoginForm";
+import { AuthPage } from "@/components/AuthPage";
 
 function Router() {
   return (
@@ -30,7 +30,7 @@ function AuthenticatedApp() {
   }
   
   if (!user) {
-    return <LoginForm />;
+    return <AuthPage />;
   }
   
   return <Router />;

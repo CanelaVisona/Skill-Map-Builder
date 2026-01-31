@@ -4,7 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
-export function LoginForm() {
+interface LoginFormProps {
+  onRegisterClick?: () => void;
+}
+
+export function LoginForm({ onRegisterClick }: LoginFormProps) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -82,6 +86,17 @@ export function LoginForm() {
             >
               {isSubmitting ? "Ingresando..." : "Ingresar"}
             </Button>
+            {onRegisterClick && (
+              <Button 
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={onRegisterClick}
+                disabled={isSubmitting}
+              >
+                Crear Cuenta
+              </Button>
+            )}
           </form>
         </CardContent>
       </Card>
