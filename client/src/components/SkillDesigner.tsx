@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { useSkillTree } from "@/lib/skill-context";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -85,13 +85,16 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
     setEditingLevelData(null);
   };
 
-  console.log("SkillDesigner open:", open);
-
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Skill Designer</DialogTitle>
+            <DialogDescription className="sr-only">
+              Editar nombres de nodos y subtítulos de niveles.
+            </DialogDescription>
+          </DialogHeader>
 
           <Accordion type="single" collapsible className="w-full">
             {/* Areas */}

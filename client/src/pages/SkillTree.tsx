@@ -23,6 +23,7 @@ import type { JournalCharacter, JournalPlace, JournalShadow, JournalLearning, Jo
 import { OnboardingGuide, HelpButton, useOnboarding } from "@/components/OnboardingGuide";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 function calculateVisibleLevels(skills: Skill[]): Set<number> {
   const visibleLevels = new Set<number>();
@@ -403,9 +404,9 @@ function JournalSection({
       </Dialog>
 
       <div className="flex-1 min-h-0 flex flex-col">
-        <div className="flex flex-1 min-h-0 gap-4">
+        <div className="flex flex-1 min-h-0 flex-col sm:flex-row gap-5 sm:gap-4">
           <div 
-            className="w-1/2 flex flex-col bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer min-h-0"
+            className="w-full sm:w-1/2 flex flex-col bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer min-h-0"
             onTouchStart={handleLeftLongPressStart}
             onTouchEnd={handleLeftLongPressEnd}
             onTouchCancel={handleLeftLongPressEnd}
@@ -446,7 +447,7 @@ function JournalSection({
         </div>
         
         <div 
-          className="w-1/2 flex flex-col bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer min-h-0"
+          className="w-full sm:w-1/2 flex flex-col bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer min-h-0"
           onTouchStart={handleRightLongPressStart}
           onTouchEnd={handleRightLongPressEnd}
           onTouchCancel={handleRightLongPressEnd}
@@ -900,9 +901,9 @@ function ToolsSection({
         <div className="h-px w-8 bg-gradient-to-r from-zinc-600 to-transparent mt-1" />
       </div>
 
-      <div className="flex flex-1 min-h-0 gap-4">
+      <div className="flex flex-1 min-h-0 flex-col sm:flex-row gap-5 sm:gap-4">
         <div 
-          className="w-1/2 flex flex-col bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer min-h-0"
+          className="w-full sm:w-1/2 flex flex-col bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer min-h-0"
         >
           <ScrollArea className="h-full">
             {entries.length === 0 ? (
@@ -942,7 +943,7 @@ function ToolsSection({
         </div>
         
         <div 
-          className="w-1/2 h-full flex flex-col bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
+          className="w-full sm:w-1/2 h-full flex flex-col bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
           onTouchStart={handleRightLongPressStart}
           onTouchEnd={handleRightLongPressEnd}
           onTouchCancel={handleRightLongPressEnd}
@@ -1026,9 +1027,9 @@ function LearningsSection({
         <div className="h-px w-8 bg-gradient-to-r from-zinc-600 to-transparent mt-1" />
       </div>
 
-      <div className="flex flex-1 min-h-0 gap-4">
+      <div className="flex flex-1 min-h-0 flex-col sm:flex-row gap-5 sm:gap-4">
         <div 
-          className="w-1/2 flex flex-col bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer min-h-0"
+          className="w-full sm:w-1/2 flex flex-col bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer min-h-0"
         >
           <ScrollArea className="h-full">
             {entries.length === 0 ? (
@@ -1068,7 +1069,7 @@ function LearningsSection({
         </div>
         
         <div 
-          className="w-1/2 h-full flex flex-col bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
+          className="w-full sm:w-1/2 h-full flex flex-col bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
           onTouchStart={handleRightLongPressStart}
           onTouchEnd={handleRightLongPressEnd}
           onTouchCancel={handleRightLongPressEnd}
@@ -1654,9 +1655,9 @@ function ProfileSection() {
         <div className="h-px w-8 bg-gradient-to-r from-zinc-600 to-transparent mt-1" />
       </div>
 
-      <div className="flex flex-1 min-h-0 gap-2">
+      <div className="flex flex-1 min-h-0 flex-col sm:flex-row gap-5 sm:gap-3">
         <div 
-          className="w-1/2 bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]"
+          className="w-full sm:w-1/2 bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]"
           onTouchStart={handleLeftLongPressStart}
           onTouchEnd={handleLeftLongPressEnd}
           onTouchCancel={handleLeftLongPressEnd}
@@ -1698,7 +1699,7 @@ function ProfileSection() {
         </div>
         
         <div 
-          className="w-1/2 h-full bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
+          className="w-full sm:w-1/2 h-full bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
           onTouchStart={handleRightLongPressStart}
           onTouchEnd={handleRightLongPressEnd}
           onTouchCancel={handleRightLongPressEnd}
@@ -1965,8 +1966,8 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
         </DialogContent>
       </Dialog>
 
-      <div className="flex h-full overflow-hidden">
-        <div className={`${hasSubtasks ? 'w-1/3' : 'w-1/2'} h-full overflow-hidden border-r border-border pr-4`}>
+      <div className="flex h-full overflow-hidden flex-col md:flex-row gap-8 md:gap-0">
+        <div className={`${hasSubtasks ? 'md:w-1/3' : 'md:w-1/2'} w-full md:h-full max-h-[30vh] md:max-h-none overflow-hidden md:border-r border-border md:pr-4`}>
         <ScrollArea className="h-full">
           <div className="flex flex-col min-h-0">
             {sourceGroups.length === 0 ? (
@@ -2020,7 +2021,7 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
       </div>
       
       {hasSubtasks && (
-        <div className="w-1/3 h-full overflow-hidden border-r border-border px-4 flex flex-col">
+        <div className="w-full md:w-1/3 md:h-full max-h-[24vh] md:max-h-none overflow-hidden md:border-r border-border md:px-4 flex flex-col">
           <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2 flex-shrink-0">Subtasks</p>
           <ScrollArea className="flex-1 min-h-0">
             <div className="space-y-1">
@@ -2044,7 +2045,7 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
         </div>
       )}
       
-      <div className={`${hasSubtasks ? 'w-1/3' : 'w-1/2'} h-full pl-4 overflow-hidden`}>
+      <div className={`${hasSubtasks ? 'md:w-1/3' : 'md:w-1/2'} w-full h-full pt-2 md:pt-0 md:pl-4 overflow-hidden flex-1 min-h-0`}>
         <div className="h-full overflow-y-auto overscroll-contain touch-pan-y pr-2 minimal-scrollbar">
           {selectedSubtask ? (
             <div className="space-y-4">
@@ -2576,8 +2577,8 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
 
   return (
     <div className="h-full flex flex-col">
-      <ScrollArea className="flex-1 min-h-0">
-        <div className="space-y-4 pr-4">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y pr-1 minimal-scrollbar">
+        <div className="space-y-6 pr-3 sm:pr-4">
           {/* Top Section: Skills Progress Bars */}
           <div className="bg-zinc-800/30 rounded border border-zinc-700/50 p-4">
             <div className="mb-3 pb-2 border-b border-zinc-700/50">
@@ -2596,9 +2597,9 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
                 
                 return (
                   <div key={skillName} className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-zinc-100">{skillName}</span>
-                      <span className="text-sm text-zinc-400">
+                    <div className="flex flex-col sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center gap-1 sm:gap-2 pr-1">
+                      <span className="min-w-0 truncate pr-1 text-sm font-medium text-zinc-100">{skillName}</span>
+                      <span className="self-end sm:self-auto whitespace-nowrap text-xs sm:text-sm text-zinc-400">
                         Level <span className="font-bold text-zinc-100">{skill.level}</span>
                       </span>
                     </div>
@@ -2690,7 +2691,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
             )}
           </div>
         </div>
-      </ScrollArea>
+      </div>
 
       {/* Edit Modal */}
       <Dialog open={editingId !== null} onOpenChange={(open) => !open && handleEditCancel()}>
@@ -2746,6 +2747,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
 function QuestDiary() {
   const { isDiaryOpen, closeDiary } = useDiary();
   const queryClient = useQueryClient();
+  const isMobile = useIsMobile();
 
   // Listen for XP updates and refresh skills section via localStorage event
   useEffect(() => {
@@ -2940,56 +2942,56 @@ function QuestDiary() {
   
   return (
     <Dialog open={isDiaryOpen} onOpenChange={(open) => !open && closeDiary()}>
-      <DialogContent className="max-w-4xl h-[75vh] p-0 overflow-hidden bg-zinc-900 border-2 border-zinc-700 shadow-2xl">
+      <DialogContent className="w-[calc(100vw-1.5rem)] max-w-[calc(100vw-1.5rem)] sm:max-w-4xl h-[92dvh] sm:h-[75vh] p-0 overflow-hidden bg-zinc-900 border-2 border-zinc-700 shadow-2xl">
         <VisuallyHidden>
           <DialogTitle>Journal</DialogTitle>
         </VisuallyHidden>
-        <div className="flex h-full min-h-0">
-          <Tabs defaultValue="achievements" className="flex-1 flex min-h-0" orientation="vertical">
-            <TabsList className="flex flex-col h-full justify-start gap-0.5 p-1.5 rounded-none border-r-2 border-zinc-700 bg-zinc-800/50 shadow-[inset_-4px_0_8px_rgba(0,0,0,0.3)]">
-              <TabsTrigger value="achievements" className="p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-achievements" title="Achievements">
+        <div className="flex h-full min-h-0 min-w-0 flex-col sm:flex-row">
+          <Tabs defaultValue="achievements" className="flex-1 flex min-h-0 min-w-0 flex-col sm:flex-row" orientation={isMobile ? "horizontal" : "vertical"}>
+            <TabsList className="flex w-full sm:w-auto flex-row sm:flex-col h-auto sm:h-full justify-start gap-0.5 p-1.5 rounded-none border-b-2 sm:border-b-0 sm:border-r-2 border-zinc-700 bg-zinc-800/50 shadow-[inset_0_-4px_8px_rgba(0,0,0,0.3)] sm:shadow-[inset_-4px_0_8px_rgba(0,0,0,0.3)] overflow-x-auto">
+              <TabsTrigger value="achievements" className="shrink-0 p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-achievements" title="Achievements">
                 <Scroll className="h-5 w-5" />
               </TabsTrigger>
               <div className="h-px bg-zinc-700/50 my-1 mx-1" />
-              <TabsTrigger value="skills" className="p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-skills" title="Skills">
+              <TabsTrigger value="skills" className="shrink-0 p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-skills" title="Skills">
                 <BookOpen className="h-5 w-5" />
               </TabsTrigger>
-              <TabsTrigger value="characters" className="p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-characters" title="Characters">
+              <TabsTrigger value="characters" className="shrink-0 p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-characters" title="Characters">
                 <Users className="h-5 w-5" />
               </TabsTrigger>
-              <TabsTrigger value="places" className="p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-places" title="Places">
+              <TabsTrigger value="places" className="shrink-0 p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-places" title="Places">
                 <MapIcon className="h-5 w-5" />
               </TabsTrigger>
-              <TabsTrigger value="shadows" className="p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-shadows" title="Shadows">
+              <TabsTrigger value="shadows" className="shrink-0 p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-shadows" title="Shadows">
                 <Skull className="h-5 w-5" />
               </TabsTrigger>
-              <TabsTrigger value="discovery" className="p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-discovery" title="Discovery">
+              <TabsTrigger value="discovery" className="shrink-0 p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-discovery" title="Discovery">
                 <Globe className="h-5 w-5" />
               </TabsTrigger>
-              <TabsTrigger value="tools" className="p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-tools" title="Tools">
+              <TabsTrigger value="tools" className="shrink-0 p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-tools" title="Tools">
                 <Wrench className="h-5 w-5" />
               </TabsTrigger>
               <div className="h-px bg-zinc-700/50 my-1 mx-1" />
-              <TabsTrigger value="profile" className="p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-profile" title="Mi Perfil">
+              <TabsTrigger value="profile" className="shrink-0 p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-profile" title="Mi Perfil">
                 <User className="h-5 w-5" />
               </TabsTrigger>
             </TabsList>
             
-            <div className="flex-1 p-6 bg-zinc-900 flex flex-col min-h-0">
+            <div className="flex-1 p-3 sm:p-6 bg-zinc-900 flex flex-col min-h-0 min-w-0">
               <div className="mb-4 pb-3 border-b border-zinc-700">
                 <h2 className="text-xl font-bold tracking-tight text-zinc-100">Journal</h2>
                 <div className="h-0.5 w-16 bg-gradient-to-r from-zinc-500 to-transparent mt-2" />
               </div>
               
-              <TabsContent value="achievements" className="flex-1 min-h-0 mt-0">
+              <TabsContent value="achievements" className="flex-1 min-h-0 min-w-0 mt-0">
                 <AchievementsSection learnings={learnings} tools={tools} thoughts={thoughts} />
               </TabsContent>
 
-              <TabsContent value="skills" className="flex-1 min-h-0 mt-0">
+              <TabsContent value="skills" className="flex-1 min-h-0 min-w-0 mt-0">
                 <SkillsSection journalLearnings={learnings} journalTools={tools} journalThoughts={thoughts} />
               </TabsContent>
               
-              <TabsContent value="characters" className="flex-1 min-h-0 mt-0">
+              <TabsContent value="characters" className="flex-1 min-h-0 min-w-0 mt-0">
                 <JournalSection
                   type="characters"
                   entries={characters}
@@ -3000,7 +3002,7 @@ function QuestDiary() {
                 />
               </TabsContent>
               
-              <TabsContent value="places" className="flex-1 min-h-0 mt-0">
+              <TabsContent value="places" className="flex-1 min-h-0 min-w-0 mt-0">
                 <JournalSection
                   type="places"
                   entries={places}
@@ -3011,7 +3013,7 @@ function QuestDiary() {
                 />
               </TabsContent>
               
-              <TabsContent value="shadows" className="flex-1 min-h-0 mt-0">
+              <TabsContent value="shadows" className="flex-1 min-h-0 min-w-0 mt-0">
                 <ShadowsSection
                   entries={shadows}
                   isLoading={loadingShadows}
@@ -3022,7 +3024,7 @@ function QuestDiary() {
                 />
               </TabsContent>
               
-              <TabsContent value="discovery" className="flex-1 min-h-0 mt-0">
+              <TabsContent value="discovery" className="flex-1 min-h-0 min-w-0 mt-0">
                 <LearningsSection
                   entries={learnings}
                   isLoading={loadingLearnings}
@@ -3030,7 +3032,7 @@ function QuestDiary() {
                 />
               </TabsContent>
               
-              <TabsContent value="tools" className="flex-1 min-h-0 mt-0">
+              <TabsContent value="tools" className="flex-1 min-h-0 min-w-0 mt-0">
                 <ToolsSection
                   entries={tools}
                   isLoading={loadingTools}
@@ -3041,7 +3043,7 @@ function QuestDiary() {
                 />
               </TabsContent>
               
-              <TabsContent value="profile" className="flex-1 min-h-0 mt-0">
+              <TabsContent value="profile" className="flex-1 min-h-0 min-w-0 mt-0">
                 <ProfileSection />
               </TabsContent>
             </div>

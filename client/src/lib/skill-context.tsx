@@ -2434,14 +2434,19 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
           fetch(`/api/skills/${skillId}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ status: newStatus }),
+            body: JSON.stringify(
+              newStatus === "available"
+                ? { status: newStatus, fromSubtaskCompletion: true }
+                : { status: newStatus }
+            ),
           })
         )
-      ).then(() => {
+      ).then((responses) => {
+        const successfulUpdates = updatesToMake.filter((_, index) => responses[index]?.ok);
         setAreas(prev => prev.map(area => ({
           ...area,
           skills: area.skills.map(skill => {
-            const update = updatesToMake.find(u => u.skillId === skill.id);
+            const update = successfulUpdates.find(u => u.skillId === skill.id);
             return update ? { ...skill, status: update.newStatus } : skill;
           })
         })));
@@ -2520,14 +2525,19 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
           fetch(`/api/skills/${skillId}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ status: newStatus }),
+            body: JSON.stringify(
+              newStatus === "available"
+                ? { status: newStatus, fromSubtaskCompletion: true }
+                : { status: newStatus }
+            ),
           })
         )
-      ).then(() => {
+      ).then((responses) => {
+        const successfulUpdates = updatesToMake.filter((_, index) => responses[index]?.ok);
         setProjects(prev => prev.map(project => ({
           ...project,
           skills: project.skills.map(skill => {
-            const update = updatesToMake.find(u => u.skillId === skill.id);
+            const update = successfulUpdates.find(u => u.skillId === skill.id);
             return update ? { ...skill, status: update.newStatus } : skill;
           })
         })));
@@ -2603,12 +2613,17 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
           fetch(`/api/skills/${skillId}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ status: newStatus }),
+            body: JSON.stringify(
+              newStatus === "available"
+                ? { status: newStatus, fromSubtaskCompletion: true }
+                : { status: newStatus }
+            ),
           })
         )
-      ).then(() => {
+      ).then((responses) => {
+        const successfulUpdates = updatesToMake.filter((_, index) => responses[index]?.ok);
         setSubSkills(prev => prev.map(skill => {
-          const update = updatesToMake.find(u => u.skillId === skill.id);
+          const update = successfulUpdates.find(u => u.skillId === skill.id);
           return update ? { ...skill, status: update.newStatus } : skill;
         }));
       });
