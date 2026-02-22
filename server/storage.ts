@@ -1,7 +1,7 @@
 import { eq, and } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db } from "./db";
-import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, profileValues, profileLikes, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress } from "@shared/schema";
+import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress } from "@shared/schema";
 
 export interface IStorage {
   // Users
@@ -96,6 +96,20 @@ export interface IStorage {
   createProfileMission(mission: InsertProfileMission): Promise<ProfileMission>;
   updateProfileMission(id: string, mission: Partial<InsertProfileMission>): Promise<ProfileMission | undefined>;
   deleteProfileMission(id: string): Promise<void>;
+
+  // Profile - Experiences
+  getProfileExperiences(userId: string): Promise<ProfileExperience[]>;
+  getProfileExperience(id: string): Promise<ProfileExperience | undefined>;
+  createProfileExperience(experience: InsertProfileExperience): Promise<ProfileExperience>;
+  updateProfileExperience(id: string, experience: Partial<InsertProfileExperience>): Promise<ProfileExperience | undefined>;
+  deleteProfileExperience(id: string): Promise<void>;
+
+  // Profile - Contributions
+  getProfileContributions(userId: string): Promise<ProfileContribution[]>;
+  getProfileContribution(id: string): Promise<ProfileContribution | undefined>;
+  createProfileContribution(contribution: InsertProfileContribution): Promise<ProfileContribution>;
+  updateProfileContribution(id: string, contribution: Partial<InsertProfileContribution>): Promise<ProfileContribution | undefined>;
+  deleteProfileContribution(id: string): Promise<void>;
 
   // Profile - About Entries
   getProfileAboutEntries(userId: string): Promise<ProfileAboutEntry[]>;
@@ -685,6 +699,56 @@ export class DbStorage implements IStorage {
 
   async deleteProfileLike(id: string): Promise<void> {
     await db.delete(profileLikes).where(eq(profileLikes.id, id));
+  }
+
+  // Profile - Experiences
+  async getProfileExperiences(userId: string): Promise<ProfileExperience[]> {
+    return await db.select().from(profileExperiences).where(eq(profileExperiences.userId, userId));
+  }
+
+  async getProfileExperience(id: string): Promise<ProfileExperience | undefined> {
+    const result = await db.select().from(profileExperiences).where(eq(profileExperiences.id, id));
+    return result[0];
+  }
+
+  async createProfileExperience(experience: InsertProfileExperience): Promise<ProfileExperience> {
+    const id = randomUUID();
+    const result = await db.insert(profileExperiences).values({ id, ...experience }).returning();
+    return result[0];
+  }
+
+  async updateProfileExperience(id: string, experience: Partial<InsertProfileExperience>): Promise<ProfileExperience | undefined> {
+    const result = await db.update(profileExperiences).set(experience).where(eq(profileExperiences.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteProfileExperience(id: string): Promise<void> {
+    await db.delete(profileExperiences).where(eq(profileExperiences.id, id));
+  }
+
+  // Profile - Contributions
+  async getProfileContributions(userId: string): Promise<ProfileContribution[]> {
+    return await db.select().from(profileContributions).where(eq(profileContributions.userId, userId));
+  }
+
+  async getProfileContribution(id: string): Promise<ProfileContribution | undefined> {
+    const result = await db.select().from(profileContributions).where(eq(profileContributions.id, id));
+    return result[0];
+  }
+
+  async createProfileContribution(contribution: InsertProfileContribution): Promise<ProfileContribution> {
+    const id = randomUUID();
+    const result = await db.insert(profileContributions).values({ id, ...contribution }).returning();
+    return result[0];
+  }
+
+  async updateProfileContribution(id: string, contribution: Partial<InsertProfileContribution>): Promise<ProfileContribution | undefined> {
+    const result = await db.update(profileContributions).set(contribution).where(eq(profileContributions.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteProfileContribution(id: string): Promise<void> {
+    await db.delete(profileContributions).where(eq(profileContributions.id, id));
   }
 
   // Profile - Missions

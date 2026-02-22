@@ -29,6 +29,13 @@
       "when": 1771700892000,
       "tag": "0003_user_skills_progress",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1771800000000,
+      "tag": "0004_profile_experiences_contributions",
+      "breakpoints": true
     }
   ]
 }

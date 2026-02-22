@@ -108,6 +108,20 @@ export const profileLikes = pgTable("profile_likes", {
   description: text("description").notNull().default(""),
 });
 
+export const profileExperiences = pgTable("profile_experiences", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+});
+
+export const profileContributions = pgTable("profile_contributions", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+});
+
 export const journalLearnings = pgTable("journal_learnings", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
@@ -152,6 +166,8 @@ export const insertJournalPlaceSchema = createInsertSchema(journalPlaces).omit({
 export const insertJournalShadowSchema = createInsertSchema(journalShadows).omit({ id: true });
 export const insertProfileValueSchema = createInsertSchema(profileValues).omit({ id: true });
 export const insertProfileLikeSchema = createInsertSchema(profileLikes).omit({ id: true });
+export const insertProfileExperienceSchema = createInsertSchema(profileExperiences).omit({ id: true });
+export const insertProfileContributionSchema = createInsertSchema(profileContributions).omit({ id: true });
 export const insertJournalLearningSchema = createInsertSchema(journalLearnings).omit({ id: true }).extend({
   skillId: z.string().min(1, "skillId is required"),
 });
@@ -182,6 +198,12 @@ export type InsertJournalShadow = z.infer<typeof insertJournalShadowSchema>;
 export type JournalShadow = typeof journalShadows.$inferSelect;
 export type InsertProfileValue = z.infer<typeof insertProfileValueSchema>;
 export type ProfileValue = typeof profileValues.$inferSelect;
+export type InsertProfileLike = z.infer<typeof insertProfileLikeSchema>;
+export type ProfileLike = typeof profileLikes.$inferSelect;
+export type InsertProfileExperience = z.infer<typeof insertProfileExperienceSchema>;
+export type ProfileExperience = typeof profileExperiences.$inferSelect;
+export type InsertProfileContribution = z.infer<typeof insertProfileContributionSchema>;
+export type ProfileContribution = typeof profileContributions.$inferSelect;
 export const profileMissions = pgTable("profile_missions", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),

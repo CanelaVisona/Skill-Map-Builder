@@ -1276,6 +1276,26 @@ function ProfileSection() {
     },
   });
 
+  const { data: profileExperiences = [], isLoading: experiencesLoading } = useQuery<ProfileEntry[]>({
+    queryKey: ["/api/profile/experiences"],
+    queryFn: async () => {
+      const res = await fetch("/api/profile/experiences");
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    },
+  });
+
+  const { data: profileContributions = [], isLoading: contributionsLoading } = useQuery<ProfileEntry[]>({
+    queryKey: ["/api/profile/contributions"],
+    queryFn: async () => {
+      const res = await fetch("/api/profile/contributions");
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    },
+  });
+
   const createMission = useMutation({
     mutationFn: async (data: { name: string; description: string }) => {
       const res = await fetch("/api/profile/missions", {
@@ -1364,18 +1384,118 @@ function ProfileSection() {
     },
   });
 
+  const createExperience = useMutation({
+    mutationFn: async (data: { name: string; description: string }) => {
+      const res = await fetch("/api/profile/experiences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({ message: "Error al crear experiencia" }));
+        throw new Error(error.message || "Error al crear experiencia");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/profile/experiences"] });
+      setIsAdding(false);
+      setName("");
+      setDescription("");
+    },
+    onError: (error: Error) => {
+      console.error("Error creating experience:", error.message);
+      // Keep dialog open so user can retry
+    },
+  });
+
+  const updateExperience = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { name?: string; description?: string } }) => {
+      const res = await fetch(`/api/profile/experiences/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/profile/experiences"] });
+      setSelectedEntry(null);
+      setIsEditMode(false);
+    },
+  });
+
+  const deleteExperience = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/profile/experiences/${id}`, { method: "DELETE" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/profile/experiences"] });
+      setSelectedEntry(null);
+      setShowDeleteConfirm(false);
+    },
+  });
+
+  const createContribution = useMutation({
+    mutationFn: async (data: { name: string; description: string }) => {
+      const res = await fetch("/api/profile/contributions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/profile/contributions"] });
+      setIsAdding(false);
+      setName("");
+      setDescription("");
+    },
+  });
+
+  const updateContribution = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { name?: string; description?: string } }) => {
+      const res = await fetch(`/api/profile/contributions/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/profile/contributions"] });
+      setSelectedEntry(null);
+      setIsEditMode(false);
+    },
+  });
+
+  const deleteContribution = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/profile/contributions/${id}`, { method: "DELETE" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/profile/contributions"] });
+      setSelectedEntry(null);
+      setShowDeleteConfirm(false);
+    },
+  });
+
   const tabs = [
     { id: "mission", label: "Misión", title: "MI MISIÓN" },
     { id: "values", label: "Valores", title: "MIS VALORES" },
     { id: "likes", label: "Gustos", title: "LO QUE ME GUSTA" },
     { id: "about", label: "Sobre mí", title: "SOBRE MÍ" },
+    { id: "experiences", label: "Experiencias", title: "MIS EXPERIENCIAS" },
+    { id: "contributions", label: "Contribución", title: "MIS CONTRIBUCIONES" },
   ];
 
   const currentTab = tabs.find(t => t.id === activeTab) || tabs[0];
   const currentEntries = activeTab === "values" ? profileValues : 
                         activeTab === "likes" ? profileLikes : 
                         activeTab === "mission" ? profileMissions : 
-                        profileAboutEntries; 
+                        activeTab === "about" ? profileAboutEntries :
+                        activeTab === "experiences" ? profileExperiences :
+                        profileContributions;
 
   const handleAddNew = () => {
     if (!name.trim()) return;
@@ -1387,6 +1507,10 @@ function ProfileSection() {
       createMission.mutate({ name: name.trim(), description: description.trim() });
     } else if (activeTab === "about") {
       createAboutEntry.mutate({ name: name.trim(), description: description.trim() });
+    } else if (activeTab === "experiences") {
+      createExperience.mutate({ name: name.trim(), description: description.trim() });
+    } else if (activeTab === "contributions") {
+      createContribution.mutate({ name: name.trim(), description: description.trim() });
     }
   };
 
@@ -1400,6 +1524,10 @@ function ProfileSection() {
       updateMission.mutate({ id: selectedEntry.id, data: { name: name.trim(), description: description.trim() } });
     } else if (activeTab === "about") {
       updateAboutEntry.mutate({ id: selectedEntry.id, data: { name: name.trim(), description: description.trim() } });
+    } else if (activeTab === "experiences") {
+      updateExperience.mutate({ id: selectedEntry.id, data: { name: name.trim(), description: description.trim() } });
+    } else if (activeTab === "contributions") {
+      updateContribution.mutate({ id: selectedEntry.id, data: { name: name.trim(), description: description.trim() } });
     }
   };
 
@@ -1413,6 +1541,10 @@ function ProfileSection() {
       deleteMission.mutate(selectedEntry.id);
     } else if (activeTab === "about") {
       deleteAboutEntry.mutate(selectedEntry.id);
+    } else if (activeTab === "experiences") {
+      deleteExperience.mutate(selectedEntry.id);
+    } else if (activeTab === "contributions") {
+      deleteContribution.mutate(selectedEntry.id);
     }
   };
 
@@ -1429,6 +1561,10 @@ function ProfileSection() {
       updateMission.mutate({ id: selectedEntry.id, data: { description: newDesc } });
     } else if (activeTab === "about") {
       updateAboutEntry.mutate({ id: selectedEntry.id, data: { description: newDesc } });
+    } else if (activeTab === "experiences") {
+      updateExperience.mutate({ id: selectedEntry.id, data: { description: newDesc } });
+    } else if (activeTab === "contributions") {
+      updateContribution.mutate({ id: selectedEntry.id, data: { description: newDesc } });
     }
     setExtraInfo("");
   };
@@ -1491,6 +1627,8 @@ function ProfileSection() {
       case "values": return "Valor";
       case "likes": return "Gusto";
       case "about": return "Sobre mí";
+      case "experiences": return "Experiencia";
+      case "contributions": return "Contribución";
       default: return "Entrada";
     }
   };
@@ -1501,11 +1639,13 @@ function ProfileSection() {
       case "values": return "valores";
       case "likes": return "gustos";
       case "about": return "entradas";
+      case "experiences": return "experiencias";
+      case "contributions": return "contribuciones";
       default: return "entradas";
     }
   };
 
-  if (profileLoading || valuesLoading || likesLoading || missionsLoading || aboutEntriesLoading) {
+  if (profileLoading || valuesLoading || likesLoading || missionsLoading || aboutEntriesLoading || experiencesLoading || contributionsLoading) {
     return <div className="text-zinc-500 text-sm">Cargando...</div>;
   }
 

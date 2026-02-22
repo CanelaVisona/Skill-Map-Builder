@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertUserSkillsProgressSchema } from "@shared/schema";
+import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import cookieParser from "cookie-parser";
 import crypto from "crypto";
@@ -1607,6 +1607,122 @@ export async function registerRoutes(
         return;
       }
       await storage.deleteProfileAboutEntry(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Profile - Experiences
+  app.get("/api/profile/experiences", requireAuth, async (req, res) => {
+    try {
+      const experiences = await storage.getProfileExperiences(req.userId!);
+      res.json(experiences);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/profile/experiences", requireAuth, async (req, res) => {
+    try {
+      const data = { ...req.body, userId: req.userId };
+      const validated = insertProfileExperienceSchema.parse(data);
+      const experience = await storage.createProfileExperience(validated);
+      res.status(201).json(experience);
+    } catch (error: any) {
+      const validationError = fromError(error);
+      res.status(400).json({ message: validationError.toString() });
+    }
+  });
+
+  app.patch("/api/profile/experiences/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getProfileExperience(req.params.id);
+      if (!existing) {
+        res.status(404).json({ message: "Experience not found" });
+        return;
+      }
+      if (existing.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para modificar esta experiencia" });
+        return;
+      }
+      const updated = await storage.updateProfileExperience(req.params.id, req.body);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/profile/experiences/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getProfileExperience(req.params.id);
+      if (!existing) {
+        res.status(404).json({ message: "Experience not found" });
+        return;
+      }
+      if (existing.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para eliminar esta experiencia" });
+        return;
+      }
+      await storage.deleteProfileExperience(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Profile - Contributions
+  app.get("/api/profile/contributions", requireAuth, async (req, res) => {
+    try {
+      const contributions = await storage.getProfileContributions(req.userId!);
+      res.json(contributions);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/profile/contributions", requireAuth, async (req, res) => {
+    try {
+      const data = { ...req.body, userId: req.userId };
+      const validated = insertProfileContributionSchema.parse(data);
+      const contribution = await storage.createProfileContribution(validated);
+      res.status(201).json(contribution);
+    } catch (error: any) {
+      const validationError = fromError(error);
+      res.status(400).json({ message: validationError.toString() });
+    }
+  });
+
+  app.patch("/api/profile/contributions/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getProfileContribution(req.params.id);
+      if (!existing) {
+        res.status(404).json({ message: "Contribution not found" });
+        return;
+      }
+      if (existing.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para modificar esta contribución" });
+        return;
+      }
+      const updated = await storage.updateProfileContribution(req.params.id, req.body);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/profile/contributions/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getProfileContribution(req.params.id);
+      if (!existing) {
+        res.status(404).json({ message: "Contribution not found" });
+        return;
+      }
+      if (existing.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para eliminar esta contribución" });
+        return;
+      }
+      await storage.deleteProfileContribution(req.params.id);
       res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ message: error.message });
