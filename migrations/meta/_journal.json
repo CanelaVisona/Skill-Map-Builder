@@ -8,6 +8,27 @@
       "when": 1769877289964,
       "tag": "0000_eager_darwin",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1771603214434,
+      "tag": "0001_warm_hammerhead",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1771618843772,
+      "tag": "0002_conscious_frightful_four",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1771700892000,
+      "tag": "0003_user_skills_progress",
+      "breakpoints": true
     }
   ]
 }

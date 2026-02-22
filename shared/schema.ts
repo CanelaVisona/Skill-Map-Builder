@@ -111,6 +111,7 @@ export const profileLikes = pgTable("profile_likes", {
 export const journalLearnings = pgTable("journal_learnings", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  skillId: varchar("skill_id"),
   title: text("title").notNull(),
   sentence: text("sentence").notNull().default(""),
 });
@@ -118,8 +119,27 @@ export const journalLearnings = pgTable("journal_learnings", {
 export const journalTools = pgTable("journal_tools", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  skillId: varchar("skill_id"),
   title: text("title").notNull(),
   sentence: text("sentence").notNull().default(""),
+});
+
+export const journalThoughts = pgTable("journal_thoughts", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  skillId: varchar("skill_id"),
+  title: text("title").notNull(),
+  sentence: text("sentence").notNull().default(""),
+});
+
+export const userSkillsProgress = pgTable("user_skills_progress", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  skillName: text("skill_name").notNull(),
+  currentXp: integer("current_xp").notNull().default(0),
+  level: integer("level").notNull().default(1),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
@@ -132,8 +152,17 @@ export const insertJournalPlaceSchema = createInsertSchema(journalPlaces).omit({
 export const insertJournalShadowSchema = createInsertSchema(journalShadows).omit({ id: true });
 export const insertProfileValueSchema = createInsertSchema(profileValues).omit({ id: true });
 export const insertProfileLikeSchema = createInsertSchema(profileLikes).omit({ id: true });
-export const insertJournalLearningSchema = createInsertSchema(journalLearnings).omit({ id: true });
-export const insertJournalToolSchema = createInsertSchema(journalTools).omit({ id: true });
+export const insertJournalLearningSchema = createInsertSchema(journalLearnings).omit({ id: true }).extend({
+  skillId: z.string().min(1, "skillId is required"),
+});
+export const insertJournalToolSchema = createInsertSchema(journalTools).omit({ id: true }).extend({
+  skillId: z.string().min(1, "skillId is required"),
+});
+export const insertJournalThoughtSchema = createInsertSchema(journalThoughts).omit({ id: true }).extend({
+  skillId: z.string().min(1, "skillId is required"),
+});
+
+export const insertUserSkillsProgressSchema = createInsertSchema(userSkillsProgress).omit({ id: true, createdAt: true, updatedAt: true });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
@@ -178,3 +207,7 @@ export type InsertJournalLearning = z.infer<typeof insertJournalLearningSchema>;
 export type JournalLearning = typeof journalLearnings.$inferSelect;
 export type InsertJournalTool = z.infer<typeof insertJournalToolSchema>;
 export type JournalTool = typeof journalTools.$inferSelect;
+export type InsertJournalThought = z.infer<typeof insertJournalThoughtSchema>;
+export type JournalThought = typeof journalThoughts.$inferSelect;
+export type InsertUserSkillsProgress = z.infer<typeof insertUserSkillsProgressSchema>;
+export type UserSkillsProgress = typeof userSkillsProgress.$inferSelect;

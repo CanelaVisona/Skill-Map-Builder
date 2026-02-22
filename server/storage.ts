@@ -1,7 +1,7 @@
 import { eq, and } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db } from "./db";
-import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, profileValues, profileLikes, profileMissions, profileAboutEntries, journalLearnings, journalTools } from "@shared/schema";
+import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, profileValues, profileLikes, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress } from "@shared/schema";
 
 export interface IStorage {
   // Users
@@ -107,12 +107,24 @@ export interface IStorage {
   // Journal - Learnings
   getJournalLearnings(userId: string): Promise<JournalLearning[]>;
   createJournalLearning(learning: InsertJournalLearning): Promise<JournalLearning>;
+  updateJournalLearning(id: string, data: Partial<InsertJournalLearning>): Promise<JournalLearning | undefined>;
   deleteJournalLearning(id: string): Promise<void>;
 
   // Journal - Tools
   getJournalTools(userId: string): Promise<JournalTool[]>;
   createJournalTool(tool: InsertJournalTool): Promise<JournalTool>;
+  updateJournalTool(id: string, data: Partial<InsertJournalTool>): Promise<JournalTool | undefined>;
   deleteJournalTool(id: string): Promise<void>;
+
+  // Journal - Thoughts
+  getJournalThoughts(userId: string): Promise<JournalThought[]>;
+  createJournalThought(thought: InsertJournalThought): Promise<JournalThought>;
+  updateJournalThought(id: string, data: Partial<InsertJournalThought>): Promise<JournalThought | undefined>;
+  deleteJournalThought(id: string): Promise<void>;
+
+  // User Skills Progress
+  getUserSkillsProgress(userId: string): Promise<Array<{ skillName: string; currentXp: number; level: number }>>;
+  upsertUserSkillsProgress(data: InsertUserSkillsProgress, userId: string): Promise<{ skillName: string; currentXp: number; level: number }>;
 }
 
 export class DbStorage implements IStorage {
@@ -736,6 +748,11 @@ export class DbStorage implements IStorage {
     return result[0];
   }
 
+  async updateJournalLearning(id: string, data: Partial<InsertJournalLearning>): Promise<JournalLearning | undefined> {
+    const result = await db.update(journalLearnings).set(data).where(eq(journalLearnings.id, id)).returning();
+    return result[0];
+  }
+
   async deleteJournalLearning(id: string): Promise<void> {
     await db.delete(journalLearnings).where(eq(journalLearnings.id, id));
   }
@@ -751,8 +768,77 @@ export class DbStorage implements IStorage {
     return result[0];
   }
 
+  async updateJournalTool(id: string, data: Partial<InsertJournalTool>): Promise<JournalTool | undefined> {
+    const result = await db.update(journalTools).set(data).where(eq(journalTools.id, id)).returning();
+    return result[0];
+  }
+
   async deleteJournalTool(id: string): Promise<void> {
     await db.delete(journalTools).where(eq(journalTools.id, id));
+  }
+
+  // Journal - Thoughts
+  async getJournalThoughts(userId: string): Promise<JournalThought[]> {
+    return await db.select().from(journalThoughts).where(eq(journalThoughts.userId, userId));
+  }
+
+  async createJournalThought(thought: InsertJournalThought): Promise<JournalThought> {
+    const id = randomUUID();
+    const result = await db.insert(journalThoughts).values({ id, ...thought }).returning();
+    return result[0];
+  }
+
+  async updateJournalThought(id: string, data: Partial<InsertJournalThought>): Promise<JournalThought | undefined> {
+    const result = await db.update(journalThoughts).set(data).where(eq(journalThoughts.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteJournalThought(id: string): Promise<void> {
+    await db.delete(journalThoughts).where(eq(journalThoughts.id, id));
+  }
+
+  // User Skills Progress
+  async getUserSkillsProgress(userId: string): Promise<Array<{ skillName: string; currentXp: number; level: number }>> {
+    const progress = await db.select().from(userSkillsProgress).where(eq(userSkillsProgress.userId, userId));
+    return progress.map(p => ({ skillName: p.skillName, currentXp: p.currentXp, level: p.level }));
+  }
+
+  async upsertUserSkillsProgress(data: InsertUserSkillsProgress, userId: string): Promise<{ skillName: string; currentXp: number; level: number }> {
+    const existing = await db.select().from(userSkillsProgress).where(
+      and(
+        eq(userSkillsProgress.userId, userId),
+        eq(userSkillsProgress.skillName, data.skillName)
+      )
+    );
+
+    if (existing.length > 0) {
+      // Update existing
+      const result = await db.update(userSkillsProgress)
+        .set({ 
+          currentXp: data.currentXp, 
+          level: data.level,
+          updatedAt: new Date()
+        })
+        .where(
+          and(
+            eq(userSkillsProgress.userId, userId),
+            eq(userSkillsProgress.skillName, data.skillName)
+          )
+        )
+        .returning();
+      const p = result[0];
+      return { skillName: p.skillName, currentXp: p.currentXp, level: p.level };
+    } else {
+      // Create new
+      const id = randomUUID();
+      const result = await db.insert(userSkillsProgress).values({
+        id,
+        userId,
+        ...data
+      }).returning();
+      const p = result[0];
+      return { skillName: p.skillName, currentXp: p.currentXp, level: p.level };
+    }
   }
 }
 

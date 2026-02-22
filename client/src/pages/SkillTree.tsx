@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import { SkillTreeProvider, useSkillTree, type Skill } from "@/lib/skill-context";
 import { MenuProvider, useMenu } from "@/lib/menu-context";
 import { AreaMenu } from "@/components/AreaMenu";
@@ -19,7 +19,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import type { JournalCharacter, JournalPlace, JournalShadow, JournalLearning, JournalTool } from "@shared/schema";
+import type { JournalCharacter, JournalPlace, JournalShadow, JournalLearning, JournalTool, JournalThought } from "@shared/schema";
 import { OnboardingGuide, HelpButton, useOnboarding } from "@/components/OnboardingGuide";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
@@ -1739,13 +1739,40 @@ interface SourceGroup {
   skills: SkillWithSource[];
 }
 
-function AchievementsSection() {
+function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { learnings?: JournalLearning[]; tools?: JournalTool[]; thoughts?: JournalThought[] }) {
   const { areas, mainQuests, sideQuests } = useSkillTree();
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
   const [selectedSubtasks, setSelectedSubtasks] = useState<Skill[]>([]);
   const [selectedSubtaskId, setSelectedSubtaskId] = useState<string | null>(null);
   const [selectedSourceSkills, setSelectedSourceSkills] = useState<Skill[]>([]);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [viewingThought, setViewingThought] = useState<JournalThought | null>(null);
+  const [viewingLearning, setViewingLearning] = useState<JournalLearning | null>(null);
+  const [viewingTool, setViewingTool] = useState<JournalTool | null>(null);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
+  // Extract skill name from learning title
+  // Format: "Skill Title (+XP en SkillName)"
+  const extractSkillNameFromLearning = (title: string): { skillName: string; xp: number } | null => {
+    const match = title.match(/\(\+(\d+)\s+XP\s+en\s+([^)]+)\)/);
+    if (match) {
+      return { xp: parseInt(match[1]), skillName: match[2] };
+    }
+    return null;
+  };
+  
+  // Get learnings and tools for the selected skill
+  const getRelatedEntries = (skillId: string) => {
+    const relatedLearnings = learnings.filter(l => l.skillId === skillId);
+    const relatedTools = tools.filter(t => t.skillId === skillId);
+    
+    return { learnings: relatedLearnings, tools: relatedTools };
+  };
+
+  // Get thoughts for the selected skill by skillId
+  const getThoughtsForSkill = (skillId: string) => {
+    return thoughts.filter(t => t.skillId === skillId);
+  };
   
   // Group completed skills by source
   const sourceGroups: SourceGroup[] = [];
@@ -1855,9 +1882,91 @@ function AchievementsSection() {
     }
   };
 
+  const handleThoughtLongPressStart = () => {
+    longPressTimer.current = setTimeout(() => {
+      // Long press triggered
+    }, 500);
+  };
+
+  const handleThoughtLongPressEnd = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const handleLearningClick = (learning: JournalLearning) => {
+    longPressTimer.current = setTimeout(() => {
+      setViewingLearning(learning);
+    }, 500);
+  };
+
+  const handleLearningEnd = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const handleToolClick = (tool: JournalTool) => {
+    longPressTimer.current = setTimeout(() => {
+      setViewingTool(tool);
+    }, 500);
+  };
+
+  const handleToolEnd = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
   return (
-    <div className="flex h-full overflow-hidden">
-      <div className={`${hasSubtasks ? 'w-1/3' : 'w-1/2'} h-full overflow-hidden border-r border-border pr-4`}>
+    <>
+      {/* Thought Detail Dialog */}
+      <Dialog open={!!viewingThought} onOpenChange={(open) => !open && setViewingThought(null)}>
+        <DialogContent className="bg-zinc-900 border-zinc-700 max-w-lg">
+          <DialogTitle className="text-zinc-100">
+            {viewingThought?.title}
+          </DialogTitle>
+          <div className="space-y-3">
+            <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap">
+              {viewingThought?.sentence}
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Learning Detail Dialog */}
+      <Dialog open={!!viewingLearning} onOpenChange={(open) => !open && setViewingLearning(null)}>
+        <DialogContent className="bg-zinc-900 border-zinc-700 max-w-lg">
+          <DialogTitle className="text-zinc-100">
+            {viewingLearning?.title}
+          </DialogTitle>
+          <div className="space-y-3">
+            <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap">
+              {viewingLearning?.sentence}
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Tool Detail Dialog */}
+      <Dialog open={!!viewingTool} onOpenChange={(open) => !open && setViewingTool(null)}>
+        <DialogContent className="bg-zinc-900 border-zinc-700 max-w-lg">
+          <DialogTitle className="text-zinc-100">
+            {viewingTool?.title}
+          </DialogTitle>
+          <div className="space-y-3">
+            <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap">
+              {viewingTool?.sentence}
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <div className="flex h-full overflow-hidden">
+        <div className={`${hasSubtasks ? 'w-1/3' : 'w-1/2'} h-full overflow-hidden border-r border-border pr-4`}>
         <ScrollArea className="h-full">
           <div className="flex flex-col min-h-0">
             {sourceGroups.length === 0 ? (
@@ -1967,6 +2076,104 @@ function AchievementsSection() {
                   {selectedSkill.description}
                 </p>
               )}
+              
+              {/* Thoughts Section */}
+              {(() => {
+                const skillThoughts = getThoughtsForSkill(selectedSkill.id);
+                return skillThoughts.length > 0 ? (
+                  <div className="pt-2 border-t border-border">
+                    <p className="text-xs text-foreground uppercase tracking-wide mb-2 font-semibold flex items-center gap-1">
+                      <BookOpen className="h-3 w-3 text-purple-400" /> Thoughts
+                    </p>
+                    <div className="space-y-2">
+                      {skillThoughts.map((thought) => (
+                        <div
+                          key={thought.id}
+                          className="bg-zinc-800/30 rounded p-2 border border-zinc-700/30 cursor-pointer hover:bg-zinc-800/50 transition-colors"
+                          onMouseDown={() => handleThoughtLongPressStart()}
+                          onMouseUp={() => {
+                            handleThoughtLongPressEnd();
+                            setViewingThought(thought);
+                          }}
+                          onMouseLeave={() => handleThoughtLongPressEnd()}
+                          onTouchStart={() => handleThoughtLongPressStart()}
+                          onTouchEnd={() => {
+                            handleThoughtLongPressEnd();
+                            setViewingThought(thought);
+                          }}
+                        >
+                          <p className="text-xs font-medium text-zinc-100">{thought.title}</p>
+                          <p className="text-xs text-zinc-400 line-clamp-2">{thought.sentence}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null;
+              })()}
+              
+              {/* XP and Skill Section */}
+              {selectedSkill && "experiencePoints" in selectedSkill && (selectedSkill as any).experiencePoints > 0 && (
+                <div className="pt-2 border-t border-border">
+                  <p className="text-xs text-foreground uppercase tracking-wide mb-2 font-semibold">Experience</p>
+                  <p className="text-sm font-medium text-blue-400">+{(selectedSkill as any).experiencePoints} XP</p>
+                </div>
+              )}
+              
+              {/* Learnings Section */}
+              {(() => {
+                const { learnings: relatedLearnings } = getRelatedEntries(selectedSkill.id);
+                return relatedLearnings.length > 0 ? (
+                  <div className="pt-2 border-t border-border">
+                    <p className="text-xs text-foreground uppercase tracking-wide mb-2 font-semibold flex items-center gap-1">
+                      <Lightbulb className="h-3 w-3 text-yellow-500" /> Learnings
+                    </p>
+                    <div className="space-y-2">
+                      {relatedLearnings.map((learning) => (
+                        <div
+                          key={learning.id}
+                          className="bg-zinc-800/30 rounded p-2 border border-zinc-700/30 cursor-pointer hover:bg-zinc-800/50 transition-colors"
+                          onMouseDown={() => handleLearningClick(learning)}
+                          onMouseUp={handleLearningEnd}
+                          onMouseLeave={handleLearningEnd}
+                          onTouchStart={() => handleLearningClick(learning)}
+                          onTouchEnd={handleLearningEnd}
+                        >
+                          <p className="text-xs text-zinc-300 line-clamp-2">{learning.sentence}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null;
+              })()}
+              
+              {/* Tools Section */}
+              {(() => {
+                const { tools: relatedTools } = getRelatedEntries(selectedSkill.id);
+                return relatedTools.length > 0 ? (
+                  <div className="pt-2 border-t border-border">
+                    <p className="text-xs text-foreground uppercase tracking-wide mb-2 font-semibold flex items-center gap-1">
+                      <Wrench className="h-3 w-3 text-blue-400" /> Tools
+                    </p>
+                    <div className="space-y-2">
+                      {relatedTools.map((tool) => (
+                        <div
+                          key={tool.id}
+                          className="bg-zinc-800/30 rounded p-2 border border-zinc-700/30 cursor-pointer hover:bg-zinc-800/50 transition-colors"
+                          onMouseDown={() => handleToolClick(tool)}
+                          onMouseUp={handleToolEnd}
+                          onMouseLeave={handleToolEnd}
+                          onTouchStart={() => handleToolClick(tool)}
+                          onTouchEnd={handleToolEnd}
+                        >
+                          <p className="text-xs font-medium text-zinc-100">{tool.title}</p>
+                          <p className="text-xs text-zinc-400 line-clamp-2">{tool.sentence}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null;
+              })()}
+              
               {(selectedSkill.feedback || selectedSubtasks.some(s => s.feedback)) && (
                 <div className="pt-2">
                   <p className="text-xs text-foreground uppercase tracking-wide mb-2">Feedback</p>
@@ -1998,12 +2205,572 @@ function AchievementsSection() {
         </div>
       </div>
     </div>
+    </>
+  );
+}
+
+const SKILLS_LIST = ["Limpieza", "Guitarra", "Lectura", "Growth mindset", "Acertividad"];
+const xpPerLevel = 500;
+
+function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { journalLearnings: JournalLearning[]; journalTools: JournalTool[]; journalThoughts: JournalThought[] }) {
+  const queryClient = useQueryClient();
+  
+  const [skills, setSkills] = useState<Record<string, { name: string; currentXp: number; level: number }>>(() => {
+    const defaultSkills: Record<string, { name: string; currentXp: number; level: number }> = {};
+    SKILLS_LIST.forEach((skillName) => {
+      defaultSkills[skillName] = { name: skillName, currentXp: 0, level: 1 };
+    });
+
+    const stored = localStorage.getItem("skillsProgress");
+    if (stored) {
+      try {
+        const parsedSkills = JSON.parse(stored);
+        // Merge with defaults to ensure all skills exist
+        const merged = { ...defaultSkills, ...parsedSkills };
+        // Ensure all skills have required properties
+        SKILLS_LIST.forEach((skillName) => {
+          if (!merged[skillName]) {
+            merged[skillName] = defaultSkills[skillName];
+          } else if (!merged[skillName].level || !merged[skillName].currentXp) {
+            merged[skillName] = {
+              ...merged[skillName],
+              level: merged[skillName].level || 1,
+              currentXp: merged[skillName].currentXp || 0,
+            };
+          }
+        });
+        return merged;
+      } catch (e) {
+        console.error('[SkillsSection] Error parsing localStorage:', e);
+        return defaultSkills;
+      }
+    }
+    return defaultSkills;
+  });
+  
+  const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editType, setEditType] = useState<"learning" | "tool" | "thought" | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editSentence, setEditSentence] = useState("");
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isLongPress = useRef(false);
+
+
+  // Load skills progress from server
+  useEffect(() => {
+    const loadSkillsProgress = async () => {
+      try {
+        const response = await fetch("/api/skills-progress");
+        if (response.ok) {
+          const serverProgress = await response.json();
+          const updatedSkills = { ...skills };
+          serverProgress.forEach((p: { skillName: string; currentXp: number; level: number }) => {
+            updatedSkills[p.skillName] = {
+              name: p.skillName,
+              currentXp: p.currentXp,
+              level: p.level
+            };
+          });
+          setSkills(updatedSkills);
+        }
+      } catch (error) {
+        console.error('[SkillsSection] Error loading skills progress from server:', error);
+      }
+    };
+    
+    loadSkillsProgress();
+  }, []);
+
+  // Listen for XP updates - using useLayoutEffect for earlier execution
+  useLayoutEffect(() => {
+    const handleSkillXpAdded = (event: Event) => {
+      console.log('[SkillsSection] === skillXpAdded event RECEIVED ===', event);
+      
+      const stored = localStorage.getItem("skillsProgress");
+      console.log('[SkillsSection] localStorage skillsProgress:', stored);
+      
+      if (stored) {
+        try {
+          const newSkills = JSON.parse(stored);
+          console.log('[SkillsSection] Parsed newSkills:', newSkills);
+          
+          // Validate and merge with defaults
+          const defaultSkills: Record<string, { name: string; currentXp: number; level: number }> = {};
+          SKILLS_LIST.forEach((skillName) => {
+            defaultSkills[skillName] = { name: skillName, currentXp: 0, level: 1 };
+          });
+          
+          const merged = { ...defaultSkills, ...newSkills };
+          SKILLS_LIST.forEach((skillName) => {
+            if (!merged[skillName]) {
+              merged[skillName] = defaultSkills[skillName];
+            } else if (!merged[skillName].level || merged[skillName].currentXp === undefined) {
+              merged[skillName] = {
+                ...merged[skillName],
+                level: merged[skillName].level || 1,
+                currentXp: merged[skillName].currentXp ?? 0,
+              };
+            }
+          });
+          
+          console.log('[SkillsSection] Merged final skills:', merged);
+          setSkills(merged);
+          console.log('[SkillsSection] setSkills called ✓');
+        } catch (error) {
+          console.error('[SkillsSection] Error parsing/merging:', error);
+        }
+      } else {
+        console.log('[SkillsSection] No skillsProgress in localStorage');
+      }
+    };
+
+    console.log('[SkillsSection] === useLayoutEffect: Attaching listener ===');
+    window.addEventListener('skillXpAdded', handleSkillXpAdded);
+    
+    return () => {
+      console.log('[SkillsSection] === useLayoutEffect cleanup: Detaching listener ===');
+      window.removeEventListener('skillXpAdded', handleSkillXpAdded);
+    };
+  }, []);
+
+  // Mutations for delete
+  const deleteLearning = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/journal/learnings/${id}`, { method: "DELETE" });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/journal/learnings"] }),
+  });
+
+  const deleteTool = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/journal/tools/${id}`, { method: "DELETE" });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/journal/tools"] }),
+  });
+
+  const deleteThought = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/journal/thoughts/${id}`, { method: "DELETE" });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/journal/thoughts"] }),
+  });
+
+  // Mutations for edit
+  const updateLearning = useMutation({
+    mutationFn: async (data: { id: string; title: string; sentence: string }) => {
+      console.log('[SkillsSection] Updating learning:', data);
+      const response = await fetch(`/api/journal/learnings/${data.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: data.title, sentence: data.sentence }),
+      });
+      console.log('[SkillsSection] Update response status:', response.status);
+      console.log('[SkillsSection] Update response headers:', response.headers);
+      
+      const text = await response.text();
+      console.log('[SkillsSection] Update response text:', text.substring(0, 200));
+      
+      if (!response.ok) {
+        console.error('[SkillsSection] Update error response:', text);
+        throw new Error(`Failed to update learning: ${response.status} - ${text.substring(0, 100)}`);
+      }
+      
+      try {
+        const result = JSON.parse(text);
+        console.log('[SkillsSection] Update success:', result);
+        return result;
+      } catch (e) {
+        console.error('[SkillsSection] Failed to parse JSON response:', e, 'text:', text.substring(0, 200));
+        throw new Error(`Invalid JSON response: ${text.substring(0, 100)}`);
+      }
+    },
+    onSuccess: () => {
+      console.log('[SkillsSection] Update mutation success');
+      queryClient.invalidateQueries({ queryKey: ["/api/journal/learnings"] });
+      setEditingId(null);
+      setEditType(null);
+      setEditTitle("");
+      setEditSentence("");
+    },
+    onError: (error) => {
+      console.error('[SkillsSection] Update mutation error:', error);
+    },
+  });
+
+  const updateTool = useMutation({
+    mutationFn: async (data: { id: string; title: string; sentence: string }) => {
+      console.log('[SkillsSection] Updating tool:', data);
+      const response = await fetch(`/api/journal/tools/${data.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: data.title, sentence: data.sentence }),
+      });
+      console.log('[SkillsSection] Update response status:', response.status);
+      console.log('[SkillsSection] Update response headers:', response.headers);
+      
+      const text = await response.text();
+      console.log('[SkillsSection] Update response text:', text.substring(0, 200));
+      
+      if (!response.ok) {
+        console.error('[SkillsSection] Update error response:', text);
+        throw new Error(`Failed to update tool: ${response.status} - ${text.substring(0, 100)}`);
+      }
+      
+      try {
+        const result = JSON.parse(text);
+        console.log('[SkillsSection] Update success:', result);
+        return result;
+      } catch (e) {
+        console.error('[SkillsSection] Failed to parse JSON response:', e, 'text:', text.substring(0, 200));
+        throw new Error(`Invalid JSON response: ${text.substring(0, 100)}`);
+      }
+    },
+    onSuccess: () => {
+      console.log('[SkillsSection] Update mutation success');
+      queryClient.invalidateQueries({ queryKey: ["/api/journal/tools"] });
+      setEditingId(null);
+      setEditType(null);
+      setEditTitle("");
+      setEditSentence("");
+    },
+    onError: (error) => {
+      console.error('[SkillsSection] Update mutation error:', error);
+    },
+  });
+
+  const updateThought = useMutation({
+    mutationFn: async (data: { id: string; title: string; sentence: string }) => {
+      console.log('[SkillsSection] Updating thought:', data);
+      const response = await fetch(`/api/journal/thoughts/${data.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: data.title, sentence: data.sentence }),
+      });
+      console.log('[SkillsSection] Update response status:', response.status);
+      console.log('[SkillsSection] Update response headers:', response.headers);
+      
+      const text = await response.text();
+      console.log('[SkillsSection] Update response text:', text.substring(0, 200));
+      
+      if (!response.ok) {
+        console.error('[SkillsSection] Update error response:', text);
+        throw new Error(`Failed to update thought: ${response.status} - ${text.substring(0, 100)}`);
+      }
+      
+      try {
+        const result = JSON.parse(text);
+        console.log('[SkillsSection] Update success:', result);
+        return result;
+      } catch (e) {
+        console.error('[SkillsSection] Failed to parse JSON response:', e, 'text:', text.substring(0, 200));
+        throw new Error(`Invalid JSON response: ${text.substring(0, 100)}`);
+      }
+    },
+    onSuccess: () => {
+      console.log('[SkillsSection] Update mutation success');
+      queryClient.invalidateQueries({ queryKey: ["/api/journal/thoughts"] });
+      setEditingId(null);
+      setEditType(null);
+      setEditTitle("");
+      setEditSentence("");
+    },
+    onError: (error) => {
+      console.error('[SkillsSection] Update mutation error:', error);
+    },
+  });
+
+  // Long press handlers
+  const handleActivityLongPressStart = (e: React.TouchEvent | React.MouseEvent, activityId: string) => {
+    console.log('[SkillsSection] Long press started on:', activityId);
+    e.stopPropagation();
+    isLongPress.current = false;
+    longPressTimer.current = setTimeout(() => {
+      console.log('[SkillsSection] Long press completed, setting selectedActivityId:', activityId);
+      isLongPress.current = true;
+      setSelectedActivityId(activityId);
+    }, 500);
+  };
+
+  const handleActivityLongPressEnd = () => {
+    console.log('[SkillsSection] Long press ended');
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const handleDelete = (activityId: string, activityType: "learning" | "tool" | "thought") => {
+    console.log('[SkillsSection] Deleting', activityType, activityId);
+    if (activityType === "learning") {
+      deleteLearning.mutate(activityId);
+    } else if (activityType === "tool") {
+      deleteTool.mutate(activityId);
+    } else if (activityType === "thought") {
+      deleteThought.mutate(activityId);
+    }
+    setSelectedActivityId(null);
+  };
+
+  const handleEditStart = (activity: any) => {
+    setEditingId(activity.id);
+    setEditType(activity.type);
+    setEditTitle(activity.title);
+    setEditSentence(activity.sentence);
+    setSelectedActivityId(null);
+  };
+
+  const handleEditSave = () => {
+    console.log('[SkillsSection] handleEditSave called:', { editingId, editType, editTitle, editSentence });
+    if (!editingId || !editType) {
+      console.error('[SkillsSection] Missing editingId or editType');
+      return;
+    }
+    if (editType === "learning") {
+      updateLearning.mutate({ id: editingId, title: editTitle, sentence: editSentence });
+    } else if (editType === "tool") {
+      updateTool.mutate({ id: editingId, title: editTitle, sentence: editSentence });
+    } else if (editType === "thought") {
+      updateThought.mutate({ id: editingId, title: editTitle, sentence: editSentence });
+    }
+  };
+
+  const handleEditCancel = () => {
+    setEditingId(null);
+    setEditType(null);
+    setEditTitle("");
+    setEditSentence("");
+  };
+
+  const activityFeed = [
+    ...journalLearnings.map((learning) => ({
+      id: learning.id,
+      type: "learning" as const,
+      title: learning.title,
+      sentence: learning.sentence,
+    })),
+    ...journalTools.map((tool) => ({
+      id: tool.id,
+      type: "tool" as const,
+      title: tool.title,
+      sentence: tool.sentence,
+    })),
+    ...journalThoughts.map((thought) => ({
+      id: thought.id,
+      type: "thought" as const,
+      title: thought.title,
+      sentence: thought.sentence,
+    })),
+  ]
+    .filter((activity) => {
+      // Exclude items with XP in title or sentence
+      const titleHasXP = activity.title.toLowerCase().includes("xp");
+      const sentenceHasXP = activity.sentence.toLowerCase().includes("xp");
+      return !(titleHasXP || sentenceHasXP);
+    })
+    .sort((a, b) => {
+      const dateA = a.id ? new Date(a.id).getTime() : 0;
+      const dateB = b.id ? new Date(b.id).getTime() : 0;
+      return dateB - dateA;
+    });
+
+  return (
+    <div className="h-full flex flex-col">
+      <ScrollArea className="flex-1 min-h-0">
+        <div className="space-y-4 pr-4">
+          {/* Top Section: Skills Progress Bars */}
+          <div className="bg-zinc-800/30 rounded border border-zinc-700/50 p-4">
+            <div className="mb-3 pb-2 border-b border-zinc-700/50">
+              <span className="text-xs text-zinc-500 uppercase tracking-wider">Skills Progress</span>
+              <div className="h-px w-8 bg-gradient-to-r from-zinc-600 to-transparent mt-1" />
+            </div>
+            <div className="space-y-4">
+              {SKILLS_LIST.map((skillName) => {
+                const skill = skills[skillName];
+                if (!skill) {
+                  console.warn(`[SkillsSection] Skill ${skillName} not found in skills state`);
+                  return null;
+                }
+                const xpForCurrentLevel = (skill.level - 1) * xpPerLevel;
+                const xpProgressPercent = ((skill.currentXp - xpForCurrentLevel) / xpPerLevel) * 100;
+                
+                return (
+                  <div key={skillName} className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-zinc-100">{skillName}</span>
+                      <span className="text-sm text-zinc-400">
+                        Level <span className="font-bold text-zinc-100">{skill.level}</span>
+                      </span>
+                    </div>
+                    <div className="w-full bg-zinc-700/30 border border-zinc-600/50 rounded h-2 overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-green-600 via-green-500 to-green-400 transition-all duration-300"
+                        style={{ width: `${Math.min(xpProgressPercent, 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Bottom Section: Activity Feed */}
+          <div className="bg-zinc-800/30 rounded border border-zinc-700/50 p-4">
+            <div className="mb-3 pb-2 border-b border-zinc-700/50">
+              <span className="text-xs text-zinc-500 uppercase tracking-wider">{activityFeed.length} activities</span>
+              <div className="h-px w-8 bg-gradient-to-r from-zinc-600 to-transparent mt-1" />
+            </div>
+            {activityFeed.length === 0 ? (
+              <div className="text-sm text-zinc-500 py-4">No activities yet</div>
+            ) : (
+              <div className="space-y-2">
+                {activityFeed.map((activity) => (
+                  <div
+                    key={activity.id}
+                    data-activity-id={activity.id}
+                    data-activity-type={activity.type}
+                    onTouchStart={(e) => {
+                      const id = (e.currentTarget as HTMLElement).dataset.activityId;
+                      if (id) handleActivityLongPressStart(e, id);
+                    }}
+                    onTouchEnd={handleActivityLongPressEnd}
+                    onTouchCancel={handleActivityLongPressEnd}
+                    onMouseDown={(e) => {
+                      const id = (e.currentTarget as HTMLElement).dataset.activityId;
+                      if (id) handleActivityLongPressStart(e, id);
+                    }}
+                    onMouseUp={handleActivityLongPressEnd}
+                    onMouseLeave={handleActivityLongPressEnd}
+                    className="relative group bg-zinc-700/20 rounded p-3 border border-zinc-700/30 hover:border-zinc-600/50 transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-start gap-2">
+                      {activity.type === "learning" ? (
+                        <Lightbulb className="h-4 w-4 text-yellow-500 mt-0.5 flex-shrink-0" />
+                      ) : activity.type === "tool" ? (
+                        <Wrench className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                      ) : (
+                        <BookOpen className="h-4 w-4 text-purple-500 mt-0.5 flex-shrink-0" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-zinc-100 font-medium truncate text-sm">{activity.title}</p>
+                        <p className="text-zinc-400 text-xs line-clamp-2">{activity.sentence}</p>
+                      </div>
+                      {selectedActivityId === activity.id && (
+                        <div className="flex gap-1 flex-shrink-0">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0 hover:bg-zinc-600/50"
+                            onClick={(e) => { 
+                              e.stopPropagation(); 
+                              handleEditStart(activity);
+                            }}
+                            title="Edit"
+                          >
+                            <Pencil className="h-3.5 w-3.5 text-blue-500" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0 hover:bg-zinc-600/50"
+                            onClick={(e) => { 
+                              e.stopPropagation(); 
+                              handleDelete(activity.id, activity.type); 
+                            }}
+                            title="Delete"
+                          >
+                            <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </ScrollArea>
+
+      {/* Edit Modal */}
+      <Dialog open={editingId !== null} onOpenChange={(open) => !open && handleEditCancel()}>
+        <DialogContent className="bg-zinc-900 border-zinc-700">
+          <DialogTitle className="text-zinc-100">
+            Edit {editType === "learning" ? "Learning" : editType === "tool" ? "Tool" : "Thought"}
+          </DialogTitle>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="edit-title" className="text-zinc-300">Title</Label>
+              <Input
+                id="edit-title"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                className="bg-zinc-800 border-zinc-700 text-zinc-100"
+                placeholder="Enter title"
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-sentence" className="text-zinc-300">Description</Label>
+              <Textarea
+                id="edit-sentence"
+                value={editSentence}
+                onChange={(e) => setEditSentence(e.target.value)}
+                className="bg-zinc-800 border-zinc-700 text-zinc-100"
+                placeholder="Enter description"
+                rows={3}
+              />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button
+                variant="ghost"
+                onClick={handleEditCancel}
+                className="text-zinc-300 hover:bg-zinc-800"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleEditSave}
+                disabled={updateLearning.isPending || updateTool.isPending}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                {updateLearning.isPending || updateTool.isPending ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
 
 function QuestDiary() {
   const { isDiaryOpen, closeDiary } = useDiary();
   const queryClient = useQueryClient();
+
+  // Listen for XP updates and refresh skills section via localStorage event
+  useEffect(() => {
+    const handleSkillXpAdded = () => {
+      console.log('[QuestDiary] === skillXpAdded event RECEIVED - refreshing skills ===');
+      
+      // Read updated skills from localStorage
+      const stored = localStorage.getItem("skillsProgress");
+      if (stored) {
+        try {
+          console.log('[QuestDiary] Updated skills from localStorage:', stored);
+        } catch (error) {
+          console.error('[QuestDiary] Error reading updated skills:', error);
+        }
+      }
+    };
+
+    console.log('[QuestDiary] === useEffect: Attaching global skillXpAdded listener ===');
+    window.addEventListener('skillXpAdded', handleSkillXpAdded);
+    
+    return () => {
+      console.log('[QuestDiary] === QuestDiary cleanup: Detaching global listener ===');
+      window.removeEventListener('skillXpAdded', handleSkillXpAdded);
+    };
+  }, []);
 
   const { data: characters = [], isLoading: loadingCharacters } = useQuery<JournalCharacter[]>({
     queryKey: ["/api/journal/characters"],
@@ -2027,6 +2794,11 @@ function QuestDiary() {
 
   const { data: tools = [], isLoading: loadingTools } = useQuery<JournalTool[]>({
     queryKey: ["/api/journal/tools"],
+    enabled: isDiaryOpen,
+  });
+
+  const { data: thoughts = [], isLoading: loadingThoughts } = useQuery<JournalThought[]>({
+    queryKey: ["/api/journal/thoughts"],
     enabled: isDiaryOpen,
   });
 
@@ -2179,6 +2951,9 @@ function QuestDiary() {
                 <Scroll className="h-5 w-5" />
               </TabsTrigger>
               <div className="h-px bg-zinc-700/50 my-1 mx-1" />
+              <TabsTrigger value="skills" className="p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-skills" title="Skills">
+                <BookOpen className="h-5 w-5" />
+              </TabsTrigger>
               <TabsTrigger value="characters" className="p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-characters" title="Characters">
                 <Users className="h-5 w-5" />
               </TabsTrigger>
@@ -2207,7 +2982,11 @@ function QuestDiary() {
               </div>
               
               <TabsContent value="achievements" className="flex-1 min-h-0 mt-0">
-                <AchievementsSection />
+                <AchievementsSection learnings={learnings} tools={tools} thoughts={thoughts} />
+              </TabsContent>
+
+              <TabsContent value="skills" className="flex-1 min-h-0 mt-0">
+                <SkillsSection journalLearnings={learnings} journalTools={tools} journalThoughts={thoughts} />
               </TabsContent>
               
               <TabsContent value="characters" className="flex-1 min-h-0 mt-0">

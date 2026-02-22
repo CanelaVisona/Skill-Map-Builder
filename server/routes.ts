@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema } from "@shared/schema";
+import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertUserSkillsProgressSchema } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import cookieParser from "cookie-parser";
 import crypto from "crypto";
@@ -1154,8 +1154,16 @@ export async function registerRoutes(
   // Journal - Learnings
   app.get("/api/journal/learnings", requireAuth, async (req, res) => {
     try {
+      const skillId = req.query.skillId as string | undefined;
+      console.log("[GET /api/journal/learnings]", { userId: req.userId, skillId });
+      
       const learnings = await storage.getJournalLearnings(req.userId!);
-      res.json(learnings);
+      console.log("[GET /api/journal/learnings] Total learnings:", learnings.length);
+      
+      const filtered = skillId ? learnings.filter(l => l.skillId === skillId) : learnings;
+      console.log("[GET /api/journal/learnings] Filtered learnings:", filtered.length, "for skillId:", skillId);
+      
+      res.json(filtered);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -1163,11 +1171,23 @@ export async function registerRoutes(
 
   app.post("/api/journal/learnings", requireAuth, async (req, res) => {
     try {
+      console.log("[POST /api/journal/learnings]", {
+        userId: req.userId,
+        body: req.body,
+      });
+      
       const data = { ...req.body, userId: req.userId };
+      console.log("[POST /api/journal/learnings] Data to validate:", data);
+      
       const validated = insertJournalLearningSchema.parse(data);
+      console.log("[POST /api/journal/learnings] Validated:", validated);
+      
       const learning = await storage.createJournalLearning(validated);
+      console.log("[POST /api/journal/learnings] Created:", learning);
+      
       res.status(201).json(learning);
     } catch (error: any) {
+      console.error("[POST /api/journal/learnings] Error:", error.message);
       const validationError = fromError(error);
       res.status(400).json({ message: validationError.toString() });
     }
@@ -1182,11 +1202,45 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/journal/learnings/:id", requireAuth, async (req, res) => {
+    try {
+      console.log('[routes] PATCH /api/journal/learnings/:id called');
+      console.log('[routes] req.params.id:', req.params.id);
+      console.log('[routes] req.body:', req.body);
+      
+      const { title, sentence } = req.body;
+      const data: any = {};
+      if (title !== undefined) data.title = title;
+      if (sentence !== undefined) data.sentence = sentence;
+      
+      console.log('[routes] Updating with data:', data);
+      const learning = await storage.updateJournalLearning(req.params.id, data);
+      console.log('[routes] Update result:', learning);
+      
+      if (!learning) {
+        res.status(404).json({ message: "Pensamiento no encontrado" });
+        return;
+      }
+      res.json(learning);
+    } catch (error: any) {
+      console.error('[routes] PATCH error:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Journal - Tools
   app.get("/api/journal/tools", requireAuth, async (req, res) => {
     try {
+      const skillId = req.query.skillId as string | undefined;
+      console.log("[GET /api/journal/tools]", { userId: req.userId, skillId });
+      
       const tools = await storage.getJournalTools(req.userId!);
-      res.json(tools);
+      console.log("[GET /api/journal/tools] Total tools:", tools.length);
+      
+      const filtered = skillId ? tools.filter(t => t.skillId === skillId) : tools;
+      console.log("[GET /api/journal/tools] Filtered tools:", filtered.length, "for skillId:", skillId);
+      
+      res.json(filtered);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -1194,11 +1248,23 @@ export async function registerRoutes(
 
   app.post("/api/journal/tools", requireAuth, async (req, res) => {
     try {
+      console.log("[POST /api/journal/tools]", {
+        userId: req.userId,
+        body: req.body,
+      });
+      
       const data = { ...req.body, userId: req.userId };
+      console.log("[POST /api/journal/tools] Data to validate:", data);
+      
       const validated = insertJournalToolSchema.parse(data);
+      console.log("[POST /api/journal/tools] Validated:", validated);
+      
       const tool = await storage.createJournalTool(validated);
+      console.log("[POST /api/journal/tools] Created:", tool);
+      
       res.status(201).json(tool);
     } catch (error: any) {
+      console.error("[POST /api/journal/tools] Error:", error.message);
       const validationError = fromError(error);
       res.status(400).json({ message: validationError.toString() });
     }
@@ -1208,6 +1274,108 @@ export async function registerRoutes(
     try {
       await storage.deleteJournalTool(req.params.id);
       res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/journal/tools/:id", requireAuth, async (req, res) => {
+    try {
+      console.log('[routes] PATCH /api/journal/tools/:id called');
+      console.log('[routes] req.params.id:', req.params.id);
+      console.log('[routes] req.body:', req.body);
+      
+      const { title, sentence } = req.body;
+      const data: any = {};
+      if (title !== undefined) data.title = title;
+      if (sentence !== undefined) data.sentence = sentence;
+      
+      console.log('[routes] Updating with data:', data);
+      const tool = await storage.updateJournalTool(req.params.id, data);
+      console.log('[routes] Update result:', tool);
+      
+      if (!tool) {
+        res.status(404).json({ message: "Herramienta no encontrada" });
+        return;
+      }
+      res.json(tool);
+    } catch (error: any) {
+      console.error('[routes] PATCH error:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Journal - Thoughts
+  app.get("/api/journal/thoughts", requireAuth, async (req, res) => {
+    try {
+      const skillId = req.query.skillId as string | undefined;
+      console.log("[GET /api/journal/thoughts]", { userId: req.userId, skillId });
+      
+      const thoughts = await storage.getJournalThoughts(req.userId!);
+      console.log("[GET /api/journal/thoughts] Total thoughts:", thoughts.length);
+      
+      const filtered = skillId ? thoughts.filter(t => {
+        const match = t.skillId === skillId;
+        if (!match) {
+          console.log(`[GET /api/journal/thoughts] Filtering: thought.skillId=${t.skillId} vs ${skillId} = ${match}`);
+        }
+        return match;
+      }) : thoughts;
+      
+      console.log("[GET /api/journal/thoughts] Filtered thoughts:", filtered.length);
+      res.json(filtered);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/journal/thoughts", requireAuth, async (req, res) => {
+    try {
+      console.log("[POST /api/journal/thoughts]", {
+        userId: req.userId,
+        body: req.body,
+      });
+      
+      const data = { ...req.body, userId: req.userId };
+      console.log("[POST /api/journal/thoughts] Data to validate:", data);
+      
+      const validated = insertJournalThoughtSchema.parse(data);
+      console.log("[POST /api/journal/thoughts] Validated:", validated);
+      
+      const thought = await storage.createJournalThought(validated);
+      console.log("[POST /api/journal/thoughts] Created:", thought);
+      
+      res.status(201).json(thought);
+    } catch (error: any) {
+      console.error("[POST /api/journal/thoughts] Error:", error.message);
+      const validationError = fromError(error);
+      res.status(400).json({ message: validationError.toString() });
+    }
+  });
+
+  app.delete("/api/journal/thoughts/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteJournalThought(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/journal/thoughts/:id", requireAuth, async (req, res) => {
+    try {
+      const { title, sentence } = req.body;
+      const data: any = {};
+      if (title !== undefined) data.title = title;
+      if (sentence !== undefined) data.sentence = sentence;
+      
+      const thought = await storage.updateJournalThought(req.params.id, data);
+      
+      if (!thought) {
+        res.status(404).json({ message: "Pensamiento no encontrado" });
+        return;
+      }
+      res.json(thought);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -1442,6 +1610,41 @@ export async function registerRoutes(
       res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Skills Progress
+  app.get("/api/skills-progress", requireAuth, async (req, res) => {
+    try {
+      const progress = await storage.getUserSkillsProgress(req.userId!);
+      res.json(progress);
+    } catch (error: any) {
+      // If table doesn't exist, return empty array
+      if (error.message?.includes('relation "user_skills_progress" does not exist') || 
+          error.message?.includes('does not exist')) {
+        console.warn('user_skills_progress table does not exist yet, returning empty array');
+        res.json([]);
+      } else {
+        res.status(500).json({ message: error.message });
+      }
+    }
+  });
+
+  app.post("/api/skills-progress", requireAuth, async (req, res) => {
+    try {
+      const data = { ...req.body, userId: req.userId };
+      const validated = insertUserSkillsProgressSchema.parse(data);
+      const progress = await storage.upsertUserSkillsProgress(validated, req.userId!);
+      res.json(progress);
+    } catch (error: any) {
+      // If table doesn't exist, we still try to provide useful feedback
+      if (error.message?.includes('relation "user_skills_progress" does not exist') || 
+          error.message?.includes('does not exist')) {
+        console.error('user_skills_progress table does not exist. The server will attempt to create it on restart.');
+        res.status(500).json({ message: 'Database table is being initialized. Please try again in a moment.' });
+      } else {
+        res.status(500).json({ message: error.message });
+      }
     }
   });
 

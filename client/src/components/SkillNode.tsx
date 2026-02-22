@@ -1,9 +1,10 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { type Skill, useSkillTree } from "@/lib/skill-context";
+import { type JournalThought, type JournalLearning, type JournalTool } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus, Star, ChevronRight, ChevronLeft, Wrench, Lightbulb } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import {
   Popover,
   PopoverContent,
@@ -122,13 +123,46 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
   // Tools & Learnings form state
   const queryClient = useQueryClient();
-  const [feedbackActiveTab, setFeedbackActiveTab] = useState<"thoughts" | "tools" | "learnings">("thoughts");
+  const [feedbackActiveTab, setFeedbackActiveTab] = useState<"thoughts" | "tools" | "learnings" | "experience">("thoughts");
+  const [thoughtTitle, setThoughtTitle] = useState("");
+  const [thoughtSentence, setThoughtSentence] = useState("");
   const [toolTitle, setToolTitle] = useState("");
   const [toolSentence, setToolSentence] = useState("");
   const [learningTitle, setLearningTitle] = useState("");
   const [learningSentence, setLearningSentence] = useState("");
-  const [showPlusOne, setShowPlusOne] = useState<{ visible: boolean; type: "tools" | "learnings" }>({ visible: false, type: "tools" });
+  const [showPlusOne, setShowPlusOne] = useState<{ visible: boolean; type: "tools" | "learnings" | "thoughts" | "experience" }>({ visible: false, type: "tools" });
+  const [levelUpPopupVisible, setLevelUpPopupVisible] = useState(false);
+  const levelUpPopupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [hasIncompleteSubtasks, setHasIncompleteSubtasks] = useState(false);
+  
+  // Queries for archivements (learnings, tools, thoughts by skillId)
+  const { data: skillLearnings = [] } = useQuery({
+    queryKey: ["/api/journal/learnings", skill.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/journal/learnings?skillId=${skill.id}`);
+      return res.json();
+    },
+  });
+
+  const { data: skillTools = [] } = useQuery({
+    queryKey: ["/api/journal/tools", skill.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/journal/tools?skillId=${skill.id}`);
+      return res.json();
+    },
+  });
+
+  const { data: skillThoughts = [] } = useQuery({
+    queryKey: ["/api/journal/thoughts", skill.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/journal/thoughts?skillId=${skill.id}`);
+      return res.json();
+    },
+  });
+  
+  // Experience tab state for editStep 2
+  const [experienceSelectedSkill, setExperienceSelectedSkill] = useState<string | null>(null);
+  const [showExperienceSkillSelector, setShowExperienceSkillSelector] = useState(false);
   
   // XP state
   const [xpValue, setXpValue] = useState(skill.experiencePoints ? skill.experiencePoints.toString() : "");
@@ -136,6 +170,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [animatedXpValue, setAnimatedXpValue] = useState("");
   const pendingXpValue = useRef<string>("");
   const prevStatus = useRef<string>(skill.status);
+  const wasDialogOpen = useRef(false);
   
   // Add options popup state
   const [isAddOptionsOpen, setIsAddOptionsOpen] = useState(false);
@@ -152,6 +187,19 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     }
     prevStatus.current = skill.status;
   }, [skill.status]);
+
+  // Update ref to track dialog open/close state
+  useEffect(() => {
+    wasDialogOpen.current = isEditDialogOpen;
+  }, [isEditDialogOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (levelUpPopupTimer.current) {
+        clearTimeout(levelUpPopupTimer.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const checkSubtasks = async () => {
@@ -175,46 +223,296 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
   const hasUnlockedWithIncompleteSubtasks = !isLocked && !isMastered && hasIncompleteSubtasks;
 
+  const createThought = useMutation({
+    mutationFn: async (data: { title: string; sentence: string; skillId: string }) => {
+      const res = await fetch("/api/journal/thoughts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        console.error("Failed to create thought:", error);
+        throw new Error(error.message || "Failed to create thought");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/journal/thoughts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/journal/thoughts", skill.id] });
+    },
+    onError: (error) => {
+      console.error("createThought error:", error);
+    },
+  });
+
   const createLearning = useMutation({
-    mutationFn: async (data: { title: string; sentence: string }) => {
+    mutationFn: async (data: { title: string; sentence: string; skillId: string }) => {
       const res = await fetch("/api/journal/learnings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
+      if (!res.ok) {
+        const error = await res.json();
+        console.error("Failed to create learning:", error);
+        throw new Error(error.message || "Failed to create learning");
+      }
       return res.json();
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/journal/learnings"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/journal/learnings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/journal/learnings", skill.id] });
+    },
+    onError: (error) => {
+      console.error("createLearning error:", error);
+    },
   });
 
   const createTool = useMutation({
-    mutationFn: async (data: { title: string; sentence: string }) => {
+    mutationFn: async (data: { title: string; sentence: string; skillId: string }) => {
       const res = await fetch("/api/journal/tools", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
+      if (!res.ok) {
+        const error = await res.json();
+        console.error("Failed to create tool:", error);
+        throw new Error(error.message || "Failed to create tool");
+      }
       return res.json();
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/journal/tools"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/journal/tools"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/journal/tools", skill.id] });
+    },
+    onError: (error) => {
+      console.error("createTool error:", error);
+    },
   });
 
+  const deleteThought = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/journal/thoughts/${id}`, {
+        method: "DELETE",
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/journal/thoughts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/journal/thoughts", skill.id] });
+    },
+  });
+
+  const deleteLearning = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/journal/learnings/${id}`, {
+        method: "DELETE",
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/journal/learnings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/journal/learnings", skill.id] });
+    },
+  });
+
+  const deleteTool = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/journal/tools/${id}`, {
+        method: "DELETE",
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/journal/tools"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/journal/tools", skill.id] });
+    },
+  });
+
+  const handleAddThought = () => {
+    console.log("[handleAddThought] Called", {
+      thoughtTitle: thoughtTitle.trim(),
+      thoughtSentence: thoughtSentence.trim(),
+      skillId: skill.id,
+    });
+    
+    if (!thoughtTitle.trim()) {
+      console.log("[handleAddThought] Title is empty, returning");
+      return;
+    }
+    
+    const payload = { 
+      title: thoughtTitle.trim(), 
+      sentence: thoughtSentence.trim(), 
+      skillId: skill.id 
+    };
+    console.log("[handleAddThought] Calling mutation with:", payload);
+    
+    createThought.mutate(payload);
+    setThoughtTitle("");
+    setThoughtSentence("");
+    setShowPlusOne({ visible: true, type: "thoughts" });
+    setTimeout(() => setShowPlusOne({ visible: false, type: "thoughts" }), 1000);
+  };
+
+  const handleAddLearning = () => {
+    console.log("[handleAddLearning] Called", {
+      learningTitle: learningTitle.trim(),
+      learningSentence: learningSentence.trim(),
+      skillId: skill.id,
+    });
+    
+    if (!learningTitle.trim()) {
+      console.log("[handleAddLearning] Title is empty, returning");
+      return;
+    }
+    
+    const payload = { 
+      title: learningTitle.trim(), 
+      sentence: learningSentence.trim(), 
+      skillId: skill.id 
+    };
+    console.log("[handleAddLearning] Calling mutation with:", payload);
+    
+    createLearning.mutate(payload);
+    setLearningTitle("");
+    setLearningSentence("");
+    setShowPlusOne({ visible: true, type: "learnings" });
+    setTimeout(() => setShowPlusOne({ visible: false, type: "learnings" }), 1000);
+  };
+
   const handleAddTool = () => {
-    if (!toolTitle.trim()) return;
-    createTool.mutate({ title: toolTitle.trim(), sentence: toolSentence.trim() });
+    console.log("[handleAddTool] Called", {
+      toolTitle: toolTitle.trim(),
+      toolSentence: toolSentence.trim(),
+      skillId: skill.id,
+    });
+    
+    if (!toolTitle.trim()) {
+      console.log("[handleAddTool] Title is empty, returning");
+      return;
+    }
+    
+    const payload = { 
+      title: toolTitle.trim(), 
+      sentence: toolSentence.trim(), 
+      skillId: skill.id 
+    };
+    console.log("[handleAddTool] Calling mutation with:", payload);
+    
+    createTool.mutate(payload);
     setToolTitle("");
     setToolSentence("");
     setShowPlusOne({ visible: true, type: "tools" });
     setTimeout(() => setShowPlusOne({ visible: false, type: "tools" }), 1000);
   };
 
-  const handleAddLearning = () => {
-    if (!learningTitle.trim()) return;
-    createLearning.mutate({ title: learningTitle.trim(), sentence: learningSentence.trim() });
-    setLearningTitle("");
-    setLearningSentence("");
-    setShowPlusOne({ visible: true, type: "learnings" });
-    setTimeout(() => setShowPlusOne({ visible: false, type: "learnings" }), 1000);
+  const handleAddExperience = async () => {
+    console.log("[handleAddExperience] Called", {
+      xpValue,
+      experienceSelectedSkill,
+    });
+    
+    if (!experienceSelectedSkill || !xpValue || parseInt(xpValue) <= 0) {
+      console.log("[handleAddExperience] Invalid inputs, returning");
+      return;
+    }
+    
+    const xpToAdd = parseInt(xpValue);
+    console.log("[handleAddExperience] XP to add:", xpToAdd, "Skill:", experienceSelectedSkill);
+    
+    const skillsProgress = localStorage.getItem("skillsProgress");
+    console.log("[handleAddExperience] Current localStorage:", skillsProgress);
+    
+    let skills: any;
+    if (skillsProgress) {
+      try {
+        skills = JSON.parse(skillsProgress);
+      } catch (error) {
+        console.error("[handleAddExperience] Error parsing skillsProgress:", error);
+        return;
+      }
+    } else {
+      // Initialize skills if not in localStorage
+      const SKILLS_LIST = ["Limpieza", "Guitarra", "Lectura", "Growth mindset", "Acertividad"];
+      skills = {};
+      SKILLS_LIST.forEach((skillName) => {
+        skills[skillName] = { name: skillName, currentXp: 0, level: 1 };
+      });
+      console.log("[handleAddExperience] Initialized new skills object:", skills);
+    }
+    
+    if (skills && experienceSelectedSkill && skills[experienceSelectedSkill]) {
+      try {
+        const xpPerLevel = 500;
+        
+        const oldXp = skills[experienceSelectedSkill].currentXp;
+        const oldLevel = skills[experienceSelectedSkill].level;
+        
+        skills[experienceSelectedSkill].currentXp += xpToAdd;
+        
+        // Calculate new level based on total XP (level = floor(XP / 500) + 1)
+        skills[experienceSelectedSkill].level = Math.floor(skills[experienceSelectedSkill].currentXp / xpPerLevel) + 1;
+        const newLevel = skills[experienceSelectedSkill].level;
+        
+        console.log("[handleAddExperience] Updated skill:", {
+          skillName: experienceSelectedSkill,
+          oldXp,
+          newXp: skills[experienceSelectedSkill].currentXp,
+          oldLevel,
+          newLevel
+        });
+
+        if (newLevel > oldLevel) {
+          if (levelUpPopupTimer.current) {
+            clearTimeout(levelUpPopupTimer.current);
+          }
+          setLevelUpPopupVisible(true);
+          levelUpPopupTimer.current = setTimeout(() => {
+            setLevelUpPopupVisible(false);
+          }, 1800);
+        }
+        
+        localStorage.setItem("skillsProgress", JSON.stringify(skills));
+        console.log("[handleAddExperience] Saved to localStorage, dispatching event");
+        
+        // Save to server
+        try {
+          await fetch("/api/skills-progress", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              skillName: experienceSelectedSkill,
+              currentXp: skills[experienceSelectedSkill].currentXp,
+              level: skills[experienceSelectedSkill].level
+            })
+          });
+          console.log("[handleAddExperience] Saved to server successfully");
+        } catch (error) {
+          console.error('[handleAddExperience] Error saving to server:', error);
+        }
+        
+        // Dispatch event to update UI
+        console.log("[handleAddExperience] Dispatching skillXpAdded event");
+        window.dispatchEvent(new CustomEvent('skillXpAdded', { 
+          detail: { skillName: experienceSelectedSkill, currentXp: skills[experienceSelectedSkill].currentXp }
+        }));
+        
+        // Clear inputs and show feedback
+        setXpValue("");
+        setExperienceSelectedSkill(null);
+        setShowPlusOne({ visible: true, type: "experience" });
+        setTimeout(() => setShowPlusOne({ visible: false, type: "experience" }), 1000);
+      } catch (error) {
+        console.error("[handleAddExperience] Error updating skill:", error);
+      }
+    } else if (!skills) {
+      console.error("[handleAddExperience] Failed to initialize or parse skills");
+    } else {
+      console.error("[handleAddExperience] Skill not found in skills object:", experienceSelectedSkill, "Available:", skills ? Object.keys(skills) : "N/A");
+    }
   };
 
   const handleTitleLongPressStart = (e: React.TouchEvent | React.MouseEvent) => {
@@ -322,42 +620,158 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     setIsFeedbackDialogOpen(false);
   };
 
-  const handleEditSave = () => {
+  const handleEditSave = async () => {
+    // Prepare data first
     const combinedDescription = editWhen.trim() 
       ? `${editAction}\n\nWhen: ${editWhen}` 
       : editAction;
     
-    // Store XP value for animation when node becomes mastered
-    if (xpValue && parseInt(xpValue) > 0) {
-      pendingXpValue.current = xpValue;
-    }
-    
     const xpNumber = xpValue ? parseInt(xpValue) : 0;
     
-    if (isSubSkillView) {
-      updateSubSkill(skill.id, { 
-        title: editTitle, 
-        description: combinedDescription,
-        feedback: editFeedback,
-        experiencePoints: xpNumber
-      });
-    } else if (isProject) {
-      updateProjectSkill(activeId, skill.id, { 
-        title: editTitle, 
-        description: combinedDescription,
-        feedback: editFeedback,
-        experiencePoints: xpNumber
-      });
-    } else {
-      updateSkill(activeId, skill.id, { 
-        title: editTitle, 
-        description: combinedDescription,
-        feedback: editFeedback,
-        experiencePoints: xpNumber
-      });
+    // Update localStorage and dispatch event IMMEDIATELY (before mutations)
+    if (experienceSelectedSkill && xpValue && parseInt(xpValue) > 0) {
+      const xpToAdd = parseInt(xpValue);
+      const skillsProgress = localStorage.getItem("skillsProgress");
+      
+      let skills: any;
+      if (skillsProgress) {
+        try {
+          skills = JSON.parse(skillsProgress);
+        } catch (error) {
+          console.error("[handleEditSave] Error parsing skillsProgress:", error);
+          return;
+        }
+      } else {
+        // Initialize skills if not in localStorage
+        const SKILLS_LIST = ["Limpieza", "Guitarra", "Lectura", "Growth mindset", "Acertividad"];
+        skills = {};
+        SKILLS_LIST.forEach((skillName) => {
+          skills[skillName] = { name: skillName, currentXp: 0, level: 1 };
+        });
+        console.log("[handleEditSave] Initialized new skills object:", skills);
+      }
+      
+      if (skills && skills[experienceSelectedSkill]) {
+        try {
+          const xpPerLevel = 500;
+          const oldLevel = skills[experienceSelectedSkill].level;
+          
+          skills[experienceSelectedSkill].currentXp += xpToAdd;
+          
+          // Calculate new level based on total XP (level = floor(XP / 500) + 1)
+          skills[experienceSelectedSkill].level = Math.floor(skills[experienceSelectedSkill].currentXp / xpPerLevel) + 1;
+          const newLevel = skills[experienceSelectedSkill].level;
+
+          if (newLevel > oldLevel) {
+            if (levelUpPopupTimer.current) {
+              clearTimeout(levelUpPopupTimer.current);
+            }
+            setLevelUpPopupVisible(true);
+            levelUpPopupTimer.current = setTimeout(() => {
+              setLevelUpPopupVisible(false);
+            }, 1800);
+          }
+          
+          localStorage.setItem("skillsProgress", JSON.stringify(skills));
+          
+          // Save to server
+          try {
+            await fetch("/api/skills-progress", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                skillName: experienceSelectedSkill,
+                currentXp: skills[experienceSelectedSkill].currentXp,
+                level: skills[experienceSelectedSkill].level
+              })
+            });
+          } catch (error) {
+            console.error('[handleEditSave] Error saving to server:', error);
+          }
+          
+          // Dispatch event immediately to update UI without waiting for mutations
+          window.dispatchEvent(new CustomEvent('skillXpAdded', { 
+            detail: { skillName: experienceSelectedSkill, currentXp: skills[experienceSelectedSkill].currentXp }
+          }));
+        } catch (error) {
+          console.error('[handleEditSave] Error updating localStorage:', error);
+        }
+      }
     }
-    setIsEditDialogOpen(false);
+    
+    // Call mutations immediately (autosave without closing dialog)
+    if (editTitle.trim() || editAction.trim()) {
+      if (isSubSkillView) {
+        updateSubSkill(skill.id, { 
+          title: editTitle, 
+          description: combinedDescription,
+          feedback: editFeedback,
+          experiencePoints: xpNumber
+        });
+      } else if (isProject) {
+        updateProjectSkill(activeId, skill.id, { 
+          title: editTitle, 
+          description: combinedDescription,
+          feedback: editFeedback,
+          experiencePoints: xpNumber
+        });
+      } else {
+        updateSkill(activeId, skill.id, { 
+          title: editTitle, 
+          description: combinedDescription,
+          feedback: editFeedback,
+          experiencePoints: xpNumber
+        });
+      }
+      
+      // Create journal learning entry when XP is added
+      if (experienceSelectedSkill && xpNumber > 0) {
+        // Build the sentence from action and feedback
+        const parts = [];
+        if (editAction.trim()) parts.push(editAction.trim());
+        if (editFeedback.trim()) parts.push(editFeedback.trim());
+        const sentence = parts.length > 0 ? parts.join(" - ") : `${xpNumber} XP agregado`;
+        
+        const learningEntry = {
+          title: `${editTitle || skill.title} (+${xpNumber} XP en ${experienceSelectedSkill})`,
+          sentence: sentence,
+          skillId: skill.id,
+        };
+        createLearning.mutate(learningEntry);
+      }
+    }
   };
+
+  // Autosave effect with debounce for step 1 and 2 fields
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (isEditDialogOpen && (editTitle !== skill.title || editAction !== skill.description?.split("\n\nWhen: ")[0] || editWhen !== skill.description?.split("\n\nWhen: ")[1])) {
+        const combinedDescription = editWhen.trim() 
+          ? `${editAction}\n\nWhen: ${editWhen}` 
+          : editAction;
+        
+        // Autosave without closing dialog
+        if (isSubSkillView) {
+          updateSubSkill(skill.id, { 
+            title: editTitle, 
+            description: combinedDescription
+          });
+        } else if (isProject) {
+          updateProjectSkill(activeId, skill.id, { 
+            title: editTitle, 
+            description: combinedDescription
+          });
+        } else {
+          updateSkill(activeId, skill.id, { 
+            title: editTitle, 
+            description: combinedDescription
+          });
+        }
+      }
+    }, 1500); // Save after user stops typing for 1.5 seconds
+    
+    return () => clearTimeout(timer);
+  }, [editTitle, editAction, editWhen, isEditDialogOpen, skill.id, skill.title, skill.description, isSubSkillView, isProject, activeId, updateSubSkill, updateProjectSkill, updateSkill]);
 
   const handleTouchStart = () => {
     if (isInicioNode) return; // "inicio" nodes are not interactive
@@ -600,16 +1014,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
           </div>
           
           <div className="pt-2 border-t border-border flex flex-wrap justify-end gap-2">
-             <Button 
-               variant="ghost" 
-               size="sm" 
-               className="h-8 p-0 px-2 text-xs bg-muted/50 hover:bg-muted flex items-center gap-1"
-               onClick={handleFeedbackOpen}
-               data-testid="button-feedback-skill"
-             >
-               <span>Explore</span>
-             </Button>
-
              <Popover open={isAddOptionsOpen} onOpenChange={setIsAddOptionsOpen}>
                <PopoverTrigger asChild>
                  <Button 
@@ -723,7 +1127,35 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     </Popover>
 
     <Dialog open={isEditDialogOpen} onOpenChange={(open) => {
-      if (!open) setEditStep(0);
+      if (!open) {
+        // Autosave when closing modal
+        if (editTitle.trim() || editAction.trim()) {
+          const combinedDescription = editWhen.trim() 
+            ? `${editAction}\n\nWhen: ${editWhen}` 
+            : editAction;
+          
+          if (isSubSkillView) {
+            updateSubSkill(skill.id, { 
+              title: editTitle, 
+              description: combinedDescription,
+              feedback: editFeedback
+            });
+          } else if (isProject) {
+            updateProjectSkill(activeId, skill.id, { 
+              title: editTitle, 
+              description: combinedDescription,
+              feedback: editFeedback
+            });
+          } else {
+            updateSkill(activeId, skill.id, { 
+              title: editTitle, 
+              description: combinedDescription,
+              feedback: editFeedback
+            });
+          }
+        }
+        setEditStep(0);
+      }
       setIsEditDialogOpen(open);
     }}>
       <DialogContent className="sm:max-w-[400px] border-0 shadow-2xl">
@@ -829,34 +1261,275 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
             {editStep === 2 && (
               <motion.div
-                key="step-xp"
+                key="step-feedback"
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
                 transition={{ duration: 0.2 }}
                 className="flex-1 flex flex-col"
               >
-                <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3">EXPERIENCIA</Label>
-                <p className="text-sm text-muted-foreground mb-4">¿Cantidad de experiencia que le voy a dar a este nodo?</p>
-                <div className="flex items-center justify-center gap-2 py-4">
-                  <Input
-                    type="number"
-                    value={xpValue}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val.length <= 3) {
-                        setXpValue(val);
-                      }
-                    }}
-                    className="w-24 text-center text-lg font-bold border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
-                    placeholder="0"
-                    max={999}
-                    min={1}
-                    data-testid="input-xp-value"
-                    autoFocus
-                  />
-                  <span className="text-lg font-medium text-muted-foreground">xp</span>
-                </div>
+                <Tabs value={feedbackActiveTab} onValueChange={(v) => setFeedbackActiveTab(v as "thoughts" | "tools" | "learnings" | "experience")} className="w-full flex flex-col flex-1">
+                  <TabsList className="w-full grid grid-cols-4 bg-muted/50">
+                    <TabsTrigger value="thoughts" className="text-xs" data-testid="feedback-tab-thoughts">
+                      <Pencil className="h-3 w-3 mr-1" />
+                      Thoughts
+                    </TabsTrigger>
+                    <TabsTrigger value="learnings" className="text-xs" data-testid="feedback-tab-learnings">
+                      <Lightbulb className="h-3 w-3 mr-1" />
+                      Learnings
+                    </TabsTrigger>
+                    <TabsTrigger value="experience" className="text-xs" data-testid="feedback-tab-experience">
+                      <span className="text-xs font-bold mr-1">XP</span>
+                    </TabsTrigger>
+                    <TabsTrigger value="tools" className="text-xs" data-testid="feedback-tab-tools">
+                      <Wrench className="h-3 w-3 mr-1" />
+                      Tools
+                    </TabsTrigger>
+                  </TabsList>
+                  
+                  <TabsContent value="thoughts" className="mt-4 space-y-3 flex flex-col flex-1">
+                    <div className="flex-1">
+                      <Input
+                        placeholder="TITLE"
+                        value={thoughtTitle}
+                        onChange={(e) => setThoughtTitle(e.target.value.toUpperCase())}
+                        className="uppercase border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
+                        data-testid="input-thought-title"
+                      />
+                      <Textarea
+                        placeholder="Descripción, notas o reflexión..."
+                        value={thoughtSentence}
+                        onChange={(e) => setThoughtSentence(e.target.value)}
+                        rows={3}
+                        className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none mt-2"
+                        data-testid="input-thought-sentence"
+                      />
+                    </div>
+                    <div className="flex justify-end items-center gap-2 pt-2">
+                      <div className="relative">
+                        <AnimatePresence>
+                          {showPlusOne.visible && showPlusOne.type === "thoughts" && (
+                            <motion.span
+                              initial={{ opacity: 1, y: 0 }}
+                              animate={{ opacity: 0, y: -20 }}
+                              exit={{ opacity: 0 }}
+                              transition={{ duration: 0.8 }}
+                              className="absolute -top-6 -right-2 text-foreground font-medium text-sm pointer-events-none"
+                            >
+                              +1
+                            </motion.span>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={handleAddThought}
+                        disabled={!thoughtTitle.trim()}
+                        className="bg-muted/50 hover:bg-muted"
+                        data-testid="button-new-thought"
+                      >
+                        <Plus className="h-3 w-3 mr-1" />
+                        New Thought
+                      </Button>
+                    </div>
+                  </TabsContent>
+                  
+                  <TabsContent value="learnings" className="mt-4 space-y-3 flex flex-col flex-1">
+                    <div className="flex-1">
+                      <Input
+                        placeholder="TITLE"
+                        value={learningTitle}
+                        onChange={(e) => setLearningTitle(e.target.value.toUpperCase())}
+                        className="uppercase border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
+                        data-testid="input-learning-title"
+                      />
+                      <Input
+                        placeholder="Description"
+                        value={learningSentence}
+                        onChange={(e) => setLearningSentence(e.target.value)}
+                        className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted mt-2"
+                        data-testid="input-learning-sentence"
+                      />
+                    </div>
+                    <div className="flex justify-end items-center gap-2 pt-2">
+                      <div className="relative">
+                        <AnimatePresence>
+                          {showPlusOne.visible && showPlusOne.type === "learnings" && (
+                            <motion.span
+                              initial={{ opacity: 1, y: 0 }}
+                              animate={{ opacity: 0, y: -20 }}
+                              exit={{ opacity: 0 }}
+                              transition={{ duration: 0.8 }}
+                              className="absolute -top-6 -right-2 text-foreground font-medium text-sm pointer-events-none"
+                            >
+                              +1
+                            </motion.span>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={handleAddLearning}
+                        disabled={!learningTitle.trim()}
+                        className="bg-muted/50 hover:bg-muted"
+                        data-testid="button-new-learning"
+                      >
+                        <Plus className="h-3 w-3 mr-1" />
+                        New Learning
+                      </Button>
+                    </div>
+                  </TabsContent>
+                  
+                  <TabsContent value="experience" className="mt-4 space-y-3 flex flex-col flex-1">
+                    <div className="flex items-center justify-center gap-2 py-4">
+                      <Input
+                        type="number"
+                        value={xpValue}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val.length <= 3) {
+                            setXpValue(val);
+                          }
+                        }}
+                        className="w-24 text-center text-lg font-bold border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
+                        placeholder="0"
+                        max={999}
+                        min={1}
+                        data-testid="input-xp-value"
+                      />
+                      <span className="text-lg font-medium text-muted-foreground">xp</span>
+                    </div>
+                    <Popover open={showExperienceSkillSelector} onOpenChange={setShowExperienceSkillSelector}>
+                      <PopoverTrigger asChild>
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          className="bg-muted/50 hover:bg-muted w-full"
+                          data-testid="button-select-skill"
+                        >
+                          {experienceSelectedSkill ? `✓ ${experienceSelectedSkill}` : "Seleccionar skill"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-56 p-2 border-0 bg-background/95 backdrop-blur-sm" align="center" side="top">
+                        <div className="max-h-48 overflow-y-auto">
+                          <div className="space-y-1">
+                            {["Limpieza", "Guitarra", "Lectura", "Growth mindset", "Acertividad"].map((skillName) => (
+                              <Button
+                                key={skillName}
+                                variant="ghost"
+                                size="sm"
+                                className={`w-full justify-start h-8 px-3 text-xs font-normal ${
+                                  experienceSelectedSkill === skillName 
+                                    ? "bg-muted text-foreground" 
+                                    : "hover:bg-muted/50"
+                                }`}
+                                onClick={() => {
+                                  setExperienceSelectedSkill(skillName);
+                                  setShowExperienceSkillSelector(false);
+                                }}
+                                data-testid={`button-select-skill-${skillName}`}
+                              >
+                                {skillName}
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                    <div className="flex justify-end items-center gap-2 pt-4">
+                      <div className="relative">
+                        <AnimatePresence>
+                          {showPlusOne.visible && showPlusOne.type === "experience" && (
+                            <motion.span
+                              initial={{ opacity: 1, y: 0 }}
+                              animate={{ opacity: 0, y: -20 }}
+                              exit={{ opacity: 0 }}
+                              transition={{ duration: 0.8 }}
+                              className="absolute -top-6 -right-2 text-foreground font-medium text-sm pointer-events-none"
+                            >
+                              +1
+                            </motion.span>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={handleAddExperience}
+                        disabled={!experienceSelectedSkill || !xpValue || parseInt(xpValue) <= 0}
+                        className="bg-muted/50 hover:bg-muted"
+                        data-testid="button-new-experience"
+                      >
+                        <Plus className="h-3 w-3 mr-1" />
+                        Experience
+                      </Button>
+                    </div>
+                  </TabsContent>
+
+                  <AnimatePresence>
+                    {levelUpPopupVisible && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 32, scale: 0.98 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -36, scale: 1.02 }}
+                        transition={{ duration: 0.35 }}
+                        className="fixed top-24 left-1/2 -translate-x-1/2 z-[250] px-4 py-2 text-2xl font-extrabold text-green-400"
+                      >
+                        Level Up
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                  
+                  <TabsContent value="tools" className="mt-4 space-y-3 flex flex-col flex-1">
+                    <div className="flex-1">
+                      <Input
+                        placeholder="TITLE"
+                        value={toolTitle}
+                        onChange={(e) => setToolTitle(e.target.value.toUpperCase())}
+                        className="uppercase border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
+                        data-testid="input-tool-title"
+                      />
+                      <Input
+                        placeholder="Description"
+                        value={toolSentence}
+                        onChange={(e) => setToolSentence(e.target.value)}
+                        className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted mt-2"
+                        data-testid="input-tool-sentence"
+                      />
+                    </div>
+                    <div className="flex justify-end items-center gap-2 pt-2">
+                      <div className="relative">
+                        <AnimatePresence>
+                          {showPlusOne.visible && showPlusOne.type === "tools" && (
+                            <motion.span
+                              initial={{ opacity: 1, y: 0 }}
+                              animate={{ opacity: 0, y: -20 }}
+                              exit={{ opacity: 0 }}
+                              transition={{ duration: 0.8 }}
+                              className="absolute -top-6 -right-2 text-foreground font-medium text-sm pointer-events-none"
+                            >
+                              +1
+                            </motion.span>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={handleAddTool}
+                        disabled={!toolTitle.trim()}
+                        className="bg-muted/50 hover:bg-muted"
+                        data-testid="button-new-tool"
+                      >
+                        <Plus className="h-3 w-3 mr-1" />
+                        New Tool
+                      </Button>
+                    </div>
+                  </TabsContent>
+                </Tabs>
+                
                 <div className="flex justify-between mt-auto pt-6">
                   <Button 
                     variant="ghost" 
@@ -868,7 +1541,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                     <ChevronLeft className="h-5 w-5" />
                   </Button>
                   <Button 
-                    onClick={handleEditSave}
+                    onClick={() => setIsEditDialogOpen(false)}
                     className="border-0"
                     data-testid="button-save-edit"
                   >

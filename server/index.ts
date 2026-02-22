@@ -2,6 +2,8 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { db } from "./db";
+import { sql } from "drizzle-orm";
 
 const app = express();
 const httpServer = createServer(app);
@@ -60,6 +62,31 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Initialize database table if it doesn't exist
+  try {
+    console.log("Initializing database tables...");
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "user_skills_progress" (
+        "id" varchar PRIMARY KEY NOT NULL,
+        "user_id" varchar NOT NULL,
+        "skill_name" text NOT NULL,
+        "current_xp" integer DEFAULT 0 NOT NULL,
+        "level" integer DEFAULT 1 NOT NULL,
+        "created_at" timestamp DEFAULT now() NOT NULL,
+        "updated_at" timestamp DEFAULT now() NOT NULL,
+        FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE cascade
+      );
+    `);
+    console.log("✓ Database tables initialized");
+  } catch (error: any) {
+    if (error.message?.includes("already exists")) {
+      console.log("✓ Database tables already exist");
+    } else {
+      console.error("⚠ Database initialization warning:", error.message);
+      // Don't fail startup if table already exists
+    }
+  }
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

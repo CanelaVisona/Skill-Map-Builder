@@ -4,3 +4,9 @@ dist
 server/public
 vite.config.ts.*
 *.tar.gz
+nul
+bash.exe.stackdump
+build_success.txt
+build_error.txt
+thoughts_check.json
+error.txt
