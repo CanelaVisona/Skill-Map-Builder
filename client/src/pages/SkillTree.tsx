@@ -1650,7 +1650,7 @@ function ProfileSection() {
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col min-w-0 overflow-hidden">
       {/* Add entry dialog for mission/values/likes/about */}
       <Dialog open={isAdding} onOpenChange={(open) => !open && setIsAdding(false)}>
         <DialogContent className="sm:max-w-md bg-zinc-900 border border-zinc-700">
@@ -1772,12 +1772,12 @@ function ProfileSection() {
         </DialogContent>
       </Dialog>
 
-      <div className="flex border-b border-zinc-700 mb-3">
+      <div className="flex w-full border-b border-zinc-700 mb-3 overflow-x-auto scrollbar-hide">
         {tabs.map(tab => (
           <button
             key={tab.id}
             onClick={() => { setActiveTab(tab.id); setViewingEntry(null); }}
-            className={`px-3 py-1.5 text-xs transition-colors border-b-2 -mb-[1px] ${
+            className={`shrink-0 px-2 py-1.5 text-xs transition-colors border-b-2 -mb-[1px] whitespace-nowrap ${
               activeTab === tab.id 
                 ? "border-zinc-400 text-zinc-200" 
                 : "border-transparent text-zinc-500 hover:text-zinc-400"
