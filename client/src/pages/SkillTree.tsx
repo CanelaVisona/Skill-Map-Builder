@@ -1878,6 +1878,8 @@ interface SkillWithSource extends Skill {
 interface SourceGroup {
   name: string;
   skills: SkillWithSource[];
+  levelSubtitles: Record<string, string>;
+  levelSubtitleDescriptions: Record<string, string>;
 }
 
 function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { learnings?: JournalLearning[]; tools?: JournalTool[]; thoughts?: JournalThought[] }) {
@@ -1887,6 +1889,8 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
   const [selectedSubtaskId, setSelectedSubtaskId] = useState<string | null>(null);
   const [selectedSourceSkills, setSelectedSourceSkills] = useState<Skill[]>([]);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [expandedLevels, setExpandedLevels] = useState<Set<string>>(new Set());
+  const [selectedLevel, setSelectedLevel] = useState<{ level: number; subtitle: string; description: string; groupName: string } | null>(null);
   const [viewingThought, setViewingThought] = useState<JournalThought | null>(null);
   const [viewingLearning, setViewingLearning] = useState<JournalLearning | null>(null);
   const [viewingTool, setViewingTool] = useState<JournalTool | null>(null);
@@ -1937,7 +1941,7 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
       .sort(sortByPosition)
       .map(skill => ({ ...skill, sourceName: area.name, sourceSkills: area.skills }));
     if (allSkillsToShow.length > 0) {
-      sourceGroups.push({ name: area.name, skills: allSkillsToShow });
+      sourceGroups.push({ name: area.name, skills: allSkillsToShow, levelSubtitles: area.levelSubtitles || {}, levelSubtitleDescriptions: area.levelSubtitleDescriptions || {} });
     }
   });
   
@@ -1954,7 +1958,7 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
       .sort(sortByPosition)
       .map(skill => ({ ...skill, sourceName: project.name, sourceSkills: project.skills }));
     if (allSkillsToShow.length > 0) {
-      sourceGroups.push({ name: project.name, skills: allSkillsToShow });
+      sourceGroups.push({ name: project.name, skills: allSkillsToShow, levelSubtitles: project.levelSubtitles || {}, levelSubtitleDescriptions: project.levelSubtitleDescriptions || {} });
     }
   });
   
@@ -1971,7 +1975,7 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
       .sort(sortByPosition)
       .map(skill => ({ ...skill, sourceName: project.name, sourceSkills: project.skills }));
     if (allSkillsToShow.length > 0) {
-      sourceGroups.push({ name: project.name, skills: allSkillsToShow });
+      sourceGroups.push({ name: project.name, skills: allSkillsToShow, levelSubtitles: project.levelSubtitles || {}, levelSubtitleDescriptions: project.levelSubtitleDescriptions || {} });
     }
   });
   
@@ -1992,6 +1996,18 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
     });
   };
 
+  const toggleLevel = (key: string) => {
+    setExpandedLevels(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
   const findNextSkill = (currentSkill: Skill, allSkills: Skill[]): Skill | undefined => {
     const sameLevelSkills = allSkills
       .filter(s => s.level === currentSkill.level && s.y > currentSkill.y)
@@ -2005,6 +2021,7 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
   const handleSelectSkill = async (skill: SkillWithSource) => {
     setSelectedSkillId(skill.id);
     setSelectedSubtaskId(null);
+    setSelectedLevel(null);
     setSelectedSourceSkills(skill.sourceSkills);
     try {
       const response = await fetch(`/api/skills/${skill.id}/subskills`);
@@ -2131,25 +2148,75 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
                   </button>
                   {expandedGroups.has(group.name) && (
                     <div className="ml-3 border-l border-border pl-2 space-y-0.5 flex flex-col">
-                      {group.skills.map((skill) => {
-                        const isCompleted = skill.status === "mastered";
-                        return (
-                          <button
-                            key={skill.id}
-                            onClick={() => handleSelectSkill(skill)}
-                            className={`w-full text-left px-3 py-1.5 rounded-md text-sm transition-colors ${
-                              selectedSkillId === skill.id 
-                                ? "bg-muted text-foreground" 
-                                : isCompleted
-                                  ? "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                                  : "text-yellow-600 dark:text-yellow-500 hover:bg-muted/50 hover:text-yellow-500"
-                            }`}
-                            data-testid={`diary-entry-${skill.id}`}
-                          >
-                            {!isCompleted && "○ "}{skill.title}
-                          </button>
-                        );
-                      })}
+                      {(() => {
+                        // Group skills by level
+                        const skillsByLevel = new Map<number, SkillWithSource[]>();
+                        group.skills.forEach(skill => {
+                          const level = skill.level;
+                          if (!skillsByLevel.has(level)) {
+                            skillsByLevel.set(level, []);
+                          }
+                          skillsByLevel.get(level)!.push(skill);
+                        });
+                        
+                        // Sort levels
+                        const sortedLevels = Array.from(skillsByLevel.keys()).sort((a, b) => a - b);
+                        
+                        return sortedLevels.map(level => {
+                          const levelSkills = skillsByLevel.get(level)!;
+                          const subtitle = group.levelSubtitles[level.toString()] || "";
+                          const description = group.levelSubtitleDescriptions[level.toString()] || "";
+                          const levelKey = `${group.name}-level-${level}`;
+                          const levelLabel = subtitle ? `Nivel ${level}: ${subtitle}` : `Nivel ${level}`;
+                          const isLevelSelected = selectedLevel?.groupName === group.name && selectedLevel?.level === level;
+                          
+                          return (
+                            <div key={levelKey}>
+                              <button
+                                onClick={() => {
+                                  toggleLevel(levelKey);
+                                  setSelectedLevel({ level, subtitle, description, groupName: group.name });
+                                  setSelectedSkillId(null);
+                                  setSelectedSubtaskId(null);
+                                  setSelectedSubtasks([]);
+                                }}
+                                className={`w-full text-left px-3 py-1.5 rounded-md text-xs font-medium transition-colors hover:bg-muted/50 flex items-center justify-between ${expandedLevels.has(levelKey) ? "bg-muted/30 text-foreground" : "text-muted-foreground"}`}
+                              >
+                                <span>{levelLabel}</span>
+                                <span className="text-xs">
+                                  {expandedLevels.has(levelKey) ? "▼" : "▶"} {levelSkills.length}
+                                </span>
+                              </button>
+                              {expandedLevels.has(levelKey) && (
+                                <div className="ml-3 border-l border-border/50 pl-2 space-y-0.5 flex flex-col">
+                                  {levelSkills.map((skill) => {
+                                    const isCompleted = skill.status === "mastered";
+                                    const isManuallyLocked = skill.manualLock === 1;
+                                    return (
+                                      <button
+                                        key={skill.id}
+                                        onClick={() => handleSelectSkill(skill)}
+                                        className={`w-full text-left px-3 py-1.5 rounded-md text-sm transition-colors ${
+                                          selectedSkillId === skill.id 
+                                            ? "bg-muted text-foreground" 
+                                            : isCompleted
+                                              ? "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                                              : isManuallyLocked
+                                                ? "text-muted-foreground/60 hover:bg-muted/50 hover:text-muted-foreground"
+                                                : "text-yellow-600 dark:text-yellow-500 hover:bg-muted/50 hover:text-yellow-500"
+                                        }`}
+                                        data-testid={`diary-entry-${skill.id}`}
+                                      >
+                                        {!isCompleted && "○ "}{skill.title}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        });
+                      })()}
                     </div>
                   )}
                 </div>
@@ -2336,6 +2403,22 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
                     </div>
                   )}
                 </div>
+              )}
+            </div>
+          ) : selectedLevel ? (
+            <div className="space-y-4">
+              <h3 className="font-medium text-foreground">
+                {selectedLevel.subtitle ? `Nivel ${selectedLevel.level}: ${selectedLevel.subtitle}` : `Nivel ${selectedLevel.level}`}
+              </h3>
+              <p className="text-xs text-muted-foreground/60">{selectedLevel.groupName}</p>
+              {selectedLevel.description ? (
+                <p className="text-sm text-amber-500 leading-relaxed whitespace-pre-wrap">
+                  {selectedLevel.description}
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground/50 italic">
+                  Sin descripción
+                </p>
               )}
             </div>
           ) : (

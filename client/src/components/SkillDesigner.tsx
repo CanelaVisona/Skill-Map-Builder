@@ -3,6 +3,7 @@ import { useSkillTree } from "@/lib/skill-context";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -22,6 +23,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
   
   // Subtitle editing state
   const [editingLevelSubtitle, setEditingLevelSubtitle] = useState<string>("");
+  const [editingLevelSubtitleDescription, setEditingLevelSubtitleDescription] = useState<string>("");
   const [editingLevelData, setEditingLevelData] = useState<{ areaId: string | null; projectId: string | null; level: number } | null>(null);
   
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -67,21 +69,23 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
     setIsLockedNode(false);
   };
 
-  const handleEditLevelSubtitle = (level: number, currentSubtitle: string, areaId: string | null, projectId: string | null) => {
+  const handleEditLevelSubtitle = (level: number, currentSubtitle: string, currentDescription: string, areaId: string | null, projectId: string | null) => {
     setEditingLevelSubtitle(currentSubtitle);
+    setEditingLevelSubtitleDescription(currentDescription);
     setEditingLevelData({ level, areaId, projectId });
   };
 
   const handleSaveLevelSubtitle = async () => {
     if (editingLevelData) {
-      // Guardar el subtítulo (vacío o con contenido)
+      // Guardar el subtítulo y descripción (vacío o con contenido)
       if (editingLevelData.areaId) {
-        await updateLevelSubtitle(editingLevelData.areaId, editingLevelData.level, editingLevelSubtitle.trim());
+        await updateLevelSubtitle(editingLevelData.areaId, editingLevelData.level, editingLevelSubtitle.trim(), editingLevelSubtitleDescription.trim());
       } else if (editingLevelData.projectId) {
-        await updateProjectLevelSubtitle(editingLevelData.projectId, editingLevelData.level, editingLevelSubtitle.trim());
+        await updateProjectLevelSubtitle(editingLevelData.projectId, editingLevelData.level, editingLevelSubtitle.trim(), editingLevelSubtitleDescription.trim());
       }
     }
     setEditingLevelSubtitle("");
+    setEditingLevelSubtitleDescription("");
     setEditingLevelData(null);
   };
 
@@ -113,6 +117,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                       {/* Levels in Area */}
                       {levelsToShow.map((level) => {
                         const subtitle = area.levelSubtitles?.[level] || "";
+                        const subtitleDescription = area.levelSubtitleDescriptions?.[level] || "";
                         const isBlocked = level > maxLevel;
                         
                         return (
@@ -123,7 +128,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                               onClick={(e) => {
                                 if (isBlocked) {
                                   e.stopPropagation();
-                                  handleEditLevelSubtitle(level, subtitle, area.id, null);
+                                  handleEditLevelSubtitle(level, subtitle, subtitleDescription, area.id, null);
                                 }
                               }}
                             >
@@ -295,6 +300,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                       <Accordion type="single" collapsible className="w-full pl-4">
                         {levelsToShow.map((level) => {
                           const subtitle = project.levelSubtitles?.[level] || "";
+                          const subtitleDescription = project.levelSubtitleDescriptions?.[level] || "";
                           const isBlocked = level > maxLevel;
                           
                           return (
@@ -305,7 +311,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                 onClick={(e) => {
                                   if (isBlocked) {
                                     e.stopPropagation();
-                                    handleEditLevelSubtitle(level, subtitle, null, project.id);
+                                    handleEditLevelSubtitle(level, subtitle, subtitleDescription, null, project.id);
                                   }
                                 }}
                               >
@@ -387,6 +393,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                       <Accordion type="single" collapsible className="w-full pl-4">
                         {levelsToShow.map((level) => {
                           const subtitle = project.levelSubtitles?.[level] || "";
+                          const subtitleDescription = project.levelSubtitleDescriptions?.[level] || "";
                           const isBlocked = level > maxLevel;
                           
                           return (
@@ -397,7 +404,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                 onClick={(e) => {
                                   if (isBlocked) {
                                     e.stopPropagation();
-                                    handleEditLevelSubtitle(level, subtitle, null, project.id);
+                                    handleEditLevelSubtitle(level, subtitle, subtitleDescription, null, project.id);
                                   }
                                 }}
                               >
@@ -507,12 +514,14 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
               placeholder="Subtítulo del nivel"
               value={editingLevelSubtitle}
               onChange={(e) => setEditingLevelSubtitle(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  handleSaveLevelSubtitle();
-                }
-              }}
               autoFocus
+            />
+            <Textarea
+              placeholder="Descripción del nivel..."
+              value={editingLevelSubtitleDescription}
+              onChange={(e) => setEditingLevelSubtitleDescription(e.target.value)}
+              rows={3}
+              className="resize-none"
             />
           </div>
           <div className="flex justify-end gap-2">

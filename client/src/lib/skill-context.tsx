@@ -31,6 +31,7 @@ export interface Area {
   unlockedLevel: number;
   nextLevelToAssign: number;
   levelSubtitles: Record<string, string>;
+  levelSubtitleDescriptions: Record<string, string>;
   skills: Skill[];
 }
 
@@ -42,6 +43,7 @@ export interface Project {
   unlockedLevel: number;
   nextLevelToAssign: number;
   levelSubtitles: Record<string, string>;
+  levelSubtitleDescriptions: Record<string, string>;
   skills: Skill[];
   questType?: "main" | "side" | "emergent" | "experience";
 }
@@ -105,8 +107,8 @@ interface SkillTreeContextType {
   duplicateSkill: (areaId: string, skill: Skill) => Promise<void>;
   duplicateProjectSkill: (projectId: string, skill: Skill) => Promise<void>;
   duplicateSubSkill: (skill: Skill) => Promise<void>;
-  updateLevelSubtitle: (areaId: string, level: number, subtitle: string) => Promise<void>;
-  updateProjectLevelSubtitle: (projectId: string, level: number, subtitle: string) => Promise<void>;
+  updateLevelSubtitle: (areaId: string, level: number, subtitle: string, description?: string) => Promise<void>;
+  updateProjectLevelSubtitle: (projectId: string, level: number, subtitle: string, description?: string) => Promise<void>;
   toggleFinalNode: (areaId: string, skillId: string) => Promise<void>;
   toggleProjectFinalNode: (projectId: string, skillId: string) => Promise<void>;
   toggleSubSkillFinalNode: (skillId: string) => Promise<void>;
@@ -2707,42 +2709,54 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [subSkills, activeParentSkillId]);
 
-  const updateLevelSubtitle = async (areaId: string, level: number, subtitle: string) => {
+  const updateLevelSubtitle = async (areaId: string, level: number, subtitle: string, description?: string) => {
     const area = areas.find(a => a.id === areaId);
     if (!area) return;
 
     const updatedSubtitles = { ...area.levelSubtitles, [level.toString()]: subtitle };
+    const updatedDescriptions = description !== undefined 
+      ? { ...area.levelSubtitleDescriptions, [level.toString()]: description }
+      : area.levelSubtitleDescriptions;
     
     try {
       await fetch(`/api/areas/${areaId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ levelSubtitles: updatedSubtitles }),
+        body: JSON.stringify({ 
+          levelSubtitles: updatedSubtitles,
+          ...(description !== undefined && { levelSubtitleDescriptions: updatedDescriptions })
+        }),
       });
 
       setAreas(prev => prev.map(a => 
-        a.id === areaId ? { ...a, levelSubtitles: updatedSubtitles } : a
+        a.id === areaId ? { ...a, levelSubtitles: updatedSubtitles, levelSubtitleDescriptions: updatedDescriptions } : a
       ));
     } catch (error) {
       console.error("Error updating level subtitle:", error);
     }
   };
 
-  const updateProjectLevelSubtitle = async (projectId: string, level: number, subtitle: string) => {
+  const updateProjectLevelSubtitle = async (projectId: string, level: number, subtitle: string, description?: string) => {
     const project = projects.find(p => p.id === projectId);
     if (!project) return;
 
     const updatedSubtitles = { ...project.levelSubtitles, [level.toString()]: subtitle };
+    const updatedDescriptions = description !== undefined 
+      ? { ...project.levelSubtitleDescriptions, [level.toString()]: description }
+      : project.levelSubtitleDescriptions;
     
     try {
       await fetch(`/api/projects/${projectId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ levelSubtitles: updatedSubtitles }),
+        body: JSON.stringify({ 
+          levelSubtitles: updatedSubtitles,
+          ...(description !== undefined && { levelSubtitleDescriptions: updatedDescriptions })
+        }),
       });
 
       setProjects(prev => prev.map(p => 
-        p.id === projectId ? { ...p, levelSubtitles: updatedSubtitles } : p
+        p.id === projectId ? { ...p, levelSubtitles: updatedSubtitles, levelSubtitleDescriptions: updatedDescriptions } : p
       ));
     } catch (error) {
       console.error("Error updating project level subtitle:", error);

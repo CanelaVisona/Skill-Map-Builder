@@ -36,6 +36,13 @@
       "when": 1771800000000,
       "tag": "0004_profile_experiences_contributions",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1771900000000,
+      "tag": "0005_add_level_subtitle_descriptions",
+      "breakpoints": true
     }
   ]
 }

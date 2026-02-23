@@ -115,8 +115,11 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [isSubtaskConfirmOpen, setIsSubtaskConfirmOpen] = useState(false);
   const [isFeedbackDialogOpen, setIsFeedbackDialogOpen] = useState(false);
   const levelSubtitles = isProject ? (activeProject?.levelSubtitles || {}) : (activeArea?.levelSubtitles || {});
+  const levelSubtitleDescriptions = isProject ? (activeProject?.levelSubtitleDescriptions || {}) : (activeArea?.levelSubtitleDescriptions || {});
   const currentSubtitle = levelSubtitles[skill.level.toString()] || "";
+  const currentSubtitleDescription = levelSubtitleDescriptions[skill.level.toString()] || "";
   const [editSubtitle, setEditSubtitle] = useState(currentSubtitle);
+  const [editSubtitleDescription, setEditSubtitleDescription] = useState(currentSubtitleDescription);
   const levelLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const titleLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTitleLongPress = useRef(false);
@@ -583,6 +586,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     e.stopPropagation();
     levelLongPressTimer.current = setTimeout(() => {
       setEditSubtitle(currentSubtitle);
+      setEditSubtitleDescription(currentSubtitleDescription);
       setIsSubtitleDialogOpen(true);
     }, 500);
   };
@@ -596,9 +600,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
   const handleSubtitleSave = () => {
     if (isProject) {
-      updateProjectLevelSubtitle(activeId, skill.level, editSubtitle);
+      updateProjectLevelSubtitle(activeId, skill.level, editSubtitle, editSubtitleDescription);
     } else {
-      updateLevelSubtitle(activeId, skill.level, editSubtitle);
+      updateLevelSubtitle(activeId, skill.level, editSubtitle, editSubtitleDescription);
     }
     setIsSubtitleDialogOpen(false);
   };
@@ -795,6 +799,17 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       e.preventDefault();
       e.stopPropagation();
       isLongPress.current = false;
+      return;
+    }
+    // Allow unlocking manually locked nodes by clicking
+    if (skill.manualLock === 1) {
+      if (isSubSkillView) {
+        toggleSubSkillLock(skill.id);
+      } else if (isProject) {
+        toggleProjectLock(activeId, skill.id);
+      } else {
+        toggleLock(activeId, skill.id);
+      }
       return;
     }
     if (isLocked) {
@@ -1069,6 +1084,24 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                      data-testid="button-duplicate"
                    >
                      Duplicar
+                   </Button>
+                   <Button
+                     variant="ghost"
+                     size="sm"
+                     className="h-8 px-2 text-xs bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground"
+                     onClick={() => {
+                       if (isSubSkillView) {
+                         toggleSubSkillLock(skill.id);
+                       } else if (isProject) {
+                         toggleProjectLock(activeId, skill.id);
+                       } else {
+                         toggleLock(activeId, skill.id);
+                       }
+                       setIsOpen(false);
+                     }}
+                     data-testid="button-lock"
+                   >
+                     {skill.manualLock === 1 ? "Desbloquear" : "Bloquear"}
                    </Button>
                  </div>
                </PopoverContent>
@@ -1570,6 +1603,18 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               placeholder="Ej: Fundamentos, Intermedio..."
               className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
               data-testid="input-edit-subtitle"
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="edit-subtitle-description" className="text-xs text-muted-foreground uppercase tracking-wide">Descripción</Label>
+            <Textarea
+              id="edit-subtitle-description"
+              value={editSubtitleDescription}
+              onChange={(e) => setEditSubtitleDescription(e.target.value)}
+              placeholder="Describe este nivel..."
+              rows={3}
+              className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+              data-testid="input-edit-subtitle-description"
             />
           </div>
         </div>

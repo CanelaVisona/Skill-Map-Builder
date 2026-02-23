@@ -237,6 +237,7 @@ export class DbStorage implements IStorage {
       unlockedLevel: area.unlockedLevel,
       nextLevelToAssign: area.nextLevelToAssign,
       levelSubtitles: area.levelSubtitles as Record<string, string>,
+      levelSubtitleDescriptions: area.levelSubtitleDescriptions as Record<string, string>,
       archived: (area.archived ?? 0) as 0 | 1,
     };
     const result = await db.insert(areas).values(insertData).returning();
@@ -252,6 +253,7 @@ export class DbStorage implements IStorage {
     if (area.unlockedLevel !== undefined) updateData.unlockedLevel = area.unlockedLevel;
     if (area.nextLevelToAssign !== undefined) updateData.nextLevelToAssign = area.nextLevelToAssign;
     if (area.levelSubtitles !== undefined) updateData.levelSubtitles = area.levelSubtitles as Record<string, string>;
+    if (area.levelSubtitleDescriptions !== undefined) updateData.levelSubtitleDescriptions = area.levelSubtitleDescriptions as Record<string, string>;
     if (area.archived !== undefined) updateData.archived = area.archived as 0 | 1;
     
     const result = await db.update(areas).set(updateData).where(eq(areas.id, id)).returning();
@@ -478,6 +480,7 @@ export class DbStorage implements IStorage {
       unlockedLevel: project.unlockedLevel,
       nextLevelToAssign: project.nextLevelToAssign,
       levelSubtitles: project.levelSubtitles as Record<string, string>,
+      levelSubtitleDescriptions: project.levelSubtitleDescriptions as Record<string, string>,
       archived: (project.archived ?? 0) as 0 | 1,
       questType: (project.questType ?? "main") as "main" | "side" | "emergent" | "experience",
     };
@@ -493,6 +496,7 @@ export class DbStorage implements IStorage {
     if (project.unlockedLevel !== undefined) updateData.unlockedLevel = project.unlockedLevel;
     if (project.nextLevelToAssign !== undefined) updateData.nextLevelToAssign = project.nextLevelToAssign;
     if (project.levelSubtitles !== undefined) updateData.levelSubtitles = project.levelSubtitles as Record<string, string>;
+    if (project.levelSubtitleDescriptions !== undefined) updateData.levelSubtitleDescriptions = project.levelSubtitleDescriptions as Record<string, string>;
     if (project.archived !== undefined) updateData.archived = project.archived as 0 | 1;
     
     const result = await db.update(projects).set(updateData).where(eq(projects.id, id)).returning();

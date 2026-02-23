@@ -30,6 +30,7 @@ export const areas = pgTable("areas", {
   unlockedLevel: integer("unlocked_level").notNull().default(1),
   nextLevelToAssign: integer("next_level_to_assign").notNull().default(1),
   levelSubtitles: jsonb("level_subtitles").notNull().$type<Record<string, string>>().default({}),
+  levelSubtitleDescriptions: jsonb("level_subtitle_descriptions").notNull().$type<Record<string, string>>().default({}),
   archived: integer("archived").$type<0 | 1>().default(0),
 });
 
@@ -62,6 +63,7 @@ export const projects = pgTable("projects", {
   unlockedLevel: integer("unlocked_level").notNull().default(1),
   nextLevelToAssign: integer("next_level_to_assign").notNull().default(1),
   levelSubtitles: jsonb("level_subtitles").notNull().$type<Record<string, string>>().default({}),
+  levelSubtitleDescriptions: jsonb("level_subtitle_descriptions").notNull().$type<Record<string, string>>().default({}),
   archived: integer("archived").$type<0 | 1>().default(0),
   questType: text("quest_type").$type<"main" | "side" | "emergent" | "experience">().default("main"),
 });
