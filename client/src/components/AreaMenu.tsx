@@ -3,7 +3,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useMenu } from "@/lib/menu-context";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, PanelLeftClose, PanelLeftOpen, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut, Archive, ArchiveRestore, Pencil, Zap, ChevronDown, ChevronRight } from "lucide-react";
+import { Plus, PanelLeftClose, PanelLeftOpen, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut, Archive, ArchiveRestore, Pencil, Zap, ChevronDown, ChevronRight, Mountain, Compass, Scroll } from "lucide-react";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "./ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "./ui/alert-dialog";
@@ -13,7 +13,7 @@ import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
 import { useState, useEffect, useRef } from "react";
 
-type DialogStep = "choose" | "new-area" | "new-project" | "new-sidequest" | "new-emergent";
+type DialogStep = "choose" | "new-area" | "new-project" | "new-sidequest" | "new-emergent" | "new-experience";
 
 const iconKeywords: Record<string, string[]> = {
   Music: ["música", "musica", "guitarra", "guitar", "piano", "canto", "instrumento", "song", "canción"],
@@ -452,7 +452,7 @@ function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete, onArch
 export function AreaMenu() {
   const { 
     areas, activeAreaId, setActiveAreaId, createArea, deleteArea, archiveArea, unarchiveArea, archivedAreas, loadArchivedAreas,
-    mainQuests, sideQuests, emergentQuests, activeProjectId, setActiveProjectId, createProject, createSideQuest, createEmergentQuest, deleteProject, archiveProject, unarchiveProject, archivedMainQuests, archivedSideQuests, archivedEmergentQuests, loadArchivedProjects,
+    mainQuests, sideQuests, emergentQuests, experienceQuests, activeProjectId, setActiveProjectId, createProject, createSideQuest, createEmergentQuest, createExperienceQuest, deleteProject, archiveProject, unarchiveProject, archivedMainQuests, archivedSideQuests, archivedEmergentQuests, archivedExperienceQuests, loadArchivedProjects,
     renameArea, renameProject
   } = useSkillTree();
   const { user, logout } = useAuth();
@@ -468,6 +468,7 @@ export function AreaMenu() {
   const [viewingArchivedArea, setViewingArchivedArea] = useState<string | null>(null);
   const [viewingArchivedProject, setViewingArchivedProject] = useState<string | null>(null);
   const [emergentExpanded, setEmergentExpanded] = useState(true);
+  const [experienceExpanded, setExperienceExpanded] = useState(true);
   
   // Emergent Quest multi-step form state
   const [emergentStep, setEmergentStep] = useState(1);
@@ -565,6 +566,24 @@ export function AreaMenu() {
     }
   };
 
+  const handleCreateExperienceQuest = async () => {
+    if (!itemName.trim() || isSubmitting) return;
+    
+    setIsSubmitting(true);
+    try {
+      await createExperienceQuest(itemName.trim(), itemDescription.trim(), selectedIcon);
+      
+      setIsAddOpen(false);
+      setDialogStep("choose");
+      setItemName("");
+      setItemDescription("");
+      setSelectedIcon("Home");
+      setManualIconSelected(false);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleCreateEmergentQuest = async () => {
     if (!emergentObjective.trim() || !emergentNodeTitle.trim() || isSubmitting) return;
     
@@ -593,7 +612,7 @@ export function AreaMenu() {
     }
   };
 
-  const renderForm = (type: "area" | "project" | "sidequest") => (
+  const renderForm = (type: "area" | "project" | "sidequest" | "experience") => (
     <div className="space-y-4 mt-4">
       <div className="space-y-2">
         <Label>Icono</Label>
@@ -626,7 +645,7 @@ export function AreaMenu() {
           id="item-name" 
           value={itemName}
           onChange={(e) => setItemName(e.target.value)}
-          placeholder={type === "area" ? "ej: Guitarra, Cocina..." : type === "project" ? "ej: Lanzar mi app, Renovar casa..." : "ej: Organizar garage, Leer libro..."}
+          placeholder={type === "area" ? "ej: Guitarra, Cocina..." : type === "project" ? "ej: Lanzar mi app, Renovar casa..." : type === "experience" ? "ej: Aprender React, Dominar Git..." : "ej: Organizar garage, Leer libro..."}
           data-testid="input-item-name"
         />
       </div>
@@ -637,7 +656,7 @@ export function AreaMenu() {
           id="item-description" 
           value={itemDescription}
           onChange={(e) => setItemDescription(e.target.value)}
-          placeholder={type === "area" ? "Describe esta área de desarrollo" : type === "project" ? "Describe este main quest" : "Describe este side quest"}
+          placeholder={type === "area" ? "Describe esta área de desarrollo" : type === "project" ? "Describe este main quest" : type === "experience" ? "Describe este experience quest" : "Describe este side quest"}
           rows={3}
           data-testid="input-item-description"
         />
@@ -658,7 +677,7 @@ export function AreaMenu() {
           Atrás
         </Button>
         <Button 
-          onClick={type === "area" ? handleCreateArea : type === "project" ? handleCreateProject : handleCreateSideQuest}
+          onClick={type === "area" ? handleCreateArea : type === "project" ? handleCreateProject : type === "experience" ? handleCreateExperienceQuest : handleCreateSideQuest}
           disabled={!itemName.trim() || isSubmitting}
           className="flex-1"
           data-testid={`button-create-${type}`}
@@ -835,6 +854,35 @@ export function AreaMenu() {
             ))}
           </div>
         )}
+
+        {experienceQuests.length > 0 && (
+          <div className="mt-2 ml-2">
+            {isOpen && (
+              <button
+                onClick={() => setExperienceExpanded(!experienceExpanded)}
+                className="flex items-center gap-1 px-2 py-1 text-xs text-emerald-500/80 hover:text-emerald-400 transition-colors"
+                data-testid="button-toggle-experience"
+              >
+                {experienceExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                <Mountain size={12} />
+                <span className="font-medium">Experience</span>
+                <span className="text-muted-foreground">({experienceQuests.length})</span>
+              </button>
+            )}
+            {experienceExpanded && experienceQuests.map((project) => (
+              <ProjectItem
+                key={project.id}
+                project={project}
+                isActive={project.id === activeProjectId}
+                isMenuOpen={isOpen}
+                onSelect={() => setActiveProjectId(project.id)}
+                onDelete={() => deleteProject(project.id)}
+                onArchive={() => archiveProject(project.id)}
+                onRename={(name) => renameProject(project.id, name)}
+              />
+            ))}
+          </div>
+        )}
           </div>
 
         <div className={cn("p-2 flex flex-col gap-1", isOpen ? "items-start" : "items-center")}>
@@ -877,7 +925,7 @@ export function AreaMenu() {
                       onClick={() => setDialogStep("new-project")}
                       data-testid="button-new-project"
                     >
-                      <FolderKanban className="h-6 w-6" />
+                      <Compass className="h-6 w-6" />
                       <span>Main Quest</span>
                     </Button>
                     <Button 
@@ -886,7 +934,7 @@ export function AreaMenu() {
                       onClick={() => setDialogStep("new-sidequest")}
                       data-testid="button-new-sidequest"
                     >
-                      <FolderKanban className="h-6 w-6" />
+                      <Scroll className="h-6 w-6" />
                       <span>Side Quest</span>
                     </Button>
                     <Button 
@@ -897,6 +945,15 @@ export function AreaMenu() {
                     >
                       <Zap className="h-6 w-6 text-amber-500" />
                       <span>Emergent Quest</span>
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      className="h-24 flex flex-col gap-2 border-emerald-500/50 hover:border-emerald-500 hover:bg-emerald-500/10"
+                      onClick={() => setDialogStep("new-experience")}
+                      data-testid="button-new-experience"
+                    >
+                      <Mountain className="h-6 w-6 text-emerald-500" />
+                      <span>Experience Quest</span>
                     </Button>
                   </div>
                 </div>
@@ -927,6 +984,18 @@ export function AreaMenu() {
                   <DialogTitle>Nuevo Side Quest</DialogTitle>
                 </DialogHeader>
                 {renderForm("sidequest")}
+              </>
+            )}
+
+            {dialogStep === "new-experience" && (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="text-emerald-400 flex items-center gap-2">
+                    <Mountain className="h-5 w-5" />
+                    Nuevo Experience Quest
+                  </DialogTitle>
+                </DialogHeader>
+                {renderForm("experience")}
               </>
             )}
 
@@ -1409,6 +1478,89 @@ export function AreaMenu() {
                                     <AlertDialogTitle>¿Eliminar "{project.name}"?</AlertDialogTitle>
                                     <AlertDialogDescription>
                                       Esta acción no se puede deshacer. Se eliminará permanentemente este emergent quest y todas sus habilidades.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      onClick={() => deleteProject(project.id)}
+                                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                    >
+                                      Eliminar
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {archivedExperienceQuests.length > 0 && (
+                    <div className="space-y-2">
+                      <h3 className="text-xs font-semibold text-emerald-500/80 uppercase tracking-wider px-1 flex items-center gap-1">
+                        <Mountain size={12} />
+                        Experience Quest
+                      </h3>
+                      {archivedExperienceQuests.map((project) => {
+                        const isViewing = viewingArchivedProject === project.id;
+                        return (
+                          <div 
+                            key={project.id} 
+                            className={cn(
+                              "flex items-center gap-3 p-3 rounded-lg border transition-colors cursor-pointer",
+                              isViewing ? "bg-emerald-500/10 border-emerald-500/30" : "hover:bg-muted/50 border-border"
+                            )}
+                            onClick={() => {
+                              setViewingArchivedProject(isViewing ? null : project.id);
+                              setViewingArchivedArea(null);
+                              if (!isViewing) {
+                                setActiveProjectId(project.id);
+                                setIsArchivedDialogOpen(false);
+                              }
+                            }}
+                            data-testid={`archived-experience-${project.id}`}
+                          >
+                            <Mountain size={20} className="text-emerald-500" />
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium truncate">{project.name}</p>
+                              {project.description && (
+                                <p className="text-sm text-muted-foreground truncate">{project.description}</p>
+                              )}
+                            </div>
+                            <div className="flex gap-1 shrink-0">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  unarchiveProject(project.id);
+                                }}
+                                title="Restaurar"
+                                data-testid={`button-unarchive-experience-${project.id}`}
+                              >
+                                <ArchiveRestore size={16} />
+                              </Button>
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="text-destructive hover:text-destructive"
+                                    title="Eliminar"
+                                    data-testid={`button-delete-archived-experience-${project.id}`}
+                                  >
+                                    <Trash2 size={16} />
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>¿Eliminar "{project.name}"?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      Esta acción no se puede deshacer. Se eliminará permanentemente este experience quest y todas sus habilidades.
                                     </AlertDialogDescription>
                                   </AlertDialogHeader>
                                   <AlertDialogFooter>
