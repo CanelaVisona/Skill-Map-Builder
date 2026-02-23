@@ -3096,24 +3096,17 @@ function QuestDiary() {
               <TabsTrigger value="skills" className="shrink-0 p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-skills" title="Skills">
                 <BookOpen className="h-5 w-5" />
               </TabsTrigger>
-              <TabsTrigger value="characters" className="shrink-0 p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-characters" title="Characters">
-                <Users className="h-5 w-5" />
+              <TabsTrigger value="profile" className="shrink-0 p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-profile" title="Mi Perfil">
+                <User className="h-5 w-5" />
               </TabsTrigger>
-              <TabsTrigger value="places" className="shrink-0 p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-places" title="Places">
-                <MapIcon className="h-5 w-5" />
-              </TabsTrigger>
-              <TabsTrigger value="shadows" className="shrink-0 p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-shadows" title="Shadows">
-                <Skull className="h-5 w-5" />
-              </TabsTrigger>
-              <TabsTrigger value="discovery" className="shrink-0 p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-discovery" title="Discovery">
-                <Globe className="h-5 w-5" />
+              <TabsTrigger value="learnings" className="shrink-0 p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-learnings" title="Learnings">
+                <Lightbulb className="h-5 w-5" />
               </TabsTrigger>
               <TabsTrigger value="tools" className="shrink-0 p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-tools" title="Tools">
                 <Wrench className="h-5 w-5" />
               </TabsTrigger>
-              <div className="h-px bg-zinc-700/50 my-1 mx-1" />
-              <TabsTrigger value="profile" className="shrink-0 p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-profile" title="Mi Perfil">
-                <User className="h-5 w-5" />
+              <TabsTrigger value="shadows" className="shrink-0 p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-shadows" title="Shadows">
+                <Skull className="h-5 w-5" />
               </TabsTrigger>
             </TabsList>
             
@@ -3131,28 +3124,6 @@ function QuestDiary() {
                 <SkillsSection journalLearnings={learnings} journalTools={tools} journalThoughts={thoughts} />
               </TabsContent>
               
-              <TabsContent value="characters" className="flex-1 min-h-0 min-w-0 mt-0">
-                <JournalSection
-                  type="characters"
-                  entries={characters}
-                  isLoading={loadingCharacters}
-                  onAdd={(data) => createCharacter.mutate(data)}
-                  onEdit={(id, data) => updateCharacter.mutate({ id, data })}
-                  onDelete={(id) => deleteCharacter.mutate(id)}
-                />
-              </TabsContent>
-              
-              <TabsContent value="places" className="flex-1 min-h-0 min-w-0 mt-0">
-                <JournalSection
-                  type="places"
-                  entries={places}
-                  isLoading={loadingPlaces}
-                  onAdd={(data) => createPlace.mutate(data)}
-                  onEdit={(id, data) => updatePlace.mutate({ id, data })}
-                  onDelete={(id) => deletePlace.mutate(id)}
-                />
-              </TabsContent>
-              
               <TabsContent value="shadows" className="flex-1 min-h-0 min-w-0 mt-0">
                 <ShadowsSection
                   entries={shadows}
@@ -3164,7 +3135,7 @@ function QuestDiary() {
                 />
               </TabsContent>
               
-              <TabsContent value="discovery" className="flex-1 min-h-0 min-w-0 mt-0">
+              <TabsContent value="learnings" className="flex-1 min-h-0 min-w-0 mt-0">
                 <LearningsSection
                   entries={learnings}
                   isLoading={loadingLearnings}
