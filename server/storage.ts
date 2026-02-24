@@ -1,7 +1,7 @@
 import { eq, and } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db } from "./db";
-import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress } from "@shared/schema";
+import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth } from "@shared/schema";
 
 export interface IStorage {
   // Users
@@ -103,6 +103,7 @@ export interface IStorage {
   createProfileExperience(experience: InsertProfileExperience): Promise<ProfileExperience>;
   updateProfileExperience(id: string, experience: Partial<InsertProfileExperience>): Promise<ProfileExperience | undefined>;
   deleteProfileExperience(id: string): Promise<void>;
+  getProfileExperiencesBySource(userId: string, type: "area" | "project", sourceId: string): Promise<ProfileExperience[]>;
 
   // Profile - Contributions
   getProfileContributions(userId: string): Promise<ProfileContribution[]>;
@@ -110,6 +111,19 @@ export interface IStorage {
   createProfileContribution(contribution: InsertProfileContribution): Promise<ProfileContribution>;
   updateProfileContribution(id: string, contribution: Partial<InsertProfileContribution>): Promise<ProfileContribution | undefined>;
   deleteProfileContribution(id: string): Promise<void>;
+  getProfileContributionsBySource(userId: string, type: "area" | "project", sourceId: string): Promise<ProfileContribution[]>;
+
+  // Source Descriptions
+  getSourceDescriptions(userId: string, type: "area" | "project", sourceId: string): Promise<SourceDescription[]>;
+  createSourceDescription(entry: InsertSourceDescription): Promise<SourceDescription>;
+  updateSourceDescription(id: string, entry: Partial<InsertSourceDescription>): Promise<SourceDescription | undefined>;
+  deleteSourceDescription(id: string): Promise<void>;
+
+  // Source Growth
+  getSourceGrowth(userId: string, type: "area" | "project", sourceId: string): Promise<SourceGrowth[]>;
+  createSourceGrowth(entry: InsertSourceGrowth): Promise<SourceGrowth>;
+  updateSourceGrowth(id: string, entry: Partial<InsertSourceGrowth>): Promise<SourceGrowth | undefined>;
+  deleteSourceGrowth(id: string): Promise<void>;
 
   // Profile - About Entries
   getProfileAboutEntries(userId: string): Promise<ProfileAboutEntry[]>;
@@ -753,6 +767,86 @@ export class DbStorage implements IStorage {
 
   async deleteProfileContribution(id: string): Promise<void> {
     await db.delete(profileContributions).where(eq(profileContributions.id, id));
+  }
+
+  async getProfileExperiencesBySource(userId: string, type: "area" | "project", sourceId: string): Promise<ProfileExperience[]> {
+    if (type === "area") {
+      return await db.select().from(profileExperiences).where(
+        and(eq(profileExperiences.userId, userId), eq(profileExperiences.areaId, sourceId))
+      );
+    } else {
+      return await db.select().from(profileExperiences).where(
+        and(eq(profileExperiences.userId, userId), eq(profileExperiences.projectId, sourceId))
+      );
+    }
+  }
+
+  async getProfileContributionsBySource(userId: string, type: "area" | "project", sourceId: string): Promise<ProfileContribution[]> {
+    if (type === "area") {
+      return await db.select().from(profileContributions).where(
+        and(eq(profileContributions.userId, userId), eq(profileContributions.areaId, sourceId))
+      );
+    } else {
+      return await db.select().from(profileContributions).where(
+        and(eq(profileContributions.userId, userId), eq(profileContributions.projectId, sourceId))
+      );
+    }
+  }
+
+  // Source Descriptions
+  async getSourceDescriptions(userId: string, type: "area" | "project", sourceId: string): Promise<SourceDescription[]> {
+    if (type === "area") {
+      return await db.select().from(sourceDescriptions).where(
+        and(eq(sourceDescriptions.userId, userId), eq(sourceDescriptions.areaId, sourceId))
+      );
+    } else {
+      return await db.select().from(sourceDescriptions).where(
+        and(eq(sourceDescriptions.userId, userId), eq(sourceDescriptions.projectId, sourceId))
+      );
+    }
+  }
+
+  async createSourceDescription(entry: InsertSourceDescription): Promise<SourceDescription> {
+    const id = randomUUID();
+    const result = await db.insert(sourceDescriptions).values({ id, ...entry }).returning();
+    return result[0];
+  }
+
+  async updateSourceDescription(id: string, entry: Partial<InsertSourceDescription>): Promise<SourceDescription | undefined> {
+    const result = await db.update(sourceDescriptions).set(entry).where(eq(sourceDescriptions.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteSourceDescription(id: string): Promise<void> {
+    await db.delete(sourceDescriptions).where(eq(sourceDescriptions.id, id));
+  }
+
+  // Source Growth
+  async getSourceGrowth(userId: string, type: "area" | "project", sourceId: string): Promise<SourceGrowth[]> {
+    if (type === "area") {
+      return await db.select().from(sourceGrowth).where(
+        and(eq(sourceGrowth.userId, userId), eq(sourceGrowth.areaId, sourceId))
+      );
+    } else {
+      return await db.select().from(sourceGrowth).where(
+        and(eq(sourceGrowth.userId, userId), eq(sourceGrowth.projectId, sourceId))
+      );
+    }
+  }
+
+  async createSourceGrowth(entry: InsertSourceGrowth): Promise<SourceGrowth> {
+    const id = randomUUID();
+    const result = await db.insert(sourceGrowth).values({ id, ...entry }).returning();
+    return result[0];
+  }
+
+  async updateSourceGrowth(id: string, entry: Partial<InsertSourceGrowth>): Promise<SourceGrowth | undefined> {
+    const result = await db.update(sourceGrowth).set(entry).where(eq(sourceGrowth.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteSourceGrowth(id: string): Promise<void> {
+    await db.delete(sourceGrowth).where(eq(sourceGrowth.id, id));
   }
 
   // Profile - Missions

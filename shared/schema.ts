@@ -115,11 +115,33 @@ export const profileExperiences = pgTable("profile_experiences", {
   userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   description: text("description").notNull().default(""),
+  areaId: varchar("area_id"),
+  projectId: varchar("project_id"),
 });
 
 export const profileContributions = pgTable("profile_contributions", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+  areaId: varchar("area_id"),
+  projectId: varchar("project_id"),
+});
+
+export const sourceDescriptions = pgTable("source_descriptions", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  areaId: varchar("area_id"),
+  projectId: varchar("project_id"),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+});
+
+export const sourceGrowth = pgTable("source_growth", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  areaId: varchar("area_id"),
+  projectId: varchar("project_id"),
   name: text("name").notNull(),
   description: text("description").notNull().default(""),
 });
@@ -206,6 +228,12 @@ export type InsertProfileExperience = z.infer<typeof insertProfileExperienceSche
 export type ProfileExperience = typeof profileExperiences.$inferSelect;
 export type InsertProfileContribution = z.infer<typeof insertProfileContributionSchema>;
 export type ProfileContribution = typeof profileContributions.$inferSelect;
+export const insertSourceDescriptionSchema = createInsertSchema(sourceDescriptions).omit({ id: true });
+export const insertSourceGrowthSchema = createInsertSchema(sourceGrowth).omit({ id: true });
+export type InsertSourceDescription = z.infer<typeof insertSourceDescriptionSchema>;
+export type SourceDescription = typeof sourceDescriptions.$inferSelect;
+export type InsertSourceGrowth = z.infer<typeof insertSourceGrowthSchema>;
+export type SourceGrowth = typeof sourceGrowth.$inferSelect;
 export const profileMissions = pgTable("profile_missions", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),

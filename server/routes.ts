@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema } from "@shared/schema";
+import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import cookieParser from "cookie-parser";
 import crypto from "crypto";
@@ -1723,6 +1723,134 @@ export async function registerRoutes(
         return;
       }
       await storage.deleteProfileContribution(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get experiences filtered by source (area or project)
+  app.get("/api/profile/experiences/by-source/:type/:sourceId", requireAuth, async (req, res) => {
+    try {
+      const { type, sourceId } = req.params;
+      if (type !== "area" && type !== "project") {
+        res.status(400).json({ message: "Invalid type. Must be 'area' or 'project'" });
+        return;
+      }
+      const experiences = await storage.getProfileExperiencesBySource(req.userId!, type, sourceId);
+      res.json(experiences);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get contributions filtered by source (area or project)
+  app.get("/api/profile/contributions/by-source/:type/:sourceId", requireAuth, async (req, res) => {
+    try {
+      const { type, sourceId } = req.params;
+      if (type !== "area" && type !== "project") {
+        res.status(400).json({ message: "Invalid type. Must be 'area' or 'project'" });
+        return;
+      }
+      const contributions = await storage.getProfileContributionsBySource(req.userId!, type, sourceId);
+      res.json(contributions);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Source Descriptions CRUD
+  app.get("/api/source-descriptions/:type/:sourceId", requireAuth, async (req, res) => {
+    try {
+      const { type, sourceId } = req.params;
+      if (type !== "area" && type !== "project") {
+        res.status(400).json({ message: "Invalid type. Must be 'area' or 'project'" });
+        return;
+      }
+      const descriptions = await storage.getSourceDescriptions(req.userId!, type, sourceId);
+      res.json(descriptions);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/source-descriptions", requireAuth, async (req, res) => {
+    try {
+      const data = { ...req.body, userId: req.userId };
+      const validated = insertSourceDescriptionSchema.parse(data);
+      const description = await storage.createSourceDescription(validated);
+      res.status(201).json(description);
+    } catch (error: any) {
+      const validationError = fromError(error);
+      res.status(400).json({ message: validationError.toString() });
+    }
+  });
+
+  app.patch("/api/source-descriptions/:id", requireAuth, async (req, res) => {
+    try {
+      const updated = await storage.updateSourceDescription(req.params.id, req.body);
+      if (!updated) {
+        res.status(404).json({ message: "Source description not found" });
+        return;
+      }
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/source-descriptions/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteSourceDescription(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Source Growth CRUD
+  app.get("/api/source-growth/:type/:sourceId", requireAuth, async (req, res) => {
+    try {
+      const { type, sourceId } = req.params;
+      if (type !== "area" && type !== "project") {
+        res.status(400).json({ message: "Invalid type. Must be 'area' or 'project'" });
+        return;
+      }
+      const growth = await storage.getSourceGrowth(req.userId!, type, sourceId);
+      res.json(growth);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/source-growth", requireAuth, async (req, res) => {
+    try {
+      const data = { ...req.body, userId: req.userId };
+      const validated = insertSourceGrowthSchema.parse(data);
+      const growth = await storage.createSourceGrowth(validated);
+      res.status(201).json(growth);
+    } catch (error: any) {
+      const validationError = fromError(error);
+      res.status(400).json({ message: validationError.toString() });
+    }
+  });
+
+  app.patch("/api/source-growth/:id", requireAuth, async (req, res) => {
+    try {
+      const updated = await storage.updateSourceGrowth(req.params.id, req.body);
+      if (!updated) {
+        res.status(404).json({ message: "Source growth not found" });
+        return;
+      }
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/source-growth/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteSourceGrowth(req.params.id);
       res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ message: error.message });

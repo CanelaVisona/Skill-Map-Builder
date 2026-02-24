@@ -3,7 +3,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useMenu } from "@/lib/menu-context";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, PanelLeftClose, PanelLeftOpen, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut, Archive, ArchiveRestore, Pencil, Zap, ChevronDown, ChevronRight, Mountain, Compass, Scroll } from "lucide-react";
+import { Plus, PanelLeftClose, PanelLeftOpen, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut, Archive, ArchiveRestore, Pencil, Zap, ChevronDown, ChevronRight, Mountain, Compass, Scroll, Eye } from "lucide-react";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "./ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "./ui/alert-dialog";
@@ -11,7 +11,10 @@ import { Popover, PopoverContent, PopoverAnchor, PopoverTrigger } from "./ui/pop
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
+import { ScrollArea } from "./ui/scroll-area";
 import { useState, useEffect, useRef } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 type DialogStep = "choose" | "new-area" | "new-project" | "new-sidequest" | "new-emergent" | "new-experience";
 
@@ -69,6 +72,346 @@ const extendedIconMap: Record<string, any> = {
   FolderKanban
 };
 
+// Types for source view dialog
+interface SourceEntry {
+  id: string;
+  name: string;
+  description: string;
+}
+
+interface ViewSourceDialogProps {
+  isOpen: boolean;
+  onClose: () => void;
+  sourceName: string;
+  sourceType: "area" | "project";
+  sourceId: string;
+}
+
+function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }: ViewSourceDialogProps) {
+  const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState("description");
+  const [isAdding, setIsAdding] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<SourceEntry | null>(null);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+
+  // Fetch source descriptions
+  const { data: descriptions = [] } = useQuery<SourceEntry[]>({
+    queryKey: [`/api/source-descriptions/${sourceType}/${sourceId}`],
+    queryFn: async () => {
+      const res = await fetch(`/api/source-descriptions/${sourceType}/${sourceId}`);
+      return res.json();
+    },
+    enabled: isOpen,
+  });
+
+  // Fetch experiences for this source
+  const { data: experiences = [] } = useQuery<SourceEntry[]>({
+    queryKey: [`/api/profile/experiences/by-source/${sourceType}/${sourceId}`],
+    queryFn: async () => {
+      const res = await fetch(`/api/profile/experiences/by-source/${sourceType}/${sourceId}`);
+      return res.json();
+    },
+    enabled: isOpen,
+  });
+
+  // Fetch source growth
+  const { data: growth = [] } = useQuery<SourceEntry[]>({
+    queryKey: [`/api/source-growth/${sourceType}/${sourceId}`],
+    queryFn: async () => {
+      const res = await fetch(`/api/source-growth/${sourceType}/${sourceId}`);
+      return res.json();
+    },
+    enabled: isOpen,
+  });
+
+  // Fetch contributions for this source
+  const { data: contributions = [] } = useQuery<SourceEntry[]>({
+    queryKey: [`/api/profile/contributions/by-source/${sourceType}/${sourceId}`],
+    queryFn: async () => {
+      const res = await fetch(`/api/profile/contributions/by-source/${sourceType}/${sourceId}`);
+      return res.json();
+    },
+    enabled: isOpen,
+  });
+
+  // Create mutations
+  const createDescription = useMutation({
+    mutationFn: async (data: { name: string; description: string }) => {
+      const body = sourceType === "area" 
+        ? { ...data, areaId: sourceId } 
+        : { ...data, projectId: sourceId };
+      const res = await fetch("/api/source-descriptions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/source-descriptions/${sourceType}/${sourceId}`] });
+      setIsAdding(false);
+      setName("");
+      setDescription("");
+    },
+  });
+
+  const createGrowth = useMutation({
+    mutationFn: async (data: { name: string; description: string }) => {
+      const body = sourceType === "area" 
+        ? { ...data, areaId: sourceId } 
+        : { ...data, projectId: sourceId };
+      const res = await fetch("/api/source-growth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/source-growth/${sourceType}/${sourceId}`] });
+      setIsAdding(false);
+      setName("");
+      setDescription("");
+    },
+  });
+
+  const deleteDescription = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/source-descriptions/${id}`, { method: "DELETE" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/source-descriptions/${sourceType}/${sourceId}`] });
+    },
+  });
+
+  const deleteGrowth = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/source-growth/${id}`, { method: "DELETE" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/source-growth/${sourceType}/${sourceId}`] });
+    },
+  });
+
+  const updateDescription = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { name: string; description: string } }) => {
+      const res = await fetch(`/api/source-descriptions/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/source-descriptions/${sourceType}/${sourceId}`] });
+      setEditingEntry(null);
+      setName("");
+      setDescription("");
+    },
+  });
+
+  const updateGrowth = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { name: string; description: string } }) => {
+      const res = await fetch(`/api/source-growth/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/source-growth/${sourceType}/${sourceId}`] });
+      setEditingEntry(null);
+      setName("");
+      setDescription("");
+    },
+  });
+
+  const handleAdd = () => {
+    if (!name.trim()) return;
+    if (activeTab === "description") {
+      createDescription.mutate({ name: name.trim(), description: description.trim() });
+    } else if (activeTab === "growth") {
+      createGrowth.mutate({ name: name.trim(), description: description.trim() });
+    }
+  };
+
+  const handleSaveEdit = () => {
+    if (!editingEntry || !name.trim()) return;
+    if (activeTab === "description") {
+      updateDescription.mutate({ id: editingEntry.id, data: { name: name.trim(), description: description.trim() } });
+    } else if (activeTab === "growth") {
+      updateGrowth.mutate({ id: editingEntry.id, data: { name: name.trim(), description: description.trim() } });
+    }
+  };
+
+  const handleStartEdit = (entry: SourceEntry) => {
+    setEditingEntry(entry);
+    setName(entry.name);
+    setDescription(entry.description);
+    setIsAdding(false);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingEntry(null);
+    setName("");
+    setDescription("");
+  };
+
+  const renderEntryList = (entries: SourceEntry[], canEdit: boolean, onDelete?: (id: string) => void, onEdit?: (entry: SourceEntry) => void) => (
+    <div className="space-y-2">
+      {entries.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No hay items aún</p>
+      ) : (
+        entries.map((entry) => (
+          <div key={entry.id} className="p-3 bg-muted/30 rounded-lg group">
+            <div className="flex items-start justify-between">
+              <div className="flex-1 cursor-pointer" onClick={() => canEdit && onEdit && onEdit(entry)}>
+                <h4 className="font-medium text-sm">{entry.name}</h4>
+                {entry.description && (
+                  <p className="text-xs text-muted-foreground mt-1">{entry.description}</p>
+                )}
+              </div>
+              <div className="flex gap-1">
+                {canEdit && onEdit && (
+                  <button
+                    onClick={() => onEdit(entry)}
+                    className="opacity-0 group-hover:opacity-100 p-1 hover:bg-muted rounded transition-all"
+                  >
+                    <Pencil className="h-3 w-3 text-muted-foreground" />
+                  </button>
+                )}
+                {canEdit && onDelete && (
+                  <button
+                    onClick={() => onDelete(entry.id)}
+                    className="opacity-0 group-hover:opacity-100 p-1 hover:bg-destructive/20 rounded transition-all"
+                  >
+                    <Trash2 className="h-3 w-3 text-destructive" />
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  );
+
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{sourceName}</DialogTitle>
+        </DialogHeader>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-2">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="description" className="text-xs">Descripción</TabsTrigger>
+            <TabsTrigger value="experiences" className="text-xs">Experiencias</TabsTrigger>
+            <TabsTrigger value="growth" className="text-xs">Crecimiento</TabsTrigger>
+            <TabsTrigger value="contributions" className="text-xs">Contribución</TabsTrigger>
+          </TabsList>
+          <div className="mt-4 min-h-[200px]">
+            <TabsContent value="description" className="mt-0">
+              <ScrollArea className="h-[250px] pr-4">
+                {renderEntryList(descriptions, true, (id) => deleteDescription.mutate(id), handleStartEdit)}
+              </ScrollArea>
+              {!isAdding && !editingEntry ? (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="mt-3 w-full" 
+                  onClick={() => setIsAdding(true)}
+                >
+                  <Plus className="h-4 w-4 mr-1" /> Agregar
+                </Button>
+              ) : (
+                <div className="mt-3 space-y-2 p-3 bg-muted/30 rounded-lg">
+                  <Input
+                    placeholder="Título"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                  />
+                  <Textarea
+                    placeholder="Descripción (opcional)"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    rows={2}
+                  />
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={editingEntry ? handleSaveEdit : handleAdd}>
+                      {editingEntry ? "Actualizar" : "Guardar"}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => { setIsAdding(false); handleCancelEdit(); }}>
+                      Cancelar
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="experiences" className="mt-0">
+              <ScrollArea className="h-[280px] pr-4">
+                {renderEntryList(experiences, false)}
+              </ScrollArea>
+              <p className="text-xs text-muted-foreground mt-2">
+                Las experiencias se agregan desde el perfil del Journal
+              </p>
+            </TabsContent>
+
+            <TabsContent value="growth" className="mt-0">
+              <ScrollArea className="h-[250px] pr-4">
+                {renderEntryList(growth, true, (id) => deleteGrowth.mutate(id), handleStartEdit)}
+              </ScrollArea>
+              {!isAdding && !editingEntry ? (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="mt-3 w-full" 
+                  onClick={() => setIsAdding(true)}
+                >
+                  <Plus className="h-4 w-4 mr-1" /> Agregar
+                </Button>
+              ) : (
+                <div className="mt-3 space-y-2 p-3 bg-muted/30 rounded-lg">
+                  <Input
+                    placeholder="Título"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                  />
+                  <Textarea
+                    placeholder="Descripción (opcional)"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    rows={2}
+                  />
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={editingEntry ? handleSaveEdit : handleAdd}>
+                      {editingEntry ? "Actualizar" : "Guardar"}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => { setIsAdding(false); handleCancelEdit(); }}>
+                      Cancelar
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="contributions" className="mt-0">
+              <ScrollArea className="h-[280px] pr-4">
+                {renderEntryList(contributions, false)}
+              </ScrollArea>
+              <p className="text-xs text-muted-foreground mt-2">
+                Las contribuciones se agregan desde el perfil del Journal
+              </p>
+            </TabsContent>
+          </div>
+        </Tabs>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 interface AreaItemProps {
   area: { id: string; name: string; icon: string };
   isActive: boolean;
@@ -82,6 +425,7 @@ interface AreaItemProps {
 function AreaItem({ area, isActive, isMenuOpen, onSelect, onDelete, onArchive, onRename }: AreaItemProps) {
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
   const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
+  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [newName, setNewName] = useState(area.name);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPress = useRef(false);
@@ -172,6 +516,17 @@ function AreaItem({ area, isActive, isMenuOpen, onSelect, onDelete, onArchive, o
         className="w-44 p-1.5 rounded-xl border border-border/50 bg-popover/95 backdrop-blur-lg shadow-xl"
       >
         <div className="flex flex-col">
+          <button
+            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-foreground/80 hover:text-foreground hover:bg-muted/60 transition-colors"
+            onClick={() => {
+              setIsViewDialogOpen(true);
+              setIsPopoverOpen(false);
+            }}
+            data-testid={`button-view-area-${area.id}`}
+          >
+            <Eye className="h-4 w-4 text-muted-foreground" />
+            Ver
+          </button>
           <Dialog open={isRenameDialogOpen} onOpenChange={setIsRenameDialogOpen}>
             <DialogTrigger asChild>
               <button
@@ -260,6 +615,13 @@ function AreaItem({ area, isActive, isMenuOpen, onSelect, onDelete, onArchive, o
           </AlertDialog>
         </div>
       </PopoverContent>
+      <ViewSourceDialog
+        isOpen={isViewDialogOpen}
+        onClose={() => setIsViewDialogOpen(false)}
+        sourceName={area.name}
+        sourceType="area"
+        sourceId={area.id}
+      />
     </Popover>
   );
 }
@@ -277,6 +639,7 @@ interface ProjectItemProps {
 function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete, onArchive, onRename }: ProjectItemProps) {
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
   const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
+  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [newName, setNewName] = useState(project.name);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPress = useRef(false);
@@ -357,6 +720,17 @@ function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete, onArch
         className="w-44 p-1.5 rounded-xl border border-border/50 bg-popover/95 backdrop-blur-lg shadow-xl"
       >
         <div className="flex flex-col">
+          <button
+            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-foreground/80 hover:text-foreground hover:bg-muted/60 transition-colors"
+            onClick={() => {
+              setIsViewDialogOpen(true);
+              setIsPopoverOpen(false);
+            }}
+            data-testid={`button-view-project-${project.id}`}
+          >
+            <Eye className="h-4 w-4 text-muted-foreground" />
+            Ver
+          </button>
           <Dialog open={isRenameDialogOpen} onOpenChange={setIsRenameDialogOpen}>
             <DialogTrigger asChild>
               <button
@@ -445,6 +819,13 @@ function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete, onArch
           </AlertDialog>
         </div>
       </PopoverContent>
+      <ViewSourceDialog
+        isOpen={isViewDialogOpen}
+        onClose={() => setIsViewDialogOpen(false)}
+        sourceName={project.name}
+        sourceType="project"
+        sourceId={project.id}
+      />
     </Popover>
   );
 }

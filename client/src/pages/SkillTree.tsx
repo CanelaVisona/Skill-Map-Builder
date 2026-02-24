@@ -19,6 +19,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { JournalCharacter, JournalPlace, JournalShadow, JournalLearning, JournalTool, JournalThought } from "@shared/schema";
 import { OnboardingGuide, HelpButton, useOnboarding } from "@/components/OnboardingGuide";
 import { useAuth } from "@/lib/auth-context";
@@ -1108,6 +1109,8 @@ interface ProfileEntry {
 
 function ProfileSection() {
   const queryClient = useQueryClient();
+  const { areas, mainQuests, sideQuests } = useSkillTree();
+  const allProjects = [...mainQuests, ...sideQuests];
   const [profileMission, setProfileMission] = useState("");
   const [profileAbout, setProfileAbout] = useState("");
   const [activeTab, setActiveTab] = useState("mission");
@@ -1123,6 +1126,10 @@ function ProfileSection() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [extraInfo, setExtraInfo] = useState("");
+  
+  // For area/project selection in experiences and contributions
+  const [selectedSourceType, setSelectedSourceType] = useState<"area" | "project" | null>(null);
+  const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
   
   const longPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1385,7 +1392,7 @@ function ProfileSection() {
   });
 
   const createExperience = useMutation({
-    mutationFn: async (data: { name: string; description: string }) => {
+    mutationFn: async (data: { name: string; description: string; areaId?: string | null; projectId?: string | null }) => {
       const res = await fetch("/api/profile/experiences", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1399,9 +1406,15 @@ function ProfileSection() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/profile/experiences"] });
+      // Also invalidate by-source queries for ViewSourceDialog
+      queryClient.invalidateQueries({ predicate: (query) => 
+        (query.queryKey[0] as string)?.startsWith?.("/api/profile/experiences/by-source")
+      });
       setIsAdding(false);
       setName("");
       setDescription("");
+      setSelectedSourceType(null);
+      setSelectedSourceId(null);
     },
     onError: (error: Error) => {
       console.error("Error creating experience:", error.message);
@@ -1410,7 +1423,7 @@ function ProfileSection() {
   });
 
   const updateExperience = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: { name?: string; description?: string } }) => {
+    mutationFn: async ({ id, data }: { id: string; data: { name?: string; description?: string; areaId?: string | null; projectId?: string | null } }) => {
       const res = await fetch(`/api/profile/experiences/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -1420,6 +1433,10 @@ function ProfileSection() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/profile/experiences"] });
+      // Also invalidate by-source queries for ViewSourceDialog
+      queryClient.invalidateQueries({ predicate: (query) => 
+        (query.queryKey[0] as string)?.startsWith?.("/api/profile/experiences/by-source")
+      });
       setSelectedEntry(null);
       setIsEditMode(false);
     },
@@ -1431,13 +1448,17 @@ function ProfileSection() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/profile/experiences"] });
+      // Also invalidate by-source queries for ViewSourceDialog
+      queryClient.invalidateQueries({ predicate: (query) => 
+        (query.queryKey[0] as string)?.startsWith?.("/api/profile/experiences/by-source")
+      });
       setSelectedEntry(null);
       setShowDeleteConfirm(false);
     },
   });
 
   const createContribution = useMutation({
-    mutationFn: async (data: { name: string; description: string }) => {
+    mutationFn: async (data: { name: string; description: string; areaId?: string | null; projectId?: string | null }) => {
       const res = await fetch("/api/profile/contributions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1447,14 +1468,20 @@ function ProfileSection() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/profile/contributions"] });
+      // Also invalidate by-source queries for ViewSourceDialog
+      queryClient.invalidateQueries({ predicate: (query) => 
+        (query.queryKey[0] as string)?.startsWith?.("/api/profile/contributions/by-source")
+      });
       setIsAdding(false);
       setName("");
       setDescription("");
+      setSelectedSourceType(null);
+      setSelectedSourceId(null);
     },
   });
 
   const updateContribution = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: { name?: string; description?: string } }) => {
+    mutationFn: async ({ id, data }: { id: string; data: { name?: string; description?: string; areaId?: string | null; projectId?: string | null } }) => {
       const res = await fetch(`/api/profile/contributions/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -1464,6 +1491,10 @@ function ProfileSection() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/profile/contributions"] });
+      // Also invalidate by-source queries for ViewSourceDialog
+      queryClient.invalidateQueries({ predicate: (query) => 
+        (query.queryKey[0] as string)?.startsWith?.("/api/profile/contributions/by-source")
+      });
       setSelectedEntry(null);
       setIsEditMode(false);
     },
@@ -1475,6 +1506,10 @@ function ProfileSection() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/profile/contributions"] });
+      // Also invalidate by-source queries for ViewSourceDialog
+      queryClient.invalidateQueries({ predicate: (query) => 
+        (query.queryKey[0] as string)?.startsWith?.("/api/profile/contributions/by-source")
+      });
       setSelectedEntry(null);
       setShowDeleteConfirm(false);
     },
@@ -1508,9 +1543,19 @@ function ProfileSection() {
     } else if (activeTab === "about") {
       createAboutEntry.mutate({ name: name.trim(), description: description.trim() });
     } else if (activeTab === "experiences") {
-      createExperience.mutate({ name: name.trim(), description: description.trim() });
+      createExperience.mutate({ 
+        name: name.trim(), 
+        description: description.trim(),
+        areaId: selectedSourceType === "area" ? selectedSourceId : null,
+        projectId: selectedSourceType === "project" ? selectedSourceId : null,
+      });
     } else if (activeTab === "contributions") {
-      createContribution.mutate({ name: name.trim(), description: description.trim() });
+      createContribution.mutate({ 
+        name: name.trim(), 
+        description: description.trim(),
+        areaId: selectedSourceType === "area" ? selectedSourceId : null,
+        projectId: selectedSourceType === "project" ? selectedSourceId : null,
+      });
     }
   };
 
@@ -1525,9 +1570,19 @@ function ProfileSection() {
     } else if (activeTab === "about") {
       updateAboutEntry.mutate({ id: selectedEntry.id, data: { name: name.trim(), description: description.trim() } });
     } else if (activeTab === "experiences") {
-      updateExperience.mutate({ id: selectedEntry.id, data: { name: name.trim(), description: description.trim() } });
+      updateExperience.mutate({ id: selectedEntry.id, data: { 
+        name: name.trim(), 
+        description: description.trim(),
+        areaId: selectedSourceType === "area" ? selectedSourceId : null,
+        projectId: selectedSourceType === "project" ? selectedSourceId : null,
+      } });
     } else if (activeTab === "contributions") {
-      updateContribution.mutate({ id: selectedEntry.id, data: { name: name.trim(), description: description.trim() } });
+      updateContribution.mutate({ id: selectedEntry.id, data: { 
+        name: name.trim(), 
+        description: description.trim(),
+        areaId: selectedSourceType === "area" ? selectedSourceId : null,
+        projectId: selectedSourceType === "project" ? selectedSourceId : null,
+      } });
     }
   };
 
@@ -1576,6 +1631,8 @@ function ProfileSection() {
     setName("");
     setDescription("");
     setExtraInfo("");
+    setSelectedSourceType(null);
+    setSelectedSourceId(null);
   };
 
   const handleTextLongPressStart = () => {
@@ -1611,6 +1668,18 @@ function ProfileSection() {
       setSelectedEntry(viewingEntry);
       setName(viewingEntry.name);
       setDescription(viewingEntry.description);
+      // Initialize source type and id for experiences/contributions
+      const entry = viewingEntry as any;
+      if (entry.areaId) {
+        setSelectedSourceType("area");
+        setSelectedSourceId(entry.areaId);
+      } else if (entry.projectId) {
+        setSelectedSourceType("project");
+        setSelectedSourceId(entry.projectId);
+      } else {
+        setSelectedSourceType(null);
+        setSelectedSourceId(null);
+      }
     }, 500);
   };
 
@@ -1678,6 +1747,51 @@ function ProfileSection() {
               className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 resize-none"
               data-testid={`input-profile-${activeTab}-description`}
             />
+            {(activeTab === "experiences" || activeTab === "contributions") && (
+              <div className="space-y-2">
+                <Label className="text-xs text-zinc-400">Área o Quest (opcional)</Label>
+                <Select
+                  value={selectedSourceType && selectedSourceId ? `${selectedSourceType}:${selectedSourceId}` : "none"}
+                  onValueChange={(value) => {
+                    if (value === "none") {
+                      setSelectedSourceType(null);
+                      setSelectedSourceId(null);
+                    } else {
+                      const [type, id] = value.split(":");
+                      setSelectedSourceType(type as "area" | "project");
+                      setSelectedSourceId(id);
+                    }
+                  }}
+                >
+                  <SelectTrigger className="bg-zinc-800 border-zinc-700 text-zinc-200">
+                    <SelectValue placeholder="Sin asignar" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-zinc-800 border-zinc-700 max-h-60 overflow-y-auto">
+                    <SelectItem value="none" className="text-zinc-400">Sin asignar</SelectItem>
+                    {areas.length > 0 && (
+                      <SelectGroup>
+                        <SelectLabel className="text-zinc-500">Áreas</SelectLabel>
+                        {areas.map((area) => (
+                          <SelectItem key={area.id} value={`area:${area.id}`} className="text-zinc-200">
+                            {area.name}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    )}
+                    {allProjects.length > 0 && (
+                      <SelectGroup>
+                        <SelectLabel className="text-zinc-500">Quests</SelectLabel>
+                        {allProjects.map((project) => (
+                          <SelectItem key={project.id} value={`project:${project.id}`} className="text-zinc-200">
+                            {project.name}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="flex gap-2 pt-2">
               <Button size="sm" onClick={handleAddNew} className="bg-zinc-700 hover:bg-zinc-600 text-zinc-200">
                 Agregar
@@ -1744,6 +1858,51 @@ function ProfileSection() {
                   rows={3}
                   className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 resize-none"
                 />
+                {(activeTab === "experiences" || activeTab === "contributions") && (
+                  <div className="space-y-2">
+                    <Label className="text-xs text-zinc-400">Área o Quest (opcional)</Label>
+                    <Select
+                      value={selectedSourceType && selectedSourceId ? `${selectedSourceType}:${selectedSourceId}` : "none"}
+                      onValueChange={(value) => {
+                        if (value === "none") {
+                          setSelectedSourceType(null);
+                          setSelectedSourceId(null);
+                        } else {
+                          const [type, id] = value.split(":");
+                          setSelectedSourceType(type as "area" | "project");
+                          setSelectedSourceId(id);
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="bg-zinc-800 border-zinc-700 text-zinc-200">
+                        <SelectValue placeholder="Sin asignar" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-zinc-800 border-zinc-700 max-h-60 overflow-y-auto">
+                        <SelectItem value="none" className="text-zinc-400">Sin asignar</SelectItem>
+                        {areas.length > 0 && (
+                          <SelectGroup>
+                            <SelectLabel className="text-zinc-500">Áreas</SelectLabel>
+                            {areas.map((area) => (
+                              <SelectItem key={area.id} value={`area:${area.id}`} className="text-zinc-200">
+                                {area.name}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        )}
+                        {allProjects.length > 0 && (
+                          <SelectGroup>
+                            <SelectLabel className="text-zinc-500">Quests</SelectLabel>
+                            {allProjects.map((project) => (
+                              <SelectItem key={project.id} value={`project:${project.id}`} className="text-zinc-200">
+                                {project.name}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <div className="flex gap-2">
                   <Button size="sm" onClick={handleSaveEdit} className="bg-zinc-700 hover:bg-zinc-600 text-zinc-200">
                     Guardar
