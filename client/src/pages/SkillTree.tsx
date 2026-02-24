@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
-import { SkillTreeProvider, useSkillTree, type Skill } from "@/lib/skill-context";
+import { SkillTreeProvider, useSkillTree, type Skill, type GlobalSkill } from "@/lib/skill-context";
 import { MenuProvider, useMenu } from "@/lib/menu-context";
 import { AreaMenu } from "@/components/AreaMenu";
 import { SkillNode } from "@/components/SkillNode";
 import { SkillConnection } from "@/components/SkillConnection";
 import { SkillDesigner } from "@/components/SkillDesigner";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe } from "lucide-react";
+import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -15,6 +15,7 @@ import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -2592,44 +2593,197 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
   );
 }
 
-const SKILLS_LIST = ["Limpieza", "Guitarra", "Lectura", "Growth mindset", "Acertividad"];
+const SKILLS_LIST = ["Limpieza", "Guitarra", "Lectura", "Growth mindset", "Comunicación"];
 const xpPerLevel = 500;
 
 function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { journalLearnings: JournalLearning[]; journalTools: JournalTool[]; journalThoughts: JournalThought[] }) {
   const queryClient = useQueryClient();
+  const { globalSkills, globalSkillsLoading, refetchGlobalSkills, deleteGlobalSkill, areas, mainQuests, sideQuests, emergentQuests, experienceQuests } = useSkillTree();
   
-  const [skills, setSkills] = useState<Record<string, { name: string; currentXp: number; level: number }>>(() => {
-    const defaultSkills: Record<string, { name: string; currentXp: number; level: number }> = {};
-    SKILLS_LIST.forEach((skillName) => {
-      defaultSkills[skillName] = { name: skillName, currentXp: 0, level: 1 };
-    });
-
-    const stored = localStorage.getItem("skillsProgress");
+  // Legacy skills from localStorage (the original hardcoded ones)
+  const [legacySkills, setLegacySkills] = useState<Record<string, { name: string; currentXp: number; level: number }>>({});
+  
+  // State for legacy skill area/quest association dialog
+  const [legacySkillDialogOpen, setLegacySkillDialogOpen] = useState(false);
+  const [selectedLegacySkill, setSelectedLegacySkill] = useState<string | null>(null);
+  const [selectedSourceType, setSelectedSourceType] = useState<"area" | "project" | null>(null);
+  const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
+  const [legacySkillAssociations, setLegacySkillAssociations] = useState<Record<string, { type: "area" | "project"; id: string }>>({});
+  const [pressingSkill, setPressingSkill] = useState<string | null>(null);
+  const legacyLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const legacyIsLongPress = useRef(false);
+  
+  // Load legacy skill associations from localStorage
+  useEffect(() => {
+    const stored = localStorage.getItem("legacySkillAssociations");
+    console.log('[SkillsSection] Loading legacySkillAssociations from localStorage:', stored);
     if (stored) {
       try {
-        const parsedSkills = JSON.parse(stored);
-        // Merge with defaults to ensure all skills exist
-        const merged = { ...defaultSkills, ...parsedSkills };
-        // Ensure all skills have required properties
-        SKILLS_LIST.forEach((skillName) => {
-          if (!merged[skillName]) {
-            merged[skillName] = defaultSkills[skillName];
-          } else if (!merged[skillName].level || !merged[skillName].currentXp) {
-            merged[skillName] = {
-              ...merged[skillName],
-              level: merged[skillName].level || 1,
-              currentXp: merged[skillName].currentXp || 0,
-            };
-          }
-        });
-        return merged;
+        const parsed = JSON.parse(stored);
+        console.log('[SkillsSection] Parsed legacySkillAssociations:', parsed);
+        setLegacySkillAssociations(parsed);
       } catch (e) {
-        console.error('[SkillsSection] Error parsing localStorage:', e);
-        return defaultSkills;
+        console.error("Error parsing legacy skill associations:", e);
       }
     }
-    return defaultSkills;
-  });
+  }, []);
+  
+  // All quests combined
+  const allProjects = [...mainQuests, ...sideQuests, ...emergentQuests, ...experienceQuests];
+  
+  // Handlers for legacy skill long-press
+  const handleLegacySkillPointerDown = (e: React.PointerEvent, skillName: string) => {
+    console.log('[LegacySkill] PointerDown:', skillName, e.pointerType);
+    setPressingSkill(skillName);
+    legacyIsLongPress.current = false;
+    
+    // Clear any existing timer
+    if (legacyLongPressTimer.current) {
+      clearTimeout(legacyLongPressTimer.current);
+    }
+    
+    legacyLongPressTimer.current = setTimeout(() => {
+      console.log('[LegacySkill] Long press TRIGGERED:', skillName);
+      legacyIsLongPress.current = true;
+      setPressingSkill(null);
+      setSelectedLegacySkill(skillName);
+      // Pre-select current association if exists
+      const existing = legacySkillAssociations[skillName];
+      if (existing) {
+        setSelectedSourceType(existing.type);
+        setSelectedSourceId(existing.id);
+      } else {
+        setSelectedSourceType(null);
+        setSelectedSourceId(null);
+      }
+      setLegacySkillDialogOpen(true);
+    }, 400);
+  };
+  
+  const handleLegacySkillPointerUp = () => {
+    console.log('[LegacySkill] PointerUp');
+    setPressingSkill(null);
+    if (legacyLongPressTimer.current) {
+      clearTimeout(legacyLongPressTimer.current);
+      legacyLongPressTimer.current = null;
+    }
+  };
+  
+  const handleLegacySkillPointerCancel = () => {
+    console.log('[LegacySkill] PointerCancel');
+    setPressingSkill(null);
+    if (legacyLongPressTimer.current) {
+      clearTimeout(legacyLongPressTimer.current);
+      legacyLongPressTimer.current = null;
+    }
+  };
+  
+  const handleSaveAssociation = () => {
+    if (selectedLegacySkill && selectedSourceType && selectedSourceId) {
+      const newAssociations = {
+        ...legacySkillAssociations,
+        [selectedLegacySkill]: { type: selectedSourceType, id: selectedSourceId }
+      };
+      setLegacySkillAssociations(newAssociations);
+      localStorage.setItem("legacySkillAssociations", JSON.stringify(newAssociations));
+    }
+    setLegacySkillDialogOpen(false);
+    setSelectedLegacySkill(null);
+    setSelectedSourceType(null);
+    setSelectedSourceId(null);
+  };
+  
+  const handleRemoveAssociation = () => {
+    if (selectedLegacySkill) {
+      const newAssociations = { ...legacySkillAssociations };
+      delete newAssociations[selectedLegacySkill];
+      setLegacySkillAssociations(newAssociations);
+      localStorage.setItem("legacySkillAssociations", JSON.stringify(newAssociations));
+    }
+    setLegacySkillDialogOpen(false);
+    setSelectedLegacySkill(null);
+    setSelectedSourceType(null);
+    setSelectedSourceId(null);
+  };
+  
+  // Helper to get area/project name for display
+  const getAssociationName = (skillName: string) => {
+    const assoc = legacySkillAssociations[skillName];
+    if (!assoc) return null;
+    if (assoc.type === "area") {
+      const area = areas.find(a => a.id === assoc.id);
+      return area ? area.name : null;
+    } else {
+      const project = allProjects.find(p => p.id === assoc.id);
+      return project ? project.name : null;
+    }
+  };
+  
+  useEffect(() => {
+    const loadLegacySkills = () => {
+      const stored = localStorage.getItem("skillsProgress");
+      if (stored) {
+        try {
+          setLegacySkills(JSON.parse(stored));
+        } catch (e) {
+          console.error("Error parsing legacy skills:", e);
+        }
+      } else {
+        // Initialize with default values
+        const initial: Record<string, { name: string; currentXp: number; level: number }> = {};
+        SKILLS_LIST.forEach(name => {
+          initial[name] = { name, currentXp: 0, level: 1 };
+        });
+        setLegacySkills(initial);
+      }
+    };
+    loadLegacySkills();
+  }, []);
+  
+  // XP per level calculation (same formula as backend)
+  const calculateXpForLevel = (level: number) => {
+    let totalXp = 0;
+    for (let i = 1; i < level; i++) {
+      totalXp += i * 100;
+    }
+    return totalXp;
+  };
+  
+  const calculateXpProgress = (currentXp: number, level: number) => {
+    const xpForCurrentLevel = calculateXpForLevel(level);
+    const xpForNextLevel = calculateXpForLevel(level + 1);
+    const xpNeeded = xpForNextLevel - xpForCurrentLevel;
+    const xpProgress = currentXp - xpForCurrentLevel;
+    return Math.min((xpProgress / xpNeeded) * 100, 100);
+  };
+  
+  // Legacy XP calculation (500 XP per level)
+  const calculateLegacyXpProgress = (currentXp: number, level: number) => {
+    const xpInCurrentLevel = currentXp % xpPerLevel;
+    return (xpInCurrentLevel / xpPerLevel) * 100;
+  };
+  
+  // Get GlobalSkills that belong to a legacy skill's associated area
+  const getGlobalSkillsForLegacySkill = (skillName: string) => {
+    const association = legacySkillAssociations[skillName];
+    console.log('[SkillsSection] getGlobalSkillsForLegacySkill:', skillName, 'association:', association, 'globalSkills count:', globalSkills.length);
+    console.log('[SkillsSection] globalSkills areaIds:', globalSkills.map(s => ({ name: s.name, areaId: s.areaId })));
+    if (!association || association.type !== 'area') return [];
+    const matched = globalSkills.filter(s => s.areaId === association.id && !s.parentSkillId);
+    console.log('[SkillsSection] Looking for areaId:', association.id, 'matched skills for', skillName, ':', matched);
+    return matched;
+  };
+  
+  // Get all area IDs that are associated with legacy skills
+  const legacyAreaIds = Object.values(legacySkillAssociations)
+    .filter(a => a.type === 'area')
+    .map(a => a.id);
+  
+  // Filter parent skills (not subskills) - exclude those belonging to legacy skill areas
+  const parentSkills = globalSkills.filter(s => !s.parentSkillId && !legacyAreaIds.includes(s.areaId || ''));
+  
+  // Get subskills for a parent
+  const getSubSkillsOf = (parentId: string) => globalSkills.filter(s => s.parentSkillId === parentId);
   
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -2639,83 +2793,34 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPress = useRef(false);
 
-
-  // Load skills progress from server
-  useEffect(() => {
-    const loadSkillsProgress = async () => {
-      try {
-        const response = await fetch("/api/skills-progress");
-        if (response.ok) {
-          const serverProgress = await response.json();
-          const updatedSkills = { ...skills };
-          serverProgress.forEach((p: { skillName: string; currentXp: number; level: number }) => {
-            updatedSkills[p.skillName] = {
-              name: p.skillName,
-              currentXp: p.currentXp,
-              level: p.level
-            };
-          });
-          setSkills(updatedSkills);
-        }
-      } catch (error) {
-        console.error('[SkillsSection] Error loading skills progress from server:', error);
-      }
-    };
-    
-    loadSkillsProgress();
-  }, []);
-
-  // Listen for XP updates - using useLayoutEffect for earlier execution
+  // Refetch global skills and legacy skills when XP is added or skill is created
   useLayoutEffect(() => {
-    const handleSkillXpAdded = (event: Event) => {
-      console.log('[SkillsSection] === skillXpAdded event RECEIVED ===', event);
-      
+    const handleSkillXpAdded = () => {
+      console.log('[SkillsSection] === skillXpAdded event RECEIVED - refetching global skills ===');
+      refetchGlobalSkills();
+      // Also reload legacy skills
       const stored = localStorage.getItem("skillsProgress");
-      console.log('[SkillsSection] localStorage skillsProgress:', stored);
-      
       if (stored) {
         try {
-          const newSkills = JSON.parse(stored);
-          console.log('[SkillsSection] Parsed newSkills:', newSkills);
-          
-          // Validate and merge with defaults
-          const defaultSkills: Record<string, { name: string; currentXp: number; level: number }> = {};
-          SKILLS_LIST.forEach((skillName) => {
-            defaultSkills[skillName] = { name: skillName, currentXp: 0, level: 1 };
-          });
-          
-          const merged = { ...defaultSkills, ...newSkills };
-          SKILLS_LIST.forEach((skillName) => {
-            if (!merged[skillName]) {
-              merged[skillName] = defaultSkills[skillName];
-            } else if (!merged[skillName].level || merged[skillName].currentXp === undefined) {
-              merged[skillName] = {
-                ...merged[skillName],
-                level: merged[skillName].level || 1,
-                currentXp: merged[skillName].currentXp ?? 0,
-              };
-            }
-          });
-          
-          console.log('[SkillsSection] Merged final skills:', merged);
-          setSkills(merged);
-          console.log('[SkillsSection] setSkills called ✓');
-        } catch (error) {
-          console.error('[SkillsSection] Error parsing/merging:', error);
+          setLegacySkills(JSON.parse(stored));
+        } catch (e) {
+          console.error("Error reloading legacy skills:", e);
         }
-      } else {
-        console.log('[SkillsSection] No skillsProgress in localStorage');
       }
     };
-
-    console.log('[SkillsSection] === useLayoutEffect: Attaching listener ===');
-    window.addEventListener('skillXpAdded', handleSkillXpAdded);
     
-    return () => {
-      console.log('[SkillsSection] === useLayoutEffect cleanup: Detaching listener ===');
-      window.removeEventListener('skillXpAdded', handleSkillXpAdded);
+    const handleGlobalSkillCreated = () => {
+      console.log('[SkillsSection] === globalSkillCreated event RECEIVED - refetching global skills ===');
+      refetchGlobalSkills();
     };
-  }, []);
+
+    window.addEventListener('skillXpAdded', handleSkillXpAdded);
+    window.addEventListener('globalSkillCreated', handleGlobalSkillCreated);
+    return () => {
+      window.removeEventListener('skillXpAdded', handleSkillXpAdded);
+      window.removeEventListener('globalSkillCreated', handleGlobalSkillCreated);
+    };
+  }, [refetchGlobalSkills]);
 
   // Mutations for delete
   const deleteLearning = useMutation({
@@ -2959,41 +3064,192 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
 
   return (
     <div className="h-full flex flex-col">
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain touch-pan-y pr-1 minimal-scrollbar">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pr-1 minimal-scrollbar">
         <div className="space-y-6 pr-3 sm:pr-4">
-          {/* Top Section: Skills Progress Bars */}
+          {/* Top Section: Skills Progress with Accordions */}
           <div className="bg-zinc-800/30 rounded border border-zinc-700/50 p-4">
             <div className="mb-3 pb-2 border-b border-zinc-700/50">
               <span className="text-xs text-zinc-500 uppercase tracking-wider">Skills Progress</span>
               <div className="h-px w-8 bg-gradient-to-r from-zinc-600 to-transparent mt-1" />
             </div>
+            
             <div className="space-y-4">
-              {SKILLS_LIST.map((skillName) => {
-                const skill = skills[skillName];
-                if (!skill) {
-                  console.warn(`[SkillsSection] Skill ${skillName} not found in skills state`);
-                  return null;
-                }
-                const xpForCurrentLevel = (skill.level - 1) * xpPerLevel;
-                const xpProgressPercent = ((skill.currentXp - xpForCurrentLevel) / xpPerLevel) * 100;
-                
-                return (
-                  <div key={skillName} className="space-y-1">
-                    <div className="flex flex-col sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center gap-1 sm:gap-2 pr-1">
-                      <span className="min-w-0 truncate pr-1 text-sm font-medium text-zinc-100">{skillName}</span>
-                      <span className="self-end sm:self-auto whitespace-nowrap text-xs sm:text-sm text-zinc-400">
-                        Level <span className="font-bold text-zinc-100">{skill.level}</span>
-                      </span>
-                    </div>
-                    <div className="w-full bg-zinc-700/30 border border-zinc-600/50 rounded h-2 overflow-hidden">
-                      <div
-                        className="h-full bg-gradient-to-r from-green-600 via-green-500 to-green-400 transition-all duration-300"
-                        style={{ width: `${Math.min(xpProgressPercent, 100)}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
+              {/* Legacy Skills as Accordions (with associated GlobalSkills underneath) */}
+              {Object.keys(legacySkills).length > 0 && (
+                <Accordion type="multiple" className="space-y-2">
+                  {SKILLS_LIST.map((skillName) => {
+                    const skill = legacySkills[skillName] || { name: skillName, currentXp: 0, level: 1 };
+                    const xpProgress = calculateLegacyXpProgress(skill.currentXp, skill.level);
+                    const associationName = getAssociationName(skillName);
+                    const isPressing = pressingSkill === skillName;
+                    const linkedGlobalSkills = getGlobalSkillsForLegacySkill(skillName);
+                    
+                    return (
+                      <AccordionItem key={skillName} value={skillName} className="border-zinc-700/50 rounded-lg bg-zinc-800/20">
+                        <AccordionTrigger className="px-3 py-2 hover:no-underline hover:bg-zinc-700/20 rounded-t-lg">
+                          <div 
+                            className={cn(
+                              "flex-1 pr-4",
+                              isPressing && "bg-purple-500/20"
+                            )}
+                            onPointerDown={(e) => {
+                              e.stopPropagation();
+                              handleLegacySkillPointerDown(e, skillName);
+                            }}
+                            onPointerUp={handleLegacySkillPointerUp}
+                            onPointerCancel={handleLegacySkillPointerCancel}
+                            onPointerLeave={handleLegacySkillPointerUp}
+                            onContextMenu={(e) => e.preventDefault()}
+                          >
+                            <div className="flex items-center justify-between mb-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium text-zinc-100">{skill.name}</span>
+                                {associationName ? (
+                                  <span className="text-[10px] bg-zinc-700/50 text-zinc-400 px-1.5 py-0.5 rounded flex items-center gap-1">
+                                    <Target className="h-2.5 w-2.5" />
+                                    {associationName}
+                                  </span>
+                                ) : (
+                                  <span
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      e.preventDefault();
+                                      setSelectedLegacySkill(skillName);
+                                      setSelectedSourceType(null);
+                                      setSelectedSourceId(null);
+                                      setLegacySkillDialogOpen(true);
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter' || e.key === ' ') {
+                                        e.stopPropagation();
+                                        e.preventDefault();
+                                        setSelectedLegacySkill(skillName);
+                                        setSelectedSourceType(null);
+                                        setSelectedSourceId(null);
+                                        setLegacySkillDialogOpen(true);
+                                      }
+                                    }}
+                                    className="text-[10px] bg-zinc-700/30 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50 px-1.5 py-0.5 rounded flex items-center gap-1 transition-colors cursor-pointer"
+                                  >
+                                    <FolderOpen className="h-2.5 w-2.5" />
+                                    Link area
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-xs text-zinc-400">
+                                Lv.<span className="font-bold text-zinc-100">{skill.level}</span>
+                                <span className="ml-2 text-zinc-500">{skill.currentXp}xp</span>
+                              </span>
+                            </div>
+                            <div className="w-full bg-zinc-700/30 border border-zinc-600/50 rounded h-2 overflow-hidden">
+                              <div
+                                className="h-full bg-gradient-to-r from-purple-600 via-purple-500 to-purple-400 transition-all duration-300"
+                                style={{ width: `${xpProgress}%` }}
+                              />
+                            </div>
+                          </div>
+                        </AccordionTrigger>
+                        <AccordionContent className="px-3 pb-3">
+                          {linkedGlobalSkills.length === 0 ? (
+                            <p className="text-xs text-zinc-500 py-2">
+                              {associationName ? "No subskills yet. Add skills from area subtitle." : "Link an area to see subskills here."}
+                            </p>
+                          ) : (
+                            <div className="space-y-2 pl-3 border-l-2 border-zinc-700/50">
+                              {linkedGlobalSkills.map((globalSkill) => {
+                                const subXpProgress = calculateXpProgress(globalSkill.currentXp, globalSkill.level);
+                                return (
+                                  <div key={globalSkill.id} className="space-y-1">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-sm text-zinc-200">{globalSkill.name}</span>
+                                      <span className="text-xs text-zinc-400">
+                                        Lv.<span className="font-medium text-zinc-200">{globalSkill.level}</span>
+                                        <span className="ml-1.5 text-zinc-500">{globalSkill.currentXp}xp</span>
+                                      </span>
+                                    </div>
+                                    <div className="w-full bg-zinc-700/30 border border-zinc-600/40 rounded h-1.5 overflow-hidden">
+                                      <div
+                                        className="h-full bg-gradient-to-r from-green-600 via-green-500 to-green-400 transition-all duration-300"
+                                        style={{ width: `${subXpProgress}%` }}
+                                      />
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </AccordionContent>
+                      </AccordionItem>
+                    );
+                  })}
+                </Accordion>
+              )}
+              
+              {/* New GlobalSkills with Accordions */}
+              {globalSkillsLoading ? (
+                <div className="text-sm text-zinc-500 py-2">Loading new skills...</div>
+              ) : parentSkills.length > 0 ? (
+                <Accordion type="multiple" className="space-y-2">
+                  {parentSkills.map((skill) => {
+                    const subSkills = getSubSkillsOf(skill.id);
+                    const xpProgress = calculateXpProgress(skill.currentXp, skill.level);
+                    
+                    return (
+                      <AccordionItem key={skill.id} value={skill.id} className="border-zinc-700/50 rounded-lg bg-zinc-800/20">
+                        <AccordionTrigger className="px-3 py-2 hover:no-underline hover:bg-zinc-700/20 rounded-t-lg">
+                          <div className="flex-1 pr-4">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-sm font-medium text-zinc-100">{skill.name}</span>
+                              <span className="text-xs text-zinc-400">
+                                Lv.<span className="font-bold text-zinc-100">{skill.level}</span>
+                                <span className="ml-2 text-zinc-500">{skill.currentXp}xp</span>
+                              </span>
+                            </div>
+                            <div className="w-full bg-zinc-700/30 border border-zinc-600/40 rounded h-1.5 overflow-hidden">
+                              <div
+                                className="h-full bg-gradient-to-r from-blue-600 via-blue-500 to-blue-400 transition-all duration-300"
+                                style={{ width: `${xpProgress}%` }}
+                              />
+                            </div>
+                          </div>
+                        </AccordionTrigger>
+                        <AccordionContent className="px-3 pb-3">
+                          {subSkills.length === 0 ? (
+                            <p className="text-xs text-zinc-500 py-2">No subskills yet</p>
+                          ) : (
+                            <div className="space-y-2 pl-3 border-l-2 border-zinc-700/50">
+                              {subSkills.map((subSkill) => {
+                                const subXpProgress = calculateXpProgress(subSkill.currentXp, subSkill.level);
+                                return (
+                                  <div key={subSkill.id} className="space-y-1">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-sm text-zinc-200">{subSkill.name}</span>
+                                      <span className="text-xs text-zinc-400">
+                                        Lv.<span className="font-medium text-zinc-200">{subSkill.level}</span>
+                                        <span className="ml-1.5 text-zinc-500">{subSkill.currentXp}xp</span>
+                                      </span>
+                                    </div>
+                                    <div className="w-full bg-zinc-700/30 border border-zinc-600/40 rounded h-1.5 overflow-hidden">
+                                      <div
+                                        className="h-full bg-gradient-to-r from-blue-600 via-blue-500 to-blue-400 transition-all duration-300"
+                                        style={{ width: `${subXpProgress}%` }}
+                                      />
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </AccordionContent>
+                      </AccordionItem>
+                    );
+                  })}
+                </Accordion>
+              ) : (
+                <p className="text-xs text-zinc-500 py-2">No skills yet. Create skills from area subtitles.</p>
+              )}
             </div>
           </div>
 
@@ -3118,6 +3374,136 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
               >
                 {updateLearning.isPending || updateTool.isPending ? "Saving..." : "Save"}
               </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Legacy Skill Area/Quest Association Dialog */}
+      <Dialog open={legacySkillDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          setLegacySkillDialogOpen(false);
+          setSelectedLegacySkill(null);
+          setSelectedSourceType(null);
+          setSelectedSourceId(null);
+        }
+      }}>
+        <DialogContent className="bg-zinc-900 border-zinc-700 max-w-sm">
+          <DialogTitle className="text-zinc-100 flex items-center gap-2">
+            <FolderOpen className="h-5 w-5 text-purple-400" />
+            Link "{selectedLegacySkill}" to Area/Quest
+          </DialogTitle>
+          <div className="space-y-4 mt-2">
+            {/* Type Selection */}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => {
+                  setSelectedSourceType("area");
+                  setSelectedSourceId(null);
+                }}
+                className={cn(
+                  "px-3 py-2 rounded border text-sm transition-colors",
+                  selectedSourceType === "area"
+                    ? "bg-purple-600/30 border-purple-500 text-purple-200"
+                    : "bg-zinc-800 border-zinc-700 text-zinc-300 hover:border-zinc-600"
+                )}
+              >
+                <MapIcon className="h-4 w-4 inline mr-1.5" />
+                Area
+              </button>
+              <button
+                onClick={() => {
+                  setSelectedSourceType("project");
+                  setSelectedSourceId(null);
+                }}
+                className={cn(
+                  "px-3 py-2 rounded border text-sm transition-colors",
+                  selectedSourceType === "project"
+                    ? "bg-blue-600/30 border-blue-500 text-blue-200"
+                    : "bg-zinc-800 border-zinc-700 text-zinc-300 hover:border-zinc-600"
+                )}
+              >
+                <Target className="h-4 w-4 inline mr-1.5" />
+                Quest
+              </button>
+            </div>
+
+            {/* Area/Project List */}
+            {selectedSourceType === "area" && (
+              <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                {areas.length === 0 ? (
+                  <p className="text-sm text-zinc-500 py-2">No areas available</p>
+                ) : (
+                  areas.map((area) => (
+                    <button
+                      key={area.id}
+                      onClick={() => setSelectedSourceId(area.id)}
+                      className={cn(
+                        "w-full text-left px-3 py-2 rounded text-sm transition-colors",
+                        selectedSourceId === area.id
+                          ? "bg-purple-600/30 text-purple-100"
+                          : "bg-zinc-800/50 text-zinc-300 hover:bg-zinc-700/50"
+                      )}
+                    >
+                      <span className="mr-2">{area.icon}</span>
+                      {area.name}
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+
+            {selectedSourceType === "project" && (
+              <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                {allProjects.length === 0 ? (
+                  <p className="text-sm text-zinc-500 py-2">No quests available</p>
+                ) : (
+                  allProjects.map((project) => (
+                    <button
+                      key={project.id}
+                      onClick={() => setSelectedSourceId(project.id)}
+                      className={cn(
+                        "w-full text-left px-3 py-2 rounded text-sm transition-colors",
+                        selectedSourceId === project.id
+                          ? "bg-blue-600/30 text-blue-100"
+                          : "bg-zinc-800/50 text-zinc-300 hover:bg-zinc-700/50"
+                      )}
+                    >
+                      <span className="mr-2">{project.icon}</span>
+                      {project.name}
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex gap-2 justify-between pt-2">
+              {legacySkillAssociations[selectedLegacySkill || ""] && (
+                <Button
+                  variant="ghost"
+                  onClick={handleRemoveAssociation}
+                  className="text-red-400 hover:text-red-300 hover:bg-red-900/20"
+                >
+                  Remove Link
+                </Button>
+              )}
+              <div className="flex gap-2 ml-auto">
+                <Button
+                  variant="ghost"
+                  onClick={() => setLegacySkillDialogOpen(false)}
+                  className="text-zinc-300 hover:bg-zinc-800"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleSaveAssociation}
+                  disabled={!selectedSourceType || !selectedSourceId}
+                  className="bg-purple-600 hover:bg-purple-700 disabled:opacity-50"
+                >
+                  Save
+                </Button>
+              </div>
             </div>
           </div>
         </DialogContent>

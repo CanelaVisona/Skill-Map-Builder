@@ -1,7 +1,7 @@
 import { eq, and } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db } from "./db";
-import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth } from "@shared/schema";
+import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type GlobalSkill, type InsertGlobalSkill, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, globalSkills } from "@shared/schema";
 
 export interface IStorage {
   // Users
@@ -153,6 +153,16 @@ export interface IStorage {
   // User Skills Progress
   getUserSkillsProgress(userId: string): Promise<Array<{ skillName: string; currentXp: number; level: number }>>;
   upsertUserSkillsProgress(data: InsertUserSkillsProgress, userId: string): Promise<{ skillName: string; currentXp: number; level: number }>;
+
+  // Global Skills (for XP tracking with areas/projects)
+  getGlobalSkills(userId: string): Promise<GlobalSkill[]>;
+  getGlobalSkillsByArea(userId: string, areaId: string): Promise<GlobalSkill[]>;
+  getGlobalSkillsByProject(userId: string, projectId: string): Promise<GlobalSkill[]>;
+  getGlobalSkill(id: string): Promise<GlobalSkill | undefined>;
+  createGlobalSkill(skill: InsertGlobalSkill): Promise<GlobalSkill>;
+  updateGlobalSkill(id: string, skill: Partial<InsertGlobalSkill>): Promise<GlobalSkill | undefined>;
+  addXpToGlobalSkill(id: string, xpAmount: number): Promise<GlobalSkill | undefined>;
+  deleteGlobalSkill(id: string): Promise<void>;
 }
 
 export class DbStorage implements IStorage {
@@ -1001,6 +1011,98 @@ export class DbStorage implements IStorage {
       const p = result[0];
       return { skillName: p.skillName, currentXp: p.currentXp, level: p.level };
     }
+  }
+
+  // Global Skills
+  async getGlobalSkills(userId: string): Promise<GlobalSkill[]> {
+    return await db.select().from(globalSkills).where(eq(globalSkills.userId, userId));
+  }
+
+  async getGlobalSkillsByArea(userId: string, areaId: string): Promise<GlobalSkill[]> {
+    // Get skills that belong to this area (including subskills whose parent belongs to this area)
+    const allUserSkills = await this.getGlobalSkills(userId);
+    const areaSkills = allUserSkills.filter(s => s.areaId === areaId);
+    const areaSkillIds = new Set(areaSkills.map(s => s.id));
+    // Include subskills of area skills
+    const subSkills = allUserSkills.filter(s => s.parentSkillId && areaSkillIds.has(s.parentSkillId));
+    return [...areaSkills, ...subSkills];
+  }
+
+  async getGlobalSkillsByProject(userId: string, projectId: string): Promise<GlobalSkill[]> {
+    // Get skills that belong to this project (including subskills whose parent belongs to this project)
+    const allUserSkills = await this.getGlobalSkills(userId);
+    const projectSkills = allUserSkills.filter(s => s.projectId === projectId);
+    const projectSkillIds = new Set(projectSkills.map(s => s.id));
+    // Include subskills of project skills
+    const subSkills = allUserSkills.filter(s => s.parentSkillId && projectSkillIds.has(s.parentSkillId));
+    return [...projectSkills, ...subSkills];
+  }
+
+  async getGlobalSkill(id: string): Promise<GlobalSkill | undefined> {
+    const result = await db.select().from(globalSkills).where(eq(globalSkills.id, id));
+    return result[0];
+  }
+
+  async createGlobalSkill(skill: InsertGlobalSkill): Promise<GlobalSkill> {
+    const id = randomUUID();
+    console.log('[storage.createGlobalSkill] Creating with id:', id, 'skill:', skill);
+    try {
+      const result = await db.insert(globalSkills).values({ id, ...skill }).returning();
+      console.log('[storage.createGlobalSkill] Created:', result[0]);
+      return result[0];
+    } catch (error) {
+      console.error('[storage.createGlobalSkill] DB Error:', error);
+      throw error;
+    }
+  }
+
+  async updateGlobalSkill(id: string, skill: Partial<InsertGlobalSkill>): Promise<GlobalSkill | undefined> {
+    const result = await db.update(globalSkills)
+      .set({ ...skill, updatedAt: new Date() })
+      .where(eq(globalSkills.id, id))
+      .returning();
+    return result[0];
+  }
+
+  // Calculate level based on XP (100 XP per level, exponential growth)
+  private calculateLevel(xp: number): number {
+    // Level formula: each level requires (level * 100) XP
+    // Level 1: 0-99 XP, Level 2: 100-299 XP, Level 3: 300-599 XP, etc.
+    let level = 1;
+    let requiredXp = 100;
+    let totalRequired = 0;
+    while (xp >= totalRequired + requiredXp) {
+      totalRequired += requiredXp;
+      level++;
+      requiredXp = level * 100;
+    }
+    return level;
+  }
+
+  async addXpToGlobalSkill(id: string, xpAmount: number): Promise<GlobalSkill | undefined> {
+    const skill = await this.getGlobalSkill(id);
+    if (!skill) return undefined;
+
+    const newXp = skill.currentXp + xpAmount;
+    const newLevel = this.calculateLevel(newXp);
+
+    // Update this skill
+    const updated = await db.update(globalSkills)
+      .set({ currentXp: newXp, level: newLevel, updatedAt: new Date() })
+      .where(eq(globalSkills.id, id))
+      .returning();
+
+    // If this is a subskill, also add XP to parent
+    if (skill.parentSkillId) {
+      await this.addXpToGlobalSkill(skill.parentSkillId, xpAmount);
+    }
+
+    return updated[0];
+  }
+
+  async deleteGlobalSkill(id: string): Promise<void> {
+    // Children will be deleted by CASCADE
+    await db.delete(globalSkills).where(eq(globalSkills.id, id));
   }
 }
 

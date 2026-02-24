@@ -48,6 +48,19 @@ export interface Project {
   questType?: "main" | "side" | "emergent" | "experience";
 }
 
+export interface GlobalSkill {
+  id: string;
+  userId: string;
+  name: string;
+  areaId?: string | null;
+  projectId?: string | null;
+  parentSkillId?: string | null;
+  currentXp: number;
+  level: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface ParentSkillInfo {
   id: string;
   title: string;
@@ -127,6 +140,17 @@ interface SkillTreeContextType {
   experienceQuests: Project[];
   archivedExperienceQuests: Project[];
   createExperienceQuest: (name: string, description: string, icon: string) => Promise<void>;
+  // Global Skills for XP tracking
+  globalSkills: GlobalSkill[];
+  globalSkillsLoading: boolean;
+  getGlobalSkillsForArea: (areaId: string) => GlobalSkill[];
+  getGlobalSkillsForProject: (projectId: string) => GlobalSkill[];
+  getSubSkillsOf: (parentSkillId: string) => GlobalSkill[];
+  createGlobalSkill: (name: string, areaId?: string, projectId?: string, parentSkillId?: string) => Promise<GlobalSkill | null>;
+  updateGlobalSkillName: (id: string, name: string) => Promise<GlobalSkill | null>;
+  addXpToGlobalSkill: (id: string, xpAmount: number) => Promise<GlobalSkill | null>;
+  deleteGlobalSkill: (id: string) => Promise<void>;
+  refetchGlobalSkills: () => Promise<void>;
 }
 
 const SkillTreeContext = createContext<SkillTreeContextType | undefined>(undefined);
@@ -153,6 +177,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
   const [levelUpNumber, setLevelUpNumber] = useState(0);
   const [showCompleted, setShowCompleted] = useState(false);
   const [showQuestUpdated, setShowQuestUpdated] = useState(false);
+  const [globalSkills, setGlobalSkills] = useState<GlobalSkill[]>([]);
+  const [globalSkillsLoading, setGlobalSkillsLoading] = useState(true);
 
   const triggerLevelUp = (level: number) => {
     setLevelUpNumber(level);
@@ -197,12 +223,14 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     async function loadData() {
       try {
-        const [areasResponse, projectsResponse] = await Promise.all([
-          fetch("/api/areas"),
-          fetch("/api/projects")
+        const [areasResponse, projectsResponse, globalSkillsResponse] = await Promise.all([
+          fetch("/api/areas", { credentials: "include" }),
+          fetch("/api/projects", { credentials: "include" }),
+          fetch("/api/global-skills", { credentials: "include" })
         ]);
         const areasData = await areasResponse.json();
         const projectsData = await projectsResponse.json();
+        const globalSkillsData = await globalSkillsResponse.json();
         
         // Handle authentication errors
         if (Array.isArray(areasData)) {
@@ -219,10 +247,17 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
         } else {
           setProjects([]);
         }
+
+        if (Array.isArray(globalSkillsData)) {
+          setGlobalSkills(globalSkillsData);
+        } else {
+          setGlobalSkills([]);
+        }
       } catch (error) {
         console.error("Error loading data:", error);
       } finally {
         setIsLoading(false);
+        setGlobalSkillsLoading(false);
       }
     }
     loadData();
@@ -2924,6 +2959,118 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Global Skills functions
+  const getGlobalSkillsForArea = (areaId: string): GlobalSkill[] => {
+    const areaSkills = globalSkills.filter(s => s.areaId === areaId && !s.parentSkillId);
+    const areaSkillIds = new Set(areaSkills.map(s => s.id));
+    const subSkillsOfArea = globalSkills.filter(s => s.parentSkillId && areaSkillIds.has(s.parentSkillId));
+    return [...areaSkills, ...subSkillsOfArea];
+  };
+
+  const getGlobalSkillsForProject = (projectId: string): GlobalSkill[] => {
+    const projectSkills = globalSkills.filter(s => s.projectId === projectId && !s.parentSkillId);
+    const projectSkillIds = new Set(projectSkills.map(s => s.id));
+    const subSkillsOfProject = globalSkills.filter(s => s.parentSkillId && projectSkillIds.has(s.parentSkillId));
+    return [...projectSkills, ...subSkillsOfProject];
+  };
+
+  const getSubSkillsOf = (parentSkillId: string): GlobalSkill[] => {
+    return globalSkills.filter(s => s.parentSkillId === parentSkillId);
+  };
+
+  const refetchGlobalSkills = async () => {
+    try {
+      setGlobalSkillsLoading(true);
+      const response = await fetch("/api/global-skills", { credentials: "include" });
+      const data = await response.json();
+      if (Array.isArray(data)) {
+        setGlobalSkills(data);
+      }
+    } catch (error) {
+      console.error("Error refetching global skills:", error);
+    } finally {
+      setGlobalSkillsLoading(false);
+    }
+  };
+
+  const createGlobalSkill = async (
+    name: string, 
+    areaId?: string, 
+    projectId?: string, 
+    parentSkillId?: string
+  ): Promise<GlobalSkill | null> => {
+    console.log('[createGlobalSkill] Creating skill:', name, 'areaId:', areaId, 'projectId:', projectId);
+    try {
+      const response = await fetch("/api/global-skills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, areaId, projectId, parentSkillId }),
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        console.error("Error creating global skill:", error);
+        return null;
+      }
+      const newSkill = await response.json();
+      console.log('[createGlobalSkill] Created skill:', newSkill);
+      setGlobalSkills(prev => [...prev, newSkill]);
+      // Dispatch event to notify other components
+      window.dispatchEvent(new Event('globalSkillCreated'));
+      return newSkill;
+    } catch (error) {
+      console.error("Error creating global skill:", error);
+      return null;
+    }
+  };
+
+  const updateGlobalSkillName = async (id: string, name: string): Promise<GlobalSkill | null> => {
+    try {
+      const response = await fetch(`/api/global-skills/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+        credentials: "include",
+      });
+      if (!response.ok) return null;
+      const updated = await response.json();
+      setGlobalSkills(prev => prev.map(s => s.id === id ? updated : s));
+      return updated;
+    } catch (error) {
+      console.error("Error updating global skill:", error);
+      return null;
+    }
+  };
+
+  const addXpToGlobalSkill = async (id: string, xpAmount: number): Promise<GlobalSkill | null> => {
+    try {
+      const response = await fetch(`/api/global-skills/${id}/add-xp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ xpAmount }),
+        credentials: "include",
+      });
+      if (!response.ok) return null;
+      const updated = await response.json();
+      // Refetch all skills to get updated parent XP too
+      await refetchGlobalSkills();
+      return updated;
+    } catch (error) {
+      console.error("Error adding XP to global skill:", error);
+      return null;
+    }
+  };
+
+  const deleteGlobalSkill = async (id: string): Promise<void> => {
+    try {
+      await fetch(`/api/global-skills/${id}`, { method: "DELETE", credentials: "include" });
+      // Remove skill and its children from state
+      setGlobalSkills(prev => prev.filter(s => s.id !== id && s.parentSkillId !== id));
+    } catch (error) {
+      console.error("Error deleting global skill:", error);
+    }
+  };
+
   return (
     <SkillTreeContext.Provider value={{ 
       areas, 
@@ -2998,7 +3145,18 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
       createEmergentQuest,
       experienceQuests,
       archivedExperienceQuests,
-      createExperienceQuest
+      createExperienceQuest,
+      // Global Skills
+      globalSkills,
+      globalSkillsLoading,
+      getGlobalSkillsForArea,
+      getGlobalSkillsForProject,
+      getSubSkillsOf,
+      createGlobalSkill,
+      updateGlobalSkillName,
+      addXpToGlobalSkill,
+      deleteGlobalSkill,
+      refetchGlobalSkills
     }}>
       {children}
     </SkillTreeContext.Provider>

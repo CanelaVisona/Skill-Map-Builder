@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { type Skill, useSkillTree } from "@/lib/skill-context";
+import { type Skill, type GlobalSkill, useSkillTree } from "@/lib/skill-context";
 import { type JournalThought, type JournalLearning, type JournalTool } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus, Star, ChevronRight, ChevronLeft, Wrench, Lightbulb } from "lucide-react";
@@ -42,6 +42,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     activeParentSkillId,
     activeArea,
     activeProject,
+    areas,
+    projects,
     subSkills,
     deleteSkill, 
     toggleLock, 
@@ -66,7 +68,12 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     updateProjectLevelSubtitle,
     toggleFinalNode,
     toggleProjectFinalNode,
-    toggleSubSkillFinalNode
+    toggleSubSkillFinalNode,
+    globalSkills,
+    getGlobalSkillsForArea,
+    getGlobalSkillsForProject,
+    createGlobalSkill,
+    addXpToGlobalSkill
   } = useSkillTree();
   
   const isProject = !activeAreaId && !!activeProjectId;
@@ -167,6 +174,30 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [experienceSelectedSkill, setExperienceSelectedSkill] = useState<string | null>(null);
   const [showExperienceSkillSelector, setShowExperienceSkillSelector] = useState(false);
   
+  // Legacy skill associations from localStorage
+  const [legacySkillAssociations, setLegacySkillAssociations] = useState<Record<string, { type: "area" | "project"; id: string }>>({});
+  
+  // Load legacy skill associations
+  useEffect(() => {
+    const stored = localStorage.getItem("legacySkillAssociations");
+    if (stored) {
+      try {
+        setLegacySkillAssociations(JSON.parse(stored));
+      } catch (e) {
+        console.error("Error parsing legacy skill associations:", e);
+      }
+    }
+  }, []);
+  
+  // Filter legacy skills to only show ones associated with current area/project
+  const filteredLegacySkills = ["Limpieza", "Guitarra", "Lectura", "Growth mindset", "Acertividad"].filter(skillName => {
+    const association = legacySkillAssociations[skillName];
+    if (!association) return false; // Only show skills that have associations
+    if (activeAreaId && association.type === "area" && association.id === activeAreaId) return true;
+    if (activeProjectId && association.type === "project" && association.id === activeProjectId) return true;
+    return false;
+  });
+  
   // XP state
   const [xpValue, setXpValue] = useState(skill.experiencePoints ? skill.experiencePoints.toString() : "");
   const [showXpAnimation, setShowXpAnimation] = useState(false);
@@ -177,6 +208,21 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   
   // Add options popup state
   const [isAddOptionsOpen, setIsAddOptionsOpen] = useState(false);
+
+  // Get available Global Skills for the current area/quest
+  const availableGlobalSkills = activeAreaId 
+    ? getGlobalSkillsForArea(activeAreaId)
+    : activeProjectId 
+      ? getGlobalSkillsForProject(activeProjectId) 
+      : [];
+
+  // State for subskill creation/selection in subtitle dialog
+  const [newSubskillName, setNewSubskillName] = useState("");
+  const [selectedSubskillId, setSelectedSubskillId] = useState<string | null>(null);
+  const [showSubskillCreator, setShowSubskillCreator] = useState(false);
+
+  // Get parent skills (not subskills) for the current area/quest
+  const parentGlobalSkills = availableGlobalSkills.filter(s => !s.parentSkillId);
 
   // Show XP animation when skill becomes mastered
   useEffect(() => {
@@ -424,51 +470,86 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     }
     
     const xpToAdd = parseInt(xpValue);
-    console.log("[handleAddExperience] XP to add:", xpToAdd, "Skill:", experienceSelectedSkill);
+    console.log("[handleAddExperience] XP to add:", xpToAdd, "SkillId:", experienceSelectedSkill);
     
-    const skillsProgress = localStorage.getItem("skillsProgress");
-    console.log("[handleAddExperience] Current localStorage:", skillsProgress);
-    
-    let skills: any;
-    if (skillsProgress) {
-      try {
-        skills = JSON.parse(skillsProgress);
-      } catch (error) {
-        console.error("[handleAddExperience] Error parsing skillsProgress:", error);
-        return;
+    // Check if it's a legacy skill
+    if (experienceSelectedSkill.startsWith("legacy:")) {
+      const legacySkillName = experienceSelectedSkill.replace("legacy:", "");
+      console.log("[handleAddExperience] Adding XP to legacy skill:", legacySkillName);
+      
+      const skillsProgress = localStorage.getItem("skillsProgress");
+      let skills: Record<string, { name: string; currentXp: number; level: number }> = {};
+      
+      if (skillsProgress) {
+        try {
+          skills = JSON.parse(skillsProgress);
+        } catch (error) {
+          console.error("[handleAddExperience] Error parsing skillsProgress:", error);
+        }
       }
-    } else {
-      // Initialize skills if not in localStorage
-      const SKILLS_LIST = ["Limpieza", "Guitarra", "Lectura", "Growth mindset", "Acertividad"];
-      skills = {};
-      SKILLS_LIST.forEach((skillName) => {
-        skills[skillName] = { name: skillName, currentXp: 0, level: 1 };
-      });
-      console.log("[handleAddExperience] Initialized new skills object:", skills);
+      
+      // Initialize if skill doesn't exist
+      if (!skills[legacySkillName]) {
+        skills[legacySkillName] = { name: legacySkillName, currentXp: 0, level: 1 };
+      }
+      
+      const xpPerLevel = 500;
+      const oldLevel = skills[legacySkillName].level;
+      skills[legacySkillName].currentXp += xpToAdd;
+      skills[legacySkillName].level = Math.floor(skills[legacySkillName].currentXp / xpPerLevel) + 1;
+      const newLevel = skills[legacySkillName].level;
+      
+      if (newLevel > oldLevel) {
+        if (levelUpPopupTimer.current) {
+          clearTimeout(levelUpPopupTimer.current);
+        }
+        setLevelUpPopupVisible(true);
+        levelUpPopupTimer.current = setTimeout(() => {
+          setLevelUpPopupVisible(false);
+        }, 1800);
+      }
+      
+      localStorage.setItem("skillsProgress", JSON.stringify(skills));
+      
+      // Save to server
+      try {
+        await fetch("/api/skills-progress", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            skillName: legacySkillName,
+            currentXp: skills[legacySkillName].currentXp,
+            level: skills[legacySkillName].level
+          })
+        });
+      } catch (error) {
+        console.error('[handleAddExperience] Error saving to server:', error);
+      }
+      
+      window.dispatchEvent(new CustomEvent('skillXpAdded', { 
+        detail: { skillName: legacySkillName, currentXp: skills[legacySkillName].currentXp }
+      }));
+      
+      setXpValue("");
+      setExperienceSelectedSkill(null);
+      setShowPlusOne({ visible: true, type: "experience" });
+      setTimeout(() => setShowPlusOne({ visible: false, type: "experience" }), 1000);
+      return;
     }
     
-    if (skills && experienceSelectedSkill && skills[experienceSelectedSkill]) {
-      try {
-        const xpPerLevel = 500;
+    // GlobalSkill flow
+    const currentSkill = availableGlobalSkills.find(s => s.id === experienceSelectedSkill);
+    const oldLevel = currentSkill?.level || 1;
+    
+    try {
+      // Use the GlobalSkills API to add XP (with cascade to parent)
+      const updatedSkill = await addXpToGlobalSkill(experienceSelectedSkill, xpToAdd);
+      
+      if (updatedSkill) {
+        console.log("[handleAddExperience] Updated skill via API:", updatedSkill);
         
-        const oldXp = skills[experienceSelectedSkill].currentXp;
-        const oldLevel = skills[experienceSelectedSkill].level;
-        
-        skills[experienceSelectedSkill].currentXp += xpToAdd;
-        
-        // Calculate new level based on total XP (level = floor(XP / 500) + 1)
-        skills[experienceSelectedSkill].level = Math.floor(skills[experienceSelectedSkill].currentXp / xpPerLevel) + 1;
-        const newLevel = skills[experienceSelectedSkill].level;
-        
-        console.log("[handleAddExperience] Updated skill:", {
-          skillName: experienceSelectedSkill,
-          oldXp,
-          newXp: skills[experienceSelectedSkill].currentXp,
-          oldLevel,
-          newLevel
-        });
-
-        if (newLevel > oldLevel) {
+        // Check for level up
+        if (updatedSkill.level > oldLevel) {
           if (levelUpPopupTimer.current) {
             clearTimeout(levelUpPopupTimer.current);
           }
@@ -478,29 +559,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
           }, 1800);
         }
         
-        localStorage.setItem("skillsProgress", JSON.stringify(skills));
-        console.log("[handleAddExperience] Saved to localStorage, dispatching event");
-        
-        // Save to server
-        try {
-          await fetch("/api/skills-progress", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              skillName: experienceSelectedSkill,
-              currentXp: skills[experienceSelectedSkill].currentXp,
-              level: skills[experienceSelectedSkill].level
-            })
-          });
-          console.log("[handleAddExperience] Saved to server successfully");
-        } catch (error) {
-          console.error('[handleAddExperience] Error saving to server:', error);
-        }
-        
-        // Dispatch event to update UI
-        console.log("[handleAddExperience] Dispatching skillXpAdded event");
+        // Dispatch event to update UI (for compatibility)
         window.dispatchEvent(new CustomEvent('skillXpAdded', { 
-          detail: { skillName: experienceSelectedSkill, currentXp: skills[experienceSelectedSkill].currentXp }
+          detail: { skillId: experienceSelectedSkill, currentXp: updatedSkill.currentXp, level: updatedSkill.level }
         }));
         
         // Clear inputs and show feedback
@@ -508,13 +569,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
         setExperienceSelectedSkill(null);
         setShowPlusOne({ visible: true, type: "experience" });
         setTimeout(() => setShowPlusOne({ visible: false, type: "experience" }), 1000);
-      } catch (error) {
-        console.error("[handleAddExperience] Error updating skill:", error);
       }
-    } else if (!skills) {
-      console.error("[handleAddExperience] Failed to initialize or parse skills");
-    } else {
-      console.error("[handleAddExperience] Skill not found in skills object:", experienceSelectedSkill, "Available:", skills ? Object.keys(skills) : "N/A");
+    } catch (error) {
+      console.error("[handleAddExperience] Error adding XP:", error);
     }
   };
 
@@ -632,41 +689,71 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     
     const xpNumber = xpValue ? parseInt(xpValue) : 0;
     
-    // Update localStorage and dispatch event IMMEDIATELY (before mutations)
+    // Add XP to skill (before mutations)
     if (experienceSelectedSkill && xpValue && parseInt(xpValue) > 0) {
       const xpToAdd = parseInt(xpValue);
-      const skillsProgress = localStorage.getItem("skillsProgress");
       
-      let skills: any;
-      if (skillsProgress) {
-        try {
-          skills = JSON.parse(skillsProgress);
-        } catch (error) {
-          console.error("[handleEditSave] Error parsing skillsProgress:", error);
-          return;
+      // Check if it's a legacy skill
+      if (experienceSelectedSkill.startsWith("legacy:")) {
+        const legacySkillName = experienceSelectedSkill.replace("legacy:", "");
+        const skillsProgress = localStorage.getItem("skillsProgress");
+        let skills: Record<string, { name: string; currentXp: number; level: number }> = {};
+        
+        if (skillsProgress) {
+          try {
+            skills = JSON.parse(skillsProgress);
+          } catch (error) {
+            console.error("[handleEditSave] Error parsing skillsProgress:", error);
+          }
         }
-      } else {
-        // Initialize skills if not in localStorage
-        const SKILLS_LIST = ["Limpieza", "Guitarra", "Lectura", "Growth mindset", "Acertividad"];
-        skills = {};
-        SKILLS_LIST.forEach((skillName) => {
-          skills[skillName] = { name: skillName, currentXp: 0, level: 1 };
-        });
-        console.log("[handleEditSave] Initialized new skills object:", skills);
-      }
-      
-      if (skills && skills[experienceSelectedSkill]) {
+        
+        if (!skills[legacySkillName]) {
+          skills[legacySkillName] = { name: legacySkillName, currentXp: 0, level: 1 };
+        }
+        
+        const xpPerLevel = 500;
+        const oldLevel = skills[legacySkillName].level;
+        skills[legacySkillName].currentXp += xpToAdd;
+        skills[legacySkillName].level = Math.floor(skills[legacySkillName].currentXp / xpPerLevel) + 1;
+        
+        if (skills[legacySkillName].level > oldLevel) {
+          if (levelUpPopupTimer.current) {
+            clearTimeout(levelUpPopupTimer.current);
+          }
+          setLevelUpPopupVisible(true);
+          levelUpPopupTimer.current = setTimeout(() => {
+            setLevelUpPopupVisible(false);
+          }, 1800);
+        }
+        
+        localStorage.setItem("skillsProgress", JSON.stringify(skills));
+        
         try {
-          const xpPerLevel = 500;
-          const oldLevel = skills[experienceSelectedSkill].level;
+          await fetch("/api/skills-progress", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              skillName: legacySkillName,
+              currentXp: skills[legacySkillName].currentXp,
+              level: skills[legacySkillName].level
+            })
+          });
+        } catch (error) {
+          console.error('[handleEditSave] Error saving to server:', error);
+        }
+        
+        window.dispatchEvent(new CustomEvent('skillXpAdded', { 
+          detail: { skillName: legacySkillName, currentXp: skills[legacySkillName].currentXp }
+        }));
+      } else {
+        // GlobalSkill flow
+        const currentSkill = availableGlobalSkills.find(s => s.id === experienceSelectedSkill);
+        const oldLevel = currentSkill?.level || 1;
+        
+        try {
+          const updatedSkill = await addXpToGlobalSkill(experienceSelectedSkill, xpToAdd);
           
-          skills[experienceSelectedSkill].currentXp += xpToAdd;
-          
-          // Calculate new level based on total XP (level = floor(XP / 500) + 1)
-          skills[experienceSelectedSkill].level = Math.floor(skills[experienceSelectedSkill].currentXp / xpPerLevel) + 1;
-          const newLevel = skills[experienceSelectedSkill].level;
-
-          if (newLevel > oldLevel) {
+          if (updatedSkill && updatedSkill.level > oldLevel) {
             if (levelUpPopupTimer.current) {
               clearTimeout(levelUpPopupTimer.current);
             }
@@ -676,29 +763,11 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             }, 1800);
           }
           
-          localStorage.setItem("skillsProgress", JSON.stringify(skills));
-          
-          // Save to server
-          try {
-            await fetch("/api/skills-progress", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                skillName: experienceSelectedSkill,
-                currentXp: skills[experienceSelectedSkill].currentXp,
-                level: skills[experienceSelectedSkill].level
-              })
-            });
-          } catch (error) {
-            console.error('[handleEditSave] Error saving to server:', error);
-          }
-          
-          // Dispatch event immediately to update UI without waiting for mutations
           window.dispatchEvent(new CustomEvent('skillXpAdded', { 
-            detail: { skillName: experienceSelectedSkill, currentXp: skills[experienceSelectedSkill].currentXp }
+            detail: { skillId: experienceSelectedSkill, currentXp: updatedSkill?.currentXp, level: updatedSkill?.level }
           }));
         } catch (error) {
-          console.error('[handleEditSave] Error updating localStorage:', error);
+          console.error('[handleEditSave] Error adding XP:', error);
         }
       }
     }
@@ -1442,32 +1511,94 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                           className="bg-muted/50 hover:bg-muted w-full"
                           data-testid="button-select-skill"
                         >
-                          {experienceSelectedSkill ? `✓ ${experienceSelectedSkill}` : "Seleccionar skill"}
+                          {experienceSelectedSkill 
+                            ? `✓ ${experienceSelectedSkill.startsWith("legacy:") 
+                                ? experienceSelectedSkill.replace("legacy:", "") 
+                                : (availableGlobalSkills.find(s => s.id === experienceSelectedSkill)?.name || "Skill")}` 
+                            : "Seleccionar skill"}
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-56 p-2 border-0 bg-background/95 backdrop-blur-sm" align="center" side="top">
-                        <div className="max-h-48 overflow-y-auto">
-                          <div className="space-y-1">
-                            {["Limpieza", "Guitarra", "Lectura", "Growth mindset", "Acertividad"].map((skillName) => (
-                              <Button
+                        <div className="max-h-56 overflow-y-auto">
+                          {/* Legacy skills (only those associated with this area/project) */}
+                          {filteredLegacySkills.length > 0 && (
+                            <div className="space-y-1 mb-2">
+                              {filteredLegacySkills.map((skillName) => (
+                                <Button
                                 key={skillName}
                                 variant="ghost"
                                 size="sm"
                                 className={`w-full justify-start h-8 px-3 text-xs font-normal ${
-                                  experienceSelectedSkill === skillName 
+                                  experienceSelectedSkill === `legacy:${skillName}`
                                     ? "bg-muted text-foreground" 
                                     : "hover:bg-muted/50"
                                 }`}
                                 onClick={() => {
-                                  setExperienceSelectedSkill(skillName);
+                                  setExperienceSelectedSkill(`legacy:${skillName}`);
                                   setShowExperienceSkillSelector(false);
                                 }}
-                                data-testid={`button-select-skill-${skillName}`}
-                              >
-                                {skillName}
-                              </Button>
-                            ))}
-                          </div>
+                                  data-testid={`button-select-legacy-${skillName}`}
+                                >
+                                  {skillName}
+                                </Button>
+                              ))}
+                            </div>
+                          )}
+                          
+                          {/* GlobalSkills for this area/quest */}
+                          {availableGlobalSkills.length > 0 && (
+                            <>
+                              <div className="border-t border-muted my-2" />
+                              <div className="space-y-1">
+                                {/* Parent skills (not subskills) */}
+                                {availableGlobalSkills.filter(s => !s.parentSkillId).map((gSkill) => (
+                                  <div key={gSkill.id}>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className={`w-full justify-start h-8 px-3 text-xs font-medium ${
+                                        experienceSelectedSkill === gSkill.id 
+                                          ? "bg-muted text-foreground" 
+                                          : "hover:bg-muted/50"
+                                      }`}
+                                      onClick={() => {
+                                        setExperienceSelectedSkill(gSkill.id);
+                                        setShowExperienceSkillSelector(false);
+                                      }}
+                                      data-testid={`button-select-skill-${gSkill.id}`}
+                                    >
+                                      {gSkill.name}
+                                      <span className="ml-auto text-muted-foreground">Lv.{gSkill.level}</span>
+                                    </Button>
+                                    {/* Subskills of this parent */}
+                                    {availableGlobalSkills
+                                      .filter(s => s.parentSkillId === gSkill.id)
+                                      .map((subSkill) => (
+                                        <Button
+                                          key={subSkill.id}
+                                        variant="ghost"
+                                        size="sm"
+                                        className={`w-full justify-start h-7 px-3 pl-6 text-xs font-normal ${
+                                          experienceSelectedSkill === subSkill.id 
+                                            ? "bg-muted text-foreground" 
+                                            : "hover:bg-muted/50 text-muted-foreground"
+                                        }`}
+                                        onClick={() => {
+                                          setExperienceSelectedSkill(subSkill.id);
+                                          setShowExperienceSkillSelector(false);
+                                        }}
+                                        data-testid={`button-select-subskill-${subSkill.id}`}
+                                      >
+                                        ↳ {subSkill.name}
+                                        <span className="ml-auto">Lv.{subSkill.level}</span>
+                                      </Button>
+                                    ))
+                                  }
+                                </div>
+                              ))}
+                            </div>
+                            </>
+                          )}
                         </div>
                       </PopoverContent>
                     </Popover>
@@ -1588,8 +1719,15 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       </DialogContent>
     </Dialog>
 
-    <Dialog open={isSubtitleDialogOpen} onOpenChange={setIsSubtitleDialogOpen}>
-      <DialogContent className="sm:max-w-[350px] border-0 shadow-2xl">
+    <Dialog open={isSubtitleDialogOpen} onOpenChange={(open) => {
+      setIsSubtitleDialogOpen(open);
+      if (!open) {
+        setNewSubskillName("");
+        setSelectedSubskillId(null);
+        setShowSubskillCreator(false);
+      }
+    }}>
+      <DialogContent className="sm:max-w-[400px] border-0 shadow-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-lg font-medium">Subtítulo del Nivel {skill.level}</DialogTitle>
         </DialogHeader>
@@ -1616,6 +1754,88 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
               data-testid="input-edit-subtitle-description"
             />
+          </div>
+
+          {/* SubSkill Section */}
+          <div className="border-t pt-4">
+            <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3 block">
+              SubSkills para este nivel
+            </Label>
+            
+            {/* Existing subskills list */}
+            {parentGlobalSkills.length > 0 && (
+              <div className="space-y-1 mb-3">
+                <p className="text-xs text-muted-foreground mb-2">Seleccionar skill existente:</p>
+                {parentGlobalSkills.map((gSkill) => (
+                  <Button
+                    key={gSkill.id}
+                    variant={selectedSubskillId === gSkill.id ? "default" : "ghost"}
+                    size="sm"
+                    className="w-full justify-start text-left h-auto py-2"
+                    onClick={() => setSelectedSubskillId(selectedSubskillId === gSkill.id ? null : gSkill.id)}
+                  >
+                    <div className="flex flex-col items-start">
+                      <span className="text-sm">{gSkill.name}</span>
+                      <span className="text-xs text-muted-foreground">Lv.{gSkill.level} • {gSkill.currentXp}xp</span>
+                    </div>
+                  </Button>
+                ))}
+              </div>
+            )}
+
+            {/* Create new subskill */}
+            {showSubskillCreator ? (
+              <div className="space-y-2 bg-muted/30 p-3 rounded-lg">
+                <Input
+                  value={newSubskillName}
+                  onChange={(e) => setNewSubskillName(e.target.value)}
+                  placeholder="Nombre del nuevo skill..."
+                  className="border-0 bg-muted/50 focus-visible:ring-0"
+                />
+                <div className="flex gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setShowSubskillCreator(false);
+                      setNewSubskillName("");
+                    }}
+                    className="flex-1 bg-muted/50"
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={async () => {
+                      if (newSubskillName.trim()) {
+                        console.log('[SkillNode] Creating skill with activeAreaId:', activeAreaId, 'activeProjectId:', activeProjectId);
+                        await createGlobalSkill(
+                          newSubskillName.trim(),
+                          activeAreaId || undefined,
+                          activeProjectId || undefined
+                        );
+                        setNewSubskillName("");
+                        setShowSubskillCreator(false);
+                      }
+                    }}
+                    disabled={!newSubskillName.trim()}
+                    className="flex-1"
+                  >
+                    Crear Skill
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowSubskillCreator(true)}
+                className="w-full bg-muted/30 hover:bg-muted/50"
+              >
+                <Plus className="h-3 w-3 mr-1" />
+                Agregar nuevo Skill
+              </Button>
+            )}
           </div>
         </div>
         <div className="flex gap-2 pt-2">

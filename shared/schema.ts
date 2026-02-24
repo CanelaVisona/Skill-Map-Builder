@@ -180,6 +180,19 @@ export const userSkillsProgress = pgTable("user_skills_progress", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+export const globalSkills = pgTable("global_skills", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  areaId: varchar("area_id").references(() => areas.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  parentSkillId: varchar("parent_skill_id"),
+  currentXp: integer("current_xp").notNull().default(0),
+  level: integer("level").notNull().default(1),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertSessionSchema = createInsertSchema(sessions).omit({ id: true });
 export const insertAreaSchema = createInsertSchema(areas);
@@ -203,6 +216,7 @@ export const insertJournalThoughtSchema = createInsertSchema(journalThoughts).om
 });
 
 export const insertUserSkillsProgressSchema = createInsertSchema(userSkillsProgress).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertGlobalSkillSchema = createInsertSchema(globalSkills).omit({ id: true, createdAt: true, updatedAt: true });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
@@ -263,3 +277,5 @@ export type InsertJournalThought = z.infer<typeof insertJournalThoughtSchema>;
 export type JournalThought = typeof journalThoughts.$inferSelect;
 export type InsertUserSkillsProgress = z.infer<typeof insertUserSkillsProgressSchema>;
 export type UserSkillsProgress = typeof userSkillsProgress.$inferSelect;
+export type InsertGlobalSkill = z.infer<typeof insertGlobalSkillSchema>;
+export type GlobalSkill = typeof globalSkills.$inferSelect;

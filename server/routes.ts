@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema } from "@shared/schema";
+import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertGlobalSkillSchema } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import cookieParser from "cookie-parser";
 import crypto from "crypto";
@@ -1889,6 +1889,114 @@ export async function registerRoutes(
       } else {
         res.status(500).json({ message: error.message });
       }
+    }
+  });
+
+  // Global Skills (for XP tracking with areas/projects/subskills)
+  app.get("/api/global-skills", requireAuth, async (req, res) => {
+    try {
+      const skills = await storage.getGlobalSkills(req.userId!);
+      res.json(skills);
+    } catch (error: any) {
+      if (error.message?.includes('does not exist')) {
+        res.json([]);
+      } else {
+        res.status(500).json({ message: error.message });
+      }
+    }
+  });
+
+  app.get("/api/global-skills/area/:areaId", requireAuth, async (req, res) => {
+    try {
+      const skills = await storage.getGlobalSkillsByArea(req.userId!, req.params.areaId);
+      res.json(skills);
+    } catch (error: any) {
+      if (error.message?.includes('does not exist')) {
+        res.json([]);
+      } else {
+        res.status(500).json({ message: error.message });
+      }
+    }
+  });
+
+  app.get("/api/global-skills/project/:projectId", requireAuth, async (req, res) => {
+    try {
+      const skills = await storage.getGlobalSkillsByProject(req.userId!, req.params.projectId);
+      res.json(skills);
+    } catch (error: any) {
+      if (error.message?.includes('does not exist')) {
+        res.json([]);
+      } else {
+        res.status(500).json({ message: error.message });
+      }
+    }
+  });
+
+  app.get("/api/global-skills/:id", requireAuth, async (req, res) => {
+    try {
+      const skill = await storage.getGlobalSkill(req.params.id);
+      if (!skill) {
+        return res.status(404).json({ message: "Global skill not found" });
+      }
+      res.json(skill);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/global-skills", requireAuth, async (req, res) => {
+    try {
+      console.log('[global-skills POST] req.body:', req.body, 'userId:', req.userId);
+      const data = { ...req.body, userId: req.userId };
+      console.log('[global-skills POST] data before validation:', data);
+      const validated = insertGlobalSkillSchema.parse(data);
+      console.log('[global-skills POST] validated:', validated);
+      const skill = await storage.createGlobalSkill(validated);
+      console.log('[global-skills POST] created skill:', skill);
+      res.status(201).json(skill);
+    } catch (error: any) {
+      console.error('[global-skills POST] ERROR:', error);
+      if (error.name === "ZodError") {
+        return res.status(400).json({ message: fromError(error).toString() });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/global-skills/:id", requireAuth, async (req, res) => {
+    try {
+      const skill = await storage.updateGlobalSkill(req.params.id, req.body);
+      if (!skill) {
+        return res.status(404).json({ message: "Global skill not found" });
+      }
+      res.json(skill);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/global-skills/:id/add-xp", requireAuth, async (req, res) => {
+    try {
+      const { xpAmount } = req.body;
+      if (typeof xpAmount !== 'number' || xpAmount <= 0) {
+        return res.status(400).json({ message: "xpAmount must be a positive number" });
+      }
+      const skill = await storage.addXpToGlobalSkill(req.params.id, xpAmount);
+      if (!skill) {
+        return res.status(404).json({ message: "Global skill not found" });
+      }
+      res.json(skill);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/global-skills/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteGlobalSkill(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
     }
   });
 
