@@ -2598,7 +2598,7 @@ const xpPerLevel = 500;
 
 function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { journalLearnings: JournalLearning[]; journalTools: JournalTool[]; journalThoughts: JournalThought[] }) {
   const queryClient = useQueryClient();
-  const { globalSkills, globalSkillsLoading, refetchGlobalSkills, deleteGlobalSkill, areas, mainQuests, sideQuests, emergentQuests, experienceQuests } = useSkillTree();
+  const { globalSkills, globalSkillsLoading, refetchGlobalSkills, deleteGlobalSkill, createGlobalSkill, areas, mainQuests, sideQuests, emergentQuests, experienceQuests } = useSkillTree();
   
   // Legacy skills from localStorage (the original hardcoded ones)
   const [legacySkills, setLegacySkills] = useState<Record<string, { name: string; currentXp: number; level: number }>>({});
@@ -2607,11 +2607,29 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
   const [legacySkillDialogOpen, setLegacySkillDialogOpen] = useState(false);
   const [selectedLegacySkill, setSelectedLegacySkill] = useState<string | null>(null);
   const [selectedSourceType, setSelectedSourceType] = useState<"area" | "project" | null>(null);
-  const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
-  const [legacySkillAssociations, setLegacySkillAssociations] = useState<Record<string, { type: "area" | "project"; id: string }>>({});
+  const [selectedAreaIds, setSelectedAreaIds] = useState<string[]>([]);
+  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
+  const [isEditingGlobalSkill, setIsEditingGlobalSkill] = useState(false);
+  const [legacySkillAssociations, setLegacySkillAssociations] = useState<Record<string, Array<{ type: "area" | "project"; id: string }>>>({});
   const [pressingSkill, setPressingSkill] = useState<string | null>(null);
+  const [legacySkillMenuOpen, setLegacySkillMenuOpen] = useState<string | null>(null);
+  const [legacySkillMenuPosition, setLegacySkillMenuPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const legacyLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const legacyIsLongPress = useRef(false);
+  
+  // Global skill menu state
+  const [globalSkillMenuOpen, setGlobalSkillMenuOpen] = useState<string | null>(null);
+  const [globalSkillMenuPosition, setGlobalSkillMenuPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const globalLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const globalIsLongPress = useRef(false);
+  const [pressingGlobalSkill, setPressingGlobalSkill] = useState<string | null>(null);
+  
+  // State for creating new global skill
+  const [isCreateSkillDialogOpen, setIsCreateSkillDialogOpen] = useState(false);
+  const [newSkillName, setNewSkillName] = useState("");
+  const [newSkillAreaId, setNewSkillAreaId] = useState<string>("");
+  const [newSkillProjectId, setNewSkillProjectId] = useState<string>("");
+  const createSkillLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // Load legacy skill associations from localStorage
   useEffect(() => {
@@ -2620,8 +2638,30 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
     if (stored) {
       try {
         const parsed = JSON.parse(stored);
-        console.log('[SkillsSection] Parsed legacySkillAssociations:', parsed);
-        setLegacySkillAssociations(parsed);
+        // Migration: convert old single association to array
+        const migrated: Record<string, Array<{ type: "area" | "project"; id: string }>> = {};
+        Object.entries(parsed).forEach(([skill, assoc]) => {
+            if (Array.isArray(assoc)) {
+              migrated[skill] = assoc.filter(a =>
+                a &&
+                typeof a === 'object' &&
+                (a.type === 'area' || a.type === 'project') &&
+                typeof a.id === 'string'
+              );
+            } else if (
+              assoc &&
+              typeof assoc === 'object' &&
+              ('type' in assoc) && ('id' in assoc) &&
+              ((assoc as any).type === 'area' || (assoc as any).type === 'project') &&
+              typeof (assoc as any).id === 'string'
+            ) {
+              migrated[skill] = [{
+                type: (assoc as any).type,
+                id: (assoc as any).id
+              }];
+            } // else skip invalid
+        });
+        setLegacySkillAssociations(migrated);
       } catch (e) {
         console.error("Error parsing legacy skill associations:", e);
       }
@@ -2637,6 +2677,11 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
     setPressingSkill(skillName);
     legacyIsLongPress.current = false;
     
+    // Close menu if clicking on different skill
+    if (legacySkillMenuOpen && legacySkillMenuOpen !== skillName) {
+      setLegacySkillMenuOpen(null);
+    }
+    
     // Clear any existing timer
     if (legacyLongPressTimer.current) {
       clearTimeout(legacyLongPressTimer.current);
@@ -2646,77 +2691,326 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
       console.log('[LegacySkill] Long press TRIGGERED:', skillName);
       legacyIsLongPress.current = true;
       setPressingSkill(null);
-      setSelectedLegacySkill(skillName);
-      // Pre-select current association if exists
-      const existing = legacySkillAssociations[skillName];
-      if (existing) {
-        setSelectedSourceType(existing.type);
-        setSelectedSourceId(existing.id);
-      } else {
-        setSelectedSourceType(null);
-        setSelectedSourceId(null);
-      }
-      setLegacySkillDialogOpen(true);
+      setLegacySkillMenuPosition({ x: e.clientX, y: e.clientY });
+      setLegacySkillMenuOpen(skillName);
     }, 400);
   };
   
-  const handleLegacySkillPointerUp = () => {
-    console.log('[LegacySkill] PointerUp');
-    setPressingSkill(null);
+  const handleLegacySkillPointerUp = (e: React.PointerEvent) => {
+    console.log('[LegacySkill] PointerUp', { wasLongPress: legacyIsLongPress.current });
+    if (legacyIsLongPress.current) {
+      e.stopPropagation();
+      e.preventDefault();
+    } else {
+      setPressingSkill(null);
+      setLegacySkillMenuOpen(null);
+    }
+    legacyIsLongPress.current = false;
     if (legacyLongPressTimer.current) {
       clearTimeout(legacyLongPressTimer.current);
       legacyLongPressTimer.current = null;
     }
   };
   
-  const handleLegacySkillPointerCancel = () => {
+  const handleLegacySkillPointerCancel = (e: React.PointerEvent) => {
     console.log('[LegacySkill] PointerCancel');
+    if (legacyIsLongPress.current) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
     setPressingSkill(null);
+    setLegacySkillMenuOpen(null);
+    legacyIsLongPress.current = false;
     if (legacyLongPressTimer.current) {
       clearTimeout(legacyLongPressTimer.current);
       legacyLongPressTimer.current = null;
     }
   };
   
-  const handleSaveAssociation = () => {
-    if (selectedLegacySkill && selectedSourceType && selectedSourceId) {
-      const newAssociations = {
-        ...legacySkillAssociations,
-        [selectedLegacySkill]: { type: selectedSourceType, id: selectedSourceId }
-      };
-      setLegacySkillAssociations(newAssociations);
-      localStorage.setItem("legacySkillAssociations", JSON.stringify(newAssociations));
+  // Global skill long-press handlers
+  const handleGlobalSkillPointerDown = (e: React.PointerEvent, skillId: string) => {
+    console.log('[GlobalSkill] PointerDown:', skillId, e.pointerType);
+    setPressingGlobalSkill(skillId);
+    globalIsLongPress.current = false;
+    
+    // Close menu if clicking on different skill
+    if (globalSkillMenuOpen && globalSkillMenuOpen !== skillId) {
+      setGlobalSkillMenuOpen(null);
+    }
+    
+    // Clear any existing timer
+    if (globalLongPressTimer.current) {
+      clearTimeout(globalLongPressTimer.current);
+    }
+    
+    globalLongPressTimer.current = setTimeout(() => {
+      console.log('[GlobalSkill] Long press TRIGGERED:', skillId);
+      globalIsLongPress.current = true;
+      setPressingGlobalSkill(null);
+      setGlobalSkillMenuPosition({ x: e.clientX, y: e.clientY });
+      setGlobalSkillMenuOpen(skillId);
+    }, 400);
+  };
+  
+  const handleGlobalSkillPointerUp = (e: React.PointerEvent) => {
+    console.log('[GlobalSkill] PointerUp', { wasLongPress: globalIsLongPress.current });
+    if (globalIsLongPress.current) {
+      e.stopPropagation();
+      e.preventDefault();
+    } else {
+      setPressingGlobalSkill(null);
+      setGlobalSkillMenuOpen(null);
+    }
+    globalIsLongPress.current = false;
+    if (globalLongPressTimer.current) {
+      clearTimeout(globalLongPressTimer.current);
+      globalLongPressTimer.current = null;
+    }
+  };
+  
+  const handleGlobalSkillPointerCancel = (e: React.PointerEvent) => {
+    console.log('[GlobalSkill] PointerCancel');
+    if (globalIsLongPress.current) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    setPressingGlobalSkill(null);
+    setGlobalSkillMenuOpen(null);
+    globalIsLongPress.current = false;
+    if (globalLongPressTimer.current) {
+      clearTimeout(globalLongPressTimer.current);
+      globalLongPressTimer.current = null;
+    }
+  };
+  
+  const handleSaveGlobalSkillArea = async () => {
+    if (selectedLegacySkill && (selectedAreaIds.length > 0 || selectedProjectIds.length > 0)) {
+      try {
+        const skillName = selectedLegacySkill;
+        const newAreaId = selectedAreaIds.length > 0 ? selectedAreaIds[0] : undefined;
+        const newProjectId = selectedProjectIds.length > 0 ? selectedProjectIds[0] : undefined;
+        
+        // Check if skill already exists in the new area/project
+        const skillAlreadyExists = globalSkills.some(s => {
+          const sameArea = s.areaId === newAreaId && newAreaId !== undefined;
+          const sameProject = s.projectId === newProjectId && newProjectId !== undefined;
+          const sameName = s.name === skillName && !s.parentSkillId;
+          return sameName && (sameArea || sameProject);
+        });
+        
+        if (skillAlreadyExists) {
+          console.log('[SkillsSection] Skill already exists in the new area/project:', { skillName, newAreaId, newProjectId });
+          alert(`Skill "${skillName}" already exists in this area/quest`);
+          return;
+        }
+        
+        // Create a copy of the skill in the new area/project
+        console.log('[SkillsSection] Creating copy of skill in new area/project:', { skillName, newAreaId, newProjectId });
+        await createGlobalSkill(skillName, newAreaId, newProjectId);
+        
+        refetchGlobalSkills();
+        setLegacySkillDialogOpen(false);
+        setSelectedLegacySkill(null);
+        setSelectedAreaIds([]);
+        setSelectedProjectIds([]);
+        setIsEditingGlobalSkill(false);
+      } catch (error) {
+        console.error('[SkillsSection] Error saving global skill area:', error);
+      }
+    }
+  };
+  
+  const handleSaveAssociation = async () => {
+    if (selectedLegacySkill) {
+      // Get old associations before update
+      const oldAssociations = legacySkillAssociations[selectedLegacySkill] || [];
+      const oldAreaIds = new Set(oldAssociations.filter(a => a.type === "area").map(a => a.id));
+      const oldProjectIds = new Set(oldAssociations.filter(a => a.type === "project").map(a => a.id));
+      const newAreaIds = new Set(selectedAreaIds);
+      const newProjectIds = new Set(selectedProjectIds);
+      
+      // Detect new areas and projects being added
+      const newAreasAdded = selectedAreaIds.filter(id => !oldAreaIds.has(id));
+      const newProjectsAdded = selectedProjectIds.filter(id => !oldProjectIds.has(id));
+      
+      // If new areas are being added, replicate global skills from old areas to new areas
+      if (newAreasAdded.length > 0 && oldAreaIds.size > 0) {
+        console.log('[SkillsSection] Replicating global skills to new areas:', newAreasAdded);
+        
+        // Get global skills from all old areas (including subskills)
+        const oldAreaGlobalSkills = globalSkills.filter(s => {
+          const isFromOldArea = s.areaId && oldAreaIds.has(s.areaId);
+          return isFromOldArea;
+        });
+        
+        // For each new area, create copies of the global skills
+        for (const newAreaId of newAreasAdded) {
+          // Create parent skills first
+          const parentSkillsToCreate = oldAreaGlobalSkills.filter(s => !s.parentSkillId);
+          const parentSkillMap = new Map<string, string>(); // Maps old skill ID to new skill ID
+          
+          for (const skill of parentSkillsToCreate) {
+            try {
+              // Check if skill already exists in the new area
+              const skillAlreadyExists = globalSkills.some(s => {
+                return s.name === skill.name && s.areaId === newAreaId && !s.parentSkillId;
+              });
+              
+              if (!skillAlreadyExists) {
+                console.log(`[SkillsSection] Creating copy of skill "${skill.name}" in new area ${newAreaId}`);
+                const newSkill = await createGlobalSkill(skill.name, newAreaId);
+                if (newSkill) {
+                  parentSkillMap.set(skill.id, newSkill.id);
+                }
+              } else {
+                console.log(`[SkillsSection] Skill "${skill.name}" already exists in area ${newAreaId}, skipping`);
+              }
+            } catch (error) {
+              console.error(`[SkillsSection] Failed to replicate skill ${skill.id}:`, error);
+            }
+          }
+          
+          // Then create subskills
+          const subSkillsToCreate = oldAreaGlobalSkills.filter(s => s.parentSkillId && parentSkillMap.has(s.parentSkillId));
+          for (const skill of subSkillsToCreate) {
+            const newParentId = parentSkillMap.get(skill.parentSkillId!);
+            if (newParentId) {
+              try {
+                // Check if subskill already exists in the new area with the same parent
+                const subskillAlreadyExists = globalSkills.some(s => {
+                  return s.name === skill.name && s.areaId === newAreaId && s.parentSkillId === newParentId;
+                });
+                
+                if (!subskillAlreadyExists) {
+                  console.log(`[SkillsSection] Creating copy of subskill "${skill.name}" in new area ${newAreaId}`);
+                  await createGlobalSkill(skill.name, newAreaId, undefined, newParentId);
+                } else {
+                  console.log(`[SkillsSection] Subskill "${skill.name}" already exists in area ${newAreaId}, skipping`);
+                }
+              } catch (error) {
+                console.error(`[SkillsSection] Failed to replicate subskill ${skill.id}:`, error);
+              }
+            }
+          }
+        }
+      }
+      
+      // If new projects are being added, replicate global skills from old projects to new projects
+      if (newProjectsAdded.length > 0 && oldProjectIds.size > 0) {
+        console.log('[SkillsSection] Replicating global skills to new projects:', newProjectsAdded);
+        
+        // Get global skills from all old projects (including subskills)
+        const oldProjectGlobalSkills = globalSkills.filter(s => {
+          const isFromOldProject = s.projectId && oldProjectIds.has(s.projectId);
+          return isFromOldProject;
+        });
+        
+        // For each new project, create copies of the global skills
+        for (const newProjectId of newProjectsAdded) {
+          // Create parent skills first
+          const parentSkillsToCreate = oldProjectGlobalSkills.filter(s => !s.parentSkillId);
+          const parentSkillMap = new Map<string, string>(); // Maps old skill ID to new skill ID
+          
+          for (const skill of parentSkillsToCreate) {
+            try {
+              // Check if skill already exists in the new project
+              const skillAlreadyExists = globalSkills.some(s => {
+                return s.name === skill.name && s.projectId === newProjectId && !s.parentSkillId;
+              });
+              
+              if (!skillAlreadyExists) {
+                console.log(`[SkillsSection] Creating copy of skill "${skill.name}" in new project ${newProjectId}`);
+                const newSkill = await createGlobalSkill(skill.name, undefined, newProjectId);
+                if (newSkill) {
+                  parentSkillMap.set(skill.id, newSkill.id);
+                }
+              } else {
+                console.log(`[SkillsSection] Skill "${skill.name}" already exists in project ${newProjectId}, skipping`);
+              }
+            } catch (error) {
+              console.error(`[SkillsSection] Failed to replicate skill ${skill.id}:`, error);
+            }
+          }
+          
+          // Then create subskills
+          const subSkillsToCreate = oldProjectGlobalSkills.filter(s => s.parentSkillId && parentSkillMap.has(s.parentSkillId));
+          for (const skill of subSkillsToCreate) {
+            const newParentId = parentSkillMap.get(skill.parentSkillId!);
+            if (newParentId) {
+              try {
+                // Check if subskill already exists in the new project with the same parent
+                const subskillAlreadyExists = globalSkills.some(s => {
+                  return s.name === skill.name && s.projectId === newProjectId && s.parentSkillId === newParentId;
+                });
+                
+                if (!subskillAlreadyExists) {
+                  console.log(`[SkillsSection] Creating copy of subskill "${skill.name}" in new project ${newProjectId}`);
+                  await createGlobalSkill(skill.name, undefined, newProjectId, newParentId);
+                } else {
+                  console.log(`[SkillsSection] Subskill "${skill.name}" already exists in project ${newProjectId}, skipping`);
+                }
+              } catch (error) {
+                console.error(`[SkillsSection] Failed to replicate subskill ${skill.id}:`, error);
+              }
+            }
+          }
+        }
+      }
+      
+      // Refetch if any changes were made
+      if (newAreasAdded.length > 0 || newProjectsAdded.length > 0) {
+        refetchGlobalSkills();
+      }
+      
+      setLegacySkillAssociations(prev => {
+        const updated = { ...prev };
+        const arr = updated[selectedLegacySkill] || [];
+        // Remove all previous associations for this skill
+        let newArr: Array<{ type: "area" | "project"; id: string }> = [];
+        newArr = [
+          ...selectedAreaIds.map(id => ({ type: "area" as const, id })),
+          ...selectedProjectIds.map(id => ({ type: "project" as const, id }))
+        ];
+        updated[selectedLegacySkill] = newArr;
+        localStorage.setItem("legacySkillAssociations", JSON.stringify(updated));
+        return updated;
+      });
     }
     setLegacySkillDialogOpen(false);
     setSelectedLegacySkill(null);
     setSelectedSourceType(null);
-    setSelectedSourceId(null);
+    setSelectedAreaIds([]);
+    setSelectedProjectIds([]);
   };
   
   const handleRemoveAssociation = () => {
     if (selectedLegacySkill) {
-      const newAssociations = { ...legacySkillAssociations };
-      delete newAssociations[selectedLegacySkill];
-      setLegacySkillAssociations(newAssociations);
-      localStorage.setItem("legacySkillAssociations", JSON.stringify(newAssociations));
+      setLegacySkillAssociations(prev => {
+        const updated = { ...prev };
+        updated[selectedLegacySkill] = [];
+        localStorage.setItem("legacySkillAssociations", JSON.stringify(updated));
+        return updated;
+      });
     }
     setLegacySkillDialogOpen(false);
     setSelectedLegacySkill(null);
     setSelectedSourceType(null);
-    setSelectedSourceId(null);
+    setSelectedAreaIds([]);
+    setSelectedProjectIds([]);
   };
   
   // Helper to get area/project name for display
-  const getAssociationName = (skillName: string) => {
-    const assoc = legacySkillAssociations[skillName];
-    if (!assoc) return null;
-    if (assoc.type === "area") {
-      const area = areas.find(a => a.id === assoc.id);
-      return area ? area.name : null;
-    } else {
-      const project = allProjects.find(p => p.id === assoc.id);
-      return project ? project.name : null;
-    }
+  const getAssociationNames = (skillName: string) => {
+    const assocs = legacySkillAssociations[skillName] || [];
+    return assocs.map(assoc => {
+      if (assoc.type === "area") {
+        const area = areas.find(a => a.id === assoc.id);
+        return area ? area.name : null;
+      } else {
+        const project = allProjects.find(p => p.id === assoc.id);
+        return project ? project.name : null;
+      }
+    }).filter(Boolean);
   };
   
   useEffect(() => {
@@ -2763,24 +3057,47 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
     return (xpInCurrentLevel / xpPerLevel) * 100;
   };
   
-  // Get GlobalSkills that belong to a legacy skill's associated area
+  // Get GlobalSkills that belong to a legacy skill's associated area or project
   const getGlobalSkillsForLegacySkill = (skillName: string) => {
-    const association = legacySkillAssociations[skillName];
-    console.log('[SkillsSection] getGlobalSkillsForLegacySkill:', skillName, 'association:', association, 'globalSkills count:', globalSkills.length);
-    console.log('[SkillsSection] globalSkills areaIds:', globalSkills.map(s => ({ name: s.name, areaId: s.areaId })));
-    if (!association || association.type !== 'area') return [];
-    const matched = globalSkills.filter(s => s.areaId === association.id && !s.parentSkillId);
-    console.log('[SkillsSection] Looking for areaId:', association.id, 'matched skills for', skillName, ':', matched);
+    const associations = Array.isArray(legacySkillAssociations[skillName]) ? legacySkillAssociations[skillName] : [];
+    const areaIds = associations.filter(a => a.type === 'area').map(a => a.id);
+    const projectIds = associations.filter(a => a.type === 'project').map(a => a.id);
+    const matched = globalSkills.filter(s => {
+      const isFromArea = s.areaId && areaIds.includes(s.areaId);
+      const isFromProject = s.projectId && projectIds.includes(s.projectId);
+      return (isFromArea || isFromProject) && !s.parentSkillId;
+    });
     return matched;
   };
   
   // Get all area IDs that are associated with legacy skills
   const legacyAreaIds = Object.values(legacySkillAssociations)
-    .filter(a => a.type === 'area')
-    .map(a => a.id);
+    .flatMap(arr => Array.isArray(arr) ? arr.filter(a => a.type === 'area').map(a => a.id) : []);
   
   // Filter parent skills (not subskills) - exclude those belonging to legacy skill areas
   const parentSkills = globalSkills.filter(s => !s.parentSkillId && !legacyAreaIds.includes(s.areaId || ''));
+  
+  // Helper function to adjust menu position to stay within viewport
+  const adjustMenuPosition = (x: number, y: number): { x: number; y: number } => {
+    const MENU_WIDTH = 200;
+    const MENU_HEIGHT = 120;
+    const PADDING = 10;
+    
+    let adjustedX = x;
+    let adjustedY = y;
+    
+    // Adjust horizontal position
+    if (x + MENU_WIDTH + PADDING > window.innerWidth) {
+      adjustedX = Math.max(PADDING, window.innerWidth - MENU_WIDTH - PADDING);
+    }
+    
+    // Adjust vertical position
+    if (y + MENU_HEIGHT + PADDING > window.innerHeight) {
+      adjustedY = Math.max(PADDING, window.innerHeight - MENU_HEIGHT - PADDING);
+    }
+    
+    return { x: adjustedX, y: adjustedY };
+  };
   
   // Get subskills for a parent
   const getSubSkillsOf = (parentId: string) => globalSkills.filter(s => s.parentSkillId === parentId);
@@ -3030,6 +3347,56 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
     setEditSentence("");
   };
 
+  // Handlers for create skill long-press
+  const handleCreateSkillPointerDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    createSkillLongPressTimer.current = setTimeout(() => {
+      console.log('[SkillsSection] Long press on Skills Progress header - opening create skill dialog');
+      setIsCreateSkillDialogOpen(true);
+    }, 400);
+  };
+
+  const handleCreateSkillPointerUp = () => {
+    if (createSkillLongPressTimer.current) {
+      clearTimeout(createSkillLongPressTimer.current);
+      createSkillLongPressTimer.current = null;
+    }
+  };
+
+  const handleCreateSkill = async () => {
+    if (newSkillName.trim()) {
+      try {
+        const skillName = newSkillName.trim();
+        const areaId = newSkillAreaId || undefined;
+        const projectId = newSkillProjectId || undefined;
+        
+        // Check if skill already exists in the same area/project
+        const skillAlreadyExists = globalSkills.some(s => {
+          const sameArea = s.areaId === areaId && areaId !== undefined;
+          const sameProject = s.projectId === projectId && projectId !== undefined;
+          const sameName = s.name === skillName && !s.parentSkillId;
+          return sameName && (sameArea || sameProject);
+        });
+        
+        if (skillAlreadyExists) {
+          console.log('[SkillsSection] Skill already exists:', { skillName, areaId, projectId });
+          alert(`Skill "${skillName}" already exists in this area/quest`);
+          return;
+        }
+        
+        console.log('[SkillsSection] Creating new global skill:', skillName, { areaId, projectId });
+        await createGlobalSkill(skillName, areaId, projectId);
+        setNewSkillName("");
+        setNewSkillAreaId("");
+        setNewSkillProjectId("");
+        setIsCreateSkillDialogOpen(false);
+        refetchGlobalSkills();
+      } catch (error) {
+        console.error('[SkillsSection] Error creating skill:', error);
+      }
+    }
+  };
+
   const activityFeed = [
     ...journalLearnings.map((learning) => ({
       id: learning.id,
@@ -3068,7 +3435,13 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
         <div className="space-y-6 pr-3 sm:pr-4">
           {/* Top Section: Skills Progress with Accordions */}
           <div className="bg-zinc-800/30 rounded border border-zinc-700/50 p-4">
-            <div className="mb-3 pb-2 border-b border-zinc-700/50">
+            <div 
+              className="mb-3 pb-2 border-b border-zinc-700/50 select-none"
+              onPointerDown={handleCreateSkillPointerDown}
+              onPointerUp={handleCreateSkillPointerUp}
+              onPointerCancel={handleCreateSkillPointerUp}
+              onPointerLeave={handleCreateSkillPointerUp}
+            >
               <span className="text-xs text-zinc-500 uppercase tracking-wider">Skills Progress</span>
               <div className="h-px w-8 bg-gradient-to-r from-zinc-600 to-transparent mt-1" />
             </div>
@@ -3080,7 +3453,9 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
                   {SKILLS_LIST.map((skillName) => {
                     const skill = legacySkills[skillName] || { name: skillName, currentXp: 0, level: 1 };
                     const xpProgress = calculateLegacyXpProgress(skill.currentXp, skill.level);
-                    const associationName = getAssociationName(skillName);
+                    const associationNames = getAssociationNames(skillName);
+                    const associationName = associationNames.length > 0 ? associationNames[0] : null;
+                    const additionalCount = Math.max(0, associationNames.length - 1);
                     const isPressing = pressingSkill === skillName;
                     const linkedGlobalSkills = getGlobalSkillsForLegacySkill(skillName);
                     
@@ -3096,48 +3471,13 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
                               e.stopPropagation();
                               handleLegacySkillPointerDown(e, skillName);
                             }}
-                            onPointerUp={handleLegacySkillPointerUp}
-                            onPointerCancel={handleLegacySkillPointerCancel}
-                            onPointerLeave={handleLegacySkillPointerUp}
+                            onPointerUp={(e) => handleLegacySkillPointerUp(e)}
+                            onPointerCancel={(e) => handleLegacySkillPointerCancel(e)}
+                            onPointerLeave={(e) => handleLegacySkillPointerUp(e)}
                             onContextMenu={(e) => e.preventDefault()}
                           >
                             <div className="flex items-center justify-between mb-1">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-medium text-zinc-100">{skill.name}</span>
-                                {associationName ? (
-                                  <span className="text-[10px] bg-zinc-700/50 text-zinc-400 px-1.5 py-0.5 rounded flex items-center gap-1">
-                                    <Target className="h-2.5 w-2.5" />
-                                    {associationName}
-                                  </span>
-                                ) : (
-                                  <span
-                                    role="button"
-                                    tabIndex={0}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      e.preventDefault();
-                                      setSelectedLegacySkill(skillName);
-                                      setSelectedSourceType(null);
-                                      setSelectedSourceId(null);
-                                      setLegacySkillDialogOpen(true);
-                                    }}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter' || e.key === ' ') {
-                                        e.stopPropagation();
-                                        e.preventDefault();
-                                        setSelectedLegacySkill(skillName);
-                                        setSelectedSourceType(null);
-                                        setSelectedSourceId(null);
-                                        setLegacySkillDialogOpen(true);
-                                      }
-                                    }}
-                                    className="text-[10px] bg-zinc-700/30 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50 px-1.5 py-0.5 rounded flex items-center gap-1 transition-colors cursor-pointer"
-                                  >
-                                    <FolderOpen className="h-2.5 w-2.5" />
-                                    Link area
-                                  </span>
-                                )}
-                              </div>
+                              <span className="text-sm font-medium text-zinc-100">{skill.name}</span>
                               <span className="text-xs text-zinc-400">
                                 Lv.<span className="font-bold text-zinc-100">{skill.level}</span>
                                 <span className="ml-2 text-zinc-500">{skill.currentXp}xp</span>
@@ -3154,7 +3494,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
                         <AccordionContent className="px-3 pb-3">
                           {linkedGlobalSkills.length === 0 ? (
                             <p className="text-xs text-zinc-500 py-2">
-                              {associationName ? "No subskills yet. Add skills from area subtitle." : "Link an area to see subskills here."}
+                              {Array.isArray(legacySkillAssociations[skillName]) && legacySkillAssociations[skillName].length > 0 ? "No subskills yet. Add skills from area subtitle." : "Long press to link or delete."}
                             </p>
                           ) : (
                             <div className="space-y-2 pl-3 border-l-2 border-zinc-700/50">
@@ -3195,11 +3535,22 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
                   {parentSkills.map((skill) => {
                     const subSkills = getSubSkillsOf(skill.id);
                     const xpProgress = calculateXpProgress(skill.currentXp, skill.level);
+                    const isPressing = pressingGlobalSkill === skill.id;
                     
                     return (
                       <AccordionItem key={skill.id} value={skill.id} className="border-zinc-700/50 rounded-lg bg-zinc-800/20">
                         <AccordionTrigger className="px-3 py-2 hover:no-underline hover:bg-zinc-700/20 rounded-t-lg">
-                          <div className="flex-1 pr-4">
+                          <div 
+                            className={cn("flex-1 pr-4", isPressing && "bg-purple-500/20")}
+                            onPointerDown={(e) => {
+                              e.stopPropagation();
+                              handleGlobalSkillPointerDown(e, skill.id);
+                            }}
+                            onPointerUp={(e) => handleGlobalSkillPointerUp(e)}
+                            onPointerCancel={(e) => handleGlobalSkillPointerCancel(e)}
+                            onPointerLeave={(e) => handleGlobalSkillPointerUp(e)}
+                            onContextMenu={(e) => e.preventDefault()}
+                          >
                             <div className="flex items-center justify-between mb-1">
                               <span className="text-sm font-medium text-zinc-100">{skill.name}</span>
                               <span className="text-xs text-zinc-400">
@@ -3385,120 +3736,120 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
           setLegacySkillDialogOpen(false);
           setSelectedLegacySkill(null);
           setSelectedSourceType(null);
-          setSelectedSourceId(null);
+          setSelectedAreaIds([]);
+          setSelectedProjectIds([]);
+          setIsEditingGlobalSkill(false);
         }
       }}>
         <DialogContent className="bg-zinc-900 border-zinc-700 max-w-sm">
           <DialogTitle className="text-zinc-100 flex items-center gap-2">
             <FolderOpen className="h-5 w-5 text-purple-400" />
-            Link "{selectedLegacySkill}" to Area/Quest
+            {isEditingGlobalSkill ? "Change" : "Link"} "{selectedLegacySkill}" to Areas/Quests
           </DialogTitle>
           <div className="space-y-4 mt-2">
             {/* Type Selection */}
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => {
-                  setSelectedSourceType("area");
-                  setSelectedSourceId(null);
-                }}
-                className={cn(
-                  "px-3 py-2 rounded border text-sm transition-colors",
-                  selectedSourceType === "area"
-                    ? "bg-purple-600/30 border-purple-500 text-purple-200"
-                    : "bg-zinc-800 border-zinc-700 text-zinc-300 hover:border-zinc-600"
-                )}
-              >
-                <MapIcon className="h-4 w-4 inline mr-1.5" />
-                Area
-              </button>
-              <button
-                onClick={() => {
-                  setSelectedSourceType("project");
-                  setSelectedSourceId(null);
-                }}
-                className={cn(
-                  "px-3 py-2 rounded border text-sm transition-colors",
-                  selectedSourceType === "project"
-                    ? "bg-blue-600/30 border-blue-500 text-blue-200"
-                    : "bg-zinc-800 border-zinc-700 text-zinc-300 hover:border-zinc-600"
-                )}
-              >
-                <Target className="h-4 w-4 inline mr-1.5" />
-                Quest
-              </button>
-            </div>
-
-            {/* Area/Project List */}
-            {selectedSourceType === "area" && (
-              <div className="space-y-1.5 max-h-48 overflow-y-auto">
+            <div className="space-y-2">
+              <div className="text-xs text-zinc-400 mb-2">
+                {isEditingGlobalSkill 
+                  ? "✓ Select the new area or quest for this skill" 
+                  : "✓ Select one or more areas and/or quests"}
+              </div>
+              <div className="text-xs text-zinc-400 mb-1">Select Areas</div>
+              <div className="space-y-1.5 max-h-32 overflow-y-auto">
                 {areas.length === 0 ? (
                   <p className="text-sm text-zinc-500 py-2">No areas available</p>
                 ) : (
-                  areas.map((area) => (
-                    <button
-                      key={area.id}
-                      onClick={() => setSelectedSourceId(area.id)}
-                      className={cn(
-                        "w-full text-left px-3 py-2 rounded text-sm transition-colors",
-                        selectedSourceId === area.id
-                          ? "bg-purple-600/30 text-purple-100"
-                          : "bg-zinc-800/50 text-zinc-300 hover:bg-zinc-700/50"
-                      )}
-                    >
+                  areas.map(area => (
+                    <label key={area.id} className="flex items-center gap-2 px-3 py-2 rounded text-sm transition-colors cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedAreaIds.includes(area.id)}
+                        onChange={e => {
+                          if (isEditingGlobalSkill) {
+                            // For global skills, single selection
+                            setSelectedAreaIds(e.target.checked ? [area.id] : []);
+                            setSelectedProjectIds([]);
+                          } else {
+                            // For legacy skills, multiple selection
+                            setSelectedAreaIds(ids =>
+                              e.target.checked ? [...ids, area.id] : ids.filter(id => id !== area.id)
+                            );
+                          }
+                        }}
+                        className="accent-purple-500"
+                      />
                       <span className="mr-2">{area.icon}</span>
                       {area.name}
-                    </button>
+                    </label>
                   ))
                 )}
               </div>
-            )}
-
-            {selectedSourceType === "project" && (
-              <div className="space-y-1.5 max-h-48 overflow-y-auto">
+              <div className="text-xs text-zinc-400 mt-3 mb-1">Select Quests</div>
+              <div className="space-y-1.5 max-h-32 overflow-y-auto">
                 {allProjects.length === 0 ? (
                   <p className="text-sm text-zinc-500 py-2">No quests available</p>
                 ) : (
-                  allProjects.map((project) => (
-                    <button
-                      key={project.id}
-                      onClick={() => setSelectedSourceId(project.id)}
-                      className={cn(
-                        "w-full text-left px-3 py-2 rounded text-sm transition-colors",
-                        selectedSourceId === project.id
-                          ? "bg-blue-600/30 text-blue-100"
-                          : "bg-zinc-800/50 text-zinc-300 hover:bg-zinc-700/50"
-                      )}
-                    >
+                  allProjects.map(project => (
+                    <label key={project.id} className="flex items-center gap-2 px-3 py-2 rounded text-sm transition-colors cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedProjectIds.includes(project.id)}
+                        onChange={e => {
+                          if (isEditingGlobalSkill) {
+                            // For global skills, single selection
+                            setSelectedProjectIds(e.target.checked ? [project.id] : []);
+                            setSelectedAreaIds([]);
+                          } else {
+                            // For legacy skills, multiple selection
+                            setSelectedProjectIds(ids =>
+                              e.target.checked ? [...ids, project.id] : ids.filter(id => id !== project.id)
+                            );
+                          }
+                        }}
+                        className="accent-blue-500"
+                      />
                       <span className="mr-2">{project.icon}</span>
                       {project.name}
-                    </button>
+                    </label>
                   ))
                 )}
               </div>
-            )}
+            </div>
+
+            {/* Area/Project List */}
+            {/* Both area and quest checkboxes are always shown above */}
 
             {/* Actions */}
             <div className="flex gap-2 justify-between pt-2">
-              {legacySkillAssociations[selectedLegacySkill || ""] && (
+              {!isEditingGlobalSkill && legacySkillAssociations[selectedLegacySkill || ""] && legacySkillAssociations[selectedLegacySkill || ""].length > 0 && (
                 <Button
                   variant="ghost"
                   onClick={handleRemoveAssociation}
                   className="text-red-400 hover:text-red-300 hover:bg-red-900/20"
                 >
-                  Remove Link
+                  Remove All Links
                 </Button>
               )}
               <div className="flex gap-2 ml-auto">
                 <Button
                   variant="ghost"
-                  onClick={() => setLegacySkillDialogOpen(false)}
+                  onClick={() => {
+                    setLegacySkillDialogOpen(false);
+                    setIsEditingGlobalSkill(false);
+                  }}
                   className="text-zinc-300 hover:bg-zinc-800"
                 >
                   Cancel
                 </Button>
                 <Button
-                  onClick={handleSaveAssociation}
-                  disabled={!selectedSourceType || !selectedSourceId}
+                  onClick={() => {
+                    if (isEditingGlobalSkill) {
+                      handleSaveGlobalSkillArea();
+                    } else {
+                      handleSaveAssociation();
+                    }
+                  }}
+                  disabled={selectedAreaIds.length === 0 && selectedProjectIds.length === 0}
                   className="bg-purple-600 hover:bg-purple-700 disabled:opacity-50"
                 >
                   Save
@@ -3508,6 +3859,204 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Create New Global Skill Dialog */}
+      <Dialog open={isCreateSkillDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          setNewSkillName("");
+          setNewSkillAreaId("");
+          setNewSkillProjectId("");
+        }
+        setIsCreateSkillDialogOpen(open);
+      }}>
+        <DialogContent className="bg-zinc-900 border-zinc-700 sm:max-w-[450px]">
+          <DialogTitle className="text-zinc-100">Create New Skill</DialogTitle>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="new-skill-name" className="text-zinc-300">Skill Name</Label>
+              <Input
+                id="new-skill-name"
+                value={newSkillName}
+                onChange={(e) => setNewSkillName(e.target.value)}
+                placeholder="Enter skill name (e.g., Mathematics, Design)"
+                className="bg-zinc-800 border-zinc-700 text-zinc-100"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handleCreateSkill();
+                  }
+                }}
+                autoFocus
+              />
+            </div>
+            
+            <div className="space-y-3">
+              <Label className="text-zinc-300 text-sm">Link to Area/Quest (optional)</Label>
+              
+              <div className="space-y-2">
+                <Label htmlFor="new-skill-area" className="text-xs text-zinc-400">Select Area</Label>
+                <select
+                  id="new-skill-area"
+                  value={newSkillAreaId}
+                  onChange={(e) => {
+                    setNewSkillAreaId(e.target.value);
+                    setNewSkillProjectId("");
+                  }}
+                  className="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 rounded px-3 py-2 text-sm focus:outline-none focus:border-zinc-600"
+                >
+                  <option value="">None</option>
+                  {areas.map(area => (
+                    <option key={area.id} value={area.id}>
+                      {area.icon} {area.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="new-skill-project" className="text-xs text-zinc-400">Select Quest</Label>
+                <select
+                  id="new-skill-project"
+                  value={newSkillProjectId}
+                  onChange={(e) => {
+                    setNewSkillProjectId(e.target.value);
+                    setNewSkillAreaId("");
+                  }}
+                  className="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 rounded px-3 py-2 text-sm focus:outline-none focus:border-zinc-600"
+                >
+                  <option value="">None</option>
+                  {allProjects.map(project => (
+                    <option key={project.id} value={project.id}>
+                      {project.icon} {project.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            
+            <p className="text-xs text-zinc-400">
+              This skill will be created as a global skill that you can add to any area or quest.
+            </p>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Button
+              variant="ghost"
+              onClick={() => setIsCreateSkillDialogOpen(false)}
+              className="text-zinc-300 hover:bg-zinc-800"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateSkill}
+              disabled={!newSkillName.trim()}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              Create Skill
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Unified Skill Context Menu - for both legacy and global skills */}
+      {(legacySkillMenuOpen || globalSkillMenuOpen) && (
+        <>
+          {/* Modal overlay */}
+          <div
+            className="fixed inset-0 z-40 bg-black/50 flex items-center justify-center"
+            onClick={() => {
+              setLegacySkillMenuOpen(null);
+              setGlobalSkillMenuOpen(null);
+            }}
+            onContextMenu={(e) => e.preventDefault()}
+          />
+          
+          {/* Centered modal menu */}
+          <div
+            className="fixed z-50 inset-0 flex items-center justify-center pointer-events-none"
+          >
+            <div className="pointer-events-auto bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl overflow-hidden">
+              {legacySkillMenuOpen && (
+                <>
+                  <button
+                    onClick={() => {
+                      const existing = legacySkillAssociations[legacySkillMenuOpen] || [];
+                      setSelectedLegacySkill(legacySkillMenuOpen);
+                      setSelectedSourceType(null);
+                      setSelectedAreaIds(existing.filter(a => a.type === "area").map(a => a.id));
+                      setSelectedProjectIds(existing.filter(a => a.type === "project").map(a => a.id));
+                      setLegacySkillMenuOpen(null);
+                      setLegacySkillDialogOpen(true);
+                    }}
+                    className="w-full text-left px-4 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors flex items-center gap-2 whitespace-nowrap"
+                  >
+                    <FolderOpen className="h-4 w-4" />
+                    Link to Area/Quest
+                  </button>
+                  <button
+                    onClick={() => {
+                      // Delete the legacy skill completely
+                      setLegacySkills(prev => {
+                        const updated = { ...prev };
+                        delete updated[legacySkillMenuOpen];
+                        localStorage.setItem("skillsProgress", JSON.stringify(updated));
+                        return updated;
+                      });
+                      // Also remove associations
+                      setLegacySkillAssociations(prev => {
+                        const updated = { ...prev };
+                        delete updated[legacySkillMenuOpen];
+                        localStorage.setItem("legacySkillAssociations", JSON.stringify(updated));
+                        return updated;
+                      });
+                      setLegacySkillMenuOpen(null);
+                    }}
+                    className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-red-900/20 hover:text-red-300 transition-colors flex items-center gap-2 whitespace-nowrap border-t border-zinc-700"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete Skill
+                  </button>
+                </>
+              )}
+              {globalSkillMenuOpen && (
+                <>
+                  <button
+                    onClick={() => {
+                      const skill = globalSkills.find(s => s.id === globalSkillMenuOpen);
+                      if (skill) {
+                        console.log('[SkillsSection] Opening change area dialog for global skill:', skill.name);
+                        setSelectedLegacySkill(skill.name);
+                        setSelectedAreaIds(skill.areaId ? [skill.areaId] : []);
+                        setSelectedProjectIds(skill.projectId ? [skill.projectId] : []);
+                        setIsEditingGlobalSkill(true);
+                        setGlobalSkillMenuOpen(null);
+                        setLegacySkillDialogOpen(true);
+                      }
+                    }}
+                    className="w-full text-left px-4 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors flex items-center gap-2 whitespace-nowrap"
+                  >
+                    <FolderOpen className="h-4 w-4" />
+                    Change Area/Quest
+                  </button>
+                  <button
+                    onClick={() => {
+                      // Find the skill in globalSkills and delete it
+                      const skill = globalSkills.find(s => s.id === globalSkillMenuOpen);
+                      if (skill) {
+                        console.log('[SkillsSection] Deleting global skill:', skill.name, skill.id);
+                        deleteGlobalSkill(skill.id);
+                      }
+                      setGlobalSkillMenuOpen(null);
+                    }}
+                    className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-red-900/20 hover:text-red-300 transition-colors flex items-center gap-2 whitespace-nowrap border-t border-zinc-700"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete Skill
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

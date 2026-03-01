@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -175,14 +176,38 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [showExperienceSkillSelector, setShowExperienceSkillSelector] = useState(false);
   
   // Legacy skill associations from localStorage
-  const [legacySkillAssociations, setLegacySkillAssociations] = useState<Record<string, { type: "area" | "project"; id: string }>>({});
+  const [legacySkillAssociations, setLegacySkillAssociations] = useState<Record<string, Array<{ type: "area" | "project"; id: string }>>>({});
   
   // Load legacy skill associations
   useEffect(() => {
     const stored = localStorage.getItem("legacySkillAssociations");
     if (stored) {
       try {
-        setLegacySkillAssociations(JSON.parse(stored));
+        const parsed = JSON.parse(stored);
+        // Migration: convert old single association to array
+        const migrated: Record<string, Array<{ type: "area" | "project"; id: string }>> = {};
+        Object.entries(parsed).forEach(([skill, assoc]) => {
+          if (Array.isArray(assoc)) {
+            migrated[skill] = assoc.filter(a =>
+              a &&
+              typeof a === 'object' &&
+              (a.type === 'area' || a.type === 'project') &&
+              typeof a.id === 'string'
+            );
+          } else if (
+            assoc &&
+            typeof assoc === 'object' &&
+            ('type' in assoc) && ('id' in assoc) &&
+            ((assoc as any).type === 'area' || (assoc as any).type === 'project') &&
+            typeof (assoc as any).id === 'string'
+          ) {
+            migrated[skill] = [{
+              type: (assoc as any).type,
+              id: (assoc as any).id
+            }];
+          }
+        });
+        setLegacySkillAssociations(migrated);
       } catch (e) {
         console.error("Error parsing legacy skill associations:", e);
       }
@@ -191,10 +216,14 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   
   // Filter legacy skills to only show ones associated with current area/project
   const filteredLegacySkills = ["Limpieza", "Guitarra", "Lectura", "Growth mindset", "Acertividad"].filter(skillName => {
-    const association = legacySkillAssociations[skillName];
-    if (!association) return false; // Only show skills that have associations
-    if (activeAreaId && association.type === "area" && association.id === activeAreaId) return true;
-    if (activeProjectId && association.type === "project" && association.id === activeProjectId) return true;
+    const associations = Array.isArray(legacySkillAssociations[skillName]) ? legacySkillAssociations[skillName] : [];
+    if (associations.length === 0) return false;
+    if (activeAreaId) {
+      return associations.some(a => a.type === "area" && a.id === activeAreaId);
+    }
+    if (activeProjectId) {
+      return associations.some(a => a.type === "project" && a.id === activeProjectId);
+    }
     return false;
   });
   
@@ -1261,6 +1290,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       setIsEditDialogOpen(open);
     }}>
       <DialogContent className="sm:max-w-[400px] border-0 shadow-2xl">
+        <DialogTitle className="sr-only">{skill.title}</DialogTitle>
+        <DialogDescription className="sr-only">Edit skill details</DialogDescription>
         <div className="min-h-[180px] flex flex-col">
           <AnimatePresence mode="wait">
             {editStep === 0 && (
@@ -1518,7 +1549,13 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                             : "Seleccionar skill"}
                         </Button>
                       </PopoverTrigger>
-                      <PopoverContent className="w-56 p-2 border-0 bg-background/95 backdrop-blur-sm" align="center" side="top">
+                      <PopoverContent 
+                        className="w-56 p-2 border-0 bg-background/95 backdrop-blur-sm z-[9999]" 
+                        align="center" 
+                        side="top"
+                        sideOffset={8}
+                        collisionPadding={16}
+                      >
                         <div className="max-h-56 overflow-y-auto">
                           {/* Legacy skills (only those associated with this area/project) */}
                           {filteredLegacySkills.length > 0 && (
@@ -1730,6 +1767,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       <DialogContent className="sm:max-w-[400px] border-0 shadow-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-lg font-medium">Subtítulo del Nivel {skill.level}</DialogTitle>
+          <DialogDescription className="sr-only">Edit level subtitle and subskills</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="grid gap-2">
