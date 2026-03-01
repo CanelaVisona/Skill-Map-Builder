@@ -2051,6 +2051,7 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [expandedLevels, setExpandedLevels] = useState<Set<string>>(new Set());
   const [selectedLevel, setSelectedLevel] = useState<{ level: number; subtitle: string; description: string; groupName: string } | null>(null);
+  const [selectedGroupName, setSelectedGroupName] = useState<string | null>(null);
   const [viewingThought, setViewingThought] = useState<JournalThought | null>(null);
   const [viewingLearning, setViewingLearning] = useState<JournalLearning | null>(null);
   const [viewingTool, setViewingTool] = useState<JournalTool | null>(null);
@@ -2297,7 +2298,13 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
               {sourceGroups.map((group) => (
                 <div key={group.name}>
                   <button
-                    onClick={() => toggleGroup(group.name)}
+                    onClick={() => {
+                      toggleGroup(group.name);
+                      setSelectedGroupName(group.name);
+                      setSelectedSkillId(null);
+                      setSelectedSubtaskId(null);
+                      setSelectedLevel(null);
+                    }}
                     className="w-full text-left px-3 py-2 rounded-md text-sm font-medium transition-colors hover:bg-muted/50 flex items-center justify-between"
                     data-testid={`group-${group.name}`}
                   >
@@ -2566,20 +2573,273 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
               )}
             </div>
           ) : selectedLevel ? (
+            <div className="h-full flex flex-col">
+              {/* Chain of Thinking Path Graph */}
+              {(() => {
+                // Get all skills for this level in this group
+                const group = sourceGroups.find(g => g.name === selectedLevel.groupName);
+                if (!group) return null;
+                
+                const levelSkills = group.skills.filter(s => s.level === selectedLevel.level);
+                
+                // Collect all activities (learnings, tools, thoughts) for this level in order
+                const levelActivities: Array<{id: string; type: 'learning' | 'tool' | 'thought'; title: string; sentence: string}> = [];
+                
+                levelSkills.forEach(skill => {
+                  // Get activities in order they were added (by skillId which contains timestamp)
+                  const skillLearnings = learnings.filter(l => l.skillId === skill.id).map(l => ({
+                    id: l.id,
+                    type: 'learning' as const,
+                    title: l.title,
+                    sentence: l.sentence
+                  }));
+                  const skillTools = tools.filter(t => t.skillId === skill.id).map(t => ({
+                    id: t.id,
+                    type: 'tool' as const,
+                    title: t.title,
+                    sentence: t.sentence
+                  }));
+                  const skillThoughts = thoughts.filter(t => t.skillId === skill.id).map(t => ({
+                    id: t.id,
+                    type: 'thought' as const,
+                    title: t.title,
+                    sentence: t.sentence
+                  }));
+                  
+                  levelActivities.push(...skillLearnings, ...skillTools, ...skillThoughts);
+                });
+                
+                return (
+                  <>
+                    {levelActivities.length > 0 ? (
+                      <div className="space-y-4">
+                        <h3 className="font-medium text-foreground mb-4">
+                          {selectedLevel.subtitle ? `Nivel ${selectedLevel.level}: ${selectedLevel.subtitle}` : `Nivel ${selectedLevel.level}`}
+                        </h3>
+                        <p className="text-xs text-muted-foreground/60 mb-6">{selectedLevel.groupName}</p>
+                        
+                        <div className="pt-6">
+                          <div className="relative">
+                            {/* Vertical line connecting all nodes */}
+                            <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-gradient-to-b from-zinc-600 to-zinc-700" style={{height: `calc(100% - 1.5rem)`}} />
+                            
+                            <div className="space-y-6">
+                              {levelActivities.map((activity, index) => (
+                                <div key={activity.id} className="flex gap-6 relative">
+                                  {/* Node */}
+                                  <div className="flex-shrink-0 flex justify-center">
+                                    <button
+                                      onClick={() => {
+                                        if (activity.type === 'learning') {
+                                          const learning = learnings.find(l => l.id === activity.id);
+                                          if (learning) setViewingLearning(learning);
+                                        } else if (activity.type === 'tool') {
+                                          const tool = tools.find(t => t.id === activity.id);
+                                          if (tool) setViewingTool(tool);
+                                        } else if (activity.type === 'thought') {
+                                          const thought = thoughts.find(t => t.id === activity.id);
+                                          if (thought) setViewingThought(thought);
+                                        }
+                                      }}
+                                      className="w-12 h-12 rounded-full bg-zinc-900 border-2 border-zinc-700 flex items-center justify-center flex-shrink-0 hover:border-zinc-500 transition-all hover:shadow-lg hover:shadow-zinc-900/50 group relative z-10"
+                                    >
+                                      {activity.type === 'learning' ? (
+                                        <Lightbulb className="h-5 w-5 text-yellow-500 group-hover:text-yellow-400" />
+                                      ) : activity.type === 'tool' ? (
+                                        <Wrench className="h-5 w-5 text-blue-500 group-hover:text-blue-400" />
+                                      ) : (
+                                        <BookOpen className="h-5 w-5 text-purple-500 group-hover:text-purple-400" />
+                                      )}
+                                    </button>
+                                  </div>
+                                  
+                                  {/* Content */}
+                                  <div className="flex-1 pt-1">
+                                    <div className="bg-zinc-800/40 border border-zinc-700/50 rounded-lg p-4 hover:bg-zinc-800/60 transition-colors cursor-pointer group"
+                                      onClick={() => {
+                                        if (activity.type === 'learning') {
+                                          const learning = learnings.find(l => l.id === activity.id);
+                                          if (learning) setViewingLearning(learning);
+                                        } else if (activity.type === 'tool') {
+                                          const tool = tools.find(t => t.id === activity.id);
+                                          if (tool) setViewingTool(tool);
+                                        } else if (activity.type === 'thought') {
+                                          const thought = thoughts.find(t => t.id === activity.id);
+                                          if (thought) setViewingThought(thought);
+                                        }
+                                      }}
+                                    >
+                                      <p className="text-sm font-medium text-zinc-200 mb-2 group-hover:text-zinc-50 transition-colors">
+                                        {activity.title}
+                                      </p>
+                                      <p className="text-sm text-zinc-400 leading-relaxed whitespace-pre-wrap group-hover:text-zinc-300 transition-colors">
+                                        {activity.sentence}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex-1 flex flex-col items-center justify-center text-center">
+                        <h3 className="font-medium text-foreground mb-2">
+                          {selectedLevel.subtitle ? `Nivel ${selectedLevel.level}: ${selectedLevel.subtitle}` : `Nivel ${selectedLevel.level}`}
+                        </h3>
+                        <p className="text-xs text-muted-foreground/60">
+                          {selectedLevel.groupName}
+                        </p>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          ) : selectedGroupName ? (
             <div className="space-y-4">
               <h3 className="font-medium text-foreground">
-                {selectedLevel.subtitle ? `Nivel ${selectedLevel.level}: ${selectedLevel.subtitle}` : `Nivel ${selectedLevel.level}`}
+                {selectedGroupName}
               </h3>
-              <p className="text-xs text-muted-foreground/60">{selectedLevel.groupName}</p>
-              {selectedLevel.description ? (
-                <p className="text-sm text-amber-500 leading-relaxed whitespace-pre-wrap">
-                  {selectedLevel.description}
-                </p>
-              ) : (
-                <p className="text-sm text-muted-foreground/50 italic">
-                  Sin descripción
-                </p>
-              )}
+              
+              {/* Chain of Thinking Path Graph for Full Group */}
+              {(() => {
+                const group = sourceGroups.find(g => g.name === selectedGroupName);
+                if (!group) return null;
+                
+                // Group activities by level
+                const activitiesByLevel: Record<number, Array<{id: string; type: 'learning' | 'tool' | 'thought'; title: string; sentence: string}>> = {};
+                
+                group.skills.forEach(skill => {
+                  // Get activities for this skill
+                  const skillLearnings = learnings.filter(l => l.skillId === skill.id).map(l => ({
+                    id: l.id,
+                    type: 'learning' as const,
+                    title: l.title,
+                    sentence: l.sentence
+                  }));
+                  const skillTools = tools.filter(t => t.skillId === skill.id).map(t => ({
+                    id: t.id,
+                    type: 'tool' as const,
+                    title: t.title,
+                    sentence: t.sentence
+                  }));
+                  const skillThoughts = thoughts.filter(t => t.skillId === skill.id).map(t => ({
+                    id: t.id,
+                    type: 'thought' as const,
+                    title: t.title,
+                    sentence: t.sentence
+                  }));
+                  
+                  const levelActivities = [...skillLearnings, ...skillTools, ...skillThoughts];
+                  if (!activitiesByLevel[skill.level]) {
+                    activitiesByLevel[skill.level] = [];
+                  }
+                  activitiesByLevel[skill.level].push(...levelActivities);
+                });
+                
+                const sortedLevels = Object.keys(activitiesByLevel)
+                  .map(Number)
+                  .sort((a, b) => a - b);
+                
+                return sortedLevels.length > 0 ? (
+                  <div className="pt-6 space-y-8">
+                    {sortedLevels.map((level, levelIndex) => {
+                      const levelActivities = activitiesByLevel[level];
+                      const hasRealSubtitle = group.levelSubtitles[level];
+                      
+                      return (
+                        <div key={`level-${level}`}>
+                          {/* Level Separator */}
+                          <div className="text-center mb-6">
+                            <div className="flex items-center gap-4 mb-2">
+                              <div className="flex-1 h-px bg-gradient-to-r from-zinc-600/50 to-transparent" />
+                              <span className="text-sm font-semibold text-zinc-400 whitespace-nowrap">
+                                LEVEL {level}
+                              </span>
+                              <div className="flex-1 h-px bg-gradient-to-l from-zinc-600/50 to-transparent" />
+                            </div>
+                            {hasRealSubtitle && (
+                              <p className="text-sm text-zinc-500">
+                                {hasRealSubtitle}
+                              </p>
+                            )}
+                          </div>
+                          
+                          {/* Activities for this level */}
+                          <div className="relative">
+                            {/* Vertical line for this level */}
+                            <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-gradient-to-b from-zinc-600 to-zinc-700" style={{height: `calc(100% - 1.5rem)`}} />
+                            
+                            <div className="space-y-6">
+                              {levelActivities.map((activity, index) => (
+                                <div key={activity.id} className="flex gap-6 relative">
+                                  {/* Node */}
+                                  <div className="flex-shrink-0 flex justify-center">
+                                    <button
+                                      onClick={() => {
+                                        if (activity.type === 'learning') {
+                                          const learning = learnings.find(l => l.id === activity.id);
+                                          if (learning) setViewingLearning(learning);
+                                        } else if (activity.type === 'tool') {
+                                          const tool = tools.find(t => t.id === activity.id);
+                                          if (tool) setViewingTool(tool);
+                                        } else if (activity.type === 'thought') {
+                                          const thought = thoughts.find(t => t.id === activity.id);
+                                          if (thought) setViewingThought(thought);
+                                        }
+                                      }}
+                                      className="w-12 h-12 rounded-full bg-zinc-900 border-2 border-zinc-700 flex items-center justify-center flex-shrink-0 hover:border-zinc-500 transition-all hover:shadow-lg hover:shadow-zinc-900/50 group relative z-10"
+                                    >
+                                      {activity.type === 'learning' ? (
+                                        <Lightbulb className="h-5 w-5 text-yellow-500 group-hover:text-yellow-400" />
+                                      ) : activity.type === 'tool' ? (
+                                        <Wrench className="h-5 w-5 text-blue-500 group-hover:text-blue-400" />
+                                      ) : (
+                                        <BookOpen className="h-5 w-5 text-purple-500 group-hover:text-purple-400" />
+                                      )}
+                                    </button>
+                                  </div>
+                                  
+                                  {/* Content */}
+                                  <div className="flex-1 pt-1">
+                                    <div className="bg-zinc-800/40 border border-zinc-700/50 rounded-lg p-4 hover:bg-zinc-800/60 transition-colors cursor-pointer group"
+                                      onClick={() => {
+                                        if (activity.type === 'learning') {
+                                          const learning = learnings.find(l => l.id === activity.id);
+                                          if (learning) setViewingLearning(learning);
+                                        } else if (activity.type === 'tool') {
+                                          const tool = tools.find(t => t.id === activity.id);
+                                          if (tool) setViewingTool(tool);
+                                        } else if (activity.type === 'thought') {
+                                          const thought = thoughts.find(t => t.id === activity.id);
+                                          if (thought) setViewingThought(thought);
+                                        }
+                                      }}
+                                    >
+                                      <p className="text-sm font-medium text-zinc-200 mb-2 group-hover:text-zinc-50 transition-colors">
+                                        {activity.title}
+                                      </p>
+                                      <p className="text-sm text-zinc-400 leading-relaxed whitespace-pre-wrap group-hover:text-zinc-300 transition-colors">
+                                        {activity.sentence}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground/50 italic">
+                    Sin actividades registradas
+                  </p>
+                );
+              })()}
             </div>
           ) : (
             <div className="h-full flex items-center justify-center text-muted-foreground/40 text-sm">
