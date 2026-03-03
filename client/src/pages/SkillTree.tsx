@@ -2894,6 +2894,8 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
   
   // State for creating new global skill
   const [isCreateSkillDialogOpen, setIsCreateSkillDialogOpen] = useState(false);
+  const [skillCreationMode, setSkillCreationMode] = useState<'mode-selection' | 'subskill' | 'skill' | null>(null);
+  const [parentSkillForSubskill, setParentSkillForSubskill] = useState<string>("");
   const [newSkillName, setNewSkillName] = useState("");
   const [newSkillAreaId, setNewSkillAreaId] = useState<string>("");
   const [newSkillProjectId, setNewSkillProjectId] = useState<string>("");
@@ -3335,6 +3337,9 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
       const isFromProject = s.projectId && projectIds.includes(s.projectId);
       return (isFromArea || isFromProject) && !s.parentSkillId;
     });
+    if (skillName === 'Música') {
+      console.log('[getGlobalSkillsForLegacySkill] Música:', JSON.stringify({areaIds, globalSkillsCount: globalSkills.length, matched: matched.map(m => ({ id: m.id, name: m.name, areaId: m.areaId }))}));
+    }
     return matched;
   };
   
@@ -3369,6 +3374,56 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
   
   // Get subskills for a parent
   const getSubSkillsOf = (parentId: string) => globalSkills.filter(s => s.parentSkillId === parentId);
+  
+  // Get all available areas including legacy ones
+  const getAllAvailableAreas = () => {
+    const result: Array<{id: string; name: string; icon: string; isLegacy: boolean}> = [];
+    
+    // Add regular areas
+    areas.forEach(area => {
+      result.push({ id: area.id, name: area.name, icon: area.icon, isLegacy: false });
+    });
+    
+    // Add legacy areas from legacySkillAssociations
+    Object.keys(legacySkillAssociations).forEach(skillName => {
+      const associations = legacySkillAssociations[skillName] || [];
+      const areaAssocs = associations.filter(a => a.type === 'area');
+      if (areaAssocs.length > 0) {
+        const areaId = areaAssocs[0].id;
+        // Don't duplicate if already in areas
+        if (!result.some(a => a.id === areaId)) {
+          result.push({ id: areaId, name: skillName, icon: '🎵', isLegacy: true });
+        }
+      }
+    });
+    
+    return result;
+  };
+  
+  // Get all available projects including legacy ones
+  const getAllAvailableProjects = () => {
+    const result: Array<{id: string; name: string; icon: string; isLegacy: boolean}> = [];
+    
+    // Add regular projects
+    allProjects.forEach(project => {
+      result.push({ id: project.id, name: project.name, icon: project.icon, isLegacy: false });
+    });
+    
+    // Add legacy projects from legacySkillAssociations
+    Object.keys(legacySkillAssociations).forEach(skillName => {
+      const associations = legacySkillAssociations[skillName] || [];
+      const projectAssocs = associations.filter(a => a.type === 'project');
+      if (projectAssocs.length > 0) {
+        const projectId = projectAssocs[0].id;
+        // Don't duplicate if already in projects
+        if (!result.some(p => p.id === projectId)) {
+          result.push({ id: projectId, name: skillName, icon: '⚔️', isLegacy: true });
+        }
+      }
+    });
+    
+    return result;
+  };
   
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -3637,6 +3692,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
         const skillName = newSkillName.trim();
         const areaId = newSkillAreaId || undefined;
         const projectId = newSkillProjectId || undefined;
+        const parentId = skillCreationMode === 'subskill' ? parentSkillForSubskill || undefined : undefined;
         
         // Check if skill already exists in the same area/project
         const skillAlreadyExists = globalSkills.some(s => {
@@ -3652,13 +3708,16 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
           return;
         }
         
-        console.log('[SkillsSection] Creating new global skill:', skillName, { areaId, projectId });
-        await createGlobalSkill(skillName, areaId, projectId);
+        console.log('[SkillsSection] Creating new global skill:', skillName, { areaId, projectId, parentId });
+        await createGlobalSkill(skillName, areaId, projectId, parentId);
         setNewSkillName("");
         setNewSkillAreaId("");
         setNewSkillProjectId("");
+        setParentSkillForSubskill("");
+        setSkillCreationMode(null);
         setIsCreateSkillDialogOpen(false);
-        refetchGlobalSkills();
+        await refetchGlobalSkills();
+        console.log('[SkillsSection] After refetch, globalSkills count:', globalSkills.length);
       } catch (error) {
         console.error('[SkillsSection] Error creating skill:', error);
       }
@@ -3852,7 +3911,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
                                     </div>
                                     <div className="w-full bg-zinc-700/30 border border-zinc-600/40 rounded h-1.5 overflow-hidden">
                                       <div
-                                        className="h-full bg-gradient-to-r from-blue-600 via-blue-500 to-blue-400 transition-all duration-300"
+                                        className="h-full bg-gradient-to-r from-green-600 via-green-500 to-green-400 transition-all duration-300"
                                         style={{ width: `${subXpProgress}%` }}
                                       />
                                     </div>
@@ -4130,97 +4189,206 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
 
       {/* Create New Global Skill Dialog */}
       <Dialog open={isCreateSkillDialogOpen} onOpenChange={(open) => {
-        if (!open) {
+        if (open) {
+          // Refetch skills when opening the dialog to ensure we have the latest data
+          refetchGlobalSkills();
+        } else {
           setNewSkillName("");
           setNewSkillAreaId("");
           setNewSkillProjectId("");
+          setParentSkillForSubskill("");
+          setSkillCreationMode(null);
         }
         setIsCreateSkillDialogOpen(open);
       }}>
-        <DialogContent className="bg-zinc-900 border-zinc-700 sm:max-w-[450px]">
-          <DialogTitle className="text-zinc-100">Create New Skill</DialogTitle>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="new-skill-name" className="text-zinc-300">Skill Name</Label>
-              <Input
-                id="new-skill-name"
-                value={newSkillName}
-                onChange={(e) => setNewSkillName(e.target.value)}
-                placeholder="Enter skill name (e.g., Mathematics, Design)"
-                className="bg-zinc-800 border-zinc-700 text-zinc-100"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    handleCreateSkill();
-                  }
-                }}
-                autoFocus
-              />
-            </div>
-            
-            <div className="space-y-3">
-              <Label className="text-zinc-300 text-sm">Link to Area/Quest (optional)</Label>
-              
-              <div className="space-y-2">
-                <Label htmlFor="new-skill-area" className="text-xs text-zinc-400">Select Area</Label>
-                <select
-                  id="new-skill-area"
-                  value={newSkillAreaId}
-                  onChange={(e) => {
-                    setNewSkillAreaId(e.target.value);
-                    setNewSkillProjectId("");
-                  }}
-                  className="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 rounded px-3 py-2 text-sm focus:outline-none focus:border-zinc-600"
-                >
-                  <option value="">None</option>
-                  {areas.map(area => (
-                    <option key={area.id} value={area.id}>
-                      {area.icon} {area.name}
-                    </option>
-                  ))}
-                </select>
+        <DialogContent className="sm:max-w-md bg-zinc-900 border border-zinc-700">
+          <VisuallyHidden>
+            <DialogTitle>
+              {skillCreationMode === null
+                ? "Create New Skill"
+                : skillCreationMode === 'subskill'
+                ? "Create New Subskill"
+                : "Create New Skill"}
+            </DialogTitle>
+          </VisuallyHidden>
+          {skillCreationMode === null ? (
+            <>
+              <div className="space-y-4">
+                <div className="border-b border-zinc-700/50 pb-2">
+                  <h3 className="font-medium text-zinc-100">Create New Skill</h3>
+                  <div className="h-px w-8 bg-gradient-to-r from-zinc-500 to-transparent mt-1" />
+                </div>
+                <p className="text-sm text-zinc-300">What do you want to create?</p>
+                <div className="flex gap-2 pt-2">
+                  <Button
+                    onClick={() => setSkillCreationMode('subskill')}
+                    className="flex-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-100"
+                  >
+                    Create SUBSKILL
+                  </Button>
+                  <Button
+                    onClick={() => setSkillCreationMode('skill')}
+                    className="flex-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-100"
+                  >
+                    Create SKILL
+                  </Button>
+                </div>
               </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="new-skill-project" className="text-xs text-zinc-400">Select Quest</Label>
-                <select
-                  id="new-skill-project"
-                  value={newSkillProjectId}
-                  onChange={(e) => {
-                    setNewSkillProjectId(e.target.value);
-                    setNewSkillAreaId("");
-                  }}
-                  className="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 rounded px-3 py-2 text-sm focus:outline-none focus:border-zinc-600"
-                >
-                  <option value="">None</option>
-                  {allProjects.map(project => (
-                    <option key={project.id} value={project.id}>
-                      {project.icon} {project.name}
-                    </option>
-                  ))}
-                </select>
+            </>
+          ) : skillCreationMode === 'subskill' ? (
+            <>
+              <div className="space-y-4">
+                <div className="border-b border-zinc-700/50 pb-2">
+                  <h3 className="font-medium text-zinc-100">Create New Subskill</h3>
+                  <div className="h-px w-8 bg-gradient-to-r from-zinc-500 to-transparent mt-1" />
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor="parent-skill" className="text-sm text-zinc-300">Link to Skill</label>
+                  <select
+                    id="parent-skill"
+                    value={parentSkillForSubskill}
+                    onChange={(e) => setParentSkillForSubskill(e.target.value)}
+                    className="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 rounded px-3 py-2 text-sm focus:outline-none focus:border-zinc-600"
+                  >
+                    <option value="">Select a skill...</option>
+                    {globalSkills
+                      .filter(s => !s.parentSkillId)
+                      .map(skill => (
+                        <option key={skill.id} value={skill.id}>
+                          {skill.name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                
+                <div className="space-y-2">
+                  <label htmlFor="subskill-name" className="text-sm text-zinc-300">Subskill Name</label>
+                  <Input
+                    id="subskill-name"
+                    value={newSkillName}
+                    onChange={(e) => setNewSkillName(e.target.value)}
+                    placeholder="Limpiar la cocina"
+                    className="bg-zinc-800 border-zinc-700 text-zinc-100 placeholder:text-zinc-500"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && parentSkillForSubskill && newSkillName.trim()) {
+                        handleCreateSkill();
+                      }
+                    }}
+                    autoFocus
+                  />
+                </div>
+                <div className="flex gap-2 pt-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setSkillCreationMode(null);
+                      setNewSkillName("");
+                      setParentSkillForSubskill("");
+                    }}
+                    className="text-zinc-400 hover:text-zinc-300"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleCreateSkill}
+                    disabled={!newSkillName.trim() || !parentSkillForSubskill}
+                    className="bg-zinc-700 hover:bg-zinc-600 text-zinc-200"
+                  >
+                    Create
+                  </Button>
+                </div>
               </div>
-            </div>
-            
-            <p className="text-xs text-zinc-400">
-              This skill will be created as a global skill that you can add to any area or quest.
-            </p>
-          </div>
-          <div className="flex gap-2 justify-end">
-            <Button
-              variant="ghost"
-              onClick={() => setIsCreateSkillDialogOpen(false)}
-              className="text-zinc-300 hover:bg-zinc-800"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleCreateSkill}
-              disabled={!newSkillName.trim()}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              Create Skill
-            </Button>
-          </div>
+            </>
+          ) : (
+            <>
+              <div className="space-y-4">
+                <div className="border-b border-zinc-700/50 pb-2">
+                  <h3 className="font-medium text-zinc-100">Create New Skill</h3>
+                  <div className="h-px w-8 bg-gradient-to-r from-zinc-500 to-transparent mt-1" />
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor="new-skill-name" className="text-sm text-zinc-300">Skill Name</label>
+                  <Input
+                    id="new-skill-name"
+                    value={newSkillName}
+                    onChange={(e) => setNewSkillName(e.target.value)}
+                    placeholder="e.g. Mathematics"
+                    className="bg-zinc-800 border-zinc-700 text-zinc-100 placeholder:text-zinc-500"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        handleCreateSkill();
+                      }
+                    }}
+                    autoFocus
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <label htmlFor="new-skill-area" className="text-sm text-zinc-300">Link to Area (optional)</label>
+                  <select
+                    id="new-skill-area"
+                    value={newSkillAreaId}
+                    onChange={(e) => {
+                      setNewSkillAreaId(e.target.value);
+                      setNewSkillProjectId("");
+                    }}
+                    className="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 rounded px-3 py-2 text-sm focus:outline-none focus:border-zinc-600"
+                  >
+                    <option value="">None</option>
+                    {getAllAvailableAreas().map(area => (
+                      <option key={area.id} value={area.id}>
+                        {area.icon} {area.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                
+                <div className="space-y-2">
+                  <label htmlFor="new-skill-project" className="text-sm text-zinc-300">Link to Quest (optional)</label>
+                  <select
+                    id="new-skill-project"
+                    value={newSkillProjectId}
+                    onChange={(e) => {
+                      setNewSkillProjectId(e.target.value);
+                      setNewSkillAreaId("");
+                    }}
+                    className="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 rounded px-3 py-2 text-sm focus:outline-none focus:border-zinc-600"
+                  >
+                    <option value="">None</option>
+                    {getAllAvailableProjects().map(project => (
+                      <option key={project.id} value={project.id}>
+                        {project.icon} {project.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                
+                <div className="flex gap-2 pt-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setSkillCreationMode(null);
+                      setNewSkillName("");
+                    }}
+                    className="text-zinc-400 hover:text-zinc-300"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleCreateSkill}
+                    disabled={!newSkillName.trim()}
+                    className="bg-zinc-700 hover:bg-zinc-600 text-zinc-200"
+                  >
+                    Create
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 
@@ -4305,12 +4473,13 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
                     Change Area/Quest
                   </button>
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       // Find the skill in globalSkills and delete it
                       const skill = globalSkills.find(s => s.id === globalSkillMenuOpen);
                       if (skill) {
                         console.log('[SkillsSection] Deleting global skill:', skill.name, skill.id);
-                        deleteGlobalSkill(skill.id);
+                        await deleteGlobalSkill(skill.id);
+                        await refetchGlobalSkills();
                       }
                       setGlobalSkillMenuOpen(null);
                     }}

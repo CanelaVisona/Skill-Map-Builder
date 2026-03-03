@@ -560,6 +560,24 @@ export async function registerRoutes(
         }
       }
 
+      // Handle XP propagation: if updating experiencePoints on a subskill, also update parent
+      if (req.body.experiencePoints !== undefined && existingSkill.parentSkillId) {
+        const currentXp = existingSkill.experiencePoints || 0;
+        const newXp = req.body.experiencePoints;
+        const xpDifference = newXp - currentXp;
+        
+        if (xpDifference !== 0) {
+          // Get parent skill and update its XP
+          const parentSkill = await storage.getSkill(existingSkill.parentSkillId);
+          if (parentSkill) {
+            const parentCurrentXp = parentSkill.experiencePoints || 0;
+            await storage.updateSkill(existingSkill.parentSkillId, {
+              experiencePoints: parentCurrentXp + xpDifference
+            });
+          }
+        }
+      }
+
       const skill = await storage.updateSkill(req.params.id, req.body);
       res.json(skill);
     } catch (error: any) {
@@ -1995,6 +2013,30 @@ export async function registerRoutes(
     try {
       await storage.deleteGlobalSkill(req.params.id);
       res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Cleanup endpoint: remove duplicate skills without areaId or projectId
+  app.post("/api/cleanup-duplicates", requireAuth, async (req, res) => {
+    try {
+      const allSkills = await storage.getGlobalSkills(req.userId!);
+      
+      // Find all skills without areaId and projectId
+      const duplicates = allSkills.filter(skill => !skill.areaId && !skill.projectId);
+      
+      let deleted = 0;
+      for (const skill of duplicates) {
+        await storage.deleteGlobalSkill(skill.id);
+        deleted++;
+      }
+      
+      res.json({ 
+        success: true, 
+        message: `Eliminados ${deleted} skill(s) sin área/quest`,
+        deletedCount: deleted 
+      });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
