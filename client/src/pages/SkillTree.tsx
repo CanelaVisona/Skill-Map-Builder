@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
-import { SkillTreeProvider, useSkillTree, type Skill, type GlobalSkill } from "@/lib/skill-context";
+import { SkillTreeProvider, useSkillTree, type Skill, type GlobalSkill, type Area, type Project } from "@/lib/skill-context";
 import { MenuProvider, useMenu } from "@/lib/menu-context";
 import { AreaMenu } from "@/components/AreaMenu";
 import { SkillNode } from "@/components/SkillNode";
 import { SkillConnection } from "@/components/SkillConnection";
 import { SkillDesigner } from "@/components/SkillDesigner";
 import { ProgressModal } from "@/components/ProgressModal";
+import { ProgressBar } from "@/components/ProgressBar";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Mountain } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -1780,7 +1781,7 @@ function ProfileSection() {
                     {areas.length > 0 && (
                       <SelectGroup>
                         <SelectLabel className="text-zinc-500">Áreas</SelectLabel>
-                        {areas.map((area) => (
+                        {areas.map((area: Area) => (
                           <SelectItem key={area.id} value={`area:${area.id}`} className="text-zinc-200">
                             {area.name}
                           </SelectItem>
@@ -1891,7 +1892,7 @@ function ProfileSection() {
                         {areas.length > 0 && (
                           <SelectGroup>
                             <SelectLabel className="text-zinc-500">Áreas</SelectLabel>
-                            {areas.map((area) => (
+                            {areas.map((area: Area) => (
                               <SelectItem key={area.id} value={`area:${area.id}`} className="text-zinc-200">
                                 {area.name}
                               </SelectItem>
@@ -2098,9 +2099,9 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
   };
 
   // From areas
-  areas.forEach(area => {
+  areas.forEach((area: Area) => {
     const allSkillsToShow = area.skills
-      .filter(s => {
+      .filter((s: Skill) => {
         const titleLower = s.title.toLowerCase();
         const isPlaceholder = titleLower === "inicio" || titleLower.includes("next challenge") || titleLower.includes("next challange") || titleLower.includes("next objective quest") || titleLower.includes("objective quest");
         const isCompleted = s.status === "mastered";
@@ -2108,16 +2109,16 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
         return !isPlaceholder && (isCompleted || isIncompleteWithName);
       })
       .sort(sortByPosition)
-      .map(skill => ({ ...skill, sourceName: area.name, sourceSkills: area.skills }));
+      .map((skill: Skill) => ({ ...skill, sourceName: area.name, sourceSkills: area.skills }));
     if (allSkillsToShow.length > 0) {
       sourceGroups.push({ name: area.name, skills: allSkillsToShow, levelSubtitles: area.levelSubtitles || {}, levelSubtitleDescriptions: area.levelSubtitleDescriptions || {} });
     }
   });
   
   // From main quests
-  mainQuests.forEach(project => {
+  mainQuests.forEach((project: Project) => {
     const allSkillsToShow = project.skills
-      .filter(s => {
+      .filter((s: Skill) => {
         const titleLower = s.title.toLowerCase();
         const isPlaceholder = titleLower === "inicio" || titleLower.includes("next challenge") || titleLower.includes("next challange") || titleLower.includes("next objective quest") || titleLower.includes("objective quest");
         const isCompleted = s.status === "mastered";
@@ -2125,16 +2126,16 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
         return !isPlaceholder && (isCompleted || isIncompleteWithName);
       })
       .sort(sortByPosition)
-      .map(skill => ({ ...skill, sourceName: project.name, sourceSkills: project.skills }));
+      .map((skill: Skill) => ({ ...skill, sourceName: project.name, sourceSkills: project.skills }));
     if (allSkillsToShow.length > 0) {
       sourceGroups.push({ name: project.name, skills: allSkillsToShow, levelSubtitles: project.levelSubtitles || {}, levelSubtitleDescriptions: project.levelSubtitleDescriptions || {} });
     }
   });
   
   // From side quests
-  sideQuests.forEach(project => {
+  sideQuests.forEach((project: Project) => {
     const allSkillsToShow = project.skills
-      .filter(s => {
+      .filter((s: Skill) => {
         const titleLower = s.title.toLowerCase();
         const isPlaceholder = titleLower === "inicio" || titleLower.includes("next challenge") || titleLower.includes("next challange") || titleLower.includes("next objective quest") || titleLower.includes("objective quest");
         const isCompleted = s.status === "mastered";
@@ -2142,7 +2143,7 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
         return !isPlaceholder && (isCompleted || isIncompleteWithName);
       })
       .sort(sortByPosition)
-      .map(skill => ({ ...skill, sourceName: project.name, sourceSkills: project.skills }));
+      .map((skill: Skill) => ({ ...skill, sourceName: project.name, sourceSkills: project.skills }));
     if (allSkillsToShow.length > 0) {
       sourceGroups.push({ name: project.name, skills: allSkillsToShow, levelSubtitles: project.levelSubtitles || {}, levelSubtitleDescriptions: project.levelSubtitleDescriptions || {} });
     }
@@ -3108,7 +3109,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
         console.log('[SkillsSection] Replicating global skills to new areas:', newAreasAdded);
         
         // Get global skills from all old areas (including subskills)
-        const oldAreaGlobalSkills = globalSkills.filter(s => {
+        const oldAreaGlobalSkills = globalSkills.filter((s: GlobalSkill) => {
           const isFromOldArea = s.areaId && oldAreaIds.has(s.areaId);
           return isFromOldArea;
         });
@@ -3116,7 +3117,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
         // For each new area, create copies of the global skills
         for (const newAreaId of newAreasAdded) {
           // Create parent skills first
-          const parentSkillsToCreate = oldAreaGlobalSkills.filter(s => !s.parentSkillId);
+          const parentSkillsToCreate = oldAreaGlobalSkills.filter((s: GlobalSkill) => !s.parentSkillId);
           const parentSkillMap = new Map<string, string>(); // Maps old skill ID to new skill ID
           
           for (const skill of parentSkillsToCreate) {
@@ -3141,7 +3142,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
           }
           
           // Then create subskills
-          const subSkillsToCreate = oldAreaGlobalSkills.filter(s => s.parentSkillId && parentSkillMap.has(s.parentSkillId));
+          const subSkillsToCreate = oldAreaGlobalSkills.filter((s: GlobalSkill) => s.parentSkillId && parentSkillMap.has(s.parentSkillId));
           for (const skill of subSkillsToCreate) {
             const newParentId = parentSkillMap.get(skill.parentSkillId!);
             if (newParentId) {
@@ -3170,7 +3171,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
         console.log('[SkillsSection] Replicating global skills to new projects:', newProjectsAdded);
         
         // Get global skills from all old projects (including subskills)
-        const oldProjectGlobalSkills = globalSkills.filter(s => {
+        const oldProjectGlobalSkills = globalSkills.filter((s: GlobalSkill) => {
           const isFromOldProject = s.projectId && oldProjectIds.has(s.projectId);
           return isFromOldProject;
         });
@@ -3178,7 +3179,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
         // For each new project, create copies of the global skills
         for (const newProjectId of newProjectsAdded) {
           // Create parent skills first
-          const parentSkillsToCreate = oldProjectGlobalSkills.filter(s => !s.parentSkillId);
+          const parentSkillsToCreate = oldProjectGlobalSkills.filter((s: GlobalSkill) => !s.parentSkillId);
           const parentSkillMap = new Map<string, string>(); // Maps old skill ID to new skill ID
           
           for (const skill of parentSkillsToCreate) {
@@ -3203,7 +3204,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
           }
           
           // Then create subskills
-          const subSkillsToCreate = oldProjectGlobalSkills.filter(s => s.parentSkillId && parentSkillMap.has(s.parentSkillId));
+          const subSkillsToCreate = oldProjectGlobalSkills.filter((s: GlobalSkill) => s.parentSkillId && parentSkillMap.has(s.parentSkillId));
           for (const skill of subSkillsToCreate) {
             const newParentId = parentSkillMap.get(skill.parentSkillId!);
             if (newParentId) {
@@ -3274,7 +3275,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
     const assocs = legacySkillAssociations[skillName] || [];
     return assocs.map(assoc => {
       if (assoc.type === "area") {
-        const area = areas.find(a => a.id === assoc.id);
+        const area = areas.find((a: Area) => a.id === assoc.id);
         return area ? area.name : null;
       } else {
         const project = allProjects.find(p => p.id === assoc.id);
@@ -3328,17 +3329,17 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
   };
   
   // Get GlobalSkills that belong to a legacy skill's associated area or project
-  const getGlobalSkillsForLegacySkill = (skillName: string) => {
+  const getGlobalSkillsForLegacySkill = (skillName: string): GlobalSkill[] => {
     const associations = Array.isArray(legacySkillAssociations[skillName]) ? legacySkillAssociations[skillName] : [];
     const areaIds = associations.filter(a => a.type === 'area').map(a => a.id);
     const projectIds = associations.filter(a => a.type === 'project').map(a => a.id);
-    const matched = globalSkills.filter(s => {
+    const matched = globalSkills.filter((s: GlobalSkill) => {
       const isFromArea = s.areaId && areaIds.includes(s.areaId);
       const isFromProject = s.projectId && projectIds.includes(s.projectId);
       return (isFromArea || isFromProject) && !s.parentSkillId;
     });
     if (skillName === 'Música') {
-      console.log('[getGlobalSkillsForLegacySkill] Música:', JSON.stringify({areaIds, globalSkillsCount: globalSkills.length, matched: matched.map(m => ({ id: m.id, name: m.name, areaId: m.areaId }))}));
+      console.log('[getGlobalSkillsForLegacySkill] Música:', JSON.stringify({areaIds, globalSkillsCount: globalSkills.length, matched: matched.map((m: GlobalSkill) => ({ id: m.id, name: m.name, areaId: m.areaId }))}));
     }
     return matched;
   };
@@ -3348,7 +3349,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
     .flatMap(arr => Array.isArray(arr) ? arr.filter(a => a.type === 'area').map(a => a.id) : []);
   
   // Filter parent skills (not subskills) - exclude those belonging to legacy skill areas
-  const parentSkills = globalSkills.filter(s => !s.parentSkillId && !legacyAreaIds.includes(s.areaId || ''));
+  const parentSkills = globalSkills.filter((s: GlobalSkill) => !s.parentSkillId && !legacyAreaIds.includes(s.areaId || ''));
   
   // Helper function to adjust menu position to stay within viewport
   const adjustMenuPosition = (x: number, y: number): { x: number; y: number } => {
@@ -3373,14 +3374,14 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
   };
   
   // Get subskills for a parent
-  const getSubSkillsOf = (parentId: string) => globalSkills.filter(s => s.parentSkillId === parentId);
+  const getSubSkillsOf = (parentId: string) => globalSkills.filter((s: GlobalSkill) => s.parentSkillId === parentId);
   
   // Get all available areas including legacy ones
-  const getAllAvailableAreas = () => {
+  const getAllAvailableAreas = (): any[] => {
     const result: Array<{id: string; name: string; icon: string; isLegacy: boolean}> = [];
     
     // Add regular areas
-    areas.forEach(area => {
+    areas.forEach((area: Area) => {
       result.push({ id: area.id, name: area.name, icon: area.icon, isLegacy: false });
     });
     
@@ -3825,7 +3826,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
                             </p>
                           ) : (
                             <div className="space-y-2 pl-3 border-l-2 border-zinc-700/50">
-                              {linkedGlobalSkills.map((globalSkill) => {
+                              {linkedGlobalSkills.map((globalSkill: GlobalSkill) => {
                                 const subXpProgress = calculateXpProgress(globalSkill.currentXp, globalSkill.level);
                                 return (
                                   <div key={globalSkill.id} className="space-y-1">
@@ -3859,7 +3860,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
                 <div className="text-sm text-zinc-500 py-2">Loading new skills...</div>
               ) : parentSkills.length > 0 ? (
                 <Accordion type="multiple" className="space-y-2">
-                  {parentSkills.map((skill) => {
+                  {parentSkills.map((skill: GlobalSkill) => {
                     const subSkills = getSubSkillsOf(skill.id);
                     const xpProgress = calculateXpProgress(skill.currentXp, skill.level);
                     const isPressing = pressingGlobalSkill === skill.id;
@@ -3898,7 +3899,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
                             <p className="text-xs text-zinc-500 py-2">No subskills yet</p>
                           ) : (
                             <div className="space-y-2 pl-3 border-l-2 border-zinc-700/50">
-                              {subSkills.map((subSkill) => {
+                              {subSkills.map((subSkill: GlobalSkill) => {
                                 const subXpProgress = calculateXpProgress(subSkill.currentXp, subSkill.level);
                                 return (
                                   <div key={subSkill.id} className="space-y-1">
@@ -4086,7 +4087,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
                 {areas.length === 0 ? (
                   <p className="text-sm text-zinc-500 py-2">No areas available</p>
                 ) : (
-                  areas.map(area => (
+                  areas.map((area: Area) => (
                     <label key={area.id} className="flex items-center gap-2 px-3 py-2 rounded text-sm transition-colors cursor-pointer">
                       <input
                         type="checkbox"
@@ -4864,8 +4865,8 @@ function SkillCanvas() {
     
     // Use target skill position or create at end
     const targetX = targetSkill ? targetSkill.x : 50;
-    const targetY = targetSkill ? targetSkill.y : (skills.length > 0 ? Math.max(...skills.map(s => s.y)) + 80 : 100);
-    const targetLevel = targetSkill ? targetSkill.level : (skills.length > 0 ? Math.max(...skills.map(s => s.level)) : 1);
+    const targetY = targetSkill ? targetSkill.y : (skills.length > 0 ? Math.max(...skills.map((s: Skill) => s.y)) + 80 : 100);
+    const targetLevel = targetSkill ? targetSkill.level : (skills.length > 0 ? Math.max(...skills.map((s: Skill) => s.level)) : 1);
     const targetLevelPosition = targetSkill ? targetSkill.levelPosition : 1;
     
     const newSkill: Omit<Skill, "id"> = {
@@ -4918,12 +4919,12 @@ function SkillCanvas() {
     
     // Apply the same visibility logic to sub-skills
     const subSkillVisibleLevels = calculateVisibleLevels(subSkills);
-    const visibleSkills = subSkills.filter(s => subSkillVisibleLevels.has(s.level));
+    const visibleSkills = subSkills.filter((s: Skill) => subSkillVisibleLevels.has(s.level));
 
     const firstSkillOfLevel = new Set<string>();
     const levelGroups = new Map<number, typeof visibleSkills>();
     
-    visibleSkills.forEach(skill => {
+    visibleSkills.forEach((skill: Skill) => {
       if (!levelGroups.has(skill.level)) {
         levelGroups.set(skill.level, []);
       }
@@ -4931,13 +4932,13 @@ function SkillCanvas() {
     });
     
     levelGroups.forEach((skills) => {
-      const firstSkill = skills.reduce((min, s) => s.y < min.y ? s : min, skills[0]);
+      const firstSkill = skills.reduce((min: Skill, s: Skill) => s.y < min.y ? s : min, skills[0]);
       if (firstSkill) {
         firstSkillOfLevel.add(firstSkill.id);
       }
     });
 
-    const maxY = visibleSkills.length > 0 ? Math.max(...visibleSkills.map(s => s.y), 400) : 400;
+    const maxY = visibleSkills.length > 0 ? Math.max(...visibleSkills.map((s: Skill) => s.y), 400) : 400;
     const containerHeight = maxY + 200;
 
     return (
@@ -5097,7 +5098,7 @@ function SkillCanvas() {
                     return connections;
                   })}
 
-                  {visibleSkills.map((skill, index) => {
+                  {visibleSkills.map((skill: Skill, index: number) => {
                     const itemColor = "text-zinc-800 dark:text-zinc-200";
                     const handleClick = () => toggleSubSkillStatus(skill.id);
                     return (
@@ -5123,7 +5124,7 @@ function SkillCanvas() {
   if (!activeItem) return null;
 
   const visibleLevels = calculateVisibleLevels(activeItem.skills);
-  const visibleSkills = activeItem.skills.filter(s => visibleLevels.has(s.level));
+  const visibleSkills = activeItem.skills.filter((s: Skill) => visibleLevels.has(s.level));
 
   // Find the first skill of each level (lowest Y position per level)
   const firstSkillOfLevel = new Set<string>();
@@ -5143,11 +5144,11 @@ function SkillCanvas() {
     }
   });
 
-  const maxY = Math.max(...visibleSkills.map(s => s.y), 400);
+  const maxY = Math.max(...visibleSkills.map((s: Skill) => s.y), 400);
   const containerHeight = maxY + 200;
 
   return (
-    <div className="flex-1 relative overflow-hidden bg-background flex flex-col">
+    <div className="flex-1 relative bg-background flex flex-col overflow-auto">
       <AnimatePresence>
         {showLevelUp && (
           <motion.div
@@ -5209,28 +5210,46 @@ function SkillCanvas() {
         )}
       </AnimatePresence>
       <div className="flex-1 overflow-y-auto p-8 scroll-smooth">
-        <div className="w-full relative max-w-4xl mx-auto mt-2 min-h-full">
+        <div className="w-full relative max-w-4xl mx-auto min-h-full">
           
-          <div className="absolute top-0 left-0 z-10 -mt-32">
-            <div className="flex items-baseline gap-2">
+          {/* Sticky Progress Bar */}
+          <div className="sticky top-0 z-20 py-3 mb-6 -mx-8 px-8">
+            <div className="flex justify-end">
+              <div className="w-28 flex-shrink-0">
+                <ProgressBar skills={activeItem.skills} size="sm" areaOrProjectId={activeItem.id} />
+              </div>
+            </div>
+          </div>
+
+          {/* Header Section */}
+          <div className="mb-8 pb-6 border-b border-border/50">
+            {/* Title */}
+            <div className="mb-4">
               <h2 className="text-2xl font-bold tracking-tight">
                 {activeItem.name}
               </h2>
-              {(isProject ? activeProject?.skills : activeArea?.skills)?.some(
-                s => s.isFinalNode === 1 && s.status === "mastered"
-              ) && (
+            </div>
+
+            {/* Completed Badge */}
+            {(isProject ? activeProject?.skills : activeArea?.skills)?.some(
+              s => s.isFinalNode === 1 && s.status === "mastered"
+            ) && (
+              <div className="mb-3">
                 <span className="text-sm text-zinc-600 dark:text-zinc-400">
                   Completed
                 </span>
-              )}
-            </div>
-            <div className="mb-1" />
-            <p className="text-muted-foreground max-w-md text-sm leading-relaxed">
+              </div>
+            )}
+
+            {/* Description */}
+            <p className="text-muted-foreground max-w-md text-sm leading-relaxed mb-3">
               {activeItem.description}
             </p>
+
+            {/* Stuck Button */}
             <button
               onClick={() => setIsStuckDialogOpen(true)}
-              className="text-xs text-muted-foreground/60 hover:text-muted-foreground mt-2 transition-colors"
+              className="text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors"
               data-testid="button-stuck"
             >
               Estoy trabada
@@ -5389,7 +5408,7 @@ function SkillCanvas() {
           </Dialog>
 
           <div 
-            className="relative w-full mt-40 transition-all duration-500 ease-in-out"
+            className="relative w-full transition-all duration-500 ease-in-out overflow-hidden"
             style={{ height: `${containerHeight}px`, minHeight: "600px" }}
           >
             <AnimatePresence mode="wait">

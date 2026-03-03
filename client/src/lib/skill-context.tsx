@@ -153,7 +153,7 @@ interface SkillTreeContextType {
   refetchGlobalSkills: () => Promise<void>;
 }
 
-const SkillTreeContext = createContext<SkillTreeContextType | undefined>(undefined);
+export const SkillTreeContext = createContext<SkillTreeContextType | undefined>(undefined);
 
 const iconMap: Record<string, any> = {
   Music,
@@ -162,7 +162,7 @@ const iconMap: Record<string, any> = {
   Home,
 };
 
-export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
+export function SkillTreeProvider({ children }: { children: React.ReactNode }): React.ReactElement {
   const [areas, setAreas] = useState<Area[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [archivedAreas, setArchivedAreas] = useState<Area[]>([]);
@@ -329,82 +329,67 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
         triggerQuestUpdated();
       }
 
+      // Update state immediately for instant feedback
       if (isOpeningNewLevel) {
         const newUnlockedLevel = skill.level + 1;
-        // Delay the level up trigger to show quest updated first
+        
+        // Update state immediately without waiting
+        setAreas(prev => prev.map(a => {
+          if (a.id !== areaId) return a;
+          return {
+            ...a,
+            unlockedLevel: newUnlockedLevel,
+            nextLevelToAssign: newUnlockedLevel,
+            skills: a.skills.map(s => 
+              s.id === skillId ? { ...s, status: newStatus } : s
+            )
+          };
+        }));
+        
+        // Trigger UI feedback immediately
+        triggerQuestUpdated();
         setTimeout(() => triggerLevelUp(newUnlockedLevel), 2500);
         
-        // Generate 5 placeholder nodes for the new level (this also updates area in a transaction)
-        // This endpoint is idempotent - if nodes exist, it returns them without creating duplicates
-        const generateResponse = await fetch(`/api/areas/${areaId}/generate-level`, {
+        // Generate new level in the background without blocking
+        // This endpoint is idempotent, so it's safe to call even if nodes exist
+        fetch(`/api/areas/${areaId}/generate-level`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ level: newUnlockedLevel }),
+        }).then(response => {
+          if (!response.ok) {
+            console.error("Failed to generate new level");
+            return;
+          }
+          return response.json().then(({ updatedArea, createdSkills }) => {
+            // Merge generated skills with existing ones
+            const createdSkillsMap = new Map(createdSkills.map((s: Skill) => [s.id, s]));
+            setAreas(prev => prev.map(a => {
+              if (a.id !== areaId) return a;
+              const existingSkillIds = new Set(a.skills.map(s => s.id));
+              const newSkills = createdSkills.filter((s: Skill) => !existingSkillIds.has(s.id));
+              return {
+                ...a,
+                unlockedLevel: updatedArea.unlockedLevel,
+                nextLevelToAssign: updatedArea.nextLevelToAssign,
+                skills: [
+                  ...a.skills.map(s => {
+                    const backendSkill = createdSkillsMap.get(s.id);
+                    if (backendSkill) return backendSkill;
+                    return s;
+                  }),
+                  ...newSkills
+                ]
+              };
+            }));
+          });
+        }).catch(error => {
+          console.error("Error generating new level:", error);
         });
-        
-        if (!generateResponse.ok) {
-          console.error("Failed to generate new level");
-          setAreas(prev => prev.map(a => {
-            if (a.id !== areaId) return a;
-            return {
-              ...a,
-              skills: a.skills.map(s => 
-                s.id === skillId ? { ...s, status: newStatus } : s
-              )
-            };
-          }));
-          return;
-        }
-        
-        const { updatedArea, createdSkills } = await generateResponse.json();
-        
-        // Create a map of createdSkills for easy lookup (backend already sets first node to mastered)
-        const createdSkillsMap = new Map(createdSkills.map((s: Skill) => [s.id, s]));
-        
-        // Merge skills - update existing ones with data from backend, add new ones
-        setAreas(prev => prev.map(a => {
-          if (a.id !== areaId) return a;
-          const existingSkillIds = new Set(a.skills.map(s => s.id));
-          const newSkills = createdSkills.filter((s: Skill) => !existingSkillIds.has(s.id));
-          return {
-            ...a,
-            unlockedLevel: updatedArea.unlockedLevel,
-            nextLevelToAssign: updatedArea.nextLevelToAssign,
-            skills: [
-              ...a.skills.map(s => {
-                if (s.id === skillId) return { ...s, status: newStatus };
-                // Update existing skills with data from backend (e.g. first node of reopened level)
-                const backendSkill = createdSkillsMap.get(s.id);
-                if (backendSkill) return backendSkill;
-                return s;
-              }),
-              ...newSkills
-            ]
-          };
-        }));
       } else if (isClosingLevel) {
         const revertedLevel = skill.level;
         
-        const higherLevelSkills = area.skills.filter(s => s.level > revertedLevel);
-        
-        await Promise.all([
-          fetch(`/api/areas/${areaId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ 
-              unlockedLevel: revertedLevel,
-              nextLevelToAssign: revertedLevel
-            }),
-          }),
-          ...higherLevelSkills.map(s => 
-            fetch(`/api/skills/${s.id}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ status: "locked" }),
-            })
-          )
-        ]);
-
+        // Update state immediately
         setAreas(prev => prev.map(a => {
           if (a.id !== areaId) return a;
           return {
@@ -418,6 +403,31 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
             })
           };
         }));
+        
+        // Send updates to server without blocking
+        const higherLevelSkills = area.skills.filter(s => s.level > revertedLevel);
+        
+        fetch(`/api/areas/${areaId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            unlockedLevel: revertedLevel,
+            nextLevelToAssign: revertedLevel
+          }),
+        }).catch(error => {
+          console.error("Error closing level:", error);
+        });
+        
+        // Lock higher level skills in parallel without blocking
+        higherLevelSkills.forEach(s => {
+          fetch(`/api/skills/${s.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: "locked" }),
+          }).catch(error => {
+            console.error(`Error locking skill ${s.id}:`, error);
+          });
+        });
       } else {
         setAreas(prev => prev.map(a => {
           if (a.id !== areaId) return a;
@@ -503,78 +513,63 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
 
       if (isOpeningNewLevel) {
         const newUnlockedLevel = skill.level + 1;
-        // Delay the level up trigger to show quest updated first
+        
+        // Update state immediately without waiting
+        setProjects(prev => prev.map(p => {
+          if (p.id !== projectId) return p;
+          return {
+            ...p,
+            unlockedLevel: newUnlockedLevel,
+            nextLevelToAssign: newUnlockedLevel,
+            skills: p.skills.map(s => 
+              s.id === skillId ? { ...s, status: newStatus } : s
+            )
+          };
+        }));
+        
+        // Trigger UI feedback immediately
+        triggerQuestUpdated();
         setTimeout(() => triggerLevelUp(newUnlockedLevel), 2500);
         
-        const generateResponse = await fetch(`/api/projects/${projectId}/generate-level`, {
+        // Generate new level in the background without blocking
+        fetch(`/api/projects/${projectId}/generate-level`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ level: newUnlockedLevel }),
+        }).then(response => {
+          if (!response.ok) {
+            console.error("Failed to generate new level");
+            return;
+          }
+          return response.json().then(({ updatedProject, createdSkills }) => {
+            // Merge generated skills with existing ones
+            const createdSkillsMap = new Map(createdSkills.map((s: Skill) => [s.id, s]));
+            setProjects(prev => prev.map(p => {
+              if (p.id !== projectId) return p;
+              const existingSkillIds = new Set(p.skills.map(s => s.id));
+              const newSkills = createdSkills.filter((s: Skill) => !existingSkillIds.has(s.id));
+              return {
+                ...p,
+                unlockedLevel: updatedProject.unlockedLevel,
+                nextLevelToAssign: updatedProject.nextLevelToAssign,
+                skills: [
+                  ...p.skills.map(s => {
+                    const backendSkill = createdSkillsMap.get(s.id);
+                    if (backendSkill) return backendSkill;
+                    return s;
+                  }),
+                  ...newSkills
+                ]
+              };
+            }));
+          });
+        }).catch(error => {
+          console.error("Error generating new level:", error);
         });
-        
-        if (!generateResponse.ok) {
-          console.error("Failed to generate new level");
-          setProjects(prev => prev.map(p => {
-            if (p.id !== projectId) return p;
-            return {
-              ...p,
-              skills: p.skills.map(s => 
-                s.id === skillId ? { ...s, status: newStatus } : s
-              )
-            };
-          }));
-          return;
-        }
-        
-        const { updatedProject, createdSkills } = await generateResponse.json();
-        
-        // Create a map of createdSkills for easy lookup (backend already sets first node to mastered)
-        const createdSkillsMap = new Map(createdSkills.map((s: Skill) => [s.id, s]));
-        
-        // Merge skills - update existing ones with data from backend, add new ones
-        setProjects(prev => prev.map(p => {
-          if (p.id !== projectId) return p;
-          const existingSkillIds = new Set(p.skills.map(s => s.id));
-          const newSkills = createdSkills.filter((s: Skill) => !existingSkillIds.has(s.id));
-          return {
-            ...p,
-            unlockedLevel: updatedProject.unlockedLevel,
-            nextLevelToAssign: updatedProject.nextLevelToAssign,
-            skills: [
-              ...p.skills.map(s => {
-                if (s.id === skillId) return { ...s, status: newStatus };
-                // Update existing skills with data from backend (e.g. first node of reopened level)
-                const backendSkill = createdSkillsMap.get(s.id);
-                if (backendSkill) return backendSkill;
-                return s;
-              }),
-              ...newSkills
-            ]
-          };
-        }));
       } else if (isClosingLevel) {
         const revertedLevel = skill.level;
         
-        const higherLevelSkills = project.skills.filter(s => s.level > revertedLevel);
-        
-        await Promise.all([
-          fetch(`/api/projects/${projectId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ 
-              unlockedLevel: revertedLevel,
-              nextLevelToAssign: revertedLevel
-            }),
-          }),
-          ...higherLevelSkills.map(s => 
-            fetch(`/api/skills/${s.id}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ status: "locked" }),
-            })
-          )
-        ]);
-
+        // Update state immediately
         setProjects(prev => prev.map(p => {
           if (p.id !== projectId) return p;
           return {
@@ -588,6 +583,31 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
             })
           };
         }));
+        
+        // Send updates to server without blocking
+        const higherLevelSkills = project.skills.filter(s => s.level > revertedLevel);
+        
+        fetch(`/api/projects/${projectId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            unlockedLevel: revertedLevel,
+            nextLevelToAssign: revertedLevel
+          }),
+        }).catch(error => {
+          console.error("Error closing level:", error);
+        });
+        
+        // Lock higher level skills in parallel without blocking
+        higherLevelSkills.forEach(s => {
+          fetch(`/api/skills/${s.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: "locked" }),
+          }).catch(error => {
+            console.error(`Error locking skill ${s.id}:`, error);
+          });
+        });
       } else {
         setProjects(prev => prev.map(p => {
           if (p.id !== projectId) return p;
@@ -1729,29 +1749,40 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }) {
 
       if (isOpeningNewLevel && activeParentSkillId) {
         const newLevel = skill.level + 1;
-        const generateResponse = await fetch(`/api/skills/${activeParentSkillId}/subskills/generate-level`, {
+        
+        // Update state immediately without waiting
+        setSubSkills(prev => prev.map(s => 
+          s.id === skillId ? { ...s, status: newStatus } : s
+        ));
+        
+        // Trigger UI feedback immediately
+        triggerQuestUpdated();
+        
+        // Generate new level in the background without blocking
+        fetch(`/api/skills/${activeParentSkillId}/subskills/generate-level`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ level: newLevel }),
-        });
-
-        if (generateResponse.ok) {
-          const { createdSkills } = await generateResponse.json();
-          setSubSkills(prev => {
-            const existingIds = new Set(prev.map(s => s.id));
-            const newSkills = createdSkills.filter((s: Skill) => !existingIds.has(s.id));
-            return [
-              ...prev.map(s => s.id === skillId ? { ...s, status: newStatus } : s),
-              ...newSkills
-            ];
+        }).then(response => {
+          if (!response.ok) {
+            console.error("Failed to generate new subskill level");
+            return;
+          }
+          return response.json().then(({ createdSkills }) => {
+            setSubSkills(prev => {
+              const existingIds = new Set(prev.map(s => s.id));
+              const newSkills = createdSkills.filter((s: Skill) => !existingIds.has(s.id));
+              return [...prev, ...newSkills];
+            });
           });
-          return;
-        }
+        }).catch(error => {
+          console.error("Error generating new subskill level:", error);
+        });
+      } else {
+        setSubSkills(prev => prev.map(s => 
+          s.id === skillId ? { ...s, status: newStatus } : s
+        ));
       }
-
-      setSubSkills(prev => prev.map(s => 
-        s.id === skillId ? { ...s, status: newStatus } : s
-      ));
     } catch (error) {
       console.error("Error toggling sub-skill status:", error);
     }

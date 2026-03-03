@@ -1,6 +1,7 @@
-import { useSkillTree, iconMap, type Project } from "@/lib/skill-context";
+import { useSkillTree, iconMap, type Project, type Area } from "@/lib/skill-context";
 import { useAuth } from "@/lib/auth-context";
 import { useMenu } from "@/lib/menu-context";
+import { ProgressBar } from "@/components/ProgressBar";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, PanelLeftClose, PanelLeftOpen, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut, Archive, ArchiveRestore, Pencil, Zap, ChevronDown, ChevronRight, Mountain, Compass, Scroll, Eye } from "lucide-react";
@@ -413,7 +414,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
 }
 
 interface AreaItemProps {
-  area: { id: string; name: string; icon: string };
+  area: Area;
   isActive: boolean;
   isMenuOpen: boolean;
   onSelect: () => void;
@@ -483,7 +484,7 @@ function AreaItem({ area, isActive, isMenuOpen, onSelect, onDelete, onArchive, o
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
           className={cn(
-            "w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 group relative overflow-hidden touch-pan-y select-none",
+            "w-full flex flex-col gap-1 px-3 py-2 rounded-md transition-all duration-200 group relative overflow-hidden touch-pan-y select-none",
             isActive 
               ? "bg-primary/10 text-primary" 
               : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
@@ -497,16 +498,30 @@ function AreaItem({ area, isActive, isMenuOpen, onSelect, onDelete, onArchive, o
             />
           )}
           
-          <Icon size={18} className={cn("shrink-0", isActive ? "text-primary" : "group-hover:text-foreground")} />
-          
-          {isMenuOpen && (
-            <motion.span 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="font-medium text-sm truncate"
+          {/* Icon and name row */}
+          <div className="flex items-center gap-3">
+            <Icon size={18} className={cn("shrink-0", isActive ? "text-primary" : "group-hover:text-foreground")} />
+            
+            {isMenuOpen && (
+              <motion.span 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="font-medium text-sm truncate"
+              >
+                {area.name}
+              </motion.span>
+            )}
+          </div>
+
+          {/* Progress bar - only when menu is open and area is active */}
+          {isMenuOpen && isActive && (
+            <motion.div 
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              className="pl-7"
             >
-              {area.name}
-            </motion.span>
+              <ProgressBar skills={area.skills || []} size="sm" areaOrProjectId={area.id} />
+            </motion.div>
           )}
         </button>
       </PopoverAnchor>
@@ -693,7 +708,7 @@ function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete, onArch
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
           className={cn(
-            "w-full flex items-center gap-3 px-3 py-2 rounded-md transition-all duration-200 group relative overflow-hidden touch-pan-y select-none",
+            "w-full flex flex-col gap-1 px-3 py-2 rounded-md transition-all duration-200 group relative overflow-hidden touch-pan-y select-none",
             isActive 
               ? "bg-primary/10 text-foreground" 
               : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
@@ -701,16 +716,37 @@ function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete, onArch
           )}
           data-testid={`project-item-${project.id}`}
         >
-          <Icon size={18} className={cn("shrink-0", isActive ? "text-primary" : "group-hover:text-foreground")} />
-          
-          {isMenuOpen && (
-            <motion.span 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="font-medium text-sm truncate"
+          {isActive && isMenuOpen && (
+            <motion.div
+              layoutId="activeProjectIndicator"
+              className="absolute left-0 top-0 bottom-0 w-0.5 bg-primary"
+            />
+          )}
+
+          {/* Icon and name row */}
+          <div className="flex items-center gap-3">
+            <Icon size={18} className={cn("shrink-0", isActive ? "text-primary" : "group-hover:text-foreground")} />
+            
+            {isMenuOpen && (
+              <motion.span 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="font-medium text-sm truncate"
+              >
+                {project.name}
+              </motion.span>
+            )}
+          </div>
+
+          {/* Progress bar - only when menu is open and project is active */}
+          {isMenuOpen && isActive && (
+            <motion.div 
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              className="pl-7"
             >
-              {project.name}
-            </motion.span>
+              <ProgressBar skills={project.skills || []} size="sm" areaOrProjectId={project.id} />
+            </motion.div>
           )}
         </button>
       </PopoverAnchor>
