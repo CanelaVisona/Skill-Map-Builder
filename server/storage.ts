@@ -388,16 +388,15 @@ export class DbStorage implements IStorage {
         const id = randomUUID();
         const deps: string[] = previousSkillId ? [previousSkillId] : [];
         const isFirstNode = position === 1;
-        const isLevel1FirstNode = level === 1 && position === 1;
         let nodeTitle = "Objective quest";
         let nodeStatus: "locked" | "available" | "mastered" = "locked";
-        if (isLevel1FirstNode) {
-          nodeTitle = "inicio";
-          nodeStatus = "mastered";
-        } else if (isFirstNode && level >= 2) {
+        
+        // First node of level is always mastered with empty title
+        if (isFirstNode) {
           nodeTitle = "";
           nodeStatus = "mastered";
         }
+        
         const skillData: typeof skills.$inferInsert = {
           id,
           areaId,
@@ -439,16 +438,15 @@ export class DbStorage implements IStorage {
         const id = randomUUID();
         const deps: string[] = previousSkillId ? [previousSkillId] : [];
         const isFirstNode = position === 1;
-        const isLevel1FirstNode = level === 1 && position === 1;
         let nodeTitle = "Next objetive quest";
         let nodeStatus: "locked" | "available" | "mastered" = "locked";
-        if (isLevel1FirstNode) {
-          nodeTitle = "inicio";
-          nodeStatus = "mastered";
-        } else if (isFirstNode && level >= 2) {
+        
+        // First node of level is always mastered with empty title
+        if (isFirstNode) {
           nodeTitle = "";
           nodeStatus = "mastered";
         }
+        
         const skillData: typeof skills.$inferInsert = {
           id,
           projectId,

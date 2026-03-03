@@ -2498,6 +2498,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
       area.skills.forEach(skill => {
         if (skill.manualLock) return;
+        // Skip first node of level - it's always mastered from server
+        if (skill.levelPosition === 1) return;
         if (skill.level > area.unlockedLevel) return;
 
         const levelSkills = skillsInLevel.get(skill.level) || [];
@@ -2589,6 +2591,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
       project.skills.forEach(skill => {
         if (skill.manualLock) return;
+        // Skip first node of level - it's always mastered from server
+        if (skill.levelPosition === 1) return;
         if (skill.level > project.unlockedLevel) return;
 
         const levelSkills = skillsInLevel.get(skill.level) || [];
@@ -2679,6 +2683,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
     subSkills.forEach(skill => {
       if (skill.manualLock) return;
+      // Skip first node of level - it's always mastered from server
+      if (skill.levelPosition === 1) return;
 
       const levelSkills = skillsInLevel.get(skill.level) || [];
       const isLastNodeOfLevel = levelSkills.length > 0 && 

@@ -615,7 +615,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       setEditWhen(descParts[1] || "");
       setEditFeedback(skill.feedback || "");
       setXpValue("");
-      setEditStep(0);
+      // First node of level (levelPosition === 1) starts at step 2, skipping title edit
+      const initialStep = skill.levelPosition === 1 ? 2 : 0;
+      setEditStep(initialStep);
       setIsEditDialogOpen(true);
     }, 500);
   };
@@ -1331,7 +1333,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                   <Button 
                     variant="ghost" 
                     size="icon"
-                    onClick={() => setEditStep(1)}
+                    onClick={() => setEditStep(skill.levelPosition === 1 ? 2 : 1)}
                     className="h-10 w-10 bg-muted/50 hover:bg-muted"
                     data-testid="button-next-step"
                   >
@@ -1341,7 +1343,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               </motion.div>
             )}
 
-            {editStep === 1 && (
+            {editStep === 1 && skill.levelPosition !== 1 && (
               <motion.div
                 key="step-name"
                 initial={{ opacity: 0, x: 20 }}
@@ -1735,7 +1737,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                   <Button 
                     variant="ghost" 
                     size="icon"
-                    onClick={() => setEditStep(1)}
+                    onClick={() => setEditStep(skill.levelPosition === 1 ? 0 : 1)}
                     className="h-10 w-10 bg-muted/50 hover:bg-muted"
                     data-testid="button-prev-step-2"
                   >

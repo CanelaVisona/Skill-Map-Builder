@@ -489,7 +489,18 @@ export async function registerRoutes(
         
         const levelPosition = currentCount + 1;
         
-        const enforcedStatus = levelPosition > 1 ? "locked" : validatedSkill.status;
+        // First node of level is always mastered with empty title
+        let enforcedStatus: string;
+        let enforcedTitle: string;
+        
+        if (levelPosition === 1) {
+          enforcedStatus = "mastered";
+          enforcedTitle = "";
+        } else {
+          enforcedStatus = "locked";
+          enforcedTitle = validatedSkill.title;
+        }
+        
         const enforcedManualLock = levelPosition > 1 ? 0 : (validatedSkill.manualLock || 0);
         
         const skillWithPosition = {
@@ -498,16 +509,28 @@ export async function registerRoutes(
           levelPosition,
           isFinalNode: 0 as 0 | 1,
           status: enforcedStatus,
+          title: enforcedTitle,
           manualLock: enforcedManualLock as 0 | 1,
         };
         
         const skill = await storage.createSkill(skillWithPosition);
         res.status(201).json(skill);
       } else {
-        // Manual insertion - use client-provided values
+        // Manual insertion - use client-provided values but enforce first node rules
+        let finalTitle = validatedSkill.title;
+        let finalStatus = validatedSkill.status;
+        
+        // If this is the first node in the level, make it mastered with empty title
+        if (validatedSkill.levelPosition === 1) {
+          finalStatus = "mastered";
+          finalTitle = "";
+        }
+        
         const skillWithLevel = {
           ...validatedSkill,
           level: skillLevel,
+          title: finalTitle,
+          status: finalStatus,
         };
         
         const skill = await storage.createSkill(skillWithLevel);
@@ -639,18 +662,22 @@ export async function registerRoutes(
           nextLevelToAssign: level 
         });
         
-        // For level 2+, ensure first node is mastered with empty title
-        if (level >= 2) {
-          const sortedSkills = [...existingLevelSkills].sort((a, b) => a.y - b.y);
-          const firstNode = sortedSkills[0];
-          if (firstNode && (firstNode.status !== "mastered" || firstNode.title !== "")) {
-            await storage.updateSkill(firstNode.id, { status: "mastered", title: "" });
-            firstNode.status = "mastered";
-            firstNode.title = "";
+        // For all levels, ensure first node is mastered with empty title
+        let finalSkills = existingLevelSkills;
+        const sortedSkills = [...existingLevelSkills].sort((a, b) => a.y - b.y);
+        const firstNode = sortedSkills[0];
+        if (firstNode && (firstNode.status !== "mastered" || firstNode.title !== "")) {
+          await storage.updateSkill(firstNode.id, { status: "mastered", title: "" });
+          // Fetch the updated skill to ensure we have the latest version
+          const updatedFirstNode = await storage.getSkill(firstNode.id);
+          if (updatedFirstNode) {
+            finalSkills = existingLevelSkills.map(s => 
+              s.id === firstNode.id ? updatedFirstNode : s
+            );
           }
         }
         
-        res.status(200).json({ updatedArea, createdSkills: existingLevelSkills });
+        res.status(200).json({ updatedArea, createdSkills: finalSkills });
         return;
       }
       
@@ -796,18 +823,22 @@ export async function registerRoutes(
           nextLevelToAssign: level 
         });
         
-        // For level 2+, ensure first node is mastered with empty title
-        if (level >= 2) {
-          const sortedSkills = [...existingLevelSkills].sort((a, b) => a.y - b.y);
-          const firstNode = sortedSkills[0];
-          if (firstNode && (firstNode.status !== "mastered" || firstNode.title !== "")) {
-            await storage.updateSkill(firstNode.id, { status: "mastered", title: "" });
-            firstNode.status = "mastered";
-            firstNode.title = "";
+        // For all levels, ensure first node is mastered with empty title
+        let finalSkills = existingLevelSkills;
+        const sortedSkills = [...existingLevelSkills].sort((a, b) => a.y - b.y);
+        const firstNode = sortedSkills[0];
+        if (firstNode && (firstNode.status !== "mastered" || firstNode.title !== "")) {
+          await storage.updateSkill(firstNode.id, { status: "mastered", title: "" });
+          // Fetch the updated skill to ensure we have the latest version
+          const updatedFirstNode = await storage.getSkill(firstNode.id);
+          if (updatedFirstNode) {
+            finalSkills = existingLevelSkills.map(s => 
+              s.id === firstNode.id ? updatedFirstNode : s
+            );
           }
         }
         
-        res.status(200).json({ updatedProject, createdSkills: existingLevelSkills });
+        res.status(200).json({ updatedProject, createdSkills: finalSkills });
         return;
       }
       
@@ -852,7 +883,19 @@ export async function registerRoutes(
       }
       
       const levelPosition = currentCount + 1;
-      const enforcedStatus = levelPosition > 1 ? "locked" : validatedSkill.status;
+      
+      // First node of level is always mastered with empty title
+      let enforcedStatus: string;
+      let enforcedTitle: string;
+      
+      if (levelPosition === 1) {
+        enforcedStatus = "mastered";
+        enforcedTitle = "";
+      } else {
+        enforcedStatus = "locked";
+        enforcedTitle = validatedSkill.title;
+      }
+      
       const enforcedManualLock = levelPosition > 1 ? 0 : (validatedSkill.manualLock || 0);
       
       const skillWithPosition = {
@@ -862,6 +905,7 @@ export async function registerRoutes(
         levelPosition,
         isFinalNode: 0 as 0 | 1,
         status: enforcedStatus,
+        title: enforcedTitle,
         manualLock: enforcedManualLock as 0 | 1,
       };
       
@@ -905,19 +949,23 @@ export async function registerRoutes(
       const existingLevelSkills = allSubSkills.filter(s => s.level === level);
       
       if (existingLevelSkills.length > 0) {
-        // For level 2+, ensure first node is mastered with empty title
-        if (level >= 2) {
-          const sortedSkills = [...existingLevelSkills].sort((a, b) => a.y - b.y);
-          const firstNode = sortedSkills[0];
-          if (firstNode && (firstNode.status !== "mastered" || firstNode.title !== "")) {
-            await storage.updateSkill(firstNode.id, { status: "mastered", title: "" });
-            firstNode.status = "mastered";
-            firstNode.title = "";
+        // For all levels, ensure first node is mastered with empty title
+        let finalSkills = existingLevelSkills;
+        const sortedSkills = [...existingLevelSkills].sort((a, b) => a.y - b.y);
+        const firstNode = sortedSkills[0];
+        if (firstNode && (firstNode.status !== "mastered" || firstNode.title !== "")) {
+          await storage.updateSkill(firstNode.id, { status: "mastered", title: "" });
+          // Fetch the updated skill to ensure we have the latest version
+          const updatedFirstNode = await storage.getSkill(firstNode.id);
+          if (updatedFirstNode) {
+            finalSkills = existingLevelSkills.map(s => 
+              s.id === firstNode.id ? updatedFirstNode : s
+            );
           }
         }
         
         const parentSkill = await storage.getSkill(parentSkillId);
-        res.status(200).json({ parentSkill, createdSkills: existingLevelSkills });
+        res.status(200).json({ parentSkill, createdSkills: finalSkills });
         return;
       }
       
@@ -974,7 +1022,19 @@ export async function registerRoutes(
       }
       
       const levelPosition = currentCount + 1;
-      const enforcedStatus = levelPosition > 1 ? "locked" : validatedSkill.status;
+      
+      // First node of level is always mastered with empty title
+      let enforcedStatus: string;
+      let enforcedTitle: string;
+      
+      if (levelPosition === 1) {
+        enforcedStatus = "mastered";
+        enforcedTitle = "";
+      } else {
+        enforcedStatus = "locked";
+        enforcedTitle = validatedSkill.title;
+      }
+      
       const enforcedManualLock = levelPosition > 1 ? 0 : (validatedSkill.manualLock || 0);
       
       const skillWithPosition = {
@@ -984,6 +1044,7 @@ export async function registerRoutes(
         levelPosition,
         isFinalNode: 0 as 0 | 1,
         status: enforcedStatus,
+        title: enforcedTitle,
         manualLock: enforcedManualLock as 0 | 1,
       };
       
