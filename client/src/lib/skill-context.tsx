@@ -687,7 +687,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
     try {
       // Delete the skill
-      await fetch(`/api/skills/${skillId}`, { method: "DELETE" });
+      const deleteResponse = await fetch(`/api/skills/${skillId}`, { method: "DELETE" });
+      if (!deleteResponse.ok) {
+        throw new Error(`Error al eliminar skill: ${deleteResponse.status}`);
+      }
 
       // Update children's dependencies
       for (const child of children) {
@@ -695,30 +698,39 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           .filter(d => d !== skillId)
           .concat(newDependencies);
         
-        await fetch(`/api/skills/${child.id}`, {
+        const patchResponse = await fetch(`/api/skills/${child.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ dependencies: updatedDeps }),
         });
+        if (!patchResponse.ok) {
+          throw new Error(`Error al actualizar dependencias: ${patchResponse.status}`);
+        }
       }
 
       // Shift nodes below up by 150px
       const nodesToShift = area.skills.filter(s => s.y > skillToDelete.y);
       for (const node of nodesToShift) {
-        await fetch(`/api/skills/${node.id}`, {
+        const shiftResponse = await fetch(`/api/skills/${node.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ y: node.y - 150 }),
         });
+        if (!shiftResponse.ok) {
+          throw new Error(`Error al reposicionar skill: ${shiftResponse.status}`);
+        }
       }
 
       // Mark new final node if needed
       if (newFinalNodeId) {
-        await fetch(`/api/skills/${newFinalNodeId}`, {
+        const finalResponse = await fetch(`/api/skills/${newFinalNodeId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ isFinalNode: 1 }),
         });
+        if (!finalResponse.ok) {
+          throw new Error(`Error al marcar nodo final: ${finalResponse.status}`);
+        }
       }
 
       // Update local state
@@ -751,6 +763,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       }));
     } catch (error) {
       console.error("Error deleting skill:", error);
+      alert(`Error al eliminar skill: ${error instanceof Error ? error.message : "Error desconocido"}`);
     }
   };
 
@@ -990,35 +1003,47 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
 
     try {
-      await fetch(`/api/skills/${skillId}`, { method: "DELETE" });
+      const deleteResponse = await fetch(`/api/skills/${skillId}`, { method: "DELETE" });
+      if (!deleteResponse.ok) {
+        throw new Error(`Error al eliminar skill: ${deleteResponse.status}`);
+      }
 
       for (const child of children) {
         const updatedDeps = child.dependencies
           .filter(d => d !== skillId)
           .concat(newDependencies);
         
-        await fetch(`/api/skills/${child.id}`, {
+        const patchResponse = await fetch(`/api/skills/${child.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ dependencies: updatedDeps }),
         });
+        if (!patchResponse.ok) {
+          throw new Error(`Error al actualizar dependencias: ${patchResponse.status}`);
+        }
       }
 
       const nodesToShift = project.skills.filter(s => s.y > skillToDelete.y);
       for (const node of nodesToShift) {
-        await fetch(`/api/skills/${node.id}`, {
+        const shiftResponse = await fetch(`/api/skills/${node.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ y: node.y - 150 }),
         });
+        if (!shiftResponse.ok) {
+          throw new Error(`Error al reposicionar skill: ${shiftResponse.status}`);
+        }
       }
 
       if (newFinalNodeId) {
-        await fetch(`/api/skills/${newFinalNodeId}`, {
+        const finalResponse = await fetch(`/api/skills/${newFinalNodeId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ isFinalNode: 1 }),
         });
+        if (!finalResponse.ok) {
+          throw new Error(`Error al marcar nodo final: ${finalResponse.status}`);
+        }
       }
 
       setProjects(prev => prev.map(project => {
@@ -1050,6 +1075,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       }));
     } catch (error) {
       console.error("Error deleting project skill:", error);
+      alert(`Error al eliminar skill del proyecto: ${error instanceof Error ? error.message : "Error desconocido"}`);
     }
   };
 
@@ -1824,35 +1850,47 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
 
     try {
-      await fetch(`/api/skills/${skillId}`, { method: "DELETE" });
+      const deleteResponse = await fetch(`/api/skills/${skillId}`, { method: "DELETE" });
+      if (!deleteResponse.ok) {
+        throw new Error(`Error al eliminar sub-skill: ${deleteResponse.status}`);
+      }
 
       for (const child of children) {
         const updatedDeps = child.dependencies
           .filter(d => d !== skillId)
           .concat(newDependencies);
         
-        await fetch(`/api/skills/${child.id}`, {
+        const patchResponse = await fetch(`/api/skills/${child.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ dependencies: updatedDeps }),
         });
+        if (!patchResponse.ok) {
+          throw new Error(`Error al actualizar dependencias: ${patchResponse.status}`);
+        }
       }
 
       const nodesToShift = subSkills.filter(s => s.y > skillToDelete.y);
       for (const node of nodesToShift) {
-        await fetch(`/api/skills/${node.id}`, {
+        const shiftResponse = await fetch(`/api/skills/${node.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ y: node.y - 150 }),
         });
+        if (!shiftResponse.ok) {
+          throw new Error(`Error al reposicionar skill: ${shiftResponse.status}`);
+        }
       }
 
       if (newFinalNodeId) {
-        await fetch(`/api/skills/${newFinalNodeId}`, {
+        const finalResponse = await fetch(`/api/skills/${newFinalNodeId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ isFinalNode: 1 }),
         });
+        if (!finalResponse.ok) {
+          throw new Error(`Error al marcar nodo final: ${finalResponse.status}`);
+        }
       }
 
       setSubSkills(prev => {
@@ -1880,6 +1918,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       });
     } catch (error) {
       console.error("Error deleting sub-skill:", error);
+      alert(`Error al eliminar sub-skill: ${error instanceof Error ? error.message : "Error desconocido"}`);
     }
   };
 
@@ -3100,11 +3139,16 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
   const deleteGlobalSkill = async (id: string): Promise<void> => {
     try {
-      await fetch(`/api/global-skills/${id}`, { method: "DELETE", credentials: "include" });
+      const deleteResponse = await fetch(`/api/global-skills/${id}`, { method: "DELETE", credentials: "include" });
+      if (!deleteResponse.ok) {
+        const errorData = await deleteResponse.json().catch(() => ({}));
+        throw new Error(errorData.message || `Error al eliminar global skill: ${deleteResponse.status}`);
+      }
       // Remove skill and its children from state
       setGlobalSkills(prev => prev.filter(s => s.id !== id && s.parentSkillId !== id));
     } catch (error) {
       console.error("Error deleting global skill:", error);
+      alert(`Error al eliminar global skill: ${error instanceof Error ? error.message : "Error desconocido"}`);
     }
   };
 

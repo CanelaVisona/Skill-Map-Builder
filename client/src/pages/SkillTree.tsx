@@ -2885,12 +2885,14 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
   const [legacySkillMenuPosition, setLegacySkillMenuPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const legacyLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const legacyIsLongPress = useRef(false);
+  const legacyMenuOpenTime = useRef<number>(0);
   
   // Global skill menu state
   const [globalSkillMenuOpen, setGlobalSkillMenuOpen] = useState<string | null>(null);
   const [globalSkillMenuPosition, setGlobalSkillMenuPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const globalLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const globalIsLongPress = useRef(false);
+  const globalMenuOpenTime = useRef<number>(0);
   const [pressingGlobalSkill, setPressingGlobalSkill] = useState<string | null>(null);
   
   // State for creating new global skill
@@ -2902,6 +2904,16 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
   const [newSkillProjectId, setNewSkillProjectId] = useState<string>("");
   const createSkillLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   
+  // Monitor legacySkillMenuOpen state changes
+  useEffect(() => {
+    console.log('[STATE CHANGE] legacySkillMenuOpen updated to:', legacySkillMenuOpen);
+  }, [legacySkillMenuOpen]);
+
+  // Monitor globalSkillMenuOpen state changes
+  useEffect(() => {
+    console.log('[STATE CHANGE] globalSkillMenuOpen updated to:', globalSkillMenuOpen);
+  }, [globalSkillMenuOpen]);
+
   // Load legacy skill associations from localStorage
   useEffect(() => {
     const stored = localStorage.getItem("legacySkillAssociations");
@@ -2945,6 +2957,9 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
   // Handlers for legacy skill long-press
   const handleLegacySkillPointerDown = (e: React.PointerEvent, skillName: string) => {
     console.log('[LegacySkill] PointerDown:', skillName, e.pointerType);
+    // Stop propagation to prevent closing menu
+    e.stopPropagation();
+    
     setPressingSkill(skillName);
     legacyIsLongPress.current = false;
     
@@ -2962,6 +2977,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
       console.log('[LegacySkill] Long press TRIGGERED:', skillName);
       legacyIsLongPress.current = true;
       setPressingSkill(null);
+      legacyMenuOpenTime.current = Date.now();
       setLegacySkillMenuPosition({ x: e.clientX, y: e.clientY });
       setLegacySkillMenuOpen(skillName);
     }, 400);
@@ -2969,12 +2985,18 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
   
   const handleLegacySkillPointerUp = (e: React.PointerEvent) => {
     console.log('[LegacySkill] PointerUp', { wasLongPress: legacyIsLongPress.current });
-    if (legacyIsLongPress.current) {
+    // Stop propagation to prevent closing menu if menu is open
+    if (legacySkillMenuOpen || legacyIsLongPress.current) {
       e.stopPropagation();
       e.preventDefault();
+    }
+    
+    if (legacyIsLongPress.current) {
+      // Menu handling already done in long press timeout
     } else {
       setPressingSkill(null);
-      setLegacySkillMenuOpen(null);
+      // Don't close menu - it should only close when user clicks outside or on a menu option
+      // Keep menu open if it was recently opened
     }
     legacyIsLongPress.current = false;
     if (legacyLongPressTimer.current) {
@@ -2988,9 +3010,16 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
     if (legacyIsLongPress.current) {
       e.stopPropagation();
       e.preventDefault();
+      // Don't close menu if long press happened - menu should stay open
+    } else {
+      setPressingSkill(null);
+      // Only close menu if enough time has passed since opening
+      const timeSinceOpen = Date.now() - legacyMenuOpenTime.current;
+      if (timeSinceOpen > 100) {
+        // Safe to close menu if it's been open for >100ms without long press
+        // setLegacySkillMenuOpen(null);
+      }
     }
-    setPressingSkill(null);
-    setLegacySkillMenuOpen(null);
     legacyIsLongPress.current = false;
     if (legacyLongPressTimer.current) {
       clearTimeout(legacyLongPressTimer.current);
@@ -3001,6 +3030,9 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
   // Global skill long-press handlers
   const handleGlobalSkillPointerDown = (e: React.PointerEvent, skillId: string) => {
     console.log('[GlobalSkill] PointerDown:', skillId, e.pointerType);
+    // Stop propagation to prevent closing menu
+    e.stopPropagation();
+    
     setPressingGlobalSkill(skillId);
     globalIsLongPress.current = false;
     
@@ -3018,6 +3050,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
       console.log('[GlobalSkill] Long press TRIGGERED:', skillId);
       globalIsLongPress.current = true;
       setPressingGlobalSkill(null);
+      globalMenuOpenTime.current = Date.now();
       setGlobalSkillMenuPosition({ x: e.clientX, y: e.clientY });
       setGlobalSkillMenuOpen(skillId);
     }, 400);
@@ -3025,12 +3058,18 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
   
   const handleGlobalSkillPointerUp = (e: React.PointerEvent) => {
     console.log('[GlobalSkill] PointerUp', { wasLongPress: globalIsLongPress.current });
-    if (globalIsLongPress.current) {
+    // Stop propagation to prevent closing menu if menu is open
+    if (globalSkillMenuOpen || globalIsLongPress.current) {
       e.stopPropagation();
       e.preventDefault();
+    }
+    
+    if (globalIsLongPress.current) {
+      // Menu handling already done in long press timeout
     } else {
       setPressingGlobalSkill(null);
-      setGlobalSkillMenuOpen(null);
+      // Don't close menu - it should only close when user clicks outside or on a menu option
+      // Keep menu open if it was recently opened
     }
     globalIsLongPress.current = false;
     if (globalLongPressTimer.current) {
@@ -3044,9 +3083,16 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
     if (globalIsLongPress.current) {
       e.stopPropagation();
       e.preventDefault();
+      // Don't close menu if long press happened - menu should stay open
+    } else {
+      setPressingGlobalSkill(null);
+      // Only close menu if enough time has passed since opening
+      const timeSinceOpen = Date.now() - globalMenuOpenTime.current;
+      if (timeSinceOpen > 100) {
+        // Safe to close menu if it's been open for >100ms without long press
+        // setGlobalSkillMenuOpen(null);
+      }
     }
-    setPressingGlobalSkill(null);
-    setGlobalSkillMenuOpen(null);
     globalIsLongPress.current = false;
     if (globalLongPressTimer.current) {
       clearTimeout(globalLongPressTimer.current);
@@ -3289,17 +3335,16 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
       const stored = localStorage.getItem("skillsProgress");
       if (stored) {
         try {
-          setLegacySkills(JSON.parse(stored));
+          const loaded = JSON.parse(stored);
+          console.log('[loadLegacySkills] Loaded from localStorage:', loaded);
+          setLegacySkills(loaded);
         } catch (e) {
           console.error("Error parsing legacy skills:", e);
+          setLegacySkills({});
         }
       } else {
-        // Initialize with default values
-        const initial: Record<string, { name: string; currentXp: number; level: number }> = {};
-        SKILLS_LIST.forEach(name => {
-          initial[name] = { name, currentXp: 0, level: 1 };
-        });
-        setLegacySkills(initial);
+        console.log('[loadLegacySkills] No data in localStorage, starting empty');
+        setLegacySkills({});
       }
     };
     loadLegacySkills();
@@ -3778,7 +3823,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
               {/* Legacy Skills as Accordions (with associated GlobalSkills underneath) */}
               {Object.keys(legacySkills).length > 0 && (
                 <Accordion type="multiple" className="space-y-2">
-                  {SKILLS_LIST.map((skillName) => {
+                  {Object.keys(legacySkills).map((skillName) => {
                     const skill = legacySkills[skillName] || { name: skillName, currentXp: 0, level: 1 };
                     const xpProgress = calculateLegacyXpProgress(skill.currentXp, skill.level);
                     const associationNames = getAssociationNames(skillName);
@@ -4431,19 +4476,40 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
                   <button
                     onClick={() => {
                       // Delete the legacy skill completely
-                      setLegacySkills(prev => {
-                        const updated = { ...prev };
-                        delete updated[legacySkillMenuOpen];
-                        localStorage.setItem("skillsProgress", JSON.stringify(updated));
-                        return updated;
-                      });
-                      // Also remove associations
+                      const skillToDelete = legacySkillMenuOpen;
+                      console.log('[DeleteSkill] Deleting skill:', skillToDelete);
+                      console.log('[DeleteSkill] Current legacySkills:', legacySkills);
+                      console.log('[DeleteSkill] Is skill in legacySkills?', skillToDelete in legacySkills);
+                      
+                      if (!skillToDelete) {
+                        console.error('[DeleteSkill] No skill selected to delete');
+                        return;
+                      }
+                      
+                      // Remove associations first
                       setLegacySkillAssociations(prev => {
                         const updated = { ...prev };
-                        delete updated[legacySkillMenuOpen];
+                        if (skillToDelete in updated) {
+                          delete updated[skillToDelete];
+                          console.log('[DeleteSkill] Removed associations for:', skillToDelete);
+                        }
                         localStorage.setItem("legacySkillAssociations", JSON.stringify(updated));
                         return updated;
                       });
+                      
+                      // Then remove the skill itself from legacySkills
+                      // Even if it's not explicitly in legacySkills, we need to record its deletion
+                      setLegacySkills(prev => {
+                        const updated = { ...prev };
+                        // Always remove it, even if it wasn't explicitly stored
+                        delete updated[skillToDelete];
+                        console.log('[DeleteSkill] After delete from legacySkills:', updated);
+                        localStorage.setItem("skillsProgress", JSON.stringify(updated));
+                        return updated;
+                      });
+                      
+                      // Also update SKILLS_LIST if this is a legacy skill we want to hide
+                      console.log('[DeleteSkill] Skill deleted successfully');
                       setLegacySkillMenuOpen(null);
                     }}
                     className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-red-900/20 hover:text-red-300 transition-colors flex items-center gap-2 whitespace-nowrap border-t border-zinc-700"

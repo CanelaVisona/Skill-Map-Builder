@@ -2072,6 +2072,18 @@ export async function registerRoutes(
 
   app.delete("/api/global-skills/:id", requireAuth, async (req, res) => {
     try {
+      const existingSkill = await storage.getGlobalSkill(req.params.id);
+      if (!existingSkill) {
+        res.status(404).json({ message: "Global skill not found" });
+        return;
+      }
+
+      // Verify ownership - only the user who created the skill can delete it
+      if (existingSkill.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para eliminar este global skill" });
+        return;
+      }
+
       await storage.deleteGlobalSkill(req.params.id);
       res.status(204).send();
     } catch (error: any) {
