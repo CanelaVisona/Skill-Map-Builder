@@ -5006,6 +5006,8 @@ function SkillCanvas() {
 
     const maxY = visibleSkills.length > 0 ? Math.max(...visibleSkills.map((s: Skill) => s.y), 400) : 400;
     const containerHeight = maxY + 200;
+    const maxX = visibleSkills.length > 0 ? Math.max(...visibleSkills.map((s: Skill) => s.x), 50) : 50;
+    const containerMinWidth = `calc(${maxX}% + 100px)`;
 
     return (
       <div className="flex-1 relative overflow-hidden bg-background flex flex-col">
@@ -5128,8 +5130,8 @@ function SkillCanvas() {
             </div>
 
             <div 
-              className="relative w-full mt-20 transition-all duration-500 ease-in-out"
-              style={{ height: `${containerHeight}px`, minHeight: "600px" }}
+              className="relative mt-20 transition-all duration-500 ease-in-out overflow-x-auto sm:overflow-x-hidden scrollbar-hide"
+              style={{ height: `${containerHeight}px`, minHeight: "600px", width: "100%", minWidth: containerMinWidth }}
             >
               <AnimatePresence mode="wait">
                 <motion.div
@@ -5212,6 +5214,8 @@ function SkillCanvas() {
 
   const maxY = Math.max(...visibleSkills.map((s: Skill) => s.y), 400);
   const containerHeight = maxY + 200;
+  const maxX = visibleSkills.length > 0 ? Math.max(...visibleSkills.map((s: Skill) => s.x), 50) : 50;
+  const containerMinWidth = `calc(${maxX}% + 100px)`;
 
   return (
     <div className="flex-1 relative bg-background flex flex-col overflow-auto">
@@ -5474,8 +5478,8 @@ function SkillCanvas() {
           </Dialog>
 
           <div 
-            className="relative w-full transition-all duration-500 ease-in-out overflow-hidden"
-            style={{ height: `${containerHeight}px`, minHeight: "600px" }}
+            className="relative transition-all duration-500 ease-in-out overflow-x-auto sm:overflow-x-hidden scrollbar-hide"
+            style={{ height: `${containerHeight}px`, minHeight: "600px", width: "100%", minWidth: containerMinWidth }}
           >
             <AnimatePresence mode="wait">
               <motion.div
