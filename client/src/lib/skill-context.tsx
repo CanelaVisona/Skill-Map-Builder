@@ -362,19 +362,26 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
             return;
           }
           return response.json().then(({ updatedArea, createdSkills }) => {
-            // Merge generated skills with existing ones
-            const createdSkillsMap = new Map(createdSkills.map((s: Skill) => [s.id, s]));
+
+            const normalizedCreatedSkills = createdSkills.map(s => {
+              if (s.levelPosition === 1 || (s as any)._isFirstOfLevel) {
+                return { ...s, status: "mastered" as SkillStatus, title: "" };
+              }
+              return s;
+            });
+            const normalizedMap = new Map(normalizedCreatedSkills.map((s: Skill) => [s.id, s]));
+            
             setAreas(prev => prev.map(a => {
               if (a.id !== areaId) return a;
               const existingSkillIds = new Set(a.skills.map(s => s.id));
-              const newSkills = createdSkills.filter((s: Skill) => !existingSkillIds.has(s.id));
+              const newSkills = normalizedCreatedSkills.filter((s: Skill) => !existingSkillIds.has(s.id));
               return {
                 ...a,
                 unlockedLevel: updatedArea.unlockedLevel,
                 nextLevelToAssign: updatedArea.nextLevelToAssign,
                 skills: [
                   ...a.skills.map(s => {
-                    const backendSkill = createdSkillsMap.get(s.id);
+                    const backendSkill = normalizedMap.get(s.id);
                     if (backendSkill) return backendSkill;
                     return s;
                   }),
@@ -542,19 +549,26 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
             return;
           }
           return response.json().then(({ updatedProject, createdSkills }) => {
-            // Merge generated skills with existing ones
-            const createdSkillsMap = new Map(createdSkills.map((s: Skill) => [s.id, s]));
+            // Ensure first node of each level is always mastered with empty title
+            const normalizedCreatedSkills = createdSkills.map(s => {
+              if (s.levelPosition === 1 || (s as any)._isFirstOfLevel) {
+                return { ...s, status: "mastered" as SkillStatus, title: "" };
+              }
+              return s;
+            });
+            const normalizedMap = new Map(normalizedCreatedSkills.map((s: Skill) => [s.id, s]));
+            
             setProjects(prev => prev.map(p => {
               if (p.id !== projectId) return p;
               const existingSkillIds = new Set(p.skills.map(s => s.id));
-              const newSkills = createdSkills.filter((s: Skill) => !existingSkillIds.has(s.id));
+              const newSkills = normalizedCreatedSkills.filter((s: Skill) => !existingSkillIds.has(s.id));
               return {
                 ...p,
                 unlockedLevel: updatedProject.unlockedLevel,
                 nextLevelToAssign: updatedProject.nextLevelToAssign,
                 skills: [
                   ...p.skills.map(s => {
-                    const backendSkill = createdSkillsMap.get(s.id);
+                    const backendSkill = normalizedMap.get(s.id);
                     if (backendSkill) return backendSkill;
                     return s;
                   }),
@@ -1795,9 +1809,17 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
             return;
           }
           return response.json().then(({ createdSkills }) => {
+            // Ensure first node of each level is always mastered with empty title
+            const normalizedCreatedSkills = createdSkills.map(s => {
+              if (s.levelPosition === 1 || (s as any)._isFirstOfLevel) {
+                return { ...s, status: "mastered" as SkillStatus, title: "" };
+              }
+              return s;
+            });
+            
             setSubSkills(prev => {
               const existingIds = new Set(prev.map(s => s.id));
-              const newSkills = createdSkills.filter((s: Skill) => !existingIds.has(s.id));
+              const newSkills = normalizedCreatedSkills.filter((s: Skill) => !existingIds.has(s.id));
               return [...prev, ...newSkills];
             });
           });
@@ -2537,11 +2559,15 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
       area.skills.forEach(skill => {
         if (skill.manualLock) return;
-        // Skip first node of level - it's always mastered from server
-        if (skill.levelPosition === 1) return;
         if (skill.level > area.unlockedLevel) return;
 
         const levelSkills = skillsInLevel.get(skill.level) || [];
+        
+        // Skip first node of level (by levelPosition or by Y position)
+        // It's always mastered from server and should never be auto-processed
+        const skillIndex = levelSkills.findIndex(s => s.id === skill.id);
+        const isFirstNodeOfLevel = skill.levelPosition === 1 || skillIndex === 0;
+        if (isFirstNodeOfLevel) return;
         const isLastNodeOfLevel = levelSkills.length > 0 && 
           skill.y === Math.max(...levelSkills.map(s => s.y));
         const isFinalNodeByPosition = isLastNodeOfLevel || skill.isFinalNode === 1;
@@ -2549,7 +2575,6 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         const allOthersMastered = otherNodesInLevel.every(s => s.status === "mastered");
 
         // Find the previous skill by Y position in the same level
-        const skillIndex = levelSkills.findIndex(s => s.id === skill.id);
         const previousSkill = skillIndex > 0 ? levelSkills[skillIndex - 1] : null;
         const canUnlock = !previousSkill || previousSkill.status === "mastered";
 
@@ -2630,11 +2655,15 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
       project.skills.forEach(skill => {
         if (skill.manualLock) return;
-        // Skip first node of level - it's always mastered from server
-        if (skill.levelPosition === 1) return;
         if (skill.level > project.unlockedLevel) return;
 
         const levelSkills = skillsInLevel.get(skill.level) || [];
+        
+        // Skip first node of level (by levelPosition or by Y position)
+        // It's always mastered from server and should never be auto-processed
+        const skillIndex = levelSkills.findIndex(s => s.id === skill.id);
+        const isFirstNodeOfLevel = skill.levelPosition === 1 || skillIndex === 0;
+        if (isFirstNodeOfLevel) return;
         const isLastNodeOfLevel = levelSkills.length > 0 && 
           skill.y === Math.max(...levelSkills.map(s => s.y));
         const isFinalNodeByPosition = isLastNodeOfLevel || skill.isFinalNode === 1;
@@ -2642,7 +2671,6 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         const allOthersMastered = otherNodesInLevel.every(s => s.status === "mastered");
 
         // Find the previous skill by Y position in the same level
-        const skillIndex = levelSkills.findIndex(s => s.id === skill.id);
         const previousSkill = skillIndex > 0 ? levelSkills[skillIndex - 1] : null;
         const canUnlock = !previousSkill || previousSkill.status === "mastered";
 
@@ -2722,10 +2750,15 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
     subSkills.forEach(skill => {
       if (skill.manualLock) return;
-      // Skip first node of level - it's always mastered from server
-      if (skill.levelPosition === 1) return;
 
       const levelSkills = skillsInLevel.get(skill.level) || [];
+      const skillIndex = levelSkills.findIndex(s => s.id === skill.id);
+      
+      // Skip first node of level (by levelPosition or by Y position)
+      // It's always mastered from server and should never be auto-processed
+      const isFirstNodeOfLevel = skill.levelPosition === 1 || skillIndex === 0;
+      if (isFirstNodeOfLevel) return;
+
       const isLastNodeOfLevel = levelSkills.length > 0 && 
         skill.y === Math.max(...levelSkills.map(s => s.y));
       const isFinalNodeByPosition = isLastNodeOfLevel || skill.isFinalNode === 1;
@@ -2733,7 +2766,6 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       const allOthersMastered = otherNodesInLevel.every(s => s.status === "mastered");
 
       // Find the previous skill by Y position in the same level
-      const skillIndex = levelSkills.findIndex(s => s.id === skill.id);
       const previousSkill = skillIndex > 0 ? levelSkills[skillIndex - 1] : null;
       const canUnlock = !previousSkill || previousSkill.status === "mastered";
 
