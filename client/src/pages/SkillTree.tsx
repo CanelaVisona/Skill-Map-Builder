@@ -5071,7 +5071,7 @@ function SkillCanvas() {
             </motion.div>
           )}
         </AnimatePresence>
-        <div className="flex-1 overflow-y-auto p-8 scroll-smooth">
+        <div className="flex-1 overflow-y-auto p-8 scroll-smooth scrollbar-thin-on-scroll">
           <div className="w-full relative max-w-4xl mx-auto mt-2 min-h-full">
             
             <div className="absolute top-0 left-0 z-10">
@@ -5279,7 +5279,7 @@ function SkillCanvas() {
           </motion.div>
         )}
       </AnimatePresence>
-      <div className="flex-1 overflow-y-auto p-8 scroll-smooth">
+      <div className="flex-1 overflow-y-auto p-8 scroll-smooth scrollbar-thin-on-scroll">
         <div className="w-full relative max-w-4xl mx-auto min-h-full">
           
           {/* Sticky Progress Bar */}

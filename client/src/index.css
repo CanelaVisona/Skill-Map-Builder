@@ -130,3 +130,29 @@ h1, h2, h3, h4, h5, h6 {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+.scrollbar-thin-on-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(113, 113, 122, 0.2) transparent;
+}
+
+.scrollbar-thin-on-scroll::-webkit-scrollbar {
+  width: 3px;
+}
+
+.scrollbar-thin-on-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin-on-scroll::-webkit-scrollbar-thumb {
+  background-color: rgba(113, 113, 122, 0.2);
+  border-radius: 2px;
+}
+
+.scrollbar-thin-on-scroll:hover::-webkit-scrollbar-thumb {
+  background-color: rgba(113, 113, 122, 0.7);
+}
+
+.scrollbar-thin-on-scroll::-webkit-scrollbar-thumb:active {
+  background-color: rgba(113, 113, 122, 0.9);
+}
