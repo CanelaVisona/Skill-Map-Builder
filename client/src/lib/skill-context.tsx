@@ -234,16 +234,26 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         
         // Handle authentication errors
         if (Array.isArray(areasData)) {
-          setAreas(areasData);
-          if (areasData.length > 0 && !activeAreaId) {
-            setActiveAreaId(areasData[0].id);
+          // Normalize all first nodes before setting state
+          const normalizedAreas = areasData.map((area: Area) => ({
+            ...area,
+            skills: ensureFirstNodeRules(area.skills)
+          }));
+          setAreas(normalizedAreas);
+          if (normalizedAreas.length > 0 && !activeAreaId) {
+            setActiveAreaId(normalizedAreas[0].id);
           }
         } else {
           setAreas([]);
         }
         
         if (Array.isArray(projectsData)) {
-          setProjects(projectsData);
+          // Normalize all first nodes before setting state
+          const normalizedProjects = projectsData.map((project: Project) => ({
+            ...project,
+            skills: ensureFirstNodeRules(project.skills)
+          }));
+          setProjects(normalizedProjects);
         } else {
           setProjects([]);
         }
@@ -263,12 +273,30 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     loadData();
   }, []);
 
+  /**
+   * Ensure first nodes are ALWAYS mastered with empty title
+   * This is applied to any skill to guarantee consistency
+   */
+  const ensureFirstNodeRules = (skills: Skill[]): Skill[] => {
+    return skills.map(s => {
+      if (s.levelPosition === 1) {
+        return { ...s, status: "mastered" as SkillStatus, title: "" };
+      }
+      return s;
+    });
+  };
+
   const toggleSkillStatus = async (areaId: string, skillId: string) => {
     const area = areas.find(a => a.id === areaId);
     if (!area) return;
     
     const skill = area.skills.find(s => s.id === skillId);
     if (!skill) return;
+
+    // First node of any level is immutable - cannot be toggled
+    if (skill.levelPosition === 1) {
+      return;
+    }
 
     const skillsInLevel = area.skills.filter(s => s.level === skill.level);
     const isLastNodeOfLevel = skillsInLevel.length > 0 && 
@@ -362,31 +390,41 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
             return;
           }
           return response.json().then(({ updatedArea, createdSkills }) => {
-
-            const normalizedCreatedSkills = createdSkills.map(s => {
-              if (s.levelPosition === 1 || (s as any)._isFirstOfLevel) {
-                return { ...s, status: "mastered" as SkillStatus, title: "" };
-              }
-              return s;
-            });
+            // IMMEDIATE normalization right after receiving from server
+            // Ensure first node NEVER shows as locked
+            const normalizedCreatedSkills = ensureFirstNodeRules(createdSkills);
             const normalizedMap = new Map(normalizedCreatedSkills.map((s: Skill) => [s.id, s]));
             
             setAreas(prev => prev.map(a => {
               if (a.id !== areaId) return a;
               const existingSkillIds = new Set(a.skills.map(s => s.id));
               const newSkills = normalizedCreatedSkills.filter((s: Skill) => !existingSkillIds.has(s.id));
+              
+              // Ensure first node is ALWAYS mastered and empty title, regardless of any other updates
+              const allSkills = [
+                ...a.skills.map(s => {
+                  // If this skill is from the new unlocked level and is the first node, ensure it's mastered
+                  if (s.level === updatedArea.unlockedLevel && s.levelPosition === 1) {
+                    return { ...s, status: "mastered" as SkillStatus, title: "" };
+                  }
+                  const backendSkill = normalizedMap.get(s.id);
+                  if (backendSkill) return backendSkill;
+                  return s;
+                }),
+                ...newSkills.map(s => {
+                  // Double-check: ensure new first nodes are mastered
+                  if (s.levelPosition === 1) {
+                    return { ...s, status: "mastered" as SkillStatus, title: "" };
+                  }
+                  return s;
+                })
+              ];
+              
               return {
                 ...a,
                 unlockedLevel: updatedArea.unlockedLevel,
                 nextLevelToAssign: updatedArea.nextLevelToAssign,
-                skills: [
-                  ...a.skills.map(s => {
-                    const backendSkill = normalizedMap.get(s.id);
-                    if (backendSkill) return backendSkill;
-                    return s;
-                  }),
-                  ...newSkills
-                ]
+                skills: allSkills
               };
             }));
           });
@@ -457,6 +495,11 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     
     const skill = project.skills.find(s => s.id === skillId);
     if (!skill) return;
+
+    // First node of any level is immutable - cannot be toggled
+    if (skill.levelPosition === 1) {
+      return;
+    }
 
     const skillsInLevel = project.skills.filter(s => s.level === skill.level);
     const isLastNodeOfLevel = skillsInLevel.length > 0 && 
@@ -549,31 +592,41 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
             return;
           }
           return response.json().then(({ updatedProject, createdSkills }) => {
-            // Ensure first node of each level is always mastered with empty title
-            const normalizedCreatedSkills = createdSkills.map(s => {
-              if (s.levelPosition === 1 || (s as any)._isFirstOfLevel) {
-                return { ...s, status: "mastered" as SkillStatus, title: "" };
-              }
-              return s;
-            });
+            // IMMEDIATE normalization right after receiving from server
+            // Ensure first node NEVER shows as locked
+            const normalizedCreatedSkills = ensureFirstNodeRules(createdSkills);
             const normalizedMap = new Map(normalizedCreatedSkills.map((s: Skill) => [s.id, s]));
             
             setProjects(prev => prev.map(p => {
               if (p.id !== projectId) return p;
               const existingSkillIds = new Set(p.skills.map(s => s.id));
               const newSkills = normalizedCreatedSkills.filter((s: Skill) => !existingSkillIds.has(s.id));
+              
+              // Ensure first node is ALWAYS mastered and empty title, regardless of any other updates
+              const allSkills = [
+                ...p.skills.map(s => {
+                  // If this skill is from the new unlocked level and is the first node, ensure it's mastered
+                  if (s.level === updatedProject.unlockedLevel && s.levelPosition === 1) {
+                    return { ...s, status: "mastered" as SkillStatus, title: "" };
+                  }
+                  const backendSkill = normalizedMap.get(s.id);
+                  if (backendSkill) return backendSkill;
+                  return s;
+                }),
+                ...newSkills.map(s => {
+                  // Double-check: ensure new first nodes are mastered
+                  if (s.levelPosition === 1) {
+                    return { ...s, status: "mastered" as SkillStatus, title: "" };
+                  }
+                  return s;
+                })
+              ];
+              
               return {
                 ...p,
                 unlockedLevel: updatedProject.unlockedLevel,
                 nextLevelToAssign: updatedProject.nextLevelToAssign,
-                skills: [
-                  ...p.skills.map(s => {
-                    const backendSkill = normalizedMap.get(s.id);
-                    if (backendSkill) return backendSkill;
-                    return s;
-                  }),
-                  ...newSkills
-                ]
+                skills: allSkills
               };
             }));
           });
@@ -1704,6 +1757,11 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     const skill = subSkills.find(s => s.id === skillId);
     if (!skill) return;
 
+    // First node of any level is immutable - cannot be toggled
+    if (skill.levelPosition === 1) {
+      return;
+    }
+
     const skillsInLevel = subSkills.filter(s => s.level === skill.level);
     const isLastNodeOfLevel = skillsInLevel.length > 0 && 
       skill.y === Math.max(...skillsInLevel.map(s => s.y));
@@ -1809,18 +1867,23 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
             return;
           }
           return response.json().then(({ createdSkills }) => {
-            // Ensure first node of each level is always mastered with empty title
-            const normalizedCreatedSkills = createdSkills.map(s => {
-              if (s.levelPosition === 1 || (s as any)._isFirstOfLevel) {
-                return { ...s, status: "mastered" as SkillStatus, title: "" };
-              }
-              return s;
-            });
+            // IMMEDIATE normalization right after receiving from server
+            // Ensure first node NEVER shows as locked
+            const normalizedCreatedSkills = ensureFirstNodeRules(createdSkills);
             
             setSubSkills(prev => {
-              const existingIds = new Set(prev.map(s => s.id));
+              const existingIds = new Set(prev.map((s: Skill) => s.id));
               const newSkills = normalizedCreatedSkills.filter((s: Skill) => !existingIds.has(s.id));
-              return [...prev, ...newSkills];
+              
+              // Double-check: ensure new first nodes are mastered
+              const guardedNewSkills = newSkills.map(s => {
+                if (s.levelPosition === 1) {
+                  return { ...s, status: "mastered" as SkillStatus, title: "" };
+                }
+                return s;
+              });
+              
+              return [...prev, ...guardedNewSkills];
             });
           });
         }).catch(error => {

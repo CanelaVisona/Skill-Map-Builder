@@ -100,10 +100,13 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const otherNodesInLevel = skillsInLevel.filter(s => s.id !== skill.id);
   const allOthersMastered = otherNodesInLevel.every(s => s.status === "mastered");
   
+  // CRITICAL: First node of any level MUST ALWAYS appear mastered, never locked
+  const isFirstNodeOfLevel = skill.levelPosition === 1;
+  
   // Effective states: final nodes show as locked if others aren't mastered
   const shouldForceLock = isFinalNodeByPosition && skill.status !== "mastered" && !allOthersMastered;
-  const isLocked = skill.status === "locked" || shouldForceLock;
-  const isMastered = skill.status === "mastered";
+  const isLocked = isFirstNodeOfLevel ? false : (skill.status === "locked" || shouldForceLock);
+  const isMastered = isFirstNodeOfLevel ? true : skill.status === "mastered";
 
   // Detect if node has default name
   const hasDefaultName = skill.title === "Next challenge" || skill.title === "Next objetive quest" || skill.title === "Objective quest";
