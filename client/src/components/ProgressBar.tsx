@@ -10,9 +10,12 @@ interface ProgressBarProps {
 
 export function ProgressBar({ skills, size = "lg", areaOrProjectId }: ProgressBarProps) {
   const [isAnimating, setIsAnimating] = useState(false);
+  const [showLevelUp, setShowLevelUp] = useState(false);
+  const [showLevelComplete, setShowLevelComplete] = useState(false);
   const isFirstRenderRef = useRef(true);
   const prevAreaIdRef = useRef<string | undefined>(areaOrProjectId);
   const prevCompletedRef = useRef(0);
+  const prevLevelRef = useRef(1);
 
   const calculateLevel = (completedNodes: number): number => {
     return Math.floor(completedNodes / 15) + 1;
@@ -34,6 +37,7 @@ export function ProgressBar({ skills, size = "lg", areaOrProjectId }: ProgressBa
       isFirstRenderRef.current = false;
       prevAreaIdRef.current = areaOrProjectId;
       prevCompletedRef.current = completed;
+      prevLevelRef.current = level;
       setIsAnimating(false);
       return;
     }
@@ -42,7 +46,9 @@ export function ProgressBar({ skills, size = "lg", areaOrProjectId }: ProgressBa
     if (areaOrProjectId !== prevAreaIdRef.current) {
       prevAreaIdRef.current = areaOrProjectId;
       prevCompletedRef.current = completed;
+      prevLevelRef.current = level;
       setIsAnimating(false);
+      setShowLevelComplete(false);
       return;
     }
 
@@ -50,10 +56,28 @@ export function ProgressBar({ skills, size = "lg", areaOrProjectId }: ProgressBa
     if (completed > prevCompletedRef.current) {
       setIsAnimating(true);
       prevCompletedRef.current = completed;
+      
+      // Detectar cambio de nivel
+      if (level > prevLevelRef.current) {
+        // Mostrar barra completa en amarillo inmediatamente
+        setShowLevelComplete(true);
+        
+        // Mostrar "level up!" con delay para que aparezca después de "quest updated!" y "LEVEL"
+        setTimeout(() => {
+          setShowLevelUp(true);
+          setTimeout(() => {
+            setShowLevelUp(false);
+            // Ocultar barra completa después de que desaparece el cartel
+            setShowLevelComplete(false);
+          }, 2000);
+        }, 2500);
+        prevLevelRef.current = level;
+      }
+      
       const timer = setTimeout(() => setIsAnimating(false), 1500);
       return () => clearTimeout(timer);
     }
-  }, [completed, areaOrProjectId]);
+  }, [completed, areaOrProjectId, level]);
 
   const containerClass = size === "lg" 
     ? "w-full" 
@@ -67,19 +91,37 @@ export function ProgressBar({ skills, size = "lg", areaOrProjectId }: ProgressBa
     ? "text-xs" 
     : "text-[10px]";
 
+  const displayWidth = showLevelComplete ? 100 : progressPercentage;
+  const barColor = showLevelComplete 
+    ? "bg-yellow-500 dark:bg-yellow-400" 
+    : isAnimating 
+      ? "bg-orange-500 dark:bg-orange-400" 
+      : "bg-gray-700 dark:bg-gray-300";
+
   return (
-    <div className={`${containerClass} flex flex-col gap-1`}>
+    <div className={`${containerClass} flex flex-col gap-1 relative`}>
+      {/* Level up notification */}
+      {showLevelUp && (
+        <motion.div
+          className="absolute -top-6 left-0 right-0 flex justify-center pointer-events-none"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+          transition={{ duration: 0.4, ease: "easeOut" }}
+        >
+          <span className="text-sm font-bold tracking-widest uppercase text-yellow-500 dark:text-yellow-400 shadow-lg whitespace-nowrap">
+            Level up!
+          </span>
+        </motion.div>
+      )}
+      
       {/* Bar container */}
       <div className={`${barHeight} relative rounded-sm overflow-hidden bg-gray-200 dark:bg-gray-700`}>
         {/* Progress fill with animation */}
         <motion.div
-          className={`h-full transition-all duration-300 ${
-            isAnimating 
-              ? "bg-orange-500 dark:bg-orange-400" 
-              : "bg-gray-700 dark:bg-gray-300"
-          }`}
-          style={{ width: `${progressPercentage}%` }}
-          animate={isAnimating ? { boxShadow: ["0 0 0 0 rgba(249, 115, 22, 0.7)", "0 0 0 8px rgba(249, 115, 22, 0)"] } : {}}
+          className={`h-full transition-all duration-300 ${barColor}`}
+          style={{ width: `${displayWidth}%` }}
+          animate={isAnimating && !showLevelComplete ? { boxShadow: ["0 0 0 0 rgba(249, 115, 22, 0.7)", "0 0 0 8px rgba(249, 115, 22, 0)"] } : {}}
           transition={{ duration: 1.5 }}
         />
         
