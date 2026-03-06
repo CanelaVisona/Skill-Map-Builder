@@ -68,20 +68,20 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[80vh]">
+      <DialogContent className="max-w-xl rounded-2xl border-none">
         <VisuallyHidden>
           <DialogTitle>Progress Tracker</DialogTitle>
         </VisuallyHidden>
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-4">
           <h2 className="text-2xl font-bold">Progress Tracker</h2>
-          <ScrollArea className="h-[60vh] pr-4">
+          <ScrollArea className="h-[50vh] pr-4">
             <div className="space-y-4">
               {progressItems.map((item) => {
                 const nodesSinceLastLevel = item.completedNodes % 30;
                 const progress = calculateProgressPercentage(item.completedNodes);
 
                 return (
-                  <div key={`${item.type}-${item.id}`} className="space-y-2 pb-4 border-b last:border-b-0">
+                  <div key={`${item.type}-${item.id}`} className="space-y-2 pb-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="text-lg font-semibold">{item.name}</span>
@@ -96,7 +96,7 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
 
                     <div className="w-full bg-muted rounded-full h-3 overflow-hidden">
                       <div
-                        className="h-full bg-gradient-to-r from-green-400 to-green-500 transition-all duration-500"
+                        className="h-full bg-gradient-to-r from-lime-400 via-green-500 to-emerald-700 transition-all duration-500"
                         style={{ width: `${progress}%` }}
                       />
                     </div>
