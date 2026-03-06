@@ -24,12 +24,12 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
   };
 
   const calculateLevel = (completedNodes: number): number => {
-    return Math.floor(completedNodes / 30) + 1;
+    return Math.floor(completedNodes / 15) + 1;
   };
 
   const calculateProgressPercentage = (completedNodes: number): number => {
-    const nodesSinceLastLevel = completedNodes % 30;
-    return (nodesSinceLastLevel / 30) * 100;
+    const nodesSinceLastLevel = completedNodes % 15;
+    return (nodesSinceLastLevel / 15) * 100;
   };
 
   const progressItems: ProgressItem[] = [];
@@ -90,7 +90,7 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
                         </span>
                       </div>
                       <span className="text-sm font-semibold text-muted-foreground">
-                        {nodesSinceLastLevel}/30
+                        {nodesSinceLastLevel}/15
                       </span>
                     </div>
 

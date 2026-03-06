@@ -15,12 +15,12 @@ export function ProgressBar({ skills, size = "lg", areaOrProjectId }: ProgressBa
   const prevCompletedRef = useRef(0);
 
   const calculateLevel = (completedNodes: number): number => {
-    return Math.floor(completedNodes / 30) + 1;
+    return Math.floor(completedNodes / 15) + 1;
   };
 
   const calculateProgressPercentage = (completedNodes: number): number => {
-    const nodesSinceLastLevel = completedNodes % 30;
-    return (nodesSinceLastLevel / 30) * 100;
+    const nodesSinceLastLevel = completedNodes % 15;
+    return (nodesSinceLastLevel / 15) * 100;
   };
 
   const total = skills.length;
