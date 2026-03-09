@@ -610,6 +610,62 @@ function BestiarySection({
     setEditedImagePreview(null);
   };
 
+  const compressImage = (file: File): Promise<File> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            resolve(file);
+            return;
+          }
+
+          // Max width/height: 1200px
+          let width = img.width;
+          let height = img.height;
+          const maxSize = 1200;
+
+          if (width > height) {
+            if (width > maxSize) {
+              height = Math.round((height * maxSize) / width);
+              width = maxSize;
+            }
+          } else {
+            if (height > maxSize) {
+              width = Math.round((width * maxSize) / height);
+              height = maxSize;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          ctx.drawImage(img, 0, 0, width, height);
+
+          canvas.toBlob(
+            (blob) => {
+              if (blob) {
+                const compressedFile = new File([blob], file.name, {
+                  type: "image/jpeg",
+                  lastModified: Date.now(),
+                });
+                resolve(compressedFile);
+              } else {
+                resolve(file);
+              }
+            },
+            "image/jpeg",
+            0.8
+          );
+        };
+      };
+    });
+  };
+
   const handleImageUpload = async (file: File, isEditting: boolean) => {
     if (!file || !file.type.startsWith("image/")) {
       return;
@@ -630,12 +686,16 @@ function BestiarySection({
     // Upload to server
     setIsUploadingImage(true);
     try {
+      // Compress image before upload
+      const compressedFile = await compressImage(file);
+
       const formData = new FormData();
-      formData.append("image", file);
+      formData.append("image", compressedFile);
 
       const response = await fetch("/api/journal/shadows/upload", {
         method: "POST",
         body: formData,
+        signal: AbortSignal.timeout(30000), // 30 second timeout
       });
 
       if (!response.ok) {

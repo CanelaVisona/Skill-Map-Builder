@@ -1208,9 +1208,9 @@ export async function registerRoutes(
         file.on("end", async () => {
           fileBuffer = Buffer.concat(chunks);
           
-          // Limit file size to 5MB
-          if (fileBuffer.length > 5 * 1024 * 1024) {
-            res.status(400).json({ message: "La imagen no puede ser mayor a 5MB" });
+          // Limit file size to 2MB (will be ~2.6MB as Base64)
+          if (fileBuffer.length > 2 * 1024 * 1024) {
+            res.status(400).json({ message: "La imagen no puede ser mayor a 2MB" });
             return;
           }
           
