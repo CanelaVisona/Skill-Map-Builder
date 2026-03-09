@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { areas, skills } from "@shared/schema";
+import { areas, skills, users, journalShadows } from "@shared/schema";
 
 const INITIAL_AREAS = [
   {
@@ -54,23 +54,72 @@ const INITIAL_SKILLS = [
   { id: "h3", areaId: "house", title: "Reparaciones", description: "Cambiar un foco/enchufe", status: "locked", x: 50, y: 400, dependencies: ["h2"], manualLock: 0 },
 ];
 
+const DEMO_USER = {
+  id: "demo-user",
+  username: "demo",
+  password: null,
+};
+
+const INITIAL_SHADOWS = [
+  {
+    id: "shadow-1",
+    userId: DEMO_USER.id,
+    name: "Ejemplo 1",
+    description: "Este es el primer ejemplo de una bestia o sombra en el bestiary.",
+    action: "",
+    imageUrl: null,
+    defeated: 0,
+  },
+  {
+    id: "shadow-2",
+    userId: DEMO_USER.id,
+    name: "Ejemplo 2",
+    description: "Este es el segundo ejemplo de una bestia o sombra en el bestiary.",
+    action: "",
+    imageUrl: null,
+    defeated: 0,
+  },
+  {
+    id: "shadow-3",
+    userId: DEMO_USER.id,
+    name: "Ejemplo 3",
+    description: "Este es el tercer ejemplo de una bestia o sombra en el bestiary.",
+    action: "",
+    imageUrl: null,
+    defeated: 0,
+  },
+];
+
 async function seed() {
   console.log("Seeding database...");
   
   // Check if data already exists
   const existingAreas = await db.select().from(areas);
   if (existingAreas.length > 0) {
-    console.log("Database already seeded, skipping...");
-    return;
+    console.log("Database already seeded, skipping areas and skills...");
+  } else {
+    // Insert areas
+    await db.insert(areas).values(INITIAL_AREAS);
+    console.log("Areas seeded");
+
+    // Insert skills
+    await db.insert(skills).values(INITIAL_SKILLS);
+    console.log("Skills seeded");
   }
 
-  // Insert areas
-  await db.insert(areas).values(INITIAL_AREAS);
-  console.log("Areas seeded");
+  // Always try to insert demo user and shadows if they don't exist
+  const existingUser = await db.select().from(users);
+  const hasDemo = existingUser.some((u) => u.id === DEMO_USER.id);
+  if (!hasDemo) {
+    await db.insert(users).values(DEMO_USER);
+    console.log("Demo user seeded");
 
-  // Insert skills
-  await db.insert(skills).values(INITIAL_SKILLS);
-  console.log("Skills seeded");
+    // Insert shadows
+    await db.insert(journalShadows).values(INITIAL_SHADOWS);
+    console.log("Shadows seeded");
+  } else {
+    console.log("Demo user and shadows already exist, skipping...");
+  }
 
   console.log("Database seeding complete!");
   process.exit(0);

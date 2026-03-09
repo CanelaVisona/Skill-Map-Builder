@@ -1,4 +1,4 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, asc } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db } from "./db";
 import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type GlobalSkill, type InsertGlobalSkill, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, globalSkills } from "@shared/schema";
@@ -654,7 +654,7 @@ export class DbStorage implements IStorage {
 
   // Journal - Shadows
   async getJournalShadows(userId: string): Promise<JournalShadow[]> {
-    return await db.select().from(journalShadows).where(eq(journalShadows.userId, userId));
+    return await db.select().from(journalShadows).where(eq(journalShadows.userId, userId)).orderBy(asc(journalShadows.createdAt));
   }
 
   async getJournalShadow(id: string): Promise<JournalShadow | undefined> {

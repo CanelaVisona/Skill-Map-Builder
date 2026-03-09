@@ -94,6 +94,7 @@ export const journalShadows = pgTable("journal_shadows", {
   description: text("description").notNull().default(""),
   imageUrl: text("image_url"),
   defeated: integer("defeated").$type<0 | 1>().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
 export const profileValues = pgTable("profile_values", {

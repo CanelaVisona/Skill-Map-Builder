@@ -8,7 +8,7 @@ import { SkillDesigner } from "@/components/SkillDesigner";
 import { ProgressModal } from "@/components/ProgressModal";
 import { ProgressBar } from "@/components/ProgressBar";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Mountain } from "lucide-react";
+import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Mountain, Image, Grid } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -491,370 +491,658 @@ function JournalSection({
   );
 }
 
-function ShadowsSection({ 
+// Professional FlipBook Bestiary Component
+// Spread-based pagination (2 entries per spread), toolbar, thumbnails, progress bar
+
+function BestiarySection({
   entries,
   isLoading,
   onAdd,
   onEdit,
   onDelete,
-  onMarkDefeated
-}: { 
+  onMarkDefeated,
+}: {
   entries: JournalShadow[];
   isLoading: boolean;
   onAdd: (entry: { name: string; action: string; description: string }) => void;
-  onEdit: (id: string, entry: { name: string; action: string; description: string }) => void;
+  onEdit: (id: string, entry: { name: string; action: string; description: string; imageUrl?: string }) => void;
   onDelete: (id: string) => void;
   onMarkDefeated: (id: string, defeated: 0 | 1) => void;
 }) {
-    const [isAdding, setIsAdding] = useState(false);
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [extraInfo, setExtraInfo] = useState("");
-  const [selectedEntry, setSelectedEntry] = useState<JournalShadow | null>(null);
-  const [viewingEntry, setViewingEntry] = useState<JournalShadow | null>(null);
-  const [isEditMode, setIsEditMode] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const longPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [spread, setSpread] = useState(0);
+  const [flipping, setFlipping] = useState(false);
+  const [flipDir, setFlipDir] = useState<"next" | "prev" | null>(null);
+  const [showThumbs, setShowThumbs] = useState(true);
+  const [selectedEntryIdx, setSelectedEntryIdx] = useState(0);
+  const [isAdding, setIsAdding] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [newName, setNewName] = useState("");
+  const [newDescription, setNewDescription] = useState("");
+  const [newImageUrl, setNewImageUrl] = useState("");
+  const [editedName, setEditedName] = useState("");
+  const [editedDescription, setEditedDescription] = useState("");
+  const [editedImageUrl, setEditedImageUrl] = useState("");
+  const [newImagePreview, setNewImagePreview] = useState<string | null>(null);
+  const [editedImagePreview, setEditedImagePreview] = useState<string | null>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const currentSpread = selectedEntryIdx;
+  const leftEntry = entries[currentSpread] || null;
+  const rightEntry = entries[currentSpread] || null;
 
-  const currentEntries = entries;
-
-  const handleAddNew = () => {
-    if (!name.trim()) return;
-    onAdd({ name: name.trim().toUpperCase(), action: "", description: description.trim() });
-    setIsAdding(false);
-    setName("");
-    setDescription("");
+  const goTo = (idx: number) => {
+    // Guard checks
+    if (flipping) return;
+    if (idx < 0 || idx >= entries.length) return;
+    if (idx === selectedEntryIdx) return;
+    
+    const dir = idx > selectedEntryIdx ? "next" : "prev";
+    setFlipDir(dir);
+    setFlipping(true);
+    
+    setTimeout(() => {
+      setSelectedEntryIdx(idx);
+      setFlipping(false);
+      setFlipDir(null);
+    }, 700);
   };
 
-  const handleAddExtraInfo = () => {
-    if (!extraInfo.trim() || !selectedEntry) return;
-    const newDescription = selectedEntry.description 
-      ? `${selectedEntry.description}\n${extraInfo.trim()}` 
-      : extraInfo.trim();
-    onEdit(selectedEntry.id, { 
-      name: selectedEntry.name, 
-      action: "", 
-      description: newDescription 
-    });
-    setSelectedEntry(null);
-    setExtraInfo("");
+  // Update selectedEntryIdx when entries change
+  useEffect(() => {
+    if (entries.length === 0) {
+      setSelectedEntryIdx(0);
+    } else if (selectedEntryIdx >= entries.length) {
+      // Clamp selectedEntryIdx to valid range
+      const newIdx = entries.length - 1;
+      setSelectedEntryIdx(newIdx);
+    }
+  }, [entries.length]);
+
+  const handleAddBeast = () => {
+    if (!newName.trim()) return;
+    const addData: any = {
+      name: newName.toUpperCase(),
+      action: "",
+      description: newDescription,
+    };
+    if (newImageUrl) {
+      addData.imageUrl = newImageUrl;
+    }
+    onAdd(addData);
+    setNewName("");
+    setNewDescription("");
+    setNewImageUrl("");
+    setNewImagePreview(null);
+    setIsAdding(false);
+  };
+
+  const handleStartEdit = (entry: JournalShadow) => {
+    setEditingId(entry.id);
+    setEditedName(entry.name);
+    setEditedDescription(entry.description);
+    setEditedImageUrl(entry.imageUrl || "");
+    setIsEditing(true);
   };
 
   const handleSaveEdit = () => {
-    if (!name.trim() || !selectedEntry) return;
-    onEdit(selectedEntry.id, { 
-      name: name.trim().toUpperCase(), 
-      action: "", 
-      description: description.trim() 
-    });
-    setSelectedEntry(null);
-    setIsEditMode(false);
-    setName("");
-    setDescription("");
-  };
-
-  const handleDelete = () => {
-    if (selectedEntry) {
-      onDelete(selectedEntry.id);
-      setSelectedEntry(null);
-      setIsEditMode(false);
-      setShowDeleteConfirm(false);
-      setViewingEntry(null);
+    if (!editingId || !editedName.trim()) return;
+    const updateData: any = {
+      name: editedName.toUpperCase(),
+      action: "",
+      description: editedDescription,
+    };
+    if (editedImageUrl) {
+      updateData.imageUrl = editedImageUrl;
     }
+    onEdit(editingId, updateData);
+    setIsEditing(false);
+    setEditingId(null);
+    setEditedName("");
+    setEditedDescription("");
+    setEditedImageUrl("");
+    setEditedImagePreview(null);
   };
 
-  const handleToggleDefeated = () => {
-    if (selectedEntry) {
-      const newDefeated = selectedEntry.defeated === 1 ? 0 : 1;
-      onMarkDefeated(selectedEntry.id, newDefeated as 0 | 1);
-      setSelectedEntry(null);
-      setViewingEntry(null);
+  const handleImageUpload = async (file: File, isEditting: boolean) => {
+    if (!file || !file.type.startsWith("image/")) {
+      return;
     }
-  };
 
-  const handleCloseDialog = () => {
-    setSelectedEntry(null);
-    setIsEditMode(false);
-    setExtraInfo("");
-    setShowDeleteConfirm(false);
+    // Show preview immediately
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const preview = e.target?.result as string;
+      if (isEditting) {
+        setEditedImagePreview(preview);
+      } else {
+        setNewImagePreview(preview);
+      }
+    };
+    reader.readAsDataURL(file);
+
+    // Upload to server
+    setIsUploadingImage(true);
+    try {
+      const formData = new FormData();
+      formData.append("image", file);
+
+      const response = await fetch("/api/journal/shadows/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message);
+      }
+
+      const { imageUrl } = await response.json();
+      if (isEditting) {
+        setEditedImageUrl(imageUrl);
+      } else {
+        setNewImageUrl(imageUrl);
+      }
+    } catch (error: any) {
+      alert("Error al subir la imagen: " + error.message);
+      if (isEditting) {
+        setEditedImagePreview(null);
+      } else {
+        setNewImagePreview(null);
+      }
+    } finally {
+      setIsUploadingImage(false);
+    }
   };
 
   if (isLoading) {
     return <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">Loading...</div>;
   }
 
-  const handleLeftLongPressStart = () => {
-        longPressTimer.current = setTimeout(() => {
-      setIsAdding(true);
-      setName("");
-      setDescription("");
-    }, 500);
-  };
-
-  const handleLeftLongPressEnd = () => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-  };
-
-  const handleRightLongPressStart = () => {
-    if (!viewingEntry) return;
-    longPressTimer.current = setTimeout(() => {
-      setSelectedEntry(viewingEntry);
-      setName(viewingEntry.name);
-      setDescription(viewingEntry.description || "");
-      setExtraInfo("");
-      setIsEditMode(false);
-    }, 500);
-  };
-
-  const handleRightLongPressEnd = () => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-  };
-
-  return (
-    <div className="h-full flex flex-col">
-      <div className="mb-3 pb-2 border-b border-zinc-700/50">
-        <span className="text-xs text-zinc-500 uppercase tracking-wider">
-          {currentEntries.length} shadows
-        </span>
-        <div className="h-px w-8 bg-gradient-to-r from-zinc-600 to-transparent mt-1" />
-      </div>
-      
-      <Dialog open={isAdding} onOpenChange={(open) => !open && setIsAdding(false)}>
-        <DialogContent className="sm:max-w-md bg-zinc-900 border border-zinc-700">
-          <VisuallyHidden>
-            <DialogTitle>Add Shadow</DialogTitle>
-          </VisuallyHidden>
-          
-          <div className="space-y-4">
-            <div className="border-b border-zinc-700/50 pb-2">
-              <h3 className="font-medium text-zinc-100">Add Shadow</h3>
-              <div className="h-px w-8 bg-gradient-to-r from-zinc-500 to-transparent mt-1" />
-            </div>
-            <Input
-              placeholder="NAME"
-              value={name}
-              onChange={(e) => setName(e.target.value.toUpperCase())}
-              className="uppercase bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500"
-              data-testid="input-shadows-name"
-            />
-            <Textarea
-              placeholder="Description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={3}
-              className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 resize-none"
-              data-testid="input-shadows-description"
-            />
-            <div className="flex gap-2 pt-2">
-              <Button size="sm" onClick={handleAddNew} className="bg-zinc-700 hover:bg-zinc-600 text-zinc-200" data-testid="button-save-shadows">
-                Add
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setIsAdding(false)} className="text-zinc-400 hover:text-zinc-300">
-                Cancel
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={!!selectedEntry} onOpenChange={(open) => !open && handleCloseDialog()}>
-        <DialogContent className="sm:max-w-md bg-zinc-900 border border-zinc-700">
-          <VisuallyHidden>
-            <DialogTitle>{selectedEntry?.name}</DialogTitle>
-          </VisuallyHidden>
-          
-          <div className="space-y-4">
-            <div className="flex items-center justify-between border-b border-zinc-700/50 pb-2">
-              <div>
-                <h3 className="font-medium text-zinc-100 uppercase">{selectedEntry?.name}</h3>
-                <div className="h-px w-8 bg-gradient-to-r from-zinc-500 to-transparent mt-1" />
-              </div>
-              <div className="flex gap-1">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setIsEditMode(!isEditMode)}
-                  className="h-8 w-8 p-0 text-zinc-400 hover:text-zinc-200"
-                  data-testid="button-edit-mode-shadows"
-                >
-                  <Pencil className="h-4 w-4" />
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setShowDeleteConfirm(true)}
-                  className="h-8 w-8 p-0 text-zinc-400 hover:text-zinc-200"
-                  data-testid="button-delete-shadows"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-
-            {selectedEntry?.description && !isEditMode && (
-              <p className="text-sm text-zinc-400 whitespace-pre-line leading-relaxed">{selectedEntry.description}</p>
-            )}
-
-            {!isEditMode ? (
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Add more info..."
-                  value={extraInfo}
-                  onChange={(e) => setExtraInfo(e.target.value)}
-                  className="flex-1 bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500"
-                  data-testid="input-shadows-extra"
-                />
-                <Button 
-                  size="sm" 
-                  variant="ghost" 
-                  onClick={handleAddExtraInfo} 
-                  disabled={!extraInfo.trim()}
-                  className="text-zinc-400 hover:text-zinc-200"
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <Input
-                  placeholder="NAME"
-                  value={name}
-                  onChange={(e) => setName(e.target.value.toUpperCase())}
-                  className="uppercase bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500"
-                  data-testid="input-edit-shadows-name"
-                />
-                <Textarea
-                  placeholder="Description"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={3}
-                  className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 resize-none"
-                  data-testid="input-edit-shadows-description"
-                />
-                <div className="flex gap-2">
-                  <Button 
-                    size="sm" 
-                    onClick={handleSaveEdit}
-                    className="bg-zinc-700 hover:bg-zinc-600 text-zinc-200"
-                  >
-                    Save
-                  </Button>
-                  <Button 
-                    size="sm" 
-                    variant="ghost" 
-                    onClick={() => setIsEditMode(false)}
-                    className="text-zinc-400 hover:text-zinc-300"
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {showDeleteConfirm && (
-            <div className="pt-4 border-t border-zinc-700 mt-4">
-              <p className="text-sm text-zinc-400 mb-3">Delete this entry?</p>
-              <div className="flex gap-2">
-                <Button 
-                  size="sm" 
-                  onClick={handleDelete}
-                  className="bg-red-900/50 hover:bg-red-900 text-red-200"
-                >
-                  Delete
-                </Button>
-                <Button 
-                  size="sm" 
-                  variant="ghost" 
-                  onClick={() => setShowDeleteConfirm(false)}
-                  className="text-zinc-400 hover:text-zinc-300"
-                >
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      <div className="flex flex-1 min-h-0 gap-4">
-        <div 
-          className="w-1/2 flex flex-col bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer min-h-0"
-          onTouchStart={handleLeftLongPressStart}
-          onTouchEnd={handleLeftLongPressEnd}
-          onTouchCancel={handleLeftLongPressEnd}
-          onMouseDown={handleLeftLongPressStart}
-          onMouseUp={handleLeftLongPressEnd}
-          onMouseLeave={handleLeftLongPressEnd}
-        >
-          <ScrollArea className="h-full">
-            {currentEntries.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <Skull className="h-8 w-8 text-zinc-600 mb-3" />
-                <p className="text-zinc-500 text-sm">
-                  No hay sombras aún
-                </p>
-                <p className="text-zinc-600 text-xs mt-2">Mantené presionado para agregar</p>
-              </div>
-            ) : (
-              <div className="space-y-0.5">
-                {currentEntries.map((entry, index) => (
-                  <div key={entry.id}>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setViewingEntry(entry); }}
-                      className={`w-full text-left px-3 py-2 rounded text-sm transition-all cursor-pointer select-none ${
-                        viewingEntry?.id === entry.id 
-                          ? "bg-zinc-700 text-zinc-100 shadow-sm" 
-                          : "text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200"
-                      }`}
-                      data-testid={`card-shadows-${entry.id}`}
-                    >
-                      {entry.name}
-                    </button>
-                    {index < currentEntries.length - 1 && (
-                      <div className="h-px bg-zinc-700/30 mx-2" />
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </ScrollArea>
+  if (entries.length === 0) {
+    return (
+      <div className="h-full flex flex-col bg-zinc-900">
+        <div className="flex items-center justify-between p-3 bg-zinc-950 border-b border-zinc-800">
+          <div className="flex-1" />
+          <Button
+            size="sm"
+            onClick={() => setIsAdding(true)}
+            className="bg-amber-700 hover:bg-amber-800 text-amber-50 text-xs"
+          >
+            + Agregar
+          </Button>
         </div>
-        
-        <div 
-          className="w-1/2 flex flex-col bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer min-h-0"
-          onTouchStart={handleRightLongPressStart}
-          onTouchEnd={handleRightLongPressEnd}
-          onTouchCancel={handleRightLongPressEnd}
-          onMouseDown={handleRightLongPressStart}
-          onMouseUp={handleRightLongPressEnd}
-          onMouseLeave={handleRightLongPressEnd}
-        >
-          {viewingEntry ? (
-            <>
-              <div className="border-b border-zinc-700/50 pb-2 mb-4 flex-shrink-0">
-                <h3 className="font-medium text-zinc-100 uppercase tracking-wide">{viewingEntry.name}</h3>
-                <div className="h-px w-12 bg-gradient-to-r from-zinc-500 to-transparent mt-2" />
+        <div className="flex-1 flex items-center justify-center text-center">
+          <div>
+            <BookOpen className="h-16 w-16 text-zinc-600 mx-auto mb-4" />
+            <p className="text-zinc-500 text-sm">No hay bestias registradas</p>
+            <p className="text-zinc-600 text-xs mt-2">Usa el botón "Agregar" para comenzar</p>
+          </div>
+        </div>
+        <Dialog open={isAdding} onOpenChange={setIsAdding}>
+          <DialogContent className="sm:max-w-md bg-zinc-900 border border-zinc-700">
+            <VisuallyHidden>
+              <DialogTitle>Add Beast</DialogTitle>
+            </VisuallyHidden>
+            <div className="space-y-4">
+              <div className="border-b border-zinc-700/50 pb-2">
+                <h3 className="font-medium text-zinc-100">Agregar Bestia</h3>
               </div>
-              <div className="flex-1 min-h-0 overflow-y-auto minimal-scrollbar">
-                {viewingEntry.description && (
-                  <p className="text-sm text-zinc-400 whitespace-pre-line leading-relaxed">{viewingEntry.description}</p>
+              <Input
+                placeholder="NOMBRE"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value.toUpperCase())}
+                className="uppercase bg-zinc-800 border-zinc-700 text-zinc-200"
+              />
+              <Textarea
+                placeholder="Descripción"
+                value={newDescription}
+                onChange={(e) => setNewDescription(e.target.value)}
+                rows={4}
+                className="bg-zinc-800 border-zinc-700 text-zinc-200 resize-none"
+              />
+              <div>
+                <label className="text-xs text-zinc-400 block mb-2">Imagen (opcional)</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.currentTarget.files?.[0];
+                    if (file) handleImageUpload(file, false);
+                  }}
+                  disabled={isUploadingImage}
+                  className="w-full text-xs text-zinc-400 file:bg-zinc-800 file:border file:border-zinc-700 file:rounded file:px-2 file:py-1 file:text-xs file:text-zinc-400 cursor-pointer"
+                />
+                {newImagePreview && (
+                  <div className="mt-2 relative">
+                    <img
+                      src={newImagePreview}
+                      alt="Preview"
+                      className="w-full h-32 object-cover rounded bg-zinc-800"
+                    />
+                    <button
+                      onClick={() => {
+                        setNewImageUrl("");
+                        setNewImagePreview(null);
+                      }}
+                      className="absolute top-1 right-1 bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded"
+                    >
+                      Remover
+                    </button>
+                  </div>
                 )}
               </div>
-            </>
-          ) : (
-            <div className="h-full flex items-center justify-center text-zinc-600 text-sm">
-              Seleccioná una entrada
+              <Input
+                type="text"
+                placeholder="O pega una URL de imagen"
+                value={newImageUrl}
+                onChange={(e) => {
+                  setNewImageUrl(e.target.value);
+                  if (e.target.value && !newImagePreview) {
+                    setNewImagePreview(e.target.value);
+                  }
+                }}
+                disabled={isUploadingImage}
+                className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 disabled:opacity-50"
+              />
+              <div className="flex gap-2">
+                <Button size="sm" onClick={handleAddBeast} className="bg-amber-700 hover:bg-amber-800 text-amber-50">
+                  Agregar
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setIsAdding(false)} className="text-zinc-400">
+                  Cancelar
+                </Button>
+              </div>
             </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full flex flex-col bg-zinc-900">
+      <style>{`
+        @keyframes bestiaryFlipSheetNext {
+          0% { transform: rotateY(0deg); box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+          40% { transform: rotateY(-90deg); box-shadow: -30px 0 60px rgba(0,0,0,0.5); }
+          100% { transform: rotateY(-180deg); box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+        }
+        @keyframes bestiaryFlipSheetPrev {
+          0% { transform: rotateY(0deg); box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+          40% { transform: rotateY(90deg); box-shadow: 30px 0 60px rgba(0,0,0,0.5); }
+          100% { transform: rotateY(180deg); box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+        }
+        .bestiary-spread {
+          perspective: 1800px;
+          position: relative;
+        }
+        .bestiary-book {
+          transform-style: preserve-3d;
+          transition: none;
+        }
+        .bestiary-flip-sheet {
+          position: absolute;
+          top: 0;
+          width: 50%;
+          height: 100%;
+          background-color: #fef3c7;
+          transform-style: preserve-3d;
+          z-index: 10;
+        }
+        .bestiary-flip-sheet.flipping-next {
+          left: 50%;
+          transform-origin: left center;
+          animation: bestiaryFlipSheetNext 0.7s cubic-bezier(0.45, 0.05, 0.55, 0.95) forwards;
+        }
+        .bestiary-flip-sheet.flipping-prev {
+          left: 4px;
+          transform-origin: right center;
+          animation: bestiaryFlipSheetPrev 0.7s cubic-bezier(0.45, 0.05, 0.55, 0.95) forwards;
+        }
+        /* Minimal scrollbar styling */
+        .bestiary-description::-webkit-scrollbar {
+          width: 6px;
+        }
+        .bestiary-description::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .bestiary-description::-webkit-scrollbar-thumb {
+          background: rgba(120, 113, 108, 0.5);
+          border-radius: 3px;
+        }
+        .bestiary-description::-webkit-scrollbar-thumb:hover {
+          background: rgba(120, 113, 108, 0.8);
+        }
+      `}</style>
+
+      {/* Toolbar */}
+      <div className="flex items-center justify-between p-3 border-b border-zinc-800 gap-3">
+        <div className="flex gap-1">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => goTo(0)}
+            disabled={flipping || isLoading || entries.length === 0 || selectedEntryIdx === 0}
+            className="text-xs text-zinc-200 border-zinc-700 hover:bg-zinc-800 px-2"
+          >
+            ⏮
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => goTo(selectedEntryIdx - 1)}
+            disabled={flipping || isLoading || entries.length === 0 || selectedEntryIdx === 0}
+            className="text-xs text-zinc-200 border-zinc-700 hover:bg-zinc-800 px-2"
+          >
+            ◀
+          </Button>
+        </div>
+
+        <Button
+          size="sm"
+          variant={showThumbs ? "default" : "outline"}
+          onClick={() => setShowThumbs(!showThumbs)}
+          disabled={flipping || isLoading}
+          className="px-2"
+          title={showThumbs ? "Ocultar thumbnails" : "Mostrar thumbnails"}
+        >
+          <Grid className="h-4 w-4" />
+        </Button>
+
+        <div className="flex-1 h-1 bg-zinc-700 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-amber-600 transition-all duration-300"
+            style={{
+              width: `${entries.length > 0 ? ((selectedEntryIdx + 1) / entries.length) * 100 : 0}%`,
+            }}
+          />
+        </div>
+
+        <div className="flex gap-1">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => goTo(selectedEntryIdx + 1)}
+            disabled={flipping || isLoading || entries.length === 0 || selectedEntryIdx === entries.length - 1}
+            className="text-xs text-zinc-200 border-zinc-700 hover:bg-zinc-800 px-2"
+          >
+            ▶
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => goTo(entries.length - 1)}
+            disabled={flipping || isLoading || entries.length === 0 || selectedEntryIdx === entries.length - 1}
+            className="text-xs text-zinc-200 border-zinc-700 hover:bg-zinc-800 px-2"
+          >
+            ⏭
+          </Button>
+        </div>
+
+        <Button
+          size="sm"
+          onClick={() => setIsAdding(true)}
+          className="bg-amber-700 hover:bg-amber-800 text-amber-50 text-xs px-3"
+        >
+          + Agregar
+        </Button>
+      </div>
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex gap-4 p-4 overflow-hidden bg-zinc-900">
+        {/* Thumbnail Panel */}
+        {showThumbs && (
+          <div className="w-24 flex flex-col gap-2 overflow-y-auto border-r border-zinc-800 pr-2">
+            {entries.map((entry, idx) => (
+              <button
+                key={entry.id}
+                onClick={() => {
+                  goTo(idx);
+                }}
+                className={`p-2 rounded text-xs text-center font-mono transition-colors ${
+                  idx === selectedEntryIdx
+                    ? "bg-amber-700 text-amber-50"
+                    : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+                }`}
+              >
+                {entry.name.substring(0, 8).toUpperCase()}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Book Spread */}
+        <div className="flex-1 flex bestiary-spread w-full">
+          {/* Flip Sheet (flying page during animation) */}
+          {flipping && (
+            <div
+              className={`bestiary-flip-sheet ${
+                flipDir === "next" ? "flipping-next" : "flipping-prev"
+              }`}
+            />
           )}
+
+          <div className="bestiary-book flex gap-0 w-full h-full">
+            {/* Left Page */}
+            <div className="flex-1 h-full bg-amber-50 shadow-2xl flex flex-col p-8 min-w-0 rounded-l">
+              {leftEntry ? (
+                <>
+                  <div className="flex items-start justify-between gap-2 mb-2 pb-2 border-b-2 border-amber-900/20 flex-shrink-0">
+                    <h2 className="font-serif text-sm font-bold text-amber-950 uppercase">
+                      {leftEntry.name}
+                    </h2>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleStartEdit(leftEntry)}
+                      className="text-amber-700 hover:bg-amber-200 flex-shrink-0 px-1"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="flex-1 font-serif text-base text-amber-950 leading-relaxed overflow-y-auto pr-4 bestiary-description">
+                    <p>{leftEntry.description}</p>
+                  </div>
+                </>
+              ) : (
+                <div className="flex items-center justify-center h-full text-amber-700/50 text-sm">
+                  — blank page —
+                </div>
+              )}
+            </div>
+
+            {/* Spine */}
+            <div className="w-1 bg-gradient-to-b from-amber-900 to-amber-950 shadow-lg" />
+
+            {/* Right Page */}
+            <div className="flex-1 h-full bg-amber-50 shadow-2xl flex items-center justify-center p-12 min-w-0 rounded-r overflow-hidden">
+              <div className={`w-full h-full flex items-center justify-center transition-opacity duration-300 ${flipping ? 'opacity-0' : 'opacity-100'}`}>
+                {rightEntry?.imageUrl ? (
+                  <img src={rightEntry.imageUrl} alt={rightEntry.name} className="max-h-full max-w-full object-contain" />
+                ) : rightEntry ? (
+                  <div className="flex flex-col items-center justify-center text-amber-700/50">
+                    <Image className="h-8 w-8 mb-2" />
+                    <p className="text-xs">{rightEntry.name}</p>
+                  </div>
+                ) : (
+                  <div className="text-amber-700/30 text-xs">— blank page —</div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
+
+      {/* Add Dialog */}
+      <Dialog open={isAdding} onOpenChange={setIsAdding}>
+        <DialogContent className="sm:max-w-md bg-zinc-900 border border-zinc-700">
+          <VisuallyHidden>
+            <DialogTitle>Add Beast</DialogTitle>
+          </VisuallyHidden>
+          <div className="space-y-4">
+            <div className="border-b border-zinc-700/50 pb-2">
+              <h3 className="font-medium text-zinc-100">Agregar Bestia</h3>
+            </div>
+            <Input
+              placeholder="NOMBRE"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value.toUpperCase())}
+              className="uppercase bg-zinc-800 border-zinc-700 text-zinc-200"
+            />
+            <Textarea
+              placeholder="Descripción"
+              value={newDescription}
+              onChange={(e) => setNewDescription(e.target.value)}
+              rows={4}
+              className="bg-zinc-800 border-zinc-700 text-zinc-200 resize-none"
+            />
+            <div>
+              <label className="text-xs text-zinc-400 block mb-2">Imagen (opcional)</label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.currentTarget.files?.[0];
+                  if (file) handleImageUpload(file, false);
+                }}
+                disabled={isUploadingImage}
+                className="w-full text-xs text-zinc-400 file:bg-zinc-800 file:border file:border-zinc-700 file:rounded file:px-2 file:py-1 file:text-xs file:text-zinc-400 cursor-pointer"
+              />
+              {newImagePreview && (
+                <div className="mt-2 relative">
+                  <img
+                    src={newImagePreview}
+                    alt="Preview"
+                    className="w-full h-32 object-cover rounded bg-zinc-800"
+                  />
+                  <button
+                    onClick={() => {
+                      setNewImageUrl("");
+                      setNewImagePreview(null);
+                    }}
+                    className="absolute top-1 right-1 bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded"
+                  >
+                    Remover
+                  </button>
+                </div>
+              )}
+            </div>
+            <Input
+              type="text"
+              placeholder="O pega una URL de imagen"
+              value={newImageUrl}
+              onChange={(e) => {
+                setNewImageUrl(e.target.value);
+                if (e.target.value && !newImagePreview) {
+                  setNewImagePreview(e.target.value);
+                }
+              }}
+              disabled={isUploadingImage}
+              className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 disabled:opacity-50"
+            />
+            <div className="flex gap-2">
+              <Button size="sm" onClick={handleAddBeast} className="bg-amber-700 hover:bg-amber-800 text-amber-50">
+                Agregar
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setIsAdding(false)} className="text-zinc-400">
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Dialog */}
+      <Dialog open={isEditing} onOpenChange={setIsEditing}>
+        <DialogContent className="sm:max-w-md bg-zinc-900 border border-zinc-700">
+          <VisuallyHidden>
+            <DialogTitle>Edit Beast</DialogTitle>
+          </VisuallyHidden>
+          <div className="space-y-4">
+            <div className="border-b border-zinc-700/50 pb-2">
+              <h3 className="font-medium text-zinc-100">Editar Bestia</h3>
+            </div>
+            <Input
+              placeholder="NOMBRE"
+              value={editedName}
+              onChange={(e) => setEditedName(e.target.value.toUpperCase())}
+              className="uppercase bg-zinc-800 border-zinc-700 text-zinc-200"
+            />
+            <Textarea
+              placeholder="Descripción"
+              value={editedDescription}
+              onChange={(e) => setEditedDescription(e.target.value)}
+              rows={4}
+              className="bg-zinc-800 border-zinc-700 text-zinc-200 resize-none"
+            />
+            <div>
+              <label className="text-xs text-zinc-400 block mb-2">Imagen (opcional)</label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.currentTarget.files?.[0];
+                  if (file) handleImageUpload(file, true);
+                }}
+                disabled={isUploadingImage}
+                className="w-full text-xs text-zinc-400 file:bg-zinc-800 file:border file:border-zinc-700 file:rounded file:px-2 file:py-1 file:text-xs file:text-zinc-400 cursor-pointer"
+              />
+              {editedImagePreview && (
+                <div className="mt-2 relative">
+                  <img
+                    src={editedImagePreview}
+                    alt="Preview"
+                    className="w-full h-32 object-cover rounded bg-zinc-800"
+                  />
+                  <button
+                    onClick={() => {
+                      setEditedImageUrl("");
+                      setEditedImagePreview(null);
+                    }}
+                    className="absolute top-1 right-1 bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded"
+                  >
+                    Remover
+                  </button>
+                </div>
+              )}
+            </div>
+            <Input
+              type="text"
+              placeholder="O pega una URL de imagen"
+              value={editedImageUrl}
+              onChange={(e) => {
+                setEditedImageUrl(e.target.value);
+                if (e.target.value && !editedImagePreview) {
+                  setEditedImagePreview(e.target.value);
+                }
+              }}
+              disabled={isUploadingImage}
+              className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 disabled:opacity-50"
+            />
+            <div className="flex gap-2">
+              <Button size="sm" onClick={handleSaveEdit} className="bg-amber-700 hover:bg-amber-800 text-amber-50">
+                Guardar
+              </Button>
+              <Button 
+                size="sm" 
+                onClick={() => {
+                  if (editingId) {
+                    onDelete(editingId);
+                    setIsEditing(false);
+                  }
+                }} 
+                className="bg-red-700 hover:bg-red-800 text-red-50"
+              >
+                <Trash2 className="h-3 w-3 mr-1" />
+                Eliminar
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setIsEditing(false)} className="text-zinc-400">
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -4688,7 +4976,7 @@ function QuestDiary() {
   });
 
   const createShadow = useMutation({
-    mutationFn: async (data: { name: string; action: string; description: string }) => {
+    mutationFn: async (data: { name: string; action: string; description: string; imageUrl?: string }) => {
       const res = await fetch("/api/journal/shadows", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -4700,7 +4988,7 @@ function QuestDiary() {
   });
 
   const updateShadow = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: { name: string; action: string; description: string } }) => {
+    mutationFn: async ({ id, data }: { id: string; data: { name: string; action: string; description: string; imageUrl?: string } }) => {
       const res = await fetch(`/api/journal/shadows/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -4786,8 +5074,8 @@ function QuestDiary() {
               <TabsTrigger value="tools" className="shrink-0 p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-tools" title="Tools">
                 <Wrench className="h-5 w-5" />
               </TabsTrigger>
-              <TabsTrigger value="shadows" className="shrink-0 p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-shadows" title="Shadows">
-                <Skull className="h-5 w-5" />
+              <TabsTrigger value="bestiary" className="shrink-0 p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-bestiary" title="Bestiary">
+                <BookOpen className="h-5 w-5" />
               </TabsTrigger>
             </TabsList>
             
@@ -4805,8 +5093,8 @@ function QuestDiary() {
                 <SkillsSection journalLearnings={learnings} journalTools={tools} journalThoughts={thoughts} />
               </TabsContent>
               
-              <TabsContent value="shadows" className="flex-1 min-h-0 min-w-0 mt-0">
-                <ShadowsSection
+              <TabsContent value="bestiary" className="flex-1 min-h-0 min-w-0 mt-0">
+                <BestiarySection
                   entries={shadows}
                   isLoading={loadingShadows}
                   onAdd={(data) => createShadow.mutate(data)}

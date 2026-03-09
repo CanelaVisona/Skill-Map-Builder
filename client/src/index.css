@@ -156,3 +156,40 @@ h1, h2, h3, h4, h5, h6 {
 .scrollbar-thin-on-scroll::-webkit-scrollbar-thumb:active {
   background-color: rgba(113, 113, 122, 0.9);
 }
+
+/* Page Flip 3D Effect */
+.page-flip-container {
+  perspective: 1000px;
+  width: 100%;
+  height: 100%;
+}
+
+.page-flip-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.7s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  transform-style: preserve-3d;
+}
+
+.page-flip-inner.flip-active {
+  transform: rotateY(180deg);
+}
+
+.page-flip-front,
+.page-flip-back {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  display: flex;
+}
+
+.page-flip-front {
+  transform: rotateY(0deg);
+}
+
+.page-flip-back {
+  transform: rotateY(180deg);
+}

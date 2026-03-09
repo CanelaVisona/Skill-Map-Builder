@@ -5,6 +5,12 @@ import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournal
 import { fromError } from "zod-validation-error";
 import cookieParser from "cookie-parser";
 import crypto from "crypto";
+import Busboy from "busboy";
+import { promises as fs } from "fs";
+import { join } from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
 declare global {
   namespace Express {
@@ -1177,6 +1183,76 @@ export async function registerRoutes(
     try {
       const shadows = await storage.getJournalShadows(req.userId!);
       res.json(shadows);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Upload image for bestiary (must be before generic POST shadows route)
+  app.post("/api/journal/shadows/upload", requireAuth, async (req, res) => {
+    try {
+      // Ensure upload directory exists (outside of dist/ to avoid deletion during build)
+      const uploadDir = join(process.cwd(), "uploads/bestiary-images");
+      await fs.mkdir(uploadDir, { recursive: true });
+
+      const bb = Busboy({ headers: req.headers });
+      let uploadedFile: { filename: string; mimetype: string; size: number } | null = null;
+      let fileBuffer: Buffer | null = null;
+
+      bb.on("file", async (fieldname, file, info) => {
+        const { filename, encoding, mimeType } = info;
+        
+        // Validate image type
+        const allowedMimes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+        if (!allowedMimes.includes(mimeType)) {
+          res.status(400).json({ message: "Solo se permiten imágenes (JPEG, PNG, GIF, WebP)" });
+          return;
+        }
+
+        // Read file into buffer
+        const chunks: Buffer[] = [];
+        file.on("data", (chunk) => chunks.push(chunk));
+        file.on("end", async () => {
+          fileBuffer = Buffer.concat(chunks);
+          
+          // Limit file size to 5MB
+          if (fileBuffer.length > 5 * 1024 * 1024) {
+            res.status(400).json({ message: "La imagen no puede ser mayor a 5MB" });
+            return;
+          }
+          
+          uploadedFile = { filename, mimetype: mimeType, size: fileBuffer.length };
+        });
+      });
+
+      bb.on("close", async () => {
+        if (!fileBuffer || !uploadedFile) {
+          res.status(400).json({ message: "No se recibió ningún archivo" });
+          return;
+        }
+
+        try {
+          // Generate unique filename
+          const ext = uploadedFile.filename.split(".").pop() || "jpg";
+          const uniqueName = `${crypto.randomUUID()}.${ext}`;
+          const filePath = join(uploadDir, uniqueName);
+
+          // Write file
+          await fs.writeFile(filePath, fileBuffer);
+
+          // Return relative URL
+          const relativeUrl = `/bestiary-images/${uniqueName}`;
+          res.json({ imageUrl: relativeUrl });
+        } catch (error: any) {
+          res.status(500).json({ message: "Error al guardar la imagen: " + error.message });
+        }
+      });
+
+      bb.on("error", (error) => {
+        res.status(400).json({ message: "Error al procesar el archivo: " + error.message });
+      });
+
+      req.pipe(bb);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

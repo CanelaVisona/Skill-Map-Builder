@@ -4,6 +4,8 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
+import path from "path";
+import * as fs from "fs/promises";
 
 const app = express();
 const httpServer = createServer(app);
@@ -23,6 +25,11 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+
+// Serve static files EARLY, before any other middleware
+const publicPath = path.join(process.cwd(), "dist/public");
+console.log("[server] Serving static files from:", publicPath);
+app.use(express.static(publicPath));
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -87,6 +94,15 @@ app.use((req, res, next) => {
     }
   }
 
+  // Ensure bestiary images directory exists
+  try {
+    const imagesDir = path.join(process.cwd(), "uploads/bestiary-images");
+    await fs.mkdir(imagesDir, { recursive: true });
+    console.log("✓ Bestiary images directory ready:", imagesDir);
+  } catch (error: any) {
+    console.error("⚠ Error creating images directory:", error.message);
+  }
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
@@ -96,6 +112,11 @@ app.use((req, res, next) => {
     res.status(status).json({ message });
     throw err;
   });
+
+  // Serve bestiary images directly (bypass Vite)
+  const imagesPath = path.join(process.cwd(), "uploads/bestiary-images");
+  app.use("/bestiary-images", express.static(imagesPath));
+  app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
