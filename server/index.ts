@@ -31,11 +31,6 @@ const publicPath = path.join(process.cwd(), "dist/public");
 console.log("[server] Serving static files from:", publicPath);
 app.use(express.static(publicPath));
 
-// Serve bestiary images VERY EARLY, before any routes or Vite
-const imagesPath = path.join(process.cwd(), "uploads/bestiary-images");
-app.use("/bestiary-images", express.static(imagesPath));
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
-
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
     hour: "numeric",

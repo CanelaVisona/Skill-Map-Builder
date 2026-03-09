@@ -6,8 +6,6 @@ import { fromError } from "zod-validation-error";
 import cookieParser from "cookie-parser";
 import crypto from "crypto";
 import Busboy from "busboy";
-import { promises as fs } from "fs";
-import { join } from "path";
 
 const __dirname = process.cwd();
 
@@ -1190,10 +1188,6 @@ export async function registerRoutes(
   // Upload image for bestiary (must be before generic POST shadows route)
   app.post("/api/journal/shadows/upload", requireAuth, async (req, res) => {
     try {
-      // Ensure upload directory exists (outside of dist/ to avoid deletion during build)
-      const uploadDir = join(process.cwd(), "uploads/bestiary-images");
-      await fs.mkdir(uploadDir, { recursive: true });
-
       const bb = Busboy({ headers: req.headers });
       let uploadedFile: { filename: string; mimetype: string; size: number } | null = null;
       let fileBuffer: Buffer | null = null;
@@ -1231,19 +1225,12 @@ export async function registerRoutes(
         }
 
         try {
-          // Generate unique filename
-          const ext = uploadedFile.filename.split(".").pop() || "jpg";
-          const uniqueName = `${crypto.randomUUID()}.${ext}`;
-          const filePath = join(uploadDir, uniqueName);
-
-          // Write file
-          await fs.writeFile(filePath, fileBuffer);
-
-          // Return relative URL
-          const relativeUrl = `/bestiary-images/${uniqueName}`;
-          res.json({ imageUrl: relativeUrl });
+          // Convert buffer to Base64 data URL (stored in Neon, never lost)
+          const base64 = fileBuffer.toString("base64");
+          const imageUrl = `data:${uploadedFile.mimetype};base64,${base64}`;
+          res.json({ imageUrl });
         } catch (error: any) {
-          res.status(500).json({ message: "Error al guardar la imagen: " + error.message });
+          res.status(500).json({ message: "Error al procesar la imagen: " + error.message });
         }
       });
 
