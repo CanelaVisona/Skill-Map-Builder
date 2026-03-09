@@ -8,9 +8,8 @@ import crypto from "crypto";
 import Busboy from "busboy";
 import { promises as fs } from "fs";
 import { join } from "path";
-import { fileURLToPath } from "url";
 
-const __dirname = fileURLToPath(new URL(".", import.meta.url));
+const __dirname = process.cwd();
 
 declare global {
   namespace Express {
