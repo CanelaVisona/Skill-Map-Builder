@@ -509,10 +509,12 @@ function BestiarySection({
   onDelete: (id: string) => void;
   onMarkDefeated: (id: string, defeated: 0 | 1) => void;
 }) {
+  const isMobile = useIsMobile();
+  
   const [spread, setSpread] = useState(0);
   const [flipping, setFlipping] = useState(false);
   const [flipDir, setFlipDir] = useState<"next" | "prev" | null>(null);
-  const [showThumbs, setShowThumbs] = useState(true);
+  const [showThumbs, setShowThumbs] = useState(!isMobile);
   const [selectedEntryIdx, setSelectedEntryIdx] = useState(0);
   const [isAdding, setIsAdding] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -557,6 +559,11 @@ function BestiarySection({
       setSelectedEntryIdx(newIdx);
     }
   }, [entries.length]);
+
+  // Auto-hide thumbnails on mobile, show on desktop
+  useEffect(() => {
+    setShowThumbs(!isMobile);
+  }, [isMobile]);
 
   const handleAddBeast = () => {
     if (!newName.trim()) return;
@@ -816,7 +823,7 @@ function BestiarySection({
       `}</style>
 
       {/* Toolbar */}
-      <div className="flex items-center justify-between p-3 border-b border-zinc-800 gap-3">
+      <div className="flex items-center justify-between p-2 sm:p-3 border-b border-zinc-800 gap-1.5 sm:gap-3">
         <div className="flex gap-1">
           <Button
             size="sm"
@@ -849,7 +856,7 @@ function BestiarySection({
           <Grid className="h-4 w-4" />
         </Button>
 
-        <div className="flex-1 h-1 bg-zinc-700 rounded-full overflow-hidden">
+        <div className="flex-1 h-0.5 sm:h-1 bg-zinc-700 rounded-full overflow-hidden">
           <div
             className="h-full bg-amber-600 transition-all duration-300"
             style={{
@@ -889,9 +896,9 @@ function BestiarySection({
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex gap-4 p-4 overflow-hidden bg-zinc-900">
+      <div className="flex-1 flex gap-2 sm:gap-3 lg:gap-4 p-2 sm:p-3 lg:p-4 overflow-hidden bg-zinc-900">
         {/* Thumbnail Panel */}
-        {showThumbs && (
+        {showThumbs && !isMobile && (
           <div className="w-24 flex flex-col gap-2 overflow-y-auto border-r border-zinc-800 pr-2">
             {entries.map((entry, idx) => (
               <button
@@ -912,7 +919,7 @@ function BestiarySection({
         )}
 
         {/* Book Spread */}
-        <div className="flex-1 flex bestiary-spread w-full">
+        <div className="flex-1 flex flex-col lg:flex-row bestiary-spread w-full">
           {/* Flip Sheet (flying page during animation) */}
           {flipping && (
             <div
@@ -924,7 +931,7 @@ function BestiarySection({
 
           <div className="bestiary-book flex gap-0 w-full h-full">
             {/* Left Page */}
-            <div className="flex-1 h-full bg-amber-50 shadow-2xl flex flex-col p-8 min-w-0 rounded-l">
+            <div className="flex-1 max-h-[60vh] lg:h-full bg-amber-50 shadow-2xl flex flex-col p-4 sm:p-6 lg:p-8 min-w-0 rounded-l">
               {leftEntry ? (
                 <>
                   <div className="flex items-start justify-between gap-2 mb-2 pb-2 border-b-2 border-amber-900/20 flex-shrink-0">
@@ -952,10 +959,10 @@ function BestiarySection({
             </div>
 
             {/* Spine */}
-            <div className="w-1 bg-gradient-to-b from-amber-900 to-amber-950 shadow-lg" />
+            <div className="w-full h-1 lg:h-full lg:w-1 bg-gradient-to-b from-amber-900 to-amber-950 shadow-lg" />
 
             {/* Right Page */}
-            <div className="flex-1 h-full bg-amber-50 shadow-2xl flex items-center justify-center p-12 min-w-0 rounded-r overflow-hidden">
+            <div className="flex-1 max-h-[60vh] lg:h-full bg-amber-50 shadow-2xl flex items-center justify-center p-6 sm:p-8 lg:p-12 min-w-0 rounded-r overflow-hidden">
               <div className={`w-full h-full flex items-center justify-center transition-opacity duration-300 ${flipping ? 'opacity-0' : 'opacity-100'}`}>
                 {rightEntry?.imageUrl ? (
                   <img src={rightEntry.imageUrl} alt={rightEntry.name} className="max-h-full max-w-full object-contain" />
