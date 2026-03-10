@@ -625,10 +625,10 @@ function BestiarySection({
             return;
           }
 
-          // Max width/height: 1200px
+          // Max width/height: 800px (smaller to reduce Base64 size)
           let width = img.width;
           let height = img.height;
-          const maxSize = 1200;
+          const maxSize = 800;
 
           if (width > height) {
             if (width > maxSize) {
@@ -646,6 +646,7 @@ function BestiarySection({
           canvas.height = height;
           ctx.drawImage(img, 0, 0, width, height);
 
+          // Aggressive compression: 0.6 quality to keep Base64 small (max ~100KB)
           canvas.toBlob(
             (blob) => {
               if (blob) {
@@ -659,7 +660,7 @@ function BestiarySection({
               }
             },
             "image/jpeg",
-            0.8
+            0.6
           );
         };
       };
