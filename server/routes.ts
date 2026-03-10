@@ -1228,6 +1228,10 @@ export async function registerRoutes(
           // Convert buffer to Base64 data URL (stored in Neon, never lost)
           const base64 = fileBuffer.toString("base64");
           const imageUrl = `data:${uploadedFile.mimetype};base64,${base64}`;
+          
+          // Log size for debugging
+          console.log(`[upload] Image size: ${fileBuffer.length}B, Base64 size: ${imageUrl.length}B`);
+          
           res.json({ imageUrl });
         } catch (error: any) {
           res.status(500).json({ message: "Error al procesar la imagen: " + error.message });
