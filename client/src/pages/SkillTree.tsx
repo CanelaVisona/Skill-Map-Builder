@@ -878,7 +878,7 @@ function BestiarySection({
           top: 0;
           width: 50%;
           height: 100%;
-          background-color: #fef3c7;
+          background-color: #000000;
           transform-style: preserve-3d;
           z-index: 10;
         }
@@ -1017,48 +1017,48 @@ function BestiarySection({
 
           <div className="bestiary-book flex gap-0 w-full h-full">
             {/* Left Page */}
-            <div className="flex-1 max-h-[60vh] lg:h-full bg-amber-50 shadow-2xl flex flex-col p-4 sm:p-6 lg:p-8 min-w-0 rounded-l">
+            <div className="flex-1 max-h-[60vh] lg:h-full bg-black shadow-2xl flex flex-col p-4 sm:p-6 lg:p-8 min-w-0 rounded-l">
               {leftEntry ? (
                 <>
-                  <div className="flex items-start justify-between gap-2 mb-2 pb-2 border-b-2 border-amber-900/20 flex-shrink-0">
-                    <h2 className="font-serif text-sm font-bold text-amber-950 uppercase">
+                  <div className="flex items-start justify-between gap-2 mb-2 pb-2 border-b-2 border-white/20 flex-shrink-0">
+                    <h2 className="font-serif text-sm font-bold text-white uppercase">
                       {leftEntry.name}
                     </h2>
                     <Button
                       size="sm"
                       variant="ghost"
                       onClick={() => handleStartEdit(leftEntry)}
-                      className="text-amber-700 hover:bg-amber-200 flex-shrink-0 px-1"
+                      className="text-white hover:bg-white/20 flex-shrink-0 px-1"
                     >
                       <Pencil className="h-4 w-4" />
                     </Button>
                   </div>
-                  <div className="flex-1 font-serif text-base text-amber-950 leading-relaxed overflow-y-auto pr-4 bestiary-description">
+                  <div className="flex-1 font-serif text-base text-white leading-relaxed overflow-y-auto pr-4 bestiary-description">
                     <p>{leftEntry.description}</p>
                   </div>
                 </>
               ) : (
-                <div className="flex items-center justify-center h-full text-amber-700/50 text-sm">
+                <div className="flex items-center justify-center h-full text-white/50 text-sm">
                   — blank page —
                 </div>
               )}
             </div>
 
             {/* Spine */}
-            <div className="w-full h-1 lg:h-full lg:w-1 bg-gradient-to-b from-amber-900 to-amber-950 shadow-lg" />
+            <div className="w-full h-1 lg:h-full lg:w-1 bg-gradient-to-b from-gray-800 to-gray-900 shadow-lg" />
 
             {/* Right Page */}
-            <div className="flex-1 max-h-[60vh] lg:h-full bg-amber-50 shadow-2xl flex items-center justify-center p-6 sm:p-8 lg:p-12 min-w-0 rounded-r overflow-hidden">
+            <div className="flex-1 max-h-[60vh] lg:h-full bg-black shadow-2xl flex items-center justify-center p-6 sm:p-8 lg:p-12 min-w-0 rounded-r overflow-hidden">
               <div className={`w-full h-full flex items-center justify-center transition-opacity duration-300 ${flipping ? 'opacity-0' : 'opacity-100'}`}>
                 {rightEntry?.imageUrl ? (
                   <img src={rightEntry.imageUrl} alt={rightEntry.name} className="max-h-full max-w-full object-contain" />
                 ) : rightEntry ? (
-                  <div className="flex flex-col items-center justify-center text-amber-700/50">
+                  <div className="flex flex-col items-center justify-center text-white/50">
                     <Image className="h-8 w-8 mb-2" />
                     <p className="text-xs">{rightEntry.name}</p>
                   </div>
                 ) : (
-                  <div className="text-amber-700/30 text-xs">— blank page —</div>
+                  <div className="text-white/30 text-xs">— blank page —</div>
                 )}
               </div>
             </div>
@@ -1213,7 +1213,7 @@ function BestiarySection({
               className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 disabled:opacity-50"
             />
             <div className="flex gap-2">
-              <Button size="sm" onClick={handleSaveEdit} className="bg-amber-700 hover:bg-amber-800 text-amber-50">
+              <Button size="sm" onClick={handleSaveEdit} className="bg-white/20 hover:bg-white/30 text-white">
                 Guardar
               </Button>
               <Button 
