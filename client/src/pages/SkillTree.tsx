@@ -637,10 +637,10 @@ function BestiarySection({
             return;
           }
 
-          // Max width/height: 800px (smaller to reduce Base64 size)
+          // Max width/height: 600px (aggressive compression for DB)
           let width = img.width;
           let height = img.height;
-          const maxSize = 800;
+          const maxSize = 600;
 
           if (width > height) {
             if (width > maxSize) {
@@ -658,7 +658,7 @@ function BestiarySection({
           canvas.height = height;
           ctx.drawImage(img, 0, 0, width, height);
 
-          // Aggressive compression: 0.6 quality to keep Base64 small (max ~100KB)
+          // Ultra-aggressive compression: 0.5 quality (~40-50KB max)
           canvas.toBlob(
             (blob) => {
               if (blob) {
@@ -666,13 +666,14 @@ function BestiarySection({
                   type: "image/jpeg",
                   lastModified: Date.now(),
                 });
+                console.log(`[compress] Original: ${file.size}B, Compressed: ${blob.size}B`);
                 resolve(compressedFile);
               } else {
                 resolve(file);
               }
             },
             "image/jpeg",
-            0.6
+            0.5
           );
         };
       };
