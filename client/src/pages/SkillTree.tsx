@@ -566,7 +566,16 @@ function BestiarySection({
   }, [isMobile]);
 
   const handleAddBeast = () => {
-    if (!newName.trim()) return;
+    if (!newName.trim()) {
+      alert("Por favor ingresa un nombre para la bestia");
+      return;
+    }
+    if (!newDescription.trim()) {
+      alert("Por favor ingresa una descripción");
+      return;
+    }
+    console.log("[Bestiary] Adding beast:", { newName, newDescription, imageUrl: newImageUrl ? "present" : "none" });
+    
     const addData: any = {
       name: newName.toUpperCase(),
       action: "",
@@ -575,7 +584,10 @@ function BestiarySection({
     if (newImageUrl) {
       addData.imageUrl = newImageUrl;
     }
+    
     onAdd(addData);
+    
+    // Clear form
     setNewName("");
     setNewDescription("");
     setNewImageUrl("");
@@ -820,8 +832,13 @@ function BestiarySection({
                 className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 disabled:opacity-50"
               />
               <div className="flex gap-2">
-                <Button size="sm" onClick={handleAddBeast} className="bg-amber-700 hover:bg-amber-800 text-amber-50">
-                  Agregar
+                <Button 
+                  size="sm" 
+                  onClick={handleAddBeast} 
+                  disabled={isUploadingImage || !newName.trim()}
+                  className="bg-amber-700 hover:bg-amber-800 text-amber-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isUploadingImage ? "Subiendo..." : "Agregar"}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => setIsAdding(false)} className="text-zinc-400">
                   Cancelar
