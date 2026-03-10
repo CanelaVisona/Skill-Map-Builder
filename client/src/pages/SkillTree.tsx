@@ -868,10 +868,12 @@ function BestiarySection({
         .bestiary-spread {
           perspective: 1800px;
           position: relative;
+          background-color: #000000;
         }
         .bestiary-book {
           transform-style: preserve-3d;
           transition: none;
+          background-color: #000000;
         }
         .bestiary-flip-sheet {
           position: absolute;
@@ -905,6 +907,12 @@ function BestiarySection({
         }
         .bestiary-description::-webkit-scrollbar-thumb:hover {
           background: rgba(120, 113, 108, 0.8);
+        }
+        /* Force bestiary pages to be black */
+        .bestiary-spread > div > div:first-child,
+        .bestiary-spread > div > div:last-child {
+          background-color: #000000 !important;
+          color: #ffffff !important;
         }
       `}</style>
 
