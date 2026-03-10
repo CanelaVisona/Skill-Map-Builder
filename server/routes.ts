@@ -1250,11 +1250,22 @@ export async function registerRoutes(
 
   app.post("/api/journal/shadows", requireAuth, async (req, res) => {
     try {
+      console.log("[POST /api/journal/shadows] Creating shadow for user:", req.userId);
+      console.log("[POST /api/journal/shadows] Data:", {
+        name: req.body.name,
+        description: req.body.description?.substring(0, 50) + "...",
+        hasImage: !!req.body.imageUrl,
+        imageSize: req.body.imageUrl?.length || 0,
+      });
+      
       const data = { ...req.body, userId: req.userId };
       const validated = insertJournalShadowSchema.parse(data);
       const shadow = await storage.createJournalShadow(validated);
+      
+      console.log("[POST /api/journal/shadows] Created shadow:", shadow.id);
       res.status(201).json(shadow);
     } catch (error: any) {
+      console.error("[POST /api/journal/shadows] Error:", error);
       const validationError = fromError(error);
       res.status(400).json({ message: validationError.toString() });
     }
