@@ -707,15 +707,22 @@ function BestiarySection({
       const { imageUrl } = await response.json();
       if (isEditting) {
         setEditedImageUrl(imageUrl);
+        // Update preview with server-compressed version
+        setEditedImagePreview(imageUrl);
       } else {
         setNewImageUrl(imageUrl);
+        // Update preview with server-compressed version
+        setNewImagePreview(imageUrl);
       }
     } catch (error: any) {
+      console.error("Upload error:", error);
       alert("Error al subir la imagen: " + error.message);
       if (isEditting) {
         setEditedImagePreview(null);
+        setEditedImageUrl("");
       } else {
         setNewImagePreview(null);
+        setNewImageUrl("");
       }
     } finally {
       setIsUploadingImage(false);
