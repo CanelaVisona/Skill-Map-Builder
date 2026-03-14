@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertGlobalSkillSchema } from "@shared/schema";
+import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import cookieParser from "cookie-parser";
 import crypto from "crypto";
@@ -2187,6 +2187,116 @@ export async function registerRoutes(
         message: `Eliminados ${deleted} skill(s) sin área/quest`,
         deletedCount: deleted 
       });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Habits routes
+  app.get("/api/habits", requireAuth, async (req, res) => {
+    try {
+      const habits = await storage.getHabits(req.userId!);
+      res.json(habits);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/habits", requireAuth, async (req, res) => {
+    try {
+      console.log("📝 Creating habit. Body:", req.body, "UserId:", req.userId);
+      const data = { ...req.body, userId: req.userId };
+      console.log("📝 Data to validate:", data);
+      const validated = insertHabitSchema.parse(data);
+      console.log("✅ Validated data:", validated);
+      const habit = await storage.createHabit(validated);
+      console.log("✅ Habit created:", habit);
+      res.status(201).json(habit);
+    } catch (error: any) {
+      console.error("❌ Habit creation error:", error);
+      if (error.name === "ZodError") {
+        console.error("❌ Validation error:", error.errors);
+        return res.status(400).json({ message: fromError(error).toString() });
+      }
+      res.status(500).json({ message: error.message || "Internal server error" });
+    }
+  });
+
+  app.patch("/api/habits/:id", requireAuth, async (req, res) => {
+    try {
+      // Verify ownership
+      const habit = await storage.getHabit(req.params.id);
+      if (!habit || habit.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para editar este hábito" });
+      }
+
+      const updated = await storage.updateHabit(req.params.id, req.body);
+      if (!updated) {
+        return res.status(404).json({ message: "Hábito no encontrado" });
+      }
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/habits/:id", requireAuth, async (req, res) => {
+    try {
+      // Verify ownership
+      const habit = await storage.getHabit(req.params.id);
+      if (!habit || habit.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para eliminar este hábito" });
+      }
+
+      await storage.deleteHabit(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Habit Records routes
+  app.get("/api/habit-records/:habitId", requireAuth, async (req, res) => {
+    try {
+      const { startDate, endDate } = req.query;
+      if (!startDate || !endDate) {
+        return res.status(400).json({ message: "startDate y endDate son requeridos" });
+      }
+
+      const records = await storage.getHabitRecords(
+        req.params.habitId,
+        startDate as string,
+        endDate as string
+      );
+      res.json(records);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/habit-records/:habitId", requireAuth, async (req, res) => {
+    try {
+      const { date, completed } = req.body;
+      if (!date) {
+        return res.status(400).json({ message: "date es requerido (formato YYYY-MM-DD)" });
+      }
+      if (typeof completed !== "number" || (completed !== 0 && completed !== 1)) {
+        return res.status(400).json({ message: "completed debe ser 0 o 1" });
+      }
+
+      // Verify habit ownership
+      const habit = await storage.getHabit(req.params.habitId);
+      if (!habit || habit.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para registrar en este hábito" });
+      }
+
+      const record = await storage.upsertHabitRecord(
+        req.params.habitId,
+        req.userId!,
+        date,
+        completed as 0 | 1
+      );
+      res.status(201).json(record);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

@@ -194,6 +194,29 @@ export const globalSkills = pgTable("global_skills", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+export const habits = pgTable("habits", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  emoji: text("emoji").notNull(),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+  bestStreak: integer("best_streak").notNull().default(0),
+  endDate: varchar("end_date"), // YYYY-MM-DD format, nullable for unlimited habits
+  areaId: varchar("area_id").references(() => areas.id, { onDelete: "set null" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const habitRecords = pgTable("habit_records", {
+  id: varchar("id").primaryKey(),
+  habitId: varchar("habit_id").notNull().references(() => habits.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  date: varchar("date").notNull(), // YYYY-MM-DD format
+  completed: integer("completed").$type<0 | 1>().notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertSessionSchema = createInsertSchema(sessions).omit({ id: true });
 export const insertAreaSchema = createInsertSchema(areas);
@@ -280,3 +303,9 @@ export type InsertUserSkillsProgress = z.infer<typeof insertUserSkillsProgressSc
 export type UserSkillsProgress = typeof userSkillsProgress.$inferSelect;
 export type InsertGlobalSkill = z.infer<typeof insertGlobalSkillSchema>;
 export type GlobalSkill = typeof globalSkills.$inferSelect;
+export const insertHabitSchema = createInsertSchema(habits).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertHabitRecordSchema = createInsertSchema(habitRecords).omit({ id: true, createdAt: true });
+export type InsertHabit = z.infer<typeof insertHabitSchema>;
+export type Habit = typeof habits.$inferSelect;
+export type InsertHabitRecord = z.infer<typeof insertHabitRecordSchema>;
+export type HabitRecord = typeof habitRecords.$inferSelect;

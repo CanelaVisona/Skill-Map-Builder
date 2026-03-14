@@ -1,7 +1,7 @@
 import { eq, and, asc } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db } from "./db";
-import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type GlobalSkill, type InsertGlobalSkill, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, globalSkills } from "@shared/schema";
+import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, globalSkills, habits, habitRecords } from "@shared/schema";
 
 export interface IStorage {
   // Users
@@ -163,6 +163,19 @@ export interface IStorage {
   updateGlobalSkill(id: string, skill: Partial<InsertGlobalSkill>): Promise<GlobalSkill | undefined>;
   addXpToGlobalSkill(id: string, xpAmount: number): Promise<GlobalSkill | undefined>;
   deleteGlobalSkill(id: string): Promise<void>;
+
+  // Habits
+  getHabits(userId: string): Promise<Habit[]>;
+  getHabit(id: string): Promise<Habit | undefined>;
+  createHabit(habit: InsertHabit): Promise<Habit>;
+  updateHabit(id: string, habit: Partial<InsertHabit>): Promise<Habit | undefined>;
+  deleteHabit(id: string): Promise<void>;
+  
+  // Habit Records
+  getHabitRecords(habitId: string, startDate: string, endDate: string): Promise<HabitRecord[]>;
+  getHabitRecordByDate(habitId: string, date: string): Promise<HabitRecord | undefined>;
+  upsertHabitRecord(habitId: string, userId: string, date: string, completed: 0 | 1): Promise<HabitRecord>;
+  deleteHabitRecord(id: string): Promise<void>;
 }
 
 export class DbStorage implements IStorage {
@@ -1102,6 +1115,79 @@ export class DbStorage implements IStorage {
     // Children will be deleted by CASCADE
     await db.delete(globalSkills).where(eq(globalSkills.id, id));
   }
+
+  // Habits
+  async getHabits(userId: string): Promise<Habit[]> {
+    return await db.select().from(habits).where(eq(habits.userId, userId));
+  }
+
+  async getHabit(id: string): Promise<Habit | undefined> {
+    const result = await db.select().from(habits).where(eq(habits.id, id));
+    return result[0];
+  }
+
+  async createHabit(habit: InsertHabit): Promise<Habit> {
+    const id = randomUUID();
+    const result = await db.insert(habits).values({ id, ...habit }).returning();
+    return result[0];
+  }
+
+  async updateHabit(id: string, habit: Partial<InsertHabit>): Promise<Habit | undefined> {
+    const result = await db.update(habits)
+      .set({ ...habit, updatedAt: new Date() })
+      .where(eq(habits.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteHabit(id: string): Promise<void> {
+    await db.delete(habits).where(eq(habits.id, id));
+  }
+
+  // Habit Records
+  async getHabitRecords(habitId: string, startDate: string, endDate: string): Promise<HabitRecord[]> {
+    const { gte, lte } = await import("drizzle-orm");
+    return await db.select().from(habitRecords).where(
+      and(
+        eq(habitRecords.habitId, habitId),
+        gte(habitRecords.date, startDate),
+        lte(habitRecords.date, endDate)
+      )
+    );
+  }
+
+  async getHabitRecordByDate(habitId: string, date: string): Promise<HabitRecord | undefined> {
+    const result = await db.select().from(habitRecords).where(
+      and(
+        eq(habitRecords.habitId, habitId),
+        eq(habitRecords.date, date)
+      )
+    );
+    return result[0];
+  }
+
+  async upsertHabitRecord(habitId: string, userId: string, date: string, completed: 0 | 1): Promise<HabitRecord> {
+    const existing = await this.getHabitRecordByDate(habitId, date);
+    
+    if (existing) {
+      const result = await db.update(habitRecords)
+        .set({ completed })
+        .where(eq(habitRecords.id, existing.id))
+        .returning();
+      return result[0];
+    } else {
+      const id = randomUUID();
+      const result = await db.insert(habitRecords)
+        .values({ id, habitId, userId, date, completed })
+        .returning();
+      return result[0];
+    }
+  }
+
+  async deleteHabitRecord(id: string): Promise<void> {
+    await db.delete(habitRecords).where(eq(habitRecords.id, id));
+  }
 }
 
 export const storage = new DbStorage();
+

@@ -64,6 +64,27 @@
       "when": 1741532000000,
       "tag": "0008_add_created_at_shadows",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1741538400000,
+      "tag": "0009_habits",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1773429943228,
+      "tag": "0010_yummy_johnny_blaze",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1773454569085,
+      "tag": "0011_parched_nova",
+      "breakpoints": true
     }
   ]
 }
