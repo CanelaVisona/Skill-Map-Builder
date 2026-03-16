@@ -1874,6 +1874,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                                     setHabitDataWithRecords((prev: any[]) =>
                                       prev.map(h => h.id === habit.id ? { ...h, done: newDone } : h)
                                     );
+                                    // Refetch habits cache so HabitStreakModal updates immediately
+                                    await queryClient.refetchQueries({ queryKey: ["habits"] });
                                   } catch (error) {
                                     console.error("Error toggling habit:", error);
                                   }

@@ -126,9 +126,11 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       if (!res.ok) throw new Error("Failed to toggle habit");
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["habits"] });
-      fetchHabitRecords(habits);
+    onSuccess: async () => {
+      await queryClient.refetchQueries({ queryKey: ["habits"] });
+      // Rebuild records from fresh habits data
+      const freshHabits = queryClient.getQueryData<any[]>(["habits"]) || [];
+      await fetchHabitRecords(freshHabits);
     },
   });
 
@@ -138,8 +140,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       if (!res.ok) throw new Error("Failed to delete habit");
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["habits"] });
-      fetchHabitRecords(habits);
+      queryClient.refetchQueries({ queryKey: ["habits"] });
     },
   });
 
@@ -160,7 +161,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       return res.json();
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["habits"] });
+      await queryClient.refetchQueries({ queryKey: ["habits"] });
     },
   });
 
@@ -188,7 +189,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       return res.json();
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["habits"] });
+      await queryClient.refetchQueries({ queryKey: ["habits"] });
     },
   });
 
@@ -202,12 +203,38 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
     fetchHabitRecords(habits);
   }
 
+  // Refetch when modal opens
+  useEffect(() => {
+    if (open) {
+      const refetch = async () => {
+        await queryClient.refetchQueries({ queryKey: ["habits"] });
+      };
+      refetch();
+    }
+  }, [open, queryClient]);
+
   // Auto-refresh when habits array changes
   useEffect(() => {
     if (habits.length > 0) {
       fetchHabitRecords(habits);
     }
   }, [habits]);
+
+  // Listen to habit query changes from any source (including SkillNode)
+  useEffect(() => {
+    if (!open) return;
+
+    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+      if (event.query.queryKey[0] === 'habits' && event.type === 'updated') {
+        const freshHabits = event.query.state.data;
+        if (Array.isArray(freshHabits) && freshHabits.length > 0) {
+          fetchHabitRecords(freshHabits);
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [open, queryClient]);
 
   // Daily refresh: Check if day has changed and refresh habits
   useEffect(() => {
