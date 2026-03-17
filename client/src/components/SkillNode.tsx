@@ -1865,7 +1865,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                                     });
                                     
                                     // Award XP if habit is being completed and has a skill linked
-                                    if (isCompleting && habit.skillProgressId) {
+                                    if (isCompleting && (habit.skillProgressId || habit.subskillId)) {
                                       const xpRes = await fetch(`/api/habits/${habit.id}/award-xp`, {
                                         method: "POST",
                                         headers: { "Content-Type": "application/json" },

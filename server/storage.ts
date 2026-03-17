@@ -981,9 +981,9 @@ export class DbStorage implements IStorage {
   }
 
   // User Skills Progress
-  async getUserSkillsProgress(userId: string): Promise<Array<{ skillName: string; currentXp: number; level: number }>> {
+  async getUserSkillsProgress(userId: string): Promise<Array<{ id: string; skillName: string; currentXp: number; level: number; areaId: string | null }>> {
     const progress = await db.select().from(userSkillsProgress).where(eq(userSkillsProgress.userId, userId));
-    return progress.map(p => ({ skillName: p.skillName, currentXp: p.currentXp, level: p.level }));
+    return progress.map(p => ({ id: p.id, skillName: p.skillName, currentXp: p.currentXp, level: p.level, areaId: p.areaId || null }));
   }
 
   async upsertUserSkillsProgress(data: InsertUserSkillsProgress, userId: string): Promise<{ skillName: string; currentXp: number; level: number }> {

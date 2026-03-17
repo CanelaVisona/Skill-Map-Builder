@@ -84,15 +84,99 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
   });
 
   // Fetch skills progress (lectura, escritura, etc.) instead of skill tree nodes
-  const { data: skills = [] } = useQuery({
-    queryKey: ["skills-progress"],
-    queryFn: async () => {
-      const res = await fetch("/api/skills-progress");
-      if (!res.ok) throw new Error("Failed to fetch skills progress");
-      return res.json();
-    },
-    enabled: open,
-  });
+  // Fetch skills by area when areaId changes - includes both legacy and global skills
+  const [newPanelSkills, setNewPanelSkills] = useState<any[]>([]);
+  const [editPanelSkills, setEditPanelSkills] = useState<any[]>([]);
+
+  useEffect(() => {
+    const loadSkillsByArea = async () => {
+      if (!newHabitAreaId) {
+        setNewPanelSkills([]);
+        return;
+      }
+      try {
+        // Load legacy skills from localStorage
+        const legacySkillsData: Record<string, { name: string; currentXp: number; level: number }> = {};
+        const stored = localStorage.getItem("skillsProgress");
+        if (stored) {
+          try {
+            Object.assign(legacySkillsData, JSON.parse(stored));
+          } catch (e) {
+            console.error("Error parsing legacy skills:", e);
+          }
+        }
+
+        // Load global skills from API
+        const res = await fetch(`/api/global-skills/area/${newHabitAreaId}`);
+        const globalSkillsData = res.ok ? await res.json() : [];
+
+        // Combine: legacy skills first, then global skills
+        const combined = [
+          // Convert legacy skills to same format as global skills
+          ...Object.entries(legacySkillsData).map(([name, skill]) => ({
+            id: `legacy-${name}`,
+            name: name,
+            currentXp: skill.currentXp,
+            level: skill.level,
+            isLegacy: true,
+          })),
+          // Add global skills
+          ...globalSkillsData,
+        ];
+
+        setNewPanelSkills(combined);
+      } catch (error) {
+        console.error("Error loading skills:", error);
+        setNewPanelSkills([]);
+      }
+    };
+    loadSkillsByArea();
+  }, [newHabitAreaId]);
+
+  useEffect(() => {
+    const loadSkillsByArea = async () => {
+      if (!editHabitAreaId) {
+        setEditPanelSkills([]);
+        return;
+      }
+      try {
+        // Load legacy skills from localStorage
+        const legacySkillsData: Record<string, { name: string; currentXp: number; level: number }> = {};
+        const stored = localStorage.getItem("skillsProgress");
+        if (stored) {
+          try {
+            Object.assign(legacySkillsData, JSON.parse(stored));
+          } catch (e) {
+            console.error("Error parsing legacy skills:", e);
+          }
+        }
+
+        // Load global skills from API
+        const res = await fetch(`/api/global-skills/area/${editHabitAreaId}`);
+        const globalSkillsData = res.ok ? await res.json() : [];
+
+        // Combine: legacy skills first, then global skills
+        const combined = [
+          // Convert legacy skills to same format as global skills
+          ...Object.entries(legacySkillsData).map(([name, skill]) => ({
+            id: `legacy-${name}`,
+            name: name,
+            currentXp: skill.currentXp,
+            level: skill.level,
+            isLegacy: true,
+          })),
+          // Add global skills
+          ...globalSkillsData,
+        ];
+
+        setEditPanelSkills(combined);
+      } catch (error) {
+        console.error("Error loading skills:", error);
+        setEditPanelSkills([]);
+      }
+    };
+    loadSkillsByArea();
+  }, [editHabitAreaId]);
 
   // Transform habits with their records
   const [habitsWithRecords, setHabitsWithRecords] = useState<HabitData[]>([]);
@@ -370,7 +454,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                     {
                       onSuccess: async () => {
                         // Award XP if habit has a linked skill and is being marked complete
-                        if (!isCompleted && habit.skillId) {
+                        if (!isCompleted && habit.skillProgressId) {
                           try {
                             const res = await fetch(`/api/habits/${habitId}/award-xp`, {
                               method: "POST",
@@ -432,7 +516,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
               skillId={newHabitSkillProgressId}
               areas={areas}
               projects={projects}
-              skills={skills}
+              skills={newPanelSkills}
               onEmojiChange={setNewHabitEmoji}
               onNameChange={setNewHabitName}
               onEndDateChange={setNewHabitEndDate}
@@ -452,7 +536,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                       endDate: newHabitEndDate || undefined,
                       areaId: newHabitAreaId,
                       projectId: newHabitProjectId,
-                      skillProgressId: newHabitSkillProgressId,
+                      skillId: newHabitSkillProgressId,
                     });
                     resetForm();
                     showMain();
@@ -478,7 +562,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
               skillId={editHabitSkillProgressId}
               areas={areas}
               projects={projects}
-              skills={skills}
+              skills={editPanelSkills}
               onEmojiChange={setEditHabitEmoji}
               onNameChange={setEditHabitName}
               onEndDateChange={setEditHabitEndDate}
@@ -499,7 +583,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                       endDate: editHabitEndDate || undefined,
                       areaId: editHabitAreaId,
                       projectId: editHabitProjectId,
-                      skillProgressId: editHabitSkillProgressId,
+                      skillId: editHabitSkillProgressId,
                     });
                     resetEditForm();
                     showMain();
@@ -1362,7 +1446,7 @@ function AddPanel({
             <option value="">Sin skill asignado</option>
             {skills.map((skill) => (
               <option key={skill.id} value={skill.id}>
-                {skill.skillName}
+                {skill.name}
               </option>
             ))}
           </select>
@@ -1574,7 +1658,7 @@ function EditPanel({
             <option value="">Sin skill asignado</option>
             {skills.map((skill) => (
               <option key={skill.id} value={skill.id}>
-                {skill.skillName}
+                {skill.name}
               </option>
             ))}
           </select>

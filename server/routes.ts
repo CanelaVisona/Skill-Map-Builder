@@ -2048,13 +2048,17 @@ export async function registerRoutes(
     }
   });
 
-  // Global Skills (for XP tracking with areas/projects/subskills)
-  app.get("/api/global-skills", requireAuth, async (req, res) => {
+  // Get skills progress filtered by area
+  app.get("/api/skills-progress/by-area/:areaId", requireAuth, async (req, res) => {
     try {
-      const skills = await storage.getGlobalSkills(req.userId!);
-      res.json(skills);
+      const { areaId } = req.params;
+      const progress = await storage.getUserSkillsProgress(req.userId!);
+      const filtered = progress.filter((skill) => skill.areaId === areaId);
+      res.json(filtered);
     } catch (error: any) {
-      if (error.message?.includes('does not exist')) {
+      if (error.message?.includes('relation "user_skills_progress" does not exist') || 
+          error.message?.includes('does not exist')) {
+        console.warn('user_skills_progress table does not exist yet, returning empty array');
         res.json([]);
       } else {
         res.status(500).json({ message: error.message });
@@ -2062,6 +2066,8 @@ export async function registerRoutes(
     }
   });
 
+  // Global Skills (for XP tracking with areas/projects/subskills)
+  // Specific routes MUST come before generic routes
   app.get("/api/global-skills/area/:areaId", requireAuth, async (req, res) => {
     try {
       const skills = await storage.getGlobalSkillsByArea(req.userId!, req.params.areaId);
@@ -2078,6 +2084,20 @@ export async function registerRoutes(
   app.get("/api/global-skills/project/:projectId", requireAuth, async (req, res) => {
     try {
       const skills = await storage.getGlobalSkillsByProject(req.userId!, req.params.projectId);
+      res.json(skills);
+    } catch (error: any) {
+      if (error.message?.includes('does not exist')) {
+        res.json([]);
+      } else {
+        res.status(500).json({ message: error.message });
+      }
+    }
+  });
+
+  // Generic routes come after specific routes
+  app.get("/api/global-skills", requireAuth, async (req, res) => {
+    try {
+      const skills = await storage.getGlobalSkills(req.userId!);
       res.json(skills);
     } catch (error: any) {
       if (error.message?.includes('does not exist')) {
@@ -2195,10 +2215,15 @@ export async function registerRoutes(
   // Habits routes
   app.get("/api/habits", requireAuth, async (req, res) => {
     try {
+      console.log("[GET /api/habits] userId:", req.userId);
       const habits = await storage.getHabits(req.userId!);
+      console.log("[GET /api/habits] Retrieved", habits.length, "habits");
       res.json(habits);
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      console.error("[GET /api/habits] ERROR:", error);
+      console.error("[GET /api/habits] Error message:", error.message);
+      console.error("[GET /api/habits] Error stack:", error.stack);
+      res.status(500).json({ message: error.message || "Internal server error" });
     }
   });
 
@@ -2264,35 +2289,38 @@ export async function registerRoutes(
         return res.status(403).json({ message: "No tienes permiso para este hábito" });
       }
 
-      // If no linked skill progress, just return success
-      if (!habit.skillProgressId) {
-        return res.json({ xpAwarded: 0, message: "Hábito sin skill progress linkeado" });
+      // If no linked skill, just return success
+      if (!habit.skillId) {
+        return res.json({ xpAwarded: 0, message: "Hábito sin skill linkeado" });
       }
 
-      // Get the skill progress and award XP
-      const skillProgress = await storage.getUserSkillsProgress(req.userId!);
-      const linkedSkill = skillProgress.find((sp: any) => sp.id === habit.skillProgressId);
-      
-      if (!linkedSkill) {
-        return res.status(404).json({ message: "Skill progress linkeado al hábito no encontrado" });
-      }
-
-      const currentXp = linkedSkill.currentXp || 0;
       const xpToAward = 5;
+
+      // Award XP to global skill if linked
+      const skill = await storage.getGlobalSkill(habit.skillId);
+      
+      if (!skill) {
+        return res.status(404).json({ message: "Skill linkeado al hábito no encontrado" });
+      }
+
+      const currentXp = skill.currentXp || 0;
       const newXp = currentXp + xpToAward;
 
-      // Update skill progress with new XP
-      const updatedSkillProgress = await storage.upsertUserSkillsProgress({
-        skillName: linkedSkill.skillName,
-        currentXp: newXp,
-        level: linkedSkill.level
-      }, req.userId!);
+      // Update global skill with new XP and calculate new level
+      let newLevel = skill.level || 1;
+      const xpPerLevel = 100;
+      if (newXp >= (newLevel * xpPerLevel)) {
+        newLevel = Math.floor(newXp / xpPerLevel) + 1;
+      }
 
-      res.json({
+      await storage.updateGlobalSkill(habit.skillId, { currentXp: newXp, level: newLevel });
+
+      return res.json({
         xpAwarded: xpToAward,
-        skillProgressId: habit.skillProgressId,
-        skillName: linkedSkill.skillName,
-        newXp: newXp
+        skillId: habit.skillId,
+        skillName: skill.name,
+        newXp: newXp,
+        newLevel: newLevel
       });
     } catch (error: any) {
       res.status(500).json({ message: error.message });

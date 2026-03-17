@@ -177,6 +177,7 @@ export const userSkillsProgress = pgTable("user_skills_progress", {
   skillName: text("skill_name").notNull(),
   currentXp: integer("current_xp").notNull().default(0),
   level: integer("level").notNull().default(1),
+  areaId: varchar("area_id").references(() => areas.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -204,7 +205,7 @@ export const habits = pgTable("habits", {
   endDate: varchar("end_date"), // YYYY-MM-DD format, nullable for unlimited habits
   areaId: varchar("area_id").references(() => areas.id, { onDelete: "set null" }),
   projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
-  skillProgressId: varchar("skill_progress_id").references(() => userSkillsProgress.id, { onDelete: "set null" }), // Link to user's skill progress for XP rewards
+  skillId: varchar("skill_id").references(() => globalSkills.id, { onDelete: "set null" }), // Link to global skill for XP rewards
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -240,7 +241,7 @@ export const insertJournalThoughtSchema = createInsertSchema(journalThoughts).om
   skillId: z.string().min(1, "skillId is required"),
 });
 
-export const insertUserSkillsProgressSchema = createInsertSchema(userSkillsProgress).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertUserSkillsProgressSchema = createInsertSchema(userSkillsProgress).omit({ id: true, createdAt: true, updatedAt: true, userId: true });
 export const insertGlobalSkillSchema = createInsertSchema(globalSkills).omit({ id: true, createdAt: true, updatedAt: true });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
