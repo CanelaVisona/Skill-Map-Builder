@@ -2255,6 +2255,50 @@ export async function registerRoutes(
     }
   });
 
+  // Award XP to linked skill when habit is completed
+  app.post("/api/habits/:habitId/award-xp", requireAuth, async (req, res) => {
+    try {
+      // Verify habit ownership
+      const habit = await storage.getHabit(req.params.habitId);
+      if (!habit || habit.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para este hábito" });
+      }
+
+      // If no linked skill progress, just return success
+      if (!habit.skillProgressId) {
+        return res.json({ xpAwarded: 0, message: "Hábito sin skill progress linkeado" });
+      }
+
+      // Get the skill progress and award XP
+      const skillProgress = await storage.getUserSkillsProgress(req.userId!);
+      const linkedSkill = skillProgress.find((sp: any) => sp.id === habit.skillProgressId);
+      
+      if (!linkedSkill) {
+        return res.status(404).json({ message: "Skill progress linkeado al hábito no encontrado" });
+      }
+
+      const currentXp = linkedSkill.currentXp || 0;
+      const xpToAward = 5;
+      const newXp = currentXp + xpToAward;
+
+      // Update skill progress with new XP
+      const updatedSkillProgress = await storage.upsertUserSkillsProgress({
+        skillName: linkedSkill.skillName,
+        currentXp: newXp,
+        level: linkedSkill.level
+      }, req.userId!);
+
+      res.json({
+        xpAwarded: xpToAward,
+        skillProgressId: habit.skillProgressId,
+        skillName: linkedSkill.skillName,
+        newXp: newXp
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Habit Records routes
   app.get("/api/habit-records/:habitId", requireAuth, async (req, res) => {
     try {

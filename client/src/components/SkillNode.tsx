@@ -151,6 +151,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   
   // Habits state
   const [habitDataWithRecords, setHabitDataWithRecords] = useState<any[]>([]);
+  const [showXpPopup, setShowXpPopup] = useState<{ visible: boolean; x: number; y: number }>({ visible: false, x: 0, y: 0 });
   
   // Queries for archivements (learnings, tools, thoughts by skillId)
   const { data: skillLearnings = [] } = useQuery({
@@ -1855,11 +1856,36 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                                 onClick={async () => {
                                   try {
                                     const today2 = new Date().toISOString().slice(0, 10);
+                                    const isCompleting = isToday === false; // About to mark as complete
+                                    
                                     await fetch(`/api/habit-records/${habit.id}`, {
                                       method: "POST",
                                       headers: { "Content-Type": "application/json" },
                                       body: JSON.stringify({ date: today2, completed: isToday ? 0 : 1 }),
                                     });
+                                    
+                                    // Award XP if habit is being completed and has a skill linked
+                                    if (isCompleting && habit.skillProgressId) {
+                                      const xpRes = await fetch(`/api/habits/${habit.id}/award-xp`, {
+                                        method: "POST",
+                                        headers: { "Content-Type": "application/json" },
+                                      });
+                                      
+                                      if (xpRes.ok) {
+                                        const xpData = await xpRes.json();
+                                        // Show +5xp popup near cursor (approximate)
+                                        setShowXpPopup({ visible: true, x: window.innerWidth / 2, y: window.innerHeight / 2 });
+                                        setTimeout(() => setShowXpPopup({ visible: false, x: 0, y: 0 }), 1500);
+                                        
+                                        // Refetch skills to update XP display
+                                        if (activeAreaId) {
+                                          await queryClient.refetchQueries({ queryKey: ["/api/areas", activeAreaId] });
+                                        } else if (activeProjectId) {
+                                          await queryClient.refetchQueries({ queryKey: ["/api/projects", activeProjectId] });
+                                        }
+                                      }
+                                    }
+                                    
                                     // Reload records immediately
                                     const year = new Date().getFullYear();
                                     const startDate = `${year}-01-01`;
@@ -1943,6 +1969,20 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                     </div>
                   </TabsContent>
                 </Tabs>
+
+                <AnimatePresence>
+                  {showXpPopup.visible && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -100, scale: 0.5 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 100, scale: 0.5 }}
+                      transition={{ duration: 0.4, type: "spring", damping: 10 }}
+                      className="fixed left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 pointer-events-none z-50"
+                    >
+                      <div className="text-5xl font-bold text-green-400 drop-shadow-lg">+5xp</div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
                 
                 <div className="flex justify-between mt-auto pt-6">
                   <Button 

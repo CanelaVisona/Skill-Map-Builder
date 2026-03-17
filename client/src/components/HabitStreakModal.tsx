@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { ArrowLeft, ChevronLeft, ChevronRight, Eye, Trash2, Plus } from "lucide-react";
 import { useTheme } from "next-themes";
+import { motion, AnimatePresence } from "framer-motion";
 import type { Habit, HabitRecord, Area, Project } from "@shared/schema";
 
 interface HabitData extends Habit {
@@ -43,6 +44,9 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
   const [editHabitEndDate, setEditHabitEndDate] = useState("");
   const [editHabitAreaId, setEditHabitAreaId] = useState<string | null>(null);
   const [editHabitProjectId, setEditHabitProjectId] = useState<string | null>(null);
+  const [showXpPopup, setShowXpPopup] = useState<{ visible: boolean; habitName: string }>({ visible: false, habitName: "" });
+  const [newHabitSkillProgressId, setNewHabitSkillProgressId] = useState<string | null>(null);
+  const [editHabitSkillProgressId, setEditHabitSkillProgressId] = useState<string | null>(null);
   const { theme } = useTheme();
   const queryClient = useQueryClient();
 
@@ -79,6 +83,17 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
     enabled: open,
   });
 
+  // Fetch skills progress (lectura, escritura, etc.) instead of skill tree nodes
+  const { data: skills = [] } = useQuery({
+    queryKey: ["skills-progress"],
+    queryFn: async () => {
+      const res = await fetch("/api/skills-progress");
+      if (!res.ok) throw new Error("Failed to fetch skills progress");
+      return res.json();
+    },
+    enabled: open,
+  });
+
   // Transform habits with their records
   const [habitsWithRecords, setHabitsWithRecords] = useState<HabitData[]>([]);
 
@@ -94,7 +109,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
     const endDate = `${year}-12-31`;
 
     const updatedHabits = await Promise.all(
-      habitsToFetch.map(async (habit) => {
+      habitsToFetch.map(async (habit: Habit) => {
         const res = await fetch(
           `/api/habit-records/${habit.id}?startDate=${startDate}&endDate=${endDate}`
         );
@@ -151,6 +166,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       endDate?: string;
       areaId?: string | null;
       projectId?: string | null;
+      skillId?: string | null;
     }) => {
       const res = await fetch("/api/habits", {
         method: "POST",
@@ -173,6 +189,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       endDate?: string;
       areaId?: string | null;
       projectId?: string | null;
+      skillId?: string | null;
     }) => {
       const res = await fetch(`/api/habits/${data.id}`, {
         method: "PATCH",
@@ -183,6 +200,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
           endDate: data.endDate,
           areaId: data.areaId,
           projectId: data.projectId,
+          skillId: data.skillId,
         }),
       });
       if (!res.ok) throw new Error("Failed to update habit");
@@ -286,7 +304,10 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
     );
     showPanel("detail");
   };
-  const showAdd = () => showPanel("add");
+  const showAdd = () => {
+    setNewHabitSkillProgressId(null);
+    showPanel("add");
+  };
   const showArchived = () => showPanel("archived");
   const showEdit = (habitId: string) => {
     const habit = habitsWithRecords.find((h) => h.id === habitId);
@@ -297,6 +318,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       setEditHabitEndDate(habit.endDate || "");
       setEditHabitAreaId(habit.areaId || null);
       setEditHabitProjectId(habit.projectId || null);
+      setEditHabitSkillProgressId(habit.skillProgressId || null);
       showPanel("edit");
     }
   };
@@ -306,6 +328,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
     setNewHabitEndDate("");
     setNewHabitAreaId(null);
     setNewHabitProjectId(null);
+    setNewHabitSkillProgressId(null);
   };
   const resetEditForm = () => {
     setEditHabitEmoji("");
@@ -313,6 +336,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
     setEditHabitEndDate("");
     setEditHabitAreaId(null);
     setEditHabitProjectId(null);
+    setEditHabitSkillProgressId(null);
     setSelectedHabitId(null);
   };
 
@@ -337,11 +361,35 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                 const habit = habitsWithRecords.find((h) => h.id === habitId);
                 if (habit) {
                   const isCompleted = habit.done.has(today);
-                  toggleHabitMutation.mutate({
-                    habitId,
-                    date: today,
-                    completed: isCompleted ? 0 : 1,
-                  });
+                  toggleHabitMutation.mutate(
+                    {
+                      habitId,
+                      date: today,
+                      completed: isCompleted ? 0 : 1,
+                    },
+                    {
+                      onSuccess: async () => {
+                        // Award XP if habit has a linked skill and is being marked complete
+                        if (!isCompleted && habit.skillId) {
+                          try {
+                            const res = await fetch(`/api/habits/${habitId}/award-xp`, {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                            });
+                            if (res.ok) {
+                              setShowXpPopup({ visible: true, habitName: habit.name });
+                              setTimeout(() => {
+                                setShowXpPopup({ visible: false, habitName: "" });
+                              }, 1500);
+                              await queryClient.refetchQueries({ queryKey: ["skills"] });
+                            }
+                          } catch (error) {
+                            console.error("Error awarding XP:", error);
+                          }
+                        }
+                      },
+                    }
+                  );
                 }
               }}
               isLoading={habitsLoading}
@@ -381,13 +429,16 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
               endDate={newHabitEndDate}
               areaId={newHabitAreaId}
               projectId={newHabitProjectId}
+              skillId={newHabitSkillProgressId}
               areas={areas}
               projects={projects}
+              skills={skills}
               onEmojiChange={setNewHabitEmoji}
               onNameChange={setNewHabitName}
               onEndDateChange={setNewHabitEndDate}
               onAreaIdChange={setNewHabitAreaId}
               onProjectIdChange={setNewHabitProjectId}
+              onSkillIdChange={setNewHabitSkillProgressId}
               onBack={() => {
                 resetForm();
                 showMain();
@@ -401,6 +452,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                       endDate: newHabitEndDate || undefined,
                       areaId: newHabitAreaId,
                       projectId: newHabitProjectId,
+                      skillProgressId: newHabitSkillProgressId,
                     });
                     resetForm();
                     showMain();
@@ -423,13 +475,16 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
               endDate={editHabitEndDate}
               areaId={editHabitAreaId}
               projectId={editHabitProjectId}
+              skillId={editHabitSkillProgressId}
               areas={areas}
               projects={projects}
+              skills={skills}
               onEmojiChange={setEditHabitEmoji}
               onNameChange={setEditHabitName}
               onEndDateChange={setEditHabitEndDate}
               onAreaIdChange={setEditHabitAreaId}
               onProjectIdChange={setEditHabitProjectId}
+              onSkillIdChange={setEditHabitSkillProgressId}
               onBack={() => {
                 resetEditForm();
                 showMain();
@@ -444,6 +499,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                       endDate: editHabitEndDate || undefined,
                       areaId: editHabitAreaId,
                       projectId: editHabitProjectId,
+                      skillProgressId: editHabitSkillProgressId,
                     });
                     resetEditForm();
                     showMain();
@@ -477,6 +533,23 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
             />
           )}
         </div>
+
+        {/* +5xp Popup */}
+        <AnimatePresence>
+          {showXpPopup.visible && (
+            <motion.div
+              initial={{ opacity: 0, y: -100, scale: 0.5 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 100, scale: 0.5 }}
+              transition={{ duration: 0.4, type: "spring", damping: 10 }}
+              className="fixed inset-0 flex items-center justify-center pointer-events-none z-[9999]"
+            >
+              <div className="text-5xl font-bold text-green-400 drop-shadow-lg">
+                +5xp
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </DialogContent>
     </Dialog>
   );
@@ -1116,13 +1189,16 @@ function AddPanel({
   endDate,
   areaId,
   projectId,
+  skillId,
   areas,
   projects,
+  skills,
   onEmojiChange,
   onNameChange,
   onEndDateChange,
   onAreaIdChange,
   onProjectIdChange,
+  onSkillIdChange,
   onBack,
   onSubmit,
   isLoading,
@@ -1132,13 +1208,16 @@ function AddPanel({
   endDate: string;
   areaId: string | null;
   projectId: string | null;
+  skillId: string | null;
   areas: Area[];
   projects: Project[];
+  skills: any[];
   onEmojiChange: (emoji: string) => void;
   onNameChange: (name: string) => void;
   onEndDateChange: (date: string) => void;
   onAreaIdChange: (id: string | null) => void;
   onProjectIdChange: (id: string | null) => void;
+  onSkillIdChange: (id: string | null) => void;
   onBack: () => void;
   onSubmit: () => void;
   isLoading: boolean;
@@ -1268,6 +1347,29 @@ function AddPanel({
             Opcional: vincular el hábito a un proyecto
           </p>
         </div>
+
+        {/* Skill Select */}
+        <div>
+          <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
+            Skill a linkear
+          </label>
+          <select
+            value={skillId || ""}
+            onChange={(e) => onSkillIdChange(e.target.value || null)}
+            disabled={isLoading}
+            className="mt-2 w-full px-3 py-2 border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm appearance-none cursor-pointer"
+          >
+            <option value="">Sin skill asignado</option>
+            {skills.map((skill) => (
+              <option key={skill.id} value={skill.id}>
+                {skill.skillName}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Opcional: linkear a un skill para sumar XP al completar
+          </p>
+        </div>
       </div>
 
       {/* Footer */}
@@ -1299,13 +1401,16 @@ function EditPanel({
   endDate,
   areaId,
   projectId,
+  skillId,
   areas,
   projects,
+  skills,
   onEmojiChange,
   onNameChange,
   onEndDateChange,
   onAreaIdChange,
   onProjectIdChange,
+  onSkillIdChange,
   onBack,
   onSubmit,
   onDelete,
@@ -1317,13 +1422,16 @@ function EditPanel({
   endDate: string;
   areaId: string | null;
   projectId: string | null;
+  skillId: string | null;
   areas: Area[];
   projects: Project[];
+  skills: any[];
   onEmojiChange: (emoji: string) => void;
   onNameChange: (name: string) => void;
   onEndDateChange: (date: string) => void;
   onAreaIdChange: (id: string | null) => void;
   onProjectIdChange: (id: string | null) => void;
+  onSkillIdChange: (id: string | null) => void;
   onBack: () => void;
   onSubmit: () => void;
   onDelete: () => void;
@@ -1449,6 +1557,29 @@ function EditPanel({
           </select>
           <p className="mt-1 text-xs text-muted-foreground">
             Opcional: vincular el hábito a un proyecto
+          </p>
+        </div>
+
+        {/* Skill Select */}
+        <div>
+          <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
+            Skill a linkear
+          </label>
+          <select
+            value={skillId || ""}
+            onChange={(e) => onSkillIdChange(e.target.value || null)}
+            disabled={isLoading}
+            className="mt-2 w-full px-3 py-2 border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm appearance-none cursor-pointer"
+          >
+            <option value="">Sin skill asignado</option>
+            {skills.map((skill) => (
+              <option key={skill.id} value={skill.id}>
+                {skill.skillName}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Opcional: linkear a un skill para sumar XP al completar
           </p>
         </div>
       </div>

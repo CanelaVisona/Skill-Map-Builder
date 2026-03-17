@@ -210,6 +210,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                       <Accordion type="single" collapsible className="w-full pl-4">
                         {levelsToShow.map((level) => {
                           const subtitle = project.levelSubtitles?.[level] || "";
+                          const subtitleDescription = project.levelSubtitleDescriptions?.[level] || "";
                           const isBlocked = level > maxLevel;
                           
                           return (
@@ -220,7 +221,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                 onClick={(e) => {
                                   if (isBlocked) {
                                     e.stopPropagation();
-                                    handleEditLevelSubtitle(level, subtitle, null, project.id);
+                                    handleEditLevelSubtitle(level, subtitle, subtitleDescription, null, project.id);
                                   }
                                 }}
                               >

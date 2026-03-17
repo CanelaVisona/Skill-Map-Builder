@@ -204,6 +204,7 @@ export const habits = pgTable("habits", {
   endDate: varchar("end_date"), // YYYY-MM-DD format, nullable for unlimited habits
   areaId: varchar("area_id").references(() => areas.id, { onDelete: "set null" }),
   projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  skillProgressId: varchar("skill_progress_id").references(() => userSkillsProgress.id, { onDelete: "set null" }), // Link to user's skill progress for XP rewards
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
