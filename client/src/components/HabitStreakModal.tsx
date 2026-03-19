@@ -402,7 +402,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       setEditHabitEndDate(habit.endDate || "");
       setEditHabitAreaId(habit.areaId || null);
       setEditHabitProjectId(habit.projectId || null);
-      setEditHabitSkillProgressId(habit.skillProgressId || null);
+      setEditHabitSkillProgressId(habit.skillId || null);
       showPanel("edit");
     }
   };
@@ -454,7 +454,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                     {
                       onSuccess: async () => {
                         // Award XP if habit has a linked skill and is being marked complete
-                        if (!isCompleted && habit.skillProgressId) {
+                        if (!isCompleted && habit.skillId) {
                           try {
                             const res = await fetch(`/api/habits/${habitId}/award-xp`, {
                               method: "POST",
