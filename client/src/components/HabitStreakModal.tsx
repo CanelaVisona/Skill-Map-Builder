@@ -29,6 +29,14 @@ const COLORS = ["#534AB7", "#1D9E75", "#D85A30", "#185FA5"];
 
 type PanelType = "main" | "history" | "detail" | "add" | "edit" | "archived";
 
+// Helper function to get local date string in YYYY-MM-DD format (not UTC)
+function getLocalDateString(date: Date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) {
   const [currentPanel, setCurrentPanel] = useState<PanelType>("main");
   const [selectedHabitId, setSelectedHabitId] = useState<string | null>(null);
@@ -298,7 +306,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
   // Fetch records when modal opens or habits change
   if (open && habitsWithRecords.length === 0 && habits.length > 0) {
     // Initialize daily refresh date on first load
-    const today = new Date().toISOString().slice(0, 10);
+    const today = getLocalDateString();
     if (!localStorage.getItem("lastHabitRefreshDate")) {
       localStorage.setItem("lastHabitRefreshDate", today);
     }
@@ -343,7 +351,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
     if (!open) return;
 
     const storedDate = localStorage.getItem("lastHabitRefreshDate");
-    const today = new Date().toISOString().slice(0, 10);
+    const today = getLocalDateString();
 
     // If this is the first check or the date has changed, refresh
     if (storedDate !== today) {
@@ -355,7 +363,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
 
     // Check every minute if the day has changed
     const interval = setInterval(() => {
-      const newToday = new Date().toISOString().slice(0, 10);
+      const newToday = getLocalDateString();
       const currentStored = localStorage.getItem("lastHabitRefreshDate");
       if (currentStored !== newToday) {
         localStorage.setItem("lastHabitRefreshDate", newToday);
@@ -441,7 +449,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
               onAddClick={showAdd}
               onEditClick={showEdit}
               onToggle={(habitId) => {
-                const today = new Date().toISOString().slice(0, 10);
+                const today = getLocalDateString();
                 const habit = habitsWithRecords.find((h) => h.id === habitId);
                 if (habit) {
                   const isCompleted = habit.done.has(today);
@@ -612,7 +620,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
 
           {currentPanel === "archived" && (
             <ArchivedPanel
-              habits={habitsWithRecords.filter((h) => h.endDate && h.endDate < new Date().toISOString().slice(0, 10))}
+              habits={habitsWithRecords.filter((h) => h.endDate && h.endDate < getLocalDateString())}
               onBack={showMain}
             />
           )}
@@ -660,7 +668,7 @@ function MainPanel({
 }) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const todayStr = today.toISOString().slice(0, 10);
+  const todayStr = getLocalDateString(today);
 
   // Long-press detection for editing
   const longPressTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
@@ -696,7 +704,7 @@ function MainPanel({
       c.setDate(c.getDate() - 1);
     }
     while (true) {
-      const x = c.toISOString().slice(0, 10);
+      const x = getLocalDateString(c);
       if (done.has(x)) {
         s++;
         c.setDate(c.getDate() - 1);
@@ -710,7 +718,7 @@ function MainPanel({
   const isBroken = (done: Set<string>): boolean => {
     const yesterdayStr = new Date(today);
     yesterdayStr.setDate(yesterdayStr.getDate() - 1);
-    const yesterdayDateStr = yesterdayStr.toISOString().slice(0, 10);
+    const yesterdayDateStr = getLocalDateString(yesterdayStr);
     return !done.has(todayStr) && !done.has(yesterdayDateStr);
   };
 
@@ -864,7 +872,7 @@ function MainPanel({
                 {/* Week circles */}
                 <div className="flex gap-1.5 items-center">
                   {weekDays.map((w, i) => {
-                    const wds = w.toISOString().slice(0, 10);
+                    const wds = getLocalDateString(w);
                     const wc = new Date(w);
                     wc.setHours(0, 0, 0, 0);
                     const isFut = wc > today;
@@ -1021,7 +1029,7 @@ function HistoryPanel({
             const dObj = new Date(dateStr + "T12:00:00");
             dObj.setHours(0, 0, 0, 0);
             const isFuture = dObj > today;
-            const isToday = dateStr === today.toISOString().slice(0, 10);
+            const isToday = dateStr === getLocalDateString(today);
 
             const doneCount = habits.filter((h) => h.done.has(dateStr)).length;
             const allDone = doneCount === habits.length;
@@ -1125,14 +1133,14 @@ function DetailPanel({
   const computeStreak = (done: Set<string>): number => {
     let s = 0;
     const c = new Date(today);
-    if (done.has(today.toISOString().slice(0, 10))) {
+    if (done.has(getLocalDateString(today))) {
       s++;
       c.setDate(c.getDate() - 1);
     } else {
       c.setDate(c.getDate() - 1);
     }
     while (true) {
-      const x = c.toISOString().slice(0, 10);
+      const x = getLocalDateString(c);
       if (done.has(x)) {
         s++;
         c.setDate(c.getDate() - 1);
@@ -1228,7 +1236,7 @@ function DetailPanel({
             const dObj = new Date(dateStr + "T12:00:00");
             dObj.setHours(0, 0, 0, 0);
             const isFuture = dObj > today;
-            const isToday = dateStr === today.toISOString().slice(0, 10);
+            const isToday = dateStr === getLocalDateString(today);
             const isDone = habit.done.has(dateStr);
             const isPastMissed = dObj < today && !isDone && !isToday;
 
