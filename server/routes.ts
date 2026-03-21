@@ -633,6 +633,174 @@ export async function registerRoutes(
     }
   });
 
+  // Move skill to another level (with replacement node)
+  app.patch("/api/skills/:id/move", requireAuth, async (req, res) => {
+    try {
+      const { targetLevel, parentType, parentId } = req.body;
+      
+      if (!targetLevel || typeof targetLevel !== "number") {
+        res.status(400).json({ message: "targetLevel is required and must be a number" });
+        return;
+      }
+      
+      if (!parentType || !["area", "project"].includes(parentType)) {
+        res.status(400).json({ message: "parentType must be 'area' or 'project'" });
+        return;
+      }
+      
+      if (!parentId) {
+        res.status(400).json({ message: "parentId is required" });
+        return;
+      }
+
+      const existingSkill = await storage.getSkill(req.params.id);
+      if (!existingSkill) {
+        res.status(404).json({ message: "Skill not found" });
+        return;
+      }
+
+      // Verify ownership
+      const isOwner = await verifySkillOwnership(existingSkill, req.userId!);
+      if (!isOwner) {
+        res.status(403).json({ message: "No tienes permiso para mover este skill" });
+        return;
+      }
+
+      const currentLevel = existingSkill.level;
+      if (targetLevel <= currentLevel) {
+        res.status(400).json({ message: "Target level must be greater than current level" });
+        return;
+      }
+
+      // Get all skills in the parent
+      let allSkills = [];
+      if (parentType === "area") {
+        allSkills = await storage.getSkills(parentId);
+      } else {
+        allSkills = await storage.getProjectSkills(parentId);
+      }
+
+      // Calculate max level to validate target
+      const maxLevel = Math.max(...allSkills.map(s => s.level), 0);
+      if (targetLevel > maxLevel + 3) {
+        res.status(400).json({ message: "Target level exceeds unlocked levels" });
+        return;
+      }
+
+      // Get skills in target level to find next available position
+      const targetLevelSkills = allSkills.filter(s => s.level === targetLevel);
+      const nextLevelPosition = targetLevelSkills.length + 1;
+
+      // Move the skill to target level
+      const movedSkill = await storage.updateSkill(req.params.id, {
+        level: targetLevel,
+        levelPosition: nextLevelPosition,
+        status: "locked"
+      });
+
+      // Create replacement node in original level with empty title
+      const originalLevelSkills = allSkills.filter(s => s.level === currentLevel);
+      const replacementLevelPosition = originalLevelSkills.length + 1;
+
+      const replacementSkill = await storage.createSkill({
+        areaId: existingSkill.areaId!,
+        projectId: existingSkill.projectId,
+        parentSkillId: existingSkill.parentSkillId,
+        title: "",
+        description: "",
+        feedback: "",
+        status: "locked",
+        x: 50,
+        y: 200 + (originalLevelSkills.length * 150),
+        dependencies: [],
+        manualLock: 0,
+        isFinalNode: 0,
+        level: currentLevel,
+        levelPosition: replacementLevelPosition,
+        experiencePoints: 0
+      });
+
+      res.json({ movedSkill, replacementSkill });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Reorder skill within same level (swap with adjacent)
+  app.patch("/api/skills/:id/reorder", requireAuth, async (req, res) => {
+    try {
+      const { direction, parentType, parentId, currentLevel } = req.body;
+      
+      if (!direction || !["up", "down"].includes(direction)) {
+        res.status(400).json({ message: "direction must be 'up' or 'down'" });
+        return;
+      }
+      
+      if (!parentType || !["area", "project"].includes(parentType)) {
+        res.status(400).json({ message: "parentType must be 'area' or 'project'" });
+        return;
+      }
+      
+      if (!parentId) {
+        res.status(400).json({ message: "parentId is required" });
+        return;
+      }
+
+      const existingSkill = await storage.getSkill(req.params.id);
+      if (!existingSkill) {
+        res.status(404).json({ message: "Skill not found" });
+        return;
+      }
+
+      // Verify ownership
+      const isOwner = await verifySkillOwnership(existingSkill, req.userId!);
+      if (!isOwner) {
+        res.status(403).json({ message: "No tienes permiso para reordenar este skill" });
+        return;
+      }
+
+      // Get all skills in the parent
+      let allSkills = [];
+      if (parentType === "area") {
+        allSkills = await storage.getSkills(parentId);
+      } else {
+        allSkills = await storage.getProjectSkills(parentId);
+      }
+
+      // Get skills in same level sorted by Y position
+      const sameLevelSkills = allSkills
+        .filter(s => s.level === currentLevel)
+        .sort((a, b) => a.y - b.y);
+
+      const currentIndex = sameLevelSkills.findIndex(s => s.id === req.params.id);
+      if (currentIndex === -1) {
+        res.status(404).json({ message: "Skill not found in this level" });
+        return;
+      }
+
+      const neighborIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+      
+      if (neighborIndex < 0 || neighborIndex >= sameLevelSkills.length) {
+        res.status(400).json({ message: `Cannot move ${direction} - already at edge of level` });
+        return;
+      }
+
+      const neighbor = sameLevelSkills[neighborIndex];
+      
+      // Swap Y coordinates
+      const tempY = existingSkill.y;
+      const neighborY = neighbor.y;
+
+      // Update both skills
+      const updatedSkill = await storage.updateSkill(req.params.id, { y: neighborY });
+      const updatedNeighbor = await storage.updateSkill(neighbor.id, { y: tempY });
+
+      res.json({ updatedSkill, updatedNeighbor });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Generate 5 placeholder nodes for a new level (transactional, idempotent)
   app.post("/api/areas/:id/generate-level", requireAuth, async (req, res) => {
     try {
@@ -1192,7 +1360,7 @@ export async function registerRoutes(
       let uploadedFile: { filename: string; mimetype: string; size: number } | null = null;
       let fileBuffer: Buffer | null = null;
 
-      bb.on("file", async (fieldname, file, info) => {
+      bb.on("file", async (fieldname: string, file: any, info: any) => {
         const { filename, encoding, mimeType } = info;
         
         // Validate image type
@@ -1204,7 +1372,7 @@ export async function registerRoutes(
 
         // Read file into buffer
         const chunks: Buffer[] = [];
-        file.on("data", (chunk) => chunks.push(chunk));
+        file.on("data", (chunk: any) => chunks.push(chunk));
         file.on("end", async () => {
           fileBuffer = Buffer.concat(chunks);
           
@@ -1238,7 +1406,7 @@ export async function registerRoutes(
         }
       });
 
-      bb.on("error", (error) => {
+      bb.on("error", (error: any) => {
         res.status(400).json({ message: "Error al procesar el archivo: " + error.message });
       });
 

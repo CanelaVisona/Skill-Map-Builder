@@ -5,6 +5,8 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ChevronUp, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SkillDesignerProps {
@@ -13,7 +15,7 @@ interface SkillDesignerProps {
 }
 
 export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
-  const { areas, projects, activeAreaId, activeProjectId, updateSkill, updateProjectSkill, createLockedSkill, createLockedProjectSkill, updateLevelSubtitle, updateProjectLevelSubtitle } = useSkillTree();
+  const { areas, projects, activeAreaId, activeProjectId, updateSkill, updateProjectSkill, createLockedSkill, createLockedProjectSkill, updateLevelSubtitle, updateProjectLevelSubtitle, moveSkillToLevel, moveProjectSkillToLevel, reorderSkillWithinLevel, reorderProjectSkillWithinLevel } = useSkillTree();
   const [editingSkillId, setEditingSkillId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
   const [editingAreaId, setEditingAreaId] = useState<string | null>(null);
@@ -25,6 +27,10 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
   const [editingLevelSubtitle, setEditingLevelSubtitle] = useState<string>("");
   const [editingLevelSubtitleDescription, setEditingLevelSubtitleDescription] = useState<string>("");
   const [editingLevelData, setEditingLevelData] = useState<{ areaId: string | null; projectId: string | null; level: number } | null>(null);
+  
+  // Context menu state for moving skills
+  const [contextMenuOpen, setContextMenuOpen] = useState(false);
+  const [selectedSkillForMove, setSelectedSkillForMove] = useState<{ skillId: string; areaId: string | null; projectId: string | null; currentLevel: number } | null>(null);
   
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -89,6 +95,55 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
     setEditingLevelData(null);
   };
 
+  const handleContextMenu = (e: React.MouseEvent, skillId: string, areaId: string | null, projectId: string | null, currentLevel: number) => {
+    e.preventDefault();
+    setSelectedSkillForMove({ skillId, areaId, projectId, currentLevel });
+    setContextMenuOpen(true);
+  };
+
+  const handleMoveSkillToLevel = async (targetLevel: number) => {
+    if (!selectedSkillForMove) return;
+
+    if (selectedSkillForMove.areaId) {
+      await moveSkillToLevel(selectedSkillForMove.areaId, selectedSkillForMove.skillId, targetLevel);
+    } else if (selectedSkillForMove.projectId) {
+      await moveProjectSkillToLevel(selectedSkillForMove.projectId, selectedSkillForMove.skillId, targetLevel);
+    }
+
+    setContextMenuOpen(false);
+    setSelectedSkillForMove(null);
+  };
+
+  const handleReorderSkill = async (direction: "up" | "down", skillId: string, areaId: string | null, projectId: string | null, currentLevel: number) => {
+    if (areaId) {
+      await reorderSkillWithinLevel(areaId, skillId, direction);
+    } else if (projectId) {
+      await reorderProjectSkillWithinLevel(projectId, skillId, direction);
+    }
+  };
+
+  const getAvailableLevelsForMove = (currentLevel: number, maxLevel: number): number[] => {
+    const levels: number[] = [];
+    for (let i = currentLevel + 1; i <= maxLevel + 3; i++) {
+      levels.push(i);
+    }
+    return levels;
+  };
+
+  const canMoveUp = (skillsInLevel: any[], skillId: string): boolean => {
+    const sorted = [...skillsInLevel].sort((a, b) => a.y - b.y);
+    const index = sorted.findIndex(s => s.id === skillId);
+    // Can move up if not at the top of the list
+    return index > 0;
+  };
+
+  const canMoveDown = (skillsInLevel: any[], skillId: string): boolean => {
+    const sorted = [...skillsInLevel].sort((a, b) => a.y - b.y);
+    const index = sorted.findIndex(s => s.id === skillId);
+    // Can move down if not at the bottom of the list
+    return index < sorted.length - 1;
+  };
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -139,33 +194,93 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                           <AccordionContent>
                             <div className="space-y-2 pl-4">
                               {level <= maxLevel ? (
-                                area.skills
-                                  .filter((s) => s.level === level)
-                                  .sort((a, b) => a.y - b.y)
-                                  .filter((s, index) => {
-                                    const noTitle = !s.title || s.title.toLowerCase().includes("challenge") || s.title.toLowerCase().includes("objective quest");
-                                    return !noTitle || index !== 0;
-                                  })
-                                  .map((skill) => (
-                                    <div
-                                      key={skill.id}
-                                      className={cn("p-2 rounded border border-border bg-card/50 cursor-pointer hover:bg-card transition-colors", skill.status === "locked" && "opacity-60")}
-                                      onMouseDown={() => handleNodeLongPressStart(skill.id, skill.title, area.id, null)}
-                                      onMouseUp={handleNodeLongPressEnd}
-                                      onMouseLeave={handleNodeLongPressEnd}
-                                      onTouchStart={() => handleNodeLongPressStart(skill.id, skill.title, area.id, null)}
-                                      onTouchEnd={handleNodeLongPressEnd}
-                                    >
-                                      <div className="flex items-center gap-2">
-                                        <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{!skill.title || skill.title.toLowerCase().includes("challenge") || skill.title.toLowerCase().includes("objective quest") ? "-" : skill.title}</div>
-                                        {skill.status === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
+                                (() => {
+                                  const skillsInLevel = area.skills
+                                    .filter((s) => s.level === level)
+                                    .sort((a, b) => a.y - b.y)
+                                    .filter((s, index) => {
+                                      const noTitle = !s.title || s.title.toLowerCase().includes("challenge") || s.title.toLowerCase().includes("objective quest");
+                                      return !noTitle || index !== 0;
+                                    });
+                                  
+                                  return skillsInLevel.map((skill, idx) => {
+                                    const canUp = canMoveUp(skillsInLevel, skill.id);
+                                    const canDown = canMoveDown(skillsInLevel, skill.id);
+                                    const availableLevels = getAvailableLevelsForMove(level, maxLevel);
+                                    const isFirstNode = skill.levelPosition === 1;
+                                    
+                                    return (
+                                      <div
+                                        key={skill.id}
+                                        className={cn("p-2 rounded border border-border bg-card/50 hover:bg-card transition-colors", skill.status === "locked" && "opacity-60")}
+                                        onContextMenu={(e) => !isFirstNode && handleContextMenu(e, skill.id, area.id, null, level)}
+                                      >
+                                        <div className="flex items-center gap-2 justify-between">
+                                          <div className="flex items-center gap-2 flex-1">
+                                            <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{!skill.title || skill.title.toLowerCase().includes("challenge") || skill.title.toLowerCase().includes("objective quest") ? "-" : skill.title}</div>
+                                            {skill.status === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
+                                          </div>
+                                          {!isFirstNode && (
+                                            <div className="flex items-center gap-1">
+                                              <Button 
+                                                size="sm" 
+                                               variant="ghost" 
+                                                disabled={!canUp}
+                                                onClick={() => handleReorderSkill("up", skill.id, area.id, null, level)} 
+                                              >
+                                                <ChevronUp className="w-4 h-4" />
+                                              </Button>
+                                              <Button 
+                                                size="sm" 
+                                                variant="ghost" 
+                                                disabled={!canDown}
+                                                onClick={() => handleReorderSkill("down", skill.id, area.id, null, level)}
+                                              >
+                                                <ChevronDown className="w-4 h-4" />
+                                              </Button>
+                                              {availableLevels.length > 0 && (
+                                                <Popover open={contextMenuOpen && selectedSkillForMove?.skillId === skill.id} onOpenChange={setContextMenuOpen}>
+                                                  <PopoverTrigger asChild>
+                                                    <Button 
+                                                      size="sm" 
+                                                      variant="ghost" 
+                                                      onMouseDown={(e) => {
+                                                        e.stopPropagation();
+                                                        setSelectedSkillForMove({ skillId: skill.id, areaId: area.id, projectId: null, currentLevel: level });
+                                                        setContextMenuOpen(true);
+                                                      }}
+                                                    >
+                                                      ⬆
+                                                    </Button>
+                                                  </PopoverTrigger>
+                                                  <PopoverContent align="end" className="w-40 p-2">
+                                                    <div className="space-y-1">
+                                                      {availableLevels.map(lv => (
+                                                        <Button 
+                                                          key={lv}
+                                                          size="sm" 
+                                                          variant="outline" 
+                                                          className="w-full justify-start"
+                                                          onClick={() => handleMoveSkillToLevel(lv)}
+                                                        >
+                                                          Nivel {lv}
+                                                        </Button>
+                                                      ))}
+                                                    </div>
+                                                  </PopoverContent>
+                                                </Popover>
+                                              )}
+                                            </div>
+                                          )}
+                                        </div>
+                                        <div className="text-xs text-muted-foreground">
+                                          {skill.status === "mastered" && "✓ Completado"}
+                                          {skill.status === "locked" && "Bloqueado"}
+                                        </div>
                                       </div>
-                                      <div className="text-xs text-muted-foreground">
-                                        {skill.status === "mastered" && "✓ Completado"}
-                                        {skill.status === "locked" && "Bloqueado"}
-                                      </div>
-                                    </div>
-                                  ))
+                                    );
+                                  });
+                                })()
                               ) : (
                                 Array.from({ length: nodesInLastLevel }, (_, i) => (
                                   <div
@@ -232,33 +347,93 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                             <AccordionContent>
                               <div className="space-y-2 pl-4">
                                 {level <= maxLevel ? (
-                                  project.skills
-                                    .filter((s) => s.level === level)
-                                    .sort((a, b) => a.y - b.y)
-                                    .filter((s, index) => {
-                                      const noTitle = !s.title || s.title.toLowerCase().includes("challenge") || s.title.toLowerCase().includes("objective quest");
-                                      return !noTitle || index !== 0;
-                                    })
-                                    .map((skill) => (
-                                      <div
-                                        key={skill.id}
-                                        className={cn("p-2 rounded border border-border bg-card/50 cursor-pointer hover:bg-card transition-colors", skill.status === "locked" && "opacity-60")}
-                                        onMouseDown={() => handleNodeLongPressStart(skill.id, skill.title, null, project.id)}
-                                        onMouseUp={handleNodeLongPressEnd}
-                                        onMouseLeave={handleNodeLongPressEnd}
-                                        onTouchStart={() => handleNodeLongPressStart(skill.id, skill.title, null, project.id)}
-                                        onTouchEnd={handleNodeLongPressEnd}
-                                      >
-                                        <div className="flex items-center gap-2">
-                                          <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{!skill.title || skill.title.toLowerCase().includes("challenge") || skill.title.toLowerCase().includes("objective quest") ? "-" : skill.title}</div>
-                                          {skill.status === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
+                                  (() => {
+                                    const skillsInLevel = project.skills
+                                      .filter((s) => s.level === level)
+                                      .sort((a, b) => a.y - b.y)
+                                      .filter((s, index) => {
+                                        const noTitle = !s.title || s.title.toLowerCase().includes("challenge") || s.title.toLowerCase().includes("objective quest");
+                                        return !noTitle || index !== 0;
+                                      });
+                                    
+                                    return skillsInLevel.map((skill, idx) => {
+                                      const canUp = canMoveUp(skillsInLevel, skill.id);
+                                      const canDown = canMoveDown(skillsInLevel, skill.id);
+                                      const availableLevels = getAvailableLevelsForMove(level, maxLevel);
+                                      const isFirstNode = skill.levelPosition === 1;
+                                      
+                                      return (
+                                        <div
+                                          key={skill.id}
+                                          className={cn("p-2 rounded border border-border bg-card/50 hover:bg-card transition-colors", skill.status === "locked" && "opacity-60")}
+                                          onContextMenu={(e) => !isFirstNode && handleContextMenu(e, skill.id, null, project.id, level)}
+                                        >
+                                          <div className="flex items-center gap-2 justify-between">
+                                            <div className="flex items-center gap-2 flex-1">
+                                              <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{!skill.title || skill.title.toLowerCase().includes("challenge") || skill.title.toLowerCase().includes("objective quest") ? "-" : skill.title}</div>
+                                              {skill.status === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
+                                            </div>
+                                            {!isFirstNode && (
+                                              <div className="flex items-center gap-1">
+                                                <Button 
+                                                  size="sm" 
+                                                  variant="ghost" 
+                                                  disabled={!canUp}
+                                                  onClick={() => handleReorderSkill("up", skill.id, null, project.id, level)} 
+                                                >
+                                                  <ChevronUp className="w-4 h-4" />
+                                                </Button>
+                                                <Button 
+                                                  size="sm" 
+                                                  variant="ghost" 
+                                                  disabled={!canDown}
+                                                  onClick={() => handleReorderSkill("down", skill.id, null, project.id, level)}
+                                                >
+                                                  <ChevronDown className="w-4 h-4" />
+                                                </Button>
+                                                {availableLevels.length > 0 && (
+                                                  <Popover open={contextMenuOpen && selectedSkillForMove?.skillId === skill.id} onOpenChange={setContextMenuOpen}>
+                                                    <PopoverTrigger asChild>
+                                                      <Button 
+                                                        size="sm" 
+                                                        variant="ghost" 
+                                                        onMouseDown={(e) => {
+                                                          e.stopPropagation();
+                                                          setSelectedSkillForMove({ skillId: skill.id, areaId: null, projectId: project.id, currentLevel: level });
+                                                          setContextMenuOpen(true);
+                                                        }}
+                                                      >
+                                                        ⬆
+                                                      </Button>
+                                                    </PopoverTrigger>
+                                                    <PopoverContent align="end" className="w-40 p-2">
+                                                      <div className="space-y-1">
+                                                        {availableLevels.map(lv => (
+                                                          <Button 
+                                                            key={lv}
+                                                            size="sm" 
+                                                            variant="outline" 
+                                                            className="w-full justify-start"
+                                                            onClick={() => handleMoveSkillToLevel(lv)}
+                                                          >
+                                                            Nivel {lv}
+                                                          </Button>
+                                                        ))}
+                                                      </div>
+                                                    </PopoverContent>
+                                                  </Popover>
+                                                )}
+                                              </div>
+                                            )}
+                                          </div>
+                                          <div className="text-xs text-muted-foreground">
+                                            {skill.status === "mastered" && "✓ Completado"}
+                                            {skill.status === "locked" && "Bloqueado"}
+                                          </div>
                                         </div>
-                                        <div className="text-xs text-muted-foreground">
-                                          {skill.status === "mastered" && "✓ Completado"}
-                                          {skill.status === "locked" && "Bloqueado"}
-                                        </div>
-                                      </div>
-                                    ))
+                                      );
+                                    });
+                                  })()
                                 ) : (
                                   Array.from({ length: nodesInLastLevel }, (_, i) => (
                                     <div
@@ -323,33 +498,93 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                             <AccordionContent>
                               <div className="space-y-2 pl-4">
                                 {level <= maxLevel ? (
-                                  project.skills
-                                    .filter((s) => s.level === level)
-                                    .sort((a, b) => a.y - b.y)
-                                    .filter((s, index) => {
-                                      const noTitle = !s.title || s.title.toLowerCase().includes("challenge") || s.title.toLowerCase().includes("objective quest");
-                                      return !noTitle || index !== 0;
-                                    })
-                                    .map((skill) => (
-                                      <div
-                                        key={skill.id}
-                                        className={cn("p-2 rounded border border-border bg-card/50 cursor-pointer hover:bg-card transition-colors", skill.status === "locked" && "opacity-60")}
-                                        onMouseDown={() => handleNodeLongPressStart(skill.id, skill.title, null, project.id)}
-                                        onMouseUp={handleNodeLongPressEnd}
-                                        onMouseLeave={handleNodeLongPressEnd}
-                                        onTouchStart={() => handleNodeLongPressStart(skill.id, skill.title, null, project.id)}
-                                        onTouchEnd={handleNodeLongPressEnd}
-                                      >
-                                        <div className="flex items-center gap-2">
-                                          <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{!skill.title || skill.title.toLowerCase().includes("challenge") || skill.title.toLowerCase().includes("objective quest") ? "-" : skill.title}</div>
-                                          {skill.status === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
+                                  (() => {
+                                    const skillsInLevel = project.skills
+                                      .filter((s) => s.level === level)
+                                      .sort((a, b) => a.y - b.y)
+                                      .filter((s, index) => {
+                                        const noTitle = !s.title || s.title.toLowerCase().includes("challenge") || s.title.toLowerCase().includes("objective quest");
+                                        return !noTitle || index !== 0;
+                                      });
+                                    
+                                    return skillsInLevel.map((skill, idx) => {
+                                      const canUp = canMoveUp(skillsInLevel, skill.id);
+                                      const canDown = canMoveDown(skillsInLevel, skill.id);
+                                      const availableLevels = getAvailableLevelsForMove(level, maxLevel);
+                                      const isFirstNode = skill.levelPosition === 1;
+                                      
+                                      return (
+                                        <div
+                                          key={skill.id}
+                                          className={cn("p-2 rounded border border-border bg-card/50 hover:bg-card transition-colors", skill.status === "locked" && "opacity-60")}
+                                          onContextMenu={(e) => !isFirstNode && handleContextMenu(e, skill.id, null, project.id, level)}
+                                        >
+                                          <div className="flex items-center gap-2 justify-between">
+                                            <div className="flex items-center gap-2 flex-1">
+                                              <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{!skill.title || skill.title.toLowerCase().includes("challenge") || skill.title.toLowerCase().includes("objective quest") ? "-" : skill.title}</div>
+                                              {skill.status === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
+                                            </div>
+                                            {!isFirstNode && (
+                                              <div className="flex items-center gap-1">
+                                                <Button 
+                                                  size="sm" 
+                                                  variant="ghost" 
+                                                  disabled={!canUp}
+                                                  onClick={() => handleReorderSkill("up", skill.id, null, project.id, level)} 
+                                                >
+                                                  <ChevronUp className="w-4 h-4" />
+                                                </Button>
+                                                <Button 
+                                                  size="sm" 
+                                                  variant="ghost" 
+                                                  disabled={!canDown}
+                                                  onClick={() => handleReorderSkill("down", skill.id, null, project.id, level)}
+                                                >
+                                                  <ChevronDown className="w-4 h-4" />
+                                                </Button>
+                                                {availableLevels.length > 0 && (
+                                                  <Popover open={contextMenuOpen && selectedSkillForMove?.skillId === skill.id} onOpenChange={setContextMenuOpen}>
+                                                    <PopoverTrigger asChild>
+                                                      <Button 
+                                                        size="sm" 
+                                                        variant="ghost" 
+                                                        onMouseDown={(e) => {
+                                                          e.stopPropagation();
+                                                          setSelectedSkillForMove({ skillId: skill.id, areaId: null, projectId: project.id, currentLevel: level });
+                                                          setContextMenuOpen(true);
+                                                        }}
+                                                      >
+                                                        ⬆
+                                                      </Button>
+                                                    </PopoverTrigger>
+                                                    <PopoverContent align="end" className="w-40 p-2">
+                                                      <div className="space-y-1">
+                                                        {availableLevels.map(lv => (
+                                                          <Button 
+                                                            key={lv}
+                                                            size="sm" 
+                                                            variant="outline" 
+                                                            className="w-full justify-start"
+                                                            onClick={() => handleMoveSkillToLevel(lv)}
+                                                          >
+                                                            Nivel {lv}
+                                                          </Button>
+                                                        ))}
+                                                      </div>
+                                                    </PopoverContent>
+                                                  </Popover>
+                                                )}
+                                              </div>
+                                            )}
+                                          </div>
+                                          <div className="text-xs text-muted-foreground">
+                                            {skill.status === "mastered" && "✓ Completado"}
+                                            {skill.status === "locked" && "Bloqueado"}
+                                          </div>
                                         </div>
-                                        <div className="text-xs text-muted-foreground">
-                                          {skill.status === "mastered" && "✓ Completado"}
-                                          {skill.status === "locked" && "Bloqueado"}
-                                        </div>
-                                      </div>
-                                    ))
+                                      );
+                                    });
+                                  })()
                                 ) : (
                                   Array.from({ length: nodesInLastLevel }, (_, i) => (
                                     <div
@@ -416,33 +651,93 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                             <AccordionContent>
                               <div className="space-y-2 pl-4">
                                 {level <= maxLevel ? (
-                                  project.skills
-                                    .filter((s) => s.level === level)
-                                    .sort((a, b) => a.y - b.y)
-                                    .filter((s, index) => {
-                                      const noTitle = !s.title || s.title.toLowerCase().includes("challenge") || s.title.toLowerCase().includes("objective quest");
-                                      return !noTitle || index !== 0;
-                                    })
-                                    .map((skill) => (
-                                      <div
-                                        key={skill.id}
-                                        className={cn("p-2 rounded border border-border bg-card/50 cursor-pointer hover:bg-card transition-colors", skill.status === "locked" && "opacity-60")}
-                                        onMouseDown={() => handleNodeLongPressStart(skill.id, skill.title, null, project.id)}
-                                        onMouseUp={handleNodeLongPressEnd}
-                                        onMouseLeave={handleNodeLongPressEnd}
-                                        onTouchStart={() => handleNodeLongPressStart(skill.id, skill.title, null, project.id)}
-                                        onTouchEnd={handleNodeLongPressEnd}
-                                      >
-                                        <div className="flex items-center gap-2">
-                                          <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{!skill.title || skill.title.toLowerCase().includes("challenge") || skill.title.toLowerCase().includes("objective quest") ? "-" : skill.title}</div>
-                                          {skill.status === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
+                                  (() => {
+                                    const skillsInLevel = project.skills
+                                      .filter((s) => s.level === level)
+                                      .sort((a, b) => a.y - b.y)
+                                      .filter((s, index) => {
+                                        const noTitle = !s.title || s.title.toLowerCase().includes("challenge") || s.title.toLowerCase().includes("objective quest");
+                                        return !noTitle || index !== 0;
+                                      });
+                                    
+                                    return skillsInLevel.map((skill, idx) => {
+                                      const canUp = canMoveUp(skillsInLevel, skill.id);
+                                      const canDown = canMoveDown(skillsInLevel, skill.id);
+                                      const availableLevels = getAvailableLevelsForMove(level, maxLevel);
+                                      const isFirstNode = skill.levelPosition === 1;
+                                      
+                                      return (
+                                        <div
+                                          key={skill.id}
+                                          className={cn("p-2 rounded border border-border bg-card/50 hover:bg-card transition-colors", skill.status === "locked" && "opacity-60")}
+                                          onContextMenu={(e) => !isFirstNode && handleContextMenu(e, skill.id, null, project.id, level)}
+                                        >
+                                          <div className="flex items-center gap-2 justify-between">
+                                            <div className="flex items-center gap-2 flex-1">
+                                              <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{!skill.title || skill.title.toLowerCase().includes("challenge") || skill.title.toLowerCase().includes("objective quest") ? "-" : skill.title}</div>
+                                              {skill.status === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
+                                            </div>
+                                            {!isFirstNode && (
+                                              <div className="flex items-center gap-1">
+                                                <Button 
+                                                  size="sm" 
+                                                  variant="ghost" 
+                                                  disabled={!canUp}
+                                                  onClick={() => handleReorderSkill("up", skill.id, null, project.id, level)} 
+                                                >
+                                                  <ChevronUp className="w-4 h-4" />
+                                                </Button>
+                                                <Button 
+                                                  size="sm" 
+                                                  variant="ghost" 
+                                                  disabled={!canDown}
+                                                  onClick={() => handleReorderSkill("down", skill.id, null, project.id, level)}
+                                                >
+                                                  <ChevronDown className="w-4 h-4" />
+                                                </Button>
+                                                {availableLevels.length > 0 && (
+                                                  <Popover open={contextMenuOpen && selectedSkillForMove?.skillId === skill.id} onOpenChange={setContextMenuOpen}>
+                                                    <PopoverTrigger asChild>
+                                                      <Button 
+                                                        size="sm" 
+                                                        variant="ghost" 
+                                                        onMouseDown={(e) => {
+                                                          e.stopPropagation();
+                                                          setSelectedSkillForMove({ skillId: skill.id, areaId: null, projectId: project.id, currentLevel: level });
+                                                          setContextMenuOpen(true);
+                                                        }}
+                                                      >
+                                                        ⬆
+                                                      </Button>
+                                                    </PopoverTrigger>
+                                                    <PopoverContent align="end" className="w-40 p-2">
+                                                      <div className="space-y-1">
+                                                        {availableLevels.map(lv => (
+                                                          <Button 
+                                                            key={lv}
+                                                            size="sm" 
+                                                            variant="outline" 
+                                                            className="w-full justify-start"
+                                                            onClick={() => handleMoveSkillToLevel(lv)}
+                                                          >
+                                                            Nivel {lv}
+                                                          </Button>
+                                                        ))}
+                                                      </div>
+                                                    </PopoverContent>
+                                                  </Popover>
+                                                )}
+                                              </div>
+                                            )}
+                                          </div>
+                                          <div className="text-xs text-muted-foreground">
+                                            {skill.status === "mastered" && "✓ Completado"}
+                                            {skill.status === "locked" && "Bloqueado"}
+                                          </div>
                                         </div>
-                                        <div className="text-xs text-muted-foreground">
-                                          {skill.status === "mastered" && "✓ Completado"}
-                                          {skill.status === "locked" && "Bloqueado"}
-                                        </div>
-                                      </div>
-                                    ))
+                                      );
+                                    });
+                                  })()
                                 ) : (
                                   Array.from({ length: nodesInLastLevel }, (_, i) => (
                                     <div

@@ -78,11 +78,15 @@ interface SkillTreeContextType {
   deleteSkill: (areaId: string, skillId: string) => void;
   toggleLock: (areaId: string, skillId: string) => void;
   moveSkill: (areaId: string, skillId: string, direction: "up" | "down") => void;
+  moveSkillToLevel: (areaId: string, skillId: string, targetLevel: number) => Promise<void>;
+  reorderSkillWithinLevel: (areaId: string, skillId: string, direction: "up" | "down") => Promise<void>;
   updateProjectSkill: (projectId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number }) => void;
   createLockedProjectSkill: (projectId: string, level: number, title: string) => Promise<void>;
   deleteProjectSkill: (projectId: string, skillId: string) => void;
   toggleProjectLock: (projectId: string, skillId: string) => void;
   moveProjectSkill: (projectId: string, skillId: string, direction: "up" | "down") => void;
+  moveProjectSkillToLevel: (projectId: string, skillId: string, targetLevel: number) => Promise<void>;
+  reorderProjectSkillWithinLevel: (projectId: string, skillId: string, direction: "up" | "down") => Promise<void>;
   createArea: (name: string, description: string, icon: string) => Promise<void>;
   deleteArea: (areaId: string) => Promise<void>;
   archiveArea: (areaId: string) => Promise<void>;
@@ -3130,6 +3134,188 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
+  // Move skill to another level (with replacement node)
+  const moveSkillToLevel = async (areaId: string, skillId: string, targetLevel: number) => {
+    try {
+      const area = areas.find(a => a.id === areaId);
+      if (!area) return;
+
+      const skill = area.skills.find(s => s.id === skillId);
+      if (!skill || skill.level >= targetLevel) return;
+
+      const response = await fetch(`/api/skills/${skillId}/move`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetLevel,
+          parentType: "area",
+          parentId: areaId
+        }),
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.error("Error moving skill:", error);
+        return;
+      }
+
+      const { movedSkill, replacementSkill } = await response.json();
+
+      // Update local state: remove old skill, add moved skill and replacement
+      setAreas(prev => prev.map(a => {
+        if (a.id !== areaId) return a;
+        return {
+          ...a,
+          skills: [
+            ...a.skills.filter(s => s.id !== skillId),
+            movedSkill,
+            replacementSkill
+          ]
+        };
+      }));
+    } catch (error) {
+      console.error("Error moving skill to level:", error);
+    }
+  };
+
+  // Reorder skill within the same level (swap with adjacent)
+  const reorderSkillWithinLevel = async (areaId: string, skillId: string, direction: "up" | "down") => {
+    try {
+      const area = areas.find(a => a.id === areaId);
+      if (!area) return;
+
+      const skill = area.skills.find(s => s.id === skillId);
+      if (!skill) return;
+
+      const response = await fetch(`/api/skills/${skillId}/reorder`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          direction,
+          parentType: "area",
+          parentId: areaId,
+          currentLevel: skill.level
+        }),
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.error("Error reordering skill:", error);
+        return;
+      }
+
+      const { updatedSkill, updatedNeighbor } = await response.json();
+
+      // Update local state with swapped Y positions
+      setAreas(prev => prev.map(a => {
+        if (a.id !== areaId) return a;
+        return {
+          ...a,
+          skills: a.skills.map(s => {
+            if (s.id === updatedSkill.id) return updatedSkill;
+            if (s.id === updatedNeighbor.id) return updatedNeighbor;
+            return s;
+          })
+        };
+      }));
+    } catch (error) {
+      console.error("Error reordering skill within level:", error);
+    }
+  };
+
+  // Move project skill to another level (with replacement node)
+  const moveProjectSkillToLevel = async (projectId: string, skillId: string, targetLevel: number) => {
+    try {
+      const project = projects.find(p => p.id === projectId);
+      if (!project) return;
+
+      const skill = project.skills.find(s => s.id === skillId);
+      if (!skill || skill.level >= targetLevel) return;
+
+      const response = await fetch(`/api/skills/${skillId}/move`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetLevel,
+          parentType: "project",
+          parentId: projectId
+        }),
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.error("Error moving project skill:", error);
+        return;
+      }
+
+      const { movedSkill, replacementSkill } = await response.json();
+
+      // Update local state: remove old skill, add moved skill and replacement
+      setProjects(prev => prev.map(p => {
+        if (p.id !== projectId) return p;
+        return {
+          ...p,
+          skills: [
+            ...p.skills.filter(s => s.id !== skillId),
+            movedSkill,
+            replacementSkill
+          ]
+        };
+      }));
+    } catch (error) {
+      console.error("Error moving project skill to level:", error);
+    }
+  };
+
+  // Reorder project skill within the same level (swap with adjacent)
+  const reorderProjectSkillWithinLevel = async (projectId: string, skillId: string, direction: "up" | "down") => {
+    try {
+      const project = projects.find(p => p.id === projectId);
+      if (!project) return;
+
+      const skill = project.skills.find(s => s.id === skillId);
+      if (!skill) return;
+
+      const response = await fetch(`/api/skills/${skillId}/reorder`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          direction,
+          parentType: "project",
+          parentId: projectId,
+          currentLevel: skill.level
+        }),
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.error("Error reordering project skill:", error);
+        return;
+      }
+
+      const { updatedSkill, updatedNeighbor } = await response.json();
+
+      // Update local state with swapped Y positions
+      setProjects(prev => prev.map(p => {
+        if (p.id !== projectId) return p;
+        return {
+          ...p,
+          skills: p.skills.map(s => {
+            if (s.id === updatedSkill.id) return updatedSkill;
+            if (s.id === updatedNeighbor.id) return updatedNeighbor;
+            return s;
+          })
+        };
+      }));
+    } catch (error) {
+      console.error("Error reordering project skill within level:", error);
+    }
+  };
+
   // Global Skills functions
   const getGlobalSkillsForArea = (areaId: string): GlobalSkill[] => {
     const areaSkills = globalSkills.filter(s => s.areaId === areaId && !s.parentSkillId);
@@ -3301,6 +3487,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       addSkillBelow,
       addProjectSkillBelow,
       addSubSkillBelow,
+      moveSkillToLevel,
+      reorderSkillWithinLevel,
+      moveProjectSkillToLevel,
+      reorderProjectSkillWithinLevel,
       duplicateSkill,
       duplicateProjectSkill,
       duplicateSubSkill,
