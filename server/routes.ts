@@ -689,39 +689,96 @@ export async function registerRoutes(
 
       // Get skills in target level to find next available position
       const targetLevelSkills = allSkills.filter(s => s.level === targetLevel);
+      const startY = 100;
+      const endY = 600;
+
+      // Calculate proportional Y position for moved skill (including it in the count)
+      const totalSkillsInTargetLevel = targetLevelSkills.length + 1;
+      const targetSpacing = totalSkillsInTargetLevel > 1 
+        ? (endY - startY) / (totalSkillsInTargetLevel - 1)
+        : 150;
       const nextLevelPosition = targetLevelSkills.length + 1;
+      const movedSkillNewY = startY + (nextLevelPosition - 1) * targetSpacing;
 
       // Move the skill to target level
       const movedSkill = await storage.updateSkill(req.params.id, {
         level: targetLevel,
         levelPosition: nextLevelPosition,
+        y: movedSkillNewY,
         status: "locked"
       });
 
-      // Create replacement node in original level with empty title
+      // Reposition remaining skills in ORIGINAL level with proportional spacing
       const originalLevelSkills = allSkills.filter(s => s.level === currentLevel);
-      const replacementLevelPosition = originalLevelSkills.length + 1;
+      const remainingOriginalSkills = originalLevelSkills
+        .filter(s => s.id !== req.params.id)
+        .sort((a, b) => a.y - b.y);
 
-      const replacementSkill = await storage.createSkill({
-        areaId: existingSkill.areaId!,
-        projectId: existingSkill.projectId,
-        parentSkillId: existingSkill.parentSkillId,
-        title: "",
-        description: "",
-        feedback: "",
-        status: "locked",
-        x: 50,
-        y: 200 + (originalLevelSkills.length * 150),
-        dependencies: [],
-        manualLock: 0,
-        isFinalNode: 0,
-        level: currentLevel,
-        levelPosition: replacementLevelPosition,
-        experiencePoints: 0
-      });
+      const repositionedSourceSkills: any[] = [];
+      if (remainingOriginalSkills.length > 0) {
+        const sourceSpacing = remainingOriginalSkills.length > 1 
+          ? (endY - startY) / (remainingOriginalSkills.length - 1)
+          : 150;
 
-      res.json({ movedSkill, replacementSkill });
+        for (let i = 0; i < remainingOriginalSkills.length; i++) {
+          const skill = remainingOriginalSkills[i];
+          const newPosition = i + 1;
+          const newYPosition = startY + (i * sourceSpacing);
+
+          try {
+            const updated = await storage.updateSkill(skill.id, {
+              y: newYPosition,
+              levelPosition: newPosition
+            });
+            if (updated) {
+              repositionedSourceSkills.push(updated);
+            }
+          } catch (updateError: any) {
+            console.error(`Error updating source skill ${skill.id}:`, updateError.message);
+          }
+        }
+      }
+
+      // ALSO reposition skills in TARGET level to maintain uniform spacing
+      // Exclude the moved skill from allSkills (it still has old level) and add the updated movedSkill
+      const allTargetLevelSkills = [
+        ...allSkills.filter(s => s.level === targetLevel && s.id !== req.params.id),
+        ...(movedSkill ? [movedSkill] : [])
+      ].sort((a, b) => a.y - b.y);
+
+      const repositionedTargetSkills: any[] = [];
+      if (allTargetLevelSkills.length > 0) {
+        const targetSpacingFinal = allTargetLevelSkills.length > 1 
+          ? (endY - startY) / (allTargetLevelSkills.length - 1)
+          : 150;
+
+        for (let i = 0; i < allTargetLevelSkills.length; i++) {
+          const skill = allTargetLevelSkills[i];
+          if (!skill || !skill.id) {
+            console.error("Invalid skill in allTargetLevelSkills:", skill);
+            continue;
+          }
+          
+          const newPosition = i + 1;
+          const newYPosition = startY + (i * targetSpacingFinal);
+
+          try {
+            const updated = await storage.updateSkill(skill.id, {
+              y: newYPosition,
+              levelPosition: newPosition
+            });
+            if (updated) {
+              repositionedTargetSkills.push(updated);
+            }
+          } catch (updateError: any) {
+            console.error(`Error updating skill ${skill.id}:`, updateError.message);
+          }
+        }
+      }
+
+      res.json({ movedSkill, repositionedSourceSkills, repositionedTargetSkills });
     } catch (error: any) {
+      console.error("Error in move skill endpoint:", error);
       res.status(500).json({ message: error.message });
     }
   });
@@ -2383,9 +2440,10 @@ export async function registerRoutes(
   // Habits routes
   app.get("/api/habits", requireAuth, async (req, res) => {
     try {
-      console.log("[GET /api/habits] userId:", req.userId);
+      console.log("[GET /api/habits] Starting request for userId:", req.userId);
       const habits = await storage.getHabits(req.userId!);
-      console.log("[GET /api/habits] Retrieved", habits.length, "habits");
+      console.log("[GET /api/habits] Retrieved", habits.length, "habits from storage");
+      console.log("[GET /api/habits] Habits data:", JSON.stringify(habits.slice(0, 2), null, 2));
       res.json(habits);
     } catch (error: any) {
       console.error("[GET /api/habits] ERROR:", error);

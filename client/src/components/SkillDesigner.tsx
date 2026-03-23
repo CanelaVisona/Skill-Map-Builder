@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ChevronUp, ChevronDown } from "lucide-react";
+import { ChevronUp, ChevronDown, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SkillDesignerProps {
@@ -244,13 +244,13 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                     <Button 
                                                       size="sm" 
                                                       variant="ghost" 
-                                                      onMouseDown={(e) => {
+                                                      onClick={(e) => {
                                                         e.stopPropagation();
                                                         setSelectedSkillForMove({ skillId: skill.id, areaId: area.id, projectId: null, currentLevel: level });
                                                         setContextMenuOpen(true);
                                                       }}
                                                     >
-                                                      ⬆
+                                                      <Layers className="w-4 h-4" />
                                                     </Button>
                                                   </PopoverTrigger>
                                                   <PopoverContent align="end" className="w-40 p-2">
@@ -261,7 +261,10 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                           size="sm" 
                                                           variant="outline" 
                                                           className="w-full justify-start"
-                                                          onClick={() => handleMoveSkillToLevel(lv)}
+                                                          onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleMoveSkillToLevel(lv);
+                                                          }}
                                                         >
                                                           Nivel {lv}
                                                         </Button>
@@ -397,13 +400,13 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                       <Button 
                                                         size="sm" 
                                                         variant="ghost" 
-                                                        onMouseDown={(e) => {
+                                                        onClick={(e) => {
                                                           e.stopPropagation();
                                                           setSelectedSkillForMove({ skillId: skill.id, areaId: null, projectId: project.id, currentLevel: level });
                                                           setContextMenuOpen(true);
                                                         }}
                                                       >
-                                                        ⬆
+                                                        <Layers className="w-4 h-4" />
                                                       </Button>
                                                     </PopoverTrigger>
                                                     <PopoverContent align="end" className="w-40 p-2">
@@ -414,7 +417,10 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                             size="sm" 
                                                             variant="outline" 
                                                             className="w-full justify-start"
-                                                            onClick={() => handleMoveSkillToLevel(lv)}
+                                                            onClick={(e) => {
+                                                              e.stopPropagation();
+                                                              handleMoveSkillToLevel(lv);
+                                                            }}
                                                           >
                                                             Nivel {lv}
                                                           </Button>
@@ -548,13 +554,13 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                       <Button 
                                                         size="sm" 
                                                         variant="ghost" 
-                                                        onMouseDown={(e) => {
+                                                        onClick={(e) => {
                                                           e.stopPropagation();
                                                           setSelectedSkillForMove({ skillId: skill.id, areaId: null, projectId: project.id, currentLevel: level });
                                                           setContextMenuOpen(true);
                                                         }}
                                                       >
-                                                        ⬆
+                                                        <Layers className="w-4 h-4" />
                                                       </Button>
                                                     </PopoverTrigger>
                                                     <PopoverContent align="end" className="w-40 p-2">
@@ -565,7 +571,10 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                             size="sm" 
                                                             variant="outline" 
                                                             className="w-full justify-start"
-                                                            onClick={() => handleMoveSkillToLevel(lv)}
+                                                            onClick={(e) => {
+                                                              e.stopPropagation();
+                                                              handleMoveSkillToLevel(lv);
+                                                            }}
                                                           >
                                                             Nivel {lv}
                                                           </Button>
@@ -701,13 +710,13 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                       <Button 
                                                         size="sm" 
                                                         variant="ghost" 
-                                                        onMouseDown={(e) => {
+                                                        onClick={(e) => {
                                                           e.stopPropagation();
                                                           setSelectedSkillForMove({ skillId: skill.id, areaId: null, projectId: project.id, currentLevel: level });
                                                           setContextMenuOpen(true);
                                                         }}
                                                       >
-                                                        ⬆
+                                                        <Layers className="w-4 h-4" />
                                                       </Button>
                                                     </PopoverTrigger>
                                                     <PopoverContent align="end" className="w-40 p-2">
@@ -718,7 +727,10 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                             size="sm" 
                                                             variant="outline" 
                                                             className="w-full justify-start"
-                                                            onClick={() => handleMoveSkillToLevel(lv)}
+                                                            onClick={(e) => {
+                                                              e.stopPropagation();
+                                                              handleMoveSkillToLevel(lv);
+                                                            }}
                                                           >
                                                             Nivel {lv}
                                                           </Button>

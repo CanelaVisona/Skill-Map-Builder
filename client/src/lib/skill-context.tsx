@@ -3160,18 +3160,29 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         return;
       }
 
-      const { movedSkill, replacementSkill } = await response.json();
+      const { movedSkill, repositionedSourceSkills, repositionedTargetSkills } = await response.json();
 
-      // Update local state: remove old skill, add moved skill and replacement
+      // Update local state: filter moved skill, apply repositioning, add back moved skill
       setAreas(prev => prev.map(a => {
         if (a.id !== areaId) return a;
+        
+        // Build lookup maps for efficient O(1) repositioned skill lookup
+        const repositionedMap = new Map<string, any>();
+        repositionedSourceSkills?.forEach((s: any) => repositionedMap.set(s.id, s));
+        repositionedTargetSkills?.forEach((s: any) => repositionedMap.set(s.id, s));
+        
+        // Step 1: Remove the moved skill from array
+        let updatedSkills = a.skills.filter(s => s.id !== skillId);
+        
+        // Step 2: Apply repositioning from both levels using Map lookup
+        updatedSkills = updatedSkills.map(s => repositionedMap.get(s.id) || s);
+        
+        // Step 3: Add the moved skill back with new level
+        updatedSkills = [...updatedSkills, movedSkill];
+
         return {
           ...a,
-          skills: [
-            ...a.skills.filter(s => s.id !== skillId),
-            movedSkill,
-            replacementSkill
-          ]
+          skills: updatedSkills
         };
       }));
     } catch (error) {
@@ -3251,18 +3262,29 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         return;
       }
 
-      const { movedSkill, replacementSkill } = await response.json();
+      const { movedSkill, repositionedSourceSkills, repositionedTargetSkills } = await response.json();
 
-      // Update local state: remove old skill, add moved skill and replacement
+      // Update local state: filter moved skill, apply repositioning, add back moved skill
       setProjects(prev => prev.map(p => {
         if (p.id !== projectId) return p;
+        
+        // Build lookup maps for efficient O(1) repositioned skill lookup
+        const repositionedMap = new Map<string, any>();
+        repositionedSourceSkills?.forEach((s: any) => repositionedMap.set(s.id, s));
+        repositionedTargetSkills?.forEach((s: any) => repositionedMap.set(s.id, s));
+        
+        // Step 1: Remove the moved skill from array
+        let updatedSkills = p.skills.filter(s => s.id !== skillId);
+        
+        // Step 2: Apply repositioning from both levels using Map lookup
+        updatedSkills = updatedSkills.map(s => repositionedMap.get(s.id) || s);
+        
+        // Step 3: Add the moved skill back with new level
+        updatedSkills = [...updatedSkills, movedSkill];
+
         return {
           ...p,
-          skills: [
-            ...p.skills.filter(s => s.id !== skillId),
-            movedSkill,
-            replacementSkill
-          ]
+          skills: updatedSkills
         };
       }));
     } catch (error) {

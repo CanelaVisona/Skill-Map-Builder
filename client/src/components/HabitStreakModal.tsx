@@ -47,11 +47,13 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
   const [newHabitEndDate, setNewHabitEndDate] = useState("");
   const [newHabitAreaId, setNewHabitAreaId] = useState<string | null>(null);
   const [newHabitProjectId, setNewHabitProjectId] = useState<string | null>(null);
+  const [newHabitScheduledDays, setNewHabitScheduledDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
   const [editHabitEmoji, setEditHabitEmoji] = useState("");
   const [editHabitName, setEditHabitName] = useState("");
   const [editHabitEndDate, setEditHabitEndDate] = useState("");
   const [editHabitAreaId, setEditHabitAreaId] = useState<string | null>(null);
   const [editHabitProjectId, setEditHabitProjectId] = useState<string | null>(null);
+  const [editHabitScheduledDays, setEditHabitScheduledDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
   const [showXpPopup, setShowXpPopup] = useState<{ visible: boolean; habitName: string }>({ visible: false, habitName: "" });
   const [newHabitSkillProgressId, setNewHabitSkillProgressId] = useState<string | null>(null);
   const [editHabitSkillProgressId, setEditHabitSkillProgressId] = useState<string | null>(null);
@@ -259,6 +261,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       areaId?: string | null;
       projectId?: string | null;
       skillId?: string | null;
+      scheduledDays: number[];
     }) => {
       const res = await fetch("/api/habits", {
         method: "POST",
@@ -282,6 +285,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       areaId?: string | null;
       projectId?: string | null;
       skillId?: string | null;
+      scheduledDays?: number[];
     }) => {
       const res = await fetch(`/api/habits/${data.id}`, {
         method: "PATCH",
@@ -293,6 +297,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
           areaId: data.areaId,
           projectId: data.projectId,
           skillId: data.skillId,
+          scheduledDays: data.scheduledDays,
         }),
       });
       if (!res.ok) throw new Error("Failed to update habit");
@@ -411,6 +416,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       setEditHabitAreaId(habit.areaId || null);
       setEditHabitProjectId(habit.projectId || null);
       setEditHabitSkillProgressId(habit.skillId || null);
+      setEditHabitScheduledDays(habit.scheduledDays || [0, 1, 2, 3, 4, 5, 6]);
       showPanel("edit");
     }
   };
@@ -421,6 +427,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
     setNewHabitAreaId(null);
     setNewHabitProjectId(null);
     setNewHabitSkillProgressId(null);
+    setNewHabitScheduledDays([0, 1, 2, 3, 4, 5, 6]);
   };
   const resetEditForm = () => {
     setEditHabitEmoji("");
@@ -429,6 +436,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
     setEditHabitAreaId(null);
     setEditHabitProjectId(null);
     setEditHabitSkillProgressId(null);
+    setEditHabitScheduledDays([0, 1, 2, 3, 4, 5, 6]);
     setSelectedHabitId(null);
   };
 
@@ -525,6 +533,8 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
               areas={areas}
               projects={projects}
               skills={newPanelSkills}
+              scheduledDays={newHabitScheduledDays}
+              onScheduledDaysChange={setNewHabitScheduledDays}
               onEmojiChange={setNewHabitEmoji}
               onNameChange={setNewHabitName}
               onEndDateChange={setNewHabitEndDate}
@@ -545,6 +555,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                       areaId: newHabitAreaId,
                       projectId: newHabitProjectId,
                       skillId: newHabitSkillProgressId,
+                      scheduledDays: newHabitScheduledDays,
                     });
                     resetForm();
                     showMain();
@@ -571,6 +582,8 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
               areas={areas}
               projects={projects}
               skills={editPanelSkills}
+              scheduledDays={editHabitScheduledDays}
+              onScheduledDaysChange={setEditHabitScheduledDays}
               onEmojiChange={setEditHabitEmoji}
               onNameChange={setEditHabitName}
               onEndDateChange={setEditHabitEndDate}
@@ -592,6 +605,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                       areaId: editHabitAreaId,
                       projectId: editHabitProjectId,
                       skillId: editHabitSkillProgressId,
+                      scheduledDays: editHabitScheduledDays,
                     });
                     resetEditForm();
                     showMain();
@@ -694,32 +708,66 @@ function MainPanel({
 
   const doneCount = habits.filter((h) => h.done.has(todayStr)).length;
 
-  const computeStreak = (done: Set<string>): number => {
+  const computeStreak = (done: Set<string>, scheduledDays?: number[]): number => {
+    // Default to all days if not provided or invalid
+    const days = (Array.isArray(scheduledDays) && scheduledDays.length > 0) ? scheduledDays : [0, 1, 2, 3, 4, 5, 6];
+    
     let s = 0;
     const c = new Date(today);
-    if (done.has(todayStr)) {
+    const todayDayOfWeek = c.getDay() === 0 ? 6 : c.getDay() - 1; // Convert to 0=Mon, 6=Sun
+    
+    // Check if today is a scheduled day
+    if (days.includes(todayDayOfWeek) && done.has(todayStr)) {
       s++;
       c.setDate(c.getDate() - 1);
     } else {
       c.setDate(c.getDate() - 1);
     }
-    while (true) {
+    
+    // Go back through days, counting streaks only on scheduled days
+    let maxIterations = 1000; // Safety limit to prevent infinite loops
+    while (maxIterations > 0) {
+      maxIterations--;
       const x = getLocalDateString(c);
+      const dayOfWeek = c.getDay() === 0 ? 6 : c.getDay() - 1; // Convert to 0=Mon, 6=Sun
+      
+      // If this day is NOT scheduled, skip it (continue to previous day)
+      if (!days.includes(dayOfWeek)) {
+        c.setDate(c.getDate() - 1);
+        continue;
+      }
+      
+      // If this day IS scheduled
       if (done.has(x)) {
         s++;
         c.setDate(c.getDate() - 1);
       } else {
+        // This is a scheduled day but wasn't completed - streak broken
         break;
       }
     }
     return s;
   };
 
-  const isBroken = (done: Set<string>): boolean => {
+  const isBroken = (done: Set<string>, scheduledDays?: number[]): boolean => {
+    // Default to all days if not provided or invalid
+    const days = (Array.isArray(scheduledDays) && scheduledDays.length > 0) ? scheduledDays : [0, 1, 2, 3, 4, 5, 6];
+    
     const yesterdayStr = new Date(today);
     yesterdayStr.setDate(yesterdayStr.getDate() - 1);
     const yesterdayDateStr = getLocalDateString(yesterdayStr);
-    return !done.has(todayStr) && !done.has(yesterdayDateStr);
+    const yesterdayDayOfWeek = yesterdayStr.getDay() === 0 ? 6 : yesterdayStr.getDay() - 1;
+    
+    // Today is not completed
+    const todayDayOfWeek = today.getDay() === 0 ? 6 : today.getDay() - 1;
+    const todayScheduled = days.includes(todayDayOfWeek);
+    const todayNotDone = todayScheduled && !done.has(todayStr);
+    
+    // Yesterday was scheduled and not completed
+    const yesterdayScheduled = days.includes(yesterdayDayOfWeek);
+    const yesterdayNotDone = yesterdayScheduled && !done.has(yesterdayDateStr);
+    
+    return todayNotDone && yesterdayNotDone;
   };
 
   const todayStr2 = today.toLocaleDateString("es-AR", {
@@ -824,8 +872,8 @@ function MainPanel({
           </p>
         ) : (
           habits.map((habit) => {
-            const streak = computeStreak(habit.done);
-            const broken = isBroken(habit.done);
+            const streak = computeStreak(habit.done, habit.scheduledDays);
+            const broken = isBroken(habit.done, habit.scheduledDays);
             const isToday = habit.done.has(todayStr);
 
             return (
@@ -868,6 +916,15 @@ function MainPanel({
                     <Eye className="h-3.5 w-3.5 text-muted-foreground" />
                   </button>
                 </div>
+
+                {/* Scheduled days */}
+                {habit.scheduledDays && habit.scheduledDays.length > 0 && habit.scheduledDays.length < 7 && (
+                  <div className="mb-2 text-xs text-muted-foreground">
+                    Días: <span className="font-medium text-foreground">
+                      {habit.scheduledDays.map((d) => DAY_LBLS[d]).join(", ")}
+                    </span>
+                  </div>
+                )}
 
                 {/* Week circles */}
                 <div className="flex gap-1.5 items-center">
@@ -1130,28 +1187,48 @@ function DetailPanel({
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const computeStreak = (done: Set<string>): number => {
+  const computeStreak = (done: Set<string>, scheduledDays?: number[]): number => {
+    // Default to all days if not provided or invalid
+    const days = (Array.isArray(scheduledDays) && scheduledDays.length > 0) ? scheduledDays : [0, 1, 2, 3, 4, 5, 6];
+    
     let s = 0;
     const c = new Date(today);
-    if (done.has(getLocalDateString(today))) {
+    const todayDayOfWeek = c.getDay() === 0 ? 6 : c.getDay() - 1; // Convert to 0=Mon, 6=Sun
+    
+    // Check if today is a scheduled day
+    if (days.includes(todayDayOfWeek) && done.has(getLocalDateString(today))) {
       s++;
       c.setDate(c.getDate() - 1);
     } else {
       c.setDate(c.getDate() - 1);
     }
-    while (true) {
+    
+    // Go back through days, counting streaks only on scheduled days
+    let maxIterations = 1000; // Safety limit to prevent infinite loops
+    while (maxIterations > 0) {
+      maxIterations--;
       const x = getLocalDateString(c);
+      const dayOfWeek = c.getDay() === 0 ? 6 : c.getDay() - 1; // Convert to 0=Mon, 6=Sun
+      
+      // If this day is NOT scheduled, skip it (continue to previous day)
+      if (!days.includes(dayOfWeek)) {
+        c.setDate(c.getDate() - 1);
+        continue;
+      }
+      
+      // If this day IS scheduled
       if (done.has(x)) {
         s++;
         c.setDate(c.getDate() - 1);
       } else {
+        // This is a scheduled day but wasn't completed - streak broken
         break;
       }
     }
     return s;
   };
 
-  const streak = computeStreak(habit.done);
+  const streak = computeStreak(habit.done, habit.scheduledDays);
   const doneInMonth = Array.from(habit.done).filter(
     (d) => d.startsWith(`${year}-${String(month + 1).padStart(2, "0")}`)
   ).length;
@@ -1291,6 +1368,8 @@ function AddPanel({
   onAreaIdChange,
   onProjectIdChange,
   onSkillIdChange,
+  scheduledDays,
+  onScheduledDaysChange,
   onBack,
   onSubmit,
   isLoading,
@@ -1310,6 +1389,8 @@ function AddPanel({
   onAreaIdChange: (id: string | null) => void;
   onProjectIdChange: (id: string | null) => void;
   onSkillIdChange: (id: string | null) => void;
+  scheduledDays: number[];
+  onScheduledDaysChange: (days: number[]) => void;
   onBack: () => void;
   onSubmit: () => void;
   isLoading: boolean;
@@ -1391,6 +1472,39 @@ function AddPanel({
           />
           <p className="mt-1 text-xs text-muted-foreground">
             Opcional: define una fecha límite para el hábito
+          </p>
+        </div>
+
+        {/* Scheduled Days Selector */}
+        <div>
+          <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
+            Días de la semana *
+          </label>
+          <div className="mt-2 grid grid-cols-7 gap-1.5">
+            {["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"].map((day, index) => (
+              <button
+                key={index}
+                onClick={() => {
+                  const newDays = scheduledDays.includes(index)
+                    ? scheduledDays.filter((d) => d !== index)
+                    : [...scheduledDays, index];
+                  if (newDays.length > 0) {
+                    onScheduledDaysChange(newDays.sort((a, b) => a - b));
+                  }
+                }}
+                disabled={isLoading || (scheduledDays.length === 1 && scheduledDays.includes(index))}
+                className={`py-2 px-1 rounded-lg font-semibold text-sm transition-all ${ 
+                  scheduledDays.includes(index)
+                    ? "bg-purple-600 text-white border-2 border-purple-600"
+                    : "border-2 border-border/30 bg-background text-foreground hover:border-purple-400"
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                {day}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Selecciona al menos un día para rastrear el hábito
           </p>
         </div>
 
@@ -1503,6 +1617,8 @@ function EditPanel({
   onAreaIdChange,
   onProjectIdChange,
   onSkillIdChange,
+  scheduledDays,
+  onScheduledDaysChange,
   onBack,
   onSubmit,
   onDelete,
@@ -1524,6 +1640,8 @@ function EditPanel({
   onAreaIdChange: (id: string | null) => void;
   onProjectIdChange: (id: string | null) => void;
   onSkillIdChange: (id: string | null) => void;
+  scheduledDays: number[];
+  onScheduledDaysChange: (days: number[]) => void;
   onBack: () => void;
   onSubmit: () => void;
   onDelete: () => void;
@@ -1603,6 +1721,39 @@ function EditPanel({
           />
           <p className="mt-1 text-xs text-muted-foreground">
             Opcional: define una fecha límite para el hábito
+          </p>
+        </div>
+
+        {/* Scheduled Days Selector */}
+        <div>
+          <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
+            Días de la semana *
+          </label>
+          <div className="mt-2 grid grid-cols-7 gap-1.5">
+            {["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"].map((day, index) => (
+              <button
+                key={index}
+                onClick={() => {
+                  const newDays = scheduledDays.includes(index)
+                    ? scheduledDays.filter((d) => d !== index)
+                    : [...scheduledDays, index];
+                  if (newDays.length > 0) {
+                    onScheduledDaysChange(newDays.sort((a, b) => a - b));
+                  }
+                }}
+                disabled={isLoading || (scheduledDays.length === 1 && scheduledDays.includes(index))}
+                className={`py-2 px-1 rounded-lg font-semibold text-sm transition-all ${ 
+                  scheduledDays.includes(index)
+                    ? "bg-purple-600 text-white border-2 border-purple-600"
+                    : "border-2 border-border/30 bg-background text-foreground hover:border-purple-400"
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                {day}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Selecciona al menos un día para rastrear el hábito
           </p>
         </div>
 
