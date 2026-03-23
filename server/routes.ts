@@ -723,7 +723,7 @@ export async function registerRoutes(
         for (let i = 0; i < remainingOriginalSkills.length; i++) {
           const skill = remainingOriginalSkills[i];
           const newPosition = i + 1;
-          const newYPosition = startY + (i * sourceSpacing);
+          const newYPosition = Math.round(startY + (i * sourceSpacing));
 
           try {
             const updated = await storage.updateSkill(skill.id, {
@@ -760,7 +760,7 @@ export async function registerRoutes(
           }
           
           const newPosition = i + 1;
-          const newYPosition = startY + (i * targetSpacingFinal);
+          const newYPosition = Math.round(startY + (i * targetSpacingFinal));
 
           try {
             const updated = await storage.updateSkill(skill.id, {
