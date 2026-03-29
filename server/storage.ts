@@ -37,6 +37,7 @@ export interface IStorage {
   deleteSkill(id: string): Promise<void>;
   countSkillsInLevel(areaId: string, level: number): Promise<number>;
   countProjectSkillsInLevel(projectId: string, level: number): Promise<number>;
+  recalculateFinalNodes(level: number, options: { areaId?: string; projectId?: string; parentSkillId?: string }): Promise<void>;
   generateLevelWithSkills(areaId: string, level: number, startY: number): Promise<{ updatedArea: Area; createdSkills: Skill[] }>;
   generateProjectLevelWithSkills(projectId: string, level: number, startY: number): Promise<{ updatedProject: Project; createdSkills: Skill[] }>;
 
@@ -313,11 +314,11 @@ export class DbStorage implements IStorage {
 
   // Skills
   async getSkills(areaId: string): Promise<Skill[]> {
-    return await db.select().from(skills).where(eq(skills.areaId, areaId));
+    return await db.select().from(skills).where(eq(skills.areaId, areaId)).orderBy(asc(skills.level), asc(skills.y));
   }
 
   async getProjectSkills(projectId: string): Promise<Skill[]> {
-    return await db.select().from(skills).where(eq(skills.projectId, projectId));
+    return await db.select().from(skills).where(eq(skills.projectId, projectId)).orderBy(asc(skills.level), asc(skills.y));
   }
 
   async getSkill(id: string): Promise<Skill | undefined> {
@@ -385,29 +386,88 @@ export class DbStorage implements IStorage {
     return result.length;
   }
 
+  /**
+   * Recalculate isFinalNode flag for all skills in a level.
+   * isFinalNode is always position-based: the skill with the highest levelPosition gets the flag.
+   * All other skills in the level have isFinalNode set to 0.
+   */
+  async recalculateFinalNodes(
+    level: number,
+    options: { areaId?: string; projectId?: string; parentSkillId?: string }
+  ): Promise<void> {
+    const { areaId, projectId, parentSkillId } = options;
+    
+    // Get all skills in the level
+    const levelSkills = await db.select().from(skills).where(
+      and(
+        eq(skills.level, level),
+        areaId ? eq(skills.areaId, areaId) : undefined,
+        projectId ? eq(skills.projectId, projectId) : undefined,
+        parentSkillId ? eq(skills.parentSkillId, parentSkillId) : undefined
+      )
+    );
+
+    if (levelSkills.length === 0) return;
+
+    // Find the skill with the highest levelPosition
+    const sortedByPosition = [...levelSkills].sort((a, b) => 
+      (b.levelPosition || 0) - (a.levelPosition || 0)
+    );
+    const finalNodeId = sortedByPosition[0].id;
+
+    // Update all skills in the level: set isFinalNode based on position
+    for (const skill of levelSkills) {
+      const shouldBeFinal = skill.id === finalNodeId ? 1 : 0;
+      if (skill.isFinalNode !== shouldBeFinal) {
+        await db.update(skills)
+          .set({ isFinalNode: shouldBeFinal as 0 | 1 })
+          .where(eq(skills.id, skill.id));
+      }
+    }
+  }
+
   async generateLevelWithSkills(areaId: string, level: number, startY: number): Promise<{ updatedArea: Area; createdSkills: Skill[] }> {
     const createdSkills: Skill[] = [];
     let previousSkillId: string | null = null;
+
+    // Query for max y value to ensure proper spacing
+    const existingSkills = await db.select().from(skills).where(eq(skills.areaId, areaId));
+    let calculatedStartY = 100;
+    if (existingSkills.length > 0) {
+      const maxY = Math.max(...existingSkills.map(s => s.y ?? 0));
+      calculatedStartY = maxY + 150;
+    }
 
     // Use a transaction to ensure atomicity
     await db.transaction(async (tx) => {
       // Update area's unlocked level first
       await tx.update(areas)
-        .set({ unlockedLevel: level, nextLevelToAssign: level })
+        .set({ unlockedLevel: level, nextLevelToAssign: level + 3 })
         .where(eq(areas.id, areaId));
 
-      // Create 5 skills for the new level
+      // Create 5 skills for the new level with Spanish default names
       for (let position = 1; position <= 5; position++) {
         const id = randomUUID();
         const deps: string[] = previousSkillId ? [previousSkillId] : [];
         const isFirstNode = position === 1;
-        let nodeTitle = "Objective quest";
+        const isSecondNode = position === 2;
+        const isFinalNode = position === 5; // Last node is always final node
+        
+        // Node 1: auto-completing, empty title, always mastered
+        // Node 2: unlocked/available (next to unlock after Node 1 is mastered)
+        // Nodes 3-5: editable, default Spanish names (Nodo 3, Nodo 4, Nodo 5), locked initially
+        let nodeTitle = "";
         let nodeStatus: "locked" | "available" | "mastered" = "locked";
         
-        // First node of level is always mastered with empty title
         if (isFirstNode) {
           nodeTitle = "";
           nodeStatus = "mastered";
+        } else if (isSecondNode) {
+          nodeTitle = `Nodo ${position}`;
+          nodeStatus = "available";
+        } else {
+          nodeTitle = `Nodo ${position}`;
+          nodeStatus = "locked";
         }
         
         const skillData: typeof skills.$inferInsert = {
@@ -416,12 +476,13 @@ export class DbStorage implements IStorage {
           title: nodeTitle,
           description: "",
           x: 50,
-          y: startY + (position - 1) * 150,
+          y: calculatedStartY + (position - 1) * 150,
           status: nodeStatus,
           dependencies: deps,
           level,
           levelPosition: position,
-          isFinalNode: 0 as 0 | 1,
+          isFinalNode: isFinalNode ? (1 as 0 | 1) : (0 as 0 | 1),
+          isAutoComplete: isFirstNode ? (1 as 0 | 1) : (0 as 0 | 1),
           manualLock: 0 as 0 | 1,
         };
 
@@ -442,22 +503,42 @@ export class DbStorage implements IStorage {
     const createdSkills: Skill[] = [];
     let previousSkillId: string | null = null;
 
+    // Query for max y value to ensure proper spacing
+    const existingSkills = await db.select().from(skills).where(eq(skills.projectId, projectId));
+    let calculatedStartY = 100;
+    if (existingSkills.length > 0) {
+      const maxY = Math.max(...existingSkills.map(s => s.y ?? 0));
+      calculatedStartY = maxY + 150;
+    }
+
     await db.transaction(async (tx) => {
       await tx.update(projects)
-        .set({ unlockedLevel: level, nextLevelToAssign: level })
+        .set({ unlockedLevel: level, nextLevelToAssign: level + 3 })
         .where(eq(projects.id, projectId));
 
+      // Create 5 skills for the new level with Spanish default names
       for (let position = 1; position <= 5; position++) {
         const id = randomUUID();
         const deps: string[] = previousSkillId ? [previousSkillId] : [];
         const isFirstNode = position === 1;
-        let nodeTitle = "Next objetive quest";
+        const isSecondNode = position === 2;
+        const isFinalNode = position === 5; // Last node is always final node
+        
+        // Node 1: auto-completing, empty title, always mastered
+        // Node 2: unlocked/available (next to unlock after Node 1 is mastered)
+        // Nodes 3-5: editable, default Spanish names (Nodo 3, Nodo 4, Nodo 5), locked initially
+        let nodeTitle = "";
         let nodeStatus: "locked" | "available" | "mastered" = "locked";
         
-        // First node of level is always mastered with empty title
         if (isFirstNode) {
           nodeTitle = "";
           nodeStatus = "mastered";
+        } else if (isSecondNode) {
+          nodeTitle = `Nodo ${position}`;
+          nodeStatus = "available";
+        } else {
+          nodeTitle = `Nodo ${position}`;
+          nodeStatus = "locked";
         }
         
         const skillData: typeof skills.$inferInsert = {
@@ -466,12 +547,13 @@ export class DbStorage implements IStorage {
           title: nodeTitle,
           description: "",
           x: 50,
-          y: startY + (position - 1) * 150,
+          y: calculatedStartY + (position - 1) * 150,
           status: nodeStatus,
           dependencies: deps,
           level,
           levelPosition: position,
-          isFinalNode: 0 as 0 | 1,
+          isFinalNode: isFinalNode ? (1 as 0 | 1) : (0 as 0 | 1),
+          isAutoComplete: isFirstNode ? (1 as 0 | 1) : (0 as 0 | 1),
           manualLock: 0 as 0 | 1,
         };
 
@@ -572,34 +654,49 @@ export class DbStorage implements IStorage {
     const createdSkills: Skill[] = [];
     let previousSkillId: string | null = null;
 
+    // Query for max y value to ensure proper spacing
+    const existingSkills = await db.select().from(skills).where(eq(skills.parentSkillId, parentSkillId));
+    let calculatedStartY = 100;
+    if (existingSkills.length > 0) {
+      const maxY = Math.max(...existingSkills.map(s => s.y ?? 0));
+      calculatedStartY = maxY + 150;
+    }
+
     await db.transaction(async (tx) => {
       for (let position = 1; position <= 5; position++) {
         const id = randomUUID();
         const deps: string[] = previousSkillId ? [previousSkillId] : [];
         const isFirstNode = position === 1;
         const isLevel1FirstNode = level === 1 && position === 1;
-        const isLastNode = position === 5;
-        let nodeTitle = "Next objetive quest";
+        const isFinalNode = position === 5; // Last node is always final node
+        let nodeTitle = "";
         let nodeStatus: "locked" | "available" | "mastered" = "locked";
+        
         if (isLevel1FirstNode) {
           nodeTitle = "inicio";
           nodeStatus = "mastered";
         } else if (isFirstNode && level >= 2) {
           nodeTitle = "";
           nodeStatus = "mastered";
+        } else {
+          // Nodes 2-5: use Spanish default names
+          nodeTitle = `Nodo ${position}`;
+          nodeStatus = "locked";
         }
+        
         const skillData: typeof skills.$inferInsert = {
           id,
           parentSkillId,
           title: nodeTitle,
           description: "",
           x: 50,
-          y: startY + (position - 1) * 150,
+          y: calculatedStartY + (position - 1) * 150,
           status: nodeStatus,
           dependencies: deps,
           level,
           levelPosition: position,
-          isFinalNode: isLastNode ? 1 as 0 | 1 : 0 as 0 | 1,
+          isFinalNode: isFinalNode ? (1 as 0 | 1) : (0 as 0 | 1),
+          isAutoComplete: isFirstNode ? (1 as 0 | 1) : (0 as 0 | 1),
           manualLock: 0 as 0 | 1,
         };
 
@@ -677,12 +774,20 @@ export class DbStorage implements IStorage {
 
   async createJournalShadow(shadow: InsertJournalShadow): Promise<JournalShadow> {
     const id = randomUUID();
-    const result = await db.insert(journalShadows).values({ id, ...shadow }).returning();
+    const safeData = {
+      ...shadow,
+      defeated: shadow.defeated ? (shadow.defeated as 0 | 1) : undefined
+    };
+    const result = await db.insert(journalShadows).values({ id, ...safeData }).returning();
     return result[0];
   }
 
   async updateJournalShadow(id: string, shadow: Partial<InsertJournalShadow>): Promise<JournalShadow | undefined> {
-    const result = await db.update(journalShadows).set(shadow).where(eq(journalShadows.id, id)).returning();
+    const safeData = {
+      ...shadow,
+      defeated: shadow.defeated !== undefined ? (shadow.defeated as 0 | 1) : undefined
+    };
+    const result = await db.update(journalShadows).set(safeData).where(eq(journalShadows.id, id)).returning();
     return result[0];
   }
 
@@ -1128,13 +1233,22 @@ export class DbStorage implements IStorage {
 
   async createHabit(habit: InsertHabit): Promise<Habit> {
     const id = randomUUID();
-    const result = await db.insert(habits).values({ id, ...habit }).returning();
+    const safeData = {
+      ...habit,
+      scheduledDays: Array.isArray(habit.scheduledDays) ? habit.scheduledDays : [0,1,2,3,4,5,6]
+    };
+    const result = await db.insert(habits).values({ id, ...safeData }).returning();
     return result[0];
   }
 
   async updateHabit(id: string, habit: Partial<InsertHabit>): Promise<Habit | undefined> {
+    const safeData = {
+      ...habit,
+      scheduledDays: habit.scheduledDays ? (Array.isArray(habit.scheduledDays) ? habit.scheduledDays : [0,1,2,3,4,5,6]) : undefined,
+      updatedAt: new Date()
+    };
     const result = await db.update(habits)
-      .set({ ...habit, updatedAt: new Date() })
+      .set(safeData)
       .where(eq(habits.id, id))
       .returning();
     return result[0];

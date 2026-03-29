@@ -17,6 +17,7 @@ export interface Skill {
   dependencies: string[];
   manualLock?: number;
   isFinalNode?: number;
+  isAutoComplete?: number;
   level: number;
   levelPosition?: number;
   experiencePoints?: number;
@@ -32,6 +33,7 @@ export interface Area {
   nextLevelToAssign: number;
   levelSubtitles: Record<string, string>;
   levelSubtitleDescriptions: Record<string, string>;
+  endOfAreaLevel?: number;
   skills: Skill[];
 }
 
@@ -44,6 +46,7 @@ export interface Project {
   nextLevelToAssign: number;
   levelSubtitles: Record<string, string>;
   levelSubtitleDescriptions: Record<string, string>;
+  endOfAreaLevel?: number;
   skills: Skill[];
   questType?: "main" | "side" | "emergent" | "experience";
 }
@@ -74,14 +77,12 @@ interface SkillTreeContextType {
   toggleProjectSkillStatus: (projectId: string, skillId: string) => void;
   addSkill: (areaId: string, skill: Omit<Skill, "id">) => void;
   updateSkill: (areaId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number }) => void;
-  createLockedSkill: (areaId: string, level: number, title: string) => Promise<void>;
   deleteSkill: (areaId: string, skillId: string) => void;
   toggleLock: (areaId: string, skillId: string) => void;
   moveSkill: (areaId: string, skillId: string, direction: "up" | "down") => void;
   moveSkillToLevel: (areaId: string, skillId: string, targetLevel: number) => Promise<void>;
   reorderSkillWithinLevel: (areaId: string, skillId: string, direction: "up" | "down") => Promise<void>;
   updateProjectSkill: (projectId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number }) => void;
-  createLockedProjectSkill: (projectId: string, level: number, title: string) => Promise<void>;
   deleteProjectSkill: (projectId: string, skillId: string) => void;
   toggleProjectLock: (projectId: string, skillId: string) => void;
   moveProjectSkill: (projectId: string, skillId: string, direction: "up" | "down") => void;
@@ -223,6 +224,329 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     setActiveAreaId("");
   };
 
+  // Auto-create 5 locked skills for each blocked level
+  const ensureLockedLevelSkills = async (targetAreas: Area[], targetProjects: Project[]) => {
+    console.warn('[ensureLockedLevelSkills] Starting - Areas:', targetAreas.length, 'Projects:', targetProjects.length);
+    
+    // Ensure areas have 3 locked levels ahead
+    for (const area of targetAreas) {
+      // IMPORTANT: nextLevelToAssign tracks which level number comes next to CREATE in DB
+      // unlockedLevel is the highest UNLOCKED level
+      // We want to maintain 3 LOCKED levels ahead
+      const startLevel = Math.max(area.unlockedLevel + 1, area.nextLevelToAssign);
+      const targetNextLevel = area.unlockedLevel + 3; // Last locked level = unlockedLevel + 3 (so 3 locked levels)
+      const nextLevelToAssignInDb = targetNextLevel + 1; // Next number to assign after creating all locked levels
+      
+      console.warn(`[ensureLockedLevelSkills] Area "${area.name}" - unlockedLevel=${area.unlockedLevel}, nextLevelToAssign=${area.nextLevelToAssign}, startLevel=${startLevel}, targetNextLevel=${targetNextLevel}`);
+      
+      // Only create if we need more locked levels
+      if (startLevel <= targetNextLevel) {
+        console.warn(`[ensureLockedLevelSkills] Need to create levels ${startLevel} to ${targetNextLevel} for area "${area.name}"`);
+        for (let level = startLevel; level <= targetNextLevel; level++) {
+          console.warn(`[ensureLockedLevelSkills] Creating 5 skills for area "${area.name}", level ${level}`);
+          
+          // Find the last node from previous level for dependency
+          const prevLevelSkills = area.skills.filter(s => s.level === level - 1);
+          const lastNodeOfPrevLevel = prevLevelSkills.length > 0 
+            ? prevLevelSkills.reduce((max, s) => s.y > max.y ? s : max)
+            : null;
+
+          // Create 5 locked placeholder nodes for this level
+          for (let position = 1; position <= 5; position++) {
+            const newSkill = {
+              areaId: area.id,
+              parentSkillId: null,
+              title: "",
+              description: "",
+              feedback: "",
+              status: "locked" as const,
+              x: position * 150 - 100,
+              y: position * 150,
+              dependencies: position === 1 && lastNodeOfPrevLevel ? [lastNodeOfPrevLevel.id] : [],
+              manualLock: 1,
+              isFinalNode: 0,
+              level,
+              levelPosition: position,
+              experiencePoints: 0
+            };
+
+            try {
+              const response = await fetch("/api/skills", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(newSkill)
+              });
+
+              if (response.ok) {
+                const createdSkill = await response.json();
+                console.warn(`[ensureLockedLevelSkills] ✓ Created skill for area "${area.name}" level ${level} position ${position}`);
+                // Sync to local state
+                setAreas(prev => prev.map(a => {
+                  if (a.id === area.id) {
+                    return { ...a, skills: [...a.skills, createdSkill] };
+                  }
+                  return a;
+                }));
+              } else {
+                console.error(`[ensureLockedLevelSkills] ✗ Failed to create skill (status ${response.status})`);
+              }
+            } catch (error) {
+              console.error(`[ensureLockedLevelSkills] Error creating skill:`, error);
+            }
+          }
+        }
+        
+        // Update the area's nextLevelToAssign in the database
+        try {
+          const patchResult = await fetch(`/api/areas/${area.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ nextLevelToAssign: nextLevelToAssignInDb })
+          });
+          if (patchResult.ok) {
+            console.warn(`[ensureLockedLevelSkills] ✓ Updated area "${area.name}" nextLevelToAssign to ${nextLevelToAssignInDb}`);
+          } else {
+            console.error(`[ensureLockedLevelSkills] ✗ Failed to PATCH area (status ${patchResult.status})`);
+          }
+        } catch (error) {
+          console.error(`[ensureLockedLevelSkills] Error PATCHING area:`, error);
+        }
+      } else {
+        console.warn(`[ensureLockedLevelSkills] Area "${area.name}" already has enough locked levels`);
+      }
+      
+      // REFETCH area from DB to get current skills before cleanup
+      console.warn(`[ensureLockedLevelSkills] Refetching area "${area.name}" to get current skills...`);
+      try {
+        const areaRefetchResponse = await fetch(`/api/areas`, { credentials: "include" });
+        if (areaRefetchResponse.ok) {
+          const areasFromDb = await areaRefetchResponse.json();
+          const refreshedArea = areasFromDb.find((a: Area) => a.id === area.id);
+          if (refreshedArea) {
+            console.warn(`[ensureLockedLevelSkills] Refreshed area "${area.name}": has ${refreshedArea.skills?.length || 0} skills in DB`);
+            console.warn(`[ensureLockedLevelSkills] DEBUG: unlockedLevel=${area.unlockedLevel}, targetNextLevel=${targetNextLevel}`);
+            
+            // Debug: log all skill levels
+            const allSkillLevels = ((refreshedArea.skills || []) as Skill[]).map((s) => s.level);
+            console.warn(`[ensureLockedLevelSkills] DEBUG: All skill levels in area:`, allSkillLevels);
+            
+            // Clean up skills that are beyond targetNextLevel (remove extras) using FRESH data
+            const skillsToDelete = ((refreshedArea.skills || []) as Skill[]).filter((s) => {
+              const shouldDelete = s.level > targetNextLevel;
+              if (shouldDelete) {
+                console.warn(`[ensureLockedLevelSkills] DEBUG: Found skill to delete: id=${s.id}, level=${s.level}, type=${typeof s.level}, targetNextLevel=${targetNextLevel}, comparison=${s.level} > ${targetNextLevel}`);
+              }
+              return shouldDelete;
+            });
+            if (skillsToDelete.length > 0) {
+              console.warn(`[ensureLockedLevelSkills] Deleting ${skillsToDelete.length} extra skills from area "${area.name}" beyond level ${targetNextLevel}`);
+              for (const skill of skillsToDelete) {
+                console.warn(`[ensureLockedLevelSkills] Attempting to delete skill: id=${skill.id}, level=${skill.level}, position=${skill.levelPosition}`);
+                try {
+                  const deleteResult = await fetch(`/api/skills/${skill.id}`, {
+                    method: "DELETE",
+                    headers: { "Content-Type": "application/json" }
+                  });
+                  if (deleteResult.ok) {
+                    console.warn(`[ensureLockedLevelSkills] ✓ Deleted skill level ${skill.level} position ${skill.levelPosition}`);
+                  } else {
+                    console.error(`[ensureLockedLevelSkills] ✗ Failed to delete skill (status ${deleteResult.status})`);
+                  }
+                } catch (error) {
+                  console.error(`[ensureLockedLevelSkills] Error deleting skill:`, error);
+                }
+              }
+            } else {
+              console.warn(`[ensureLockedLevelSkills] No skills to delete in area "${area.name}" (all skills are within proper range)`);
+            }
+            
+            // IMPORTANT: Also fix nextLevelToAssign if it's higher than it should be
+            const correctNextLevelToAssign = targetNextLevel + 1;
+            if (refreshedArea.nextLevelToAssign !== correctNextLevelToAssign) {
+              console.warn(`[ensureLockedLevelSkills] Correcting nextLevelToAssign: ${refreshedArea.nextLevelToAssign} -> ${correctNextLevelToAssign}`);
+              try {
+                const patchResult = await fetch(`/api/areas/${area.id}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ nextLevelToAssign: correctNextLevelToAssign })
+                });
+                if (patchResult.ok) {
+                  console.warn(`[ensureLockedLevelSkills] ✓ Fixed nextLevelToAssign for "${area.name}"`);
+                } else {
+                  console.error(`[ensureLockedLevelSkills] ✗ Failed to fix nextLevelToAssign (status ${patchResult.status})`);
+                }
+              } catch (error) {
+                console.error(`[ensureLockedLevelSkills] Error fixing nextLevelToAssign:`, error);
+              }
+            }
+          } else {
+            console.warn(`[ensureLockedLevelSkills] Could not find refreshed area data`);
+          }
+        }
+      } catch (error) {
+        console.error(`[ensureLockedLevelSkills] Error refetching area for cleanup:`, error);
+      }
+    }
+
+    // Ensure projects have 3 locked levels ahead
+    for (const project of targetProjects) {
+      const startLevel = Math.max(project.unlockedLevel + 1, project.nextLevelToAssign);
+      const targetNextLevel = project.unlockedLevel + 3; // 3 locked levels ahead
+      const nextLevelToAssignInDb = targetNextLevel + 1;
+      
+      console.warn(`[ensureLockedLevelSkills] Project "${project.name}" - unlockedLevel=${project.unlockedLevel}, nextLevelToAssign=${project.nextLevelToAssign}, startLevel=${startLevel}, targetNextLevel=${targetNextLevel}`);
+      
+      if (startLevel <= targetNextLevel) {
+        console.warn(`[ensureLockedLevelSkills] Need to create levels ${startLevel} to ${targetNextLevel} for project "${project.name}"`);
+        for (let level = startLevel; level <= targetNextLevel; level++) {
+          console.warn(`[ensureLockedLevelSkills] Creating 5 skills for project "${project.name}", level ${level}`);
+          
+          // Find the last node from previous level for dependency
+          const prevLevelSkills = project.skills.filter(s => s.level === level - 1);
+          const lastNodeOfPrevLevel = prevLevelSkills.length > 0 
+            ? prevLevelSkills.reduce((max, s) => s.y > max.y ? s : max)
+            : null;
+
+          // Create 5 locked placeholder nodes for this level
+          for (let position = 1; position <= 5; position++) {
+            const newSkill = {
+              projectId: project.id,
+              parentSkillId: null,
+              title: "",
+              description: "",
+              feedback: "",
+              status: "locked" as const,
+              x: position * 150 - 100,
+              y: position * 150,
+              dependencies: position === 1 && lastNodeOfPrevLevel ? [lastNodeOfPrevLevel.id] : [],
+              manualLock: 1,
+              isFinalNode: 0,
+              level,
+              levelPosition: position,
+              experiencePoints: 0
+            };
+
+            try {
+              const response = await fetch("/api/skills", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(newSkill)
+              });
+
+              if (response.ok) {
+                const createdSkill = await response.json();
+                console.warn(`[ensureLockedLevelSkills] ✓ Created skill for project "${project.name}" level ${level} position ${position}`);
+                // Sync to local state
+                setProjects(prev => prev.map(p => {
+                  if (p.id === project.id) {
+                    return { ...p, skills: [...p.skills, createdSkill] };
+                  }
+                  return p;
+                }));
+              } else {
+                console.error(`[ensureLockedLevelSkills] ✗ Failed to create skill (status ${response.status})`);
+              }
+            } catch (error) {
+              console.error(`[ensureLockedLevelSkills] Error creating skill:`, error);
+            }
+          }
+        }
+        
+        // Update the project's nextLevelToAssign in the database
+        try {
+          const patchResult = await fetch(`/api/projects/${project.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ nextLevelToAssign: nextLevelToAssignInDb })
+          });
+          if (patchResult.ok) {
+            console.warn(`[ensureLockedLevelSkills] ✓ Updated project "${project.name}" nextLevelToAssign to ${nextLevelToAssignInDb}`);
+          } else {
+            console.error(`[ensureLockedLevelSkills] ✗ Failed to PATCH project (status ${patchResult.status})`);
+          }
+        } catch (error) {
+          console.error(`[ensureLockedLevelSkills] Error PATCHING project:`, error);
+        }
+      } else {
+        console.warn(`[ensureLockedLevelSkills] Project "${project.name}" already has enough locked levels`);
+      }
+      
+      // REFETCH project from DB to get current skills before cleanup
+      console.warn(`[ensureLockedLevelSkills] Refetching project "${project.name}" to get current skills...`);
+      try {
+        const projectRefetchResponse = await fetch(`/api/projects`, { credentials: "include" });
+        if (projectRefetchResponse.ok) {
+          const projectsFromDb = await projectRefetchResponse.json();
+          const refreshedProject = projectsFromDb.find((p: Project) => p.id === project.id);
+          if (refreshedProject) {
+            console.warn(`[ensureLockedLevelSkills] Refreshed project "${project.name}": has ${refreshedProject.skills?.length || 0} skills in DB`);
+            console.warn(`[ensureLockedLevelSkills] DEBUG: unlockedLevel=${project.unlockedLevel}, targetNextLevel=${targetNextLevel}`);
+            
+            // Debug: log all skill levels
+            const allSkillLevels = ((refreshedProject.skills || []) as Skill[]).map((s) => s.level);
+            console.warn(`[ensureLockedLevelSkills] DEBUG: All skill levels in project:`, allSkillLevels);
+            
+            // Clean up skills that are beyond targetNextLevel (remove extras) using FRESH data
+            const skillsToDelete = ((refreshedProject.skills || []) as Skill[]).filter((s) => {
+              const shouldDelete = s.level > targetNextLevel;
+              if (shouldDelete) {
+                console.warn(`[ensureLockedLevelSkills] DEBUG: Found skill to delete: id=${s.id}, level=${s.level}, type=${typeof s.level}, targetNextLevel=${targetNextLevel}, comparison=${s.level} > ${targetNextLevel}`);
+              }
+              return shouldDelete;
+            });
+            if (skillsToDelete.length > 0) {
+              console.warn(`[ensureLockedLevelSkills] Deleting ${skillsToDelete.length} extra skills from project "${project.name}" beyond level ${targetNextLevel}`);
+              for (const skill of skillsToDelete) {
+                console.warn(`[ensureLockedLevelSkills] Attempting to delete skill: id=${skill.id}, level=${skill.level}, position=${skill.levelPosition}`);
+                try {
+                  const deleteResult = await fetch(`/api/skills/${skill.id}`, {
+                    method: "DELETE",
+                    headers: { "Content-Type": "application/json" }
+                  });
+                  if (deleteResult.ok) {
+                    console.warn(`[ensureLockedLevelSkills] ✓ Deleted skill level ${skill.level} position ${skill.levelPosition}`);
+                  } else {
+                    console.error(`[ensureLockedLevelSkills] ✗ Failed to delete skill (status ${deleteResult.status})`);
+                  }
+                } catch (error) {
+                  console.error(`[ensureLockedLevelSkills] Error deleting skill:`, error);
+                }
+              }
+            } else {
+              console.warn(`[ensureLockedLevelSkills] No skills to delete in project "${project.name}" (all skills are within proper range)`);
+            }
+            
+            // IMPORTANT: Also fix nextLevelToAssign if it's higher than it should be
+            const correctNextLevelToAssign = targetNextLevel + 1;
+            if (refreshedProject.nextLevelToAssign !== correctNextLevelToAssign) {
+              console.warn(`[ensureLockedLevelSkills] Correcting nextLevelToAssign: ${refreshedProject.nextLevelToAssign} -> ${correctNextLevelToAssign}`);
+              try {
+                const patchResult = await fetch(`/api/projects/${project.id}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ nextLevelToAssign: correctNextLevelToAssign })
+                });
+                if (patchResult.ok) {
+                  console.warn(`[ensureLockedLevelSkills] ✓ Fixed nextLevelToAssign for "${project.name}"`);
+                } else {
+                  console.error(`[ensureLockedLevelSkills] ✗ Failed to fix nextLevelToAssign (status ${patchResult.status})`);
+                }
+              } catch (error) {
+                console.error(`[ensureLockedLevelSkills] Error fixing nextLevelToAssign:`, error);
+              }
+            }
+          } else {
+            console.warn(`[ensureLockedLevelSkills] Could not find refreshed project data`);
+          }
+        }
+      } catch (error) {
+        console.error(`[ensureLockedLevelSkills] Error refetching project for cleanup:`, error);
+      }
+    }
+    
+    console.warn('[ensureLockedLevelSkills] ✓ Complete');
+  };
+
   // Load areas and projects from API
   useEffect(() => {
     async function loadData() {
@@ -236,7 +560,6 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         const projectsData = await projectsResponse.json();
         const globalSkillsData = await globalSkillsResponse.json();
         
-        // Handle authentication errors
         if (Array.isArray(areasData)) {
           // Normalize all first nodes before setting state
           const normalizedAreas = areasData.map((area: Area) => ({
@@ -267,6 +590,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         } else {
           setGlobalSkills([]);
         }
+
+        // Auto-create locked level skills is DISABLED
+        // Levels are now created on-demand via /api/areas/:id/generate-level endpoint
       } catch (error) {
         console.error("Error loading data:", error);
       } finally {
@@ -290,7 +616,62 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     });
   };
 
+  // Full refresh of ALL areas from server
+  // Used after critical operations that generate new levels or move nodes
+  const refreshAllAreas = async (): Promise<void> => {
+    try {
+      const response = await fetch("/api/areas", { credentials: "include" });
+      if (!response.ok) return;
+      const areasData = await response.json();
+      if (!Array.isArray(areasData)) return;
+      const normalizedAreas = areasData.map((area: Area) => ({
+        ...area,
+        skills: ensureFirstNodeRules(area.skills || [])
+      }));
+      
+      // DEBUG: Log raw skills from each area
+      normalizedAreas.forEach(area => {
+        console.log(`[refreshAllAreas] Area "${area.name}" - ${area.skills.length} skills:`, 
+          area.skills.map(s => ({
+            title: s.title,
+            level: s.level,
+            levelPosition: s.levelPosition,
+            x: s.x,
+            y: s.y,
+            status: s.status
+          }))
+        );
+      });
+      
+      setAreas(normalizedAreas);
+      console.log(`[refreshAllAreas] ✓ Refreshed ${normalizedAreas.length} areas from server`);
+    } catch (error) {
+      console.error("[refreshAllAreas] Error:", error);
+    }
+  };
+
+  // Full refresh of ALL projects from server
+  // Used after critical operations that generate new levels or move nodes
+  const refreshAllProjects = async (): Promise<void> => {
+    try {
+      const response = await fetch("/api/projects", { credentials: "include" });
+      if (!response.ok) return;
+      const projectsData = await response.json();
+      if (!Array.isArray(projectsData)) return;
+      const normalizedProjects = projectsData.map((project: Project) => ({
+        ...project,
+        skills: ensureFirstNodeRules(project.skills || [])
+      }));
+      setProjects(normalizedProjects);
+      console.log(`[refreshAllProjects] ✓ Refreshed ${normalizedProjects.length} projects from server`);
+    } catch (error) {
+      console.error("[refreshAllProjects] Error:", error);
+    }
+  };
+
   const toggleSkillStatus = async (areaId: string, skillId: string) => {
+    console.log(`[toggleSkillStatus] CALLED - areaId: ${areaId}, skillId: ${skillId}, timestamp: ${Date.now()}`);
+    
     const area = areas.find(a => a.id === areaId);
     if (!area) return;
     
@@ -303,8 +684,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
 
     const skillsInLevel = area.skills.filter(s => s.level === skill.level);
-    const isLastNodeOfLevel = skillsInLevel.length > 0 && 
-      skill.y === Math.max(...skillsInLevel.map(s => s.y));
+    const maxLevelPosition = Math.max(...skillsInLevel.map(s => s.levelPosition ?? 0));
+    const isLastNodeOfLevel = skill.levelPosition === maxLevelPosition;
     
     // Check if this is a final node (has star OR is last node by position)
     // Can only be confirmed if all other nodes in level are mastered
@@ -315,6 +696,14 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       if (!allOthersMastered) {
         return;
       }
+    }
+
+    // NEW RULE: Node 1 of the active level cannot be unconfirmed
+    // Node 1 is always auto-completed and is part of the active level presentation
+    const isActiveLevel = skill.level === area.unlockedLevel;
+    if (isActiveLevel && skill.levelPosition === 1 && skill.status === "mastered") {
+      console.log(`[toggleSkillStatus] Cannot unconfirm Node 1 of active level`);
+      return; // Block unconfirm of active Node 1
     }
 
     // Check if next node has a title (except for final nodes)
@@ -341,48 +730,91 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     };
 
     const newStatus = nextStatus[skill.status];
+
+    // Validate unconfirm action: mastered → available
+    // A mastered node can only be unconfirmed if the next node is "available" (not yet confirmed)
+    if (skill.status === "mastered" && newStatus === "available") {
+      console.log('[unconfirm-check] skill.level:', skill.level);
+      console.log('[unconfirm-check] area.unlockedLevel:', area.unlockedLevel);
+      console.log('[unconfirm-check] isFinalNodeByPosition:', isFinalNodeByPosition);
+      console.log('[unconfirm-check] skill.status:', skill.status);
+      console.log('[unconfirm-check] newStatus:', newStatus);
+      console.log('[unconfirm-check] condition:', skill.level === area.unlockedLevel - 1);
+      
+      const nodesSortedByPosition = [...skillsInLevel].sort((a, b) => (a.levelPosition ?? 0) - (b.levelPosition ?? 0));
+      const currentNodeIndex = nodesSortedByPosition.findIndex(s => s.id === skill.id);
+      const nextNode = nodesSortedByPosition[currentNodeIndex + 1];
+
+      // Check if the next node has been mastered (progression beyond this node)
+      if (nextNode && nextNode.status === "mastered") {
+        console.log(`[toggleSkillStatus] Cannot unconfirm - next node is already mastered`);
+        return; // Block unconfirm - the chain has already progressed
+      }
+
+      // Special case: Allow unconfirming final node of level immediately before active level
+      // This will close the active level and reset it to staged state
+      const isFinalNodeOfPreviousLevel = isFinalNodeByPosition && skill.level === area.unlockedLevel - 1;
+      
+      // Check if this is the final node and the next level is unlocked (UNLESS this is the previous level's final node)
+      if (isFinalNodeByPosition && !isFinalNodeOfPreviousLevel && area.unlockedLevel > skill.level) {
+        console.log(`[toggleSkillStatus] Cannot unconfirm final node - next level already unlocked`);
+        return; // Block unconfirm - next level is already open
+      }
+
+      // For non-final nodes: check that next node exists and is available
+      // For final nodes: skip the next-node check (no next node in same level)
+      if (!isFinalNodeByPosition && (!nextNode || (nextNode.status !== "available"))) {
+        console.log(`[toggleSkillStatus] Cannot unconfirm - next node is not available`);
+        return; // Block unconfirm - unexpected state
+      }
+    }
     
-    // Last node of level can open new levels, UNLESS it has the star (isFinalNode === 1)
-    const hasStar = skill.isFinalNode === 1;
-    const canOpenNewLevels = isLastNodeOfLevel && !hasStar;
+    // Determine if the star is active: only when endOfAreaLevel equals this level
+    // isFinalNode: 1 is just an identifier (always on Node 5), not the control
+    const isStarActive = area.endOfAreaLevel === skill.level;
+    const canOpenNewLevels = isLastNodeOfLevel && !isStarActive;
     const isOpeningNewLevel = canOpenNewLevels && newStatus === "mastered";
     const isClosingLevel = canOpenNewLevels && skill.status === "mastered" && newStatus === "available";
 
     try {
-      await fetch(`/api/skills/${skillId}`, {
+      const response = await fetch(`/api/skills/${skillId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
       });
 
-      if (hasStar && newStatus === "mastered") {
+      const updatedLevelSkills = await response.json();
+
+      if (isStarActive && newStatus === "mastered") {
         triggerCompleted();
       } else if (newStatus === "mastered") {
         triggerQuestUpdated();
       }
 
-      // Update state immediately for instant feedback
-      if (isOpeningNewLevel) {
-        const newUnlockedLevel = skill.level + 1;
-        
-        // Update state immediately without waiting
+      // Update skills for this level with the server response
+      // This includes the auto-unlocked next node
+      if (Array.isArray(updatedLevelSkills) && !isOpeningNewLevel) {
         setAreas(prev => prev.map(a => {
           if (a.id !== areaId) return a;
           return {
             ...a,
-            unlockedLevel: newUnlockedLevel,
-            nextLevelToAssign: newUnlockedLevel,
-            skills: a.skills.map(s => 
-              s.id === skillId ? { ...s, status: newStatus } : s
-            )
+            skills: a.skills.map(s => {
+              const updated = updatedLevelSkills.find(u => u.id === s.id);
+              return updated || s;
+            })
           };
         }));
+      }
+
+      // Handle level unlocking with atomic state update
+      if (isOpeningNewLevel) {
+        const newUnlockedLevel = skill.level + 1;
         
-        // Trigger UI feedback immediately
+        // Trigger UI feedback immediately (no state change)
         triggerQuestUpdated();
         setTimeout(() => triggerLevelUp(newUnlockedLevel), 2500);
         
-        // Generate new level in the background without blocking
+        // Generate new level in the background - atomically update state once on completion
         // This endpoint is idempotent, so it's safe to call even if nodes exist
         fetch(`/api/areas/${areaId}/generate-level`, {
           method: "POST",
@@ -393,44 +825,43 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
             console.error("Failed to generate new level");
             return;
           }
+          
           return response.json().then(({ updatedArea, createdSkills }) => {
-            // IMMEDIATE normalization right after receiving from server
-            // Ensure first node NEVER shows as locked
-            const normalizedCreatedSkills = ensureFirstNodeRules(createdSkills);
-            const normalizedMap = new Map(normalizedCreatedSkills.map((s: Skill) => [s.id, s]));
+            // Immediately create the next future level AFTER receiving updated nextLevelToAssign
+            // This maintains the 3 locked levels ahead of the newly visible level
+            const nextFutureLevel = updatedArea.nextLevelToAssign;
             
-            setAreas(prev => prev.map(a => {
-              if (a.id !== areaId) return a;
-              const existingSkillIds = new Set(a.skills.map(s => s.id));
-              const newSkills = normalizedCreatedSkills.filter((s: Skill) => !existingSkillIds.has(s.id));
-              
-              // Ensure first node is ALWAYS mastered and empty title, regardless of any other updates
-              const allSkills = [
-                ...a.skills.map(s => {
-                  // If this skill is from the new unlocked level and is the first node, ensure it's mastered
-                  if (s.level === updatedArea.unlockedLevel && s.levelPosition === 1) {
-                    return { ...s, status: "mastered" as SkillStatus, title: "" };
-                  }
-                  const backendSkill = normalizedMap.get(s.id);
-                  if (backendSkill) return backendSkill;
-                  return s;
-                }),
-                ...newSkills.map(s => {
-                  // Double-check: ensure new first nodes are mastered
-                  if (s.levelPosition === 1) {
-                    return { ...s, status: "mastered" as SkillStatus, title: "" };
-                  }
-                  return s;
-                })
-              ];
-              
-              return {
-                ...a,
-                unlockedLevel: updatedArea.unlockedLevel,
-                nextLevelToAssign: updatedArea.nextLevelToAssign,
-                skills: allSkills
-              };
-            }));
+            // Check if the future level already exists in area skills
+            const futureLeveSkills = area.skills.filter(s => s.level === nextFutureLevel);
+            
+            console.log('[reconfirm] nextFutureLevel:', nextFutureLevel);
+            console.log('[reconfirm] futureLeveSkills.length:', futureLeveSkills?.length);
+            console.log('[reconfirm] skipping generation:', futureLeveSkills?.length > 0);
+            
+            if (futureLeveSkills.length > 0) {
+              // Future level already exists, skip generation
+              console.log(`[toggleSkillStatus] Future level ${nextFutureLevel} already exists, skipping generation`);
+            } else {
+              // Future level doesn't exist, create it
+              console.log(`[toggleSkillStatus] Creating future level ${nextFutureLevel} after unlocking level ${newUnlockedLevel}`);
+              fetch(`/api/areas/${areaId}/generate-level`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ level: nextFutureLevel }),
+              }).then(futureResponse => {
+                if (!futureResponse.ok) {
+                  console.warn(`[toggleSkillStatus] Note: Could not create future level ${nextFutureLevel}, will be created on demand`);
+                } else {
+                  console.log(`[toggleSkillStatus] ✓ Future level ${nextFutureLevel} created`);
+                }
+              }).catch(error => {
+                console.warn(`[toggleSkillStatus] Error creating future level ${nextFutureLevel}:`, error);
+              });
+            }
+            
+            // After level generation completes, refresh entire areas state from server
+            console.log("[toggleSkillStatus] Level generation complete, refreshing areas from server...");
+            return refreshAllAreas();
           });
         }).catch(error => {
           console.error("Error generating new level:", error);
@@ -477,16 +908,138 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
             console.error(`Error locking skill ${s.id}:`, error);
           });
         });
-      } else {
+      } else if (isFinalNodeByPosition && skill.status === "mastered" && newStatus === "available") {
+        // NEW RULE 2: Unconfirming the final node of a completed level closes the next level
+        // If this is a final node being unconfirmed, hide the next level and reset its skills
+        console.log(`[toggleSkillStatus] Final node unconfirmed - closing next level`);
+        
+        const nextLevelToClose = skill.level + 1;
+        
+        // Update state immediately: close next level and reset its skills
         setAreas(prev => prev.map(a => {
           if (a.id !== areaId) return a;
           return {
             ...a,
-            skills: a.skills.map(s => 
-              s.id === skillId ? { ...s, status: newStatus } : s
-            )
+            unlockedLevel: skill.level,
+            nextLevelToAssign: skill.level,
+            skills: a.skills.map(s => {
+              if (s.id === skillId) return { ...s, status: newStatus };
+              // Reset next level skills to initial state
+              if (s.level === nextLevelToClose) {
+                if (s.levelPosition === 1) {
+                  return { ...s, status: "mastered" as SkillStatus };
+                } else if (s.levelPosition === 2) {
+                  return { ...s, status: "available" as SkillStatus };
+                } else {
+                  return { ...s, status: "locked" as SkillStatus };
+                }
+              }
+              return s;
+            })
           };
         }));
+        
+        // Send updates to server without blocking
+        fetch(`/api/areas/${areaId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            unlockedLevel: skill.level,
+            nextLevelToAssign: skill.level
+          }),
+        }).catch(error => {
+          console.error("Error closing next level:", error);
+        });
+        
+        // Reset skills of the next level on server
+        const nextLevelSkills = area.skills.filter(s => s.level === nextLevelToClose);
+        nextLevelSkills.forEach(s => {
+          let newStatus: SkillStatus = "locked";
+          if (s.levelPosition === 1) {
+            newStatus = "mastered";
+          } else if (s.levelPosition === 2) {
+            newStatus = "available";
+          }
+          fetch(`/api/skills/${s.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: newStatus }),
+          }).catch(error => {
+            console.error(`Error resetting skill ${s.id}:`, error);
+          });
+        });
+      } else if (isFinalNodeByPosition && skill.levelPosition === 5 && skill.level === area.unlockedLevel - 1 && skill.status === "mastered" && newStatus === "available") {
+        // NEW RULE: Unconfirming final node of level immediately before active level
+        // Hide the current active level and reset it to staged state
+        console.log(`[toggleSkillStatus] Final node of previous level unconfirmed - hiding current active level`);
+        
+        const levelToHide = area.unlockedLevel;
+        const nextLevelToAssignValue = area.nextLevelToAssign; // Preserve current value
+        
+        console.log('[unconfirm] area.nextLevelToAssign before setAreas:', area.nextLevelToAssign);
+        console.log('[unconfirm] preservedNextLevelToAssign:', nextLevelToAssignValue);
+        
+        // Update state immediately: hide next level and reset its skills to staged state
+        setAreas(prev => prev.map(a => {
+          if (a.id !== areaId) return a;
+          return {
+            ...a,
+            unlockedLevel: skill.level,
+            nextLevelToAssign: nextLevelToAssignValue, // Explicitly preserve
+            skills: a.skills.map(s => {
+              if (s.id === skillId) return { ...s, status: newStatus };
+              // Reset now-hidden level skills to initial staged state
+              if (s.level === levelToHide) {
+                if (s.levelPosition === 1) {
+                  return { ...s, status: "mastered" as SkillStatus };
+                } else if (s.levelPosition === 2) {
+                  return { ...s, status: "available" as SkillStatus };
+                } else {
+                  return { ...s, status: "locked" as SkillStatus };
+                }
+              }
+              return s;
+            })
+          };
+        }));
+        
+        // Send updates to server and process response
+        console.log('[unconfirm] Sending PATCH with:', { unlockedLevel: skill.level, nextLevelToAssign: area.nextLevelToAssign });
+        fetch(`/api/areas/${areaId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            unlockedLevel: skill.level,
+            nextLevelToAssign: area.nextLevelToAssign
+          }),
+        }).then(response => {
+          if (!response.ok) {
+            console.error("Error updating area on server");
+            return;
+          }
+          // Response processed and state updated via the immediate setAreas() call above
+          console.log("[toggleSkillStatus] Area unlockedLevel updated on server");
+        }).catch(error => {
+          console.error("Error unlocking previous level:", error);
+        });
+        
+        // Reset skills of the now-hidden level on server
+        const levelToHideSkills = area.skills.filter(s => s.level === levelToHide);
+        levelToHideSkills.forEach(s => {
+          let resetStatus: SkillStatus = "locked";
+          if (s.levelPosition === 1) {
+            resetStatus = "mastered";
+          } else if (s.levelPosition === 2) {
+            resetStatus = "available";
+          }
+          fetch(`/api/skills/${s.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: resetStatus }),
+          }).catch(error => {
+            console.error(`Error resetting skill ${s.id}:`, error);
+          });
+        });
       }
     } catch (error) {
       console.error("Error toggling skill status:", error);
@@ -595,45 +1148,28 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
             console.error("Failed to generate new level");
             return;
           }
-          return response.json().then(({ updatedProject, createdSkills }) => {
-            // IMMEDIATE normalization right after receiving from server
-            // Ensure first node NEVER shows as locked
-            const normalizedCreatedSkills = ensureFirstNodeRules(createdSkills);
-            const normalizedMap = new Map(normalizedCreatedSkills.map((s: Skill) => [s.id, s]));
-            
-            setProjects(prev => prev.map(p => {
-              if (p.id !== projectId) return p;
-              const existingSkillIds = new Set(p.skills.map(s => s.id));
-              const newSkills = normalizedCreatedSkills.filter((s: Skill) => !existingSkillIds.has(s.id));
-              
-              // Ensure first node is ALWAYS mastered and empty title, regardless of any other updates
-              const allSkills = [
-                ...p.skills.map(s => {
-                  // If this skill is from the new unlocked level and is the first node, ensure it's mastered
-                  if (s.level === updatedProject.unlockedLevel && s.levelPosition === 1) {
-                    return { ...s, status: "mastered" as SkillStatus, title: "" };
-                  }
-                  const backendSkill = normalizedMap.get(s.id);
-                  if (backendSkill) return backendSkill;
-                  return s;
-                }),
-                ...newSkills.map(s => {
-                  // Double-check: ensure new first nodes are mastered
-                  if (s.levelPosition === 1) {
-                    return { ...s, status: "mastered" as SkillStatus, title: "" };
-                  }
-                  return s;
-                })
-              ];
-              
-              return {
-                ...p,
-                unlockedLevel: updatedProject.unlockedLevel,
-                nextLevelToAssign: updatedProject.nextLevelToAssign,
-                skills: allSkills
-              };
-            }));
+          
+          // Also create the next future level (newUnlockedLevel + 3) in the background
+          // This maintains the 3 locked levels ahead of the newly visible level
+          const nextFutureLevel = newUnlockedLevel + 3;
+          console.log(`[toggleProjectSkillStatus] Creating future level ${nextFutureLevel} after unlocking level ${newUnlockedLevel}`);
+          fetch(`/api/projects/${projectId}/generate-level`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ level: nextFutureLevel }),
+          }).then(futureResponse => {
+            if (!futureResponse.ok) {
+              console.warn(`[toggleProjectSkillStatus] Note: Could not create future level ${nextFutureLevel}, will be created on demand`);
+            } else {
+              console.log(`[toggleProjectSkillStatus] ✓ Future level ${nextFutureLevel} created`);
+            }
+          }).catch(error => {
+            console.warn(`[toggleProjectSkillStatus] Error creating future level ${nextFutureLevel}:`, error);
           });
+          
+          // After level generation completes, refresh entire projects state from server
+          console.log("[toggleProjectSkillStatus] Level generation complete, refreshing projects from server...");
+          return refreshAllProjects();
         }).catch(error => {
           console.error("Error generating new level:", error);
         });
@@ -860,12 +1396,17 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
   };
 
   const updateSkill = async (areaId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number }) => {
+    console.log('[updateSkill] Called with skillId:', skillId, 'areaId:', areaId, 'updates:', updates);
     try {
-      await fetch(`/api/skills/${skillId}`, {
+      const response = await fetch(`/api/skills/${skillId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updates),
       });
+      console.log('[updateSkill] Response status:', response.status);
+
+      const data = await response.json();
+      console.log('[updateSkill] Response data:', data);
 
       setAreas(prev => prev.map(area => {
         if (area.id !== areaId) return area;
@@ -881,44 +1422,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
-  const createLockedSkill = async (areaId: string, level: number, title: string) => {
-    try {
-      const area = areas.find(a => a.id === areaId);
-      if (!area) return;
-
-      const newSkill: Skill = {
-        id: `locked_${areaId}_${level}_${Date.now()}`,
-        areaId,
-        projectId: undefined,
-        parentSkillId: undefined,
-        title,
-        description: "",
-        feedback: "",
-        status: "locked",
-        x: 50,
-        y: 200 + (area.skills.filter(s => s.level === level).length * 150),
-        dependencies: [],
-        manualLock: 0,
-        isFinalNode: 0,
-        level,
-        levelPosition: area.skills.filter(s => s.level === level).length + 1,
-        experiencePoints: 0
-      };
-
-      await fetch(`/api/skills`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newSkill),
-      });
-
-      setAreas(prev => prev.map(a => 
-        a.id === areaId ? { ...a, skills: [...a.skills, newSkill] } : a
-      ));
-    } catch (error) {
-      console.error("Error creating locked skill:", error);
-    }
-  };
-
+  // Renamed: now uses updateSkill instead
   const moveSkill = async (areaId: string, skillId: string, direction: "up" | "down") => {
     const area = areas.find(a => a.id === areaId);
     if (!area) return;
@@ -1172,44 +1676,6 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
-  const createLockedProjectSkill = async (projectId: string, level: number, title: string) => {
-    try {
-      const project = projects.find(p => p.id === projectId);
-      if (!project) return;
-
-      const newSkill: Skill = {
-        id: `locked_${projectId}_${level}_${Date.now()}`,
-        areaId: undefined,
-        projectId,
-        parentSkillId: undefined,
-        title,
-        description: "",
-        feedback: "",
-        status: "locked",
-        x: 50,
-        y: 200 + (project.skills.filter(s => s.level === level).length * 150),
-        dependencies: [],
-        manualLock: 0,
-        isFinalNode: 0,
-        level,
-        levelPosition: project.skills.filter(s => s.level === level).length + 1,
-        experiencePoints: 0
-      };
-
-      await fetch(`/api/skills`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newSkill),
-      });
-
-      setProjects(prev => prev.map(p => 
-        p.id === projectId ? { ...p, skills: [...p.skills, newSkill] } : p
-      ));
-    } catch (error) {
-      console.error("Error creating locked project skill:", error);
-    }
-  };
-
   const moveProjectSkill = async (projectId: string, skillId: string, direction: "up" | "down") => {
     const project = projects.find(p => p.id === projectId);
     if (!project) return;
@@ -1308,6 +1774,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
   const createArea = async (name: string, description: string, icon: string) => {
     try {
       const id = name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+      console.log(`[createArea] Creating area with id="${id}", name="${name}"`);
+      
       const response = await fetch("/api/areas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1323,27 +1791,46 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       });
       
       if (!response.ok) {
-        throw new Error("Failed to create area");
+        const errorText = await response.text();
+        throw new Error(`Failed to create area: ${response.status} ${errorText}`);
       }
       
       const newArea = await response.json();
+      console.log(`[createArea] Area created with:`, { id: newArea.id, name: newArea.name, skills: newArea.skills?.length || 0 });
       
-      const generateResponse = await fetch(`/api/areas/${newArea.id}/generate-level`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ level: 1 }),
-      });
-      
-      if (generateResponse.ok) {
-        const { createdSkills } = await generateResponse.json();
-        setAreas(prev => [...prev, { ...newArea, skills: createdSkills }]);
+      // Important: Only try to generate level if area has no skills yet
+      if (!newArea.skills || newArea.skills.length === 0) {
+        console.log(`[createArea] No skills in new area, calling generate-level...`);
+        const generateResponse = await fetch(`/api/areas/${newArea.id}/generate-level`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ level: 1 }),
+        });
+        
+        console.log(`[createArea] Generate level response status: ${generateResponse.status}`);
+        
+        if (generateResponse.ok) {
+          const data = await generateResponse.json();
+          console.log(`[createArea] Generated level data:`, { 
+            createdSkills: data.createdSkills?.length || 0,
+            updatedArea: data.updatedArea?.id 
+          });
+          const createdSkills = data.createdSkills || [];
+          setAreas(prev => [...prev, { ...newArea, skills: createdSkills }]);
+          console.log(`[createArea] ✓ Area created with ${createdSkills.length} initial skills`);
+        } else {
+          const errorText = await generateResponse.text();
+          console.error(`[createArea] ✗ Generate level failed with status ${generateResponse.status}: ${errorText}`);
+          setAreas(prev => [...prev, { ...newArea, skills: [] }]);
+        }
       } else {
-        setAreas(prev => [...prev, { ...newArea, skills: [] }]);
+        console.log(`[createArea] Area already has skills (${newArea.skills.length}), skipping generate-level`);
+        setAreas(prev => [...prev, newArea]);
       }
       
       setActiveAreaId(newArea.id);
     } catch (error) {
-      console.error("Error creating area:", error);
+      console.error("✗ Error creating area:", error);
     }
   };
 
@@ -2428,26 +2915,16 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         });
       }
 
-      setAreas(prev => prev.map(a => {
-        if (a.id !== areaId) return a;
-        return {
-          ...a,
-          skills: [
-            ...a.skills.map(s => {
-              let updated = { ...s };
-              if (s.y > skill.y) {
-                updated = { ...updated, y: s.y + 150, levelPosition: (s.levelPosition || 0) + 1 };
-              }
-              if (finalNode && s.id === finalNode.id && finalNode.dependencies.includes(skill.id)) {
-                const updatedDeps = s.dependencies.map(d => d === skill.id ? newSkill.id : d);
-                updated = { ...updated, dependencies: updatedDeps };
-              }
-              return updated;
-            }),
-            newSkill
-          ]
-        };
-      }));
+      // Recalculate final nodes for the affected level
+      await fetch(`/api/areas/${areaId}/recalculate-level-final-nodes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ level: skill.level }),
+      });
+
+      // After all operations complete, refresh entire area from server
+      console.log("[duplicateSkill] Duplication complete, refreshing area from server...");
+      await refreshAllAreas();
     } catch (error) {
       console.error("Error duplicating skill:", error);
     }
@@ -2507,26 +2984,16 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         });
       }
 
-      setProjects(prev => prev.map(p => {
-        if (p.id !== projectId) return p;
-        return {
-          ...p,
-          skills: [
-            ...p.skills.map(s => {
-              let updated = { ...s };
-              if (s.y > skill.y) {
-                updated = { ...updated, y: s.y + 150, levelPosition: (s.levelPosition || 0) + 1 };
-              }
-              if (finalNode && s.id === finalNode.id && finalNode.dependencies.includes(skill.id)) {
-                const updatedDeps = s.dependencies.map(d => d === skill.id ? newSkill.id : d);
-                updated = { ...updated, dependencies: updatedDeps };
-              }
-              return updated;
-            }),
-            newSkill
-          ]
-        };
-      }));
+      // Recalculate final nodes for the affected level
+      await fetch(`/api/projects/${projectId}/recalculate-level-final-nodes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ level: skill.level }),
+      });
+
+      // After all operations complete, refresh entire projects from server
+      console.log("[duplicateProjectSkill] Duplication complete, refreshing projects from server...");
+      await refreshAllProjects();
     } catch (error) {
       console.error("Error duplicating project skill:", error);
     }
@@ -2599,6 +3066,15 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         }),
         newSkill
       ]);
+
+      // Recalculate final nodes for the affected level
+      if (activeParentSkillId) {
+        await fetch(`/api/sub-skills/${activeParentSkillId}/recalculate-level-final-nodes`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ level: skill.level }),
+        });
+      }
     } catch (error) {
       console.error("Error duplicating sub-skill:", error);
     }
@@ -3160,31 +3636,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         return;
       }
 
-      const { movedSkill, repositionedSourceSkills, repositionedTargetSkills } = await response.json();
-
-      // Update local state: filter moved skill, apply repositioning, add back moved skill
-      setAreas(prev => prev.map(a => {
-        if (a.id !== areaId) return a;
-        
-        // Build lookup maps for efficient O(1) repositioned skill lookup
-        const repositionedMap = new Map<string, any>();
-        repositionedSourceSkills?.forEach((s: any) => repositionedMap.set(s.id, s));
-        repositionedTargetSkills?.forEach((s: any) => repositionedMap.set(s.id, s));
-        
-        // Step 1: Remove the moved skill from array
-        let updatedSkills = a.skills.filter(s => s.id !== skillId);
-        
-        // Step 2: Apply repositioning from both levels using Map lookup
-        updatedSkills = updatedSkills.map(s => repositionedMap.get(s.id) || s);
-        
-        // Step 3: Add the moved skill back with new level
-        updatedSkills = [...updatedSkills, movedSkill];
-
-        return {
-          ...a,
-          skills: updatedSkills
-        };
-      }));
+      // After successful move, refresh entire area from server to ensure consistency
+      console.log("[moveSkillToLevel] Move complete, refreshing area from server...");
+      await refreshAllAreas();
     } catch (error) {
       console.error("Error moving skill to level:", error);
     }
@@ -3217,20 +3671,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         return;
       }
 
-      const { updatedSkill, updatedNeighbor } = await response.json();
-
-      // Update local state with swapped Y positions
-      setAreas(prev => prev.map(a => {
-        if (a.id !== areaId) return a;
-        return {
-          ...a,
-          skills: a.skills.map(s => {
-            if (s.id === updatedSkill.id) return updatedSkill;
-            if (s.id === updatedNeighbor.id) return updatedNeighbor;
-            return s;
-          })
-        };
-      }));
+      // After successful reorder, refresh entire area from server to ensure consistency
+      console.log("[reorderSkillWithinLevel] Reorder complete, refreshing area from server...");
+      await refreshAllAreas();
     } catch (error) {
       console.error("Error reordering skill within level:", error);
     }
@@ -3262,31 +3705,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         return;
       }
 
-      const { movedSkill, repositionedSourceSkills, repositionedTargetSkills } = await response.json();
-
-      // Update local state: filter moved skill, apply repositioning, add back moved skill
-      setProjects(prev => prev.map(p => {
-        if (p.id !== projectId) return p;
-        
-        // Build lookup maps for efficient O(1) repositioned skill lookup
-        const repositionedMap = new Map<string, any>();
-        repositionedSourceSkills?.forEach((s: any) => repositionedMap.set(s.id, s));
-        repositionedTargetSkills?.forEach((s: any) => repositionedMap.set(s.id, s));
-        
-        // Step 1: Remove the moved skill from array
-        let updatedSkills = p.skills.filter(s => s.id !== skillId);
-        
-        // Step 2: Apply repositioning from both levels using Map lookup
-        updatedSkills = updatedSkills.map(s => repositionedMap.get(s.id) || s);
-        
-        // Step 3: Add the moved skill back with new level
-        updatedSkills = [...updatedSkills, movedSkill];
-
-        return {
-          ...p,
-          skills: updatedSkills
-        };
-      }));
+      // After successful move, refresh entire projects from server to ensure consistency
+      console.log("[moveProjectSkillToLevel] Move complete, refreshing projects from server...");
+      await refreshAllProjects();
     } catch (error) {
       console.error("Error moving project skill to level:", error);
     }
@@ -3319,20 +3740,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         return;
       }
 
-      const { updatedSkill, updatedNeighbor } = await response.json();
-
-      // Update local state with swapped Y positions
-      setProjects(prev => prev.map(p => {
-        if (p.id !== projectId) return p;
-        return {
-          ...p,
-          skills: p.skills.map(s => {
-            if (s.id === updatedSkill.id) return updatedSkill;
-            if (s.id === updatedNeighbor.id) return updatedNeighbor;
-            return s;
-          })
-        };
-      }));
+      // After successful reorder, refresh entire projects from server to ensure consistency
+      console.log("[reorderProjectSkillWithinLevel] Reorder complete, refreshing projects from server...");
+      await refreshAllProjects();
     } catch (error) {
       console.error("Error reordering project skill within level:", error);
     }
@@ -3464,12 +3874,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       toggleProjectSkillStatus,
       addSkill,
       updateSkill,
-      createLockedSkill,
       deleteSkill,
       toggleLock,
       moveSkill,
       updateProjectSkill,
-      createLockedProjectSkill,
       deleteProjectSkill,
       toggleProjectLock,
       moveProjectSkill,
@@ -3549,6 +3957,70 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       {children}
     </SkillTreeContext.Provider>
   );
+}
+
+/**
+ * Calculate the rolling 5-level window for the Skill Designer.
+ * Window shows: [active-1, active, active+1, active+2, active+3]
+ * At end-of-area with fewer than 5 levels, shows last 5 available levels.
+ * 
+ * @param unlockedLevel The currently unlocked (active) level
+ * @param nextLevelToAssign The next level to create (max level + 1)
+ * @param endOfAreaLevel If set, marks the last available level (no more generation)
+ * @returns Array of level numbers to display in the window
+ */
+/**
+ * Calculates which levels should be displayed in the Designer accordion
+ * Returns a 5-level window centered on the unlocked level
+ * 
+ * @param unlockedLevel The current playable level (what user has achieved)
+ * @param nextLevelToAssign The next level number to create (max level + 1)
+ * @param endOfAreaLevel Optional cap on the maximum level for this area
+ * 
+ * IMPORTANT: Window calculation uses the SAME visibility rule as SkillDesigner
+ * Maximum visible = endOfAreaLevel ?? (nextLevelToAssign + 2)
+ * This ensures consistency: levels beyond this show as locked in both views
+ * 
+ * Example: unlockedLevel=2, nextLevelToAssign=5
+ *   -> maxLevelInDesigner = 5 + 2 = 7
+ *   -> Window = [1, 2, 3, 4, 5] (5 levels centered on unlocked)
+ *   -> Levels 6-7 can be created but are shown as locked/future
+ */
+export function calculateDesignerLevelWindow(
+  unlockedLevel: number,
+  nextLevelToAssign: number,
+  endOfAreaLevel?: number
+): number[] {
+  // Determine the maximum level visible in Designer
+  // Consistent with SkillDesigner visibility: endOfAreaLevel ?? (nextLevelToAssign + 2)
+  const maxLevelInDesigner = endOfAreaLevel ?? (nextLevelToAssign + 2);
+  
+  // Calculate the ideal window: [unlockedLevel-1, unlockedLevel, unlockedLevel+1, unlockedLevel+2, unlockedLevel+3]
+  let windowStart = Math.max(1, unlockedLevel - 1);
+  let windowEnd = unlockedLevel + 3;
+  
+  // If total available levels < 5, adjust to show last 5 or all available
+  const totalAvailable = maxLevelInDesigner;
+  if (totalAvailable < 5) {
+    // Show all available levels if less than 5
+    windowStart = 1;
+    windowEnd = totalAvailable;
+  } else {
+    // Ensure window doesn't exceed max available level
+    windowEnd = Math.min(windowEnd, maxLevelInDesigner);
+    // If adjusted end is less than 5 levels, shift window back to ensure 5 levels
+    if (windowEnd - windowStart + 1 < 5) {
+      windowStart = Math.max(1, windowEnd - 4);
+    }
+  }
+  
+  console.log('[window] unlockedLevel:', unlockedLevel, 'nextLevelToAssign:', nextLevelToAssign, 'maxLevelInDesigner:', maxLevelInDesigner, 'windowStart:', windowStart, 'windowEnd:', windowEnd);
+  
+  const levels: number[] = [];
+  for (let i = windowStart; i <= windowEnd; i++) {
+    levels.push(i);
+  }
+  return levels;
 }
 
 export function useSkillTree() {

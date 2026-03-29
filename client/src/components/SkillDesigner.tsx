@@ -1,12 +1,12 @@
 import { useState, useRef } from "react";
-import { useSkillTree } from "@/lib/skill-context";
+import { useSkillTree, calculateDesignerLevelWindow } from "@/lib/skill-context";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ChevronUp, ChevronDown, Layers } from "lucide-react";
+import { ChevronUp, ChevronDown, Layers, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SkillDesignerProps {
@@ -15,7 +15,7 @@ interface SkillDesignerProps {
 }
 
 export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
-  const { areas, projects, activeAreaId, activeProjectId, updateSkill, updateProjectSkill, createLockedSkill, createLockedProjectSkill, updateLevelSubtitle, updateProjectLevelSubtitle, moveSkillToLevel, moveProjectSkillToLevel, reorderSkillWithinLevel, reorderProjectSkillWithinLevel } = useSkillTree();
+  const { areas, projects, activeAreaId, activeProjectId, updateSkill, updateProjectSkill, updateLevelSubtitle, updateProjectLevelSubtitle, moveSkillToLevel, moveProjectSkillToLevel, reorderSkillWithinLevel, reorderProjectSkillWithinLevel } = useSkillTree();
   const [editingSkillId, setEditingSkillId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
   const [editingAreaId, setEditingAreaId] = useState<string | null>(null);
@@ -53,20 +53,11 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
 
   const handleSaveName = async () => {
     if (editingSkillId && editingName.trim()) {
-      // Si es un nodo bloqueado nuevo, crear uno nuevo
-      if (isLockedNode && editingLevel && editingSkillId.startsWith("locked_")) {
-        if (editingAreaId) {
-          await createLockedSkill(editingAreaId, editingLevel, editingName);
-        } else if (editingProjectId) {
-          await createLockedProjectSkill(editingProjectId, editingLevel, editingName);
-        }
-      } else {
-        // Si es un nodo existente, actualizar
-        if (editingAreaId) {
-          updateSkill(editingAreaId, editingSkillId, { title: editingName });
-        } else if (editingProjectId) {
-          updateProjectSkill(editingProjectId, editingSkillId, { title: editingName });
-        }
+      // Update existing skill
+      if (editingAreaId) {
+        updateSkill(editingAreaId, editingSkillId, { title: editingName });
+      } else if (editingProjectId) {
+        updateProjectSkill(editingProjectId, editingSkillId, { title: editingName });
       }
     }
     setEditingSkillId(null);
@@ -131,9 +122,13 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
   };
 
   const canMoveUp = (skillsInLevel: any[], skillId: string): boolean => {
+    const skill = skillsInLevel.find(s => s.id === skillId);
+    if (!skill) return false;
+    // Cannot move up if at levelPosition 2 (first visible node after Node 1)
+    if (skill.levelPosition === 2) return false;
+    
     const sorted = [...skillsInLevel].sort((a, b) => a.y - b.y);
     const index = sorted.findIndex(s => s.id === skillId);
-    // Can move up if not at the top of the list
     return index > 0;
   };
 
@@ -159,8 +154,9 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
             {/* Areas */}
             {areas.map((area) => {
               const maxLevel = Math.max(...area.skills.map((s) => s.level));
-              const levelsToShow = Array.from({ length: maxLevel + 3 }, (_, i) => i + 1);
-              const nodesInLastLevel = area.skills.filter((s) => s.level === maxLevel).length || 2;
+              const levelsToShow = calculateDesignerLevelWindow(area.unlockedLevel, area.nextLevelToAssign, area.endOfAreaLevel);
+              const visibleInSkillTree = area.endOfAreaLevel ?? (area.nextLevelToAssign + 2);
+              const nodesInLastLevel = 4; // Show only 4 editable nodes (positions 2-5, hiding visual node)
               
               return (
                 <AccordionItem key={area.id} value={`area-${area.id}`}>
@@ -173,13 +169,14 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                       {levelsToShow.map((level) => {
                         const subtitle = area.levelSubtitles?.[level] || "";
                         const subtitleDescription = area.levelSubtitleDescriptions?.[level] || "";
-                        const isBlocked = level > maxLevel;
+                        const isBlocked = level > area.unlockedLevel;
+                        const isNotYetVisibleInSkillTree = level > visibleInSkillTree;
                         
                         return (
-                        <AccordionItem key={`${area.id}-level-${level}`} value={`${area.id}-level-${level}`}>
+                        <AccordionItem key={`${area.id}-level-${level}`} value={`${area.id}-level-${level}`} className={cn(isBlocked && "grayscale")}>
                           <AccordionTrigger className="hover:no-underline">
                             <span 
-                              className={cn(isBlocked && "text-muted-foreground/50 cursor-pointer hover:text-foreground")}
+                              className={cn(isBlocked && "text-muted-foreground/50 cursor-pointer hover:text-foreground", isNotYetVisibleInSkillTree && "text-amber-600 dark:text-amber-500")}
                               onClick={(e) => {
                                 if (isBlocked) {
                                   e.stopPropagation();
@@ -189,6 +186,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                             >
                               Nivel {level}{subtitle && `: ${subtitle}`}
                               {isBlocked && " (Bloqueado)"}
+                              {isNotYetVisibleInSkillTree && !isBlocked && <Lock className="inline-block ml-1.5 w-3.5 h-3.5" />}
                             </span>
                           </AccordionTrigger>
                           <AccordionContent>
@@ -198,30 +196,34 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                   const skillsInLevel = area.skills
                                     .filter((s) => s.level === level)
                                     .sort((a, b) => a.y - b.y)
-                                    .filter((s, index) => {
-                                      const noTitle = !s.title || s.title.toLowerCase().includes("challenge") || s.title.toLowerCase().includes("objective quest");
-                                      return !noTitle || index !== 0;
-                                    });
+                                    .filter((s) => s.isAutoComplete !== 1 && s.levelPosition !== 1);
                                   
-                                  return skillsInLevel.map((skill, idx) => {
+                                  return skillsInLevel.map((skill) => {
                                     const canUp = canMoveUp(skillsInLevel, skill.id);
                                     const canDown = canMoveDown(skillsInLevel, skill.id);
                                     const availableLevels = getAvailableLevelsForMove(level, maxLevel);
-                                    const isFirstNode = skill.levelPosition === 1;
                                     
                                     return (
                                       <div
                                         key={skill.id}
                                         className={cn("p-2 rounded border border-border bg-card/50 hover:bg-card transition-colors", skill.status === "locked" && "opacity-60")}
-                                        onContextMenu={(e) => !isFirstNode && handleContextMenu(e, skill.id, area.id, null, level)}
+                                        onContextMenu={(e) => handleContextMenu(e, skill.id, area.id, null, level)}
                                       >
                                         <div className="flex items-center gap-2 justify-between">
-                                          <div className="flex items-center gap-2 flex-1">
-                                            <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{!skill.title || skill.title.toLowerCase().includes("challenge") || skill.title.toLowerCase().includes("objective quest") ? "-" : skill.title}</div>
+                                          <div 
+                                            className="flex items-center gap-2 flex-1 cursor-pointer"
+                                            onClick={() => {
+                                              setEditingSkillId(skill.id);
+                                              setEditingName(skill.title || "");
+                                              setEditingAreaId(area.id);
+                                              setEditingProjectId(null);
+                                              setEditingLevel(level);
+                                            }}
+                                          >
+                                            <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{!skill.title ? `Nodo ${skill.levelPosition}` : skill.title}</div>
                                             {skill.status === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
                                           </div>
-                                          {!isFirstNode && (
-                                            <div className="flex items-center gap-1">
+                                          <div className="flex items-center gap-1">
                                               <Button 
                                                 size="sm" 
                                                variant="ghost" 
@@ -274,13 +276,12 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                 </Popover>
                                               )}
                                             </div>
-                                          )}
+                                          </div>
+                                          <div className="text-xs text-muted-foreground">
+                                            {skill.status === "mastered" && "✓ Completado"}
+                                            {skill.status === "locked" && "Bloqueado"}
+                                          </div>
                                         </div>
-                                        <div className="text-xs text-muted-foreground">
-                                          {skill.status === "mastered" && "✓ Completado"}
-                                          {skill.status === "locked" && "Bloqueado"}
-                                        </div>
-                                      </div>
                                     );
                                   });
                                 })()
@@ -316,8 +317,9 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
               .filter((p) => !p.questType || p.questType === "main")
               .map((project) => {
                 const maxLevel = Math.max(...project.skills.map((s) => s.level));
-                const levelsToShow = Array.from({ length: maxLevel + 3 }, (_, i) => i + 1);
-                const nodesInLastLevel = project.skills.filter((s) => s.level === maxLevel).length || 2;
+                const levelsToShow = calculateDesignerLevelWindow(project.unlockedLevel, project.nextLevelToAssign, project.endOfAreaLevel);
+                const visibleInSkillTree = project.endOfAreaLevel ?? (project.nextLevelToAssign + 2);
+                const nodesInLastLevel = 4; // Show only 4 editable nodes (positions 2-5, hiding visual node)
                 
                 return (
                   <AccordionItem key={project.id} value={`project-${project.id}`}>
@@ -329,22 +331,23 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                         {levelsToShow.map((level) => {
                           const subtitle = project.levelSubtitles?.[level] || "";
                           const subtitleDescription = project.levelSubtitleDescriptions?.[level] || "";
-                          const isBlocked = level > maxLevel;
-                          
+                          const isBlocked = level > project.unlockedLevel;
+                          const isNotYetVisibleInSkillTree = level > visibleInSkillTree;
                           return (
-                          <AccordionItem key={`${project.id}-level-${level}`} value={`${project.id}-level-${level}`}>
+                          <AccordionItem key={`${project.id}-level-${level}`} value={`${project.id}-level-${level}`} className={cn(isBlocked && "grayscale")}>
                             <AccordionTrigger className="hover:no-underline">
                               <span 
-                                className={cn(isBlocked && "text-muted-foreground/50 cursor-pointer hover:text-foreground")}
-                                onClick={(e) => {
-                                  if (isBlocked) {
-                                    e.stopPropagation();
-                                    handleEditLevelSubtitle(level, subtitle, subtitleDescription, null, project.id);
-                                  }
-                                }}
-                              >
-                                Nivel {level}{subtitle && `: ${subtitle}`}
-                                {isBlocked && " (Bloqueado)"}
+                                  className={cn(isBlocked && "text-muted-foreground/50 cursor-pointer hover:text-foreground", isNotYetVisibleInSkillTree && "text-amber-600 dark:text-amber-500")}
+                                  onClick={(e) => {
+                                    if (isBlocked) {
+                                      e.stopPropagation();
+                                      handleEditLevelSubtitle(level, subtitle, subtitleDescription, null, project.id);
+                                    }
+                                  }}
+                                >
+                                  Nivel {level}{subtitle && `: ${subtitle}`}
+                                  {isBlocked && " (Bloqueado)"}
+                                  {isNotYetVisibleInSkillTree && !isBlocked && <Lock className="inline-block ml-1.5 w-3.5 h-3.5" />}
                               </span>
                             </AccordionTrigger>
                             <AccordionContent>
@@ -354,30 +357,34 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                     const skillsInLevel = project.skills
                                       .filter((s) => s.level === level)
                                       .sort((a, b) => a.y - b.y)
-                                      .filter((s, index) => {
-                                        const noTitle = !s.title || s.title.toLowerCase().includes("challenge") || s.title.toLowerCase().includes("objective quest");
-                                        return !noTitle || index !== 0;
-                                      });
+                                      .filter((skill) => skill.isAutoComplete !== 1 && skill.levelPosition !== 1);
                                     
-                                    return skillsInLevel.map((skill, idx) => {
+                                    return skillsInLevel.map((skill) => {
                                       const canUp = canMoveUp(skillsInLevel, skill.id);
                                       const canDown = canMoveDown(skillsInLevel, skill.id);
                                       const availableLevels = getAvailableLevelsForMove(level, maxLevel);
-                                      const isFirstNode = skill.levelPosition === 1;
                                       
                                       return (
                                         <div
                                           key={skill.id}
                                           className={cn("p-2 rounded border border-border bg-card/50 hover:bg-card transition-colors", skill.status === "locked" && "opacity-60")}
-                                          onContextMenu={(e) => !isFirstNode && handleContextMenu(e, skill.id, null, project.id, level)}
+                                          onContextMenu={(e) => handleContextMenu(e, skill.id, null, project.id, level)}
                                         >
                                           <div className="flex items-center gap-2 justify-between">
-                                            <div className="flex items-center gap-2 flex-1">
-                                              <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{!skill.title || skill.title.toLowerCase().includes("challenge") || skill.title.toLowerCase().includes("objective quest") ? "-" : skill.title}</div>
+                                            <div 
+                                              className="flex items-center gap-2 flex-1 cursor-pointer"
+                                              onClick={() => {
+                                                setEditingSkillId(skill.id);
+                                                setEditingName(skill.title || "");
+                                                setEditingAreaId(null);
+                                                setEditingProjectId(project.id);
+                                                setEditingLevel(level);
+                                              }}
+                                            >
+                                              <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{!skill.title ? `Nodo ${skill.levelPosition}` : skill.title}</div>
                                               {skill.status === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
                                             </div>
-                                            {!isFirstNode && (
-                                              <div className="flex items-center gap-1">
+                                            <div className="flex items-center gap-1">
                                                 <Button 
                                                   size="sm" 
                                                   variant="ghost" 
@@ -430,7 +437,6 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                   </Popover>
                                                 )}
                                               </div>
-                                            )}
                                           </div>
                                           <div className="text-xs text-muted-foreground">
                                             {skill.status === "mastered" && "✓ Completado"}
@@ -470,8 +476,9 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
               .filter((p) => p.questType === "side")
               .map((project) => {
                 const maxLevel = Math.max(...project.skills.map((s) => s.level));
-                const levelsToShow = Array.from({ length: maxLevel + 3 }, (_, i) => i + 1);
-                const nodesInLastLevel = project.skills.filter((s) => s.level === maxLevel).length || 2;
+                const levelsToShow = calculateDesignerLevelWindow(project.unlockedLevel, project.nextLevelToAssign, project.endOfAreaLevel);
+                const visibleInSkillTree = project.endOfAreaLevel ?? (project.nextLevelToAssign + 2);
+                const nodesInLastLevel = 4; // Show only 4 editable nodes (positions 2-5, hiding visual node)
                 
                 return (
                   <AccordionItem key={project.id} value={`project-${project.id}`}>
@@ -483,13 +490,13 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                         {levelsToShow.map((level) => {
                           const subtitle = project.levelSubtitles?.[level] || "";
                           const subtitleDescription = project.levelSubtitleDescriptions?.[level] || "";
-                          const isBlocked = level > maxLevel;
-                          
+                          const isBlocked = level > project.unlockedLevel;
+                          const isNotYetVisibleInSkillTree = level > visibleInSkillTree;
                           return (
-                          <AccordionItem key={`${project.id}-level-${level}`} value={`${project.id}-level-${level}`}>
+                          <AccordionItem key={`${project.id}-level-${level}`} value={`${project.id}-level-${level}`} className={cn(isBlocked && "grayscale")}>
                             <AccordionTrigger className="hover:no-underline">
                               <span 
-                                className={cn(isBlocked && "text-muted-foreground/50 cursor-pointer hover:text-foreground")}
+                                className={cn(isBlocked && "text-muted-foreground/50 cursor-pointer hover:text-foreground", isNotYetVisibleInSkillTree && "text-amber-600 dark:text-amber-500")}
                                 onClick={(e) => {
                                   if (isBlocked) {
                                     e.stopPropagation();
@@ -499,6 +506,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                               >
                                 Nivel {level}{subtitle && `: ${subtitle}`}
                                 {isBlocked && " (Bloqueado)"}
+                                {isNotYetVisibleInSkillTree && !isBlocked && <Lock className="inline-block ml-1.5 w-3.5 h-3.5" />}
                               </span>
                             </AccordionTrigger>
                             <AccordionContent>
@@ -508,30 +516,34 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                     const skillsInLevel = project.skills
                                       .filter((s) => s.level === level)
                                       .sort((a, b) => a.y - b.y)
-                                      .filter((s, index) => {
-                                        const noTitle = !s.title || s.title.toLowerCase().includes("challenge") || s.title.toLowerCase().includes("objective quest");
-                                        return !noTitle || index !== 0;
-                                      });
+                                      .filter((skill) => skill.isAutoComplete !== 1 && skill.levelPosition !== 1);
                                     
-                                    return skillsInLevel.map((skill, idx) => {
+                                    return skillsInLevel.map((skill) => {
                                       const canUp = canMoveUp(skillsInLevel, skill.id);
                                       const canDown = canMoveDown(skillsInLevel, skill.id);
                                       const availableLevels = getAvailableLevelsForMove(level, maxLevel);
-                                      const isFirstNode = skill.levelPosition === 1;
                                       
                                       return (
                                         <div
                                           key={skill.id}
                                           className={cn("p-2 rounded border border-border bg-card/50 hover:bg-card transition-colors", skill.status === "locked" && "opacity-60")}
-                                          onContextMenu={(e) => !isFirstNode && handleContextMenu(e, skill.id, null, project.id, level)}
+                                          onContextMenu={(e) => handleContextMenu(e, skill.id, null, project.id, level)}
                                         >
                                           <div className="flex items-center gap-2 justify-between">
-                                            <div className="flex items-center gap-2 flex-1">
-                                              <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{!skill.title || skill.title.toLowerCase().includes("challenge") || skill.title.toLowerCase().includes("objective quest") ? "-" : skill.title}</div>
+                                            <div 
+                                              className="flex items-center gap-2 flex-1 cursor-pointer"
+                                              onClick={() => {
+                                                setEditingSkillId(skill.id);
+                                                setEditingName(skill.title || "");
+                                                setEditingAreaId(null);
+                                                setEditingProjectId(project.id);
+                                                setEditingLevel(level);
+                                              }}
+                                            >
+                                              <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{skill.isAutoComplete === 1 || skill.levelPosition === 1 ? "" : (!skill.title ? `Nodo ${skill.levelPosition}` : skill.title)}</div>
                                               {skill.status === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
                                             </div>
-                                            {!isFirstNode && (
-                                              <div className="flex items-center gap-1">
+                                            <div className="flex items-center gap-1">
                                                 <Button 
                                                   size="sm" 
                                                   variant="ghost" 
@@ -584,8 +596,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                   </Popover>
                                                 )}
                                               </div>
-                                            )}
-                                          </div>
+                                            </div>
                                           <div className="text-xs text-muted-foreground">
                                             {skill.status === "mastered" && "✓ Completado"}
                                             {skill.status === "locked" && "Bloqueado"}
@@ -626,8 +637,9 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
               .filter((p) => p.questType === "emergent")
               .map((project) => {
                 const maxLevel = Math.max(...project.skills.map((s) => s.level));
-                const levelsToShow = Array.from({ length: maxLevel + 3 }, (_, i) => i + 1);
-                const nodesInLastLevel = project.skills.filter((s) => s.level === maxLevel).length || 2;
+                const levelsToShow = calculateDesignerLevelWindow(project.unlockedLevel, project.nextLevelToAssign, project.endOfAreaLevel);
+                const visibleInSkillTree = project.endOfAreaLevel ?? (project.nextLevelToAssign + 2);
+                const nodesInLastLevel = 4; // Show only 4 editable nodes (positions 2-5, hiding visual node)
                 
                 return (
                   <AccordionItem key={project.id} value={`project-${project.id}`}>
@@ -639,13 +651,13 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                         {levelsToShow.map((level) => {
                           const subtitle = project.levelSubtitles?.[level] || "";
                           const subtitleDescription = project.levelSubtitleDescriptions?.[level] || "";
-                          const isBlocked = level > maxLevel;
-                          
+                          const isBlocked = level > project.unlockedLevel;
+                          const isNotYetVisibleInSkillTree = level > visibleInSkillTree;
                           return (
-                          <AccordionItem key={`${project.id}-level-${level}`} value={`${project.id}-level-${level}`}>
+                          <AccordionItem key={`${project.id}-level-${level}`} value={`${project.id}-level-${level}`} className={cn(isBlocked && "grayscale")}>
                             <AccordionTrigger className="hover:no-underline">
                               <span 
-                                className={cn(isBlocked && "text-muted-foreground/50 cursor-pointer hover:text-foreground")}
+                                className={cn(isBlocked && "text-muted-foreground/50 cursor-pointer hover:text-foreground", isNotYetVisibleInSkillTree && "text-amber-600 dark:text-amber-500")}
                                 onClick={(e) => {
                                   if (isBlocked) {
                                     e.stopPropagation();
@@ -655,6 +667,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                               >
                                 Nivel {level}{subtitle && `: ${subtitle}`}
                                 {isBlocked && " (Bloqueado)"}
+                                {isNotYetVisibleInSkillTree && !isBlocked && <Lock className="inline-block ml-1.5 w-3.5 h-3.5" />}
                               </span>
                             </AccordionTrigger>
                             <AccordionContent>
@@ -664,30 +677,34 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                     const skillsInLevel = project.skills
                                       .filter((s) => s.level === level)
                                       .sort((a, b) => a.y - b.y)
-                                      .filter((s, index) => {
-                                        const noTitle = !s.title || s.title.toLowerCase().includes("challenge") || s.title.toLowerCase().includes("objective quest");
-                                        return !noTitle || index !== 0;
-                                      });
+                                      .filter((skill) => skill.isAutoComplete !== 1 && skill.levelPosition !== 1);
                                     
-                                    return skillsInLevel.map((skill, idx) => {
+                                    return skillsInLevel.map((skill) => {
                                       const canUp = canMoveUp(skillsInLevel, skill.id);
                                       const canDown = canMoveDown(skillsInLevel, skill.id);
                                       const availableLevels = getAvailableLevelsForMove(level, maxLevel);
-                                      const isFirstNode = skill.levelPosition === 1;
                                       
                                       return (
                                         <div
                                           key={skill.id}
                                           className={cn("p-2 rounded border border-border bg-card/50 hover:bg-card transition-colors", skill.status === "locked" && "opacity-60")}
-                                          onContextMenu={(e) => !isFirstNode && handleContextMenu(e, skill.id, null, project.id, level)}
+                                          onContextMenu={(e) => handleContextMenu(e, skill.id, null, project.id, level)}
                                         >
                                           <div className="flex items-center gap-2 justify-between">
-                                            <div className="flex items-center gap-2 flex-1">
-                                              <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{!skill.title || skill.title.toLowerCase().includes("challenge") || skill.title.toLowerCase().includes("objective quest") ? "-" : skill.title}</div>
+                                            <div 
+                                              className="flex items-center gap-2 flex-1 cursor-pointer"
+                                              onClick={() => {
+                                                setEditingSkillId(skill.id);
+                                                setEditingName(skill.title || "");
+                                                setEditingAreaId(null);
+                                                setEditingProjectId(project.id);
+                                                setEditingLevel(level);
+                                              }}
+                                            >
+                                              <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{skill.isAutoComplete === 1 || skill.levelPosition === 1 ? "" : (!skill.title ? `Nodo ${skill.levelPosition}` : skill.title)}</div>
                                               {skill.status === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
                                             </div>
-                                            {!isFirstNode && (
-                                              <div className="flex items-center gap-1">
+                                            <div className="flex items-center gap-1">
                                                 <Button 
                                                   size="sm" 
                                                   variant="ghost" 
@@ -740,8 +757,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                   </Popover>
                                                 )}
                                               </div>
-                                            )}
-                                          </div>
+                                            </div>
                                           <div className="text-xs text-muted-foreground">
                                             {skill.status === "mastered" && "✓ Completado"}
                                             {skill.status === "locked" && "Bloqueado"}

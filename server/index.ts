@@ -6,6 +6,7 @@ import { db } from "./db";
 import { sql } from "drizzle-orm";
 import path from "path";
 import * as fs from "fs/promises";
+import { runOldDataMigration } from "./migrate-old-data";
 
 const app = express();
 const httpServer = createServer(app);
@@ -93,6 +94,14 @@ app.use((req, res, next) => {
       console.error("⚠ Database initialization warning:", error.message);
       // Don't fail startup if table already exists
     }
+  }
+
+  // Run data migration for old areas and skills
+  try {
+    await runOldDataMigration();
+  } catch (error: any) {
+    console.error("⚠ Data migration error:", error.message);
+    // Continue startup even if migration fails
   }
 
   // Ensure bestiary images directory exists

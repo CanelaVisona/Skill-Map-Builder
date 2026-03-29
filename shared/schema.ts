@@ -32,6 +32,7 @@ export const areas = pgTable("areas", {
   levelSubtitles: jsonb("level_subtitles").notNull().$type<Record<string, string>>().default({}),
   levelSubtitleDescriptions: jsonb("level_subtitle_descriptions").notNull().$type<Record<string, string>>().default({}),
   archived: integer("archived").$type<0 | 1>().default(0),
+  endOfAreaLevel: integer("end_of_area_level"),
 });
 
 export const skills = pgTable("skills", {
@@ -49,6 +50,7 @@ export const skills = pgTable("skills", {
   dependencies: jsonb("dependencies").notNull().$type<string[]>(),
   manualLock: integer("manual_lock").$type<0 | 1>().default(0),
   isFinalNode: integer("is_final_node").$type<0 | 1>().default(0),
+  isAutoComplete: integer("is_auto_complete").$type<0 | 1>().default(0),
   level: integer("level").notNull().default(1),
   levelPosition: integer("level_position").notNull().default(1),
   experiencePoints: integer("experience_points").default(0),
@@ -66,6 +68,7 @@ export const projects = pgTable("projects", {
   levelSubtitleDescriptions: jsonb("level_subtitle_descriptions").notNull().$type<Record<string, string>>().default({}),
   archived: integer("archived").$type<0 | 1>().default(0),
   questType: text("quest_type").$type<"main" | "side" | "emergent" | "experience">().default("main"),
+  endOfAreaLevel: integer("end_of_area_level"),
 });
 
 export const journalCharacters = pgTable("journal_characters", {

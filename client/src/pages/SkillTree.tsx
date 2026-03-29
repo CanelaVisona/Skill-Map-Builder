@@ -30,7 +30,7 @@ import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 
-function calculateVisibleLevels(skills: Skill[]): Set<number> {
+function calculateVisibleLevels(skills: Skill[], endOfAreaLevel?: number): Set<number> {
   const visibleLevels = new Set<number>();
   
   const levelMap = new Map<number, Skill[]>();
@@ -41,18 +41,15 @@ function calculateVisibleLevels(skills: Skill[]): Set<number> {
     levelMap.get(skill.level)!.push(skill);
   });
   
-  const sortedLevels = Array.from(levelMap.keys()).sort((a, b) => a - b);
+  const sortedLevels = Array.from(levelMap.keys())
+    .sort((a, b) => a - b)
+    // Filter out staged levels (those > endOfAreaLevel when endOfAreaLevel is active)
+    .filter(level => !endOfAreaLevel || level <= endOfAreaLevel);
   
   if (sortedLevels.length === 0) return visibleLevels;
   
   const firstLevel = sortedLevels[0];
   visibleLevels.add(firstLevel);
-  
-  const firstLevelSkills = levelMap.get(firstLevel);
-  const firstLevelStarredNode = firstLevelSkills?.find(s => s.isFinalNode === 1);
-  if (firstLevelStarredNode && firstLevelStarredNode.status === "mastered") {
-    return visibleLevels;
-  }
   
   for (let i = 1; i < sortedLevels.length; i++) {
     const currentLevel = sortedLevels[i];
@@ -67,10 +64,11 @@ function calculateVisibleLevels(skills: Skill[]): Set<number> {
       );
       
       if (gatingNode.status === "mastered") {
-        if (gatingNode.isFinalNode === 1) {
+        visibleLevels.add(currentLevel);
+        // Stop only if we've reached the end of the area marker
+        if (endOfAreaLevel && currentLevel === endOfAreaLevel) {
           break;
         }
-        visibleLevels.add(currentLevel);
       } else {
         break;
       }
@@ -2503,7 +2501,8 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
         const isPlaceholder = titleLower === "inicio" || titleLower.includes("next challenge") || titleLower.includes("next challange") || titleLower.includes("next objective quest") || titleLower.includes("objective quest");
         const isCompleted = s.status === "mastered";
         const isIncompleteWithName = s.status !== "mastered" && s.title && s.title !== "?";
-        return !isPlaceholder && (isCompleted || isIncompleteWithName);
+        const isWithinValidLevels = s.level <= (area.nextLevelToAssign - 1);
+        return !isPlaceholder && (isCompleted || isIncompleteWithName) && isWithinValidLevels;
       })
       .sort(sortByPosition)
       .map((skill: Skill) => ({ ...skill, sourceName: area.name, sourceSkills: area.skills }));
@@ -2520,7 +2519,8 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
         const isPlaceholder = titleLower === "inicio" || titleLower.includes("next challenge") || titleLower.includes("next challange") || titleLower.includes("next objective quest") || titleLower.includes("objective quest");
         const isCompleted = s.status === "mastered";
         const isIncompleteWithName = s.status !== "mastered" && s.title && s.title !== "?";
-        return !isPlaceholder && (isCompleted || isIncompleteWithName);
+        const isWithinValidLevels = s.level <= (project.nextLevelToAssign - 1);
+        return !isPlaceholder && (isCompleted || isIncompleteWithName) && isWithinValidLevels;
       })
       .sort(sortByPosition)
       .map((skill: Skill) => ({ ...skill, sourceName: project.name, sourceSkills: project.skills }));
@@ -2537,7 +2537,8 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
         const isPlaceholder = titleLower === "inicio" || titleLower.includes("next challenge") || titleLower.includes("next challange") || titleLower.includes("next objective quest") || titleLower.includes("objective quest");
         const isCompleted = s.status === "mastered";
         const isIncompleteWithName = s.status !== "mastered" && s.title && s.title !== "?";
-        return !isPlaceholder && (isCompleted || isIncompleteWithName);
+        const isWithinValidLevels = s.level <= (project.nextLevelToAssign - 1);
+        return !isPlaceholder && (isCompleted || isIncompleteWithName) && isWithinValidLevels;
       })
       .sort(sortByPosition)
       .map((skill: Skill) => ({ ...skill, sourceName: project.name, sourceSkills: project.skills }));
@@ -5305,8 +5306,8 @@ function SkillCanvas() {
     
     // If no "objective quest" found, find the first node of the next level after current visible
     if (!targetSkill) {
-      // Get visible levels
-      const visibleLevels = calculateVisibleLevels(skills);
+      // Get visible levels, filtering out staged levels if end-of-area is active
+      const visibleLevels = calculateVisibleLevels(skills, (activeItem as any)?.endOfAreaLevel);
       const visibleLevelArray = Array.from(visibleLevels).sort((a, b) => a - b);
       const maxVisibleLevel = visibleLevelArray.length > 0 ? Math.max(...visibleLevelArray) : 0;
       
@@ -5383,6 +5384,9 @@ function SkillCanvas() {
     // Apply the same visibility logic to sub-skills
     const subSkillVisibleLevels = calculateVisibleLevels(subSkills);
     const visibleSkills = subSkills.filter((s: Skill) => subSkillVisibleLevels.has(s.level));
+
+    // DEBUG: Log subskill visible skills with coordinate details
+    console.log("[SkillCanvas SubSkills] visibleSkills:", visibleSkills.map(s => `level:${s.level} pos:${s.levelPosition} x:${s.x} y:${s.y} title:${s.title}`));
 
     const firstSkillOfLevel = new Set<string>();
     const levelGroups = new Map<number, typeof visibleSkills>();
@@ -5539,7 +5543,7 @@ function SkillCanvas() {
                   transition={{ duration: 0.4 }}
                   className="w-full h-full relative"
                 >
-                  {Array.from(levelGroups.entries()).flatMap(([level, skills]) => {
+                  {Array.from(levelGroups.entries()).sort((a, b) => a[0] - b[0]).flatMap(([level, skills]) => {
                     const sortedByY = [...skills].sort((a, b) => a.y - b.y);
                     const connections = [];
                     const itemColor = "text-zinc-800 dark:text-zinc-200";
@@ -5588,8 +5592,31 @@ function SkillCanvas() {
 
   if (!activeItem) return null;
 
-  const visibleLevels = calculateVisibleLevels(activeItem.skills);
-  const visibleSkills = activeItem.skills.filter((s: Skill) => visibleLevels.has(s.level));
+  const visibleLevels = calculateVisibleLevels(activeItem.skills, (activeItem as any)?.endOfAreaLevel);
+  // Always show +3 levels ahead: nextLevelToAssign + 2 (current level + 3)
+  // If nextLevelToAssign = 2, show levels up to 4 (but we want 1,2,3,4,5, so it's +3 from 2)
+  // So max level = nextLevelToAssign + 2
+  const maxAllowedLevel = activeItem.nextLevelToAssign + 2;
+  const validVisibleLevels = new Set(Array.from(visibleLevels).filter(level => level <= maxAllowedLevel));
+  const visibleSkills = activeItem.skills
+    .filter((s: Skill) => validVisibleLevels.has(s.level))
+    .sort((a: Skill, b: Skill) => {
+      if (a.level !== b.level) return a.level - b.level;
+      return a.y - b.y;
+    });
+
+  // DEBUG: Log visible skills order after sorting with full coordinate details
+  console.log("[SkillCanvas] visibleSkills after sorting:", visibleSkills.map(s => `level:${s.level} pos:${s.levelPosition} x:${s.x} y:${s.y} title:${s.title}`));
+  
+  // Also log as structured objects for easier inspection
+  console.log("[SkillCanvas] visibleSkills details:", visibleSkills.map(s => ({
+    title: s.title,
+    level: s.level,
+    levelPosition: s.levelPosition,
+    x: s.x,
+    y: s.y,
+    status: s.status
+  })));
 
   // Find the first skill of each level (lowest Y position per level)
   const firstSkillOfLevel = new Set<string>();
@@ -5601,6 +5628,8 @@ function SkillCanvas() {
     }
     levelGroups.get(skill.level)!.push(skill);
   });
+  
+  console.log("[SkillCanvas] levelGroups keys (in order):", Array.from(levelGroups.keys()).sort((a, b) => a - b));
   
   levelGroups.forEach((skills) => {
     const firstSkill = skills.reduce((min, s) => s.y < min.y ? s : min, skills[0]);
@@ -5888,7 +5917,7 @@ function SkillCanvas() {
                 className="w-full h-full relative"
               >
                 {/* Connections - based on visual Y position */}
-                {Array.from(levelGroups.entries()).flatMap(([level, skills]) => {
+                {Array.from(levelGroups.entries()).sort((a, b) => a[0] - b[0]).flatMap(([level, skills]) => {
                   const sortedByY = [...skills].sort((a, b) => a.y - b.y);
                   const connections = [];
                   const itemColor = 'color' in activeItem ? (activeItem.color as string) : "text-zinc-800 dark:text-zinc-200";
@@ -5913,9 +5942,9 @@ function SkillCanvas() {
                 })}
 
                 {/* Level Quest Labels */}
-                {Array.from(levelGroups.entries()).map(([level, skills]) => {
+                {Array.from(levelGroups.entries()).sort((a, b) => a[0] - b[0]).flatMap(([level, skills]) => {
                   const sortedByY = [...skills].sort((a, b) => a.y - b.y);
-                  if (sortedByY.length === 0) return null;
+                  if (sortedByY.length === 0) return [];
                   
                   const firstSkill = sortedByY[0];
                   const lastSkill = sortedByY[sortedByY.length - 1];
@@ -5942,7 +5971,7 @@ function SkillCanvas() {
                   const subtitle = levelSubtitles[level.toString()] || "";
                   
                   // Si no hay subtítulo, no mostrar nada
-                  if (!subtitle) return null;
+                  if (!subtitle) return [];
                   
                   const isNewOrUpdatedQuest = !levelCompleted;
                   
@@ -5951,59 +5980,58 @@ function SkillCanvas() {
                   // Approximate max-width based on first available skill's X position
                   const maxWidthPercent = Math.max(firstAvailableSkill.x - 15, 30); // Leave 15% margin before node
                   
-                  return (
-                    <motion.div
-                      key={`quest-label-${level}-${activeItem.id}`}
-                      initial={{ opacity: 0 }}
-                      whileInView={isNewOrUpdatedQuest ? { opacity: 1 } : undefined}
-                      transition={isNewOrUpdatedQuest ? { 
-                        duration: 0.8,
-                        ease: "easeIn"
-                      } : undefined}
-                      viewport={isNewOrUpdatedQuest ? { once: false, amount: 0.5 } : undefined}
-                      className={cn(
-                        "absolute -translate-y-1/2 flex flex-col items-start z-30",
-                        "md:whitespace-nowrap",
-                        "md:left-[20px]",
-                        "left-[8px]",
-                        "md:block",
-                        !isMenuOpen && "block",
-                        isMenuOpen && "md:block hidden"
-                      )}
-                      style={{ 
-                        top: `${midY}px`,
-                        maxWidth: `${maxWidthPercent}%`,
+                  return [<motion.div
+                    key={`quest-label-${level}-${activeItem.id}`}
+                    initial={{ opacity: 0 }}
+                    whileInView={isNewOrUpdatedQuest ? { opacity: 1 } : undefined}
+                    transition={isNewOrUpdatedQuest ? { 
+                      duration: 0.8,
+                      ease: "easeIn"
+                    } : undefined}
+                    viewport={isNewOrUpdatedQuest ? { once: false, amount: 0.5 } : undefined}
+                    className={cn(
+                      "absolute -translate-y-1/2 flex flex-col items-start z-30",
+                      "md:whitespace-nowrap",
+                      "md:left-[20px]",
+                      "left-[8px]",
+                      "md:block",
+                      !isMenuOpen && "block",
+                      isMenuOpen && "md:block hidden"
+                    )}
+                    style={{ 
+                      top: `${midY}px`,
+                      maxWidth: `${maxWidthPercent}%`,
+                    }}
+                  >
+                    <div 
+                      className={`text-xs font-bold tracking-wider uppercase ${isNewOrUpdatedQuest ? 'text-amber-400' : 'text-muted-foreground'}`}
+                      style={{
+                        ...(isNewOrUpdatedQuest && {
+                          textShadow: "0 0 20px rgba(251, 191, 36, 0.8), 0 0 40px rgba(251, 191, 36, 0.5), 0 0 60px rgba(251, 191, 36, 0.3)",
+                        }),
+                        letterSpacing: "0.15em",
+                        fontSize: "clamp(0.5rem, 2vw, 0.75rem)"
                       }}
                     >
-                      <div 
-                        className={`text-xs font-bold tracking-wider uppercase ${isNewOrUpdatedQuest ? 'text-amber-400' : 'text-muted-foreground'}`}
-                        style={{
-                          ...(isNewOrUpdatedQuest && {
-                            textShadow: "0 0 20px rgba(251, 191, 36, 0.8), 0 0 40px rgba(251, 191, 36, 0.5), 0 0 60px rgba(251, 191, 36, 0.3)",
-                          }),
-                          letterSpacing: "0.15em",
-                          fontSize: "clamp(0.5rem, 2vw, 0.75rem)"
-                        }}
-                      >
-                        {questText.replace(":", "")}
-                      </div>
-                      <div 
-                        className={`font-bold mt-1 ${isNewOrUpdatedQuest ? 'text-amber-300' : 'text-muted-foreground'}`}
-                        style={{
-                          ...(isNewOrUpdatedQuest && {
-                            textShadow: "0 0 15px rgba(251, 191, 36, 0.6), 0 0 30px rgba(251, 191, 36, 0.3)",
-                          }),
-                          letterSpacing: "0.05em",
-                          fontSize: "clamp(0.875rem, 3vw, 1.125rem)"
-                        }}
-                      >
-                        {subtitle}
-                      </div>
-                    </motion.div>
-                  );
+                      {questText.replace(":", "")}
+                    </div>
+                    <div 
+                      className={`font-bold mt-1 ${isNewOrUpdatedQuest ? 'text-amber-300' : 'text-muted-foreground'}`}
+                      style={{
+                        ...(isNewOrUpdatedQuest && {
+                          textShadow: "0 0 15px rgba(251, 191, 36, 0.6), 0 0 30px rgba(251, 191, 36, 0.3)",
+                        }),
+                        letterSpacing: "0.05em",
+                        fontSize: "clamp(0.875rem, 3vw, 1.125rem)"
+                      }}
+                    >
+                      {subtitle}
+                    </div>
+                  </motion.div>];
                 })}
 
                 {/* Nodes */}
+                {visibleSkills.length > 0 && console.log("[SkillCanvas] About to render visibleSkills:", visibleSkills.map(s => `level:${s.level} pos:${s.levelPosition} x:${s.x} y:${s.y} title:${s.title}`)) || null}
                 {visibleSkills.map((skill, index) => {
                   const itemColor = 'color' in activeItem ? (activeItem.color as string) : "text-zinc-800 dark:text-zinc-200";
                   const handleClick = isProject 

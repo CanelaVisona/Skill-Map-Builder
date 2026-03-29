@@ -34,7 +34,6 @@ interface SkillNodeProps {
 }
 
 export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboardingTarget }: SkillNodeProps) {
-  const hasStar = skill.isFinalNode === 1; // Has the star activated (final final node)
   const isInicioNode = skill.title.toLowerCase() === "inicio"; // "inicio" nodes are text-only, not interactive
   
   const { 
@@ -94,9 +93,15 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const isLastNodeOfLevel = skillsInLevel.length > 0 && 
     skill.y === Math.max(...skillsInLevel.map(s => s.y));
   
-  // Calculate effective locked state: final nodes (by position or star) should appear locked
-  // if not all other nodes in level are mastered
-  const isFinalNodeByPosition = isLastNodeOfLevel || hasStar;
+  // Star is active only when endOfAreaLevel is set to this level
+  // isFinalNode: 1 is just an identifier (always on Node 5), not the control
+  const isStarActive = isProject 
+    ? (activeProject?.endOfAreaLevel === skill.level)
+    : (activeArea?.endOfAreaLevel === skill.level);
+  
+  // Calculate effective locked state: final nodes (by position) should appear locked
+  // if not all other nodes in level are mastered (UNLESS star is active, then node itself blocks)
+  const isFinalNodeByPosition = isLastNodeOfLevel;
   const otherNodesInLevel = skillsInLevel.filter(s => s.id !== skill.id);
   const allOthersMastered = otherNodesInLevel.every(s => s.status === "mastered");
   
@@ -121,6 +126,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [editFeedback, setEditFeedback] = useState(skill.feedback || "");
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPress = useRef(false);
+  const lastClickTime = useRef<number>(0); // Debounce flag to prevent duplicate onClick calls
   
   const [isSubtitleDialogOpen, setIsSubtitleDialogOpen] = useState(false);
   const [isSubtaskConfirmOpen, setIsSubtaskConfirmOpen] = useState(false);
@@ -957,6 +963,18 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       isLongPress.current = false;
       return;
     }
+    
+    // Debounce: prevent multiple onClick invocations within 100ms
+    // This prevents duplicate fires from touch/mouse event synthesis
+    const now = Date.now();
+    if (now - lastClickTime.current < 100) {
+      console.log(`[SkillNode] onClick debounced (${now - lastClickTime.current}ms since last click)`);
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    lastClickTime.current = now;
+    
     // Allow unlocking manually locked nodes by clicking
     if (skill.manualLock === 1) {
       if (isSubSkillView) {
@@ -972,6 +990,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       return; // Locked nodes cannot be clicked - only unlock when previous node is mastered
     }
     
+    console.log(`[SkillNode] onClick triggered for skill "${skill.title}" (id: ${skill.id})`);
     onClick();
   };
 
@@ -1089,6 +1108,17 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             )}
           </motion.div>
 
+          {/* Final Node Star Icon */}
+          {isStarActive && (
+            <div className="absolute -top-1 -right-1 z-30">
+              <Star 
+                size={14} 
+                className="fill-amber-400 text-amber-400 drop-shadow-lg" 
+                title="Nodo final del área"
+              />
+            </div>
+          )}
+
           {/* Label */}
           <div className={cn(
             "absolute left-14 top-1/2 -translate-y-1/2 font-medium transition-colors text-sm flex items-center gap-2",
@@ -1111,7 +1141,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               )}
               data-testid={`link-skill-title-${skill.id}`}
             >
-              {skill.title}
+              {skill.isAutoComplete === 1 || skill.levelPosition === 1 ? "" : (skill.title || "Objective quest")}
             </span>
             {!isLocked && !isMastered && (
               <span className="text-2xl font-bold text-amber-400">!</span>
@@ -1137,6 +1167,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               variant="ghost"
               size="icon"
               className="h-8 w-8"
+              disabled={isFirstNodeOfLevel}
+              title={isFirstNodeOfLevel ? "No puedes reordenar el Nodo 1" : "Mover arriba"}
               onClick={() => {
                 if (isSubSkillView) {
                   moveSubSkill(skill.id, "up");
@@ -1155,6 +1187,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               variant="ghost"
               size="icon"
               className="h-8 w-8"
+              disabled={isFirstNodeOfLevel}
+              title={isFirstNodeOfLevel ? "No puedes reordenar el Nodo 1" : "Mover abajo"}
               onClick={() => {
                 if (isSubSkillView) {
                   moveSubSkill(skill.id, "down");
@@ -1263,14 +1297,14 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                </PopoverContent>
              </Popover>
 
-             {/* Star button - show for last node of level OR if node already has star (to allow removal) */}
-             {(isLastNodeOfLevel || hasStar) && (
+             {/* Star button - show for last node of level OR if star is currently active (to allow removal) */}
+             {(isLastNodeOfLevel || isStarActive) && (
                <Button 
                  variant="ghost"
                  size="sm" 
                  className={cn(
                    "h-8 w-8 p-0 text-xs",
-                   hasStar ? "bg-amber-500 hover:bg-amber-600 text-white" : "bg-muted/50 hover:bg-muted"
+                   isStarActive ? "bg-amber-500 hover:bg-amber-600 text-white" : "bg-muted/50 hover:bg-muted"
                  )}
                  onClick={() => {
                    if (isSubSkillView) {
@@ -1283,9 +1317,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                    setIsOpen(false);
                  }}
                  data-testid="button-toggle-final"
-                 title={hasStar ? "Quitar nodo final final" : "Marcar como nodo final final"}
+                 title={isStarActive ? "Quitar nodo final final" : "Marcar como nodo final final"}
                >
-                 <Star className={cn("h-3 w-3", hasStar && "fill-white")} />
+                 <Star className={cn("h-3 w-3", isStarActive && "fill-white")} />
                </Button>
              )}
 
