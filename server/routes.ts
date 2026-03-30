@@ -1127,7 +1127,7 @@ export async function registerRoutes(
         .filter(s => s.level === targetLevel)
         .sort((a, b) => a.levelPosition - b.levelPosition);
 
-      // Recalculate final nodes for both levels (since positions changed)
+      // Recalculate final nodes and node statuses for both levels (since positions changed)
       const parentInfo = {
         areaId: parentType === "area" ? parentId : undefined,
         projectId: parentType === "project" ? parentId : undefined
@@ -1135,6 +1135,8 @@ export async function registerRoutes(
       
       await storage.recalculateFinalNodes(currentLevel, parentInfo);
       await storage.recalculateFinalNodes(targetLevel, parentInfo);
+      await storage.recalculateNodeStatuses(currentLevel, parentInfo);
+      await storage.recalculateNodeStatuses(targetLevel, parentInfo);
 
       // Return the final repositioned moved skill
       const finalMovedSkill = repositionedTargetSkills.find(s => s.id === req.params.id);
@@ -1211,21 +1213,30 @@ export async function registerRoutes(
 
       const neighbor = sameLevelSkills[neighborIndex];
       
-      // Swap Y coordinates
+      // Swap Y coordinates and levelPosition
       const tempY = existingSkill.y;
       const neighborY = neighbor.y;
+      const tempLevelPosition = existingSkill.levelPosition;
+      const neighborLevelPosition = neighbor.levelPosition;
 
-      // Update both skills
-      const updatedSkill = await storage.updateSkill(req.params.id, { y: neighborY });
-      const updatedNeighbor = await storage.updateSkill(neighbor.id, { y: tempY });
+      // Update both skills with swapped coordinates and positions
+      const updatedSkill = await storage.updateSkill(req.params.id, { 
+        y: neighborY,
+        levelPosition: neighborLevelPosition
+      });
+      const updatedNeighbor = await storage.updateSkill(neighbor.id, { 
+        y: tempY,
+        levelPosition: tempLevelPosition
+      });
 
-      // Recalculate final node for this level (positions unchanged, but being explicit)
+      // Recalculate final node and node statuses for this level
       const parentInfo = {
         areaId: parentType === "area" ? parentId : undefined,
         projectId: parentType === "project" ? parentId : undefined
       };
       
       await storage.recalculateFinalNodes(currentLevel, parentInfo);
+      await storage.recalculateNodeStatuses(currentLevel, parentInfo);
 
       res.json({ updatedSkill, updatedNeighbor });
     } catch (error: any) {

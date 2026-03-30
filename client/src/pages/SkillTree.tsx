@@ -2444,6 +2444,7 @@ interface SourceGroup {
   skills: SkillWithSource[];
   levelSubtitles: Record<string, string>;
   levelSubtitleDescriptions: Record<string, string>;
+  unlockedLevel: number;
 }
 
 function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { learnings?: JournalLearning[]; tools?: JournalTool[]; thoughts?: JournalThought[] }) {
@@ -2499,15 +2500,20 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
       .filter((s: Skill) => {
         const titleLower = s.title.toLowerCase();
         const isPlaceholder = titleLower === "inicio" || titleLower.includes("next challenge") || titleLower.includes("next challange") || titleLower.includes("next objective quest") || titleLower.includes("objective quest");
-        const isCompleted = s.status === "mastered";
-        const isIncompleteWithName = s.status !== "mastered" && s.title && s.title !== "?";
-        const isWithinValidLevels = s.level <= (area.nextLevelToAssign - 1);
-        return !isPlaceholder && (isCompleted || isIncompleteWithName) && isWithinValidLevels;
+        if (isPlaceholder) return false;
+        
+        // Show all skills from the unlocked level
+        if (s.level === area.unlockedLevel) return true;
+        
+        // For previous levels, only show mastered skills
+        if (s.level < area.unlockedLevel && s.status === "mastered") return true;
+        
+        return false;
       })
       .sort(sortByPosition)
       .map((skill: Skill) => ({ ...skill, sourceName: area.name, sourceSkills: area.skills }));
     if (allSkillsToShow.length > 0) {
-      sourceGroups.push({ name: area.name, skills: allSkillsToShow, levelSubtitles: area.levelSubtitles || {}, levelSubtitleDescriptions: area.levelSubtitleDescriptions || {} });
+      sourceGroups.push({ name: area.name, skills: allSkillsToShow, levelSubtitles: area.levelSubtitles || {}, levelSubtitleDescriptions: area.levelSubtitleDescriptions || {}, unlockedLevel: area.unlockedLevel });
     }
   });
   
@@ -2517,15 +2523,20 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
       .filter((s: Skill) => {
         const titleLower = s.title.toLowerCase();
         const isPlaceholder = titleLower === "inicio" || titleLower.includes("next challenge") || titleLower.includes("next challange") || titleLower.includes("next objective quest") || titleLower.includes("objective quest");
-        const isCompleted = s.status === "mastered";
-        const isIncompleteWithName = s.status !== "mastered" && s.title && s.title !== "?";
-        const isWithinValidLevels = s.level <= (project.nextLevelToAssign - 1);
-        return !isPlaceholder && (isCompleted || isIncompleteWithName) && isWithinValidLevels;
+        if (isPlaceholder) return false;
+        
+        // Show all skills from the unlocked level
+        if (s.level === project.unlockedLevel) return true;
+        
+        // For previous levels, only show mastered skills
+        if (s.level < project.unlockedLevel && s.status === "mastered") return true;
+        
+        return false;
       })
       .sort(sortByPosition)
       .map((skill: Skill) => ({ ...skill, sourceName: project.name, sourceSkills: project.skills }));
     if (allSkillsToShow.length > 0) {
-      sourceGroups.push({ name: project.name, skills: allSkillsToShow, levelSubtitles: project.levelSubtitles || {}, levelSubtitleDescriptions: project.levelSubtitleDescriptions || {} });
+      sourceGroups.push({ name: project.name, skills: allSkillsToShow, levelSubtitles: project.levelSubtitles || {}, levelSubtitleDescriptions: project.levelSubtitleDescriptions || {}, unlockedLevel: project.unlockedLevel });
     }
   });
   
@@ -2535,15 +2546,20 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
       .filter((s: Skill) => {
         const titleLower = s.title.toLowerCase();
         const isPlaceholder = titleLower === "inicio" || titleLower.includes("next challenge") || titleLower.includes("next challange") || titleLower.includes("next objective quest") || titleLower.includes("objective quest");
-        const isCompleted = s.status === "mastered";
-        const isIncompleteWithName = s.status !== "mastered" && s.title && s.title !== "?";
-        const isWithinValidLevels = s.level <= (project.nextLevelToAssign - 1);
-        return !isPlaceholder && (isCompleted || isIncompleteWithName) && isWithinValidLevels;
+        if (isPlaceholder) return false;
+        
+        // Show all skills from the unlocked level
+        if (s.level === project.unlockedLevel) return true;
+        
+        // For previous levels, only show mastered skills
+        if (s.level < project.unlockedLevel && s.status === "mastered") return true;
+        
+        return false;
       })
       .sort(sortByPosition)
       .map((skill: Skill) => ({ ...skill, sourceName: project.name, sourceSkills: project.skills }));
     if (allSkillsToShow.length > 0) {
-      sourceGroups.push({ name: project.name, skills: allSkillsToShow, levelSubtitles: project.levelSubtitles || {}, levelSubtitleDescriptions: project.levelSubtitleDescriptions || {} });
+      sourceGroups.push({ name: project.name, skills: allSkillsToShow, levelSubtitles: project.levelSubtitles || {}, levelSubtitleDescriptions: project.levelSubtitleDescriptions || {}, unlockedLevel: project.unlockedLevel });
     }
   });
   
@@ -2733,8 +2749,9 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
                           skillsByLevel.get(level)!.push(skill);
                         });
                         
-                        // Sort levels
-                        const sortedLevels = Array.from(skillsByLevel.keys()).sort((a, b) => a - b);
+                        // Sort levels and filter to show only levels up to and including the unlocked level
+                        const allLevels = Array.from(skillsByLevel.keys()).sort((a, b) => a - b);
+                        const sortedLevels = allLevels.filter(level => level <= group.unlockedLevel);
                         
                         return sortedLevels.map(level => {
                           const levelSkills = skillsByLevel.get(level)!;
