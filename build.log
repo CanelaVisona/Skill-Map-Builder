@@ -6,15 +6,20 @@ building client...
 [36mvite v7.1.12 [32mbuilding for production...[36m[39m
 transforming...
 [32m✓[39m 2269 modules transformed.
-[31m✗[39m Build failed in 24.15s
-[31m[vite:esbuild-transpile] The service was stopped[39m
-    at C:\Users\Daniel Visona\Desktop\Skill-Map-Builder\node_modules\esbuild\lib\main.js:718:38
-    at responseCallbacks.<computed> (C:\Users\Daniel Visona\Desktop\Skill-Map-Builder\node_modules\esbuild\lib\main.js:603:9)
-    at Socket.afterClose (C:\Users\Daniel Visona\Desktop\Skill-Map-Builder\node_modules\esbuild\lib\main.js:594:28)
-    at Socket.emit (node:events:536:35)
-    at endReadableNT (node:internal/streams/readable:1698:12)
-    at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
-  code: 'PLUGIN_ERROR',
-  plugin: 'vite:esbuild-transpile',
-  hook: 'renderChunk'
-}
+rendering chunks...
+[meta-images] no Replit deployment domain found, skipping meta tag updates
+computing gzip size...
+[2m../dist/public/[22m[32mindex.html                 [39m[1m[2m  1.43 kB[22m[1m[22m[2m │ gzip:   0.57 kB[22m
+[2m../dist/public/[22m[35massets/index-BctV1eCj.css  [39m[1m[2m133.38 kB[22m[1m[22m[2m │ gzip:  20.87 kB[22m
+[2m../dist/public/[22m[36massets/index-BsQBJls7.js   [39m[1m[33m894.31 kB[39m[22m[2m │ gzip: 242.50 kB[22m
+[33m
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
+[32m✓ built in 40.41s[39m
+building server...
+
+  dist\index.cjs  1.1mb
+
+Done in 1908ms

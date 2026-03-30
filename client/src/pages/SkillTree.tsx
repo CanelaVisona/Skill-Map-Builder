@@ -2502,8 +2502,10 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
         const isPlaceholder = titleLower === "inicio" || titleLower.includes("next challenge") || titleLower.includes("next challange") || titleLower.includes("next objective quest") || titleLower.includes("objective quest");
         if (isPlaceholder) return false;
         
-        // Show all skills from the unlocked level
-        if (s.level === area.unlockedLevel) return true;
+        // Only show mastered skills from the unlocked level
+        if (s.level === area.unlockedLevel && s.status === "mastered") return true;
+        // Show available (next) skill from unlocked level
+        if (s.level === area.unlockedLevel && s.status === "available") return true;
         
         // For previous levels, only show mastered skills
         if (s.level < area.unlockedLevel && s.status === "mastered") return true;
@@ -2525,8 +2527,10 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
         const isPlaceholder = titleLower === "inicio" || titleLower.includes("next challenge") || titleLower.includes("next challange") || titleLower.includes("next objective quest") || titleLower.includes("objective quest");
         if (isPlaceholder) return false;
         
-        // Show all skills from the unlocked level
-        if (s.level === project.unlockedLevel) return true;
+        // Only show mastered skills from the unlocked level
+        if (s.level === project.unlockedLevel && s.status === "mastered") return true;
+        // Show available (next) skill from unlocked level
+        if (s.level === project.unlockedLevel && s.status === "available") return true;
         
         // For previous levels, only show mastered skills
         if (s.level < project.unlockedLevel && s.status === "mastered") return true;
@@ -2548,8 +2552,10 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
         const isPlaceholder = titleLower === "inicio" || titleLower.includes("next challenge") || titleLower.includes("next challange") || titleLower.includes("next objective quest") || titleLower.includes("objective quest");
         if (isPlaceholder) return false;
         
-        // Show all skills from the unlocked level
-        if (s.level === project.unlockedLevel) return true;
+        // Only show mastered skills from the unlocked level
+        if (s.level === project.unlockedLevel && s.status === "mastered") return true;
+        // Show available (next) skill from unlocked level
+        if (s.level === project.unlockedLevel && s.status === "available") return true;
         
         // For previous levels, only show mastered skills
         if (s.level < project.unlockedLevel && s.status === "mastered") return true;
