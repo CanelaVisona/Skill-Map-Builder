@@ -6,10 +6,11 @@ import { SkillNode } from "@/components/SkillNode";
 import { SkillConnection } from "@/components/SkillConnection";
 import { SkillDesigner } from "@/components/SkillDesigner";
 import { HabitStreakModal } from "@/components/HabitStreakModal";
+import { SpaceRepetitionModal } from "@/components/SpaceRepetitionModal";
 import { ProgressModal } from "@/components/ProgressModal";
 import { ProgressBar } from "@/components/ProgressBar";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Mountain, Image, Grid, Flame } from "lucide-react";
+import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Mountain, Image, Grid, Flame, Dumbbell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -78,7 +79,7 @@ function calculateVisibleLevels(skills: Skill[], endOfAreaLevel?: number): Set<n
   return visibleLevels;
 }
 
-function TopRightControls({ onOpenGuide, onOpenDesigner, onOpenProgress, onOpenHabits }: { onOpenGuide: () => void; onOpenDesigner: () => void; onOpenProgress: () => void; onOpenHabits: () => void }) {
+function TopRightControls({ onOpenGuide, onOpenDesigner, onOpenProgress, onOpenHabits, onOpenStrength }: { onOpenGuide: () => void; onOpenDesigner: () => void; onOpenProgress: () => void; onOpenHabits: () => void; onOpenStrength: () => void }) {
   const { theme, setTheme, resolvedTheme } = useTheme();
   const currentTheme = resolvedTheme || theme;
   const { openDiary } = useDiary();
@@ -125,6 +126,13 @@ function TopRightControls({ onOpenGuide, onOpenDesigner, onOpenProgress, onOpenH
         title="Habit Streak"
       >
         <Flame className="h-5 w-5" />
+      </button>
+      <button
+        className="text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+        onClick={onOpenStrength}
+        title="Space Repetition"
+      >
+        <Dumbbell className="h-5 w-5" />
       </button>
     </div>
   );
@@ -6086,6 +6094,7 @@ export default function SkillTreePage() {
   const [isDesignerOpen, setIsDesignerOpen] = useState(false);
   const [isProgressOpen, setIsProgressOpen] = useState(false);
   const [isHabitsOpen, setIsHabitsOpen] = useState(false);
+  const [isStrengthOpen, setIsStrengthOpen] = useState(false);
   
   const handleCompleteOnboarding = () => {
     if (user?.id) {
@@ -6099,10 +6108,11 @@ export default function SkillTreePage() {
       <SkillTreeProvider>
         <MenuProvider>
           <div className="flex h-screen w-full bg-background text-foreground overflow-hidden font-body selection:bg-primary/30">
-            <TopRightControls onOpenGuide={openGuide} onOpenDesigner={() => setIsDesignerOpen(true)} onOpenProgress={() => setIsProgressOpen(true)} onOpenHabits={() => setIsHabitsOpen(true)} />
+            <TopRightControls onOpenGuide={openGuide} onOpenDesigner={() => setIsDesignerOpen(true)} onOpenProgress={() => setIsProgressOpen(true)} onOpenHabits={() => setIsHabitsOpen(true)} onOpenStrength={() => setIsStrengthOpen(true)} />
             <ProgressModal open={isProgressOpen} onOpenChange={setIsProgressOpen} />
             <SkillDesigner open={isDesignerOpen} onOpenChange={setIsDesignerOpen} />
             <HabitStreakModal open={isHabitsOpen} onOpenChange={setIsHabitsOpen} />
+            <SpaceRepetitionModal open={isStrengthOpen} onOpenChange={setIsStrengthOpen} />
             <AreaMenu />
             <SkillCanvas />
             <QuestDiary />
