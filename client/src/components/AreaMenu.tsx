@@ -1574,24 +1574,24 @@ export function AreaMenu() {
               </span>
             </button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[500px]">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Archive size={18} />
-                Quests Completados
+          <DialogContent className="sm:max-w-[500px] border-yellow-500/30 bg-gradient-to-b from-yellow-50/50 to-white dark:from-yellow-950/30 dark:to-background">
+            <DialogHeader className="border-b border-yellow-500/20 pb-4 bg-gradient-to-r from-yellow-500/10 to-amber-500/5">
+              <DialogTitle className="flex items-center gap-2 text-yellow-900 dark:text-yellow-100">
+                <Archive size={18} className="text-yellow-600 dark:text-yellow-400" />
+                🏆 Quests Completados
               </DialogTitle>
             </DialogHeader>
             <div className="mt-4 space-y-4 max-h-[60vh] overflow-y-auto">
               {archivedAreas.length === 0 && archivedMainQuests.length === 0 && archivedSideQuests.length === 0 && archivedEmergentQuests.length === 0 ? (
-                <div className="text-center text-muted-foreground py-8">
-                  <Archive className="mx-auto h-12 w-12 mb-3 opacity-30" />
-                  <p>No hay quests completados</p>
+                <div className="text-center text-yellow-600/60 dark:text-yellow-400/60 py-8">
+                  <Archive className="mx-auto h-12 w-12 mb-3 opacity-40 text-yellow-500" />
+                  <p className="font-medium">No hay quests completados</p>
                 </div>
               ) : (
                 <>
                   {archivedAreas.length > 0 && (
                     <div className="space-y-2">
-                      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">Áreas</h3>
+                      <h3 className="text-xs font-black text-yellow-700 dark:text-yellow-300 uppercase tracking-wider px-1 flex items-center gap-1">📍 Áreas</h3>
                       {archivedAreas.map((area) => {
                         const Icon = extendedIconMap[area.icon] || extendedIconMap.Home;
                         const isViewing = viewingArchivedArea === area.id;
@@ -1599,8 +1599,8 @@ export function AreaMenu() {
                           <div 
                             key={area.id} 
                             className={cn(
-                              "flex items-center gap-3 p-3 rounded-lg border transition-colors cursor-pointer",
-                              isViewing ? "bg-primary/10 border-primary/30" : "hover:bg-muted/50 border-border"
+                              "flex items-center gap-3 p-3 rounded-lg border-2 transition-all cursor-pointer",
+                              isViewing ? "bg-gradient-to-br from-yellow-400/40 to-amber-400/30 border-yellow-400 shadow-md shadow-yellow-500/20" : "bg-gradient-to-br from-yellow-500/15 to-amber-500/10 border-yellow-400/50 hover:border-yellow-400 hover:from-yellow-500/25 hover:to-amber-500/15"
                             )}
                             onClick={() => {
                               setViewingArchivedArea(isViewing ? null : area.id);
@@ -1612,11 +1612,11 @@ export function AreaMenu() {
                             }}
                             data-testid={`archived-area-${area.id}`}
                           >
-                            <Icon size={20} className="text-muted-foreground" />
+                            <Icon size={20} className="text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
                             <div className="flex-1 min-w-0">
-                              <p className="font-medium truncate">{area.name}</p>
+                              <p className="font-bold truncate text-yellow-900 dark:text-yellow-100">{area.name}</p>
                               {area.description && (
-                                <p className="text-sm text-muted-foreground truncate">{area.description}</p>
+                                <p className="text-sm text-yellow-700/70 dark:text-yellow-300/70 truncate">{area.description}</p>
                               )}
                             </div>
                             <div className="flex gap-1 shrink-0">
@@ -1628,6 +1628,7 @@ export function AreaMenu() {
                                   unarchiveArea(area.id);
                                 }}
                                 title="Restaurar"
+                                className="hover:text-yellow-600 dark:hover:text-yellow-400"
                                 data-testid={`button-unarchive-area-${area.id}`}
                               >
                                 <ArchiveRestore size={16} />
@@ -1672,7 +1673,7 @@ export function AreaMenu() {
 
                   {archivedMainQuests.length > 0 && (
                     <div className="space-y-2">
-                      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">Main Quest</h3>
+                      <h3 className="text-xs font-black text-yellow-700 dark:text-yellow-300 uppercase tracking-wider px-1 flex items-center gap-1">⚔️ Main Quest</h3>
                       {archivedMainQuests.map((project) => {
                         const Icon = extendedIconMap[project.icon] || FolderKanban;
                         const isViewing = viewingArchivedProject === project.id;
@@ -1680,8 +1681,8 @@ export function AreaMenu() {
                           <div 
                             key={project.id} 
                             className={cn(
-                              "flex items-center gap-3 p-3 rounded-lg border transition-colors cursor-pointer",
-                              isViewing ? "bg-primary/10 border-primary/30" : "hover:bg-muted/50 border-border"
+                              "flex items-center gap-3 p-3 rounded-lg border-2 transition-all cursor-pointer",
+                              isViewing ? "bg-gradient-to-br from-yellow-400/40 to-amber-400/30 border-yellow-400 shadow-md shadow-yellow-500/20" : "bg-gradient-to-br from-yellow-500/15 to-amber-500/10 border-yellow-400/50 hover:border-yellow-400 hover:from-yellow-500/25 hover:to-amber-500/15"
                             )}
                             onClick={() => {
                               setViewingArchivedProject(isViewing ? null : project.id);
@@ -1693,11 +1694,11 @@ export function AreaMenu() {
                             }}
                             data-testid={`archived-project-${project.id}`}
                           >
-                            <Icon size={20} className="text-muted-foreground" />
+                            <Icon size={20} className="text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
                             <div className="flex-1 min-w-0">
-                              <p className="font-medium truncate">{project.name}</p>
+                              <p className="font-bold truncate text-yellow-900 dark:text-yellow-100">{project.name}</p>
                               {project.description && (
-                                <p className="text-sm text-muted-foreground truncate">{project.description}</p>
+                                <p className="text-sm text-yellow-700/70 dark:text-yellow-300/70 truncate">{project.description}</p>
                               )}
                             </div>
                             <div className="flex gap-1 shrink-0">
@@ -1709,6 +1710,7 @@ export function AreaMenu() {
                                   unarchiveProject(project.id);
                                 }}
                                 title="Restaurar"
+                                className="hover:text-yellow-600 dark:hover:text-yellow-400"
                                 data-testid={`button-unarchive-project-${project.id}`}
                               >
                                 <ArchiveRestore size={16} />
@@ -1753,7 +1755,7 @@ export function AreaMenu() {
 
                   {archivedSideQuests.length > 0 && (
                     <div className="space-y-2">
-                      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">Side Quest</h3>
+                      <h3 className="text-xs font-black text-yellow-700 dark:text-yellow-300 uppercase tracking-wider px-1 flex items-center gap-1">🗺️ Side Quest</h3>
                       {archivedSideQuests.map((project) => {
                         const Icon = extendedIconMap[project.icon] || FolderKanban;
                         const isViewing = viewingArchivedProject === project.id;
@@ -1761,8 +1763,8 @@ export function AreaMenu() {
                           <div 
                             key={project.id} 
                             className={cn(
-                              "flex items-center gap-3 p-3 rounded-lg border transition-colors cursor-pointer",
-                              isViewing ? "bg-primary/10 border-primary/30" : "hover:bg-muted/50 border-border"
+                              "flex items-center gap-3 p-3 rounded-lg border-2 transition-all cursor-pointer",
+                              isViewing ? "bg-gradient-to-br from-yellow-400/40 to-amber-400/30 border-yellow-400 shadow-md shadow-yellow-500/20" : "bg-gradient-to-br from-yellow-500/15 to-amber-500/10 border-yellow-400/50 hover:border-yellow-400 hover:from-yellow-500/25 hover:to-amber-500/15"
                             )}
                             onClick={() => {
                               setViewingArchivedProject(isViewing ? null : project.id);
@@ -1774,11 +1776,11 @@ export function AreaMenu() {
                             }}
                             data-testid={`archived-sidequest-${project.id}`}
                           >
-                            <Icon size={20} className="text-muted-foreground" />
+                            <Icon size={20} className="text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
                             <div className="flex-1 min-w-0">
-                              <p className="font-medium truncate">{project.name}</p>
+                              <p className="font-bold truncate text-yellow-900 dark:text-yellow-100">{project.name}</p>
                               {project.description && (
-                                <p className="text-sm text-muted-foreground truncate">{project.description}</p>
+                                <p className="text-sm text-yellow-700/70 dark:text-yellow-300/70 truncate">{project.description}</p>
                               )}
                             </div>
                             <div className="flex gap-1 shrink-0">
@@ -1790,6 +1792,7 @@ export function AreaMenu() {
                                   unarchiveProject(project.id);
                                 }}
                                 title="Restaurar"
+                                className="hover:text-yellow-600 dark:hover:text-yellow-400"
                                 data-testid={`button-unarchive-sidequest-${project.id}`}
                               >
                                 <ArchiveRestore size={16} />
@@ -1834,9 +1837,8 @@ export function AreaMenu() {
 
                   {archivedEmergentQuests.length > 0 && (
                     <div className="space-y-2">
-                      <h3 className="text-xs font-semibold text-amber-500/80 uppercase tracking-wider px-1 flex items-center gap-1">
-                        <Zap size={12} />
-                        Emergent Quest
+                      <h3 className="text-xs font-black text-yellow-700 dark:text-yellow-300 uppercase tracking-wider px-1 flex items-center gap-1">
+                        ⚡ Emergent Quest
                       </h3>
                       {archivedEmergentQuests.map((project) => {
                         const isViewing = viewingArchivedProject === project.id;
@@ -1844,8 +1846,8 @@ export function AreaMenu() {
                           <div 
                             key={project.id} 
                             className={cn(
-                              "flex items-center gap-3 p-3 rounded-lg border transition-colors cursor-pointer",
-                              isViewing ? "bg-amber-500/10 border-amber-500/30" : "hover:bg-muted/50 border-border"
+                              "flex items-center gap-3 p-3 rounded-lg border-2 transition-all cursor-pointer",
+                              isViewing ? "bg-gradient-to-br from-yellow-400/40 to-amber-400/30 border-yellow-400 shadow-md shadow-yellow-500/20" : "bg-gradient-to-br from-yellow-500/15 to-amber-500/10 border-yellow-400/50 hover:border-yellow-400 hover:from-yellow-500/25 hover:to-amber-500/15"
                             )}
                             onClick={() => {
                               setViewingArchivedProject(isViewing ? null : project.id);
@@ -1857,11 +1859,11 @@ export function AreaMenu() {
                             }}
                             data-testid={`archived-emergent-${project.id}`}
                           >
-                            <Zap size={20} className="text-amber-500" />
+                            <Zap size={20} className="text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
                             <div className="flex-1 min-w-0">
-                              <p className="font-medium truncate">{project.name}</p>
+                              <p className="font-bold truncate text-yellow-900 dark:text-yellow-100">{project.name}</p>
                               {project.description && (
-                                <p className="text-sm text-muted-foreground truncate">{project.description}</p>
+                                <p className="text-sm text-yellow-700/70 dark:text-yellow-300/70 truncate">{project.description}</p>
                               )}
                             </div>
                             <div className="flex gap-1 shrink-0">
@@ -1873,6 +1875,7 @@ export function AreaMenu() {
                                   unarchiveProject(project.id);
                                 }}
                                 title="Restaurar"
+                                className="hover:text-yellow-600 dark:hover:text-yellow-400"
                                 data-testid={`button-unarchive-emergent-${project.id}`}
                               >
                                 <ArchiveRestore size={16} />
@@ -1917,9 +1920,8 @@ export function AreaMenu() {
 
                   {archivedExperienceQuests.length > 0 && (
                     <div className="space-y-2">
-                      <h3 className="text-xs font-semibold text-emerald-500/80 uppercase tracking-wider px-1 flex items-center gap-1">
-                        <Mountain size={12} />
-                        Experience Quest
+                      <h3 className="text-xs font-black text-yellow-700 dark:text-yellow-300 uppercase tracking-wider px-1 flex items-center gap-1">
+                        🏔️ Experience Quest
                       </h3>
                       {archivedExperienceQuests.map((project) => {
                         const isViewing = viewingArchivedProject === project.id;
@@ -1927,8 +1929,8 @@ export function AreaMenu() {
                           <div 
                             key={project.id} 
                             className={cn(
-                              "flex items-center gap-3 p-3 rounded-lg border transition-colors cursor-pointer",
-                              isViewing ? "bg-emerald-500/10 border-emerald-500/30" : "hover:bg-muted/50 border-border"
+                              "flex items-center gap-3 p-3 rounded-lg border-2 transition-all cursor-pointer",
+                              isViewing ? "bg-gradient-to-br from-yellow-400/40 to-amber-400/30 border-yellow-400 shadow-md shadow-yellow-500/20" : "bg-gradient-to-br from-yellow-500/15 to-amber-500/10 border-yellow-400/50 hover:border-yellow-400 hover:from-yellow-500/25 hover:to-amber-500/15"
                             )}
                             onClick={() => {
                               setViewingArchivedProject(isViewing ? null : project.id);
@@ -1940,11 +1942,11 @@ export function AreaMenu() {
                             }}
                             data-testid={`archived-experience-${project.id}`}
                           >
-                            <Mountain size={20} className="text-emerald-500" />
+                            <Mountain size={20} className="text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
                             <div className="flex-1 min-w-0">
-                              <p className="font-medium truncate">{project.name}</p>
+                              <p className="font-bold truncate text-yellow-900 dark:text-yellow-100">{project.name}</p>
                               {project.description && (
-                                <p className="text-sm text-muted-foreground truncate">{project.description}</p>
+                                <p className="text-sm text-yellow-700/70 dark:text-yellow-300/70 truncate">{project.description}</p>
                               )}
                             </div>
                             <div className="flex gap-1 shrink-0">
@@ -1956,6 +1958,7 @@ export function AreaMenu() {
                                   unarchiveProject(project.id);
                                 }}
                                 title="Restaurar"
+                                className="hover:text-yellow-600 dark:hover:text-yellow-400"
                                 data-testid={`button-unarchive-experience-${project.id}`}
                               >
                                 <ArchiveRestore size={16} />

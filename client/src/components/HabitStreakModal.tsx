@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/compone
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
-import { ArrowLeft, ChevronLeft, ChevronRight, Eye, Trash2, Plus } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Eye, Trash2, Plus, Archive } from "lucide-react";
 import { useTheme } from "next-themes";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Habit, HabitRecord, Area, Project } from "@shared/schema";
@@ -35,6 +35,69 @@ function getLocalDateString(date: Date = new Date()): string {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+// Helper function to compute streak
+function computeStreakGlobal(done: Set<string>, scheduledDays?: number[], referenceDate?: Date): number {
+  const today = referenceDate || new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayStr = getLocalDateString(today);
+  
+  const days = (Array.isArray(scheduledDays) && scheduledDays.length > 0) ? scheduledDays : [0, 1, 2, 3, 4, 5, 6];
+  
+  let s = 0;
+  const c = new Date(today);
+  const todayDayOfWeek = c.getDay() === 0 ? 6 : c.getDay() - 1;
+  
+  if (days.includes(todayDayOfWeek) && done.has(todayStr)) {
+    s++;
+    c.setDate(c.getDate() - 1);
+  } else {
+    c.setDate(c.getDate() - 1);
+  }
+  
+  let maxIterations = 1000;
+  while (maxIterations > 0) {
+    maxIterations--;
+    const x = getLocalDateString(c);
+    const dayOfWeek = c.getDay() === 0 ? 6 : c.getDay() - 1;
+    
+    if (!days.includes(dayOfWeek)) {
+      c.setDate(c.getDate() - 1);
+      continue;
+    }
+    
+    if (done.has(x)) {
+      s++;
+      c.setDate(c.getDate() - 1);
+    } else {
+      break;
+    }
+  }
+  return s;
+}
+
+// Helper function to check if streak is broken
+function isStreakBrokenGlobal(done: Set<string>, scheduledDays?: number[], referenceDate?: Date): boolean {
+  const today = referenceDate || new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayStr = getLocalDateString(today);
+  
+  const days = (Array.isArray(scheduledDays) && scheduledDays.length > 0) ? scheduledDays : [0, 1, 2, 3, 4, 5, 6];
+  
+  const yesterdayStr = new Date(today);
+  yesterdayStr.setDate(yesterdayStr.getDate() - 1);
+  const yesterdayDateStr = getLocalDateString(yesterdayStr);
+  const yesterdayDayOfWeek = yesterdayStr.getDay() === 0 ? 6 : yesterdayStr.getDay() - 1;
+  
+  const todayDayOfWeek = today.getDay() === 0 ? 6 : today.getDay() - 1;
+  const todayScheduled = days.includes(todayDayOfWeek);
+  const todayNotDone = todayScheduled && !done.has(todayStr);
+  
+  const yesterdayScheduled = days.includes(yesterdayDayOfWeek);
+  const yesterdayNotDone = yesterdayScheduled && !done.has(yesterdayDateStr);
+  
+  return todayNotDone && yesterdayNotDone;
 }
 
 export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) {
@@ -452,7 +515,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
         <div className="overflow-hidden rounded-3xl border border-border/50">
           {currentPanel === "main" && (
             <MainPanel
-              habits={habitsWithRecords}
+              habits={habitsWithRecords.filter((h) => !h.endDate || h.endDate >= getLocalDateString())}
               onDetailed={showDetail}
               onHistory={showHistory}
               onArchived={showArchived}
@@ -730,68 +793,6 @@ function MainPanel({
 
   const doneCount = habits.filter((h) => h.done.has(todayStr)).length;
 
-  const computeStreak = (done: Set<string>, scheduledDays?: number[]): number => {
-    // Default to all days if not provided or invalid
-    const days = (Array.isArray(scheduledDays) && scheduledDays.length > 0) ? scheduledDays : [0, 1, 2, 3, 4, 5, 6];
-    
-    let s = 0;
-    const c = new Date(today);
-    const todayDayOfWeek = c.getDay() === 0 ? 6 : c.getDay() - 1; // Convert to 0=Mon, 6=Sun
-    
-    // Check if today is a scheduled day
-    if (days.includes(todayDayOfWeek) && done.has(todayStr)) {
-      s++;
-      c.setDate(c.getDate() - 1);
-    } else {
-      c.setDate(c.getDate() - 1);
-    }
-    
-    // Go back through days, counting streaks only on scheduled days
-    let maxIterations = 1000; // Safety limit to prevent infinite loops
-    while (maxIterations > 0) {
-      maxIterations--;
-      const x = getLocalDateString(c);
-      const dayOfWeek = c.getDay() === 0 ? 6 : c.getDay() - 1; // Convert to 0=Mon, 6=Sun
-      
-      // If this day is NOT scheduled, skip it (continue to previous day)
-      if (!days.includes(dayOfWeek)) {
-        c.setDate(c.getDate() - 1);
-        continue;
-      }
-      
-      // If this day IS scheduled
-      if (done.has(x)) {
-        s++;
-        c.setDate(c.getDate() - 1);
-      } else {
-        // This is a scheduled day but wasn't completed - streak broken
-        break;
-      }
-    }
-    return s;
-  };
-
-  const isBroken = (done: Set<string>, scheduledDays?: number[]): boolean => {
-    // Default to all days if not provided or invalid
-    const days = (Array.isArray(scheduledDays) && scheduledDays.length > 0) ? scheduledDays : [0, 1, 2, 3, 4, 5, 6];
-    
-    const yesterdayStr = new Date(today);
-    yesterdayStr.setDate(yesterdayStr.getDate() - 1);
-    const yesterdayDateStr = getLocalDateString(yesterdayStr);
-    const yesterdayDayOfWeek = yesterdayStr.getDay() === 0 ? 6 : yesterdayStr.getDay() - 1;
-    
-    // Today is not completed
-    const todayDayOfWeek = today.getDay() === 0 ? 6 : today.getDay() - 1;
-    const todayScheduled = days.includes(todayDayOfWeek);
-    const todayNotDone = todayScheduled && !done.has(todayStr);
-    
-    // Yesterday was scheduled and not completed
-    const yesterdayScheduled = days.includes(yesterdayDayOfWeek);
-    const yesterdayNotDone = yesterdayScheduled && !done.has(yesterdayDateStr);
-    
-    return todayNotDone && yesterdayNotDone;
-  };
-
   const todayStr2 = today.toLocaleDateString("es-AR", {
     weekday: "long",
     day: "numeric",
@@ -894,8 +895,9 @@ function MainPanel({
           </p>
         ) : (
           habits.map((habit) => {
-            const streak = computeStreak(habit.done, habit.scheduledDays);
-            const broken = isBroken(habit.done, habit.scheduledDays);
+            const streak = computeStreakGlobal(habit.done, habit.scheduledDays, today);
+            const broken = isStreakBrokenGlobal(habit.done, habit.scheduledDays, today);
+            const displayBestStreak = broken ? habit.bestStreak : Math.max(streak, habit.bestStreak);
             const isToday = habit.done.has(todayStr);
 
             return (
@@ -1902,7 +1904,8 @@ function ArchivedPanel({
             <ArrowLeft className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
           </button>
           <div>
-            <h2 className="font-black text-xl text-yellow-700 dark:text-yellow-300">
+            <h2 className="font-black text-xl text-yellow-700 dark:text-yellow-300 flex items-center gap-2">
+              <Archive size={20} className="text-yellow-600 dark:text-yellow-400" />
               🏆 Hábitos Completados
             </h2>
             <p className="mt-1 text-sm text-yellow-600/70 dark:text-yellow-400/70">
@@ -1919,29 +1922,37 @@ function ArchivedPanel({
             No hay hábitos archivados
           </p>
         ) : (
-          habits.map((habit) => (
-            <button
-              key={habit.id}
-              onClick={() => onDetailClick(habit.id)}
-              className="text-left rounded-2xl border-2 border-yellow-400/50 px-4 py-3 bg-gradient-to-br from-yellow-500/20 via-amber-500/10 to-yellow-500/10 hover:border-yellow-400 hover:from-yellow-500/30 hover:via-amber-500/20 transition-all shadow-md hover:shadow-lg hover:shadow-yellow-500/20"
-            >
-              <div className="flex items-center gap-3 mb-2">
-                <span className="text-2xl flex-shrink-0 drop-shadow">{habit.emoji}</span>
-                <div className="flex-1 min-w-0">
-                  <span className="font-black text-sm text-yellow-900 dark:text-yellow-100 block truncate">
-                    {habit.name}
-                  </span>
-                  <span className="text-xs text-yellow-700/80 dark:text-yellow-300/80">
-                    Terminó: {new Date(habit.endDate!).toLocaleDateString("es-AR")}
-                  </span>
+          habits.map((habit) => {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const streak = computeStreakGlobal(habit.done, habit.scheduledDays, today);
+            const broken = isStreakBrokenGlobal(habit.done, habit.scheduledDays, today);
+            const displayBestStreak = broken ? habit.bestStreak : Math.max(streak, habit.bestStreak);
+            
+            return (
+              <button
+                key={habit.id}
+                onClick={() => onDetailClick(habit.id)}
+                className="text-left rounded-2xl border-2 border-yellow-400/50 px-4 py-3 bg-gradient-to-br from-yellow-500/20 via-amber-500/10 to-yellow-500/10 hover:border-yellow-400 hover:from-yellow-500/30 hover:via-amber-500/20 transition-all shadow-md hover:shadow-lg hover:shadow-yellow-500/20"
+              >
+                <div className="flex items-center gap-3 mb-2">
+                  <span className="text-2xl flex-shrink-0 drop-shadow">{habit.emoji}</span>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-black text-sm text-yellow-900 dark:text-yellow-100 block truncate">
+                      {habit.name}
+                    </span>
+                    <span className="text-xs text-yellow-700/80 dark:text-yellow-300/80">
+                      Terminó: {new Date(habit.endDate!).toLocaleDateString("es-AR")}
+                    </span>
+                  </div>
                 </div>
-              </div>
-              <div className="pl-11 flex items-center gap-2 text-xs text-yellow-700/70 dark:text-yellow-300/70">
-                <span className="font-semibold">Mejor racha:</span>
-                <span className="font-black text-yellow-800 dark:text-yellow-200">{habit.bestStreak} 🔥</span>
-              </div>
-            </button>
-          ))
+                <div className="pl-11 flex items-center gap-2 text-xs text-yellow-700/70 dark:text-yellow-300/70">
+                  <span className="font-semibold">Mejor racha:</span>
+                  <span className="font-black text-yellow-800 dark:text-yellow-200">{displayBestStreak} 🔥</span>
+                </div>
+              </button>
+            );
+          })
         )}
       </div>
 
@@ -1984,6 +1995,11 @@ function ArchivedDetailPanel({
   const offset = getFirstDayOfMonth(currentDate);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  
+  // Calculate display best streak
+  const streak = computeStreakGlobal(habit.done, habit.scheduledDays, today);
+  const broken = isStreakBrokenGlobal(habit.done, habit.scheduledDays, today);
+  const displayBestStreak = broken ? habit.bestStreak : Math.max(streak, habit.bestStreak);
 
   return (
     <div className="w-full">
@@ -2006,7 +2022,7 @@ function ArchivedDetailPanel({
       {/* Stats */}
       <div className="border-b border-yellow-500/20 flex gap-2 px-5 py-3 bg-yellow-50/30 dark:bg-yellow-950/10">
         <div className="flex-1 rounded-xl bg-gradient-to-br from-yellow-400/30 to-amber-400/20 px-3 py-2 text-center border border-yellow-300/30">
-          <div className="font-black text-xl text-yellow-900 dark:text-yellow-100">{habit.bestStreak}</div>
+          <div className="font-black text-xl text-yellow-900 dark:text-yellow-100">{displayBestStreak}</div>
           <div className="text-xs text-yellow-700/80 dark:text-yellow-300/80 uppercase font-semibold">Mejor racha 🔥</div>
         </div>
         <div className="flex-1 rounded-xl bg-gradient-to-br from-yellow-500/20 to-amber-500/10 px-3 py-2 text-center border border-yellow-300/30">
