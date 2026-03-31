@@ -17,6 +17,20 @@ interface ProgressItem {
 export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { areas, projects } = useSkillTree();
 
+  const getLevelColor = (level: number): string => {
+    const colors: { [key: number]: string } = {
+      1: "bg-green-100 dark:bg-green-100",
+      2: "bg-green-200 dark:bg-green-200",
+      3: "bg-green-300 dark:bg-green-300",
+      4: "bg-green-400 dark:bg-green-400",
+      5: "bg-green-500 dark:bg-green-500",
+      6: "bg-green-600 dark:bg-green-600",
+      7: "bg-green-700 dark:bg-green-700",
+      8: "bg-green-800 dark:bg-green-800",
+    };
+    return colors[level] || "bg-green-500 dark:bg-green-500";
+  };
+
   const calculateProgress = (skills: Array<{ status: string }>): { completed: number; total: number } => {
     const total = skills.length;
     const completed = skills.filter(s => s.status === "mastered").length;
@@ -77,7 +91,7 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
           <ScrollArea className="h-[50vh] pr-4">
             <div className="space-y-4">
               {progressItems.map((item) => {
-                const nodesSinceLastLevel = item.completedNodes % 30;
+                const nodesSinceLastLevel = item.completedNodes % 15;
                 const progress = calculateProgressPercentage(item.completedNodes);
 
                 return (
@@ -85,7 +99,7 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="text-lg font-semibold">{item.name}</span>
-                        <span className="text-xs font-bold px-2 py-1 rounded-full bg-primary/20 text-primary">
+                        <span className={`text-xs font-bold px-2 py-1 rounded-full ${getLevelColor(item.level)} text-gray-900 dark:text-black`}>
                           Lvl {item.level}
                         </span>
                       </div>
@@ -96,7 +110,7 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
 
                     <div className="w-full bg-muted rounded-full h-3 overflow-hidden">
                       <div
-                        className="h-full bg-gradient-to-r from-lime-400 via-green-500 to-emerald-700 transition-all duration-500"
+                        className={`h-full transition-all duration-500 ${getLevelColor(item.level)}`}
                         style={{ width: `${progress}%` }}
                       />
                     </div>

@@ -2861,6 +2861,16 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
+  // Helper function to find the next node by Y coordinate in the same level
+  const getNextNodeByY = (skills: Skill[], skill: Skill): Skill | undefined => {
+    const sameLevelSkills = skills
+      .filter(s => s.level === skill.level)
+      .sort((a, b) => a.y - b.y);
+    
+    const nextNode = sameLevelSkills.find(s => s.y > skill.y);
+    return nextNode;
+  };
+
   const duplicateSkill = async (areaId: string, skill: Skill) => {
     const area = areas.find(a => a.id === areaId);
     if (!area) return;
@@ -2870,6 +2880,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       .sort((a, b) => a.y - b.y);
 
     const finalNode = sameLevelSkills.find(s => s.isFinalNode === 1);
+    const nextNode = getNextNodeByY(area.skills, skill);
     const newY = skill.y + 150;
 
     try {
@@ -2884,6 +2895,16 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         });
       }
 
+      // Determine status for duplicated node based on next node
+      let duplicatedStatus: SkillStatus = "locked";
+      let nextNodeStatusUpdate: { needsUpdate: boolean; newStatus?: SkillStatus } = { needsUpdate: false };
+
+      if (skill.status === "mastered" && nextNode && nextNode.status === "available") {
+        duplicatedStatus = "available";
+        nextNodeStatusUpdate = { needsUpdate: true, newStatus: "locked" };
+        console.log(`[duplicateSkill] Intelligent status replication: duplicated=${duplicatedStatus}, nextNode will be locked`);
+      }
+
       const newSkillData = {
         areaId,
         title: skill.title,
@@ -2891,7 +2912,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         feedback: skill.feedback,
         x: skill.x,
         y: newY,
-        status: "locked" as SkillStatus,
+        status: duplicatedStatus,
         dependencies: [skill.id],
         level: skill.level,
         levelPosition: (skill.levelPosition || 0) + 1,
@@ -2905,6 +2926,15 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         body: JSON.stringify(newSkillData),
       });
       const newSkill = await response.json();
+
+      // Update next node status if needed (intelligent replication)
+      if (nextNodeStatusUpdate.needsUpdate && nextNode && nextNodeStatusUpdate.newStatus) {
+        await fetch(`/api/skills/${nextNode.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: nextNodeStatusUpdate.newStatus }),
+        });
+      }
 
       if (finalNode && finalNode.dependencies.includes(skill.id)) {
         const updatedDeps = finalNode.dependencies.map(d => d === skill.id ? newSkill.id : d);
@@ -2939,6 +2969,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       .sort((a, b) => a.y - b.y);
 
     const finalNode = sameLevelSkills.find(s => s.isFinalNode === 1);
+    const nextNode = getNextNodeByY(project.skills, skill);
     const newY = skill.y + 150;
 
     try {
@@ -2953,6 +2984,16 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         });
       }
 
+      // Determine status for duplicated node based on next node
+      let duplicatedStatus: SkillStatus = "locked";
+      let nextNodeStatusUpdate: { needsUpdate: boolean; newStatus?: SkillStatus } = { needsUpdate: false };
+
+      if (skill.status === "mastered" && nextNode && nextNode.status === "available") {
+        duplicatedStatus = "available";
+        nextNodeStatusUpdate = { needsUpdate: true, newStatus: "locked" };
+        console.log(`[duplicateProjectSkill] Intelligent status replication: duplicated=${duplicatedStatus}, nextNode will be locked`);
+      }
+
       const newSkillData = {
         projectId,
         title: skill.title,
@@ -2960,7 +3001,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         feedback: skill.feedback,
         x: skill.x,
         y: newY,
-        status: "locked" as SkillStatus,
+        status: duplicatedStatus,
         dependencies: [skill.id],
         level: skill.level,
         levelPosition: (skill.levelPosition || 0) + 1,
@@ -2974,6 +3015,15 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         body: JSON.stringify(newSkillData),
       });
       const newSkill = await response.json();
+
+      // Update next node status if needed (intelligent replication)
+      if (nextNodeStatusUpdate.needsUpdate && nextNode && nextNodeStatusUpdate.newStatus) {
+        await fetch(`/api/skills/${nextNode.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: nextNodeStatusUpdate.newStatus }),
+        });
+      }
 
       if (finalNode && finalNode.dependencies.includes(skill.id)) {
         const updatedDeps = finalNode.dependencies.map(d => d === skill.id ? newSkill.id : d);
@@ -3007,6 +3057,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       .sort((a, b) => a.y - b.y);
 
     const finalNode = sameLevelSkills.find(s => s.isFinalNode === 1);
+    const nextNode = getNextNodeByY(subSkills, skill);
     const newY = skill.y + 150;
 
     try {
@@ -3021,6 +3072,16 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         });
       }
 
+      // Determine status for duplicated node based on next node
+      let duplicatedStatus: SkillStatus = "locked";
+      let nextNodeStatusUpdate: { needsUpdate: boolean; newStatus?: SkillStatus } = { needsUpdate: false };
+
+      if (skill.status === "mastered" && nextNode && nextNode.status === "available") {
+        duplicatedStatus = "available";
+        nextNodeStatusUpdate = { needsUpdate: true, newStatus: "locked" };
+        console.log(`[duplicateSubSkill] Intelligent status replication: duplicated=${duplicatedStatus}, nextNode will be locked`);
+      }
+
       const newSkillData = {
         parentSkillId: activeParentSkillId,
         title: skill.title,
@@ -3028,7 +3089,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         feedback: skill.feedback,
         x: skill.x,
         y: newY,
-        status: "locked" as SkillStatus,
+        status: duplicatedStatus,
         dependencies: [skill.id],
         level: skill.level,
         levelPosition: (skill.levelPosition || 0) + 1,
@@ -3042,6 +3103,15 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         body: JSON.stringify(newSkillData),
       });
       const newSkill = await response.json();
+
+      // Update next node status if needed (intelligent replication)
+      if (nextNodeStatusUpdate.needsUpdate && nextNode && nextNodeStatusUpdate.newStatus) {
+        await fetch(`/api/skills/${nextNode.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: nextNodeStatusUpdate.newStatus }),
+        });
+      }
 
       if (finalNode && finalNode.dependencies.includes(skill.id)) {
         const updatedDeps = finalNode.dependencies.map(d => d === skill.id ? newSkill.id : d);
@@ -3061,6 +3131,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           if (finalNode && s.id === finalNode.id && finalNode.dependencies.includes(skill.id)) {
             const updatedDeps = s.dependencies.map(d => d === skill.id ? newSkill.id : d);
             updated = { ...updated, dependencies: updatedDeps };
+          }
+          // Apply intelligent status replication to local state
+          if (nextNodeStatusUpdate.needsUpdate && s.id === nextNode?.id && nextNodeStatusUpdate.newStatus) {
+            updated = { ...updated, status: nextNodeStatusUpdate.newStatus };
           }
           return updated;
         }),

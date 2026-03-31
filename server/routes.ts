@@ -1138,13 +1138,26 @@ export async function registerRoutes(
       await storage.recalculateNodeStatuses(currentLevel, parentInfo);
       await storage.recalculateNodeStatuses(targetLevel, parentInfo);
 
+      // Fetch final updated state of both levels to include correct statuses
+      const finalAllSkills = parentType === "area" 
+        ? await storage.getSkills(parentId)
+        : await storage.getProjectSkills(parentId);
+
+      const finalSourceSkills = finalAllSkills
+        .filter(s => s.level === currentLevel)
+        .sort((a, b) => a.levelPosition - b.levelPosition);
+
+      const finalTargetSkills = finalAllSkills
+        .filter(s => s.level === targetLevel)
+        .sort((a, b) => a.levelPosition - b.levelPosition);
+
       // Return the final repositioned moved skill
-      const finalMovedSkill = repositionedTargetSkills.find(s => s.id === req.params.id);
+      const finalMovedSkill = finalTargetSkills.find(s => s.id === req.params.id);
 
       res.json({ 
         movedSkill: finalMovedSkill || movedSkill, 
-        repositionedSourceSkills, 
-        repositionedTargetSkills 
+        sourceLevel: { skills: finalSourceSkills },
+        targetLevel: { skills: finalTargetSkills }
       });
     } catch (error: any) {
       console.error("Error in move skill endpoint:", error);
@@ -1238,7 +1251,16 @@ export async function registerRoutes(
       await storage.recalculateFinalNodes(currentLevel, parentInfo);
       await storage.recalculateNodeStatuses(currentLevel, parentInfo);
 
-      res.json({ updatedSkill, updatedNeighbor });
+      // Fetch all updated skills of the level to return to client
+      const updatedAllSkills = parentType === "area" 
+        ? await storage.getSkills(parentId)
+        : await storage.getProjectSkills(parentId);
+      
+      const levelSkillsUpdated = updatedAllSkills
+        .filter(s => s.level === currentLevel)
+        .sort((a, b) => a.levelPosition - b.levelPosition);
+
+      res.json({ levelSkills: levelSkillsUpdated, updatedSkill, updatedNeighbor });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -3102,6 +3124,120 @@ export async function registerRoutes(
         completed as 0 | 1
       );
       res.status(201).json(record);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Admin: Fix all node statuses consistent with unlockedLevel
+  app.post("/api/admin/fix-statuses", async (req, res) => {
+    try {
+      const { areas: areasTable, projects: projectsTable } = (await import("@shared/schema")).default;
+      
+      // Get all areas and recalculate
+      const allAreas = await db.select().from(areas);
+      let fixedCount = 0;
+      const fixes: string[] = [];
+
+      for (const area of allAreas) {
+        const unlockedLevel = area.unlockedLevel || 1;
+        const allSkills = await db.select().from(skills).where(eq(skills.areaId, area.id));
+        
+        if (allSkills.length === 0) continue;
+
+        // Group by level
+        const skillsByLevel = new Map<number, typeof allSkills>();
+        for (const skill of allSkills) {
+          const lv = skill.level || 1;
+          if (!skillsByLevel.has(lv)) skillsByLevel.set(lv, []);
+          skillsByLevel.get(lv)!.push(skill);
+        }
+
+        // Process each level
+        for (const [lvl, lvlSkills] of skillsByLevel) {
+          const sortedByPosition = [...lvlSkills].sort((a, b) => (a.levelPosition || 0) - (b.levelPosition || 0));
+          let foundFirstAvailable = false;
+
+          for (const skill of sortedByPosition) {
+            let newStatus: "mastered" | "available" | "locked";
+
+            if (lvl < unlockedLevel) {
+              newStatus = "mastered";
+            } else if (lvl === unlockedLevel) {
+              if (skill.levelPosition === 1) {
+                newStatus = "mastered";
+              } else if (!foundFirstAvailable && skill.status !== "mastered") {
+                newStatus = "available";
+                foundFirstAvailable = true;
+              } else {
+                newStatus = "locked";
+              }
+            } else {
+              newStatus = "locked";
+            }
+
+            if (skill.status !== newStatus) {
+              await db.update(skills).set({ status: newStatus }).where(eq(skills.id, skill.id));
+              fixedCount++;
+              fixes.push(`${area.name} L${lvl}: ${skill.title || "(empty)"} ${skill.status}→${newStatus}`);
+            }
+          }
+        }
+      }
+
+      // Get all projects and recalculate
+      const allProjects = await db.select().from(projects);
+      for (const project of allProjects) {
+        const unlockedLevel = project.unlockedLevel || 1;
+        const allSkills = await db.select().from(skills).where(eq(skills.projectId, project.id));
+        
+        if (allSkills.length === 0) continue;
+
+        // Group by level
+        const skillsByLevel = new Map<number, typeof allSkills>();
+        for (const skill of allSkills) {
+          const lv = skill.level || 1;
+          if (!skillsByLevel.has(lv)) skillsByLevel.set(lv, []);
+          skillsByLevel.get(lv)!.push(skill);
+        }
+
+        // Process each level
+        for (const [lvl, lvlSkills] of skillsByLevel) {
+          const sortedByPosition = [...lvlSkills].sort((a, b) => (a.levelPosition || 0) - (b.levelPosition || 0));
+          let foundFirstAvailable = false;
+
+          for (const skill of sortedByPosition) {
+            let newStatus: "mastered" | "available" | "locked";
+
+            if (lvl < unlockedLevel) {
+              newStatus = "mastered";
+            } else if (lvl === unlockedLevel) {
+              if (skill.levelPosition === 1) {
+                newStatus = "mastered";
+              } else if (!foundFirstAvailable && skill.status !== "mastered") {
+                newStatus = "available";
+                foundFirstAvailable = true;
+              } else {
+                newStatus = "locked";
+              }
+            } else {
+              newStatus = "locked";
+            }
+
+            if (skill.status !== newStatus) {
+              await db.update(skills).set({ status: newStatus }).where(eq(skills.id, skill.id));
+              fixedCount++;
+              fixes.push(`${project.name} L${lvl}: ${skill.title || "(empty)"} ${skill.status}→${newStatus}`);
+            }
+          }
+        }
+      }
+
+      res.json({ 
+        message: `✅ Recalculación completada. ${fixedCount} nodos corregidos.`,
+        fixedCount,
+        fixes: fixes.slice(0, 50) // Return first 50 fixes
+      });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

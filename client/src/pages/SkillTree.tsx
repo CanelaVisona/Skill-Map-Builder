@@ -1300,22 +1300,22 @@ function ToolsSection({
 
   return (
     <div className="h-full flex flex-col">
-      <div className="mb-3 pb-2 border-b border-zinc-700/50">
-        <span className="text-xs text-zinc-500 uppercase tracking-wider">
+      <div className="mb-3 pb-2 border-b border-border">
+        <span className="text-xs text-muted-foreground uppercase tracking-wider">
           {entries.length} tools
         </span>
-        <div className="h-px w-8 bg-gradient-to-r from-zinc-600 to-transparent mt-1" />
+        <div className="h-px w-8 bg-gradient-to-r from-muted-foreground to-transparent mt-1" />
       </div>
 
       <div className="flex flex-1 min-h-0 flex-col sm:flex-row gap-5 sm:gap-4">
         <div 
-          className="w-full sm:w-1/2 flex flex-col bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer min-h-0"
+          className="w-full sm:w-1/2 flex flex-col bg-secondary/30 rounded border border-border/50 p-3 cursor-pointer min-h-0"
         >
           <ScrollArea className="h-full">
             {entries.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
-                <Wrench className="h-8 w-8 text-zinc-600 mb-3" />
-                <p className="text-zinc-500 text-sm">No tools yet</p>
+                <Wrench className="h-8 w-8 text-muted-foreground/50 mb-3" />
+                <p className="text-muted-foreground text-sm">No tools yet</p>
               </div>
             ) : (
               <div className="space-y-0.5">
@@ -1331,15 +1331,15 @@ function ToolsSection({
                       onMouseLeave={handleLeftLongPressEnd}
                       className={`w-full text-left px-3 py-2 rounded text-sm transition-all cursor-pointer select-none ${
                         viewingEntry?.id === entry.id 
-                          ? "bg-zinc-700 text-zinc-100 shadow-sm" 
-                          : "text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200"
+                          ? "bg-secondary text-foreground shadow-sm" 
+                          : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground/80"
                       }`}
                       data-testid={`card-tools-${entry.id}`}
                     >
                       {entry.title}
                     </button>
                     {index < entries.length - 1 && (
-                      <div className="h-px bg-zinc-700/30 mx-2" />
+                      <div className="h-px bg-border/30 mx-2" />
                     )}
                   </div>
                 ))}
@@ -1349,7 +1349,7 @@ function ToolsSection({
         </div>
         
         <div 
-          className="w-full sm:w-1/2 h-full flex flex-col bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
+          className="w-full sm:w-1/2 h-full flex flex-col bg-secondary/20 rounded border border-border/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)] dark:shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
           onTouchStart={handleRightLongPressStart}
           onTouchEnd={handleRightLongPressEnd}
           onTouchCancel={handleRightLongPressEnd}
@@ -1359,18 +1359,18 @@ function ToolsSection({
         >
           {viewingEntry ? (
             <>
-              <div className="border-b border-zinc-700/50 pb-2 mb-4 flex-shrink-0">
-                <h3 className="font-medium text-zinc-100 uppercase tracking-wide">{viewingEntry.title}</h3>
-                <div className="h-px w-12 bg-gradient-to-r from-zinc-500 to-transparent mt-2" />
+              <div className="border-b border-border/50 pb-2 mb-4 flex-shrink-0">
+                <h3 className="font-medium text-foreground uppercase tracking-wide">{viewingEntry.title}</h3>
+                <div className="h-px w-12 bg-gradient-to-r from-muted-foreground to-transparent mt-2" />
               </div>
               <div className="flex-1 min-h-0 overflow-y-auto minimal-scrollbar">
                 {viewingEntry.sentence && (
-                  <p className="text-sm text-zinc-400 whitespace-pre-line leading-relaxed">{viewingEntry.sentence}</p>
+                  <p className="text-sm text-muted-foreground whitespace-pre-line leading-relaxed">{viewingEntry.sentence}</p>
                 )}
               </div>
             </>
           ) : (
-            <div className="h-full flex items-center justify-center text-zinc-600 text-sm">
+            <div className="h-full flex items-center justify-center text-muted-foreground/50 text-sm">
               Seleccioná una entrada
             </div>
           )}
@@ -1426,22 +1426,22 @@ function LearningsSection({
 
   return (
     <div className="h-full flex flex-col">
-      <div className="mb-3 pb-2 border-b border-zinc-700/50">
-        <span className="text-xs text-zinc-500 uppercase tracking-wider">
+      <div className="mb-3 pb-2 border-b border-border">
+        <span className="text-xs text-muted-foreground uppercase tracking-wider">
           {entries.length} discoveries
         </span>
-        <div className="h-px w-8 bg-gradient-to-r from-zinc-600 to-transparent mt-1" />
+        <div className="h-px w-8 bg-gradient-to-r from-muted-foreground to-transparent mt-1" />
       </div>
 
       <div className="flex flex-1 min-h-0 flex-col sm:flex-row gap-5 sm:gap-4">
         <div 
-          className="w-full sm:w-1/2 flex flex-col bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer min-h-0"
+          className="w-full sm:w-1/2 flex flex-col bg-secondary/30 rounded border border-border/50 p-3 cursor-pointer min-h-0"
         >
           <ScrollArea className="h-full">
             {entries.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
-                <Lightbulb className="h-8 w-8 text-zinc-600 mb-3" />
-                <p className="text-zinc-500 text-sm">No learnings yet</p>
+                <Lightbulb className="h-8 w-8 text-muted-foreground/50 mb-3" />
+                <p className="text-muted-foreground text-sm">No learnings yet</p>
               </div>
             ) : (
               <div className="space-y-0.5">
@@ -1457,15 +1457,15 @@ function LearningsSection({
                       onMouseLeave={handleLeftLongPressEnd}
                       className={`w-full text-left px-3 py-2 rounded text-sm transition-all cursor-pointer select-none ${
                         viewingEntry?.id === entry.id 
-                          ? "bg-zinc-700 text-zinc-100 shadow-sm" 
-                          : "text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200"
+                          ? "bg-secondary text-foreground shadow-sm" 
+                          : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground/80"
                       }`}
                       data-testid={`card-learnings-${entry.id}`}
                     >
                       {entry.title}
                     </button>
                     {index < entries.length - 1 && (
-                      <div className="h-px bg-zinc-700/30 mx-2" />
+                      <div className="h-px bg-border/30 mx-2" />
                     )}
                   </div>
                 ))}
@@ -1475,7 +1475,7 @@ function LearningsSection({
         </div>
         
         <div 
-          className="w-full sm:w-1/2 h-full flex flex-col bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
+          className="w-full sm:w-1/2 h-full flex flex-col bg-secondary/20 rounded border border-border/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)] dark:shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
           onTouchStart={handleRightLongPressStart}
           onTouchEnd={handleRightLongPressEnd}
           onTouchCancel={handleRightLongPressEnd}
@@ -1485,18 +1485,18 @@ function LearningsSection({
         >
           {viewingEntry ? (
             <>
-              <div className="border-b border-zinc-700/50 pb-2 mb-4 flex-shrink-0">
-                <h3 className="font-medium text-zinc-100 uppercase tracking-wide">{viewingEntry.title}</h3>
-                <div className="h-px w-12 bg-gradient-to-r from-zinc-500 to-transparent mt-2" />
+              <div className="border-b border-border/50 pb-2 mb-4 flex-shrink-0">
+                <h3 className="font-medium text-foreground uppercase tracking-wide">{viewingEntry.title}</h3>
+                <div className="h-px w-12 bg-gradient-to-r from-muted-foreground to-transparent mt-2" />
               </div>
               <div className="flex-1 min-h-0 overflow-y-auto minimal-scrollbar">
                 {viewingEntry.sentence && (
-                  <p className="text-sm text-zinc-400 whitespace-pre-line leading-relaxed">{viewingEntry.sentence}</p>
+                  <p className="text-sm text-muted-foreground whitespace-pre-line leading-relaxed">{viewingEntry.sentence}</p>
                 )}
               </div>
             </>
           ) : (
-            <div className="h-full flex items-center justify-center text-zinc-600 text-sm">
+            <div className="h-full flex items-center justify-center text-muted-foreground/50 text-sm">
               Seleccioná una entrada
             </div>
           )}
@@ -3051,7 +3051,7 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
                         <div className="pt-6">
                           <div className="relative">
                             {/* Vertical line connecting all nodes */}
-                            <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-gradient-to-b from-zinc-600 to-zinc-700" style={{height: `calc(100% - 1.5rem)`}} />
+                            <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-gradient-to-b from-muted-foreground/30 to-muted-foreground/50 dark:from-zinc-600 dark:to-zinc-700" style={{height: `calc(100% - 1.5rem)`}} />
                             
                             <div className="space-y-6">
                               {levelActivities.map((activity, index) => (
@@ -3071,7 +3071,7 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
                                           if (thought) setViewingThought(thought);
                                         }
                                       }}
-                                      className="w-12 h-12 rounded-full bg-zinc-900 border-2 border-zinc-700 flex items-center justify-center flex-shrink-0 hover:border-zinc-500 transition-all hover:shadow-lg hover:shadow-zinc-900/50 group relative z-10"
+                                      className="w-12 h-12 rounded-full bg-background border-2 border-border flex items-center justify-center flex-shrink-0 hover:border-muted-foreground/50 transition-all hover:shadow-lg hover:shadow-foreground/10 dark:bg-zinc-900 dark:border-zinc-700 dark:hover:border-zinc-500 dark:hover:shadow-zinc-900/50 group relative z-10"
                                     >
                                       {activity.type === 'learning' ? (
                                         <Lightbulb className="h-5 w-5 text-yellow-500 group-hover:text-yellow-400" />
@@ -3085,7 +3085,7 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
                                   
                                   {/* Content */}
                                   <div className="flex-1 pt-1">
-                                    <div className="bg-zinc-800/40 border border-zinc-700/50 rounded-lg p-4 hover:bg-zinc-800/60 transition-colors cursor-pointer group"
+                                    <div className="bg-transparent border border-border/30 rounded-lg p-4 hover:bg-muted/30 transition-colors cursor-pointer group dark:bg-zinc-800/40 dark:border-zinc-700/50 dark:hover:bg-zinc-800/60"
                                       onClick={() => {
                                         if (activity.type === 'learning') {
                                           const learning = learnings.find(l => l.id === activity.id);
@@ -3099,10 +3099,10 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
                                         }
                                       }}
                                     >
-                                      <p className="text-sm font-medium text-zinc-200 mb-2 group-hover:text-zinc-50 transition-colors">
+                                      <p className="text-sm font-medium text-foreground mb-2 group-hover:text-foreground transition-colors dark:text-zinc-200 dark:group-hover:text-zinc-50">
                                         {activity.title}
                                       </p>
-                                      <p className="text-sm text-zinc-400 leading-relaxed whitespace-pre-wrap group-hover:text-zinc-300 transition-colors">
+                                      <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap group-hover:text-muted-foreground/80 transition-colors dark:text-zinc-400 dark:group-hover:text-zinc-300">
                                         {activity.sentence}
                                       </p>
                                     </div>
@@ -3184,14 +3184,14 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
                           {/* Level Separator */}
                           <div className="text-center mb-6">
                             <div className="flex items-center gap-4 mb-2">
-                              <div className="flex-1 h-px bg-gradient-to-r from-zinc-600/50 to-transparent" />
-                              <span className="text-sm font-semibold text-zinc-400 whitespace-nowrap">
+                              <div className="flex-1 h-px bg-gradient-to-r from-muted-foreground/30 to-transparent dark:from-zinc-600/50 dark:to-transparent" />
+                              <span className="text-sm font-semibold text-muted-foreground dark:text-zinc-400 whitespace-nowrap">
                                 LEVEL {level}
                               </span>
-                              <div className="flex-1 h-px bg-gradient-to-l from-zinc-600/50 to-transparent" />
+                              <div className="flex-1 h-px bg-gradient-to-l from-muted-foreground/30 to-transparent dark:from-zinc-600/50 dark:to-transparent" />
                             </div>
                             {hasRealSubtitle && (
-                              <p className="text-sm text-zinc-500">
+                              <p className="text-sm text-muted-foreground/70 dark:text-zinc-500">
                                 {hasRealSubtitle}
                               </p>
                             )}
@@ -3200,7 +3200,7 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
                           {/* Activities for this level */}
                           <div className="relative">
                             {/* Vertical line for this level */}
-                            <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-gradient-to-b from-zinc-600 to-zinc-700" style={{height: `calc(100% - 1.5rem)`}} />
+                            <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-gradient-to-b from-muted-foreground/30 to-muted-foreground/50 dark:from-zinc-600 dark:to-zinc-700" style={{height: `calc(100% - 1.5rem)`}} />
                             
                             <div className="space-y-6">
                               {levelActivities.map((activity, index) => (
@@ -3220,7 +3220,7 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
                                           if (thought) setViewingThought(thought);
                                         }
                                       }}
-                                      className="w-12 h-12 rounded-full bg-zinc-900 border-2 border-zinc-700 flex items-center justify-center flex-shrink-0 hover:border-zinc-500 transition-all hover:shadow-lg hover:shadow-zinc-900/50 group relative z-10"
+                                      className="w-12 h-12 rounded-full bg-background border-2 border-border flex items-center justify-center flex-shrink-0 hover:border-muted-foreground/50 transition-all hover:shadow-lg hover:shadow-foreground/10 dark:bg-zinc-900 dark:border-zinc-700 dark:hover:border-zinc-500 dark:hover:shadow-zinc-900/50 group relative z-10"
                                     >
                                       {activity.type === 'learning' ? (
                                         <Lightbulb className="h-5 w-5 text-yellow-500 group-hover:text-yellow-400" />
@@ -3234,7 +3234,7 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
                                   
                                   {/* Content */}
                                   <div className="flex-1 pt-1">
-                                    <div className="bg-zinc-800/40 border border-zinc-700/50 rounded-lg p-4 hover:bg-zinc-800/60 transition-colors cursor-pointer group"
+                                    <div className="bg-transparent border border-border/30 rounded-lg p-4 hover:bg-muted/30 transition-colors cursor-pointer group dark:bg-zinc-800/40 dark:border-zinc-700/50 dark:hover:bg-zinc-800/60"
                                       onClick={() => {
                                         if (activity.type === 'learning') {
                                           const learning = learnings.find(l => l.id === activity.id);
@@ -3248,10 +3248,10 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
                                         }
                                       }}
                                     >
-                                      <p className="text-sm font-medium text-zinc-200 mb-2 group-hover:text-zinc-50 transition-colors">
+                                      <p className="text-sm font-medium text-foreground mb-2 group-hover:text-foreground transition-colors dark:text-zinc-200 dark:group-hover:text-zinc-50">
                                         {activity.title}
                                       </p>
-                                      <p className="text-sm text-zinc-400 leading-relaxed whitespace-pre-wrap group-hover:text-zinc-300 transition-colors">
+                                      <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap group-hover:text-muted-foreground/80 transition-colors dark:text-zinc-400 dark:group-hover:text-zinc-300">
                                         {activity.sentence}
                                       </p>
                                     </div>
@@ -5184,38 +5184,38 @@ function QuestDiary() {
   
   return (
     <Dialog open={isDiaryOpen} onOpenChange={(open) => !open && closeDiary()}>
-      <DialogContent className="w-[calc(100vw-1.5rem)] max-w-[calc(100vw-1.5rem)] sm:max-w-4xl h-[92dvh] sm:h-[75vh] p-0 overflow-hidden bg-zinc-900 border-2 border-zinc-700 shadow-2xl">
+      <DialogContent className="w-[calc(100vw-1.5rem)] max-w-[calc(100vw-1.5rem)] sm:max-w-4xl h-[92dvh] sm:h-[75vh] p-0 overflow-hidden bg-background border-2 border-border shadow-2xl">
         <VisuallyHidden>
           <DialogTitle>Journal</DialogTitle>
         </VisuallyHidden>
         <div className="flex h-full min-h-0 min-w-0 flex-col sm:flex-row">
           <Tabs defaultValue="achievements" className="flex-1 flex min-h-0 min-w-0 flex-col sm:flex-row" orientation={isMobile ? "horizontal" : "vertical"}>
-            <TabsList className="flex w-full sm:w-auto flex-row sm:flex-col h-auto sm:h-full justify-start gap-0.5 p-1.5 rounded-none border-b-2 sm:border-b-0 sm:border-r-2 border-zinc-700 bg-zinc-800/50 shadow-[inset_0_-4px_8px_rgba(0,0,0,0.3)] sm:shadow-[inset_-4px_0_8px_rgba(0,0,0,0.3)] overflow-x-auto">
-              <TabsTrigger value="achievements" className="shrink-0 p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-achievements" title="Achievements">
+            <TabsList className="flex w-full sm:w-auto flex-row sm:flex-col h-auto sm:h-full justify-start gap-0.5 p-1.5 rounded-none border-b-2 sm:border-b-0 sm:border-r-2 border-border bg-secondary/50 shadow-[inset_0_-4px_8px_rgba(0,0,0,0.3)] sm:shadow-[inset_-4px_0_8px_rgba(0,0,0,0.3)] dark:shadow-[inset_0_-4px_8px_rgba(0,0,0,0.3)] sm:dark:shadow-[inset_-4px_0_8px_rgba(0,0,0,0.3)] overflow-x-auto">
+              <TabsTrigger value="achievements" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-achievements" title="Achievements">
                 <Scroll className="h-5 w-5" />
               </TabsTrigger>
-              <div className="h-px bg-zinc-700/50 my-1 mx-1" />
-              <TabsTrigger value="skills" className="shrink-0 p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-skills" title="Skills">
+              <div className="h-px bg-border/50 my-1 mx-1" />
+              <TabsTrigger value="skills" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-skills" title="Skills">
                 <BookOpen className="h-5 w-5" />
               </TabsTrigger>
-              <TabsTrigger value="profile" className="shrink-0 p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-profile" title="Mi Perfil">
+              <TabsTrigger value="profile" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-profile" title="Mi Perfil">
                 <User className="h-5 w-5" />
               </TabsTrigger>
-              <TabsTrigger value="learnings" className="shrink-0 p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-learnings" title="Learnings">
+              <TabsTrigger value="learnings" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-learnings" title="Learnings">
                 <Lightbulb className="h-5 w-5" />
               </TabsTrigger>
-              <TabsTrigger value="tools" className="shrink-0 p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-tools" title="Tools">
+              <TabsTrigger value="tools" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-tools" title="Tools">
                 <Wrench className="h-5 w-5" />
               </TabsTrigger>
-              <TabsTrigger value="bestiary" className="shrink-0 p-2.5 rounded data-[state=active]:bg-zinc-700 data-[state=active]:shadow-inner text-zinc-400 data-[state=active]:text-zinc-100 transition-all" data-testid="tab-bestiary" title="Bestiary">
+              <TabsTrigger value="bestiary" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-bestiary" title="Bestiary">
                 <BookOpen className="h-5 w-5" />
               </TabsTrigger>
             </TabsList>
             
-            <div className="flex-1 p-3 sm:p-6 bg-zinc-900 flex flex-col min-h-0 min-w-0">
-              <div className="mb-4 pb-3 border-b border-zinc-700">
-                <h2 className="text-xl font-bold tracking-tight text-zinc-100">Journal</h2>
-                <div className="h-0.5 w-16 bg-gradient-to-r from-zinc-500 to-transparent mt-2" />
+            <div className="flex-1 p-3 sm:p-6 bg-background flex flex-col min-h-0 min-w-0">
+              <div className="mb-4 pb-3 border-b border-border">
+                <h2 className="text-xl font-bold tracking-tight text-foreground">Journal</h2>
+                <div className="h-0.5 w-16 bg-gradient-to-r from-muted-foreground to-transparent mt-2" />
               </div>
               
               <TabsContent value="achievements" className="flex-1 min-h-0 min-w-0 mt-0">

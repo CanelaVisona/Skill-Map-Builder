@@ -17,6 +17,20 @@ export function ProgressBar({ skills, size = "lg", areaOrProjectId }: ProgressBa
   const prevCompletedRef = useRef(0);
   const prevLevelRef = useRef(1);
 
+  const getLevelColor = (level: number): string => {
+    const colors: { [key: number]: string } = {
+      1: "bg-green-100 dark:bg-green-100",
+      2: "bg-green-200 dark:bg-green-200",
+      3: "bg-green-300 dark:bg-green-300",
+      4: "bg-green-400 dark:bg-green-400",
+      5: "bg-green-500 dark:bg-green-500",
+      6: "bg-green-600 dark:bg-green-600",
+      7: "bg-green-700 dark:bg-green-700",
+      8: "bg-green-800 dark:bg-green-800",
+    };
+    return colors[level] || "bg-green-500 dark:bg-green-500";
+  };
+
   const calculateLevel = (completedNodes: number): number => {
     return Math.floor(completedNodes / 15) + 1;
   };
@@ -92,11 +106,12 @@ export function ProgressBar({ skills, size = "lg", areaOrProjectId }: ProgressBa
     : "text-[10px]";
 
   const displayWidth = showLevelComplete ? 100 : progressPercentage;
+  const levelColor = getLevelColor(level);
   const barColor = showLevelComplete 
     ? "bg-yellow-500 dark:bg-yellow-400" 
     : isAnimating 
-      ? "bg-orange-500 dark:bg-orange-400" 
-      : "bg-gray-700 dark:bg-gray-300";
+      ? levelColor 
+      : levelColor;
 
   return (
     <div className={`${containerClass} flex flex-col gap-1 relative`}>
@@ -126,7 +141,7 @@ export function ProgressBar({ skills, size = "lg", areaOrProjectId }: ProgressBa
         />
         
         {/* Level text integrated inside bar */}
-        <div className={`absolute inset-0 flex items-center justify-center ${textSize} font-semibold text-gray-900 dark:text-gray-100 pointer-events-none`}>
+        <div className={`absolute inset-0 flex items-center justify-center ${textSize} font-semibold text-gray-900 dark:text-black pointer-events-none`}>
           Lvl {level}
         </div>
       </div>

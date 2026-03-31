@@ -428,57 +428,89 @@ export class DbStorage implements IStorage {
   }
 
   /**
-   * Recalculate node status for all skills in a level based on levelPosition.
-   * Rules:
-   * - levelPosition 1: always "mastered" (auto-complete)
-   * - First non-mastered node after all mastered: "available" (next to unlock)
-   * - All remaining nodes: "locked"
+   * Recalculate node statuses for the entire area/project.
+   * Rules based on unlockedLevel:
+   * - Levels < unlockedLevel: all nodes are "locked" (completed levels)
+   * - Level == unlockedLevel: levelPosition 1 is "mastered", first non-mastered is "available"
+   * - Levels > unlockedLevel: all nodes are "locked" (future levels)
    */
   async recalculateNodeStatuses(
     level: number,
     options: { areaId?: string; projectId?: string; parentSkillId?: string }
   ): Promise<void> {
     const { areaId, projectId, parentSkillId } = options;
-    
-    // Get all skills in the level, sorted by levelPosition
-    const levelSkills = await db.select().from(skills).where(
+
+    let unlockedLevel: number;
+
+    // Get unlockedLevel from area or project
+    if (areaId) {
+      const area = await db.select().from(areas).where(eq(areas.id, areaId)).limit(1);
+      if (!area.length) return;
+      unlockedLevel = area[0].unlockedLevel || 1;
+    } else if (projectId) {
+      const project = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
+      if (!project.length) return;
+      unlockedLevel = project[0].unlockedLevel || 1;
+    } else {
+      return; // Need either areaId or projectId
+    }
+
+    // Get all skills in the area/project/parent
+    const allSkills = await db.select().from(skills).where(
       and(
-        eq(skills.level, level),
         areaId ? eq(skills.areaId, areaId) : undefined,
         projectId ? eq(skills.projectId, projectId) : undefined,
         parentSkillId ? eq(skills.parentSkillId, parentSkillId) : undefined
       )
     );
 
-    if (levelSkills.length === 0) return;
+    if (allSkills.length === 0) return;
 
-    // Sort by levelPosition ascending
-    const sortedByPosition = [...levelSkills].sort((a, b) => 
-      (a.levelPosition || 0) - (b.levelPosition || 0)
-    );
-
-    let foundFirstAvailable = false;
-
-    // Update statuses based on rules
-    for (const skill of sortedByPosition) {
-      let newStatus: "mastered" | "available" | "locked";
-
-      if (skill.levelPosition === 1) {
-        // Position 1 is always mastered
-        newStatus = "mastered";
-      } else if (!foundFirstAvailable && skill.status !== "mastered") {
-        // First non-mastered node becomes available
-        newStatus = "available";
-        foundFirstAvailable = true;
-      } else {
-        // All others are locked
-        newStatus = "locked";
+    // Group skills by level
+    const skillsByLevel = new Map<number, Skill[]>();
+    for (const skill of allSkills) {
+      const lv = skill.level || 1;
+      if (!skillsByLevel.has(lv)) {
+        skillsByLevel.set(lv, []);
       }
+      skillsByLevel.get(lv)!.push(skill);
+    }
 
-      if (skill.status !== newStatus) {
-        await db.update(skills)
-          .set({ status: newStatus })
-          .where(eq(skills.id, skill.id));
+    // Process each level according to unlockedLevel
+    for (const [lvl, lvlSkills] of skillsByLevel) {
+      // Sort by levelPosition
+      const sortedByPosition = [...lvlSkills].sort((a, b) => 
+        (a.levelPosition || 0) - (b.levelPosition || 0)
+      );
+
+      let foundFirstAvailable = false;
+
+      for (const skill of sortedByPosition) {
+        let newStatus: "mastered" | "available" | "locked";
+
+        if (lvl < unlockedLevel) {
+          // All nodes in completed levels (below unlockedLevel) are mastered
+          newStatus = "mastered";
+        } else if (lvl === unlockedLevel) {
+          // Current unlocked level: apply the progression rules
+          if (skill.levelPosition === 1) {
+            newStatus = "mastered";
+          } else if (!foundFirstAvailable && skill.status !== "mastered") {
+            newStatus = "available";
+            foundFirstAvailable = true;
+          } else {
+            newStatus = "locked";
+          }
+        } else {
+          // Levels above unlockedLevel: all locked
+          newStatus = "locked";
+        }
+
+        if (skill.status !== newStatus) {
+          await db.update(skills)
+            .set({ status: newStatus })
+            .where(eq(skills.id, skill.id));
+        }
       }
     }
   }

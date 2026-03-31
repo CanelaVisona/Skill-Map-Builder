@@ -27,7 +27,7 @@ const MONTHS = [
 const DAY_LBLS = ["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"];
 const COLORS = ["#534AB7", "#1D9E75", "#D85A30", "#185FA5"];
 
-type PanelType = "main" | "history" | "detail" | "add" | "edit" | "archived";
+type PanelType = "main" | "history" | "detail" | "add" | "edit" | "archived" | "archived-detail";
 
 // Helper function to get local date string in YYYY-MM-DD format (not UTC)
 function getLocalDateString(date: Date = new Date()): string {
@@ -42,6 +42,8 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
   const [selectedHabitId, setSelectedHabitId] = useState<string | null>(null);
   const [historyViewDate, setHistoryViewDate] = useState(new Date());
   const [detailViewDate, setDetailViewDate] = useState(new Date());
+  const [selectedArchivedHabitId, setSelectedArchivedHabitId] = useState<string | null>(null);
+  const [archivedDetailDate, setArchivedDetailDate] = useState(new Date());
   const [newHabitEmoji, setNewHabitEmoji] = useState("");
   const [newHabitName, setNewHabitName] = useState("");
   const [newHabitEndDate, setNewHabitEndDate] = useState("");
@@ -636,6 +638,26 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
             <ArchivedPanel
               habits={habitsWithRecords.filter((h) => h.endDate && h.endDate < getLocalDateString())}
               onBack={showMain}
+              onDetailClick={(habitId) => {
+                setSelectedArchivedHabitId(habitId);
+                setCurrentPanel("archived-detail");
+              }}
+            />
+          )}
+
+          {currentPanel === "archived-detail" && selectedArchivedHabitId && (
+            <ArchivedDetailPanel
+              habit={habitsWithRecords.find((h) => h.id === selectedArchivedHabitId)}
+              currentDate={archivedDetailDate}
+              onMonthChange={(delta) => {
+                const newDate = new Date(archivedDetailDate);
+                newDate.setMonth(newDate.getMonth() + delta);
+                setArchivedDetailDate(newDate);
+              }}
+              onBack={() => {
+                setSelectedArchivedHabitId(null);
+                setCurrentPanel("archived");
+              }}
             />
           )}
         </div>
@@ -1862,68 +1884,211 @@ function EditPanel({
 function ArchivedPanel({
   habits,
   onBack,
+  onDetailClick,
 }: {
   habits: HabitData[];
   onBack: () => void;
+  onDetailClick: (habitId: string) => void;
 }) {
   return (
     <div className="w-full">
       {/* Header */}
-      <div className="border-b border-border/30 px-6 py-5">
+      <div className="border-b border-yellow-500/30 px-6 py-5 bg-gradient-to-r from-yellow-500/5 to-amber-500/5">
         <div className="flex items-start gap-4">
           <button
             onClick={onBack}
-            className="flex-shrink-0 mt-1 rounded hover:bg-muted p-1 transition-colors"
+            className="flex-shrink-0 mt-1 rounded hover:bg-yellow-500/10 p-1 transition-colors"
           >
-            <ArrowLeft className="h-5 w-5 text-muted-foreground" />
+            <ArrowLeft className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
           </button>
           <div>
-            <h2 className="font-black text-xl text-foreground">
-              Hábitos Archivados
+            <h2 className="font-black text-xl text-yellow-700 dark:text-yellow-300">
+              🏆 Hábitos Completados
             </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Hábitos que ya pasaron su fecha límite
+            <p className="mt-1 text-sm text-yellow-600/70 dark:text-yellow-400/70">
+              ¡Felicidades! Superaste estos desafíos
             </p>
           </div>
         </div>
       </div>
 
       {/* Habits List */}
-      <div className="px-5 py-3 flex flex-col gap-1.5 max-h-80 overflow-y-auto">
+      <div className="px-5 py-3 flex flex-col gap-2 max-h-80 overflow-y-auto">
         {habits.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No hay hábitos archivados
           </p>
         ) : (
           habits.map((habit) => (
-            <div
+            <button
               key={habit.id}
-              className="rounded-2xl border border-border/30 px-3.5 py-3 bg-muted/30"
+              onClick={() => onDetailClick(habit.id)}
+              className="text-left rounded-2xl border-2 border-yellow-400/50 px-4 py-3 bg-gradient-to-br from-yellow-500/20 via-amber-500/10 to-yellow-500/10 hover:border-yellow-400 hover:from-yellow-500/30 hover:via-amber-500/20 transition-all shadow-md hover:shadow-lg hover:shadow-yellow-500/20"
             >
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-xl flex-shrink-0">{habit.emoji}</span>
-                <span className="font-bold text-sm text-foreground flex-1 truncate">
-                  {habit.name}
-                </span>
+              <div className="flex items-center gap-3 mb-2">
+                <span className="text-2xl flex-shrink-0 drop-shadow">{habit.emoji}</span>
+                <div className="flex-1 min-w-0">
+                  <span className="font-black text-sm text-yellow-900 dark:text-yellow-100 block truncate">
+                    {habit.name}
+                  </span>
+                  <span className="text-xs text-yellow-700/80 dark:text-yellow-300/80">
+                    Terminó: {new Date(habit.endDate!).toLocaleDateString("es-AR")}
+                  </span>
+                </div>
               </div>
-              <div className="text-xs text-muted-foreground pl-7">
-                Terminó: {new Date(habit.endDate!).toLocaleDateString("es-AR")}
+              <div className="pl-11 flex items-center gap-2 text-xs text-yellow-700/70 dark:text-yellow-300/70">
+                <span className="font-semibold">Mejor racha:</span>
+                <span className="font-black text-yellow-800 dark:text-yellow-200">{habit.bestStreak} 🔥</span>
               </div>
-            </div>
+            </button>
           ))
         )}
       </div>
 
       {/* Footer */}
-      <div className="border-t border-border/30 px-6 py-4">
+      <div className="border-t border-yellow-500/20 px-6 py-4 bg-yellow-50/30 dark:bg-yellow-950/20">
         <Button
           variant="outline"
           onClick={onBack}
-          className="w-full"
+          className="w-full border-yellow-400/50 hover:border-yellow-400 hover:bg-yellow-500/10 text-yellow-700 dark:text-yellow-300"
         >
           Volver
         </Button>
       </div>
+    </div>
+  );
+}
+
+function ArchivedDetailPanel({
+  habit,
+  currentDate,
+  onMonthChange,
+  onBack,
+}: {
+  habit?: HabitData;
+  currentDate: Date;
+  onMonthChange: (delta: number) => void;
+  onBack: () => void;
+}) {
+  if (!habit) return null;
+
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
+  const dim = new Date(year, month + 1, 0).getDate();
+
+  const getFirstDayOfMonth = (date: Date) => {
+    const firstDow = new Date(date.getFullYear(), date.getMonth(), 1).getDay();
+    return firstDow === 0 ? 6 : firstDow - 1;
+  };
+
+  const offset = getFirstDayOfMonth(currentDate);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  return (
+    <div className="w-full">
+      {/* Header */}
+      <div className="border-b border-yellow-500/30 px-6 py-4 bg-gradient-to-r from-yellow-500/10 to-amber-500/5">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onBack}
+            className="flex h-7 w-7 items-center justify-center rounded-full border border-yellow-400/50 bg-yellow-500/10 hover:bg-yellow-500/20 transition-colors"
+          >
+            <ArrowLeft className="h-3.5 w-3.5 text-yellow-600 dark:text-yellow-400" />
+          </button>
+          <h2 className="font-black text-lg text-yellow-900 dark:text-yellow-100">
+            {habit.emoji} {habit.name}
+          </h2>
+          <span className="ml-auto text-2xl">🏆</span>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="border-b border-yellow-500/20 flex gap-2 px-5 py-3 bg-yellow-50/30 dark:bg-yellow-950/10">
+        <div className="flex-1 rounded-xl bg-gradient-to-br from-yellow-400/30 to-amber-400/20 px-3 py-2 text-center border border-yellow-300/30">
+          <div className="font-black text-xl text-yellow-900 dark:text-yellow-100">{habit.bestStreak}</div>
+          <div className="text-xs text-yellow-700/80 dark:text-yellow-300/80 uppercase font-semibold">Mejor racha 🔥</div>
+        </div>
+        <div className="flex-1 rounded-xl bg-gradient-to-br from-yellow-500/20 to-amber-500/10 px-3 py-2 text-center border border-yellow-300/30">
+          <div className="font-black text-xl text-yellow-900 dark:text-yellow-100">
+            {habit.done.size}
+          </div>
+          <div className="text-xs text-yellow-700/80 dark:text-yellow-300/80 uppercase font-semibold">Completados</div>
+        </div>
+        <div className="flex-1 rounded-xl bg-gradient-to-br from-yellow-400/25 to-amber-400/15 px-3 py-2 text-center border border-yellow-300/30">
+          <div className="font-black text-xl text-yellow-900 dark:text-yellow-100">
+            {new Date(habit.endDate!).toLocaleDateString("es-AR")}
+          </div>
+          <div className="text-xs text-yellow-700/80 dark:text-yellow-300/80 uppercase font-semibold">Fecha fin</div>
+        </div>
+      </div>
+
+      {/* Month Navigation */}
+      <div className="border-b border-yellow-500/20 flex items-center justify-between px-6 py-2.5">
+        <button
+          onClick={() => onMonthChange(-1)}
+          className="flex h-7 w-7 items-center justify-center rounded border border-yellow-400/50 bg-yellow-500/10 hover:bg-yellow-500/20 transition-colors"
+        >
+          <ChevronLeft className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+        </button>
+        <span className="font-bold text-sm text-yellow-900 dark:text-yellow-100 capitalize">
+          {MONTHS[month]} {year}
+        </span>
+        <button
+          onClick={() => onMonthChange(1)}
+          className="flex h-7 w-7 items-center justify-center rounded border border-yellow-400/50 bg-yellow-500/10 hover:bg-yellow-500/20 transition-colors"
+        >
+          <ChevronRight className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+        </button>
+      </div>
+
+      {/* Calendar */}
+      <div className="px-5 py-3 bg-yellow-50/20 dark:bg-yellow-950/10">
+        <div className="grid grid-cols-7 gap-1">
+          {DAY_LBLS.map((lbl) => (
+            <div
+              key={lbl}
+              className="text-center text-xs font-bold text-yellow-700 dark:text-yellow-300 uppercase mb-1"
+            >
+              {lbl}
+            </div>
+          ))}
+
+          {Array.from({ length: offset }).map((_, i) => (
+            <div key={`empty-${i}`} />
+          ))}
+
+          {Array.from({ length: dim }).map((_, d) => {
+            const day = d + 1;
+            const dateStr = `${year}-${String(month + 1).padStart(
+              2,
+              "0"
+            )}-${String(day).padStart(2, "0")}`;
+            const dObj = new Date(dateStr + "T12:00:00");
+            dObj.setHours(0, 0, 0, 0);
+            const isDone = habit.done.has(dateStr);
+
+            return (
+              <div
+                key={day}
+                className={`relative aspect-square rounded-lg flex items-center justify-center text-xs font-black transition-all ${
+                  isDone
+                    ? "bg-gradient-to-br from-yellow-500 to-amber-500 text-white shadow-md shadow-yellow-500/30 border border-yellow-400"
+                    : "bg-yellow-100/30 dark:bg-yellow-900/20 border border-yellow-300/30 text-yellow-700 dark:text-yellow-300"
+                }`}
+              >
+                {isDone ? (
+                  <span className="text-base">🔥</span>
+                ) : (
+                  <span>{day}</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="h-2" />
     </div>
   );
 }
