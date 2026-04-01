@@ -190,20 +190,64 @@ export function SpaceRepetitionModal({
   const [notification, setNotification] = useState<string | null>(null);
   const { theme } = useTheme();
 
-  useEffect(() => {
-    if (open) {
+  // Función para migrar datos de localStorage a la API
+  const migrateLocalStorageData = async () => {
+    try {
       const stored = localStorage.getItem("sr_habits_v2");
-      if (stored) {
+      if (!stored) return; // No hay datos para migrar
+
+      const data = JSON.parse(stored) as StorageData;
+      if (!data.practices || data.practices.length === 0) return; // No hay prácticas para migrar
+
+      // Migrar cada práctica a la API
+      let migratedCount = 0;
+      for (const practice of data.practices) {
         try {
-          const data = JSON.parse(stored) as StorageData;
-          setPractices(data.practices || []);
-          setArchived(data.archived || []);
+          const res = await fetch("/api/space-repetition", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: practice.name,
+              emoji: practice.emoji,
+              startDate: practice.startDate,
+              completedIntervals: practice.completedIntervals,
+            }),
+          });
+          if (res.ok) {
+            migratedCount++;
+          }
         } catch (e) {
-          console.error("Error loading practices:", e);
+          console.error("Error migrating practice:", e);
         }
       }
+
+      // Si se migraron prácticas, limpiar localStorage y mostrar notificación
+      if (migratedCount > 0) {
+        localStorage.removeItem("sr_habits_v2");
+        setNotification(`✨ ${migratedCount} práctica${migratedCount > 1 ? "s" : ""} migrada${migratedCount > 1 ? "s" : ""}!`);
+      }
+    } catch (error) {
+      console.error("Error during migration:", error);
+    }
+  };
+
+  useEffect(() => {
+    if (open) {
+      migrateLocalStorageData();
+      loadPractices();
     }
   }, [open]);
+
+  const loadPractices = async () => {
+    try {
+      const res = await fetch("/api/space-repetition");
+      if (!res.ok) throw new Error("Error loading practices");
+      const data = await res.json();
+      setPractices(data);
+    } catch (error) {
+      console.error("Error loading practices:", error);
+    }
+  };
 
   useEffect(() => {
     if (notification) {
@@ -215,76 +259,116 @@ export function SpaceRepetitionModal({
   const savePractices = (updated: SpaceRepetitionPractice[], archivedUpdated?: ArchivedPractice[]) => {
     setPractices(updated);
     if (archivedUpdated) setArchived(archivedUpdated);
-    localStorage.setItem("sr_habits_v2", JSON.stringify({
-      practices: updated,
-      archived: archivedUpdated || archived,
-    }));
   };
 
-  const addPractice = () => {
+  const addPractice = async () => {
     if (!newName.trim()) return;
-    const newId = Date.now().toString();
-    const newPractice: SpaceRepetitionPractice = {
-      id: newId,
-      name: newName.trim(),
-      emoji: newEmoji || "💪",
-      startDate: getLocalDateString(),
-      completedIntervals: [],
-    };
-    savePractices([...practices, newPractice]);
-    setNewName("");
-    setNewEmoji("💪");
-    setCurrentPanel("main");
-  };
-
-  const deletePractice = (id: string) => {
-    savePractices(practices.filter((p) => p.id !== id));
-  };
-
-  const toggleInterval = (practiceId: string, intervalIndex: number) => {
-    const updated = practices.map((p) => {
-      if (p.id === practiceId) {
-        const intervals = new Set(p.completedIntervals);
-        intervals.add(intervalIndex);
-        const newCompleted = Array.from(intervals).sort();
-
-        // Check if all intervals are completed
-        if (newCompleted.length === INTERVALS.length) {
-          // Archive this practice
-          const archivedItem: ArchivedPractice = {
-            id: p.id,
-            name: p.name,
-            emoji: p.emoji,
-            startDate: p.startDate,
-            endDate: getLocalDateString(),
-            totalDays: calculateDaysSince(p.startDate),
-          };
-          setArchived([...archived, archivedItem]);
-          setNotification("✅ ¡Práctica completada y archivada!");
-          return null;
-        }
-
-        return { ...p, completedIntervals: newCompleted };
-      }
-      return p;
-    }).filter(Boolean) as SpaceRepetitionPractice[];
-
-    savePractices(updated);
-  };
-
-  const handleExpiredReset = (practiceId: string) => {
-    const updated = practices.map((p) => {
-      if (p.id === practiceId) {
-        setNotification("🔄 ¡Práctica reiniciada!");
-        return {
-          ...p,
+    try {
+      const res = await fetch("/api/space-repetition", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newName.trim(),
+          emoji: newEmoji || "💪",
           startDate: getLocalDateString(),
           completedIntervals: [],
-        };
+        })
+      });
+      if (!res.ok) throw new Error("Error creating practice");
+      const newPractice = await res.json();
+      setPractices([...practices, newPractice]);
+      setNewName("");
+      setNewEmoji("💪");
+      setCurrentPanel("main");
+    } catch (error) {
+      console.error("Error adding practice:", error);
+    }
+  };
+
+  const deletePractice = async (id: string) => {
+    try {
+      const res = await fetch(`/api/space-repetition/${id}`, {
+        method: "DELETE"
+      });
+      if (!res.ok) throw new Error("Error deleting practice");
+      setPractices(practices.filter((p) => p.id !== id));
+    } catch (error) {
+      console.error("Error deleting practice:", error);
+    }
+  };
+
+  const toggleInterval = async (practiceId: string, intervalIndex: number) => {
+    try {
+      const practice = practices.find((p) => p.id === practiceId);
+      if (!practice) return;
+
+      const intervals = new Set(practice.completedIntervals);
+      intervals.add(intervalIndex);
+      const newCompleted = Array.from(intervals).sort();
+
+      // Check if all intervals are completed
+      if (newCompleted.length === INTERVALS.length) {
+        // Archive this practice
+        const res = await fetch(`/api/space-repetition/${practiceId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            completedIntervals: newCompleted,
+            archived: 1,
+            endDate: getLocalDateString(),
+          })
+        });
+        if (!res.ok) throw new Error("Error updating practice");
+        const updated = await res.json();
+        
+        setPractices(practices.filter((p) => p.id !== practiceId));
+        setArchived([...archived, {
+          id: practice.id,
+          name: practice.name,
+          emoji: practice.emoji,
+          startDate: practice.startDate,
+          endDate: getLocalDateString(),
+          totalDays: calculateDaysSince(practice.startDate),
+        }]);
+        setNotification("✅ ¡Práctica completada y archivada!");
+        return;
       }
-      return p;
-    });
-    savePractices(updated);
+
+      // Regular interval update
+      const res = await fetch(`/api/space-repetition/${practiceId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          completedIntervals: newCompleted,
+        })
+      });
+      if (!res.ok) throw new Error("Error updating practice");
+      const updated = await res.json();
+      
+      setPractices(practices.map((p) => p.id === practiceId ? updated : p));
+    } catch (error) {
+      console.error("Error toggling interval:", error);
+    }
+  };
+
+  const handleExpiredReset = async (practiceId: string) => {
+    try {
+      const res = await fetch(`/api/space-repetition/${practiceId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          startDate: getLocalDateString(),
+          completedIntervals: [],
+        })
+      });
+      if (!res.ok) throw new Error("Error resetting practice");
+      const updated = await res.json();
+      
+      setPractices(practices.map((p) => p.id === practiceId ? updated : p));
+      setNotification("🔄 ¡Práctica reiniciada!");
+    } catch (error) {
+      console.error("Error resetting practice:", error);
+    }
   };
 
   if (!open) return null;

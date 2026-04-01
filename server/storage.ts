@@ -1,7 +1,7 @@
 import { eq, and, asc } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db } from "./db";
-import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, globalSkills, habits, habitRecords } from "@shared/schema";
+import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, globalSkills, habits, habitRecords, spaceRepetitionPractices } from "@shared/schema";
 
 export interface IStorage {
   // Users
@@ -178,6 +178,13 @@ export interface IStorage {
   getHabitRecordByDate(habitId: string, date: string): Promise<HabitRecord | undefined>;
   upsertHabitRecord(habitId: string, userId: string, date: string, completed: 0 | 1): Promise<HabitRecord>;
   deleteHabitRecord(id: string): Promise<void>;
+
+  // Space-Repetition Practices
+  getSpaceRepetitionPractices(userId: string): Promise<SpaceRepetitionPractice[]>;
+  getSpaceRepetitionPractice(id: string): Promise<SpaceRepetitionPractice | undefined>;
+  createSpaceRepetitionPractice(practice: InsertSpaceRepetitionPractice & { userId: string }): Promise<SpaceRepetitionPractice>;
+  updateSpaceRepetitionPractice(id: string, practice: Partial<InsertSpaceRepetitionPractice>): Promise<SpaceRepetitionPractice | undefined>;
+  deleteSpaceRepetitionPractice(id: string): Promise<void>;
 }
 
 export class DbStorage implements IStorage {
@@ -1389,6 +1396,47 @@ export class DbStorage implements IStorage {
 
   async deleteHabitRecord(id: string): Promise<void> {
     await db.delete(habitRecords).where(eq(habitRecords.id, id));
+  }
+
+  // Space-Repetition Practices
+  async getSpaceRepetitionPractices(userId: string): Promise<SpaceRepetitionPractice[]> {
+    return await db.select().from(spaceRepetitionPractices)
+      .where(eq(spaceRepetitionPractices.userId, userId));
+  }
+
+  async getSpaceRepetitionPractice(id: string): Promise<SpaceRepetitionPractice | undefined> {
+    const result = await db.select().from(spaceRepetitionPractices)
+      .where(eq(spaceRepetitionPractices.id, id));
+    return result[0];
+  }
+
+  async createSpaceRepetitionPractice(practice: InsertSpaceRepetitionPractice & { userId: string }): Promise<SpaceRepetitionPractice> {
+    const id = randomUUID();
+    const safeData = {
+      ...practice,
+      completedIntervals: Array.isArray(practice.completedIntervals) ? practice.completedIntervals : []
+    };
+    const result = await db.insert(spaceRepetitionPractices)
+      .values({ id, ...safeData })
+      .returning();
+    return result[0];
+  }
+
+  async updateSpaceRepetitionPractice(id: string, practice: Partial<InsertSpaceRepetitionPractice>): Promise<SpaceRepetitionPractice | undefined> {
+    const safeData = {
+      ...practice,
+      completedIntervals: practice.completedIntervals ? (Array.isArray(practice.completedIntervals) ? practice.completedIntervals : []) : undefined,
+      updatedAt: new Date()
+    };
+    const result = await db.update(spaceRepetitionPractices)
+      .set(safeData)
+      .where(eq(spaceRepetitionPractices.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteSpaceRepetitionPractice(id: string): Promise<void> {
+    await db.delete(spaceRepetitionPractices).where(eq(spaceRepetitionPractices.id, id));
   }
 }
 

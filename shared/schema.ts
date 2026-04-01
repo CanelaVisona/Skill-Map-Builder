@@ -223,6 +223,19 @@ export const habitRecords = pgTable("habit_records", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+export const spaceRepetitionPractices = pgTable("space_repetition_practices", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  emoji: text("emoji").notNull(),
+  startDate: varchar("start_date").notNull(), // YYYY-MM-DD format
+  completedIntervals: jsonb("completed_intervals").notNull().$type<number[]>().default([]),
+  archived: integer("archived").$type<0 | 1>().default(0),
+  endDate: varchar("end_date"), // YYYY-MM-DD format, null if not completed
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertSessionSchema = createInsertSchema(sessions).omit({ id: true });
 export const insertAreaSchema = createInsertSchema(areas);
@@ -311,7 +324,10 @@ export type InsertGlobalSkill = z.infer<typeof insertGlobalSkillSchema>;
 export type GlobalSkill = typeof globalSkills.$inferSelect;
 export const insertHabitSchema = createInsertSchema(habits).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertHabitRecordSchema = createInsertSchema(habitRecords).omit({ id: true, createdAt: true });
+export const insertSpaceRepetitionPracticeSchema = createInsertSchema(spaceRepetitionPractices).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertHabit = z.infer<typeof insertHabitSchema>;
 export type Habit = typeof habits.$inferSelect;
 export type InsertHabitRecord = z.infer<typeof insertHabitRecordSchema>;
 export type HabitRecord = typeof habitRecords.$inferSelect;
+export type InsertSpaceRepetitionPractice = z.infer<typeof insertSpaceRepetitionPracticeSchema>;
+export type SpaceRepetitionPractice = typeof spaceRepetitionPractices.$inferSelect;

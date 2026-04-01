@@ -2,7 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { db } from "./db";
-import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema, skills } from "@shared/schema";
+import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema, insertSpaceRepetitionPracticeSchema, skills } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import cookieParser from "cookie-parser";
 import crypto from "crypto";
@@ -3124,6 +3124,63 @@ export async function registerRoutes(
         completed as 0 | 1
       );
       res.status(201).json(record);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Space-Repetition Practices
+  app.get("/api/space-repetition", requireAuth, async (req, res) => {
+    try {
+      const practices = await storage.getSpaceRepetitionPractices(req.userId!);
+      res.json(practices);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/space-repetition", requireAuth, async (req, res) => {
+    try {
+      const data = { ...req.body, userId: req.userId };
+      const validated = insertSpaceRepetitionPracticeSchema.parse(data);
+      const practice = await storage.createSpaceRepetitionPractice(validated as InsertSpaceRepetitionPractice & { userId: string });
+      res.status(201).json(practice);
+    } catch (error: any) {
+      if (error.name === "ZodError") {
+        return res.status(400).json({ message: fromError(error).toString() });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/space-repetition/:id", requireAuth, async (req, res) => {
+    try {
+      // Verify ownership
+      const practice = await storage.getSpaceRepetitionPractice(req.params.id);
+      if (!practice || practice.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para editar esta práctica" });
+      }
+
+      const updated = await storage.updateSpaceRepetitionPractice(req.params.id, req.body);
+      if (!updated) {
+        return res.status(404).json({ message: "Práctica no encontrada" });
+      }
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/space-repetition/:id", requireAuth, async (req, res) => {
+    try {
+      // Verify ownership
+      const practice = await storage.getSpaceRepetitionPractice(req.params.id);
+      if (!practice || practice.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para eliminar esta práctica" });
+      }
+
+      await storage.deleteSpaceRepetitionPractice(req.params.id);
+      res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
