@@ -642,7 +642,7 @@ function PracticeCardWithLongPress({
                 >
                   {/* Connection line to next node */}
                   {idx < isNextIndex && (
-                    <div className="absolute top-3 left-1/2 right-0 h-0.5 pointer-events-none">
+                    <div className="absolute top-3 left-1/2 h-0.5 pointer-events-none" style={{ width: nextIsPartial ? "calc(100% + 25%)" : "calc(100% + 50%)" }}>
                       <div
                         className={`h-full w-full transition-all ${
                           nextIsCompleted
@@ -794,7 +794,7 @@ function PracticeWaitingCardWithLongPress({
                 >
                   {/* Connection line to next node */}
                   {idx < isNextIndex && (
-                    <div className="absolute top-3 left-1/2 right-0 h-0.5 pointer-events-none">
+                    <div className="absolute top-3 left-1/2 h-0.5 pointer-events-none" style={{ width: nextIsPartial ? "calc(100% + 25%)" : "calc(100% + 50%)" }}>
                       <div
                         className={`h-full w-full transition-all ${
                           nextIsCompleted
@@ -1071,7 +1071,7 @@ function TimelineVisual({
                 >
                   {/* Connection line to next node */}
                   {idx < isNextIndex && (
-                    <div className="absolute top-5 left-1/2 right-0 h-0.5 pointer-events-none">
+                    <div className="absolute top-5 left-1/2 h-0.5 pointer-events-none" style={{ width: nextIsPartial ? "calc(100% + 25%)" : "calc(100% + 50%)" }}>
                       <div
                         className={`h-full transition-all ${
                           nextIsCompleted

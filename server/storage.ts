@@ -1317,6 +1317,84 @@ export class DbStorage implements IStorage {
     await db.delete(globalSkills).where(eq(globalSkills.id, id));
   }
 
+  async setGoalXpGlobalSkill(id: string, goalXp: number): Promise<GlobalSkill | undefined> {
+    const skill = await this.getGlobalSkill(id);
+    if (!skill) return undefined;
+
+    // Validate goalXp >= 0
+    if (goalXp < 0) {
+      throw new Error("goalXp must be >= 0");
+    }
+
+    // Check if auto-complete should be triggered
+    const autoComplete = skill.currentXp >= goalXp && goalXp > 0;
+
+    const updateData: any = { 
+      goalXp, 
+      updatedAt: new Date() 
+    };
+
+    if (autoComplete) {
+      updateData.completed = true;
+      updateData.completedAt = new Date();
+    }
+
+    const result = await db.update(globalSkills)
+      .set(updateData)
+      .where(eq(globalSkills.id, id))
+      .returning();
+
+    return result[0];
+  }
+
+  async completeGlobalSkill(id: string): Promise<GlobalSkill | undefined> {
+    const skill = await this.getGlobalSkill(id);
+    if (!skill) return undefined;
+
+    // Validate that currentXp >= goalXp (if goalXp is set)
+    if (skill.goalXp > 0 && skill.currentXp < skill.goalXp) {
+      throw new Error(`Cannot complete skill: currentXp (${skill.currentXp}) is less than goalXp (${skill.goalXp})`);
+    }
+
+    // Validate that this skill has no incomplete subskills with goalXp defined
+    if (!skill.parentSkillId) {
+      // This is a parent skill - check subskills
+      const subskills = await db.select()
+        .from(globalSkills)
+        .where(eq(globalSkills.parentSkillId, id));
+
+      const pendingSubskills = subskills.filter(subskill => 
+        subskill.goalXp && subskill.goalXp > 0 && !subskill.completed
+      );
+
+      if (pendingSubskills.length > 0) {
+        const error = new Error("Completá todos los subskills primero");
+        (error as any).code = "PENDING_SUBSKILLS";
+        (error as any).pendingSubskills = pendingSubskills.map(s => ({ id: s.id, name: s.name }));
+        throw error;
+      }
+    }
+
+    const result = await db.update(globalSkills)
+      .set({ completed: true, completedAt: new Date(), updatedAt: new Date() })
+      .where(eq(globalSkills.id, id))
+      .returning();
+
+    return result[0];
+  }
+
+  async uncompleteGlobalSkill(id: string): Promise<GlobalSkill | undefined> {
+    const skill = await this.getGlobalSkill(id);
+    if (!skill) return undefined;
+
+    const result = await db.update(globalSkills)
+      .set({ completed: false, completedAt: null, updatedAt: new Date() })
+      .where(eq(globalSkills.id, id))
+      .returning();
+
+    return result[0];
+  }
+
   // Habits
   async getHabits(userId: string): Promise<Habit[]> {
     return await db.select().from(habits).where(eq(habits.userId, userId));

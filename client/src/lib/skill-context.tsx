@@ -60,6 +60,9 @@ export interface GlobalSkill {
   parentSkillId?: string | null;
   currentXp: number;
   level: number;
+  goalXp: number;
+  completed: boolean | number;
+  completedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }

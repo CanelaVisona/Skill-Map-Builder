@@ -507,7 +507,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md p-0 border-0 bg-background">
+      <DialogContent className="max-w-md p-0 border-0 bg-background touch-manipulation">
         <VisuallyHidden>
           <DialogTitle>Hábitos</DialogTitle>
           <DialogDescription>Gestiona tus hábitos diarios</DialogDescription>
@@ -769,7 +769,7 @@ function MainPanel({
   today.setHours(0, 0, 0, 0);
   const todayStr = getLocalDateString(today);
 
-  // Long-press detection for editing
+  // Long-press detection for editing (mouse + touch)
   const longPressTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
 
   const getWeekDays = () => {
@@ -803,9 +803,10 @@ function MainPanel({
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
   const isLongPress = useRef(false);
 
-  const handleMouseDown = (e: React.MouseEvent) => {
+  const handlePressStart = (e: React.MouseEvent | React.TouchEvent, identifier?: string) => {
     // Don't trigger on buttons or interactive elements
-    if ((e.target as HTMLElement).closest("button")) return;
+    const target = e.currentTarget as HTMLElement;
+    if (target.closest("button")) return;
     
     isLongPress.current = false;
     longPressTimer.current = setTimeout(() => {
@@ -814,7 +815,7 @@ function MainPanel({
     }, 500);
   };
 
-  const handleMouseUp = () => {
+  const handlePressEnd = () => {
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current);
       longPressTimer.current = null;
@@ -830,14 +831,14 @@ function MainPanel({
     };
   }, []);
 
-  const handleHabitMouseDown = (habitId: string) => {
+  const handleHabitPressStart = (habitId: string) => {
     const timer = setTimeout(() => {
       onEditClick(habitId);
     }, 500);
     longPressTimers.current.set(habitId, timer);
   };
 
-  const handleHabitMouseUp = (habitId: string) => {
+  const handleHabitPressEnd = (habitId: string) => {
     const timer = longPressTimers.current.get(habitId);
     if (timer) {
       clearTimeout(timer);
@@ -845,14 +846,14 @@ function MainPanel({
     }
   };
 
-  const handleHeaderMouseDown = () => {
+  const handleHeaderPressStart = () => {
     const timer = setTimeout(() => {
       onAddClick();
     }, 500);
     longPressTimers.current.set("header", timer);
   };
 
-  const handleHeaderMouseUp = () => {
+  const handleHeaderPressEnd = () => {
     const timer = longPressTimers.current.get("header");
     if (timer) {
       clearTimeout(timer);
@@ -863,30 +864,32 @@ function MainPanel({
   return (
     <div className="w-full">
       {/* Header */}
-      <div className="border-b border-border/30 px-6 py-5">
-        <div className="flex items-start justify-between">
+      <div className="border-b border-border/30 px-4 sm:px-6 py-5">
+        <div className="flex items-start justify-between gap-2">
           <div
-            onMouseDown={handleHeaderMouseDown}
-            onMouseUp={handleHeaderMouseUp}
-            onMouseLeave={handleHeaderMouseUp}
-            className="cursor-pointer select-none transition-opacity hover:opacity-70"
+            onMouseDown={handleHeaderPressStart}
+            onMouseUp={handleHeaderPressEnd}
+            onMouseLeave={handleHeaderPressEnd}
+            onTouchStart={handleHeaderPressStart}
+            onTouchEnd={handleHeaderPressEnd}
+            className="cursor-pointer select-none transition-opacity hover:opacity-70 active:opacity-70 flex-1 min-w-0"
           >
-            <h2 className="font-black text-xl text-foreground">
+            <h2 className="font-black text-lg sm:text-xl text-foreground truncate">
               Mis hábitos de hoy
             </h2>
-            <p className="mt-1 text-sm text-muted-foreground capitalize">
+            <p className="mt-1 text-xs sm:text-sm text-muted-foreground capitalize truncate">
               {todayStr2.charAt(0).toUpperCase() + todayStr2.slice(1)}
             </p>
           </div>
-          <div className="text-right text-xs text-muted-foreground leading-relaxed">
-            <div className="font-medium text-foreground">{weekRange}</div>
-            <div>esta semana</div>
+          <div className="text-right text-xs text-muted-foreground leading-relaxed flex-shrink-0">
+            <div className="font-medium text-foreground text-xs sm:text-sm">{weekRange}</div>
+            <div className="text-xs">esta semana</div>
           </div>
         </div>
       </div>
 
       {/* Habits List */}
-      <div className="px-5 py-3 flex flex-col gap-1.5 max-h-80 overflow-y-auto">
+      <div className="px-3 sm:px-5 py-3 flex flex-col gap-2 sm:gap-1.5 max-h-80 overflow-y-auto">
         {isLoading ? (
           <p className="text-sm text-muted-foreground">Cargando hábitos...</p>
         ) : habits.length === 0 ? (
@@ -904,10 +907,12 @@ function MainPanel({
               <div
                 key={habit.id}
                 onClick={() => onToggle(habit.id)}
-                onMouseDown={() => handleHabitMouseDown(habit.id)}
-                onMouseUp={() => handleHabitMouseUp(habit.id)}
-                onMouseLeave={() => handleHabitMouseUp(habit.id)}
-                className={`cursor-pointer rounded-2xl border px-3.5 py-3 transition-all ${
+                onMouseDown={() => handleHabitPressStart(habit.id)}
+                onMouseUp={() => handleHabitPressEnd(habit.id)}
+                onMouseLeave={() => handleHabitPressEnd(habit.id)}
+                onTouchStart={() => handleHabitPressStart(habit.id)}
+                onTouchEnd={() => handleHabitPressEnd(habit.id)}
+                className={`cursor-pointer rounded-2xl border px-3 sm:px-3.5 py-3 transition-all active:opacity-75 touch-manipulation ${
                   isToday
                     ? "border-purple-500 bg-purple-500/10"
                     : broken
@@ -915,29 +920,29 @@ function MainPanel({
                       : "border-border/30 hover:border-purple-400 hover:bg-purple-500/5"
                 }`}
               >
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="text-xl flex-shrink-0">{habit.emoji}</span>
-                  <span className="font-bold text-sm text-foreground flex-1 truncate">
+                <div className="flex items-center gap-2 mb-3 flex-wrap">
+                  <span className="text-lg sm:text-xl flex-shrink-0">{habit.emoji}</span>
+                  <span className="font-bold text-xs sm:text-sm text-foreground flex-1 min-w-0 truncate">
                     {habit.name}
                   </span>
                   <span
-                    className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium flex-shrink-0 ${
+                    className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium flex-shrink-0 whitespace-nowrap ${
                       broken
                         ? "border border-border/50 bg-muted text-muted-foreground"
                         : "bg-purple-500/20 text-purple-700 dark:text-purple-400"
                     }`}
                   >
-                    {broken ? "— racha rota" : `🔥 ${streak} días`}
+                    {broken ? "— racha rota" : `🔥 ${streak}`}
                   </span>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       onDetailed(habit.id);
                     }}
-                    className="ml-1 flex h-7 w-7 items-center justify-center rounded-full border border-border/30 bg-muted hover:border-purple-400 hover:bg-purple-500/10"
+                    className="ml-1 flex h-8 w-8 sm:h-7 sm:w-7 items-center justify-center rounded-full border border-border/30 bg-muted hover:border-purple-400 hover:bg-purple-500/10 active:bg-purple-500/20 transition-colors flex-shrink-0 touch-manipulation"
                     title="Ver historial"
                   >
-                    <Eye className="h-3.5 w-3.5 text-muted-foreground" />
+                    <Eye className="h-4 w-4 sm:h-3.5 sm:w-3.5 text-muted-foreground" />
                   </button>
                 </div>
 
@@ -951,7 +956,7 @@ function MainPanel({
                 )}
 
                 {/* Week circles */}
-                <div className="flex gap-1.5 items-center">
+                <div className="flex gap-1 sm:gap-1.5 items-center">
                   {weekDays.map((w, i) => {
                     const wds = getLocalDateString(w);
                     const wc = new Date(w);
@@ -967,7 +972,7 @@ function MainPanel({
                         className="flex flex-col items-center gap-1 flex-1"
                       >
                         <div
-                          className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-medium transition-all ${
+                          className={`h-7 w-7 sm:h-8 sm:w-8 rounded-full flex items-center justify-center text-xs sm:text-sm font-medium transition-all ${
                             isDone
                               ? "bg-gray-900 border-purple-500 border-2"
                               : isTod
@@ -979,7 +984,7 @@ function MainPanel({
                                     : "border border-border/30"
                           }`}
                         >
-                          {isDone ? <span className="text-base">🔥</span> : ""}
+                          {isDone ? <span className="text-sm">🔥</span> : ""}
                         </div>
                         <span className="text-xs font-medium text-muted-foreground uppercase">
                           {DAY_LBLS[i]}
@@ -1002,22 +1007,21 @@ function MainPanel({
       </div>
 
       {/* Footer */}
-      <div className="border-t border-border/30 flex items-center justify-between px-6 py-3.5 gap-3">
-        <div className="text-sm text-muted-foreground">
-          <strong className="font-bold text-foreground">{doneCount}</strong> /{" "}
-          {habits.length}
+      <div className="border-t border-border/30 flex items-center justify-between px-4 sm:px-6 py-3 gap-2 sm:gap-3">
+        <div className="text-xs sm:text-sm text-muted-foreground">
+          <strong className="font-bold text-foreground">{doneCount}</strong> / {habits.length}
         </div>
         <div className="flex gap-2">
           <button
             onClick={onArchived}
-            className="inline-flex items-center justify-center rounded-full bg-purple-500/20 p-2 text-purple-700 hover:opacity-80 dark:text-purple-400"
+            className="inline-flex items-center justify-center rounded-full bg-purple-500/20 p-2 text-purple-700 hover:opacity-80 dark:text-purple-400 active:opacity-60 transition-colors touch-manipulation h-9 w-9 sm:h-auto"
             title="Archivados"
           >
             📦
           </button>
           <button
             onClick={onHistory}
-            className="inline-flex items-center justify-center rounded-full bg-purple-500/20 p-2 text-purple-700 hover:opacity-80 dark:text-purple-400"
+            className="inline-flex items-center justify-center rounded-full bg-purple-500/20 p-2 text-purple-700 hover:opacity-80 dark:text-purple-400 active:opacity-60 transition-colors touch-manipulation h-9 w-9 sm:h-auto"
             title="Historial"
           >
             <Eye className="h-4 w-4" />
@@ -1048,6 +1052,18 @@ function HistoryPanel({
     return firstDow === 0 ? 6 : firstDow - 1;
   };
 
+  // Filter habits that were active in this month
+  // A habit is active if it has no endDate or if its endDate is >= the first day of the month
+  const firstDayOfMonth = new Date(year, month, 1);
+  firstDayOfMonth.setHours(0, 0, 0, 0);
+  
+  const activeHabits = habits.filter((habit) => {
+    if (!habit.endDate) return true; // No end date = always active
+    const endDate = new Date(habit.endDate + "T00:00:00");
+    endDate.setHours(0, 0, 0, 0);
+    return endDate >= firstDayOfMonth; // Show if ended on or after the first day of this month
+  });
+
   const offset = getFirstDayOfMonth(currentDate);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -1055,39 +1071,39 @@ function HistoryPanel({
   return (
     <div className="w-full">
       {/* Header */}
-      <div className="border-b border-border/30 flex items-center gap-3 px-6 py-4">
+      <div className="border-b border-border/30 flex items-center gap-3 px-4 sm:px-6 py-4">
         <button
           onClick={onBack}
-          className="flex h-7 w-7 items-center justify-center rounded-full border border-border/30 bg-muted hover:bg-muted/80"
+          className="flex h-9 w-9 sm:h-7 sm:w-7 items-center justify-center rounded-full border border-border/30 bg-muted hover:bg-muted/80 active:bg-muted/60 transition-colors touch-manipulation flex-shrink-0"
         >
-          <ArrowLeft className="h-3.5 w-3.5 text-muted-foreground" />
+          <ArrowLeft className="h-4 w-4 sm:h-3.5 sm:w-3.5 text-muted-foreground" />
         </button>
-        <h2 className="font-black text-lg text-foreground">Historial general</h2>
-        <p className="text-xs text-muted-foreground ml-auto">Todos los hábitos</p>
+        <h2 className="font-black text-base sm:text-lg text-foreground flex-1 truncate">Historial general</h2>
+        <p className="text-xs text-muted-foreground ml-auto flex-shrink-0">Todos</p>
       </div>
 
       {/* Month Navigation */}
-      <div className="border-b border-border/30 flex items-center justify-between px-6 py-2.5">
+      <div className="border-b border-border/30 flex items-center justify-between px-4 sm:px-6 py-2.5 gap-2">
         <button
           onClick={() => onMonthChange(-1)}
-          className="flex h-7 w-7 items-center justify-center rounded border border-border/30 bg-muted hover:bg-muted/80"
+          className="flex h-9 w-9 sm:h-7 sm:w-7 items-center justify-center rounded border border-border/30 bg-muted hover:bg-muted/80 active:bg-muted/60 transition-colors touch-manipulation flex-shrink-0"
         >
-          <ChevronLeft className="h-4 w-4 text-muted-foreground" />
+          <ChevronLeft className="h-4 w-4 sm:h-4 sm:w-4 text-muted-foreground" />
         </button>
-        <span className="font-bold text-sm text-foreground capitalize">
+        <span className="font-bold text-xs sm:text-sm text-foreground capitalize flex-1 text-center">
           {MONTHS[month]} {year}
         </span>
         <button
           onClick={() => onMonthChange(1)}
-          className="flex h-7 w-7 items-center justify-center rounded border border-border/30 bg-muted hover:bg-muted/80"
+          className="flex h-9 w-9 sm:h-7 sm:w-7 items-center justify-center rounded border border-border/30 bg-muted hover:bg-muted/80 active:bg-muted/60 transition-colors touch-manipulation flex-shrink-0"
         >
-          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          <ChevronRight className="h-4 w-4 sm:h-4 sm:w-4 text-muted-foreground" />
         </button>
       </div>
 
       {/* Calendar */}
-      <div className="px-5 py-3">
-        <div className="grid grid-cols-7 gap-1">
+      <div className="px-3 sm:px-5 py-3">
+        <div className="grid grid-cols-7 gap-1 sm:gap-1">
           {DAY_LBLS.map((lbl) => (
             <div
               key={lbl}
@@ -1112,13 +1128,13 @@ function HistoryPanel({
             const isFuture = dObj > today;
             const isToday = dateStr === getLocalDateString(today);
 
-            const doneCount = habits.filter((h) => h.done.has(dateStr)).length;
-            const allDone = doneCount === habits.length;
+            const doneCount = activeHabits.filter((h) => h.done.has(dateStr)).length;
+            const allDone = doneCount === activeHabits.length && activeHabits.length > 0;
 
             return (
               <div
                 key={day}
-                className={`relative aspect-square rounded-lg flex flex-col items-center justify-center text-xs font-medium ${
+                className={`relative aspect-square rounded-lg flex flex-col items-center justify-center text-xs font-medium cursor-pointer transition-all active:scale-95 ${
                   allDone
                     ? "bg-purple-500/20"
                     : isFuture
@@ -1140,7 +1156,7 @@ function HistoryPanel({
                 )}
                 {doneCount > 0 && !allDone && !isFuture && (
                   <div className="flex gap-1 flex-wrap justify-center max-w-full">
-                    {habits
+                    {activeHabits
                       .filter((h) => h.done.has(dateStr))
                       .map((h, i) => (
                         <div
@@ -1148,7 +1164,7 @@ function HistoryPanel({
                           className="h-1.5 w-1.5 rounded-full"
                           style={{
                             background:
-                              COLORS[habits.indexOf(h) % COLORS.length],
+                              COLORS[activeHabits.indexOf(h) % COLORS.length],
                           }}
                         />
                       ))}
@@ -1161,8 +1177,8 @@ function HistoryPanel({
       </div>
 
       {/* Legend */}
-      <div className="border-t border-border/30 flex flex-wrap gap-2 px-5 py-3">
-        {habits.map((habit, i) => (
+      <div className="border-t border-border/30 flex flex-wrap gap-2 px-4 sm:px-5 py-3">
+        {activeHabits.map((habit, i) => (
           <div
             key={habit.id}
             className="flex items-center gap-1 text-xs text-muted-foreground"
@@ -1176,10 +1192,12 @@ function HistoryPanel({
             </span>
           </div>
         ))}
-        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-          <div className="h-2 w-2 rounded-full bg-purple-500/30 border border-purple-500" />
-          <span>Todos completos</span>
-        </div>
+        {activeHabits.length > 0 && (
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <div className="h-2 w-2 rounded-full bg-purple-500/30 border border-purple-500" />
+            <span>Todos</span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1261,59 +1279,59 @@ function DetailPanel({
   return (
     <div className="w-full">
       {/* Header */}
-      <div className="border-b border-border/30 flex items-center gap-3 px-6 py-4">
+      <div className="border-b border-border/30 flex items-center gap-3 px-4 sm:px-6 py-4">
         <button
           onClick={onBack}
-          className="flex h-7 w-7 items-center justify-center rounded-full border border-border/30 bg-muted hover:bg-muted/80"
+          className="flex h-9 w-9 sm:h-7 sm:w-7 items-center justify-center rounded-full border border-border/30 bg-muted hover:bg-muted/80 active:bg-muted/60 transition-colors touch-manipulation flex-shrink-0"
         >
-          <ArrowLeft className="h-3.5 w-3.5 text-muted-foreground" />
+          <ArrowLeft className="h-4 w-4 sm:h-3.5 sm:w-3.5 text-muted-foreground" />
         </button>
-        <h2 className="font-black text-lg text-foreground">
+        <h2 className="font-black text-base sm:text-lg text-foreground flex-1 truncate">
           {habit.emoji} {habit.name}
         </h2>
       </div>
 
       {/* Stats */}
-      <div className="border-b border-border/30 flex gap-2 px-5 py-3">
-        <div className="flex-1 rounded-xl bg-muted/50 px-3 py-2 text-center">
-          <div className="font-black text-xl text-foreground">{streak}</div>
-          <div className="text-xs text-muted-foreground uppercase">Racha actual</div>
+      <div className="border-b border-border/30 flex gap-2 px-3 sm:px-5 py-3">
+        <div className="flex-1 rounded-xl bg-muted/50 px-2 sm:px-3 py-2 text-center">
+          <div className="font-black text-lg sm:text-xl text-foreground">{streak}</div>
+          <div className="text-xs text-muted-foreground uppercase">Racha</div>
         </div>
-        <div className="flex-1 rounded-xl bg-muted/50 px-3 py-2 text-center">
-          <div className="font-black text-xl text-foreground">
+        <div className="flex-1 rounded-xl bg-muted/50 px-2 sm:px-3 py-2 text-center">
+          <div className="font-black text-lg sm:text-xl text-foreground">
             {habit.bestStreak}
           </div>
-          <div className="text-xs text-muted-foreground uppercase">Mejor racha</div>
+          <div className="text-xs text-muted-foreground uppercase">Mejor</div>
         </div>
-        <div className="flex-1 rounded-xl bg-muted/50 px-3 py-2 text-center">
-          <div className="font-black text-xl text-foreground">
+        <div className="flex-1 rounded-xl bg-muted/50 px-2 sm:px-3 py-2 text-center">
+          <div className="font-black text-lg sm:text-xl text-foreground">
             {percentThisMonth}%
           </div>
-          <div className="text-xs text-muted-foreground uppercase">Este mes</div>
+          <div className="text-xs text-muted-foreground uppercase">Mes</div>
         </div>
       </div>
 
       {/* Month Navigation */}
-      <div className="border-b border-border/30 flex items-center justify-between px-6 py-2.5">
+      <div className="border-b border-border/30 flex items-center justify-between px-4 sm:px-6 py-2.5 gap-2">
         <button
           onClick={() => onMonthChange(-1)}
-          className="flex h-7 w-7 items-center justify-center rounded border border-border/30 bg-muted hover:bg-muted/80"
+          className="flex h-9 w-9 sm:h-7 sm:w-7 items-center justify-center rounded border border-border/30 bg-muted hover:bg-muted/80 active:bg-muted/60 transition-colors touch-manipulation flex-shrink-0"
         >
-          <ChevronLeft className="h-4 w-4 text-muted-foreground" />
+          <ChevronLeft className="h-4 w-4 sm:h-4 sm:w-4 text-muted-foreground" />
         </button>
-        <span className="font-bold text-sm text-foreground capitalize">
+        <span className="font-bold text-xs sm:text-sm text-foreground capitalize">
           {MONTHS[month]} {year}
         </span>
         <button
           onClick={() => onMonthChange(1)}
-          className="flex h-7 w-7 items-center justify-center rounded border border-border/30 bg-muted hover:bg-muted/80"
+          className="flex h-9 w-9 sm:h-7 sm:w-7 items-center justify-center rounded border border-border/30 bg-muted hover:bg-muted/80 active:bg-muted/60 transition-colors touch-manipulation flex-shrink-0"
         >
-          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          <ChevronRight className="h-4 w-4 sm:h-4 sm:w-4 text-muted-foreground" />
         </button>
       </div>
 
       {/* Calendar */}
-      <div className="px-5 py-3">
+      <div className="px-3 sm:px-5 py-3">
         <div className="grid grid-cols-7 gap-1">
           {DAY_LBLS.map((lbl) => (
             <div
@@ -1344,7 +1362,7 @@ function DetailPanel({
             return (
               <div
                 key={day}
-                className={`relative aspect-square rounded-lg flex items-center justify-center text-xs font-medium ${
+                className={`relative aspect-square rounded-lg flex items-center justify-center text-xs font-medium cursor-pointer transition-all active:scale-95 ${
                   isDone
                     ? "bg-gray-900"
                     : isToday && !isDone
@@ -1422,20 +1440,20 @@ function AddPanel({
   return (
     <div className="w-full">
       {/* Header */}
-      <div className="border-b border-border/30 px-6 py-5">
-        <div className="flex items-start gap-4">
+      <div className="border-b border-border/30 px-4 sm:px-6 py-5">
+        <div className="flex items-start gap-3 sm:gap-4">
           <button
             onClick={onBack}
             disabled={isLoading}
-            className="flex-shrink-0 mt-1 rounded hover:bg-muted p-1 transition-colors disabled:opacity-50"
+            className="flex-shrink-0 mt-0.5 sm:mt-1 rounded hover:bg-muted p-1.5 sm:p-1 transition-colors disabled:opacity-50 h-8 w-8 sm:h-auto sm:w-auto touch-manipulation"
           >
-            <ArrowLeft className="h-5 w-5 text-muted-foreground" />
+            <ArrowLeft className="h-5 w-5 sm:h-5 sm:w-5 text-muted-foreground" />
           </button>
-          <div>
-            <h2 className="font-black text-xl text-foreground">
+          <div className="min-w-0 flex-1">
+            <h2 className="font-black text-lg sm:text-xl text-foreground">
               Nuevo hábito
             </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="mt-1 text-xs sm:text-sm text-muted-foreground">
               Crea un nuevo hábito para rastrear
             </p>
           </div>
@@ -1443,7 +1461,7 @@ function AddPanel({
       </div>
 
       {/* Form */}
-      <div className="px-6 py-5 flex flex-col gap-4 max-h-[calc(100vh-300px)] overflow-y-auto">
+      <div className="px-4 sm:px-6 py-5 flex flex-col gap-4 max-h-[calc(100vh-300px)] overflow-y-auto">
         {/* Emoji Input */}
         <div>
           <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
@@ -1456,7 +1474,7 @@ function AddPanel({
             onChange={(e) => onEmojiChange(e.target.value)}
             placeholder="⭐"
             disabled={isLoading}
-            className="mt-2 w-full px-3 py-2 text-lg text-center border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            className="mt-2 w-full px-3 py-2.5 text-lg text-center border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all touch-manipulation"
           />
           <p className="mt-1 text-xs text-muted-foreground">
             Selecciona un emoji para tu hábito
@@ -1474,7 +1492,7 @@ function AddPanel({
             onChange={(e) => onNameChange(e.target.value)}
             placeholder="Ej: Meditar"
             disabled={isLoading}
-            className="mt-2 w-full px-3 py-2 border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm"
+            className="mt-2 w-full px-3 py-2.5 border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm touch-manipulation"
             required
           />
           <p className="mt-1 text-xs text-muted-foreground">
@@ -1492,7 +1510,7 @@ function AddPanel({
             value={endDate}
             onChange={(e) => onEndDateChange(e.target.value)}
             disabled={isLoading}
-            className="mt-2 w-full px-3 py-2 border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm"
+            className="mt-2 w-full px-3 py-2.5 border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm touch-manipulation"
           />
           <p className="mt-1 text-xs text-muted-foreground">
             Opcional: define una fecha límite para el hábito
@@ -1517,7 +1535,7 @@ function AddPanel({
                   }
                 }}
                 disabled={isLoading || (scheduledDays.length === 1 && scheduledDays.includes(index))}
-                className={`py-2 px-1 rounded-lg font-semibold text-sm transition-all ${ 
+                className={`py-2.5 sm:py-2 px-1 rounded-lg font-semibold text-xs sm:text-sm transition-all active:scale-95 touch-manipulation ${ 
                   scheduledDays.includes(index)
                     ? "bg-purple-600 text-white border-2 border-purple-600"
                     : "border-2 border-border/30 bg-background text-foreground hover:border-purple-400"
@@ -1541,7 +1559,7 @@ function AddPanel({
             value={areaId || ""}
             onChange={(e) => onAreaIdChange(e.target.value || null)}
             disabled={isLoading}
-            className="mt-2 w-full px-3 py-2 border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm appearance-none cursor-pointer"
+            className="mt-2 w-full px-3 py-2.5 border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm appearance-none cursor-pointer touch-manipulation"
           >
             <option value="">Sin área asignada</option>
             {areas.map((area) => (
@@ -1564,7 +1582,7 @@ function AddPanel({
             value={projectId || ""}
             onChange={(e) => onProjectIdChange(e.target.value || null)}
             disabled={isLoading}
-            className="mt-2 w-full px-3 py-2 border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm appearance-none cursor-pointer"
+            className="mt-2 w-full px-3 py-2.5 border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm appearance-none cursor-pointer touch-manipulation"
           >
             <option value="">Sin proyecto asignado</option>
             {projects.map((project) => (
@@ -1587,7 +1605,7 @@ function AddPanel({
             value={skillId || ""}
             onChange={(e) => onSkillIdChange(e.target.value || null)}
             disabled={isLoading}
-            className="mt-2 w-full px-3 py-2 border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm appearance-none cursor-pointer"
+            className="mt-2 w-full px-3 py-2.5 border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm appearance-none cursor-pointer touch-manipulation"
           >
             <option value="">Sin skill asignado</option>
             {skills.map((skill) => (
@@ -1603,19 +1621,19 @@ function AddPanel({
       </div>
 
       {/* Footer */}
-      <div className="border-t border-border/30 px-6 py-4 flex gap-3">
+      <div className="border-t border-border/30 px-4 sm:px-6 py-3.5 sm:py-4 flex gap-3">
         <Button
           variant="outline"
           onClick={onBack}
           disabled={isLoading}
-          className="flex-1"
+          className="flex-1 h-10 sm:h-auto touch-manipulation"
         >
           Cancelar
         </Button>
         <Button
           onClick={onSubmit}
           disabled={isLoading || !name.trim()}
-          className="flex-1 bg-purple-600 hover:bg-purple-700 text-white"
+          className="flex-1 h-10 sm:h-auto bg-purple-600 hover:bg-purple-700 text-white touch-manipulation"
         >
           {isLoading ? "Creando..." : "Crear hábito"}
         </Button>
@@ -1674,20 +1692,20 @@ function EditPanel({
   return (
     <div className="w-full">
       {/* Header */}
-      <div className="border-b border-border/30 px-6 py-5">
-        <div className="flex items-start gap-4">
+      <div className="border-b border-border/30 px-4 sm:px-6 py-5">
+        <div className="flex items-start gap-3 sm:gap-4">
           <button
             onClick={onBack}
             disabled={isLoading}
-            className="flex-shrink-0 mt-1 rounded hover:bg-muted p-1 transition-colors disabled:opacity-50"
+            className="flex-shrink-0 mt-0.5 sm:mt-1 rounded hover:bg-muted p-1.5 sm:p-1 transition-colors disabled:opacity-50 h-8 w-8 sm:h-auto sm:w-auto touch-manipulation"
           >
-            <ArrowLeft className="h-5 w-5 text-muted-foreground" />
+            <ArrowLeft className="h-5 w-5 sm:h-5 sm:w-5 text-muted-foreground" />
           </button>
-          <div>
-            <h2 className="font-black text-xl text-foreground">
+          <div className="min-w-0 flex-1">
+            <h2 className="font-black text-lg sm:text-xl text-foreground">
               Editar hábito
             </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="mt-1 text-xs sm:text-sm text-muted-foreground">
               Actualiza los detalles de tu hábito
             </p>
           </div>
@@ -1695,7 +1713,7 @@ function EditPanel({
       </div>
 
       {/* Form */}
-      <div className="px-6 py-5 flex flex-col gap-4 max-h-[calc(100vh-300px)] overflow-y-auto">
+      <div className="px-4 sm:px-6 py-5 flex flex-col gap-4 max-h-[calc(100vh-300px)] overflow-y-auto">
         {/* Emoji Input */}
         <div>
           <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
@@ -1708,7 +1726,7 @@ function EditPanel({
             onChange={(e) => onEmojiChange(e.target.value)}
             placeholder="⭐"
             disabled={isLoading}
-            className="mt-2 w-full px-3 py-2 text-lg text-center border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            className="mt-2 w-full px-3 py-2.5 text-lg text-center border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all touch-manipulation"
           />
           <p className="mt-1 text-xs text-muted-foreground">
             Selecciona un emoji para tu hábito
@@ -1726,7 +1744,7 @@ function EditPanel({
             onChange={(e) => onNameChange(e.target.value)}
             placeholder="Ej: Meditar"
             disabled={isLoading}
-            className="mt-2 w-full px-3 py-2 border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm"
+            className="mt-2 w-full px-3 py-2.5 border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm touch-manipulation"
             required
           />
         </div>
@@ -1741,7 +1759,7 @@ function EditPanel({
             value={endDate}
             onChange={(e) => onEndDateChange(e.target.value)}
             disabled={isLoading}
-            className="mt-2 w-full px-3 py-2 border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm"
+            className="mt-2 w-full px-3 py-2.5 border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm touch-manipulation"
           />
           <p className="mt-1 text-xs text-muted-foreground">
             Opcional: define una fecha límite para el hábito
@@ -1766,7 +1784,7 @@ function EditPanel({
                   }
                 }}
                 disabled={isLoading || (scheduledDays.length === 1 && scheduledDays.includes(index))}
-                className={`py-2 px-1 rounded-lg font-semibold text-sm transition-all ${ 
+                className={`py-2.5 sm:py-2 px-1 rounded-lg font-semibold text-xs sm:text-sm transition-all active:scale-95 touch-manipulation ${ 
                   scheduledDays.includes(index)
                     ? "bg-purple-600 text-white border-2 border-purple-600"
                     : "border-2 border-border/30 bg-background text-foreground hover:border-purple-400"
@@ -1790,7 +1808,7 @@ function EditPanel({
             value={areaId || ""}
             onChange={(e) => onAreaIdChange(e.target.value || null)}
             disabled={isLoading}
-            className="mt-2 w-full px-3 py-2 border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm appearance-none cursor-pointer"
+            className="mt-2 w-full px-3 py-2.5 border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm appearance-none cursor-pointer touch-manipulation"
           >
             <option value="">Sin área asignada</option>
             {areas.map((area) => (
@@ -1813,7 +1831,7 @@ function EditPanel({
             value={projectId || ""}
             onChange={(e) => onProjectIdChange(e.target.value || null)}
             disabled={isLoading}
-            className="mt-2 w-full px-3 py-2 border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm appearance-none cursor-pointer"
+            className="mt-2 w-full px-3 py-2.5 border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm appearance-none cursor-pointer touch-manipulation"
           >
             <option value="">Sin proyecto asignado</option>
             {projects.map((project) => (
@@ -1836,7 +1854,7 @@ function EditPanel({
             value={skillId || ""}
             onChange={(e) => onSkillIdChange(e.target.value || null)}
             disabled={isLoading}
-            className="mt-2 w-full px-3 py-2 border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm appearance-none cursor-pointer"
+            className="mt-2 w-full px-3 py-2.5 border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm appearance-none cursor-pointer touch-manipulation"
           >
             <option value="">Sin skill asignado</option>
             {skills.map((skill) => (
@@ -1852,12 +1870,12 @@ function EditPanel({
       </div>
 
       {/* Footer */}
-      <div className="border-t border-border/30 px-6 py-4 flex gap-3">
+      <div className="border-t border-border/30 px-4 sm:px-6 py-3.5 sm:py-4 flex gap-2 sm:gap-3">
         <Button
           variant="outline"
           onClick={onBack}
           disabled={isLoading}
-          className="flex-1"
+          className="flex-1 h-10 sm:h-auto touch-manipulation"
         >
           Cancelar
         </Button>
@@ -1865,18 +1883,18 @@ function EditPanel({
           variant="destructive"
           onClick={onDelete}
           disabled={isLoading}
-          className="flex-1"
+          className="flex-1 h-10 sm:h-auto touch-manipulation"
           title="Eliminar este hábito permanentemente"
         >
           <Trash2 className="h-4 w-4 mr-1" />
-          Eliminar
+          <span className="hidden sm:inline">Eliminar</span>
         </Button>
         <Button
           onClick={onSubmit}
           disabled={isLoading || !name.trim()}
-          className="flex-1 bg-purple-600 hover:bg-purple-700 text-white"
+          className="flex-1 h-10 sm:h-auto bg-purple-600 hover:bg-purple-700 text-white touch-manipulation"
         >
-          {isLoading ? "Actualizando..." : "Guardar cambios"}
+          {isLoading ? "Actualizando..." : "Guardar"}
         </Button>
       </div>
     </div>
@@ -1895,20 +1913,20 @@ function ArchivedPanel({
   return (
     <div className="w-full">
       {/* Header */}
-      <div className="border-b border-yellow-500/30 px-6 py-5 bg-gradient-to-r from-yellow-500/5 to-amber-500/5">
-        <div className="flex items-start gap-4">
+      <div className="border-b border-yellow-500/30 px-4 sm:px-6 py-5 bg-gradient-to-r from-yellow-500/5 to-amber-500/5">
+        <div className="flex items-start gap-3 sm:gap-4">
           <button
             onClick={onBack}
-            className="flex-shrink-0 mt-1 rounded hover:bg-yellow-500/10 p-1 transition-colors"
+            className="flex-shrink-0 mt-0.5 sm:mt-1 rounded hover:bg-yellow-500/10 p-1.5 sm:p-1 transition-colors h-8 w-8 sm:h-auto sm:w-auto touch-manipulation"
           >
-            <ArrowLeft className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
+            <ArrowLeft className="h-5 w-5 sm:h-5 sm:w-5 text-yellow-600 dark:text-yellow-400" />
           </button>
-          <div>
-            <h2 className="font-black text-xl text-yellow-700 dark:text-yellow-300 flex items-center gap-2">
-              <Archive size={20} className="text-yellow-600 dark:text-yellow-400" />
-              🏆 Hábitos Completados
+          <div className="min-w-0 flex-1">
+            <h2 className="font-black text-base sm:text-lg text-yellow-700 dark:text-yellow-300 flex items-center gap-2 flex-wrap">
+              <Archive size={18} className="sm:size-20 text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
+              <span>🏆 Completados</span>
             </h2>
-            <p className="mt-1 text-sm text-yellow-600/70 dark:text-yellow-400/70">
+            <p className="mt-1 text-xs sm:text-sm text-yellow-600/70 dark:text-yellow-400/70">
               ¡Felicidades! Superaste estos desafíos
             </p>
           </div>
@@ -1916,7 +1934,7 @@ function ArchivedPanel({
       </div>
 
       {/* Habits List */}
-      <div className="px-5 py-3 flex flex-col gap-2 max-h-80 overflow-y-auto">
+      <div className="px-3 sm:px-5 py-3 flex flex-col gap-2 max-h-80 overflow-y-auto">
         {habits.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No hay hábitos archivados
@@ -1933,12 +1951,12 @@ function ArchivedPanel({
               <button
                 key={habit.id}
                 onClick={() => onDetailClick(habit.id)}
-                className="text-left rounded-2xl border-2 border-yellow-400/50 px-4 py-3 bg-gradient-to-br from-yellow-500/20 via-amber-500/10 to-yellow-500/10 hover:border-yellow-400 hover:from-yellow-500/30 hover:via-amber-500/20 transition-all shadow-md hover:shadow-lg hover:shadow-yellow-500/20"
+                className="text-left rounded-2xl border-2 border-yellow-400/50 px-3 sm:px-4 py-2.5 sm:py-3 bg-gradient-to-br from-yellow-500/20 via-amber-500/10 to-yellow-500/10 hover:border-yellow-400 hover:from-yellow-500/30 hover:via-amber-500/20 active:scale-95 transition-all shadow-md hover:shadow-lg hover:shadow-yellow-500/20 touch-manipulation"
               >
-                <div className="flex items-center gap-3 mb-2">
-                  <span className="text-2xl flex-shrink-0 drop-shadow">{habit.emoji}</span>
+                <div className="flex items-center gap-2 sm:gap-3 mb-1.5 sm:mb-2 flex-wrap">
+                  <span className="text-xl sm:text-2xl flex-shrink-0 drop-shadow">{habit.emoji}</span>
                   <div className="flex-1 min-w-0">
-                    <span className="font-black text-sm text-yellow-900 dark:text-yellow-100 block truncate">
+                    <span className="font-black text-xs sm:text-sm text-yellow-900 dark:text-yellow-100 block truncate">
                       {habit.name}
                     </span>
                     <span className="text-xs text-yellow-700/80 dark:text-yellow-300/80">
@@ -1946,8 +1964,8 @@ function ArchivedPanel({
                     </span>
                   </div>
                 </div>
-                <div className="pl-11 flex items-center gap-2 text-xs text-yellow-700/70 dark:text-yellow-300/70">
-                  <span className="font-semibold">Mejor racha:</span>
+                <div className="pl-7 sm:pl-11 flex items-center gap-1.5 sm:gap-2 text-xs text-yellow-700/70 dark:text-yellow-300/70">
+                  <span className="font-semibold">Racha:</span>
                   <span className="font-black text-yellow-800 dark:text-yellow-200">{displayBestStreak} 🔥</span>
                 </div>
               </button>
@@ -1957,11 +1975,11 @@ function ArchivedPanel({
       </div>
 
       {/* Footer */}
-      <div className="border-t border-yellow-500/20 px-6 py-4 bg-yellow-50/30 dark:bg-yellow-950/20">
+      <div className="border-t border-yellow-500/20 px-4 sm:px-6 py-3 sm:py-4 bg-yellow-50/30 dark:bg-yellow-950/20">
         <Button
           variant="outline"
           onClick={onBack}
-          className="w-full border-yellow-400/50 hover:border-yellow-400 hover:bg-yellow-500/10 text-yellow-700 dark:text-yellow-300"
+          className="w-full h-10 sm:h-auto border-yellow-400/50 hover:border-yellow-400 hover:bg-yellow-500/10 text-yellow-700 dark:text-yellow-300 touch-manipulation"
         >
           Volver
         </Button>
@@ -2004,62 +2022,62 @@ function ArchivedDetailPanel({
   return (
     <div className="w-full">
       {/* Header */}
-      <div className="border-b border-yellow-500/30 px-6 py-4 bg-gradient-to-r from-yellow-500/10 to-amber-500/5">
-        <div className="flex items-center gap-3">
+      <div className="border-b border-yellow-500/30 px-4 sm:px-6 py-4 bg-gradient-to-r from-yellow-500/10 to-amber-500/5">
+        <div className="flex items-center gap-2 sm:gap-3">
           <button
             onClick={onBack}
-            className="flex h-7 w-7 items-center justify-center rounded-full border border-yellow-400/50 bg-yellow-500/10 hover:bg-yellow-500/20 transition-colors"
+            className="flex h-8 w-8 sm:h-7 sm:w-7 items-center justify-center rounded-full border border-yellow-400/50 bg-yellow-500/10 hover:bg-yellow-500/20 transition-colors touch-manipulation flex-shrink-0"
           >
-            <ArrowLeft className="h-3.5 w-3.5 text-yellow-600 dark:text-yellow-400" />
+            <ArrowLeft className="h-4 w-4 sm:h-3.5 sm:w-3.5 text-yellow-600 dark:text-yellow-400" />
           </button>
-          <h2 className="font-black text-lg text-yellow-900 dark:text-yellow-100">
+          <h2 className="font-black text-base sm:text-lg text-yellow-900 dark:text-yellow-100 flex-1 truncate">
             {habit.emoji} {habit.name}
           </h2>
-          <span className="ml-auto text-2xl">🏆</span>
+          <span className="text-lg sm:text-2xl flex-shrink-0">🏆</span>
         </div>
       </div>
 
       {/* Stats */}
-      <div className="border-b border-yellow-500/20 flex gap-2 px-5 py-3 bg-yellow-50/30 dark:bg-yellow-950/10">
-        <div className="flex-1 rounded-xl bg-gradient-to-br from-yellow-400/30 to-amber-400/20 px-3 py-2 text-center border border-yellow-300/30">
-          <div className="font-black text-xl text-yellow-900 dark:text-yellow-100">{displayBestStreak}</div>
-          <div className="text-xs text-yellow-700/80 dark:text-yellow-300/80 uppercase font-semibold">Mejor racha 🔥</div>
+      <div className="border-b border-yellow-500/20 flex gap-2 px-3 sm:px-5 py-3 bg-yellow-50/30 dark:bg-yellow-950/10">
+        <div className="flex-1 rounded-xl bg-gradient-to-br from-yellow-400/30 to-amber-400/20 px-2 sm:px-3 py-2 text-center border border-yellow-300/30">
+          <div className="font-black text-lg sm:text-xl text-yellow-900 dark:text-yellow-100">{displayBestStreak}</div>
+          <div className="text-xs text-yellow-700/80 dark:text-yellow-300/80 uppercase font-semibold">Racha</div>
         </div>
-        <div className="flex-1 rounded-xl bg-gradient-to-br from-yellow-500/20 to-amber-500/10 px-3 py-2 text-center border border-yellow-300/30">
-          <div className="font-black text-xl text-yellow-900 dark:text-yellow-100">
+        <div className="flex-1 rounded-xl bg-gradient-to-br from-yellow-500/20 to-amber-500/10 px-2 sm:px-3 py-2 text-center border border-yellow-300/30">
+          <div className="font-black text-lg sm:text-xl text-yellow-900 dark:text-yellow-100">
             {habit.done.size}
           </div>
           <div className="text-xs text-yellow-700/80 dark:text-yellow-300/80 uppercase font-semibold">Completados</div>
         </div>
-        <div className="flex-1 rounded-xl bg-gradient-to-br from-yellow-400/25 to-amber-400/15 px-3 py-2 text-center border border-yellow-300/30">
-          <div className="font-black text-xl text-yellow-900 dark:text-yellow-100">
+        <div className="flex-1 rounded-xl bg-gradient-to-br from-yellow-400/25 to-amber-400/15 px-2 sm:px-3 py-2 text-center border border-yellow-300/30">
+          <div className="font-black text-lg sm:text-xl text-yellow-900 dark:text-yellow-100 text-sm sm:text-base">
             {new Date(habit.endDate!).toLocaleDateString("es-AR")}
           </div>
-          <div className="text-xs text-yellow-700/80 dark:text-yellow-300/80 uppercase font-semibold">Fecha fin</div>
+          <div className="text-xs text-yellow-700/80 dark:text-yellow-300/80 uppercase font-semibold">Fin</div>
         </div>
       </div>
 
       {/* Month Navigation */}
-      <div className="border-b border-yellow-500/20 flex items-center justify-between px-6 py-2.5">
+      <div className="border-b border-yellow-500/20 flex items-center justify-between px-4 sm:px-6 py-2.5 gap-2">
         <button
           onClick={() => onMonthChange(-1)}
-          className="flex h-7 w-7 items-center justify-center rounded border border-yellow-400/50 bg-yellow-500/10 hover:bg-yellow-500/20 transition-colors"
+          className="flex h-8 w-8 sm:h-7 sm:w-7 items-center justify-center rounded border border-yellow-400/50 bg-yellow-500/10 hover:bg-yellow-500/20 active:bg-yellow-500/30 transition-colors touch-manipulation flex-shrink-0"
         >
-          <ChevronLeft className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+          <ChevronLeft className="h-4 w-4 sm:h-4 sm:w-4 text-yellow-600 dark:text-yellow-400" />
         </button>
-        <span className="font-bold text-sm text-yellow-900 dark:text-yellow-100 capitalize">
+        <span className="font-bold text-xs sm:text-sm text-yellow-900 dark:text-yellow-100 capitalize flex-1 text-center">
           {MONTHS[month]} {year}
         </span>
         <button
           onClick={() => onMonthChange(1)}
-          className="flex h-7 w-7 items-center justify-center rounded border border-yellow-400/50 bg-yellow-500/10 hover:bg-yellow-500/20 transition-colors"
+          className="flex h-8 w-8 sm:h-7 sm:w-7 items-center justify-center rounded border border-yellow-400/50 bg-yellow-500/10 hover:bg-yellow-500/20 active:bg-yellow-500/30 transition-colors touch-manipulation flex-shrink-0"
         >
-          <ChevronRight className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+          <ChevronRight className="h-4 w-4 sm:h-4 sm:w-4 text-yellow-600 dark:text-yellow-400" />
         </button>
       </div>
 
       {/* Calendar */}
-      <div className="px-5 py-3 bg-yellow-50/20 dark:bg-yellow-950/10">
+      <div className="px-3 sm:px-5 py-3 bg-yellow-50/20 dark:bg-yellow-950/10">
         <div className="grid grid-cols-7 gap-1">
           {DAY_LBLS.map((lbl) => (
             <div
@@ -2087,7 +2105,7 @@ function ArchivedDetailPanel({
             return (
               <div
                 key={day}
-                className={`relative aspect-square rounded-lg flex items-center justify-center text-xs font-black transition-all ${
+                className={`relative aspect-square rounded-lg flex items-center justify-center text-xs font-black transition-all cursor-pointer active:scale-95 ${
                   isDone
                     ? "bg-gradient-to-br from-yellow-500 to-amber-500 text-white shadow-md shadow-yellow-500/30 border border-yellow-400"
                     : "bg-yellow-100/30 dark:bg-yellow-900/20 border border-yellow-300/30 text-yellow-700 dark:text-yellow-300"

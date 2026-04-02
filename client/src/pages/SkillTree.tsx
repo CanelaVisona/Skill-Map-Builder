@@ -10,7 +10,7 @@ import { SpaceRepetitionModal } from "@/components/SpaceRepetitionModal";
 import { ProgressModal } from "@/components/ProgressModal";
 import { ProgressBar } from "@/components/ProgressBar";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Mountain, Image, Grid, Flame, Dumbbell } from "lucide-react";
+import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Mountain, Image, Grid, Flame, Dumbbell, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -3294,12 +3294,21 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
 const SKILLS_LIST = ["Limpieza", "Guitarra", "Lectura", "Growth mindset", "Comunicación"];
 const xpPerLevel = 500;
 
+interface LegacySkill {
+  name: string;
+  currentXp: number;
+  level: number;
+  goalXp?: number;
+  completed?: boolean;
+  completedAt?: string | null;
+}
+
 function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { journalLearnings: JournalLearning[]; journalTools: JournalTool[]; journalThoughts: JournalThought[] }) {
   const queryClient = useQueryClient();
   const { globalSkills, globalSkillsLoading, refetchGlobalSkills, deleteGlobalSkill, createGlobalSkill, areas, mainQuests, sideQuests, emergentQuests, experienceQuests } = useSkillTree();
   
   // Legacy skills from localStorage (the original hardcoded ones)
-  const [legacySkills, setLegacySkills] = useState<Record<string, { name: string; currentXp: number; level: number }>>({});
+  const [legacySkills, setLegacySkills] = useState<Record<string, LegacySkill>>({});
   
   // State for legacy skill area/quest association dialog
   const [legacySkillDialogOpen, setLegacySkillDialogOpen] = useState(false);
@@ -3323,6 +3332,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
   const globalIsLongPress = useRef(false);
   const globalMenuOpenTime = useRef<number>(0);
   const [pressingGlobalSkill, setPressingGlobalSkill] = useState<string | null>(null);
+  const [longTermModalOpen, setLongTermModalOpen] = useState(false);
   
   // State for creating new global skill
   const [isCreateSkillDialogOpen, setIsCreateSkillDialogOpen] = useState(false);
@@ -3333,6 +3343,41 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
   const [newSkillProjectId, setNewSkillProjectId] = useState<string>("");
   const createSkillLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   
+  // State for subskill long-press menu
+  const [pressingSubskill, setPressingSubskill] = useState<string | null>(null);
+  const [subskillMenuOpen, setSubskillMenuOpen] = useState<string | null>(null);
+  const [subskillMenuPosition, setSubskillMenuPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const subskillLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const subskillIsLongPress = useRef(false);
+  const subskillMenuOpenTime = useRef<number>(0);
+  
+  // State for Meta modal
+  const [metaModalOpen, setMetaModalOpen] = useState(false);
+  const [selectedSkillForMeta, setSelectedSkillForMeta] = useState<{ id: string; name: string } | null>(null);
+  const [goalXpValue, setGoalXpValue] = useState<string>("");
+  
+  // Clean up corrupted localStorage data with "0" prefixes on mount ONCE
+  useEffect(() => {
+    const raw = localStorage.getItem('skillsProgress');
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw);
+      const cleaned: Record<string, any> = {};
+      for (const key of Object.keys(parsed)) {
+        const cleanKey = key.replace(/^0+/, '');
+        const skill = parsed[key];
+        cleaned[cleanKey] = {
+          ...skill,
+          name: skill.name?.replace(/^0+/, '') ?? cleanKey
+        };
+      }
+      localStorage.setItem('skillsProgress', JSON.stringify(cleaned));
+      console.log('[CleanupEffect] Cleaned corrupted localStorage data');
+    } catch (e) {
+      console.error('[CleanupEffect] Error cleaning localStorage:', e);
+    }
+  }, []);
+
   // Monitor legacySkillMenuOpen state changes
   useEffect(() => {
     console.log('[STATE CHANGE] legacySkillMenuOpen updated to:', legacySkillMenuOpen);
@@ -3351,10 +3396,22 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
       try {
         const parsed = JSON.parse(stored);
         // Migration: convert old single association to array
+        // Also clean up "0" prefix from skill names
         const migrated: Record<string, Array<{ type: "area" | "project"; id: string }>> = {};
+        let hasCleanupNeeded = false;
+        
         Object.entries(parsed).forEach(([skill, assoc]) => {
+            // Clean up "0" prefix in skill name
+            const cleanedSkillName = (typeof skill === 'string' && skill.startsWith('0') && skill !== '0') 
+              ? skill.substring(1) 
+              : skill;
+            if (cleanedSkillName !== skill) {
+              hasCleanupNeeded = true;
+              console.log('[SkillsSection] Cleaned association skill name:', skill, '→', cleanedSkillName);
+            }
+            
             if (Array.isArray(assoc)) {
-              migrated[skill] = assoc.filter(a =>
+              migrated[cleanedSkillName] = assoc.filter(a =>
                 a &&
                 typeof a === 'object' &&
                 (a.type === 'area' || a.type === 'project') &&
@@ -3367,12 +3424,18 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
               ((assoc as any).type === 'area' || (assoc as any).type === 'project') &&
               typeof (assoc as any).id === 'string'
             ) {
-              migrated[skill] = [{
+              migrated[cleanedSkillName] = [{
                 type: (assoc as any).type,
                 id: (assoc as any).id
               }];
             } // else skip invalid
         });
+        
+        if (hasCleanupNeeded) {
+          console.log('[SkillsSection] Saved cleaned legacySkillAssociations to localStorage');
+          localStorage.setItem("legacySkillAssociations", JSON.stringify(migrated));
+        }
+        
         setLegacySkillAssociations(migrated);
       } catch (e) {
         console.error("Error parsing legacy skill associations:", e);
@@ -3526,6 +3589,68 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
     if (globalLongPressTimer.current) {
       clearTimeout(globalLongPressTimer.current);
       globalLongPressTimer.current = null;
+    }
+  };
+  
+  // Subskill long-press handlers
+  const handleSubSkillPointerDown = (e: React.PointerEvent, subskillId: string) => {
+    console.log('[SubSkill] PointerDown:', subskillId, e.pointerType);
+    e.stopPropagation();
+    
+    setPressingSubskill(subskillId);
+    subskillIsLongPress.current = false;
+    
+    // Close menu if clicking on different subskill
+    if (subskillMenuOpen && subskillMenuOpen !== subskillId) {
+      setSubskillMenuOpen(null);
+    }
+    
+    // Clear any existing timer
+    if (subskillLongPressTimer.current) {
+      clearTimeout(subskillLongPressTimer.current);
+    }
+    
+    subskillLongPressTimer.current = setTimeout(() => {
+      console.log('[SubSkill] Long press TRIGGERED:', subskillId);
+      subskillIsLongPress.current = true;
+      setPressingSubskill(null);
+      subskillMenuOpenTime.current = Date.now();
+      setSubskillMenuPosition({ x: e.clientX, y: e.clientY });
+      setSubskillMenuOpen(subskillId);
+    }, 400);
+  };
+  
+  const handleSubSkillPointerUp = (e: React.PointerEvent) => {
+    console.log('[SubSkill] PointerUp', { wasLongPress: subskillIsLongPress.current });
+    if (subskillMenuOpen || subskillIsLongPress.current) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    
+    if (subskillIsLongPress.current) {
+      // Menu handling already done in long press timeout
+    } else {
+      setPressingSubskill(null);
+    }
+    subskillIsLongPress.current = false;
+    if (subskillLongPressTimer.current) {
+      clearTimeout(subskillLongPressTimer.current);
+      subskillLongPressTimer.current = null;
+    }
+  };
+  
+  const handleSubSkillPointerCancel = (e: React.PointerEvent) => {
+    console.log('[SubSkill] PointerCancel');
+    if (subskillIsLongPress.current) {
+      e.stopPropagation();
+      e.preventDefault();
+    } else {
+      setPressingSubskill(null);
+    }
+    subskillIsLongPress.current = false;
+    if (subskillLongPressTimer.current) {
+      clearTimeout(subskillLongPressTimer.current);
+      subskillLongPressTimer.current = null;
     }
   };
   
@@ -3745,6 +3870,20 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
     setSelectedProjectIds([]);
   };
   
+  // Auto-complete skills that have reached their XP goal
+  const autoCompleteReachedSkills = useCallback(async (skillsToCheck: GlobalSkill[]) => {
+    for (const skill of skillsToCheck) {
+      if (skill.goalXp > 0 && !skill.completed && skill.currentXp >= skill.goalXp) {
+        console.log('[autoComplete] Skill reached goal - auto-completing:', skill.name, skill.currentXp, '>=', skill.goalXp);
+        try {
+          await fetch(`/api/global-skills/${skill.id}/complete`, { method: "PATCH" });
+        } catch (error) {
+          console.error('[autoComplete] Error completing skill:', error);
+        }
+      }
+    }
+  }, []);
+  
   // Helper to get area/project name for display
   const getAssociationNames = (skillName: string) => {
     const assocs = legacySkillAssociations[skillName] || [];
@@ -3764,9 +3903,36 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
       const stored = localStorage.getItem("skillsProgress");
       if (stored) {
         try {
-          const loaded = JSON.parse(stored);
-          console.log('[loadLegacySkills] Loaded from localStorage:', loaded);
-          setLegacySkills(loaded);
+          let loaded = JSON.parse(stored);
+          
+          // Clean up "0" prefix from all skill names
+          let hasChanges = false;
+          const cleaned: Record<string, LegacySkill> = {};
+          
+          for (const [key, skill] of Object.entries(loaded)) {
+            if (typeof key === 'string' && key.startsWith('0') && key !== '0') {
+              // Remove "0" prefix from key/skill name
+              const cleanedKey = key.substring(1);
+              const cleanedSkill = { ...skill as LegacySkill };
+              if (cleanedSkill.name && cleanedSkill.name.startsWith('0')) {
+                cleanedSkill.name = cleanedSkill.name.substring(1);
+              }
+              cleaned[cleanedKey] = cleanedSkill;
+              hasChanges = true;
+              console.log('[loadLegacySkills] Cleaned skill name:', key, '→', cleanedKey);
+            } else {
+              cleaned[key] = skill;
+            }
+          }
+          
+          if (hasChanges) {
+            console.log('[loadLegacySkills] Cleaned legacy skills (removed "0" prefix):', cleaned);
+            localStorage.setItem("skillsProgress", JSON.stringify(cleaned));
+            setLegacySkills(cleaned);
+          } else {
+            console.log('[loadLegacySkills] Loaded from localStorage:', loaded);
+            setLegacySkills(loaded);
+          }
         } catch (e) {
           console.error("Error parsing legacy skills:", e);
           setLegacySkills({});
@@ -3801,6 +3967,22 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
     const xpInCurrentLevel = currentXp % xpPerLevel;
     return (xpInCurrentLevel / xpPerLevel) * 100;
   };
+
+  const formatCompletedDate = (dateString: string | null | undefined): string => {
+    if (!dateString) return 'Unknown';
+    try {
+      const date = new Date(dateString);
+      return new Intl.DateTimeFormat('es-AR', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
+      }).format(date);
+    } catch {
+      return dateString;
+    }
+  };
   
   // Get GlobalSkills that belong to a legacy skill's associated area or project
   const getGlobalSkillsForLegacySkill = (skillName: string): GlobalSkill[] => {
@@ -3823,7 +4005,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
     .flatMap(arr => Array.isArray(arr) ? arr.filter(a => a.type === 'area').map(a => a.id) : []);
   
   // Filter parent skills (not subskills) - exclude those belonging to legacy skill areas
-  const parentSkills = globalSkills.filter((s: GlobalSkill) => !s.parentSkillId && !legacyAreaIds.includes(s.areaId || ''));
+  const parentSkills = globalSkills.filter((s: GlobalSkill) => !s.parentSkillId && !s.completed && !legacyAreaIds.includes(s.areaId || ''));
   
   // Helper function to adjust menu position to stay within viewport
   const adjustMenuPosition = (x: number, y: number): { x: number; y: number } => {
@@ -3910,9 +4092,19 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
 
   // Refetch global skills and legacy skills when XP is added or skill is created
   useLayoutEffect(() => {
-    const handleSkillXpAdded = () => {
+    const handleSkillXpAdded = async () => {
       console.log('[SkillsSection] === skillXpAdded event RECEIVED - refetching global skills ===');
-      refetchGlobalSkills();
+      await refetchGlobalSkills();
+      
+      // Check for auto-completion after refetch
+      const freshSkills = await fetch("/api/global-skills", {
+        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
+      }).then(r => r.json()).catch(() => []);
+      
+      if (freshSkills && freshSkills.length > 0) {
+        await autoCompleteReachedSkills(freshSkills);
+      }
+      
       // Also reload legacy skills
       const stored = localStorage.getItem("skillsProgress");
       if (stored) {
@@ -3935,7 +4127,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
       window.removeEventListener('skillXpAdded', handleSkillXpAdded);
       window.removeEventListener('globalSkillCreated', handleGlobalSkillCreated);
     };
-  }, [refetchGlobalSkills]);
+  }, [refetchGlobalSkills, autoCompleteReachedSkills]);
 
   // Mutations for delete
   const deleteLearning = useMutation({
@@ -4238,14 +4430,30 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
           {/* Top Section: Skills Progress with Accordions */}
           <div className="bg-zinc-800/30 rounded border border-zinc-700/50 p-4">
             <div 
-              className="mb-3 pb-2 border-b border-zinc-700/50 select-none"
+              className="mb-3 pb-2 border-b border-zinc-700/50 select-none flex items-center justify-between"
               onPointerDown={handleCreateSkillPointerDown}
               onPointerUp={handleCreateSkillPointerUp}
               onPointerCancel={handleCreateSkillPointerUp}
               onPointerLeave={handleCreateSkillPointerUp}
             >
-              <span className="text-xs text-zinc-500 uppercase tracking-wider">Skills Progress</span>
-              <div className="h-px w-8 bg-gradient-to-r from-zinc-600 to-transparent mt-1" />
+              <div>
+                <span className="text-xs text-zinc-500 uppercase tracking-wider">Skills Progress</span>
+                <div className="h-px w-8 bg-gradient-to-r from-zinc-600 to-transparent mt-1" />
+              </div>
+              {(() => {
+                const completedCount = globalSkills.filter(s => s.completed).length;
+                return (
+                  <Button 
+                    onClick={() => setLongTermModalOpen(true)}
+                    size="sm"
+                    variant="outline"
+                    className="h-8 gap-2 bg-amber-900/20 border-amber-600/40 hover:bg-amber-800/30 text-amber-400 hover:text-amber-300"
+                  >
+                    <Star className="h-4 w-4" />
+                    <span className="text-xs font-medium">Long-term {completedCount > 0 && `(${completedCount})`}</span>
+                  </Button>
+                );
+              })()}
             </div>
             
             <div className="space-y-4">
@@ -4253,17 +4461,18 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
               {Object.keys(legacySkills).length > 0 && (
                 <Accordion type="multiple" className="space-y-2">
                   {Object.keys(legacySkills).map((skillName) => {
-                    const skill = legacySkills[skillName] || { name: skillName, currentXp: 0, level: 1 };
+                    const skill: LegacySkill = legacySkills[skillName] || { name: skillName, currentXp: 0, level: 1, goalXp: 0, completed: false, completedAt: null };
                     const xpProgress = calculateLegacyXpProgress(skill.currentXp, skill.level);
                     const associationNames = getAssociationNames(skillName);
                     const associationName = associationNames.length > 0 ? associationNames[0] : null;
                     const additionalCount = Math.max(0, associationNames.length - 1);
                     const isPressing = pressingSkill === skillName;
                     const linkedGlobalSkills = getGlobalSkillsForLegacySkill(skillName);
+                    const incompleteLinkedSkills = linkedGlobalSkills.filter(s => !s.completed);
                     
                     return (
-                      <AccordionItem key={skillName} value={skillName} className="border-zinc-700/50 rounded-lg bg-zinc-800/20">
-                        <AccordionTrigger className="px-3 py-2 hover:no-underline hover:bg-zinc-700/20 rounded-t-lg">
+                      <AccordionItem key={skillName} value={skillName} className={cn("rounded-lg", skill.completed ? "border-amber-400 border-2 bg-amber-900/10" : "border-zinc-700/50 bg-zinc-800/20")}>
+                        <AccordionTrigger className={cn("px-3 py-2 hover:no-underline rounded-t-lg", skill.completed ? "hover:bg-amber-800/20" : "hover:bg-zinc-700/20")}>
                           <div 
                             className={cn(
                               "flex-1 pr-4",
@@ -4279,15 +4488,21 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
                             onContextMenu={(e) => e.preventDefault()}
                           >
                             <div className="flex items-center justify-between mb-1">
-                              <span className="text-sm font-medium text-zinc-100">{skill.name}</span>
-                              <span className="text-xs text-zinc-400">
+                              <span className={cn("text-sm font-medium", skill.completed ? "text-amber-300" : "text-zinc-100")}>
+                                {!!skill.completed && <Star className="h-4 w-4 inline mr-1 text-amber-400" />}
+                                {skill.name}
+                              </span>
+                              <span className={cn("text-xs", skill.completed ? "text-amber-400" : "text-zinc-400")}>
                                 Lv.<span className="font-bold text-zinc-100">{skill.level}</span>
-                                <span className="ml-2 text-zinc-500">{skill.currentXp}xp</span>
+                                <span className="ml-2">{skill.currentXp}xp</span>
                               </span>
                             </div>
-                            <div className="w-full bg-zinc-700/30 border border-zinc-600/50 rounded h-2 overflow-hidden">
+                            {!!skill.completed && skill.completedAt && (
+                              <p className="text-xs text-amber-600/80 mb-1">✓ {formatCompletedDate(skill.completedAt)}</p>
+                            )}
+                            <div className={cn("w-full rounded h-2 overflow-hidden", skill.completed ? "border border-amber-500/50 bg-amber-950/30" : "bg-zinc-700/30 border border-zinc-600/50")}>
                               <div
-                                className="h-full bg-gradient-to-r from-purple-600 via-purple-500 to-purple-400 transition-all duration-300"
+                                className={cn("h-full transition-all duration-300", skill.completed ? "bg-gradient-to-r from-amber-600 via-amber-500 to-amber-400" : "bg-gradient-to-r from-purple-600 via-purple-500 to-purple-400")}
                                 style={{ width: `${xpProgress}%` }}
                               />
                             </div>
@@ -4300,20 +4515,26 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
                             </p>
                           ) : (
                             <div className="space-y-2 pl-3 border-l-2 border-zinc-700/50">
-                              {linkedGlobalSkills.map((globalSkill: GlobalSkill) => {
+                              {incompleteLinkedSkills.map((globalSkill: GlobalSkill) => {
                                 const subXpProgress = calculateXpProgress(globalSkill.currentXp, globalSkill.level);
                                 return (
-                                  <div key={globalSkill.id} className="space-y-1">
+                                  <div key={globalSkill.id} className={cn("space-y-1 rounded p-2", globalSkill.completed ? "border-l-2 border-amber-400 bg-amber-900/15" : "")}>
                                     <div className="flex items-center justify-between">
-                                      <span className="text-sm text-zinc-200">{globalSkill.name}</span>
-                                      <span className="text-xs text-zinc-400">
-                                        Lv.<span className="font-medium text-zinc-200">{globalSkill.level}</span>
-                                        <span className="ml-1.5 text-zinc-500">{globalSkill.currentXp}xp</span>
+                                      <span className={cn("text-sm", globalSkill.completed ? "text-amber-300 font-medium" : "text-zinc-200")}>
+                                        {!!globalSkill.completed && <Star className="h-3 w-3 inline mr-1 text-amber-400" />}
+                                        {globalSkill.name}
+                                      </span>
+                                      <span className={cn("text-xs", globalSkill.completed ? "text-amber-400" : "text-zinc-400")}>
+                                        Lv.<span className="font-medium">{globalSkill.level}</span>
+                                        <span className="ml-1.5">{globalSkill.currentXp}xp</span>
                                       </span>
                                     </div>
-                                    <div className="w-full bg-zinc-700/30 border border-zinc-600/40 rounded h-1.5 overflow-hidden">
+                                    {!!globalSkill.completed && globalSkill.completedAt && (
+                                      <p className="text-xs text-amber-600/80">✓ {formatCompletedDate(globalSkill.completedAt)}</p>
+                                    )}
+                                    <div className={cn("w-full rounded h-1.5 overflow-hidden", globalSkill.completed ? "border border-amber-500/30 bg-amber-950/20" : "bg-zinc-700/30 border border-zinc-600/40")}>
                                       <div
-                                        className="h-full bg-gradient-to-r from-green-600 via-green-500 to-green-400 transition-all duration-300"
+                                        className={cn("h-full transition-all duration-300", globalSkill.completed ? "bg-gradient-to-r from-amber-600 via-amber-500 to-amber-400" : "bg-gradient-to-r from-green-600 via-green-500 to-green-400")}
                                         style={{ width: `${subXpProgress}%` }}
                                       />
                                     </div>
@@ -4335,13 +4556,13 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
               ) : parentSkills.length > 0 ? (
                 <Accordion type="multiple" className="space-y-2">
                   {parentSkills.map((skill: GlobalSkill) => {
-                    const subSkills = getSubSkillsOf(skill.id);
+                    const subSkills = getSubSkillsOf(skill.id).filter(s => !s.completed);
                     const xpProgress = calculateXpProgress(skill.currentXp, skill.level);
                     const isPressing = pressingGlobalSkill === skill.id;
                     
                     return (
-                      <AccordionItem key={skill.id} value={skill.id} className="border-zinc-700/50 rounded-lg bg-zinc-800/20">
-                        <AccordionTrigger className="px-3 py-2 hover:no-underline hover:bg-zinc-700/20 rounded-t-lg">
+                      <AccordionItem key={skill.id} value={skill.id} className={cn("rounded-lg", skill.completed ? "border-amber-400 border-2 bg-amber-900/10" : "border-zinc-700/50 bg-zinc-800/20")}>
+                        <AccordionTrigger className={cn("px-3 py-2 hover:no-underline rounded-t-lg", skill.completed ? "hover:bg-amber-800/20" : "hover:bg-zinc-700/20")}>
                           <div 
                             className={cn("flex-1 pr-4", isPressing && "bg-purple-500/20")}
                             onPointerDown={(e) => {
@@ -4354,15 +4575,21 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
                             onContextMenu={(e) => e.preventDefault()}
                           >
                             <div className="flex items-center justify-between mb-1">
-                              <span className="text-sm font-medium text-zinc-100">{skill.name}</span>
-                              <span className="text-xs text-zinc-400">
-                                Lv.<span className="font-bold text-zinc-100">{skill.level}</span>
-                                <span className="ml-2 text-zinc-500">{skill.currentXp}xp</span>
+                              <span className={cn("text-sm font-medium", skill.completed ? "text-amber-300" : "text-zinc-100")}>
+                                {!!skill.completed && <Star className="h-4 w-4 inline mr-1 text-amber-400" />}
+                                {skill.name}
+                              </span>
+                              <span className={cn("text-xs", skill.completed ? "text-amber-400" : "text-zinc-400")}>
+                                Lv.<span className="font-bold">{skill.level}</span>
+                                <span className="ml-2">{skill.currentXp}xp</span>
                               </span>
                             </div>
-                            <div className="w-full bg-zinc-700/30 border border-zinc-600/40 rounded h-1.5 overflow-hidden">
+                            {!!skill.completed && skill.completedAt && (
+                              <p className="text-xs text-amber-600/80 mb-1">✓ {formatCompletedDate(skill.completedAt)}</p>
+                            )}
+                            <div className={cn("w-full rounded h-1.5 overflow-hidden", skill.completed ? "border border-amber-500/50 bg-amber-950/30" : "bg-zinc-700/30 border border-zinc-600/40")}>
                               <div
-                                className="h-full bg-gradient-to-r from-blue-600 via-blue-500 to-blue-400 transition-all duration-300"
+                                className={cn("h-full transition-all duration-300", skill.completed ? "bg-gradient-to-r from-amber-600 via-amber-500 to-amber-400" : "bg-gradient-to-r from-blue-600 via-blue-500 to-blue-400")}
                                 style={{ width: `${xpProgress}%` }}
                               />
                             </div>
@@ -4375,18 +4602,36 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
                             <div className="space-y-2 pl-3 border-l-2 border-zinc-700/50">
                               {subSkills.map((subSkill: GlobalSkill) => {
                                 const subXpProgress = calculateXpProgress(subSkill.currentXp, subSkill.level);
+                                const isPressingThisSubskill = pressingSubskill === subSkill.id;
                                 return (
-                                  <div key={subSkill.id} className="space-y-1">
+                                  <div 
+                                    key={subSkill.id} 
+                                    className={cn("space-y-1 rounded p-2", subSkill.completed ? "border-l-2 border-amber-400 bg-amber-900/15" : "", isPressingThisSubskill && "bg-purple-500/20")}
+                                    onPointerDown={(e) => {
+                                      e.stopPropagation();
+                                      handleSubSkillPointerDown(e, subSkill.id);
+                                    }}
+                                    onPointerUp={(e) => handleSubSkillPointerUp(e)}
+                                    onPointerCancel={(e) => handleSubSkillPointerCancel(e)}
+                                    onPointerLeave={(e) => handleSubSkillPointerUp(e)}
+                                    onContextMenu={(e) => e.preventDefault()}
+                                  >
                                     <div className="flex items-center justify-between">
-                                      <span className="text-sm text-zinc-200">{subSkill.name}</span>
-                                      <span className="text-xs text-zinc-400">
-                                        Lv.<span className="font-medium text-zinc-200">{subSkill.level}</span>
-                                        <span className="ml-1.5 text-zinc-500">{subSkill.currentXp}xp</span>
+                                      <span className={cn("text-sm", subSkill.completed ? "text-amber-300 font-medium" : "text-zinc-200")}>
+                                        {!!subSkill.completed && <Star className="h-3 w-3 inline mr-1 text-amber-400" />}
+                                        {subSkill.name}
+                                      </span>
+                                      <span className={cn("text-xs", subSkill.completed ? "text-amber-400" : "text-zinc-400")}>
+                                        Lv.<span className="font-medium">{subSkill.level}</span>
+                                        <span className="ml-1.5">{subSkill.currentXp}xp</span>
                                       </span>
                                     </div>
-                                    <div className="w-full bg-zinc-700/30 border border-zinc-600/40 rounded h-1.5 overflow-hidden">
+                                    {!!subSkill.completed && subSkill.completedAt && (
+                                      <p className="text-xs text-amber-600/80">✓ {formatCompletedDate(subSkill.completedAt)}</p>
+                                    )}
+                                    <div className={cn("w-full rounded h-1.5 overflow-hidden", subSkill.completed ? "border border-amber-500/30 bg-amber-950/20" : "bg-zinc-700/30 border border-zinc-600/40")}>
                                       <div
-                                        className="h-full bg-gradient-to-r from-green-600 via-green-500 to-green-400 transition-all duration-300"
+                                        className={cn("h-full transition-all duration-300", subSkill.completed ? "bg-gradient-to-r from-amber-600 via-amber-500 to-amber-400" : "bg-gradient-to-r from-green-600 via-green-500 to-green-400")}
                                         style={{ width: `${subXpProgress}%` }}
                                       />
                                     </div>
@@ -4868,7 +5113,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
       </Dialog>
 
       {/* Unified Skill Context Menu - for both legacy and global skills */}
-      {(legacySkillMenuOpen || globalSkillMenuOpen) && (
+      {(legacySkillMenuOpen || globalSkillMenuOpen || subskillMenuOpen) && (
         <>
           {/* Modal overlay */}
           <div
@@ -4876,6 +5121,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
             onClick={() => {
               setLegacySkillMenuOpen(null);
               setGlobalSkillMenuOpen(null);
+              setSubskillMenuOpen(null);
             }}
             onContextMenu={(e) => e.preventDefault()}
           />
@@ -4901,6 +5147,22 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
                   >
                     <FolderOpen className="h-4 w-4" />
                     Link to Area/Quest
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      const skillName = legacySkillMenuOpen;
+                      console.log('[MetaButton] Opening meta for legacy skill:', skillName);
+                      setSelectedSkillForMeta({ id: skillName, name: skillName });
+                      setGoalXpValue(legacySkills[skillName]?.goalXp ? String(legacySkills[skillName].goalXp) : "");
+                      setMetaModalOpen(true);
+                      setLegacySkillMenuOpen(null);
+                    }}
+                    className="w-full text-left px-4 py-2.5 text-sm text-blue-400 hover:bg-blue-900/20 hover:text-blue-300 transition-colors flex items-center gap-2 whitespace-nowrap border-t border-zinc-700"
+                  >
+                    <Target className="h-4 w-4" />
+                    Meta
                   </button>
                   <button
                     onClick={() => {
@@ -4969,6 +5231,24 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
                     Change Area/Quest
                   </button>
                   <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      const skill = globalSkills.find(s => s.id === globalSkillMenuOpen);
+                      if (skill) {
+                        console.log('[MetaButton] Opening meta for global skill:', skill.name);
+                        setSelectedSkillForMeta({ id: skill.id, name: skill.name });
+                        setGoalXpValue(String(skill.goalXp || ""));
+                        setMetaModalOpen(true);
+                      }
+                      setGlobalSkillMenuOpen(null);
+                    }}
+                    className="w-full text-left px-4 py-2.5 text-sm text-blue-400 hover:bg-blue-900/20 hover:text-blue-300 transition-colors flex items-center gap-2 whitespace-nowrap border-t border-zinc-700"
+                  >
+                    <Target className="h-4 w-4" />
+                    Meta
+                  </button>
+                  <button
                     onClick={async () => {
                       // Find the skill in globalSkills and delete it
                       const skill = globalSkills.find(s => s.id === globalSkillMenuOpen);
@@ -4986,10 +5266,229 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
                   </button>
                 </>
               )}
+              {subskillMenuOpen && (
+                <>
+                  <button
+                    onClick={() => {
+                      const skill = globalSkills.find(s => s.id === subskillMenuOpen);
+                      if (skill) {
+                        console.log('[SkillsSection] Opening change area dialog for subskill:', skill.name);
+                        setSelectedLegacySkill(skill.name);
+                        setSelectedAreaIds(skill.areaId ? [skill.areaId] : []);
+                        setSelectedProjectIds(skill.projectId ? [skill.projectId] : []);
+                        setIsEditingGlobalSkill(true);
+                        setSubskillMenuOpen(null);
+                        setLegacySkillDialogOpen(true);
+                      }
+                    }}
+                    className="w-full text-left px-4 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors flex items-center gap-2 whitespace-nowrap"
+                  >
+                    <FolderOpen className="h-4 w-4" />
+                    Change Area/Quest
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      const skill = globalSkills.find(s => s.id === subskillMenuOpen);
+                      if (skill) {
+                        console.log('[MetaButton] Opening meta for subskill:', skill.name);
+                        setSelectedSkillForMeta({ id: skill.id, name: skill.name });
+                        setGoalXpValue(String(skill.goalXp || ""));
+                        setMetaModalOpen(true);
+                      }
+                      setSubskillMenuOpen(null);
+                    }}
+                    className="w-full text-left px-4 py-2.5 text-sm text-blue-400 hover:bg-blue-900/20 hover:text-blue-300 transition-colors flex items-center gap-2 whitespace-nowrap border-t border-zinc-700"
+                  >
+                    <Target className="h-4 w-4" />
+                    Meta
+                  </button>
+                  <button
+                    onClick={async () => {
+                      // Find the skill in globalSkills and delete it
+                      const skill = globalSkills.find(s => s.id === subskillMenuOpen);
+                      if (skill) {
+                        console.log('[SkillsSection] Deleting subskill:', skill.name, skill.id);
+                        await deleteGlobalSkill(skill.id);
+                        await refetchGlobalSkills();
+                      }
+                      setSubskillMenuOpen(null);
+                    }}
+                    className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-red-900/20 hover:text-red-300 transition-colors flex items-center gap-2 whitespace-nowrap border-t border-zinc-700"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete Skill
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </>
       )}
+
+      {/* Long-term Completed Skills Modal */}
+      <Dialog open={longTermModalOpen} onOpenChange={setLongTermModalOpen}>
+        <DialogContent className="bg-zinc-900 border-zinc-700 max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogTitle className="text-zinc-100 flex items-center gap-2">
+            <Star className="h-5 w-5 text-amber-400" />
+            Completed Skills - Long-term Goals
+          </DialogTitle>
+          <div className="space-y-4 mt-4">
+            {(() => {
+              // Global skills
+              const completed = globalSkills.filter(s => s.completed);
+              const groupedByParent = completed.reduce((acc, skill) => {
+                if (skill.parentSkillId) {
+                  const parentId = skill.parentSkillId;
+                  if (!acc[parentId]) acc[parentId] = [];
+                  acc[parentId].push(skill);
+                } else {
+                  if (!acc['_parent']) acc['_parent'] = [];
+                  acc['_parent'].push(skill);
+                }
+                return acc;
+              }, {} as Record<string, GlobalSkill[]>);
+
+              // Legacy skills
+              const completedLegacySkills = Object.entries(legacySkills)
+                .filter(([name, skill]) => skill.completed)
+                .map(([name, skill]) => ({
+                  isLegacy: true,
+                  ...skill
+                }));
+
+              return (
+                <>
+                  {/* Global Skills Section */}
+                  {Object.entries(groupedByParent).length > 0 && (
+                    <div>
+                      <p className="text-xs text-zinc-400 font-semibold mb-3 uppercase tracking-wide">Global Skills</p>
+                      {Object.entries(groupedByParent).map(([parentId, skills]) => (
+                        <div key={parentId} className="border-l-2 border-amber-500/50 pl-3 mb-3">
+                          {parentId !== '_parent' && (
+                            <p className="text-xs text-amber-500 font-semibold mb-2">
+                              Parent: {globalSkills.find(s => s.id === parentId)?.name || parentId}
+                            </p>
+                          )}
+                          <div className="space-y-2">
+                            {skills.map(skill => (
+                              <div key={skill.id} className="bg-zinc-800/50 rounded p-3">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-sm text-zinc-100 font-medium">{skill.name}</span>
+                                  <span className="text-xs text-amber-400">
+                                    Lv.{skill.level} • {skill.currentXp} XP
+                                    {skill.goalXp > 0 && <span> / {skill.goalXp} goal</span>}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-zinc-400 mt-1">
+                                  Completed: {skill.completedAt ? formatCompletedDate(skill.completedAt) : 'Unknown date'}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Legacy Skills Section */}
+                  {completedLegacySkills.length > 0 && (
+                    <div className="pt-3 border-t border-zinc-700/50">
+                      <p className="text-xs text-zinc-400 font-semibold mb-3 uppercase tracking-wide">Legacy Skills</p>
+                      <div className="space-y-2">
+                        {completedLegacySkills.map((skill: any) => (
+                          <div key={skill.name} className="bg-zinc-800/50 rounded p-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm text-zinc-100 font-medium">{skill.name}</span>
+                              <span className="text-xs text-amber-400">
+                                Lv.{skill.level} • {skill.currentXp} XP
+                                {skill.goalXp > 0 && <span> / {skill.goalXp} goal</span>}
+                              </span>
+                            </div>
+                            <p className="text-xs text-zinc-400 mt-1">
+                              Completed: {skill.completedAt ? formatCompletedDate(skill.completedAt) : 'Unknown date'}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {Object.entries(groupedByParent).length === 0 && completedLegacySkills.length === 0 && (
+                    <p className="text-sm text-zinc-500 py-4">No completed skills yet</p>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Meta Modal - Set Goal XP */}
+      <Dialog open={metaModalOpen} onOpenChange={setMetaModalOpen}>
+        <DialogContent className="bg-zinc-900 border-zinc-700">
+          <DialogTitle className="text-zinc-100 flex items-center gap-2">
+            <Target className="h-5 w-5 text-blue-400" />
+            Set Goal XP
+          </DialogTitle>
+          {selectedSkillForMeta && (
+            <div className="space-y-4 mt-4">
+              <div>
+                <p className="text-sm text-zinc-300 mb-2">Skill: <strong>{selectedSkillForMeta.name}</strong></p>
+              </div>
+              <div>
+                <label className="text-sm text-zinc-300 mb-2 block">Goal XP</label>
+                <input
+                  type="number"
+                  value={goalXpValue}
+                  onChange={(e) => setGoalXpValue(e.target.value)}
+                  placeholder="Enter goal XP"
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={async () => {
+                    if (!selectedSkillForMeta) return;
+                    try {
+                      const response = await fetch(`/api/global-skills/${selectedSkillForMeta.id}/goal-xp`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ goalXp: parseInt(goalXpValue) || 0 })
+                      });
+                      if (response.ok) {
+                        console.log('[MetaModal] Goal XP saved successfully');
+                        setMetaModalOpen(false);
+                        setSelectedSkillForMeta(null);
+                        setGoalXpValue("");
+                        await refetchGlobalSkills();
+                      } else {
+                        console.error('[MetaModal] Failed to save goal XP:', response.statusText);
+                      }
+                    } catch (error) {
+                      console.error('[MetaModal] Error saving goal XP:', error);
+                    }
+                  }}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded transition-colors"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={() => {
+                    setMetaModalOpen(false);
+                    setSelectedSkillForMeta(null);
+                    setGoalXpValue("");
+                  }}
+                  className="flex-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-100 font-medium py-2 rounded transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

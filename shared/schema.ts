@@ -194,6 +194,9 @@ export const globalSkills = pgTable("global_skills", {
   parentSkillId: varchar("parent_skill_id"),
   currentXp: integer("current_xp").notNull().default(0),
   level: integer("level").notNull().default(1),
+  goalXp: integer("goal_xp").notNull().default(0),
+  completed: integer("completed").$type<0 | 1>().default(0),
+  completedAt: timestamp("completed_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

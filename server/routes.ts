@@ -2942,6 +2942,60 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/global-skills/:id/goal-xp", requireAuth, async (req, res) => {
+    try {
+      const { goalXp } = req.body;
+      if (typeof goalXp !== 'number' || goalXp < 0) {
+        return res.status(400).json({ message: "goalXp must be a non-negative number" });
+      }
+      
+      const skill = await storage.setGoalXpGlobalSkill(req.params.id, goalXp);
+      if (!skill) {
+        return res.status(404).json({ message: "Global skill not found" });
+      }
+      
+      res.json(skill);
+    } catch (error: any) {
+      console.error('[goal-xp PATCH] ERROR:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/global-skills/:id/complete", requireAuth, async (req, res) => {
+    try {
+      const skill = await storage.completeGlobalSkill(req.params.id);
+      if (!skill) {
+        return res.status(404).json({ message: "Global skill not found" });
+      }
+      res.json(skill);
+    } catch (error: any) {
+      console.error('[complete PATCH] ERROR:', error);
+      if (error.code === "PENDING_SUBSKILLS") {
+        return res.status(400).json({ 
+          error: error.message,
+          pendingSubskills: error.pendingSubskills 
+        });
+      }
+      if (error.message.includes("subskills")) {
+        return res.status(400).json({ message: error.message });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/global-skills/:id/uncomplete", requireAuth, async (req, res) => {
+    try {
+      const skill = await storage.uncompleteGlobalSkill(req.params.id);
+      if (!skill) {
+        return res.status(404).json({ message: "Global skill not found" });
+      }
+      res.json(skill);
+    } catch (error: any) {
+      console.error('[uncomplete PATCH] ERROR:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Cleanup endpoint: remove duplicate skills without areaId or projectId
   app.post("/api/cleanup-duplicates", requireAuth, async (req, res) => {
     try {
