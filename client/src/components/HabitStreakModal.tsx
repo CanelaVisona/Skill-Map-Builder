@@ -100,6 +100,44 @@ function isStreakBrokenGlobal(done: Set<string>, scheduledDays?: number[], refer
   return todayNotDone && yesterdayNotDone;
 }
 
+// Helper function to find the best streak from historical records
+function computeBestStreakFromRecords(done: Set<string>, scheduledDays?: number[]): number {
+  if (done.size === 0) return 0;
+  
+  const days = (Array.isArray(scheduledDays) && scheduledDays.length > 0) 
+    ? scheduledDays 
+    : [0, 1, 2, 3, 4, 5, 6];
+  
+  const sortedDates = Array.from(done).sort();
+  let best = 0;
+  let current = 0;
+  
+  for (const dateStr of sortedDates) {
+    const d = new Date(dateStr + "T00:00:00");
+    const dayOfWeek = d.getDay() === 0 ? 6 : d.getDay() - 1;
+    if (!days.includes(dayOfWeek)) continue;
+    
+    const prev = new Date(d);
+    prev.setDate(prev.getDate() - 1);
+    let foundPrev = false;
+    
+    for (let i = 1; i <= 7; i++) {
+      const p = getLocalDateString(prev);
+      const pDow = prev.getDay() === 0 ? 6 : prev.getDay() - 1;
+      if (days.includes(pDow)) {
+        foundPrev = done.has(p);
+        break;
+      }
+      prev.setDate(prev.getDate() - 1);
+    }
+    
+    current = foundPrev ? current + 1 : 1;
+    best = Math.max(best, current);
+  }
+  
+  return best;
+}
+
 export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) {
   const [currentPanel, setCurrentPanel] = useState<PanelType>("main");
   const [selectedHabitId, setSelectedHabitId] = useState<string | null>(null);
@@ -264,11 +302,23 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const year = today.getFullYear();
-    const startDate = `${year}-01-01`;
-    const endDate = `${year}-12-31`;
 
     const updatedHabits = await Promise.all(
       habitsToFetch.map(async (habit: Habit) => {
+        // For archived habits, load all records; for active habits, load current year only
+        let startDate: string;
+        let endDate: string;
+
+        if (habit.endDate) {
+          // Archived habit: load from year 2000 to the end date
+          startDate = "2000-01-01";
+          endDate = habit.endDate;
+        } else {
+          // Active habit: load current year
+          startDate = `${year}-01-01`;
+          endDate = `${year}-12-31`;
+        }
+
         const res = await fetch(
           `/api/habit-records/${habit.id}?startDate=${startDate}&endDate=${endDate}`
         );
@@ -276,7 +326,17 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
         const done = new Set(
           records.filter((r) => r.completed === 1).map((r) => r.date)
         );
-        return { ...habit, done, bestStreak: habit.bestStreak };
+        
+        // Recalculate bestStreak for archived habits based on all records
+        let calculatedBestStreak = habit.bestStreak || 0;
+        if (habit.endDate && done.size > 0) {
+          const endDateObj = new Date(habit.endDate + "T00:00:00");
+          const streakAtEnd = computeStreakGlobal(done, habit.scheduledDays, endDateObj);
+          const bestEver = computeBestStreakFromRecords(done, habit.scheduledDays);
+          calculatedBestStreak = Math.max(calculatedBestStreak, streakAtEnd, bestEver);
+        }
+        
+        return { ...habit, done, bestStreak: calculatedBestStreak };
       })
     );
     setHabitsWithRecords(updatedHabits);

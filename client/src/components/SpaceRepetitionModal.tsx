@@ -628,9 +628,6 @@ function PracticeCardWithLongPress({
               const isDone = completedSet.has(idx);
               const isNext = idx === practice.nextIdx && (practice.status === "due" || practice.status === "late" || practice.status === "expired");
               const isFinal = idx === INTERVALS.length - 1;
-              const isNextIndex = INTERVALS.length - 1;
-              const nextIsCompleted = idx < isNextIndex && completedSet.has(idx) && completedSet.has(idx + 1);
-              const nextIsPartial = idx < isNextIndex && completedSet.has(idx) && !completedSet.has(idx + 1);
 
               return (
                 <motion.div
@@ -641,13 +638,16 @@ function PracticeCardWithLongPress({
                   className="flex flex-col items-center relative flex-1"
                 >
                   {/* Connection line to next node */}
-                  {idx < isNextIndex && (
-                    <div className="absolute top-3 left-1/2 h-0.5 pointer-events-none" style={{ width: nextIsPartial ? "calc(100% + 25%)" : "calc(100% + 50%)" }}>
+                  {idx < INTERVALS.length - 1 && (
+                    <div
+                      className="absolute h-0.5 pointer-events-none"
+                      style={{ top: "50%", left: "50%", width: "100%", transform: "translateY(-50%)" }}
+                    >
                       <div
                         className={`h-full w-full transition-all ${
-                          nextIsCompleted
+                          completedSet.has(idx) && completedSet.has(idx + 1)
                             ? "bg-green-500"
-                            : nextIsPartial
+                            : completedSet.has(idx)
                             ? "bg-gradient-to-r from-green-500 to-border/30"
                             : "bg-border/30"
                         }`}
@@ -780,9 +780,6 @@ function PracticeWaitingCardWithLongPress({
             {INTERVALS.map((days, idx) => {
               const isDone = completedSet.has(idx);
               const isFinal = idx === INTERVALS.length - 1;
-              const isNextIndex = INTERVALS.length - 1;
-              const nextIsCompleted = idx < isNextIndex && completedSet.has(idx) && completedSet.has(idx + 1);
-              const nextIsPartial = idx < isNextIndex && completedSet.has(idx) && !completedSet.has(idx + 1);
 
               return (
                 <motion.div
@@ -793,13 +790,16 @@ function PracticeWaitingCardWithLongPress({
                   className="flex flex-col items-center relative flex-1"
                 >
                   {/* Connection line to next node */}
-                  {idx < isNextIndex && (
-                    <div className="absolute top-3 left-1/2 h-0.5 pointer-events-none" style={{ width: nextIsPartial ? "calc(100% + 25%)" : "calc(100% + 50%)" }}>
+                  {idx < INTERVALS.length - 1 && (
+                    <div
+                      className="absolute h-0.5 pointer-events-none"
+                      style={{ top: "50%", left: "50%", width: "100%", transform: "translateY(-50%)" }}
+                    >
                       <div
                         className={`h-full w-full transition-all ${
-                          nextIsCompleted
+                          completedSet.has(idx) && completedSet.has(idx + 1)
                             ? "bg-green-500"
-                            : nextIsPartial
+                            : completedSet.has(idx)
                             ? "bg-gradient-to-r from-green-500 to-border/30"
                             : "bg-border/30"
                         }`}
@@ -1055,11 +1055,6 @@ function TimelineVisual({
               const isDone = completedSet.has(idx);
               const isNext = idx === nextIdx && (status === "due" || status === "late" || status === "expired");
               const isFinal = idx === INTERVALS.length - 1;
-              const isNextIndex = INTERVALS.length - 1;
-              
-              // Determine if the connection line to the next node should be completed
-              const nextIsCompleted = idx < isNextIndex && completedSet.has(idx) && completedSet.has(idx + 1);
-              const nextIsPartial = idx < isNextIndex && completedSet.has(idx) && !completedSet.has(idx + 1);
 
               return (
                 <motion.div
@@ -1070,13 +1065,16 @@ function TimelineVisual({
                   className="flex flex-col items-center relative flex-1"
                 >
                   {/* Connection line to next node */}
-                  {idx < isNextIndex && (
-                    <div className="absolute top-5 left-1/2 h-0.5 pointer-events-none" style={{ width: nextIsPartial ? "calc(100% + 25%)" : "calc(100% + 50%)" }}>
+                  {idx < INTERVALS.length - 1 && (
+                    <div
+                      className="absolute h-0.5 pointer-events-none"
+                      style={{ top: "50%", left: "50%", width: "100%", transform: "translateY(-50%)" }}
+                    >
                       <div
-                        className={`h-full transition-all ${
-                          nextIsCompleted
+                        className={`h-full w-full transition-all ${
+                          completedSet.has(idx) && completedSet.has(idx + 1)
                             ? "bg-gradient-to-r from-green-500 to-green-500"
-                            : nextIsPartial
+                            : completedSet.has(idx)
                             ? "bg-gradient-to-r from-green-500 to-border/30"
                             : "bg-border/30"
                         }`}
