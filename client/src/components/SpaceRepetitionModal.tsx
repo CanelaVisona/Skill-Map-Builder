@@ -635,50 +635,55 @@ function PracticeCardWithLongPress({
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
                   transition={{ delay: idx * 0.05 }}
-                  className="flex flex-col items-center relative flex-1"
+                  className="flex flex-col items-center flex-1"
                 >
-                  {/* Connection line to next node */}
-                  {idx < INTERVALS.length - 1 && (
-                    <div
-                      className="absolute h-0.5 pointer-events-none"
-                      style={{ top: "12px", left: "50%", width: "100%", zIndex: 0 }}
-                    >
+                  {/* Wrapper que centra la línea con el círculo */}
+                  <div className="relative flex items-center justify-center w-full">
+                    {/* Connection line to next node */}
+                    {idx < INTERVALS.length - 1 && (
                       <div
-                        className={`h-full w-full transition-all ${
-                          completedSet.has(idx) && completedSet.has(idx + 1)
-                            ? "bg-green-500"
-                            : completedSet.has(idx)
-                            ? "bg-gradient-to-r from-green-500 to-border/30"
-                            : "bg-border/30"
-                        }`}
-                      />
-                    </div>
-                  )}
-
-                  {/* Node */}
-                  {isDone ? (
-                    <div className="relative z-10 w-6 h-6 rounded-full bg-green-500/20 border-1.5 border-green-500 flex items-center justify-center text-xs font-bold">
-                      ✓
-                    </div>
-                  ) : isNext ? (
-                    <div className="relative z-10">
-                      <motion.div
-                        animate={{ scale: [1, 1.1, 1] }}
-                        transition={{ duration: 2, repeat: Infinity }}
-                        className="absolute inset-0 rounded-full bg-yellow-500/30 border border-yellow-500/50"
-                        style={{ width: 36, height: 36, top: -5.5, left: -5.5 }}
-                      />
-                      <div className="w-6 h-6 rounded-full bg-yellow-500/20 border-2 border-yellow-500 flex items-center justify-center text-base font-bold relative">
-                        🔥
+                        className="absolute h-0.5 pointer-events-none"
+                        style={{ left: "50%", width: "100%", zIndex: 0 }}
+                      >
+                        <div
+                          className={`h-full w-full transition-all ${
+                            completedSet.has(idx) && completedSet.has(idx + 1)
+                              ? "bg-green-500"
+                              : completedSet.has(idx)
+                              ? "bg-gradient-to-r from-green-500 to-border/30"
+                              : "bg-border/30"
+                          }`}
+                        />
                       </div>
+                    )}
+
+                    {/* Node */}
+                    <div className="relative z-10">
+                      {isDone ? (
+                        <div className="w-6 h-6 rounded-full bg-green-500/20 border-1.5 border-green-500 flex items-center justify-center text-xs font-bold">
+                          ✓
+                        </div>
+                      ) : isNext ? (
+                        <div>
+                          <motion.div
+                            animate={{ scale: [1, 1.1, 1] }}
+                            transition={{ duration: 2, repeat: Infinity }}
+                            className="absolute inset-0 rounded-full bg-yellow-500/30 border border-yellow-500/50"
+                            style={{ width: 36, height: 36, top: -5.5, left: -5.5 }}
+                          />
+                          <div className="w-6 h-6 rounded-full bg-yellow-500/20 border-2 border-yellow-500 flex items-center justify-center text-base font-bold relative">
+                            🔥
+                          </div>
+                        </div>
+                      ) : isFinal ? (
+                        <div className="w-6 h-6 rounded-full bg-muted/50 border-1.5 border-border/30 flex items-center justify-center text-xs">
+                          🧠
+                        </div>
+                      ) : (
+                        <div className="w-4 h-4 rounded-full bg-border/30 border border-border/50" />
+                      )}
                     </div>
-                  ) : isFinal ? (
-                    <div className="w-6 h-6 rounded-full bg-muted/50 border-1.5 border-border/30 flex items-center justify-center text-xs relative z-10">
-                      🧠
-                    </div>
-                  ) : (
-                    <div className="w-4 h-4 rounded-full bg-border/30 border border-border/50 relative z-10" />
-                  )}
+                  </div>
 
                   {/* Label */}
                   <p className="text-xs font-bold text-muted-foreground mt-1 whitespace-nowrap">
@@ -787,38 +792,43 @@ function PracticeWaitingCardWithLongPress({
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
                   transition={{ delay: idx * 0.05 }}
-                  className="flex flex-col items-center relative flex-1"
+                  className="flex flex-col items-center flex-1"
                 >
-                  {/* Connection line to next node */}
-                  {idx < INTERVALS.length - 1 && (
-                    <div
-                      className="absolute h-0.5 pointer-events-none"
-                      style={{ top: "12px", left: "50%", width: "100%", zIndex: 0 }}
-                    >
+                  {/* Wrapper que centra la línea con el círculo */}
+                  <div className="relative flex items-center justify-center w-full">
+                    {/* Connection line to next node */}
+                    {idx < INTERVALS.length - 1 && (
                       <div
-                        className={`h-full w-full transition-all ${
-                          completedSet.has(idx) && completedSet.has(idx + 1)
-                            ? "bg-green-500"
-                            : completedSet.has(idx)
-                            ? "bg-gradient-to-r from-green-500 to-border/30"
-                            : "bg-border/30"
-                        }`}
-                      />
-                    </div>
-                  )}
+                        className="absolute h-0.5 pointer-events-none"
+                        style={{ left: "50%", width: "100%", zIndex: 0 }}
+                      >
+                        <div
+                          className={`h-full w-full transition-all ${
+                            completedSet.has(idx) && completedSet.has(idx + 1)
+                              ? "bg-green-500"
+                              : completedSet.has(idx)
+                              ? "bg-gradient-to-r from-green-500 to-border/30"
+                              : "bg-border/30"
+                          }`}
+                        />
+                      </div>
+                    )}
 
-                  {/* Node */}
-                  {isDone ? (
-                    <div className="relative z-10 w-6 h-6 rounded-full bg-green-500/20 border-1.5 border-green-500 flex items-center justify-center text-xs font-bold">
-                      ✓
+                    {/* Node */}
+                    <div className="relative z-10">
+                      {isDone ? (
+                        <div className="w-6 h-6 rounded-full bg-green-500/20 border-1.5 border-green-500 flex items-center justify-center text-xs font-bold">
+                          ✓
+                        </div>
+                      ) : isFinal ? (
+                        <div className="w-6 h-6 rounded-full bg-muted/50 border-1.5 border-border/30 flex items-center justify-center text-xs">
+                          🧠
+                        </div>
+                      ) : (
+                        <div className="w-4 h-4 rounded-full bg-border/30 border border-border/50" />
+                      )}
                     </div>
-                  ) : isFinal ? (
-                    <div className="relative z-10 w-6 h-6 rounded-full bg-muted/50 border-1.5 border-border/30 flex items-center justify-center text-xs">
-                      🧠
-                    </div>
-                  ) : (
-                    <div className="relative z-10 w-4 h-4 rounded-full bg-border/30 border border-border/50" />
-                  )}
+                  </div>
 
                   {/* Label */}
                   <p className="text-xs font-bold text-muted-foreground mt-1 whitespace-nowrap">
@@ -1062,50 +1072,55 @@ function TimelineVisual({
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
                   transition={{ delay: idx * 0.1 }}
-                  className="flex flex-col items-center relative flex-1"
+                  className="flex flex-col items-center flex-1"
                 >
-                  {/* Connection line to next node */}
-                  {idx < INTERVALS.length - 1 && (
-                    <div
-                      className="absolute h-0.5 pointer-events-none"
-                      style={{ top: "20px", left: "50%", width: "100%", zIndex: 0 }}
-                    >
+                  {/* Wrapper que centra la línea con el círculo */}
+                  <div className="relative flex items-center justify-center w-full">
+                    {/* Connection line to next node */}
+                    {idx < INTERVALS.length - 1 && (
                       <div
-                        className={`h-full w-full transition-all ${
-                          completedSet.has(idx) && completedSet.has(idx + 1)
-                            ? "bg-gradient-to-r from-green-500 to-green-500"
-                            : completedSet.has(idx)
-                            ? "bg-gradient-to-r from-green-500 to-border/30"
-                            : "bg-border/30"
-                        }`}
-                      />
-                    </div>
-                  )}
-
-                  {/* Node */}
-                  {isDone ? (
-                    <div className="relative z-10 w-10 h-10 rounded-full bg-green-500/20 border-2 border-green-500 flex items-center justify-center text-lg font-bold">
-                      🔥
-                    </div>
-                  ) : isNext ? (
-                    <div className="relative z-10">
-                      <motion.div
-                        animate={{ scale: [1, 1.1, 1] }}
-                        transition={{ duration: 2, repeat: Infinity }}
-                        className="absolute inset-0 rounded-full bg-yellow-500/30 border-2 border-yellow-500/50"
-                        style={{ width: 56, height: 56, top: -8, left: -8 }}
-                      />
-                      <div className="w-10 h-10 rounded-full bg-yellow-500/20 border-3 border-yellow-500 flex items-center justify-center text-xl font-bold relative">
-                        🔥
+                        className="absolute h-0.5 pointer-events-none"
+                        style={{ left: "50%", width: "100%", zIndex: 0 }}
+                      >
+                        <div
+                          className={`h-full w-full transition-all ${
+                            completedSet.has(idx) && completedSet.has(idx + 1)
+                              ? "bg-gradient-to-r from-green-500 to-green-500"
+                              : completedSet.has(idx)
+                              ? "bg-gradient-to-r from-green-500 to-border/30"
+                              : "bg-border/30"
+                          }`}
+                        />
                       </div>
+                    )}
+
+                    {/* Node */}
+                    <div className="relative z-10">
+                      {isDone ? (
+                        <div className="w-10 h-10 rounded-full bg-green-500/20 border-2 border-green-500 flex items-center justify-center text-lg font-bold">
+                          🔥
+                        </div>
+                      ) : isNext ? (
+                        <div>
+                          <motion.div
+                            animate={{ scale: [1, 1.1, 1] }}
+                            transition={{ duration: 2, repeat: Infinity }}
+                            className="absolute inset-0 rounded-full bg-yellow-500/30 border-2 border-yellow-500/50"
+                            style={{ width: 56, height: 56, top: -8, left: -8 }}
+                          />
+                          <div className="w-10 h-10 rounded-full bg-yellow-500/20 border-3 border-yellow-500 flex items-center justify-center text-xl font-bold relative">
+                            🔥
+                          </div>
+                        </div>
+                      ) : isFinal ? (
+                        <div className="w-10 h-10 rounded-full bg-muted/50 border-2 border-border/30 flex items-center justify-center text-xl">
+                          🧠
+                        </div>
+                      ) : (
+                        <div className="w-6 h-6 rounded-full bg-border/30 border border-border/50" />
+                      )}
                     </div>
-                  ) : isFinal ? (
-                    <div className="relative z-10 w-10 h-10 rounded-full bg-muted/50 border-2 border-border/30 flex items-center justify-center text-xl">
-                      🧠
-                    </div>
-                  ) : (
-                    <div className="relative z-10 w-6 h-6 rounded-full bg-border/30 border border-border/50" />
-                  )}
+                  </div>
 
                   {/* Label */}
                   <p className="text-xs font-bold text-muted-foreground mt-2 whitespace-nowrap">

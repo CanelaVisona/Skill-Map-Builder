@@ -613,7 +613,16 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
   const ensureFirstNodeRules = (skills: Skill[]): Skill[] => {
     return skills.map(s => {
       if (s.levelPosition === 1) {
-        return { ...s, status: "mastered" as SkillStatus, title: "" };
+        const normalized = { ...s, status: "mastered" as SkillStatus, title: "", isAutoComplete: 1 };
+        // Log for debugging
+        if (s.title !== "" || s.status !== "mastered" || s.isAutoComplete !== 1) {
+          console.log('[ensureFirstNodeRules] Normalized first node:', {
+            level: s.level,
+            before: { title: s.title, status: s.status, isAutoComplete: s.isAutoComplete },
+            after: { title: normalized.title, status: normalized.status, isAutoComplete: normalized.isAutoComplete }
+          });
+        }
+        return normalized;
       }
       return s;
     });
