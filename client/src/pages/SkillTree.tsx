@@ -3909,7 +3909,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
           let hasChanges = false;
           const cleaned: Record<string, LegacySkill> = {};
           
-          for (const [key, skill] of Object.entries(loaded)) {
+          for (const [key, skill] of Object.entries(loaded) as Array<[string, unknown]>) {
             if (typeof key === 'string' && key.startsWith('0') && key !== '0') {
               // Remove "0" prefix from key/skill name
               const cleanedKey = key.substring(1);
@@ -3921,7 +3921,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
               hasChanges = true;
               console.log('[loadLegacySkills] Cleaned skill name:', key, '→', cleanedKey);
             } else {
-              cleaned[key] = skill;
+              cleaned[key] = skill as LegacySkill;
             }
           }
           
@@ -3931,7 +3931,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
             setLegacySkills(cleaned);
           } else {
             console.log('[loadLegacySkills] Loaded from localStorage:', loaded);
-            setLegacySkills(loaded);
+            setLegacySkills(loaded as Record<string, LegacySkill>);
           }
         } catch (e) {
           console.error("Error parsing legacy skills:", e);

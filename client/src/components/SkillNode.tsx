@@ -89,9 +89,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const skillsInLevel = currentSkills.filter(s => s.level === skill.level);
   const isLevelCompleted = skillsInLevel.length > 0 && skillsInLevel.every(s => s.status === "mastered");
   
-  // Calculate if this node is the last node of its level (by Y position)
+  // Calculate if this node is the last node of its level (by levelPosition, not Y)
+  // This ensures visibility is always based on the current sequential position after reorders
   const isLastNodeOfLevel = skillsInLevel.length > 0 && 
-    skill.y === Math.max(...skillsInLevel.map(s => s.y));
+    skill.levelPosition === Math.max(...skillsInLevel.map(s => s.levelPosition || 0));
   
   // Star is active only when endOfAreaLevel is set to this level
   // isFinalNode: 1 is just an identifier (always on Node 5), not the control
@@ -1243,11 +1244,11 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                      className="h-7 px-3 text-xs justify-start font-normal hover:bg-muted/50"
                      onClick={() => {
                        if (isSubSkillView) {
-                         addSubSkillBelow(skill.id, "Next challenge");
+                         addSubSkillBelow(skill.id, "");
                        } else if (isProject) {
-                         addProjectSkillBelow(activeId, skill.id, "Next challenge");
+                         addProjectSkillBelow(activeId, skill.id, "");
                        } else {
-                         addSkillBelow(activeId, skill.id, "Next challenge");
+                         addSkillBelow(activeId, skill.id, "");
                        }
                        setIsAddOptionsOpen(false);
                        setIsOpen(false);

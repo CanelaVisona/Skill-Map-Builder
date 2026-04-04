@@ -591,7 +591,7 @@ function PracticeCardWithLongPress({
 }) {
   const [showDelete, setShowDelete] = useState(false);
   const longPressHandler = useLongPress(() => setShowDelete(true), 800);
-  const completedSet = new Set(practice.completedIntervals);
+  const completedSet = new Set(practice.completedIntervals.map(Number));
 
   const handleClick = () => {
     // No abrir el DetailPanel si estamos mostrando los botones de eliminar
@@ -641,7 +641,7 @@ function PracticeCardWithLongPress({
                   {idx < INTERVALS.length - 1 && (
                     <div
                       className="absolute h-0.5 pointer-events-none"
-                      style={{ top: "50%", left: "50%", width: "100%", transform: "translateY(-50%)" }}
+                      style={{ top: "12px", left: "50%", width: "100%", zIndex: 0 }}
                     >
                       <div
                         className={`h-full w-full transition-all ${
@@ -657,7 +657,7 @@ function PracticeCardWithLongPress({
 
                   {/* Node */}
                   {isDone ? (
-                    <div className="w-6 h-6 rounded-full bg-green-500/20 border-1.5 border-green-500 flex items-center justify-center text-xs font-bold relative z-10">
+                    <div className="relative z-10 w-6 h-6 rounded-full bg-green-500/20 border-1.5 border-green-500 flex items-center justify-center text-xs font-bold">
                       ✓
                     </div>
                   ) : isNext ? (
@@ -746,7 +746,7 @@ function PracticeWaitingCardWithLongPress({
 }) {
   const [showDelete, setShowDelete] = useState(false);
   const longPressHandler = useLongPress(() => setShowDelete(true), 800);
-  const completedSet = new Set(practice.completedIntervals);
+  const completedSet = new Set(practice.completedIntervals.map(Number));
 
   const handleClick = () => {
     // No abrir el DetailPanel si estamos mostrando los botones de eliminar
@@ -793,7 +793,7 @@ function PracticeWaitingCardWithLongPress({
                   {idx < INTERVALS.length - 1 && (
                     <div
                       className="absolute h-0.5 pointer-events-none"
-                      style={{ top: "50%", left: "50%", width: "100%", transform: "translateY(-50%)" }}
+                      style={{ top: "12px", left: "50%", width: "100%", zIndex: 0 }}
                     >
                       <div
                         className={`h-full w-full transition-all ${
@@ -809,15 +809,15 @@ function PracticeWaitingCardWithLongPress({
 
                   {/* Node */}
                   {isDone ? (
-                    <div className="w-6 h-6 rounded-full bg-green-500/20 border-1.5 border-green-500 flex items-center justify-center text-xs font-bold relative z-10">
+                    <div className="relative z-10 w-6 h-6 rounded-full bg-green-500/20 border-1.5 border-green-500 flex items-center justify-center text-xs font-bold">
                       ✓
                     </div>
                   ) : isFinal ? (
-                    <div className="w-6 h-6 rounded-full bg-muted/50 border-1.5 border-border/30 flex items-center justify-center text-xs relative z-10">
+                    <div className="relative z-10 w-6 h-6 rounded-full bg-muted/50 border-1.5 border-border/30 flex items-center justify-center text-xs">
                       🧠
                     </div>
                   ) : (
-                    <div className="w-4 h-4 rounded-full bg-border/30 border border-border/50 relative z-10" />
+                    <div className="relative z-10 w-4 h-4 rounded-full bg-border/30 border border-border/50" />
                   )}
 
                   {/* Label */}
@@ -963,7 +963,7 @@ function DetailPanel({
   const daysSince = calculateDaysSince(practice.startDate);
   const nextIntervalIdx = getNextIntervalIndex(practice);
   const progress = practice.completedIntervals.length / INTERVALS.length;
-  const completedSet = new Set(practice.completedIntervals);
+  const completedSet = new Set(practice.completedIntervals.map(Number));
 
   return (
     <div className="w-full">
@@ -1068,7 +1068,7 @@ function TimelineVisual({
                   {idx < INTERVALS.length - 1 && (
                     <div
                       className="absolute h-0.5 pointer-events-none"
-                      style={{ top: "50%", left: "50%", width: "100%", transform: "translateY(-50%)" }}
+                      style={{ top: "20px", left: "50%", width: "100%", zIndex: 0 }}
                     >
                       <div
                         className={`h-full w-full transition-all ${
@@ -1084,7 +1084,7 @@ function TimelineVisual({
 
                   {/* Node */}
                   {isDone ? (
-                    <div className="w-10 h-10 rounded-full bg-green-500/20 border-2 border-green-500 flex items-center justify-center text-lg font-bold relative z-10">
+                    <div className="relative z-10 w-10 h-10 rounded-full bg-green-500/20 border-2 border-green-500 flex items-center justify-center text-lg font-bold">
                       🔥
                     </div>
                   ) : isNext ? (
@@ -1100,11 +1100,11 @@ function TimelineVisual({
                       </div>
                     </div>
                   ) : isFinal ? (
-                    <div className="w-10 h-10 rounded-full bg-muted/50 border-2 border-border/30 flex items-center justify-center text-xl relative z-10">
+                    <div className="relative z-10 w-10 h-10 rounded-full bg-muted/50 border-2 border-border/30 flex items-center justify-center text-xl">
                       🧠
                     </div>
                   ) : (
-                    <div className="w-6 h-6 rounded-full bg-border/30 border border-border/50 relative z-10" />
+                    <div className="relative z-10 w-6 h-6 rounded-full bg-border/30 border border-border/50" />
                   )}
 
                   {/* Label */}

@@ -730,6 +730,25 @@ export async function registerRoutes(
         if (validatedSkill.levelPosition === 1 && validatedSkill.status !== "locked") {
           finalStatus = "mastered";
           finalTitle = "";
+        } else if (validatedSkill.levelPosition && validatedSkill.levelPosition > 1 && validatedSkill.status === "locked") {
+          // Check if there's already an available node in this level
+          // If not, the first non-mastered node should be available
+          let existingSkills: typeof validatedSkill[] = [];
+          if (validatedSkill.areaId) {
+            existingSkills = await storage.getSkills(validatedSkill.areaId);
+          } else if (validatedSkill.projectId) {
+            existingSkills = await storage.getProjectSkills(validatedSkill.projectId);
+          } else if (validatedSkill.parentSkillId) {
+            existingSkills = await storage.getSubSkills(validatedSkill.parentSkillId);
+          }
+          
+          const skillsInLevel = existingSkills.filter(s => s.level === skillLevel);
+          const hasAvailableNode = skillsInLevel.some(s => s.status === "available");
+          
+          // If no available node exists, make this one available
+          if (!hasAvailableNode) {
+            finalStatus = "available";
+          }
         }
         
         const skillWithLevel = {
@@ -908,15 +927,52 @@ export async function registerRoutes(
         return;
       }
 
-      // Get level info before deletion for recalculation
+      // Get level info and all skills in the same level BEFORE deletion
       const deletedLevel = existingSkill.level;
+      const deletedStatus = existingSkill.status;
+      const deletedLevelPosition = existingSkill.levelPosition;
+      
       const parentInfo = {
         areaId: existingSkill.areaId || undefined,
         projectId: existingSkill.projectId || undefined,
         parentSkillId: existingSkill.parentSkillId || undefined
       };
 
+      // Get all skills in the same level before deletion to find next/previous nodes
+      let siblingSkilsBeforeDeletion: typeof existingSkill[] = [];
+      if (existingSkill.areaId && !existingSkill.projectId && !existingSkill.parentSkillId) {
+        siblingSkilsBeforeDeletion = await storage.getSkills(existingSkill.areaId);
+      } else if (existingSkill.projectId && !existingSkill.parentSkillId) {
+        siblingSkilsBeforeDeletion = await storage.getProjectSkills(existingSkill.projectId);
+      } else if (existingSkill.parentSkillId) {
+        siblingSkilsBeforeDeletion = await storage.getSubSkills(existingSkill.parentSkillId);
+      }
+
+      const sameLevelSiblings = siblingSkilsBeforeDeletion.filter(s => 
+        s.level === deletedLevel && s.id !== req.params.id
+      );
+
+      // Delete the skill
       await storage.deleteSkill(req.params.id);
+      
+      // Cascading unlock logic: if deleted skill was 'available', unlock next node
+      if (deletedStatus === "available") {
+        // Find next node (levelPosition + 1 in same level)
+        const nextNode = sameLevelSiblings.find(s => s.levelPosition === deletedLevelPosition + 1);
+        
+        if (nextNode && nextNode.status === "locked") {
+          // Unlock the next node
+          await storage.updateSkill(nextNode.id, { status: "available" });
+        } else if (!nextNode) {
+          // No next node, find previous node (levelPosition - 1)
+          const previousNode = sameLevelSiblings.find(s => s.levelPosition === deletedLevelPosition - 1);
+          
+          if (previousNode && previousNode.status === "mastered") {
+            // Set previous node back to available
+            await storage.updateSkill(previousNode.id, { status: "available" });
+          }
+        }
+      }
       
       // Recalculate final nodes in the affected level after deletion
       await storage.recalculateFinalNodes(deletedLevel, parentInfo);
