@@ -100,6 +100,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     ? (activeProject?.endOfAreaLevel === skill.level)
     : (activeArea?.endOfAreaLevel === skill.level);
   
+  console.log('[isStarActive] skill.level:', skill.level, 'activeArea?.endOfAreaLevel:', activeArea?.endOfAreaLevel, 'activeProject?.endOfAreaLevel:', activeProject?.endOfAreaLevel, 'isStarActive:', isStarActive);
+  
   // Calculate effective locked state: final nodes (by position) should appear locked
   // if not all other nodes in level are mastered (UNLESS star is active, then node itself blocks)
   const isFinalNodeByPosition = isLastNodeOfLevel;
@@ -1109,8 +1111,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             )}
           </motion.div>
 
-          {/* Final Node Star Icon */}
-          {isStarActive && (
+          {/* Final Node Star Icon - only show when star is active AND final node is mastered */}
+          {isStarActive && skillsInLevel.find(s => s.levelPosition === Math.max(...skillsInLevel.map(s => s.levelPosition || 0)))?.status === "mastered" && (
             <div className="absolute -top-1 -right-1 z-30">
               <Star 
                 size={14} 

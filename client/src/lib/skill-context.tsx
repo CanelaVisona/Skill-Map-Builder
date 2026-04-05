@@ -653,12 +653,13 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       if (!Array.isArray(areasData)) return;
       const normalizedAreas = areasData.map((area: Area) => ({
         ...area,
-        skills: ensureFirstNodeRules(area.skills || [])
+        skills: ensureFirstNodeRules(area.skills || []),
+        endOfAreaLevel: area.endOfAreaLevel
       }));
       
-      // DEBUG: Log raw skills from each area
+      // DEBUG: Log area with endOfAreaLevel value
       normalizedAreas.forEach(area => {
-        console.log(`[refreshAllAreas] Area "${area.name}" - ${area.skills.length} skills:`, 
+        console.log(`[refreshAllAreas] Area "${area.name}" - endOfAreaLevel: ${area.endOfAreaLevel}, skills: ${area.skills.length}:`, 
           area.skills.map(s => ({
             title: s.title,
             level: s.level,
@@ -808,6 +809,11 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
       if (isStarActive && newStatus === "mastered") {
         triggerCompleted();
+        // Archive area after 5 second delay to show completion before disappearing
+        setTimeout(async () => {
+          await archiveArea(areaId);
+          await refreshAllAreas();
+        }, 5000);
       } else if (newStatus === "mastered") {
         triggerQuestUpdated();
       }
@@ -3549,58 +3555,50 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
   };
 
   const toggleFinalNode = async (areaId: string, skillId: string) => {
+    console.log('[toggleFinalNode] called - areaId:', areaId, 'skillId:', skillId);
+    
     const area = areas.find(a => a.id === areaId);
-    if (!area) return;
+    console.log('[toggleFinalNode] area found:', area?.name, 'endOfAreaLevel:', area?.endOfAreaLevel);
+    if (!area) {
+      console.log('[toggleFinalNode] ERROR: area not found');
+      return;
+    }
 
     const skill = area.skills.find(s => s.id === skillId);
-    if (!skill) return;
+    console.log('[toggleFinalNode] skill found:', skill?.title, 'skill.level:', skill?.level);
+    if (!skill) {
+      console.log('[toggleFinalNode] ERROR: skill not found');
+      return;
+    }
 
-    const isCurrentlyFinal = skill.isFinalNode === 1;
+    const isCurrentlyFinal = area.endOfAreaLevel === skill.level;
+    console.log('[toggleFinalNode] isCurrentlyFinal:', isCurrentlyFinal, '(area.endOfAreaLevel === skill.level:', area.endOfAreaLevel, '===', skill.level, ')');
 
     try {
       if (isCurrentlyFinal) {
-        await fetch(`/api/skills/${skillId}`, {
+        // Deactivate: set endOfAreaLevel to null
+        console.log('[toggleFinalNode] Deactivating final node for level', skill.level);
+        const response = await fetch(`/api/areas/${areaId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ isFinalNode: 0 }),
+          body: JSON.stringify({ endOfAreaLevel: null }),
         });
-
-        setAreas(prev => prev.map(a => 
-          a.id === areaId ? {
-            ...a,
-            skills: a.skills.map(s => 
-              s.id === skillId ? { ...s, isFinalNode: 0 } : s
-            )
-          } : a
-        ));
+        console.log('[toggleFinalNode] Deactivate response status:', response.status);
       } else {
-        const otherFinalNodes = area.skills.filter(s => s.isFinalNode === 1 && s.id !== skillId);
-        
-        await Promise.all([
-          ...otherFinalNodes.map(s => 
-            fetch(`/api/skills/${s.id}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ isFinalNode: 0 }),
-            })
-          ),
-          fetch(`/api/skills/${skillId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ isFinalNode: 1 }),
-          })
-        ]);
-
-        setAreas(prev => prev.map(a => 
-          a.id === areaId ? {
-            ...a,
-            skills: a.skills.map(s => ({
-              ...s,
-              isFinalNode: s.id === skillId ? 1 : 0
-            }))
-          } : a
-        ));
+        // Activate: set endOfAreaLevel to skill.level
+        console.log('[toggleFinalNode] Activating final node for level', skill.level);
+        const response = await fetch(`/api/areas/${areaId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endOfAreaLevel: skill.level }),
+        });
+        console.log('[toggleFinalNode] Activate response status:', response.status);
       }
+      
+      // Refresh UI immediately
+      console.log('[toggleFinalNode] Calling refreshAllAreas()...');
+      await refreshAllAreas();
+      console.log('[toggleFinalNode] ✓ refreshAllAreas() completed');
     } catch (error) {
       console.error("Error toggling final node:", error);
     }
@@ -3613,52 +3611,29 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     const skill = project.skills.find(s => s.id === skillId);
     if (!skill) return;
 
-    const isCurrentlyFinal = skill.isFinalNode === 1;
+    const isCurrentlyFinal = project.endOfAreaLevel === skill.level;
 
     try {
       if (isCurrentlyFinal) {
-        await fetch(`/api/skills/${skillId}`, {
+        // Deactivate: set endOfAreaLevel to null
+        console.log('[toggleProjectFinalNode] Deactivating final node for level', skill.level);
+        await fetch(`/api/projects/${projectId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ isFinalNode: 0 }),
+          body: JSON.stringify({ endOfAreaLevel: null }),
         });
-
-        setProjects(prev => prev.map(p => 
-          p.id === projectId ? {
-            ...p,
-            skills: p.skills.map(s => 
-              s.id === skillId ? { ...s, isFinalNode: 0 } : s
-            )
-          } : p
-        ));
       } else {
-        const otherFinalNodes = project.skills.filter(s => s.isFinalNode === 1 && s.id !== skillId);
-        
-        await Promise.all([
-          ...otherFinalNodes.map(s => 
-            fetch(`/api/skills/${s.id}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ isFinalNode: 0 }),
-            })
-          ),
-          fetch(`/api/skills/${skillId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ isFinalNode: 1 }),
-          })
-        ]);
-
-        setProjects(prev => prev.map(p => 
-          p.id === projectId ? {
-            ...p,
-            skills: p.skills.map(s => ({
-              ...s,
-              isFinalNode: s.id === skillId ? 1 : 0
-            }))
-          } : p
-        ));
+        // Activate: set endOfAreaLevel to skill.level
+        console.log('[toggleProjectFinalNode] Activating final node for level', skill.level);
+        await fetch(`/api/projects/${projectId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endOfAreaLevel: skill.level }),
+        });
       }
+      
+      // Refresh UI immediately
+      await refreshAllAreas();
     } catch (error) {
       console.error("Error toggling project final node:", error);
     }
@@ -3666,44 +3641,24 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
   const toggleSubSkillFinalNode = async (skillId: string) => {
     const skill = subSkills.find(s => s.id === skillId);
-    if (!skill) return;
+    if (!skill || !skill.parentSkillId) return;
 
-    const isCurrentlyFinal = skill.isFinalNode === 1;
+    console.log('[toggleSubSkillFinalNode] called - skillId:', skillId, 'parentSkillId:', skill.parentSkillId);
 
     try {
-      if (isCurrentlyFinal) {
-        await fetch(`/api/skills/${skillId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ isFinalNode: 0 }),
-        });
-
-        setSubSkills(prev => prev.map(s => 
-          s.id === skillId ? { ...s, isFinalNode: 0 } : s
-        ));
-      } else {
-        const otherFinalNodes = subSkills.filter(s => s.isFinalNode === 1 && s.id !== skillId);
-        
-        await Promise.all([
-          ...otherFinalNodes.map(s => 
-            fetch(`/api/skills/${s.id}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ isFinalNode: 0 }),
-            })
-          ),
-          fetch(`/api/skills/${skillId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ isFinalNode: 1 }),
-          })
-        ]);
-
-        setSubSkills(prev => prev.map(s => ({
-          ...s,
-          isFinalNode: s.id === skillId ? 1 : 0
-        })));
-      }
+      // For subskills, we update the parent skill's endOfAreaLevel
+      const response = await fetch(`/api/skills/${skill.parentSkillId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endOfAreaLevel: skill.level }),
+      });
+      
+      console.log('[toggleSubSkillFinalNode] response status:', response.status);
+      
+      // Refresh UI immediately
+      console.log('[toggleSubSkillFinalNode] Calling refreshAllAreas()...');
+      await refreshAllAreas();
+      console.log('[toggleSubSkillFinalNode] ✓ refreshAllAreas() completed');
     } catch (error) {
       console.error("Error toggling sub-skill final node:", error);
     }

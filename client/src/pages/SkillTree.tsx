@@ -6257,9 +6257,17 @@ function SkillCanvas() {
             </div>
 
             {/* Completed Badge */}
-            {(isProject ? activeProject?.skills : activeArea?.skills)?.some(
-              s => s.isFinalNode === 1 && s.status === "mastered"
-            ) && (
+            {(() => {
+              const skills = isProject ? activeProject?.skills : activeArea?.skills;
+              const endOfAreaLevel = isProject ? activeProject?.endOfAreaLevel : activeArea?.endOfAreaLevel;
+              
+              // Show "Completed" only when:
+              // 1. endOfAreaLevel is set (star was placed on a specific level)
+              // 2. The final node of that level has status === "mastered"
+              return endOfAreaLevel != null && skills?.some(
+                s => s.level === endOfAreaLevel && s.isFinalNode === 1 && s.status === "mastered"
+              );
+            })() && (
               <div className="mb-3">
                 <span className="text-sm text-zinc-600 dark:text-zinc-400">
                   Completed

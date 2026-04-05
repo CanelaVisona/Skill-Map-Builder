@@ -411,10 +411,60 @@ export async function registerRoutes(
         res.status(403).json({ message: "No tienes permiso para modificar esta área" });
         return;
       }
-      const area = await storage.updateArea(req.params.id, req.body);
-      res.json(area);
+
+      const areaId = req.params.id;
+      const { endOfAreaLevel } = req.body;
+      const isChangingEndOfAreaLevel = endOfAreaLevel !== undefined && endOfAreaLevel !== existingArea.endOfAreaLevel;
+
+      // Handle level generation when endOfAreaLevel changes
+      if (isChangingEndOfAreaLevel) {
+        if (endOfAreaLevel === null) {
+          // Deactivate: Generate 3 new levels
+          console.log('[PATCH /api/areas] Deactivating end-of-area, generating 3 new levels');
+          const currentUnlockedLevel = existingArea.unlockedLevel;
+          
+          let startY = 100;
+          const allSkills = await storage.getSkills(areaId);
+          if (allSkills.length > 0) {
+            const lastSkill = allSkills.reduce((max, s) => s.y > max.y ? s : max, allSkills[0]);
+            startY = lastSkill.y + 150;
+          }
+          
+          for (let i = 1; i <= 3; i++) {
+            const newLevel = currentUnlockedLevel + i;
+            try {
+              await storage.generateLevelWithSkills(areaId, newLevel, startY);
+              const updatedSkills = await storage.getSkills(areaId);
+              const newLevelSkills = updatedSkills.filter(s => s.level === newLevel);
+              if (newLevelSkills.length > 0) {
+                const lastSkill = newLevelSkills.reduce((max, s) => s.y > max.y ? s : max, newLevelSkills[0]);
+                startY = lastSkill.y + 150;
+              }
+            } catch (levelError) {
+              console.error(`Error generating level ${newLevel}:`, levelError);
+            }
+          }
+        } else {
+          // Activate: Delete staged levels (skills with level > unlockedLevel)
+          console.log('[PATCH /api/areas] Activating end-of-area, deleting staged levels');
+          const unlockedLevel = existingArea.unlockedLevel;
+          const scheduledForDeletion = await storage.getSkills(areaId);
+          const skillsToDelete = scheduledForDeletion.filter(s => s.level > unlockedLevel);
+          
+          for (const skill of skillsToDelete) {
+            await storage.deleteSkill(skill.id);
+          }
+        }
+      }
+
+      const area = await storage.updateArea(areaId, req.body);
+      console.log('[PATCH /api/areas] ✓ Area updated:', area?.id, 'endOfAreaLevel:', area?.endOfAreaLevel);
+      const areaWithSkills = await storage.getSkills(areaId);
+      res.json({ ...area, skills: areaWithSkills });
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      console.error('[PATCH /api/areas] ❌ ERROR:', error);
+      console.error('[PATCH /api/areas] Stack:', error.stack);
+      res.status(500).json({ message: error.message, stack: error.stack });
     }
   });
 
@@ -844,6 +894,14 @@ export async function registerRoutes(
             });
           }
         }
+      }
+
+      // Handle level generation when endOfAreaLevel changes on a skill with subskills
+      // NOTE: Skills (including parent skills) don't have endOfAreaLevel column
+      // Only areas and projects have endOfAreaLevel
+      // Skip subskill level generation if endOfAreaLevel is in the request
+      if (req.body.endOfAreaLevel !== undefined) {
+        delete req.body.endOfAreaLevel;
       }
 
       const skill = await storage.updateSkill(req.params.id, req.body);
@@ -1517,8 +1575,55 @@ export async function registerRoutes(
         res.status(403).json({ message: "No tienes permiso para modificar este proyecto" });
         return;
       }
-      const project = await storage.updateProject(req.params.id, req.body);
-      res.json(project);
+
+      const projectId = req.params.id;
+      const { endOfAreaLevel } = req.body;
+      const isChangingEndOfAreaLevel = endOfAreaLevel !== undefined && endOfAreaLevel !== existingProject.endOfAreaLevel;
+
+      // Handle level generation when endOfAreaLevel changes
+      if (isChangingEndOfAreaLevel) {
+        if (endOfAreaLevel === null) {
+          // Deactivate: Generate 3 new levels
+          console.log('[PATCH /api/projects] Deactivating end-of-area, generating 3 new levels');
+          const currentUnlockedLevel = existingProject.unlockedLevel;
+          
+          let startY = 100;
+          const allSkills = await storage.getProjectSkills(projectId);
+          if (allSkills.length > 0) {
+            const lastSkill = allSkills.reduce((max, s) => s.y > max.y ? s : max, allSkills[0]);
+            startY = lastSkill.y + 150;
+          }
+          
+          for (let i = 1; i <= 3; i++) {
+            const newLevel = currentUnlockedLevel + i;
+            try {
+              await storage.generateProjectLevelWithSkills(projectId, newLevel, startY);
+              const updatedSkills = await storage.getProjectSkills(projectId);
+              const newLevelSkills = updatedSkills.filter(s => s.level === newLevel);
+              if (newLevelSkills.length > 0) {
+                const lastSkill = newLevelSkills.reduce((max, s) => s.y > max.y ? s : max, newLevelSkills[0]);
+                startY = lastSkill.y + 150;
+              }
+            } catch (levelError) {
+              console.error(`Error generating project level ${newLevel}:`, levelError);
+            }
+          }
+        } else {
+          // Activate: Delete staged levels (skills with level > unlockedLevel)
+          console.log('[PATCH /api/projects] Activating end-of-area, deleting staged levels');
+          const unlockedLevel = existingProject.unlockedLevel;
+          const scheduledForDeletion = await storage.getProjectSkills(projectId);
+          const skillsToDelete = scheduledForDeletion.filter(s => s.level > unlockedLevel);
+          
+          for (const skill of skillsToDelete) {
+            await storage.deleteSkill(skill.id);
+          }
+        }
+      }
+
+      const project = await storage.updateProject(projectId, req.body);
+      const projectWithSkills = await storage.getProjectSkills(projectId);
+      res.json({ ...project, skills: projectWithSkills });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
