@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/compone
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
-import { ArrowLeft, Plus, Trash2, Archive } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Swords } from "lucide-react";
 import { useTheme } from "next-themes";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -1178,7 +1178,7 @@ function TimelineVisual({
       <div className="grid grid-cols-2 gap-2">
         <div className="rounded-xl border border-border/30 bg-muted/30 px-3 py-2 text-center">
           <p className="text-xl font-bold text-foreground">{practice.completedIntervals.length}/6</p>
-          <p className="text-xs text-muted-foreground">Completados</p>
+          <p className="text-xs text-muted-foreground">Conquistados</p>
         </div>
         <div className="rounded-xl border border-border/30 bg-muted/30 px-3 py-2 text-center">
           <p className="text-xl font-bold text-foreground">{calculateDaysSince(practice.startDate)}</p>

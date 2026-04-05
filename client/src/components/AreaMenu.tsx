@@ -4,7 +4,7 @@ import { useMenu } from "@/lib/menu-context";
 import { ProgressBar } from "@/components/ProgressBar";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, PanelLeftClose, PanelLeftOpen, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut, Archive, ArchiveRestore, Pencil, Zap, ChevronDown, ChevronRight, Mountain, Compass, Scroll, Eye } from "lucide-react";
+import { Plus, PanelLeftClose, PanelLeftOpen, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut, Archive, ArchiveRestore, Pencil, Zap, ChevronDown, ChevronRight, Mountain, Compass, Scroll, Eye, Swords } from "lucide-react";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "./ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "./ui/alert-dialog";
@@ -1565,27 +1565,27 @@ export function AreaMenu() {
               className="group flex items-center gap-2 px-3 py-2 text-muted-foreground hover:text-foreground transition-all duration-200 rounded-md hover:bg-muted/50"
               data-testid="button-open-archived"
             >
-              <Archive size={18} className="shrink-0" />
+              <Swords size={18} className="shrink-0" />
               <span className={cn(
                 "text-sm font-medium overflow-hidden transition-all duration-200",
                 isOpen ? "max-w-[100px] opacity-100" : "max-w-0 opacity-0 group-hover:max-w-[100px] group-hover:opacity-100"
               )}>
-                Completados
+                Conquistados
               </span>
             </button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-[500px] border-yellow-500/30 bg-gradient-to-b from-yellow-50/50 to-white dark:from-yellow-950/30 dark:to-background">
             <DialogHeader className="border-b border-yellow-500/20 pb-4 bg-gradient-to-r from-yellow-500/10 to-amber-500/5">
               <DialogTitle className="flex items-center gap-2 text-yellow-900 dark:text-yellow-100">
-                <Archive size={18} className="text-yellow-600 dark:text-yellow-400" />
-                🏆 Quests Completados
+                <Swords size={18} className="text-yellow-600 dark:text-yellow-400" />
+                🏆 Quests Conquistados
               </DialogTitle>
             </DialogHeader>
             <div className="mt-4 space-y-4 max-h-[60vh] overflow-y-auto">
               {archivedAreas.length === 0 && archivedMainQuests.length === 0 && archivedSideQuests.length === 0 && archivedEmergentQuests.length === 0 ? (
                 <div className="text-center text-yellow-600/60 dark:text-yellow-400/60 py-8">
-                  <Archive className="mx-auto h-12 w-12 mb-3 opacity-40 text-yellow-500" />
-                  <p className="font-medium">No hay quests completados</p>
+                  <Swords className="mx-auto h-12 w-12 mb-3 opacity-40 text-yellow-500" />
+                  <p className="font-medium">No hay quests conquistados</p>
                 </div>
               ) : (
                 <>

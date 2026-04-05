@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/compone
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
-import { ArrowLeft, ChevronLeft, ChevronRight, Eye, Trash2, Plus, Archive } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Eye, Trash2, Plus, Swords } from "lucide-react";
 import { useTheme } from "next-themes";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Habit, HabitRecord, Area, Project } from "@shared/schema";
@@ -1077,7 +1077,7 @@ function MainPanel({
             className="inline-flex items-center justify-center rounded-full bg-purple-500/20 p-2 text-purple-700 hover:opacity-80 dark:text-purple-400 active:opacity-60 transition-colors touch-manipulation h-9 w-9 sm:h-auto"
             title="Archivados"
           >
-            📦
+            <Swords className="h-4 w-4" />
           </button>
           <button
             onClick={onHistory}
@@ -1983,8 +1983,8 @@ function ArchivedPanel({
           </button>
           <div className="min-w-0 flex-1">
             <h2 className="font-black text-base sm:text-lg text-yellow-700 dark:text-yellow-300 flex items-center gap-2 flex-wrap">
-              <Archive size={18} className="sm:size-20 text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
-              <span>🏆 Completados</span>
+              <Swords size={18} className="sm:size-20 text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
+              <span>🏆 Conquistados</span>
             </h2>
             <p className="mt-1 text-xs sm:text-sm text-yellow-600/70 dark:text-yellow-400/70">
               ¡Felicidades! Superaste estos desafíos
@@ -2107,7 +2107,7 @@ function ArchivedDetailPanel({
           <div className="font-black text-lg sm:text-xl text-yellow-900 dark:text-yellow-100">
             {habit.done.size}
           </div>
-          <div className="text-xs text-yellow-700/80 dark:text-yellow-300/80 uppercase font-semibold">Completados</div>
+          <div className="text-xs text-yellow-700/80 dark:text-yellow-300/80 uppercase font-semibold">Conquistados</div>
         </div>
         <div className="flex-1 rounded-xl bg-gradient-to-br from-yellow-400/25 to-amber-400/15 px-2 sm:px-3 py-2 text-center border border-yellow-300/30">
           <div className="font-black text-lg sm:text-xl text-yellow-900 dark:text-yellow-100 text-sm sm:text-base">
