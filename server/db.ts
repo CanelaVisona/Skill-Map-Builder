@@ -12,3 +12,6 @@ const pool = new pg.Pool({
 });
 
 export const db = drizzle(pool, { schema });
+
+// Export pool for raw SQL queries
+export { pool };

@@ -1,6 +1,6 @@
 import { eq, and, asc } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import { db } from "./db";
+import { db, pool } from "./db";
 import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, globalSkills, habits, habitRecords, spaceRepetitionPractices } from "@shared/schema";
 
 export interface IStorage {
@@ -40,6 +40,7 @@ export interface IStorage {
   recalculateFinalNodes(level: number, options: { areaId?: string; projectId?: string; parentSkillId?: string }): Promise<void>;
   recalculateNodeStatuses(level: number, options: { areaId?: string; projectId?: string; parentSkillId?: string }): Promise<void>;
   recalculateNodeStatusesAfterReorder(level: number, options: { areaId?: string; projectId?: string; parentSkillId?: string }): Promise<void>;
+  recalculateYCoordinates(options: { areaId?: string; projectId?: string; parentSkillId?: string }): Promise<void>;
   generateLevelWithSkills(areaId: string, level: number, startY: number): Promise<{ updatedArea: Area; createdSkills: Skill[] }>;
   generateProjectLevelWithSkills(projectId: string, level: number, startY: number): Promise<{ updatedProject: Project; createdSkills: Skill[] }>;
 
@@ -521,6 +522,69 @@ export class DbStorage implements IStorage {
         }
       }
     }
+  }
+
+  /**
+   * Recalculate Y coordinates for all nodes in an area/project/parent skill.
+   * Uses a single SQL update with CTE for atomicity:
+   * y = 100 + (cumulative_position - 1) * 150
+   * where cumulative_position is ROW_NUMBER() ordered by level, then level_position.
+   * 
+   * This MUST run as a single atomic UPDATE to avoid race conditions where the SELECT
+   * might see deleted nodes before the DELETE is committed.
+   */
+  async recalculateYCoordinates(
+    options: { areaId?: string; projectId?: string; parentSkillId?: string }
+  ): Promise<void> {
+    const { areaId, projectId, parentSkillId } = options;
+
+    // Build parameterized query
+    const conditions: string[] = [];
+    const params: (string | undefined)[] = [];
+    let paramIndex = 1;
+
+    if (areaId) {
+      conditions.push(`area_id = $${paramIndex}`);
+      params.push(areaId);
+      paramIndex++;
+    }
+    if (projectId) {
+      conditions.push(`project_id = $${paramIndex}`);
+      params.push(projectId);
+      paramIndex++;
+    }
+    if (parentSkillId) {
+      conditions.push(`parent_skill_id = $${paramIndex}`);
+      params.push(parentSkillId);
+      paramIndex++;
+    }
+
+    if (conditions.length === 0) {
+      // No filter specified, don't update anything
+      return;
+    }
+
+    const whereClause = conditions.join(" AND ");
+
+    // Use raw SQL with CTE for atomic update
+    // This executes the SELECT and UPDATE in a single SQL statement,
+    // ensuring the deleted node is not included in the ranking
+    const updateSql = `
+      WITH skill_ranking AS (
+        SELECT id,
+               ROW_NUMBER() OVER (ORDER BY level ASC, level_position ASC) as cumulative_pos
+        FROM skills
+        WHERE ${whereClause}
+      )
+      UPDATE skills
+      SET y = 100 + (sr.cumulative_pos - 1) * 150
+      FROM skill_ranking sr
+      WHERE skills.id = sr.id;
+    `;
+
+    // Execute with parameterized query
+    const cleanParams = params.filter((p) => p !== undefined);
+    await pool.query(updateSql, cleanParams);
   }
 
   async recalculateNodeStatusesAfterReorder(

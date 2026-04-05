@@ -719,6 +719,14 @@ export async function registerRoutes(
         };
         
         const skill = await storage.createSkill(skillWithPosition);
+        
+        // Recalculate Y coordinates for all nodes in the area/project/parent
+        await storage.recalculateYCoordinates({
+          areaId: validatedSkill.areaId || undefined,
+          projectId: validatedSkill.projectId || undefined,
+          parentSkillId: validatedSkill.parentSkillId || undefined,
+        });
+        
         res.status(201).json(skill);
       } else {
         // Manual insertion - use client-provided values but enforce first node rules
@@ -759,6 +767,14 @@ export async function registerRoutes(
         };
         
         const skill = await storage.createSkill(skillWithLevel);
+        
+        // Recalculate Y coordinates for all nodes in the area/project/parent
+        await storage.recalculateYCoordinates({
+          areaId: validatedSkill.areaId || undefined,
+          projectId: validatedSkill.projectId || undefined,
+          parentSkillId: validatedSkill.parentSkillId || undefined,
+        });
+        
         res.status(201).json(skill);
       }
     } catch (error: any) {
@@ -954,6 +970,9 @@ export async function registerRoutes(
 
       // Delete the skill
       await storage.deleteSkill(req.params.id);
+      
+      // Recalculate Y coordinates for all remaining nodes in the area/project/parent
+      await storage.recalculateYCoordinates(parentInfo);
       
       // Cascading unlock logic: if deleted skill was 'available', unlock next node
       if (deletedStatus === "available") {
@@ -1718,6 +1737,12 @@ export async function registerRoutes(
       };
       
       const skill = await storage.createSkill(skillWithPosition);
+      
+      // Recalculate Y coordinates for all nodes in the project
+      await storage.recalculateYCoordinates({
+        projectId: validatedSkill.projectId || undefined,
+      });
+      
       res.status(201).json(skill);
     } catch (error: any) {
       const validationError = fromError(error);
@@ -1857,6 +1882,12 @@ export async function registerRoutes(
       };
       
       const skill = await storage.createSkill(skillWithPosition);
+      
+      // Recalculate Y coordinates for all sub-skills under the parent
+      await storage.recalculateYCoordinates({
+        parentSkillId: validatedSkill.parentSkillId || undefined,
+      });
+      
       res.status(201).json(skill);
     } catch (error: any) {
       const validationError = fromError(error);
