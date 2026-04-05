@@ -781,12 +781,6 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       // Special case: Allow unconfirming final node of level immediately before active level
       // This will close the active level and reset it to staged state
       const isFinalNodeOfPreviousLevel = isFinalNodeByPosition && skill.level === area.unlockedLevel - 1;
-      
-      // Check if this is the final node and the next level is unlocked (UNLESS this is the previous level's final node)
-      if (isFinalNodeByPosition && !isFinalNodeOfPreviousLevel && area.unlockedLevel > skill.level) {
-        console.log(`[toggleSkillStatus] Cannot unconfirm final node - next level already unlocked`);
-        return; // Block unconfirm - next level is already open
-      }
 
       // For non-final nodes: check that next node exists and is available
       // For final nodes: skip the next-node check (no next node in same level)
