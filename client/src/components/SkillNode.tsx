@@ -107,8 +107,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const allOthersMastered = otherNodesInLevel.every(s => s.status === "mastered");
   
   // CRITICAL: First node of any level MUST ALWAYS appear mastered, never locked
-  // Check BOTH conditions to avoid treating corrupted nodes as first
-  const isFirstNodeOfLevel = skill.levelPosition === 1 && skill.isAutoComplete === 1;
+  const isFirstNodeOfLevel = skill.levelPosition === 1;
   
   // Effective states: final nodes show as locked if others aren't mastered
   const shouldForceLock = isFinalNodeByPosition && skill.status !== "mastered" && !allOthersMastered;
@@ -709,7 +708,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       isTitleLongPress.current = false;
       return;
     }
-    if (!isSubSkillView && !isInicioNode && !isFirstNodeOfLevel) {
+    if (!isSubSkillView && !isInicioNode) {
       e.stopPropagation();
       try {
         const response = await fetch(`/api/skills/${skill.id}/subskills`);
@@ -943,7 +942,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
   const handleTouchStart = () => {
     if (isInicioNode) return; // "inicio" nodes are not interactive
-    if (isFirstNodeOfLevel) return; // Node 1 is not interactive
     isLongPress.current = false;
     longPressTimer.current = setTimeout(() => {
       isLongPress.current = true;
@@ -960,7 +958,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
   const handleClick = (e: React.MouseEvent) => {
     if (isInicioNode) return; // "inicio" nodes are not interactive
-    if (isFirstNodeOfLevel) return; // Node 1 is not interactive
     if (isLongPress.current) {
       e.preventDefault();
       e.stopPropagation();
@@ -1000,7 +997,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
   const handleMouseDown = () => {
     if (isInicioNode) return; // "inicio" nodes are not interactive
-    if (isFirstNodeOfLevel) return; // Node 1 is not interactive
     isLongPress.current = false;
     longPressTimer.current = setTimeout(() => {
       isLongPress.current = true;

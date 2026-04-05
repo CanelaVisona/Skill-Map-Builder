@@ -143,9 +143,19 @@ interface StorageData {
 // Hook para detectar long press
 function useLongPress(callback: () => void, duration = 500) {
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const [isPressed, setIsPressed] = useState(false);
+  const MOVE_THRESHOLD = 10; // pixels
 
-  const handleMouseDown = () => {
+  const clearPress = () => {
+    setIsPressed(false);
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+  };
+
+  const startPress = () => {
     setIsPressed(true);
     timeoutRef.current = setTimeout(() => {
       callback();
@@ -153,26 +163,57 @@ function useLongPress(callback: () => void, duration = 500) {
     }, duration);
   };
 
+  // Mouse events
+  const handleMouseDown = () => {
+    startPress();
+  };
+
   const handleMouseUp = () => {
-    setIsPressed(false);
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
+    clearPress();
   };
 
   const handleMouseLeave = () => {
-    setIsPressed(false);
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
+    clearPress();
+  };
+
+  // Touch events
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+    startPress();
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!touchStartRef.current) return;
+    
+    const touch = e.touches[0];
+    const dx = Math.abs(touch.clientX - touchStartRef.current.x);
+    const dy = Math.abs(touch.clientY - touchStartRef.current.y);
+    
+    // Si se movió más del threshold, cancelar el long press
+    if (dx > MOVE_THRESHOLD || dy > MOVE_THRESHOLD) {
+      clearPress();
     }
+  };
+
+  const handleTouchEnd = () => {
+    touchStartRef.current = null;
+    clearPress();
+  };
+
+  const handleTouchCancel = () => {
+    touchStartRef.current = null;
+    clearPress();
   };
 
   return {
     onMouseDown: handleMouseDown,
     onMouseUp: handleMouseUp,
     onMouseLeave: handleMouseLeave,
-    onTouchStart: handleMouseDown,
-    onTouchEnd: handleMouseUp,
+    onTouchStart: handleTouchStart,
+    onTouchMove: handleTouchMove,
+    onTouchEnd: handleTouchEnd,
+    onTouchCancel: handleTouchCancel,
     isPressed,
   };
 }

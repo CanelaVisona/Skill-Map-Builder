@@ -872,7 +872,7 @@ function MainPanel({
     longPressTimer.current = setTimeout(() => {
       isLongPress.current = true;
       onAddClick();
-    }, 500);
+    }, 1500);
   };
 
   const handlePressEnd = () => {
@@ -894,7 +894,7 @@ function MainPanel({
   const handleHabitPressStart = (habitId: string) => {
     const timer = setTimeout(() => {
       onEditClick(habitId);
-    }, 500);
+    }, 1500);
     longPressTimers.current.set(habitId, timer);
   };
 
@@ -909,7 +909,7 @@ function MainPanel({
   const handleHeaderPressStart = () => {
     const timer = setTimeout(() => {
       onAddClick();
-    }, 500);
+    }, 1500);
     longPressTimers.current.set("header", timer);
   };
 

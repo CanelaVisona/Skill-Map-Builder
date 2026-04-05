@@ -1298,14 +1298,14 @@ export async function registerRoutes(
         levelPosition: tempLevelPosition
       });
 
-      // Recalculate final node and node statuses for this level
+      // Recalculate final node for this level only
+      // Note: Node statuses stay with the node and are not affected by reordering
       const parentInfo = {
         areaId: parentType === "area" ? parentId : undefined,
         projectId: parentType === "project" ? parentId : undefined
       };
       
       await storage.recalculateFinalNodes(currentLevel, parentInfo);
-      await storage.recalculateNodeStatuses(currentLevel, parentInfo);
 
       // Fetch all updated skills of the level to return to client
       const updatedAllSkills = parentType === "area" 

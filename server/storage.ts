@@ -39,6 +39,7 @@ export interface IStorage {
   countProjectSkillsInLevel(projectId: string, level: number): Promise<number>;
   recalculateFinalNodes(level: number, options: { areaId?: string; projectId?: string; parentSkillId?: string }): Promise<void>;
   recalculateNodeStatuses(level: number, options: { areaId?: string; projectId?: string; parentSkillId?: string }): Promise<void>;
+  recalculateNodeStatusesAfterReorder(level: number, options: { areaId?: string; projectId?: string; parentSkillId?: string }): Promise<void>;
   generateLevelWithSkills(areaId: string, level: number, startY: number): Promise<{ updatedArea: Area; createdSkills: Skill[] }>;
   generateProjectLevelWithSkills(projectId: string, level: number, startY: number): Promise<{ updatedProject: Project; createdSkills: Skill[] }>;
 
@@ -520,6 +521,15 @@ export class DbStorage implements IStorage {
         }
       }
     }
+  }
+
+  async recalculateNodeStatusesAfterReorder(
+    level: number,
+    options: { areaId?: string; projectId?: string; parentSkillId?: string }
+  ): Promise<void> {
+    // No-op: Node statuses stay with the node, not with the position
+    // When reordering, statuses are preserved and only levelPosition/y coordinates swap
+    return;
   }
 
   async generateLevelWithSkills(areaId: string, level: number, startY: number): Promise<{ updatedArea: Area; createdSkills: Skill[] }> {

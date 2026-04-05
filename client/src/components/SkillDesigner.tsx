@@ -129,14 +129,40 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
     
     const sorted = [...skillsInLevel].sort((a, b) => a.y - b.y);
     const index = sorted.findIndex(s => s.id === skillId);
-    return index > 0;
+    if (index <= 0) return false;
+    
+    // Check if swap would violate mastered/available constraint
+    const neighbor = sorted[index - 1];
+    if (!neighbor) return false;
+    
+    // Block if this is mastered and neighbor is available (or vice versa)
+    if ((skill.status === "mastered" && neighbor.status === "available") ||
+        (skill.status === "available" && neighbor.status === "mastered")) {
+      return false;
+    }
+    
+    return true;
   };
 
   const canMoveDown = (skillsInLevel: any[], skillId: string): boolean => {
+    const skill = skillsInLevel.find(s => s.id === skillId);
+    if (!skill) return false;
+    
     const sorted = [...skillsInLevel].sort((a, b) => a.y - b.y);
     const index = sorted.findIndex(s => s.id === skillId);
-    // Can move down if not at the bottom of the list
-    return index < sorted.length - 1;
+    if (index >= sorted.length - 1) return false;
+    
+    // Check if swap would violate mastered/available constraint
+    const neighbor = sorted[index + 1];
+    if (!neighbor) return false;
+    
+    // Block if this is mastered and neighbor is available (or vice versa)
+    if ((skill.status === "mastered" && neighbor.status === "available") ||
+        (skill.status === "available" && neighbor.status === "mastered")) {
+      return false;
+    }
+    
+    return true;
   };
 
   return (

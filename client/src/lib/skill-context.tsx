@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from "react";
+import { createContext, useContext, useState, useEffect, useRef } from "react";
 import { Music, Trophy, BookOpen, Home } from "lucide-react";
 
 export type SkillStatus = "locked" | "available" | "mastered";
@@ -170,6 +170,20 @@ const iconMap: Record<string, any> = {
   Home,
 };
 
+// Helper function to safely access dependencies as an array
+function ensureDependenciesArray(deps: any): string[] {
+  if (Array.isArray(deps)) return deps;
+  if (typeof deps === 'string') {
+    try {
+      const parsed = JSON.parse(deps);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 export function SkillTreeProvider({ children }: { children: React.ReactNode }): React.ReactElement {
   const [areas, setAreas] = useState<Area[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -187,6 +201,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
   const [showQuestUpdated, setShowQuestUpdated] = useState(false);
   const [globalSkills, setGlobalSkills] = useState<GlobalSkill[]>([]);
   const [globalSkillsLoading, setGlobalSkillsLoading] = useState(true);
+  const isReordering = useRef(false);
 
   const triggerLevelUp = (level: number) => {
     setLevelUpNumber(level);
@@ -1288,7 +1303,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     if (!skillToDelete) return;
 
     // Find children (nodes that depend on this skill)
-    const children = area.skills.filter(s => s.dependencies.includes(skillId));
+    const children = area.skills.filter(s => ensureDependenciesArray(s.dependencies).includes(skillId));
     const newDependencies = skillToDelete.dependencies;
 
     // Check if we're deleting a final node - need to mark the previous one as final
@@ -1574,7 +1589,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     const skillToDelete = project.skills.find(s => s.id === skillId);
     if (!skillToDelete) return;
 
-    const children = project.skills.filter(s => s.dependencies.includes(skillId));
+    const children = project.skills.filter(s => ensureDependenciesArray(s.dependencies).includes(skillId));
     const newDependencies = skillToDelete.dependencies;
 
     const wasIsFinalNode = skillToDelete.isFinalNode === 1;
@@ -2422,7 +2437,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     const skillToDelete = subSkills.find(s => s.id === skillId);
     if (!skillToDelete) return;
 
-    const children = subSkills.filter(s => s.dependencies.includes(skillId));
+    const children = subSkills.filter(s => ensureDependenciesArray(s.dependencies).includes(skillId));
     const newDependencies = skillToDelete.dependencies;
 
     const wasIsFinalNode = skillToDelete.isFinalNode === 1;
@@ -2686,8 +2701,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       });
       const newSkill = await response.json();
 
-      if (finalNode && finalNode.dependencies.includes(clickedSkill.id)) {
-        const updatedDeps = finalNode.dependencies.map(d => d === clickedSkill.id ? newSkill.id : d);
+      if (finalNode && ensureDependenciesArray(finalNode.dependencies).includes(clickedSkill.id)) {
+        const updatedDeps = ensureDependenciesArray(finalNode.dependencies).map(d => d === clickedSkill.id ? newSkill.id : d);
         await fetch(`/api/skills/${finalNode.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -2705,8 +2720,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
               if (s.y > clickedSkill.y) {
                 updated = { ...updated, y: s.y + 150, levelPosition: (s.levelPosition || 0) + 1 };
               }
-              if (finalNode && s.id === finalNode.id && finalNode.dependencies.includes(clickedSkill.id)) {
-                const updatedDeps = s.dependencies.map(d => d === clickedSkill.id ? newSkill.id : d);
+              if (finalNode && s.id === finalNode.id && ensureDependenciesArray(finalNode.dependencies).includes(clickedSkill.id)) {
+                const updatedDeps = ensureDependenciesArray(s.dependencies).map(d => d === clickedSkill.id ? newSkill.id : d);
                 updated = { ...updated, dependencies: updatedDeps };
               }
               return updated;
@@ -2767,8 +2782,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       });
       const newSkill = await response.json();
 
-      if (finalNode && finalNode.dependencies.includes(clickedSkill.id)) {
-        const updatedDeps = finalNode.dependencies.map(d => d === clickedSkill.id ? newSkill.id : d);
+      if (finalNode && ensureDependenciesArray(finalNode.dependencies).includes(clickedSkill.id)) {
+        const updatedDeps = ensureDependenciesArray(finalNode.dependencies).map(d => d === clickedSkill.id ? newSkill.id : d);
         await fetch(`/api/skills/${finalNode.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -2786,8 +2801,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
               if (s.y > clickedSkill.y) {
                 updated = { ...updated, y: s.y + 150, levelPosition: (s.levelPosition || 0) + 1 };
               }
-              if (finalNode && s.id === finalNode.id && finalNode.dependencies.includes(clickedSkill.id)) {
-                const updatedDeps = s.dependencies.map(d => d === clickedSkill.id ? newSkill.id : d);
+              if (finalNode && s.id === finalNode.id && ensureDependenciesArray(finalNode.dependencies).includes(clickedSkill.id)) {
+                const updatedDeps = ensureDependenciesArray(s.dependencies).map(d => d === clickedSkill.id ? newSkill.id : d);
                 updated = { ...updated, dependencies: updatedDeps };
               }
               return updated;
@@ -2845,8 +2860,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       });
       const newSkill = await response.json();
 
-      if (finalNode && finalNode.dependencies.includes(clickedSkill.id)) {
-        const updatedDeps = finalNode.dependencies.map(d => d === clickedSkill.id ? newSkill.id : d);
+      if (finalNode && ensureDependenciesArray(finalNode.dependencies).includes(clickedSkill.id)) {
+        const updatedDeps = ensureDependenciesArray(finalNode.dependencies).map(d => d === clickedSkill.id ? newSkill.id : d);
         await fetch(`/api/skills/${finalNode.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -2860,8 +2875,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           if (s.y > clickedSkill.y) {
             updated = { ...updated, y: s.y + 150, levelPosition: (s.levelPosition || 0) + 1 };
           }
-          if (finalNode && s.id === finalNode.id && finalNode.dependencies.includes(clickedSkill.id)) {
-            const updatedDeps = s.dependencies.map(d => d === clickedSkill.id ? newSkill.id : d);
+          if (finalNode && s.id === finalNode.id && ensureDependenciesArray(finalNode.dependencies).includes(clickedSkill.id)) {
+            const updatedDeps = ensureDependenciesArray(s.dependencies).map(d => d === clickedSkill.id ? newSkill.id : d);
             updated = { ...updated, dependencies: updatedDeps };
           }
           return updated;
@@ -2948,8 +2963,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         });
       }
 
-      if (finalNode && finalNode.dependencies.includes(skill.id)) {
-        const updatedDeps = finalNode.dependencies.map(d => d === skill.id ? newSkill.id : d);
+      if (finalNode && ensureDependenciesArray(finalNode.dependencies).includes(skill.id)) {
+        const updatedDeps = ensureDependenciesArray(finalNode.dependencies).map(d => d === skill.id ? newSkill.id : d);
         await fetch(`/api/skills/${finalNode.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -3037,8 +3052,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         });
       }
 
-      if (finalNode && finalNode.dependencies.includes(skill.id)) {
-        const updatedDeps = finalNode.dependencies.map(d => d === skill.id ? newSkill.id : d);
+      if (finalNode && ensureDependenciesArray(finalNode.dependencies).includes(skill.id)) {
+        const updatedDeps = ensureDependenciesArray(finalNode.dependencies).map(d => d === skill.id ? newSkill.id : d);
         await fetch(`/api/skills/${finalNode.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -3125,8 +3140,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         });
       }
 
-      if (finalNode && finalNode.dependencies.includes(skill.id)) {
-        const updatedDeps = finalNode.dependencies.map(d => d === skill.id ? newSkill.id : d);
+      if (finalNode && ensureDependenciesArray(finalNode.dependencies).includes(skill.id)) {
+        const updatedDeps = ensureDependenciesArray(finalNode.dependencies).map(d => d === skill.id ? newSkill.id : d);
         await fetch(`/api/skills/${finalNode.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -3140,8 +3155,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           if (s.y > skill.y) {
             updated = { ...updated, y: s.y + 150, levelPosition: (s.levelPosition || 0) + 1 };
           }
-          if (finalNode && s.id === finalNode.id && finalNode.dependencies.includes(skill.id)) {
-            const updatedDeps = s.dependencies.map(d => d === skill.id ? newSkill.id : d);
+          if (finalNode && s.id === finalNode.id && ensureDependenciesArray(finalNode.dependencies).includes(skill.id)) {
+            const updatedDeps = ensureDependenciesArray(s.dependencies).map(d => d === skill.id ? newSkill.id : d);
             updated = { ...updated, dependencies: updatedDeps };
           }
           // Apply intelligent status replication to local state
@@ -3169,6 +3184,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
   // Auto-unlock logic for areas (also re-locks final nodes that shouldn't be available)
   useEffect(() => {
     if (isLoading || areas.length === 0) return;
+    if (isReordering.current) return; // Skip auto-unlock during reorder
 
     const updatesToMake: Array<{ skillId: string; newStatus: SkillStatus }> = [];
 
@@ -3260,11 +3276,12 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         })));
       });
     }
-  }, [areas, isLoading]);
+  }, [areas, isLoading, isReordering]);
 
   // Auto-unlock logic for projects (also re-locks nodes that shouldn't be available)
   useEffect(() => {
     if (isLoading || projects.length === 0) return;
+    if (isReordering.current) return; // Skip auto-unlock during reorder
 
     const updatesToMake: Array<{ skillId: string; newStatus: SkillStatus }> = [];
 
@@ -3361,6 +3378,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
   // Auto-unlock logic for sub-skills
   useEffect(() => {
     if (subSkills.length === 0) return;
+    if (isReordering.current) return; // Skip auto-unlock during reorder
 
     const updatesToMake: Array<{ skillId: string; newStatus: SkillStatus }> = [];
 
@@ -3452,6 +3470,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
   // Auto-unlock parent skill when ALL subtasks are mastered
   useEffect(() => {
     if (!activeParentSkillId || subSkills.length === 0) return;
+    if (isReordering.current) return; // Skip auto-unlock during reorder
     
     const allSubtasksMastered = subSkills.every(s => s.status === "mastered");
     
@@ -3739,6 +3758,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       const skill = area.skills.find(s => s.id === skillId);
       if (!skill) return;
 
+      // Mark reordering in progress to prevent auto-unlock effects
+      isReordering.current = true;
+      console.log("[reorderSkillWithinLevel] Starting reorder, isReordering set to true");
+
       const response = await fetch(`/api/skills/${skillId}/reorder`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -3754,14 +3777,20 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       if (!response.ok) {
         const error = await response.json();
         console.error("Error reordering skill:", error);
+        isReordering.current = false;
         return;
       }
 
       // After successful reorder, refresh entire area from server to ensure consistency
       console.log("[reorderSkillWithinLevel] Reorder complete, refreshing area from server...");
       await refreshAllAreas();
+      
+      // Mark reordering complete to allow auto-unlock effects again
+      isReordering.current = false;
+      console.log("[reorderSkillWithinLevel] Refresh complete, isReordering set to false");
     } catch (error) {
       console.error("Error reordering skill within level:", error);
+      isReordering.current = false;
     }
   };
 
@@ -3808,6 +3837,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       const skill = project.skills.find(s => s.id === skillId);
       if (!skill) return;
 
+      // Mark reordering in progress to prevent auto-unlock effects
+      isReordering.current = true;
+      console.log("[reorderProjectSkillWithinLevel] Starting reorder, isReordering set to true");
+
       const response = await fetch(`/api/skills/${skillId}/reorder`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -3823,14 +3856,20 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       if (!response.ok) {
         const error = await response.json();
         console.error("Error reordering project skill:", error);
+        isReordering.current = false;
         return;
       }
 
       // After successful reorder, refresh entire projects from server to ensure consistency
       console.log("[reorderProjectSkillWithinLevel] Reorder complete, refreshing projects from server...");
       await refreshAllProjects();
+      
+      // Mark reordering complete to allow auto-unlock effects again
+      isReordering.current = false;
+      console.log("[reorderProjectSkillWithinLevel] Refresh complete, isReordering set to false");
     } catch (error) {
       console.error("Error reordering project skill within level:", error);
+      isReordering.current = false;
     }
   };
 
