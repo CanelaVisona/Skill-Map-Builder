@@ -3711,6 +3711,22 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       isReordering.current = true;
       console.log("[reorderSkillWithinLevel] Starting reorder, isReordering set to true");
 
+      // Find neighbor and available node before swap
+      const sameLevelSkills = area.skills
+        .filter(s => s.level === skill.level)
+        .sort((a, b) => a.y - b.y);
+      
+      const currentIndex = sameLevelSkills.findIndex(s => s.id === skillId);
+      const neighborIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+      
+      if (neighborIndex < 0 || neighborIndex >= sameLevelSkills.length) {
+        isReordering.current = false;
+        return;
+      }
+
+      const neighbor = sameLevelSkills[neighborIndex];
+      const availableNodeBefore = sameLevelSkills.find(s => s.status === "available");
+
       const response = await fetch(`/api/skills/${skillId}/reorder`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -3730,13 +3746,51 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         return;
       }
 
-      // After successful reorder, refresh entire area from server to ensure consistency
-      console.log("[reorderSkillWithinLevel] Reorder complete, refreshing area from server...");
-      await refreshAllAreas();
-      
+      // Update local state with swapped positions and statuses
+      setAreas(prev => prev.map(a => {
+        if (a.id !== areaId) return a;
+        
+        return {
+          ...a,
+          skills: a.skills.map(s => {
+            let updated = { ...s };
+            
+            if (s.id === skillId) {
+              // Swap levelPosition and y with neighbor
+              updated.levelPosition = neighbor.levelPosition;
+              updated.y = neighbor.y;
+              
+              // Update status: if moved away from available position, become locked
+              if (availableNodeBefore && s.id === availableNodeBefore.id && neighbor.levelPosition !== availableNodeBefore.levelPosition) {
+                updated.status = "locked";
+              }
+              // If moved to available position, become available
+              else if (availableNodeBefore && neighbor.levelPosition === availableNodeBefore.levelPosition) {
+                updated.status = "available";
+              }
+            } else if (s.id === neighbor.id) {
+              // Swap levelPosition and y with current skill
+              updated.levelPosition = skill.levelPosition;
+              updated.y = skill.y;
+              
+              // Update status: if moved away from available position, become locked
+              if (availableNodeBefore && s.id === availableNodeBefore.id && skill.levelPosition !== availableNodeBefore.levelPosition) {
+                updated.status = "locked";
+              }
+              // If moved to available position, become available
+              else if (availableNodeBefore && skill.levelPosition === availableNodeBefore.levelPosition) {
+                updated.status = "available";
+              }
+            }
+            
+            return updated;
+          })
+        };
+      }));
+
       // Mark reordering complete to allow auto-unlock effects again
       isReordering.current = false;
-      console.log("[reorderSkillWithinLevel] Refresh complete, isReordering set to false");
+      console.log("[reorderSkillWithinLevel] Reorder complete, local state updated");
     } catch (error) {
       console.error("Error reordering skill within level:", error);
       isReordering.current = false;
@@ -3790,6 +3844,22 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       isReordering.current = true;
       console.log("[reorderProjectSkillWithinLevel] Starting reorder, isReordering set to true");
 
+      // Find neighbor and available node before swap
+      const sameLevelSkills = project.skills
+        .filter(s => s.level === skill.level)
+        .sort((a, b) => a.y - b.y);
+      
+      const currentIndex = sameLevelSkills.findIndex(s => s.id === skillId);
+      const neighborIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+      
+      if (neighborIndex < 0 || neighborIndex >= sameLevelSkills.length) {
+        isReordering.current = false;
+        return;
+      }
+
+      const neighbor = sameLevelSkills[neighborIndex];
+      const availableNodeBefore = sameLevelSkills.find(s => s.status === "available");
+
       const response = await fetch(`/api/skills/${skillId}/reorder`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -3809,13 +3879,51 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         return;
       }
 
-      // After successful reorder, refresh entire projects from server to ensure consistency
-      console.log("[reorderProjectSkillWithinLevel] Reorder complete, refreshing projects from server...");
-      await refreshAllProjects();
-      
+      // Update local state with swapped positions and statuses
+      setProjects(prev => prev.map(p => {
+        if (p.id !== projectId) return p;
+        
+        return {
+          ...p,
+          skills: p.skills.map(s => {
+            let updated = { ...s };
+            
+            if (s.id === skillId) {
+              // Swap levelPosition and y with neighbor
+              updated.levelPosition = neighbor.levelPosition;
+              updated.y = neighbor.y;
+              
+              // Update status: if moved away from available position, become locked
+              if (availableNodeBefore && s.id === availableNodeBefore.id && neighbor.levelPosition !== availableNodeBefore.levelPosition) {
+                updated.status = "locked";
+              }
+              // If moved to available position, become available
+              else if (availableNodeBefore && neighbor.levelPosition === availableNodeBefore.levelPosition) {
+                updated.status = "available";
+              }
+            } else if (s.id === neighbor.id) {
+              // Swap levelPosition and y with current skill
+              updated.levelPosition = skill.levelPosition;
+              updated.y = skill.y;
+              
+              // Update status: if moved away from available position, become locked
+              if (availableNodeBefore && s.id === availableNodeBefore.id && skill.levelPosition !== availableNodeBefore.levelPosition) {
+                updated.status = "locked";
+              }
+              // If moved to available position, become available
+              else if (availableNodeBefore && skill.levelPosition === availableNodeBefore.levelPosition) {
+                updated.status = "available";
+              }
+            }
+            
+            return updated;
+          })
+        };
+      }));
+
       // Mark reordering complete to allow auto-unlock effects again
       isReordering.current = false;
-      console.log("[reorderProjectSkillWithinLevel] Refresh complete, isReordering set to false");
+      console.log("[reorderProjectSkillWithinLevel] Reorder complete, local state updated");
     } catch (error) {
       console.error("Error reordering project skill within level:", error);
       isReordering.current = false;
