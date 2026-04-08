@@ -311,7 +311,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
         let startDate: string;
         let endDate: string;
 
-        if (habit.endDate) {
+        if (habit.endDate && habit.endDate < getLocalDateString()) {
           // Archived habit: load from year 2000 to the end date
           startDate = "2000-01-01";
           endDate = habit.endDate;
@@ -331,7 +331,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
         
         // Recalculate bestStreak for archived habits based on all records
         let calculatedBestStreak = habit.bestStreak || 0;
-        if (habit.endDate && done.size > 0) {
+        if (habit.endDate && habit.endDate < getLocalDateString() && done.size > 0) {
           const endDateObj = new Date(habit.endDate + "T00:00:00");
           const streakAtEnd = computeStreakGlobal(done, habit.scheduledDays, endDateObj);
           const bestEver = computeBestStreakFromRecords(done, habit.scheduledDays);
@@ -2059,8 +2059,7 @@ function ArchivedPanel({
           </button>
           <div className="min-w-0 flex-1">
             <h2 className="font-black text-base sm:text-lg text-yellow-700 dark:text-yellow-300 flex items-center gap-2 flex-wrap">
-              <Archive size={18} className="sm:size-20 text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
-              <span>🏆 Completados</span>
+              <span>⚔️ Conquistados</span>
             </h2>
             <p className="mt-1 text-xs sm:text-sm text-yellow-600/70 dark:text-yellow-400/70">
               ¡Felicidades! Superaste estos desafíos
