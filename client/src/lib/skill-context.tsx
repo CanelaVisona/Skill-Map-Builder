@@ -1805,7 +1805,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
   const createArea = async (name: string, description: string, icon: string) => {
     try {
-      const id = name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+      // Use crypto.randomUUID() to ensure globally unique IDs (prevents duplicates when users create areas with same name)
+      const id = crypto.randomUUID();
       console.log(`[createArea] Creating area with id="${id}", name="${name}"`);
       
       const response = await fetch("/api/areas", {
@@ -1939,7 +1940,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
   const createProject = async (name: string, description: string, icon: string) => {
     try {
-      const id = name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') + '_' + Date.now();
+      const id = crypto.randomUUID();
       const response = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1978,7 +1979,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
   const createSideQuest = async (name: string, description: string, icon: string) => {
     try {
-      const id = name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') + '_' + Date.now();
+      const id = crypto.randomUUID();
       const response = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -2018,7 +2019,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
   const createEmergentQuest = async (name: string, description: string, icon: string, firstNodeTitle: string, firstNodeAction: string) => {
     try {
-      const id = name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') + '_' + Date.now();
+      const id = crypto.randomUUID();
       const response = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -2072,7 +2073,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
   const createExperienceQuest = async (name: string, description: string, icon: string) => {
     try {
-      const id = name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') + '_' + Date.now();
+      const id = crypto.randomUUID();
       const response = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
