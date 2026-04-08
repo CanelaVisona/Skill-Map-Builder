@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/compone
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
-import { ArrowLeft, ChevronLeft, ChevronRight, Eye, Trash2, Plus, Swords } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Eye, Trash2, Plus, Swords, Archive } from "lucide-react";
 import { useTheme } from "next-themes";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Habit, HabitRecord, Area, Project } from "@shared/schema";
