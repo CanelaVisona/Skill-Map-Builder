@@ -706,6 +706,11 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     const skill = area.skills.find(s => s.id === skillId);
     if (!skill) return;
 
+    // Node 1 cannot be unconfirmed - it must always be mastered
+    if (skill.isAutoComplete === 1 || skill.levelPosition === 1) {
+      return;
+    }
+
     // First node of any level is immutable - cannot be toggled
     if (skill.levelPosition === 1) {
       return;
@@ -2654,7 +2659,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
-  const addSkillBelow = async (areaId: string, skillId: string, title: string = "?") => {
+  const addSkillBelow = async (areaId: string, skillId: string, title: string = "") => {
     const area = areas.find(a => a.id === areaId);
     if (!area) return;
 

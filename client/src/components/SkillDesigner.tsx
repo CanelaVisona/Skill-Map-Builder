@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ChevronUp, ChevronDown, Layers, Lock } from "lucide-react";
+import { ChevronUp, ChevronDown, Lock, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SkillDesignerProps {
@@ -15,7 +15,7 @@ interface SkillDesignerProps {
 }
 
 export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
-  const { areas, projects, activeAreaId, activeProjectId, updateSkill, updateProjectSkill, updateLevelSubtitle, updateProjectLevelSubtitle, moveSkillToLevel, moveProjectSkillToLevel, reorderSkillWithinLevel, reorderProjectSkillWithinLevel } = useSkillTree();
+  const { areas, projects, activeAreaId, activeProjectId, updateSkill, updateProjectSkill, updateLevelSubtitle, updateProjectLevelSubtitle, moveSkillToLevel, moveProjectSkillToLevel, reorderSkillWithinLevel, reorderProjectSkillWithinLevel, addSkillBelow, addProjectSkillBelow } = useSkillTree();
   const [editingSkillId, setEditingSkillId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
   const [editingAreaId, setEditingAreaId] = useState<string | null>(null);
@@ -124,18 +124,21 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
   const canMoveUp = (skillsInLevel: any[], skillId: string): boolean => {
     const skill = skillsInLevel.find(s => s.id === skillId);
     if (!skill) return false;
-    // Cannot move up if at levelPosition 2 (first visible node after Node 1)
+    
+    // Rule 1: Node 1 (levelPosition === 1) - disable both arrows
+    if (skill.levelPosition === 1) return false;
+    
+    // Rule 3: First non-Node-1 (levelPosition === 2) - disable up arrow
     if (skill.levelPosition === 2) return false;
     
     const sorted = [...skillsInLevel].sort((a, b) => a.y - b.y);
     const index = sorted.findIndex(s => s.id === skillId);
     if (index <= 0) return false;
     
-    // Check if swap would violate mastered/available constraint
     const neighbor = sorted[index - 1];
     if (!neighbor) return false;
     
-    // Block if this is mastered and neighbor is available (or vice versa)
+    // Disable button if mastered/available swap
     if ((skill.status === "mastered" && neighbor.status === "available") ||
         (skill.status === "available" && neighbor.status === "mastered")) {
       return false;
@@ -148,15 +151,21 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
     const skill = skillsInLevel.find(s => s.id === skillId);
     if (!skill) return false;
     
+    // Rule 1: Node 1 (levelPosition === 1) - disable both arrows
+    if (skill.levelPosition === 1) return false;
+    
+    // Rule 2: Final node - disable down arrow
+    const maxLevelPosition = Math.max(...skillsInLevel.map(s => s.levelPosition || 0));
+    if (skill.isFinalNode === 1 || skill.levelPosition === maxLevelPosition) return false;
+    
     const sorted = [...skillsInLevel].sort((a, b) => a.y - b.y);
     const index = sorted.findIndex(s => s.id === skillId);
     if (index >= sorted.length - 1) return false;
     
-    // Check if swap would violate mastered/available constraint
     const neighbor = sorted[index + 1];
     if (!neighbor) return false;
     
-    // Block if this is mastered and neighbor is available (or vice versa)
+    // Disable button if mastered/available swap
     if ((skill.status === "mastered" && neighbor.status === "available") ||
         (skill.status === "available" && neighbor.status === "mastered")) {
       return false;
@@ -249,58 +258,34 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                             <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{!skill.title ? `Nodo ${skill.levelPosition}` : skill.title}</div>
                                             {skill.status === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
                                           </div>
-                                          <div className="flex items-center gap-1">
+                                          <div className="flex flex-row gap-1">
                                               <Button 
                                                 size="sm" 
-                                               variant="ghost" 
-                                                disabled={!canUp}
+                                                variant="ghost" 
+                                                disabled={!canMoveUp(skillsInLevel, skill.id)}
                                                 onClick={() => handleReorderSkill("up", skill.id, area.id, null, level)} 
+                                                className="h-8 w-8"
                                               >
                                                 <ChevronUp className="w-4 h-4" />
                                               </Button>
                                               <Button 
                                                 size="sm" 
                                                 variant="ghost" 
-                                                disabled={!canDown}
+                                                disabled={!canMoveDown(skillsInLevel, skill.id)}
                                                 onClick={() => handleReorderSkill("down", skill.id, area.id, null, level)}
+                                                className="h-8 w-8"
                                               >
                                                 <ChevronDown className="w-4 h-4" />
                                               </Button>
-                                              {availableLevels.length > 0 && (
-                                                <Popover open={contextMenuOpen && selectedSkillForMove?.skillId === skill.id} onOpenChange={setContextMenuOpen}>
-                                                  <PopoverTrigger asChild>
-                                                    <Button 
-                                                      size="sm" 
-                                                      variant="ghost" 
-                                                      onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setSelectedSkillForMove({ skillId: skill.id, areaId: area.id, projectId: null, currentLevel: level });
-                                                        setContextMenuOpen(true);
-                                                      }}
-                                                    >
-                                                      <Layers className="w-4 h-4" />
-                                                    </Button>
-                                                  </PopoverTrigger>
-                                                  <PopoverContent align="end" className="w-40 p-2">
-                                                    <div className="space-y-1">
-                                                      {availableLevels.map(lv => (
-                                                        <Button 
-                                                          key={lv}
-                                                          size="sm" 
-                                                          variant="outline" 
-                                                          className="w-full justify-start"
-                                                          onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleMoveSkillToLevel(lv);
-                                                          }}
-                                                        >
-                                                          Nivel {lv}
-                                                        </Button>
-                                                      ))}
-                                                    </div>
-                                                  </PopoverContent>
-                                                </Popover>
-                                              )}
+                                              <Button 
+                                                size="sm" 
+                                                variant="ghost" 
+                                                onClick={() => addSkillBelow(area.id, skill.id, '')}
+                                                className="h-8 w-8"
+                                                title="Añadir nodo debajo"
+                                              >
+                                                <Plus className="w-4 h-4" />
+                                              </Button>
                                             </div>
                                           </div>
                                           <div className="text-xs text-muted-foreground">
@@ -410,58 +395,34 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                               <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{!skill.title ? `Nodo ${skill.levelPosition}` : skill.title}</div>
                                               {skill.status === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
                                             </div>
-                                            <div className="flex items-center gap-1">
+                                            <div className="flex flex-row gap-1">
                                                 <Button 
                                                   size="sm" 
                                                   variant="ghost" 
-                                                  disabled={!canUp}
+                                                  disabled={!canMoveUp(skillsInLevel, skill.id)}
                                                   onClick={() => handleReorderSkill("up", skill.id, null, project.id, level)} 
+                                                  className="h-8 w-8"
                                                 >
                                                   <ChevronUp className="w-4 h-4" />
                                                 </Button>
                                                 <Button 
                                                   size="sm" 
                                                   variant="ghost" 
-                                                  disabled={!canDown}
+                                                  disabled={!canMoveDown(skillsInLevel, skill.id)}
                                                   onClick={() => handleReorderSkill("down", skill.id, null, project.id, level)}
+                                                  className="h-8 w-8"
                                                 >
                                                   <ChevronDown className="w-4 h-4" />
                                                 </Button>
-                                                {availableLevels.length > 0 && (
-                                                  <Popover open={contextMenuOpen && selectedSkillForMove?.skillId === skill.id} onOpenChange={setContextMenuOpen}>
-                                                    <PopoverTrigger asChild>
-                                                      <Button 
-                                                        size="sm" 
-                                                        variant="ghost" 
-                                                        onClick={(e) => {
-                                                          e.stopPropagation();
-                                                          setSelectedSkillForMove({ skillId: skill.id, areaId: null, projectId: project.id, currentLevel: level });
-                                                          setContextMenuOpen(true);
-                                                        }}
-                                                      >
-                                                        <Layers className="w-4 h-4" />
-                                                      </Button>
-                                                    </PopoverTrigger>
-                                                    <PopoverContent align="end" className="w-40 p-2">
-                                                      <div className="space-y-1">
-                                                        {availableLevels.map(lv => (
-                                                          <Button 
-                                                            key={lv}
-                                                            size="sm" 
-                                                            variant="outline" 
-                                                            className="w-full justify-start"
-                                                            onClick={(e) => {
-                                                              e.stopPropagation();
-                                                              handleMoveSkillToLevel(lv);
-                                                            }}
-                                                          >
-                                                            Nivel {lv}
-                                                          </Button>
-                                                        ))}
-                                                      </div>
-                                                    </PopoverContent>
-                                                  </Popover>
-                                                )}
+                                                <Button 
+                                                  size="sm" 
+                                                  variant="ghost" 
+                                                  onClick={() => addProjectSkillBelow(project.id, skill.id, '')}
+                                                  className="h-8 w-8"
+                                                  title="Añadir nodo debajo"
+                                                >
+                                                  <Plus className="w-4 h-4" />
+                                                </Button>
                                               </div>
                                           </div>
                                           <div className="text-xs text-muted-foreground">
@@ -586,42 +547,16 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                 >
                                                   <ChevronDown className="w-4 h-4" />
                                                 </Button>
-                                                {availableLevels.length > 0 && (
-                                                  <Popover open={contextMenuOpen && selectedSkillForMove?.skillId === skill.id} onOpenChange={setContextMenuOpen}>
-                                                    <PopoverTrigger asChild>
-                                                      <Button 
-                                                        size="sm" 
-                                                        variant="ghost" 
-                                                        onClick={(e) => {
-                                                          e.stopPropagation();
-                                                          setSelectedSkillForMove({ skillId: skill.id, areaId: null, projectId: project.id, currentLevel: level });
-                                                          setContextMenuOpen(true);
-                                                        }}
-                                                      >
-                                                        <Layers className="w-4 h-4" />
-                                                      </Button>
-                                                    </PopoverTrigger>
-                                                    <PopoverContent align="end" className="w-40 p-2">
-                                                      <div className="space-y-1">
-                                                        {availableLevels.map(lv => (
-                                                          <Button 
-                                                            key={lv}
-                                                            size="sm" 
-                                                            variant="outline" 
-                                                            className="w-full justify-start"
-                                                            onClick={(e) => {
-                                                              e.stopPropagation();
-                                                              handleMoveSkillToLevel(lv);
-                                                            }}
-                                                          >
-                                                            Nivel {lv}
-                                                          </Button>
-                                                        ))}
-                                                      </div>
-                                                    </PopoverContent>
-                                                  </Popover>
-                                                )}
                                               </div>
+                                              <Button 
+                                                size="sm" 
+                                                variant="ghost" 
+                                                onClick={() => addProjectSkillBelow(project.id, skill.id, '')}
+                                                className="h-8 w-8"
+                                                title="Añadir nodo debajo"
+                                              >
+                                                <Plus className="w-4 h-4" />
+                                              </Button>
                                             </div>
                                           <div className="text-xs text-muted-foreground">
                                             {skill.status === "mastered" && "✓ Completado"}
@@ -705,108 +640,80 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                       .sort((a, b) => a.y - b.y)
                                       .filter((skill) => skill.isAutoComplete !== 1 && skill.levelPosition !== 1);
                                     
-                                    return skillsInLevel.map((skill) => {
-                                      const canUp = canMoveUp(skillsInLevel, skill.id);
-                                      const canDown = canMoveDown(skillsInLevel, skill.id);
-                                      const availableLevels = getAvailableLevelsForMove(level, maxLevel);
-                                      
-                                      return (
-                                        <div
-                                          key={skill.id}
-                                          className={cn("p-2 rounded border border-border bg-card/50 hover:bg-card transition-colors", skill.status === "locked" && "opacity-60")}
-                                          onContextMenu={(e) => handleContextMenu(e, skill.id, null, project.id, level)}
-                                        >
-                                          <div className="flex items-center gap-2 justify-between">
-                                            <div 
-                                              className="flex items-center gap-2 flex-1 cursor-pointer"
-                                              onClick={() => {
-                                                setEditingSkillId(skill.id);
-                                                setEditingName(skill.title || "");
-                                                setEditingAreaId(null);
-                                                setEditingProjectId(project.id);
-                                                setEditingLevel(level);
-                                              }}
+                                    return skillsInLevel.map((skill) => (
+                                      <div
+                                        key={skill.id}
+                                        className={cn("p-2 rounded border border-border bg-card/50 hover:bg-card transition-colors", skill.status === "locked" && "opacity-60")}
+                                        onContextMenu={(e) => handleContextMenu(e, skill.id, null, project.id, level)}
+                                      >
+                                        <div className="flex items-center gap-2 justify-between">
+                                          <div 
+                                            className="flex items-center gap-2 flex-1 cursor-pointer"
+                                            onClick={() => {
+                                              setEditingSkillId(skill.id);
+                                              setEditingName(skill.title || "");
+                                              setEditingAreaId(null);
+                                              setEditingProjectId(project.id);
+                                              setEditingLevel(level);
+                                            }}
+                                          >
+                                            <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{skill.isAutoComplete === 1 || skill.levelPosition === 1 ? "" : (!skill.title ? `Nodo ${skill.levelPosition}` : skill.title)}</div>
+                                            {skill.status === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
+                                          </div>
+                                          <div className="flex flex-row gap-1"> 
+                                            <Button
+                                              size="sm" 
+                                              variant="ghost" 
+                                              disabled={!canMoveUp(skillsInLevel, skill.id)}
+                                              onClick={() => handleReorderSkill("up", skill.id, null, project.id, level)} 
+                                              className="h-8 w-8"
                                             >
-                                              <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{skill.isAutoComplete === 1 || skill.levelPosition === 1 ? "" : (!skill.title ? `Nodo ${skill.levelPosition}` : skill.title)}</div>
-                                              {skill.status === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
-                                            </div>
-                                            <div className="flex items-center gap-1">
-                                                <Button 
-                                                  size="sm" 
-                                                  variant="ghost" 
-                                                  disabled={!canUp}
-                                                  onClick={() => handleReorderSkill("up", skill.id, null, project.id, level)} 
-                                                >
-                                                  <ChevronUp className="w-4 h-4" />
-                                                </Button>
-                                                <Button 
-                                                  size="sm" 
-                                                  variant="ghost" 
-                                                  disabled={!canDown}
-                                                  onClick={() => handleReorderSkill("down", skill.id, null, project.id, level)}
-                                                >
-                                                  <ChevronDown className="w-4 h-4" />
-                                                </Button>
-                                                {availableLevels.length > 0 && (
-                                                  <Popover open={contextMenuOpen && selectedSkillForMove?.skillId === skill.id} onOpenChange={setContextMenuOpen}>
-                                                    <PopoverTrigger asChild>
-                                                      <Button 
-                                                        size="sm" 
-                                                        variant="ghost" 
-                                                        onClick={(e) => {
-                                                          e.stopPropagation();
-                                                          setSelectedSkillForMove({ skillId: skill.id, areaId: null, projectId: project.id, currentLevel: level });
-                                                          setContextMenuOpen(true);
-                                                        }}
-                                                      >
-                                                        <Layers className="w-4 h-4" />
-                                                      </Button>
-                                                    </PopoverTrigger>
-                                                    <PopoverContent align="end" className="w-40 p-2">
-                                                      <div className="space-y-1">
-                                                        {availableLevels.map(lv => (
-                                                          <Button 
-                                                            key={lv}
-                                                            size="sm" 
-                                                            variant="outline" 
-                                                            className="w-full justify-start"
-                                                            onClick={(e) => {
-                                                              e.stopPropagation();
-                                                              handleMoveSkillToLevel(lv);
-                                                            }}
-                                                          >
-                                                            Nivel {lv}
-                                                          </Button>
-                                                        ))}
-                                                      </div>
-                                                    </PopoverContent>
-                                                  </Popover>
-                                                )}
-                                              </div>
-                                            </div>
+                                              <ChevronUp className="w-4 h-4" />
+                                            </Button>
+                                            <Button 
+                                              size="sm" 
+                                              variant="ghost" 
+                                              disabled={!canMoveDown(skillsInLevel, skill.id)}
+                                              onClick={() => handleReorderSkill("down", skill.id, null, project.id, level)}
+                                              className="h-8 w-8"
+                                            >
+                                              <ChevronDown className="w-4 h-4" />
+                                            </Button>
+                                            <Button 
+                                              size="sm" 
+                                              variant="ghost" 
+                                              onClick={() => addProjectSkillBelow(project.id, skill.id, '')}
+                                              className="h-8 w-8"
+                                              title="Añadir nodo debajo"
+                                            >
+                                              <Plus className="w-4 h-4" />
+                                            </Button>
+                                          </div>
                                           <div className="text-xs text-muted-foreground">
                                             {skill.status === "mastered" && "✓ Completado"}
                                             {skill.status === "locked" && "Bloqueado"}
                                           </div>
                                         </div>
-                                      );
-                                    });
+                                      </div>
+                                    ));
                                   })()
                                 ) : (
-                                  Array.from({ length: nodesInLastLevel }, (_, i) => (
-                                    <div
-                                      key={`locked-${level}-${i}`}
-                                      className="p-2 rounded border border-border bg-card/50 cursor-pointer hover:bg-card/70 transition-colors opacity-60"
-                                      onMouseDown={() => handleNodeLongPressStart(`locked_${project.id}_${level}_${i}`, `Nodo ${i + 1}`, null, project.id, level, true)}
-                                      onMouseUp={handleNodeLongPressEnd}
-                                      onMouseLeave={handleNodeLongPressEnd}
-                                      onTouchStart={() => handleNodeLongPressStart(`locked_${project.id}_${level}_${i}`, `Nodo ${i + 1}`, null, project.id, level, true)}
-                                      onTouchEnd={handleNodeLongPressEnd}
-                                    >
-                                      <div className="text-sm font-medium">Nodo {i + 1}</div>
-                                      <div className="text-xs text-muted-foreground">Bloqueado</div>
-                                    </div>
-                                  ))
+                                  <>
+                                    {Array.from({ length: nodesInLastLevel }, (_, i) => (
+                                      <div
+                                        key={`locked-${level}-${i}`}
+                                        className="p-2 rounded border border-border bg-card/50 cursor-pointer hover:bg-card/70 transition-colors opacity-60"
+                                        onMouseDown={() => handleNodeLongPressStart(`locked_${project.id}_${level}_${i}`, `Nodo ${i + 1}`, null, project.id, level, true)}
+                                        onMouseUp={handleNodeLongPressEnd}
+                                        onMouseLeave={handleNodeLongPressEnd}
+                                        onTouchStart={() => handleNodeLongPressStart(`locked_${project.id}_${level}_${i}`, `Nodo ${i + 1}`, null, project.id, level, true)}
+                                        onTouchEnd={handleNodeLongPressEnd}
+                                      >
+                                        <div className="text-sm font-medium">Nodo {i + 1}</div>
+                                        <div className="text-xs text-muted-foreground">Bloqueado</div>
+                                      </div>
+                                    ))}
+                                  </>
                                 )}
                               </div>
                             </AccordionContent>

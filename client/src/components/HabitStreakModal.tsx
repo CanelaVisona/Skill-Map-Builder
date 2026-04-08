@@ -145,6 +145,8 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
   const [detailViewDate, setDetailViewDate] = useState(new Date());
   const [selectedArchivedHabitId, setSelectedArchivedHabitId] = useState<string | null>(null);
   const [archivedDetailDate, setArchivedDetailDate] = useState(new Date());
+  const [editingArchivedId, setEditingArchivedId] = useState<string | null>(null);
+  const [editingArchivedDate, setEditingArchivedDate] = useState<string>("");
   const [newHabitEmoji, setNewHabitEmoji] = useState("");
   const [newHabitName, setNewHabitName] = useState("");
   const [newHabitEndDate, setNewHabitEndDate] = useState("");
@@ -426,6 +428,21 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
         }),
       });
       if (!res.ok) throw new Error("Failed to update habit");
+      return res.json();
+    },
+    onSuccess: async () => {
+      await queryClient.refetchQueries({ queryKey: ["habits"] });
+    },
+  });
+
+  const updateArchivedEndDateMutation = useMutation({
+    mutationFn: async ({ id, endDate }: { id: string; endDate: string }) => {
+      const res = await fetch(`/api/habits/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endDate }),
+      });
+      if (!res.ok) throw new Error("Failed to update end date");
       return res.json();
     },
     onSuccess: async () => {
@@ -764,6 +781,30 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
               onDetailClick={(habitId) => {
                 setSelectedArchivedHabitId(habitId);
                 setCurrentPanel("archived-detail");
+              }}
+              editingId={editingArchivedId}
+              editingDate={editingArchivedDate}
+              onEditingDateChange={setEditingArchivedDate}
+              onLongPress={(habitId) => {
+                const habit = habitsWithRecords.find((h) => h.id === habitId);
+                if (habit) {
+                  setEditingArchivedId(habitId);
+                  setEditingArchivedDate(habit.endDate || "");
+                }
+              }}
+              onSaveDate={async () => {
+                if (editingArchivedId && editingArchivedDate) {
+                  await updateArchivedEndDateMutation.mutateAsync({
+                    id: editingArchivedId,
+                    endDate: editingArchivedDate,
+                  });
+                  setEditingArchivedId(null);
+                  setEditingArchivedDate("");
+                }
+              }}
+              onCancelEdit={() => {
+                setEditingArchivedId(null);
+                setEditingArchivedDate("");
               }}
             />
           )}
@@ -1965,11 +2006,46 @@ function ArchivedPanel({
   habits,
   onBack,
   onDetailClick,
+  editingId,
+  editingDate,
+  onEditingDateChange,
+  onLongPress,
+  onSaveDate,
+  onCancelEdit,
 }: {
   habits: HabitData[];
   onBack: () => void;
   onDetailClick: (habitId: string) => void;
+  editingId: string | null;
+  editingDate: string;
+  onEditingDateChange: (date: string) => void;
+  onLongPress: (habitId: string) => void;
+  onSaveDate: () => Promise<void>;
+  onCancelEdit: () => void;
 }) {
+  const longPressTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
+
+  const handleHabitPressStart = (habitId: string) => {
+    const timer = setTimeout(() => {
+      onLongPress(habitId);
+    }, 500);
+    longPressTimers.current.set(habitId, timer);
+  };
+
+  const handleHabitPressEnd = (habitId: string) => {
+    const timer = longPressTimers.current.get(habitId);
+    if (timer) {
+      clearTimeout(timer);
+      longPressTimers.current.delete(habitId);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      longPressTimers.current.forEach(timer => clearTimeout(timer));
+    };
+  }, []);
+
   return (
     <div className="w-full">
       {/* Header */}
@@ -1983,8 +2059,8 @@ function ArchivedPanel({
           </button>
           <div className="min-w-0 flex-1">
             <h2 className="font-black text-base sm:text-lg text-yellow-700 dark:text-yellow-300 flex items-center gap-2 flex-wrap">
-              <Swords size={18} className="sm:size-20 text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
-              <span>🏆 Conquistados</span>
+              <Archive size={18} className="sm:size-20 text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
+              <span>🏆 Completados</span>
             </h2>
             <p className="mt-1 text-xs sm:text-sm text-yellow-600/70 dark:text-yellow-400/70">
               ¡Felicidades! Superaste estos desafíos
@@ -2006,29 +2082,77 @@ function ArchivedPanel({
             const streak = computeStreakGlobal(habit.done, habit.scheduledDays, today);
             const broken = isStreakBrokenGlobal(habit.done, habit.scheduledDays, today);
             const displayBestStreak = broken ? habit.bestStreak : Math.max(streak, habit.bestStreak);
+            const isEditing = editingId === habit.id;
             
             return (
-              <button
+              <div
                 key={habit.id}
-                onClick={() => onDetailClick(habit.id)}
-                className="text-left rounded-2xl border-2 border-yellow-400/50 px-3 sm:px-4 py-2.5 sm:py-3 bg-gradient-to-br from-yellow-500/20 via-amber-500/10 to-yellow-500/10 hover:border-yellow-400 hover:from-yellow-500/30 hover:via-amber-500/20 active:scale-95 transition-all shadow-md hover:shadow-lg hover:shadow-yellow-500/20 touch-manipulation"
+                onMouseDown={() => handleHabitPressStart(habit.id)}
+                onMouseUp={() => handleHabitPressEnd(habit.id)}
+                onMouseLeave={() => handleHabitPressEnd(habit.id)}
+                onTouchStart={() => handleHabitPressStart(habit.id)}
+                onTouchEnd={() => handleHabitPressEnd(habit.id)}
+                onTouchCancel={() => handleHabitPressEnd(habit.id)}
               >
-                <div className="flex items-center gap-2 sm:gap-3 mb-1.5 sm:mb-2 flex-wrap">
-                  <span className="text-xl sm:text-2xl flex-shrink-0 drop-shadow">{habit.emoji}</span>
-                  <div className="flex-1 min-w-0">
-                    <span className="font-black text-xs sm:text-sm text-yellow-900 dark:text-yellow-100 block truncate">
-                      {habit.name}
-                    </span>
-                    <span className="text-xs text-yellow-700/80 dark:text-yellow-300/80">
-                      Terminó: {new Date(habit.endDate!).toLocaleDateString("es-AR")}
-                    </span>
+                {isEditing ? (
+                  <div className="rounded-2xl border-2 border-yellow-400 px-3 sm:px-4 py-2.5 sm:py-3 bg-gradient-to-br from-yellow-500/30 via-amber-500/20 to-yellow-500/20 shadow-md">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl sm:text-2xl flex-shrink-0 drop-shadow">{habit.emoji}</span>
+                        <span className="font-black text-xs sm:text-sm text-yellow-900 dark:text-yellow-100 flex-1 truncate">
+                          {habit.name}
+                        </span>
+                      </div>
+                      <div className="pl-7 sm:pl-11">
+                        <Input
+                          type="date"
+                          value={editingDate}
+                          onChange={(e) => onEditingDateChange(e.target.value)}
+                          className="bg-yellow-100 dark:bg-yellow-900/40 border-yellow-300 text-yellow-900 dark:text-yellow-100 h-9 text-sm"
+                        />
+                      </div>
+                      <div className="pl-7 sm:pl-11 flex gap-2">
+                        <Button
+                          onClick={onSaveDate}
+                          size="sm"
+                          className="flex-1 h-8 bg-green-600 hover:bg-green-700 text-white text-xs"
+                        >
+                          Guardar
+                        </Button>
+                        <Button
+                          onClick={onCancelEdit}
+                          size="sm"
+                          variant="outline"
+                          className="flex-1 h-8 border-yellow-300 text-yellow-700 dark:text-yellow-300 text-xs"
+                        >
+                          Cancelar
+                        </Button>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div className="pl-7 sm:pl-11 flex items-center gap-1.5 sm:gap-2 text-xs text-yellow-700/70 dark:text-yellow-300/70">
-                  <span className="font-semibold">Racha:</span>
-                  <span className="font-black text-yellow-800 dark:text-yellow-200">{displayBestStreak} 🔥</span>
-                </div>
-              </button>
+                ) : (
+                  <button
+                    onClick={() => onDetailClick(habit.id)}
+                    className="w-full text-left rounded-2xl border-2 border-yellow-400/50 px-3 sm:px-4 py-2.5 sm:py-3 bg-gradient-to-br from-yellow-500/20 via-amber-500/10 to-yellow-500/10 hover:border-yellow-400 hover:from-yellow-500/30 hover:via-amber-500/20 active:scale-95 transition-all shadow-md hover:shadow-lg hover:shadow-yellow-500/20 touch-manipulation"
+                  >
+                    <div className="flex items-center gap-2 sm:gap-3 mb-1.5 sm:mb-2 flex-wrap">
+                      <span className="text-xl sm:text-2xl flex-shrink-0 drop-shadow">{habit.emoji}</span>
+                      <div className="flex-1 min-w-0">
+                        <span className="font-black text-xs sm:text-sm text-yellow-900 dark:text-yellow-100 block truncate">
+                          {habit.name}
+                        </span>
+                        <span className="text-xs text-yellow-700/80 dark:text-yellow-300/80">
+                          Terminó: {new Date(habit.endDate!).toLocaleDateString("es-AR")}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="pl-7 sm:pl-11 flex items-center gap-1.5 sm:gap-2 text-xs text-yellow-700/70 dark:text-yellow-300/70">
+                      <span className="font-semibold">Racha:</span>
+                      <span className="font-black text-yellow-800 dark:text-yellow-200">{displayBestStreak} 🔥</span>
+                    </div>
+                  </button>
+                )}
+              </div>
             );
           })
         )}

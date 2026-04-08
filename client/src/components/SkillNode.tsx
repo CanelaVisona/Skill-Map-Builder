@@ -116,8 +116,55 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const isLocked = isFirstNodeOfLevel ? false : (skill.status === "locked" || shouldForceLock);
   const isMastered = isFirstNodeOfLevel ? true : skill.status === "mastered";
 
-  // Detect if node has default name
-  const hasDefaultName = skill.title === "Next challenge" || skill.title === "Next objetive quest" || skill.title === "Objective quest";
+  // Detect if node has default name (generated Nodo X format)
+  const hasDefaultName = skill.title.startsWith("Nodo ") || skill.title === "Next challenge" || skill.title === "Next objetive quest" || skill.title === "Objective quest";
+  
+  // Check if swap would violate mastered/available constraint
+  const canMoveUp = (): boolean | null => {
+    // Rule 1: Node 1 (levelPosition === 1) - hide both arrows
+    if (skill.levelPosition === 1) return null;
+    
+    // Rule 3: First non-Node-1 (levelPosition === 2) - hide up arrow
+    if (skill.levelPosition === 2) return null;
+    
+    const sorted = [...skillsInLevel].sort((a, b) => a.y - b.y);
+    const index = sorted.findIndex(s => s.id === skill.id);
+    if (index <= 0) return false;
+    
+    const neighbor = sorted[index - 1];
+    if (!neighbor) return false;
+    
+    // Hide button if mastered/available swap
+    if ((skill.status === "mastered" && neighbor.status === "available") ||
+        (skill.status === "available" && neighbor.status === "mastered")) {
+      return null;
+    }
+    
+    return true;
+  };
+
+  const canMoveDown = (): boolean | null => {
+    // Rule 1: Node 1 (levelPosition === 1) - hide both arrows
+    if (skill.levelPosition === 1) return null;
+    
+    // Rule 2: Final node - hide down arrow
+    if (skill.isFinalNode === 1 || isLastNodeOfLevel) return null;
+    
+    const sorted = [...skillsInLevel].sort((a, b) => a.y - b.y);
+    const index = sorted.findIndex(s => s.id === skill.id);
+    if (index >= sorted.length - 1) return false;
+    
+    const neighbor = sorted[index + 1];
+    if (!neighbor) return false;
+    
+    // Hide button if mastered/available swap
+    if ((skill.status === "mastered" && neighbor.status === "available") ||
+        (skill.status === "available" && neighbor.status === "mastered")) {
+      return null;
+    }
+    
+    return true;
+  };
   
   const [isOpen, setIsOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -944,6 +991,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
   const handleTouchStart = () => {
     if (isInicioNode) return; // "inicio" nodes are not interactive
+    if (skill.levelPosition === 1) return; // Node 1 is not interactive
     isLongPress.current = false;
     longPressTimer.current = setTimeout(() => {
       isLongPress.current = true;
@@ -999,6 +1047,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
   const handleMouseDown = () => {
     if (isInicioNode) return; // "inicio" nodes are not interactive
+    if (skill.levelPosition === 1) return; // Node 1 is not interactive
     isLongPress.current = false;
     longPressTimer.current = setTimeout(() => {
       isLongPress.current = true;
@@ -1127,7 +1176,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             "absolute left-14 top-1/2 -translate-y-1/2 font-medium transition-colors text-sm flex items-center gap-2",
             isLocked ? "text-muted-foreground" : "text-foreground",
             isMastered && "text-foreground",
-            (skill.title === "Next challenge" || skill.title === "Next objetive quest" || skill.title === "Objective quest") && "text-muted-foreground/60"
+            (skill.title.startsWith("Nodo ") || skill.title === "Next challenge" || skill.title === "Next objetive quest" || skill.title === "Objective quest") && "text-muted-foreground/60"
           )}>
             <span
               onClick={handleTitleClick}
@@ -1144,7 +1193,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               )}
               data-testid={`link-skill-title-${skill.id}`}
             >
-              {skill.isAutoComplete === 1 || skill.levelPosition === 1 ? "" : (skill.title || "Objective quest")}
+              {skill.isAutoComplete === 1 || skill.levelPosition === 1 ? "" : skill.title}
             </span>
             {!isLocked && !isMastered && (
               <span className="text-2xl font-bold text-amber-400">!</span>
@@ -1166,45 +1215,53 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       >
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              disabled={isFirstNodeOfLevel}
-              title={isFirstNodeOfLevel ? "No puedes reordenar el Nodo 1" : "Mover arriba"}
-              onClick={() => {
-                if (isSubSkillView) {
-                  moveSubSkill(skill.id, "up");
-                } else if (isProject) {
-                  moveProjectSkill(activeId, skill.id, "up");
-                } else {
-                  moveSkill(activeId, skill.id, "up");
-                }
-              }}
-              data-testid="button-move-up"
-            >
-              <ChevronUp className="h-4 w-4" />
-            </Button>
+            {canMoveUp() === null ? (
+              <div className="h-8 w-8" />
+            ) : (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                disabled={canMoveUp() === false}
+                title={canMoveUp() === false ? "No puedes reordenar el Nodo 1" : "Mover arriba"}
+                onClick={() => {
+                  if (isSubSkillView) {
+                    moveSubSkill(skill.id, "up");
+                  } else if (isProject) {
+                    moveProjectSkill(activeId, skill.id, "up");
+                  } else {
+                    moveSkill(activeId, skill.id, "up");
+                  }
+                }}
+                data-testid="button-move-up"
+              >
+                <ChevronUp className="h-4 w-4" />
+              </Button>
+            )}
             <span className="text-xs text-muted-foreground">Mover</span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              disabled={isFirstNodeOfLevel}
-              title={isFirstNodeOfLevel ? "No puedes reordenar el Nodo 1" : "Mover abajo"}
-              onClick={() => {
-                if (isSubSkillView) {
-                  moveSubSkill(skill.id, "down");
-                } else if (isProject) {
-                  moveProjectSkill(activeId, skill.id, "down");
-                } else {
-                  moveSkill(activeId, skill.id, "down");
-                }
-              }}
-              data-testid="button-move-down"
-            >
-              <ChevronDown className="h-4 w-4" />
-            </Button>
+            {canMoveDown() === null ? (
+              <div className="h-8 w-8" />
+            ) : (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                disabled={canMoveDown() === false}
+                title={canMoveDown() === false ? "No puedes reordenar el Nodo 1" : "Mover abajo"}
+                onClick={() => {
+                  if (isSubSkillView) {
+                    moveSubSkill(skill.id, "down");
+                  } else if (isProject) {
+                    moveProjectSkill(activeId, skill.id, "down");
+                  } else {
+                    moveSkill(activeId, skill.id, "down");
+                  }
+                }}
+                data-testid="button-move-down"
+              >
+                <ChevronDown className="h-4 w-4" />
+              </Button>
+            )}
           </div>
           <div className="max-h-[200px] overflow-y-auto custom-scrollbar">
             <h4 className="font-semibold leading-none mb-1.5">{skill.title}</h4>

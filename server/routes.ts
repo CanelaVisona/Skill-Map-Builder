@@ -703,7 +703,11 @@ export async function registerRoutes(
           enforcedTitle = "";
         } else {
           enforcedStatus = "locked";
-          enforcedTitle = validatedSkill.title;
+          // Set default title to 'Nodo X' where X is the position of the node it was inserted after
+          const titlePosition = levelPosition - 1;
+          enforcedTitle = validatedSkill.title && validatedSkill.title.trim() !== '' 
+            ? validatedSkill.title 
+            : `Nodo ${titlePosition}`;
         }
         
         const enforcedManualLock = levelPosition > 1 ? 0 : (validatedSkill.manualLock || 0);
@@ -732,6 +736,7 @@ export async function registerRoutes(
         // Manual insertion - use client-provided values but enforce first node rules
         let finalTitle = validatedSkill.title;
         let finalStatus = validatedSkill.status;
+        const newLevelPosition = validatedSkill.levelPosition || 1;
         
         // If this is the first node in the level AND not a locked node, make it mastered with empty title
         // Locked nodes should preserve their status and title from user input
@@ -759,10 +764,16 @@ export async function registerRoutes(
           }
         }
         
+        // Set default title to 'Nodo X' where X is the position of the node it was inserted after
+        const titlePosition = newLevelPosition - 1;
+        const finalTitleWithDefault = finalTitle && finalTitle.trim() !== ''
+          ? finalTitle
+          : `Nodo ${titlePosition}`;
+
         const skillWithLevel = {
           ...validatedSkill,
           level: skillLevel,
-          title: finalTitle,
+          title: finalTitleWithDefault,
           status: finalStatus,
         };
         
