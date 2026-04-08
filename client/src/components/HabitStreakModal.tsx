@@ -794,12 +794,17 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
               }}
               onSaveDate={async () => {
                 if (editingArchivedId && editingArchivedDate) {
-                  await updateArchivedEndDateMutation.mutateAsync({
-                    id: editingArchivedId,
-                    endDate: editingArchivedDate,
-                  });
-                  setEditingArchivedId(null);
-                  setEditingArchivedDate("");
+                  try {
+                    await updateArchivedEndDateMutation.mutateAsync({
+                      id: editingArchivedId,
+                      endDate: editingArchivedDate,
+                    });
+                    setEditingArchivedId(null);
+                    setEditingArchivedDate("");
+                  } catch (error: any) {
+                    console.error("Error saving archived end date:", error);
+                    alert(`Error al guardar: ${error?.message || "Intenta de nuevo"}`);
+                  }
                 }
               }}
               onCancelEdit={() => {
@@ -2023,26 +2028,26 @@ function ArchivedPanel({
   onSaveDate: () => Promise<void>;
   onCancelEdit: () => void;
 }) {
-  const longPressTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const longPressTimers = useRef<Record<string, NodeJS.Timeout>>({});
 
   const handleHabitPressStart = (habitId: string) => {
     const timer = setTimeout(() => {
       onLongPress(habitId);
     }, 500);
-    longPressTimers.current.set(habitId, timer);
+    longPressTimers.current[habitId] = timer;
   };
 
   const handleHabitPressEnd = (habitId: string) => {
-    const timer = longPressTimers.current.get(habitId);
+    const timer = longPressTimers.current[habitId];
     if (timer) {
       clearTimeout(timer);
-      longPressTimers.current.delete(habitId);
+      delete longPressTimers.current[habitId];
     }
   };
 
   useEffect(() => {
     return () => {
-      longPressTimers.current.forEach(timer => clearTimeout(timer));
+      Object.values(longPressTimers.current).forEach(timer => clearTimeout(timer));
     };
   }, []);
 
@@ -2070,8 +2075,8 @@ function ArchivedPanel({
 
       {/* Habits List */}
       <div className="px-3 sm:px-5 py-3 flex flex-col gap-2 max-h-80 overflow-y-auto">
-        {habits.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
+        {!habits || habits.length === 0 ? (
+          <p className="text-sm text-yellow-600/70 dark:text-yellow-400/70 py-4">
             No hay hábitos archivados
           </p>
         ) : (
@@ -2112,7 +2117,13 @@ function ArchivedPanel({
                       </div>
                       <div className="pl-7 sm:pl-11 flex gap-2">
                         <Button
-                          onClick={onSaveDate}
+                          onClick={async () => {
+                            try {
+                              await onSaveDate();
+                            } catch (error) {
+                              console.error("Error saving archived date:", error);
+                            }
+                          }}
                           size="sm"
                           className="flex-1 h-8 bg-green-600 hover:bg-green-700 text-white text-xs"
                         >
