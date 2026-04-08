@@ -3275,6 +3275,12 @@ export async function registerRoutes(
         return res.status(400).json({ message: "startDate y endDate son requeridos" });
       }
 
+      // Verify habit ownership
+      const habit = await storage.getHabit(req.params.habitId);
+      if (!habit || habit.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para acceder a estos registros" });
+      }
+
       const records = await storage.getHabitRecords(
         req.params.habitId,
         startDate as string,
