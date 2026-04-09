@@ -700,6 +700,14 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
   const toggleSkillStatus = async (areaId: string, skillId: string) => {
     console.log(`[toggleSkillStatus] CALLED - areaId: ${areaId}, skillId: ${skillId}, timestamp: ${Date.now()}`);
     
+    // Guard: Node 1 should never be clickable
+    const tempArea = areas.find(a => a.id === areaId);
+    const tempSkill = tempArea?.skills.find(s => s.id === skillId);
+    if (tempSkill && (tempSkill.isAutoComplete === 1 || tempSkill.levelPosition === 1)) {
+      console.log('[toggleSkillStatus] Blocked - Node 1 is not clickable');
+      return;
+    }
+    
     const area = areas.find(a => a.id === areaId);
     if (!area) return;
     

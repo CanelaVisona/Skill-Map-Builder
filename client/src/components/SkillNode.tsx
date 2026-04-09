@@ -167,6 +167,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   };
   
   const [isOpen, setIsOpen] = useState(false);
+  const [popoverStep, setPopoverStep] = useState(0); // 0 = menu, 1 = journal tabs
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editStep, setEditStep] = useState(0);
   const [editTitle, setEditTitle] = useState(skill.title);
@@ -200,7 +201,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [toolSentence, setToolSentence] = useState("");
   const [learningTitle, setLearningTitle] = useState("");
   const [learningSentence, setLearningSentence] = useState("");
-  const [showPlusOne, setShowPlusOne] = useState<{ visible: boolean; type: "tools" | "learnings" | "thoughts" | "experience" }>({ visible: false, type: "tools" });
+  const [showPlusOne, setShowPlusOne] = useState<{ visible: boolean; type: "tools" | "learnings" | "thoughts" | "experience"; value?: number }>({ visible: false, type: "tools" });
   const [levelUpPopupVisible, setLevelUpPopupVisible] = useState(false);
   const levelUpPopupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [hasIncompleteSubtasks, setHasIncompleteSubtasks] = useState(false);
@@ -673,7 +674,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       
       setXpValue("");
       setExperienceSelectedSkill(null);
-      setShowPlusOne({ visible: true, type: "experience" });
+      setShowPlusOne({ visible: true, type: "experience", value: xpToAdd });
       setTimeout(() => setShowPlusOne({ visible: false, type: "experience" }), 1000);
       return;
     }
@@ -708,7 +709,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
         // Clear inputs and show feedback
         setXpValue("");
         setExperienceSelectedSkill(null);
-        setShowPlusOne({ visible: true, type: "experience" });
+        setShowPlusOne({ visible: true, type: "experience", value: xpToAdd });
         setTimeout(() => setShowPlusOne({ visible: false, type: "experience" }), 1000);
       }
     } catch (error) {
@@ -1008,6 +1009,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
   const handleClick = (e: React.MouseEvent) => {
     if (isInicioNode) return; // "inicio" nodes are not interactive
+    if (skill.isAutoComplete === 1 || skill.levelPosition === 1) return; // Node 1 is not clickable
     if (isLongPress.current) {
       e.preventDefault();
       e.stopPropagation();
@@ -1065,6 +1067,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const handleOpenChange = (open: boolean) => {
     if (!open) {
       setIsOpen(false);
+      setPopoverStep(0); // Reset to menu step when closing
       isLongPress.current = false;
     }
   };
@@ -1211,201 +1214,744 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       <PopoverContent 
         side="top" 
         collisionPadding={16} 
-        className="w-64 border-border bg-popover/95 backdrop-blur-xl shadow-xl p-4 z-50"
+        className={cn(
+          "border-border bg-popover/95 backdrop-blur-xl shadow-xl p-4 z-50",
+          popoverStep === 0 ? "w-64" : "w-96"
+        )}
       >
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            {canMoveUp() === null ? (
-              <div className="h-8 w-8" />
-            ) : (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                disabled={canMoveUp() === false}
-                title={canMoveUp() === false ? "No puedes reordenar el Nodo 1" : "Mover arriba"}
-                onClick={() => {
-                  if (isSubSkillView) {
-                    moveSubSkill(skill.id, "up");
-                  } else if (isProject) {
-                    moveProjectSkill(activeId, skill.id, "up");
-                  } else {
-                    moveSkill(activeId, skill.id, "up");
-                  }
-                }}
-                data-testid="button-move-up"
-              >
-                <ChevronUp className="h-4 w-4" />
-              </Button>
-            )}
-            <span className="text-xs text-muted-foreground">Mover</span>
-            {canMoveDown() === null ? (
-              <div className="h-8 w-8" />
-            ) : (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                disabled={canMoveDown() === false}
-                title={canMoveDown() === false ? "No puedes reordenar el Nodo 1" : "Mover abajo"}
-                onClick={() => {
-                  if (isSubSkillView) {
-                    moveSubSkill(skill.id, "down");
-                  } else if (isProject) {
-                    moveProjectSkill(activeId, skill.id, "down");
-                  } else {
-                    moveSkill(activeId, skill.id, "down");
-                  }
-                }}
-                data-testid="button-move-down"
-              >
-                <ChevronDown className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
-          <div className="max-h-[200px] overflow-y-auto custom-scrollbar">
-            <h4 className="font-semibold leading-none mb-1.5">{skill.title}</h4>
-            <p className="text-sm text-muted-foreground leading-relaxed break-words">
-              {skill.description || "No description available."}
-            </p>
-            {skill.feedback && (
-              <div className="mt-2 pt-2 border-t border-border/50">
-                <p className="text-xs text-muted-foreground font-medium mb-1">Thoughts:</p>
-                <p className="text-sm text-foreground/80 leading-relaxed break-words italic">
-                  {skill.feedback}
+        {popoverStep === 0 ? (
+          // STEP 1: Menu (current)
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              {canMoveUp() === null ? (
+                <div className="h-8 w-8" />
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  disabled={canMoveUp() === false}
+                  title={canMoveUp() === false ? "No puedes reordenar el Nodo 1" : "Mover arriba"}
+                  onClick={() => {
+                    if (isSubSkillView) {
+                      moveSubSkill(skill.id, "up");
+                    } else if (isProject) {
+                      moveProjectSkill(activeId, skill.id, "up");
+                    } else {
+                      moveSkill(activeId, skill.id, "up");
+                    }
+                  }}
+                  data-testid="button-move-up"
+                >
+                  <ChevronUp className="h-4 w-4" />
+                </Button>
+              )}
+              <span className="text-xs text-muted-foreground">Mover</span>
+              {canMoveDown() === null ? (
+                <div className="h-8 w-8" />
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  disabled={canMoveDown() === false}
+                  title={canMoveDown() === false ? "No puedes reordenar el Nodo 1" : "Mover abajo"}
+                  onClick={() => {
+                    if (isSubSkillView) {
+                      moveSubSkill(skill.id, "down");
+                    } else if (isProject) {
+                      moveProjectSkill(activeId, skill.id, "down");
+                    } else {
+                      moveSkill(activeId, skill.id, "down");
+                    }
+                  }}
+                  data-testid="button-move-down"
+                >
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+            <div className="max-h-[200px] overflow-y-auto custom-scrollbar">
+              <h4 className="font-semibold leading-none mb-1.5">{skill.title}</h4>
+              {skill.description && (
+                <p className="text-sm text-muted-foreground leading-relaxed break-words">
+                  {skill.description}
                 </p>
-              </div>
-            )}
-          </div>
-          
-          <div className="pt-2 border-t border-border flex flex-wrap justify-end gap-2">
-             <Popover open={isAddOptionsOpen} onOpenChange={setIsAddOptionsOpen}>
-               <PopoverTrigger asChild>
+              )}
+              {skill.feedback && (
+                <div className="mt-2 pt-2 border-t border-border/50">
+                  <p className="text-xs text-muted-foreground font-medium mb-1">Thoughts:</p>
+                  <p className="text-sm text-foreground/80 leading-relaxed break-words italic">
+                    {skill.feedback}
+                  </p>
+                </div>
+              )}
+            </div>
+            
+            <div className="pt-2 border-t border-border flex flex-wrap justify-between gap-2">
+               <Popover open={isAddOptionsOpen} onOpenChange={setIsAddOptionsOpen}>
+                 <PopoverTrigger asChild>
+                   <Button 
+                     variant="ghost" 
+                     size="sm" 
+                     className="h-8 w-8 p-0 text-xs bg-muted/50 hover:bg-muted"
+                     data-testid="button-add-skill-below"
+                   >
+                     +
+                   </Button>
+                 </PopoverTrigger>
+                 <PopoverContent 
+                   className="w-auto p-1 border-0 bg-background/95 backdrop-blur-sm" 
+                   align="center" 
+                   side="top"
+                   sideOffset={4}
+                 >
+                   <div className="flex flex-col gap-0.5">
+                     <Button
+                       variant="ghost"
+                       size="sm"
+                       className="h-7 px-3 text-xs justify-start font-normal hover:bg-muted/50"
+                       onClick={() => {
+                         if (isSubSkillView) {
+                           addSubSkillBelow(skill.id, "");
+                         } else if (isProject) {
+                           addProjectSkillBelow(activeId, skill.id, "");
+                         } else {
+                           addSkillBelow(activeId, skill.id, "");
+                         }
+                         setIsAddOptionsOpen(false);
+                         setIsOpen(false);
+                       }}
+                       data-testid="button-add-new"
+                     >
+                       Agregar
+                     </Button>
+                     <Button
+                       variant="ghost"
+                       size="sm"
+                       className="h-7 px-3 text-xs justify-start font-normal hover:bg-muted/50"
+                       onClick={() => {
+                         if (isSubSkillView) {
+                           duplicateSubSkill(skill);
+                         } else if (isProject) {
+                           duplicateProjectSkill(activeId, skill);
+                         } else {
+                           duplicateSkill(activeId, skill);
+                         }
+                         setIsAddOptionsOpen(false);
+                         setIsOpen(false);
+                       }}
+                       data-testid="button-duplicate"
+                     >
+                       Duplicar
+                     </Button>
+                     <Button
+                       variant="ghost"
+                       size="sm"
+                       className="h-8 px-2 text-xs bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground"
+                       onClick={() => {
+                         if (isSubSkillView) {
+                           toggleSubSkillLock(skill.id);
+                         } else if (isProject) {
+                           toggleProjectLock(activeId, skill.id);
+                         } else {
+                           toggleLock(activeId, skill.id);
+                         }
+                         setIsOpen(false);
+                       }}
+                       data-testid="button-lock"
+                     >
+                       {skill.manualLock === 1 ? "Desbloquear" : "Bloquear"}
+                     </Button>
+                   </div>
+                 </PopoverContent>
+               </Popover>
+
+               {/* Star button - show for last node of level OR if star is currently active (to allow removal) */}
+               {(isLastNodeOfLevel || isStarActive) && (
+                 <Button 
+                   variant="ghost"
+                   size="sm" 
+                   className={cn(
+                     "h-8 w-8 p-0 text-xs",
+                     isStarActive ? "bg-amber-500 hover:bg-amber-600 text-white" : "bg-muted/50 hover:bg-muted"
+                   )}
+                   onClick={() => {
+                     if (isSubSkillView) {
+                       toggleSubSkillFinalNode(skill.id);
+                     } else if (isProject) {
+                       toggleProjectFinalNode(activeId, skill.id);
+                     } else {
+                       toggleFinalNode(activeId, skill.id);
+                     }
+                     setIsOpen(false);
+                   }}
+                   data-testid="button-toggle-final"
+                   title={isStarActive ? "Quitar nodo final final" : "Marcar como nodo final final"}
+                 >
+                   <Star className={cn("h-3 w-3", isStarActive && "fill-white")} />
+                 </Button>
+               )}
+
+               {/* Delete button - hide for last node of level (can't delete) */}
+               {!isLastNodeOfLevel && (
                  <Button 
                    variant="ghost" 
                    size="sm" 
-                   className="h-8 w-8 p-0 text-xs bg-muted/50 hover:bg-muted"
-                   data-testid="button-add-skill-below"
+                   className="h-8 w-8 p-0 bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground"
+                   onClick={() => {
+                     if (isSubSkillView) {
+                       deleteSubSkill(skill.id);
+                     } else if (isProject) {
+                       deleteProjectSkill(activeId, skill.id);
+                     } else {
+                       deleteSkill(activeId, skill.id);
+                     }
+                     setIsOpen(false);
+                   }}
+                   data-testid="button-delete"
                  >
-                   +
+                   <Trash2 className="h-3 w-3" />
                  </Button>
-               </PopoverTrigger>
-               <PopoverContent 
-                 className="w-auto p-1 border-0 bg-background/95 backdrop-blur-sm" 
-                 align="center" 
-                 side="top"
-                 sideOffset={4}
-               >
-                 <div className="flex flex-col gap-0.5">
-                   <Button
-                     variant="ghost"
-                     size="sm"
-                     className="h-7 px-3 text-xs justify-start font-normal hover:bg-muted/50"
-                     onClick={() => {
-                       if (isSubSkillView) {
-                         addSubSkillBelow(skill.id, "");
-                       } else if (isProject) {
-                         addProjectSkillBelow(activeId, skill.id, "");
-                       } else {
-                         addSkillBelow(activeId, skill.id, "");
-                       }
-                       setIsAddOptionsOpen(false);
-                       setIsOpen(false);
-                     }}
-                     data-testid="button-add-new"
-                   >
-                     Agregar
-                   </Button>
-                   <Button
-                     variant="ghost"
-                     size="sm"
-                     className="h-7 px-3 text-xs justify-start font-normal hover:bg-muted/50"
-                     onClick={() => {
-                       if (isSubSkillView) {
-                         duplicateSubSkill(skill);
-                       } else if (isProject) {
-                         duplicateProjectSkill(activeId, skill);
-                       } else {
-                         duplicateSkill(activeId, skill);
-                       }
-                       setIsAddOptionsOpen(false);
-                       setIsOpen(false);
-                     }}
-                     data-testid="button-duplicate"
-                   >
-                     Duplicar
-                   </Button>
-                   <Button
-                     variant="ghost"
-                     size="sm"
-                     className="h-8 px-2 text-xs bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground"
-                     onClick={() => {
-                       if (isSubSkillView) {
-                         toggleSubSkillLock(skill.id);
-                       } else if (isProject) {
-                         toggleProjectLock(activeId, skill.id);
-                       } else {
-                         toggleLock(activeId, skill.id);
-                       }
-                       setIsOpen(false);
-                     }}
-                     data-testid="button-lock"
-                   >
-                     {skill.manualLock === 1 ? "Desbloquear" : "Bloquear"}
-                   </Button>
-                 </div>
-               </PopoverContent>
-             </Popover>
+               )}
 
-             {/* Star button - show for last node of level OR if star is currently active (to allow removal) */}
-             {(isLastNodeOfLevel || isStarActive) && (
-               <Button 
-                 variant="ghost"
-                 size="sm" 
-                 className={cn(
-                   "h-8 w-8 p-0 text-xs",
-                   isStarActive ? "bg-amber-500 hover:bg-amber-600 text-white" : "bg-muted/50 hover:bg-muted"
-                 )}
-                 onClick={() => {
-                   if (isSubSkillView) {
-                     toggleSubSkillFinalNode(skill.id);
-                   } else if (isProject) {
-                     toggleProjectFinalNode(activeId, skill.id);
-                   } else {
-                     toggleFinalNode(activeId, skill.id);
-                   }
-                   setIsOpen(false);
-                 }}
-                 data-testid="button-toggle-final"
-                 title={isStarActive ? "Quitar nodo final final" : "Marcar como nodo final final"}
-               >
-                 <Star className={cn("h-3 w-3", isStarActive && "fill-white")} />
-               </Button>
-             )}
-
-             {/* Delete button - hide for last node of level (can't delete) */}
-             {!isLastNodeOfLevel && (
+               {/* Next button to go to journal tabs step */}
                <Button 
                  variant="ghost" 
                  size="sm" 
-                 className="h-8 w-8 p-0 bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground"
-                 onClick={() => {
-                   if (isSubSkillView) {
-                     deleteSubSkill(skill.id);
-                   } else if (isProject) {
-                     deleteProjectSkill(activeId, skill.id);
-                   } else {
-                     deleteSkill(activeId, skill.id);
-                   }
-                   setIsOpen(false);
-                 }}
-                 data-testid="button-delete"
+                 className="h-8 w-8 p-0 bg-muted/50 hover:bg-muted ml-auto"
+                 onClick={() => setPopoverStep(1)}
+                 title="Thoughts, Learnings, Experience, Tools, Habits"
                >
-                 <Trash2 className="h-3 w-3" />
+                 <ChevronRight className="h-4 w-4" />
                </Button>
-             )}
+            </div>
           </div>
-        </div>
+        ) : (
+          // STEP 2: Journal Tabs (from previous Edit Dialog Step 3)
+          <div className="flex flex-col h-full">
+            <div className="mb-3">
+              <span className="text-xs font-medium text-muted-foreground">Journal</span>
+            </div>
+
+            <Tabs value={feedbackActiveTab} onValueChange={(v) => setFeedbackActiveTab(v as "thoughts" | "tools" | "learnings" | "experience" | "habits")} className="w-full flex flex-col flex-1">
+              <TabsList className="w-full grid grid-cols-5 bg-muted/50">
+                <TabsTrigger value="thoughts" className="text-xs" data-testid="feedback-tab-thoughts">
+                  <Pencil className="h-3 w-3 mr-1" />
+                  Thoughts
+                </TabsTrigger>
+                <TabsTrigger value="learnings" className="text-xs" data-testid="feedback-tab-learnings">
+                  <Lightbulb className="h-3 w-3 mr-1" />
+                  Learnings
+                </TabsTrigger>
+                <TabsTrigger value="experience" className="text-xs" data-testid="feedback-tab-experience">
+                  <span className="text-xs font-bold mr-1">XP</span>
+                </TabsTrigger>
+                <TabsTrigger value="tools" className="text-xs" data-testid="feedback-tab-tools">
+                  <Wrench className="h-3 w-3 mr-1" />
+                  Tools
+                </TabsTrigger>
+                <TabsTrigger value="habits" className="text-xs" data-testid="feedback-tab-habits">
+                  <Flame className="h-3 w-3 mr-1" />
+                  Habits
+                </TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="thoughts" className="mt-4 space-y-3 flex flex-col flex-1">
+                <div className="flex-1">
+                  <Input
+                    placeholder="TITLE"
+                    value={thoughtTitle}
+                    onChange={(e) => setThoughtTitle(e.target.value.toUpperCase())}
+                    className="uppercase border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
+                    data-testid="input-thought-title"
+                  />
+                  <Textarea
+                    placeholder="Descripción, notas o reflexión..."
+                    value={thoughtSentence}
+                    onChange={(e) => setThoughtSentence(e.target.value)}
+                    rows={3}
+                    className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none mt-2"
+                    data-testid="input-thought-sentence"
+                  />
+                </div>
+                <div className="flex justify-end items-center gap-2 pt-2">
+                  <div className="relative">
+                    <AnimatePresence>
+                      {showPlusOne.visible && showPlusOne.type === "thoughts" && (
+                        <motion.span
+                          initial={{ opacity: 1, y: 0 }}
+                          animate={{ opacity: 0, y: -20 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ duration: 0.8 }}
+                          className="absolute -top-6 -right-2 text-foreground font-medium text-sm pointer-events-none"
+                        >
+                          +1
+                        </motion.span>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    onClick={handleAddThought}
+                    disabled={!thoughtTitle.trim()}
+                    className="bg-muted/50 hover:bg-muted"
+                    data-testid="button-new-thought"
+                  >
+                    <Plus className="h-3 w-3 mr-1" />
+                    New Thought
+                  </Button>
+                </div>
+              </TabsContent>
+              
+              <TabsContent value="learnings" className="mt-4 space-y-3 flex flex-col flex-1">
+                <div className="flex-1">
+                  <Input
+                    placeholder="TITLE"
+                    value={learningTitle}
+                    onChange={(e) => setLearningTitle(e.target.value.toUpperCase())}
+                    className="uppercase border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
+                    data-testid="input-learning-title"
+                  />
+                  <Input
+                    placeholder="Description"
+                    value={learningSentence}
+                    onChange={(e) => setLearningSentence(e.target.value)}
+                    className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted mt-2"
+                    data-testid="input-learning-sentence"
+                  />
+                </div>
+                <div className="flex justify-end items-center gap-2 pt-2">
+                  <div className="relative">
+                    <AnimatePresence>
+                      {showPlusOne.visible && showPlusOne.type === "learnings" && (
+                        <motion.span
+                          initial={{ opacity: 1, y: 0 }}
+                          animate={{ opacity: 0, y: -20 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ duration: 0.8 }}
+                          className="absolute -top-6 -right-2 text-foreground font-medium text-sm pointer-events-none"
+                        >
+                          +1
+                        </motion.span>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    onClick={handleAddLearning}
+                    disabled={!learningTitle.trim()}
+                    className="bg-muted/50 hover:bg-muted"
+                    data-testid="button-new-learning"
+                  >
+                    <Plus className="h-3 w-3 mr-1" />
+                    New Learning
+                  </Button>
+                </div>
+              </TabsContent>
+              
+              <TabsContent value="experience" className="mt-4 space-y-3 flex flex-col flex-1">
+                <div className="flex items-center justify-center gap-2 py-4">
+                  <Input
+                    type="number"
+                    value={xpValue}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val.length <= 3) {
+                        setXpValue(val);
+                      }
+                    }}
+                    className="w-24 text-center text-lg font-bold border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
+                    placeholder="0"
+                    max={999}
+                    min={1}
+                    data-testid="input-xp-value"
+                  />
+                  <span className="text-lg font-medium text-muted-foreground">xp</span>
+                </div>
+                <Popover open={showExperienceSkillSelector} onOpenChange={setShowExperienceSkillSelector}>
+                  <PopoverTrigger asChild>
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      className="bg-muted/50 hover:bg-muted w-full"
+                      data-testid="button-select-skill"
+                    >
+                      {experienceSelectedSkill 
+                        ? `✓ ${experienceSelectedSkill.startsWith("legacy:") 
+                            ? experienceSelectedSkill.replace("legacy:", "") 
+                            : (availableGlobalSkills.find(s => s.id === experienceSelectedSkill)?.name || "Skill")}` 
+                        : "Seleccionar skill"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent 
+                    className="w-56 p-2 border-0 bg-background/95 backdrop-blur-sm z-[9999]" 
+                    align="center" 
+                    side="top"
+                    sideOffset={8}
+                    collisionPadding={16}
+                  >
+                    <div className="max-h-56 overflow-y-auto">
+                      {/* Legacy skills (only those associated with this area/project) */}
+                      {filteredLegacySkills.length > 0 && (
+                        <div className="space-y-1 mb-2">
+                          {filteredLegacySkills.map((skillName) => (
+                            <Button
+                            key={skillName}
+                            variant="ghost"
+                            size="sm"
+                            className={`w-full justify-start h-8 px-3 text-xs font-normal ${
+                              experienceSelectedSkill === `legacy:${skillName}`
+                                ? "bg-muted text-foreground" 
+                                : "hover:bg-muted/50"
+                            }`}
+                            onClick={() => {
+                              setExperienceSelectedSkill(`legacy:${skillName}`);
+                              setShowExperienceSkillSelector(false);
+                            }}
+                              data-testid={`button-select-legacy-${skillName}`}
+                            >
+                              {skillName}
+                            </Button>
+                          ))}
+                        </div>
+                      )}
+                      
+                      {/* GlobalSkills for this area/quest */}
+                      {availableGlobalSkills.length > 0 && (
+                        <>
+                          <div className="border-t border-muted my-2" />
+                          <div className="space-y-1">
+                            {/* Parent skills (not subskills) */}
+                            {availableGlobalSkills.filter(s => !s.parentSkillId).map((gSkill) => (
+                              <div key={gSkill.id}>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className={`w-full justify-start h-8 px-3 text-xs font-medium ${
+                                    experienceSelectedSkill === gSkill.id 
+                                      ? "bg-muted text-foreground" 
+                                      : "hover:bg-muted/50"
+                                  }`}
+                                  onClick={() => {
+                                    setExperienceSelectedSkill(gSkill.id);
+                                    setShowExperienceSkillSelector(false);
+                                  }}
+                                  data-testid={`button-select-skill-${gSkill.id}`}
+                                >
+                                  {gSkill.name}
+                                  <span className="ml-auto text-muted-foreground">Lv.{gSkill.level}</span>
+                                </Button>
+                                {/* Subskills of this parent */}
+                                {availableGlobalSkills
+                                  .filter(s => s.parentSkillId === gSkill.id)
+                                  .map((subSkill) => (
+                                    <Button
+                                      key={subSkill.id}
+                                    variant="ghost"
+                                    size="sm"
+                                    className={`w-full justify-start h-7 px-3 pl-6 text-xs font-normal ${
+                                      experienceSelectedSkill === subSkill.id 
+                                        ? "bg-muted text-foreground" 
+                                        : "hover:bg-muted/50 text-muted-foreground"
+                                    }`}
+                                    onClick={() => {
+                                      setExperienceSelectedSkill(subSkill.id);
+                                      setShowExperienceSkillSelector(false);
+                                    }}
+                                    data-testid={`button-select-subskill-${subSkill.id}`}
+                                  >
+                                    ↳ {subSkill.name}
+                                    <span className="ml-auto">Lv.{subSkill.level}</span>
+                                  </Button>
+                                ))
+                              }
+                            </div>
+                          ))}
+                        </div>
+                        </>
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                <div className="flex justify-end items-center gap-2 pt-4">
+                  <div className="relative">
+                    <AnimatePresence>
+                      {showPlusOne.visible && showPlusOne.type === "experience" && (
+                        <motion.span
+                          initial={{ opacity: 1, y: 0 }}
+                          animate={{ opacity: 0, y: -20 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ duration: 0.8 }}
+                          className="absolute -top-6 -right-2 text-foreground font-medium text-sm pointer-events-none"
+                        >
+                          +{showPlusOne.value}
+                        </motion.span>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    onClick={handleAddExperience}
+                    disabled={!experienceSelectedSkill || !xpValue || parseInt(xpValue) <= 0}
+                    className="bg-muted/50 hover:bg-muted"
+                    data-testid="button-new-experience"
+                  >
+                    <Plus className="h-3 w-3 mr-1" />
+                    Experience
+                  </Button>
+                </div>
+              </TabsContent>
+
+              <AnimatePresence>
+                {levelUpPopupVisible && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 32, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -36, scale: 1.02 }}
+                    transition={{ duration: 0.35 }}
+                    className="fixed top-24 left-1/2 -translate-x-1/2 z-[250] px-4 py-2 text-2xl font-extrabold text-green-400"
+                  >
+                    Level Up
+                  </motion.div>
+                )}
+              </AnimatePresence>
+              
+              <TabsContent value="tools" className="mt-4 space-y-3 flex flex-col flex-1">
+                <div className="flex-1">
+                  <Input
+                    placeholder="TITLE"
+                    value={toolTitle}
+                    onChange={(e) => setToolTitle(e.target.value.toUpperCase())}
+                    className="uppercase border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
+                    data-testid="input-tool-title"
+                  />
+                  <Input
+                    placeholder="Description"
+                    value={toolSentence}
+                    onChange={(e) => setToolSentence(e.target.value)}
+                    className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted mt-2"
+                    data-testid="input-tool-sentence"
+                  />
+                </div>
+                <div className="flex justify-end items-center gap-2 pt-2">
+                  <div className="relative">
+                    <AnimatePresence>
+                      {showPlusOne.visible && showPlusOne.type === "tools" && (
+                        <motion.span
+                          initial={{ opacity: 1, y: 0 }}
+                          animate={{ opacity: 0, y: -20 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ duration: 0.8 }}
+                          className="absolute -top-6 -right-2 text-foreground font-medium text-sm pointer-events-none"
+                        >
+                          +1
+                        </motion.span>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    onClick={handleAddTool}
+                    disabled={!toolTitle.trim()}
+                    className="bg-muted/50 hover:bg-muted"
+                    data-testid="button-new-tool"
+                  >
+                    <Plus className="h-3 w-3 mr-1" />
+                    New Tool
+                  </Button>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="habits" className="mt-4 flex flex-col flex-1 overflow-hidden">
+                <div className="flex-1 overflow-y-auto space-y-2 px-1">
+                  {skillHabits.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">No habits linked to this area/project</p>
+                  ) : (
+                    (() => {
+                      const today = new Date();
+                      today.setHours(0, 0, 0, 0);
+                      const todayStr = today.toISOString().slice(0, 10);
+
+                      const getWeekDays = () => {
+                        const dow = today.getDay();
+                        const mo = dow === 0 ? -6 : 1 - dow;
+                        return Array.from({ length: 7 }, (_, i) => {
+                          const d = new Date(today);
+                          d.setDate(today.getDate() + mo + i);
+                          return d;
+                        });
+                      };
+
+                      const computeStreak = (done: Set<string>): number => {
+                        let s = 0;
+                        const c = new Date(today);
+                        if (done.has(todayStr)) {
+                          s++;
+                          c.setDate(c.getDate() - 1);
+                        } else {
+                          c.setDate(c.getDate() - 1);
+                        }
+                        while (true) {
+                          const x = c.toISOString().slice(0, 10);
+                          if (done.has(x)) {
+                            s++;
+                            c.setDate(c.getDate() - 1);
+                          } else {
+                            break;
+                          }
+                        }
+                        return s;
+                      };
+
+                      const isBroken = (done: Set<string>): boolean => {
+                        const yesterdayStr = new Date(today);
+                        yesterdayStr.setDate(yesterdayStr.getDate() - 1);
+                        const yesterdayDateStr = yesterdayStr.toISOString().slice(0, 10);
+                        return !done.has(todayStr) && !done.has(yesterdayDateStr);
+                      };
+
+                      const weekDays = getWeekDays();
+                      const DAY_LBLS = ["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"];
+
+                      return skillHabits.map((habit: any) => {
+                        const habitData = habitDataWithRecords.find(h => h.id === habit.id);
+                        const done = habitData?.done || new Set();
+                        const streak = computeStreak(done);
+                        const broken = isBroken(done);
+                        const isToday = done.has(todayStr);
+
+                        return (
+                          <div
+                            key={habit.id}
+                            onClick={async () => {
+                              try {
+                                const today2 = new Date().toISOString().slice(0, 10);
+                                const isCompleting = isToday === false;
+                                
+                                await fetch(`/api/habit-records/${habit.id}`, {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ date: today2, completed: isToday ? 0 : 1 }),
+                                });
+                                
+                                if (isCompleting && (habit.skillProgressId || habit.subskillId)) {
+                                  const xpRes = await fetch(`/api/habits/${habit.id}/award-xp`, {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                  });
+                                  
+                                  if (xpRes.ok) {
+                                    const xpData = await xpRes.json();
+                                    setShowXpPopup({ visible: true, x: window.innerWidth / 2, y: window.innerHeight / 2 });
+                                    setTimeout(() => setShowXpPopup({ visible: false, x: 0, y: 0 }), 1500);
+                                    
+                                    if (activeAreaId) {
+                                      await queryClient.refetchQueries({ queryKey: ["/api/areas", activeAreaId] });
+                                    } else if (activeProjectId) {
+                                      await queryClient.refetchQueries({ queryKey: ["/api/projects", activeProjectId] });
+                                    }
+                                  }
+                                }
+                                
+                                const year = new Date().getFullYear();
+                                const startDate = `${year}-01-01`;
+                                const endDate = `${year}-12-31`;
+                                const recordsRes = await fetch(
+                                  `/api/habit-records/${habit.id}?startDate=${startDate}&endDate=${endDate}`
+                                );
+                                const newRecords = recordsRes.ok ? await recordsRes.json() : [];
+                                const newDone = new Set(
+                                  newRecords.filter((r: any) => r.completed === 1).map((r: any) => r.date)
+                                );
+                                setHabitDataWithRecords((prev: any[]) =>
+                                  prev.map(h => h.id === habit.id ? { ...h, done: newDone } : h)
+                                );
+                                await queryClient.refetchQueries({ queryKey: ["habits"] });
+                              } catch (error) {
+                                console.error("Error toggling habit:", error);
+                              }
+                            }}
+                            className={`cursor-pointer rounded-lg border px-3 py-2 transition-all ${
+                              isToday
+                                ? "border-purple-500 bg-purple-500/10"
+                                : broken
+                                  ? "border-border/30 bg-muted/30"
+                                  : "border-border/30 hover:border-purple-400 hover:bg-purple-500/5"
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="text-lg flex-shrink-0">{habit.emoji}</span>
+                              <span className="font-bold text-xs text-foreground flex-1 truncate">
+                                {habit.name}
+                              </span>
+                              <span className={`text-xs font-medium flex-shrink-0 ${broken ? "text-muted-foreground" : "text-purple-600 dark:text-purple-400"}`}>
+                                {broken ? "— rota" : `🔥 ${streak}`}
+                              </span>
+                            </div>
+
+                            <div className="flex gap-1 items-center">
+                              {weekDays.map((w, i) => {
+                                const wds = w.toISOString().slice(0, 10);
+                                const wc = new Date(w);
+                                wc.setHours(0, 0, 0, 0);
+                                const isFut = wc > today;
+                                const isTod = wds === todayStr;
+                                const isDone = done.has(wds);
+                                const isMissed = wc < today && !isDone;
+
+                                return (
+                                  <div
+                                    key={i}
+                                    className="flex flex-col items-center gap-0.5 flex-1 text-center"
+                                  >
+                                    <div
+                                      className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium transition-all ${
+                                        isDone
+                                          ? "bg-gray-900 border border-purple-500"
+                                          : isTod
+                                            ? "border-2 border-purple-500 bg-purple-500/20"
+                                            : isMissed
+                                              ? "bg-muted border border-dashed border-border/50 opacity-50"
+                                              : isFut
+                                                ? "border border-border/30 opacity-20"
+                                                : "border border-border/30"
+                                      }`}
+                                    >
+                                      {isDone ? <span className="text-sm">🔥</span> : ""}
+                                    </div>
+                                    <span className="text-xs font-medium text-muted-foreground">
+                                      {DAY_LBLS[i]}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()
+                  )}
+                </div>
+              </TabsContent>
+            </Tabs>
+
+            <div className="mt-auto pt-4">
+              <Button 
+                variant="ghost" 
+                size="icon"
+                onClick={() => setPopoverStep(0)}
+                className="h-8 w-8"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
       </PopoverContent>
     </Popover>
 
@@ -1456,7 +2002,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 className="flex-1 flex flex-col gap-4"
               >
                 <div>
-                  <Label htmlFor="edit-action" className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block">ACTION: What can you do to advance in this quest?</Label>
+                  <Label htmlFor="edit-action" className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block">PASO 1: Background</Label>
                   <Textarea
                     id="edit-action"
                     value={editAction}
@@ -1483,7 +2029,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                   <Button 
                     variant="ghost" 
                     size="icon"
-                    onClick={() => setEditStep(skill.levelPosition === 1 ? 2 : 1)}
+                    onClick={() => setEditStep(1)}
                     className="h-10 w-10 bg-muted/50 hover:bg-muted"
                     data-testid="button-next-step"
                   >
@@ -1502,14 +2048,14 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 transition={{ duration: 0.2 }}
                 className="flex-1 flex flex-col"
               >
-                <Label htmlFor="edit-title" className="text-xs text-muted-foreground uppercase tracking-wide mb-3">NAME: Name this move (6 words max)</Label>
+                <Label htmlFor="edit-title" className="text-xs text-muted-foreground uppercase tracking-wide mb-3">STEP 2: Name this move</Label>
                 <Input
                   id="edit-title"
                   value={editTitle}
                   onChange={(e) => {
                     const val = e.target.value;
                     const words = val.split(/\s+/).filter(w => w.length > 0);
-                    if (words.length <= 6) {
+                    if (words.length <= 8) {
                       setEditTitle(val);
                     } else {
                       setEditTitle(words.slice(0, 8).join(" "));
@@ -1531,565 +2077,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                     <ChevronLeft className="h-5 w-5" />
                   </Button>
                   <Button 
-                    variant="ghost" 
-                    size="icon"
-                    onClick={() => setEditStep(2)}
-                    disabled={!editTitle.trim()}
-                    className="h-10 w-10 bg-muted/50 hover:bg-muted"
-                    data-testid="button-next-step-2"
-                  >
-                    <ChevronRight className="h-5 w-5" />
-                  </Button>
-                </div>
-              </motion.div>
-            )}
-
-            {editStep === 2 && (
-              <motion.div
-                key="step-feedback"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.2 }}
-                className="flex-1 flex flex-col"
-              >
-                <Tabs value={feedbackActiveTab} onValueChange={(v) => setFeedbackActiveTab(v as "thoughts" | "tools" | "learnings" | "experience" | "habits")} className="w-full flex flex-col flex-1">
-                  <TabsList className="w-full grid grid-cols-5 bg-muted/50">
-                    <TabsTrigger value="thoughts" className="text-xs" data-testid="feedback-tab-thoughts">
-                      <Pencil className="h-3 w-3 mr-1" />
-                      Thoughts
-                    </TabsTrigger>
-                    <TabsTrigger value="learnings" className="text-xs" data-testid="feedback-tab-learnings">
-                      <Lightbulb className="h-3 w-3 mr-1" />
-                      Learnings
-                    </TabsTrigger>
-                    <TabsTrigger value="experience" className="text-xs" data-testid="feedback-tab-experience">
-                      <span className="text-xs font-bold mr-1">XP</span>
-                    </TabsTrigger>
-                    <TabsTrigger value="tools" className="text-xs" data-testid="feedback-tab-tools">
-                      <Wrench className="h-3 w-3 mr-1" />
-                      Tools
-                    </TabsTrigger>
-                    <TabsTrigger value="habits" className="text-xs" data-testid="feedback-tab-habits">
-                      <Flame className="h-3 w-3 mr-1" />
-                      Habits
-                    </TabsTrigger>
-                  </TabsList>
-                  
-                  <TabsContent value="thoughts" className="mt-4 space-y-3 flex flex-col flex-1">
-                    <div className="flex-1">
-                      <Input
-                        placeholder="TITLE"
-                        value={thoughtTitle}
-                        onChange={(e) => setThoughtTitle(e.target.value.toUpperCase())}
-                        className="uppercase border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
-                        data-testid="input-thought-title"
-                      />
-                      <Textarea
-                        placeholder="Descripción, notas o reflexión..."
-                        value={thoughtSentence}
-                        onChange={(e) => setThoughtSentence(e.target.value)}
-                        rows={3}
-                        className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none mt-2"
-                        data-testid="input-thought-sentence"
-                      />
-                    </div>
-                    <div className="flex justify-end items-center gap-2 pt-2">
-                      <div className="relative">
-                        <AnimatePresence>
-                          {showPlusOne.visible && showPlusOne.type === "thoughts" && (
-                            <motion.span
-                              initial={{ opacity: 1, y: 0 }}
-                              animate={{ opacity: 0, y: -20 }}
-                              exit={{ opacity: 0 }}
-                              transition={{ duration: 0.8 }}
-                              className="absolute -top-6 -right-2 text-foreground font-medium text-sm pointer-events-none"
-                            >
-                              +1
-                            </motion.span>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                      <Button 
-                        variant="ghost" 
-                        size="sm"
-                        onClick={handleAddThought}
-                        disabled={!thoughtTitle.trim()}
-                        className="bg-muted/50 hover:bg-muted"
-                        data-testid="button-new-thought"
-                      >
-                        <Plus className="h-3 w-3 mr-1" />
-                        New Thought
-                      </Button>
-                    </div>
-                  </TabsContent>
-                  
-                  <TabsContent value="learnings" className="mt-4 space-y-3 flex flex-col flex-1">
-                    <div className="flex-1">
-                      <Input
-                        placeholder="TITLE"
-                        value={learningTitle}
-                        onChange={(e) => setLearningTitle(e.target.value.toUpperCase())}
-                        className="uppercase border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
-                        data-testid="input-learning-title"
-                      />
-                      <Input
-                        placeholder="Description"
-                        value={learningSentence}
-                        onChange={(e) => setLearningSentence(e.target.value)}
-                        className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted mt-2"
-                        data-testid="input-learning-sentence"
-                      />
-                    </div>
-                    <div className="flex justify-end items-center gap-2 pt-2">
-                      <div className="relative">
-                        <AnimatePresence>
-                          {showPlusOne.visible && showPlusOne.type === "learnings" && (
-                            <motion.span
-                              initial={{ opacity: 1, y: 0 }}
-                              animate={{ opacity: 0, y: -20 }}
-                              exit={{ opacity: 0 }}
-                              transition={{ duration: 0.8 }}
-                              className="absolute -top-6 -right-2 text-foreground font-medium text-sm pointer-events-none"
-                            >
-                              +1
-                            </motion.span>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                      <Button 
-                        variant="ghost" 
-                        size="sm"
-                        onClick={handleAddLearning}
-                        disabled={!learningTitle.trim()}
-                        className="bg-muted/50 hover:bg-muted"
-                        data-testid="button-new-learning"
-                      >
-                        <Plus className="h-3 w-3 mr-1" />
-                        New Learning
-                      </Button>
-                    </div>
-                  </TabsContent>
-                  
-                  <TabsContent value="experience" className="mt-4 space-y-3 flex flex-col flex-1">
-                    <div className="flex items-center justify-center gap-2 py-4">
-                      <Input
-                        type="number"
-                        value={xpValue}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (val.length <= 3) {
-                            setXpValue(val);
-                          }
-                        }}
-                        className="w-24 text-center text-lg font-bold border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
-                        placeholder="0"
-                        max={999}
-                        min={1}
-                        data-testid="input-xp-value"
-                      />
-                      <span className="text-lg font-medium text-muted-foreground">xp</span>
-                    </div>
-                    <Popover open={showExperienceSkillSelector} onOpenChange={setShowExperienceSkillSelector}>
-                      <PopoverTrigger asChild>
-                        <Button 
-                          variant="ghost" 
-                          size="sm"
-                          className="bg-muted/50 hover:bg-muted w-full"
-                          data-testid="button-select-skill"
-                        >
-                          {experienceSelectedSkill 
-                            ? `✓ ${experienceSelectedSkill.startsWith("legacy:") 
-                                ? experienceSelectedSkill.replace("legacy:", "") 
-                                : (availableGlobalSkills.find(s => s.id === experienceSelectedSkill)?.name || "Skill")}` 
-                            : "Seleccionar skill"}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent 
-                        className="w-56 p-2 border-0 bg-background/95 backdrop-blur-sm z-[9999]" 
-                        align="center" 
-                        side="top"
-                        sideOffset={8}
-                        collisionPadding={16}
-                      >
-                        <div className="max-h-56 overflow-y-auto">
-                          {/* Legacy skills (only those associated with this area/project) */}
-                          {filteredLegacySkills.length > 0 && (
-                            <div className="space-y-1 mb-2">
-                              {filteredLegacySkills.map((skillName) => (
-                                <Button
-                                key={skillName}
-                                variant="ghost"
-                                size="sm"
-                                className={`w-full justify-start h-8 px-3 text-xs font-normal ${
-                                  experienceSelectedSkill === `legacy:${skillName}`
-                                    ? "bg-muted text-foreground" 
-                                    : "hover:bg-muted/50"
-                                }`}
-                                onClick={() => {
-                                  setExperienceSelectedSkill(`legacy:${skillName}`);
-                                  setShowExperienceSkillSelector(false);
-                                }}
-                                  data-testid={`button-select-legacy-${skillName}`}
-                                >
-                                  {skillName}
-                                </Button>
-                              ))}
-                            </div>
-                          )}
-                          
-                          {/* GlobalSkills for this area/quest */}
-                          {availableGlobalSkills.length > 0 && (
-                            <>
-                              <div className="border-t border-muted my-2" />
-                              <div className="space-y-1">
-                                {/* Parent skills (not subskills) */}
-                                {availableGlobalSkills.filter(s => !s.parentSkillId).map((gSkill) => (
-                                  <div key={gSkill.id}>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className={`w-full justify-start h-8 px-3 text-xs font-medium ${
-                                        experienceSelectedSkill === gSkill.id 
-                                          ? "bg-muted text-foreground" 
-                                          : "hover:bg-muted/50"
-                                      }`}
-                                      onClick={() => {
-                                        setExperienceSelectedSkill(gSkill.id);
-                                        setShowExperienceSkillSelector(false);
-                                      }}
-                                      data-testid={`button-select-skill-${gSkill.id}`}
-                                    >
-                                      {gSkill.name}
-                                      <span className="ml-auto text-muted-foreground">Lv.{gSkill.level}</span>
-                                    </Button>
-                                    {/* Subskills of this parent */}
-                                    {availableGlobalSkills
-                                      .filter(s => s.parentSkillId === gSkill.id)
-                                      .map((subSkill) => (
-                                        <Button
-                                          key={subSkill.id}
-                                        variant="ghost"
-                                        size="sm"
-                                        className={`w-full justify-start h-7 px-3 pl-6 text-xs font-normal ${
-                                          experienceSelectedSkill === subSkill.id 
-                                            ? "bg-muted text-foreground" 
-                                            : "hover:bg-muted/50 text-muted-foreground"
-                                        }`}
-                                        onClick={() => {
-                                          setExperienceSelectedSkill(subSkill.id);
-                                          setShowExperienceSkillSelector(false);
-                                        }}
-                                        data-testid={`button-select-subskill-${subSkill.id}`}
-                                      >
-                                        ↳ {subSkill.name}
-                                        <span className="ml-auto">Lv.{subSkill.level}</span>
-                                      </Button>
-                                    ))
-                                  }
-                                </div>
-                              ))}
-                            </div>
-                            </>
-                          )}
-                        </div>
-                      </PopoverContent>
-                    </Popover>
-                    <div className="flex justify-end items-center gap-2 pt-4">
-                      <div className="relative">
-                        <AnimatePresence>
-                          {showPlusOne.visible && showPlusOne.type === "experience" && (
-                            <motion.span
-                              initial={{ opacity: 1, y: 0 }}
-                              animate={{ opacity: 0, y: -20 }}
-                              exit={{ opacity: 0 }}
-                              transition={{ duration: 0.8 }}
-                              className="absolute -top-6 -right-2 text-foreground font-medium text-sm pointer-events-none"
-                            >
-                              +1
-                            </motion.span>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                      <Button 
-                        variant="ghost" 
-                        size="sm"
-                        onClick={handleAddExperience}
-                        disabled={!experienceSelectedSkill || !xpValue || parseInt(xpValue) <= 0}
-                        className="bg-muted/50 hover:bg-muted"
-                        data-testid="button-new-experience"
-                      >
-                        <Plus className="h-3 w-3 mr-1" />
-                        Experience
-                      </Button>
-                    </div>
-                  </TabsContent>
-
-                  <AnimatePresence>
-                    {levelUpPopupVisible && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 32, scale: 0.98 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: -36, scale: 1.02 }}
-                        transition={{ duration: 0.35 }}
-                        className="fixed top-24 left-1/2 -translate-x-1/2 z-[250] px-4 py-2 text-2xl font-extrabold text-green-400"
-                      >
-                        Level Up
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                  
-                  <TabsContent value="tools" className="mt-4 space-y-3 flex flex-col flex-1">
-                    <div className="flex-1">
-                      <Input
-                        placeholder="TITLE"
-                        value={toolTitle}
-                        onChange={(e) => setToolTitle(e.target.value.toUpperCase())}
-                        className="uppercase border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
-                        data-testid="input-tool-title"
-                      />
-                      <Input
-                        placeholder="Description"
-                        value={toolSentence}
-                        onChange={(e) => setToolSentence(e.target.value)}
-                        className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted mt-2"
-                        data-testid="input-tool-sentence"
-                      />
-                    </div>
-                    <div className="flex justify-end items-center gap-2 pt-2">
-                      <div className="relative">
-                        <AnimatePresence>
-                          {showPlusOne.visible && showPlusOne.type === "tools" && (
-                            <motion.span
-                              initial={{ opacity: 1, y: 0 }}
-                              animate={{ opacity: 0, y: -20 }}
-                              exit={{ opacity: 0 }}
-                              transition={{ duration: 0.8 }}
-                              className="absolute -top-6 -right-2 text-foreground font-medium text-sm pointer-events-none"
-                            >
-                              +1
-                            </motion.span>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                      <Button 
-                        variant="ghost" 
-                        size="sm"
-                        onClick={handleAddTool}
-                        disabled={!toolTitle.trim()}
-                        className="bg-muted/50 hover:bg-muted"
-                        data-testid="button-new-tool"
-                      >
-                        <Plus className="h-3 w-3 mr-1" />
-                        New Tool
-                      </Button>
-                    </div>
-                  </TabsContent>
-
-                  <TabsContent value="habits" className="mt-4 flex flex-col flex-1 overflow-hidden">
-                    <div className="flex-1 overflow-y-auto space-y-2 px-1">
-                      {skillHabits.length === 0 ? (
-                        <p className="text-sm text-muted-foreground text-center py-4">No habits linked to this area/project</p>
-                      ) : (
-                        (() => {
-                          const today = new Date();
-                          today.setHours(0, 0, 0, 0);
-                          const todayStr = today.toISOString().slice(0, 10);
-
-                          const getWeekDays = () => {
-                            const dow = today.getDay();
-                            const mo = dow === 0 ? -6 : 1 - dow;
-                            return Array.from({ length: 7 }, (_, i) => {
-                              const d = new Date(today);
-                              d.setDate(today.getDate() + mo + i);
-                              return d;
-                            });
-                          };
-
-                          const computeStreak = (done: Set<string>): number => {
-                            let s = 0;
-                            const c = new Date(today);
-                            if (done.has(todayStr)) {
-                              s++;
-                              c.setDate(c.getDate() - 1);
-                            } else {
-                              c.setDate(c.getDate() - 1);
-                            }
-                            while (true) {
-                              const x = c.toISOString().slice(0, 10);
-                              if (done.has(x)) {
-                                s++;
-                                c.setDate(c.getDate() - 1);
-                              } else {
-                                break;
-                              }
-                            }
-                            return s;
-                          };
-
-                          const isBroken = (done: Set<string>): boolean => {
-                            const yesterdayStr = new Date(today);
-                            yesterdayStr.setDate(yesterdayStr.getDate() - 1);
-                            const yesterdayDateStr = yesterdayStr.toISOString().slice(0, 10);
-                            return !done.has(todayStr) && !done.has(yesterdayDateStr);
-                          };
-
-                          const weekDays = getWeekDays();
-                          const DAY_LBLS = ["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"];
-
-                          return skillHabits.map((habit: any) => {
-                            const habitData = habitDataWithRecords.find(h => h.id === habit.id);
-                            const done = habitData?.done || new Set();
-                            const streak = computeStreak(done);
-                            const broken = isBroken(done);
-                            const isToday = done.has(todayStr);
-
-                            return (
-                              <div
-                                key={habit.id}
-                                onClick={async () => {
-                                  try {
-                                    const today2 = new Date().toISOString().slice(0, 10);
-                                    const isCompleting = isToday === false; // About to mark as complete
-                                    
-                                    await fetch(`/api/habit-records/${habit.id}`, {
-                                      method: "POST",
-                                      headers: { "Content-Type": "application/json" },
-                                      body: JSON.stringify({ date: today2, completed: isToday ? 0 : 1 }),
-                                    });
-                                    
-                                    // Award XP if habit is being completed and has a skill linked
-                                    if (isCompleting && (habit.skillProgressId || habit.subskillId)) {
-                                      const xpRes = await fetch(`/api/habits/${habit.id}/award-xp`, {
-                                        method: "POST",
-                                        headers: { "Content-Type": "application/json" },
-                                      });
-                                      
-                                      if (xpRes.ok) {
-                                        const xpData = await xpRes.json();
-                                        // Show +5xp popup near cursor (approximate)
-                                        setShowXpPopup({ visible: true, x: window.innerWidth / 2, y: window.innerHeight / 2 });
-                                        setTimeout(() => setShowXpPopup({ visible: false, x: 0, y: 0 }), 1500);
-                                        
-                                        // Refetch skills to update XP display
-                                        if (activeAreaId) {
-                                          await queryClient.refetchQueries({ queryKey: ["/api/areas", activeAreaId] });
-                                        } else if (activeProjectId) {
-                                          await queryClient.refetchQueries({ queryKey: ["/api/projects", activeProjectId] });
-                                        }
-                                      }
-                                    }
-                                    
-                                    // Reload records immediately
-                                    const year = new Date().getFullYear();
-                                    const startDate = `${year}-01-01`;
-                                    const endDate = `${year}-12-31`;
-                                    const recordsRes = await fetch(
-                                      `/api/habit-records/${habit.id}?startDate=${startDate}&endDate=${endDate}`
-                                    );
-                                    const newRecords = recordsRes.ok ? await recordsRes.json() : [];
-                                    const newDone = new Set(
-                                      newRecords.filter((r: any) => r.completed === 1).map((r: any) => r.date)
-                                    );
-                                    setHabitDataWithRecords((prev: any[]) =>
-                                      prev.map(h => h.id === habit.id ? { ...h, done: newDone } : h)
-                                    );
-                                    // Refetch habits cache so HabitStreakModal updates immediately
-                                    await queryClient.refetchQueries({ queryKey: ["habits"] });
-                                  } catch (error) {
-                                    console.error("Error toggling habit:", error);
-                                  }
-                                }}
-                                className={`cursor-pointer rounded-lg border px-3 py-2 transition-all ${
-                                  isToday
-                                    ? "border-purple-500 bg-purple-500/10"
-                                    : broken
-                                      ? "border-border/30 bg-muted/30"
-                                      : "border-border/30 hover:border-purple-400 hover:bg-purple-500/5"
-                                }`}
-                              >
-                                <div className="flex items-center gap-2 mb-2">
-                                  <span className="text-lg flex-shrink-0">{habit.emoji}</span>
-                                  <span className="font-bold text-xs text-foreground flex-1 truncate">
-                                    {habit.name}
-                                  </span>
-                                  <span className={`text-xs font-medium flex-shrink-0 ${broken ? "text-muted-foreground" : "text-purple-600 dark:text-purple-400"}`}>
-                                    {broken ? "— rota" : `🔥 ${streak}`}
-                                  </span>
-                                </div>
-
-                                <div className="flex gap-1 items-center">
-                                  {weekDays.map((w, i) => {
-                                    const wds = w.toISOString().slice(0, 10);
-                                    const wc = new Date(w);
-                                    wc.setHours(0, 0, 0, 0);
-                                    const isFut = wc > today;
-                                    const isTod = wds === todayStr;
-                                    const isDone = done.has(wds);
-                                    const isMissed = wc < today && !isDone;
-
-                                    return (
-                                      <div
-                                        key={i}
-                                        className="flex flex-col items-center gap-0.5 flex-1 text-center"
-                                      >
-                                        <div
-                                          className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium transition-all ${
-                                            isDone
-                                              ? "bg-gray-900 border border-purple-500"
-                                              : isTod
-                                                ? "border-2 border-purple-500 bg-purple-500/20"
-                                                : isMissed
-                                                  ? "bg-muted border border-dashed border-border/50 opacity-50"
-                                                  : isFut
-                                                    ? "border border-border/30 opacity-20"
-                                                    : "border border-border/30"
-                                          }`}
-                                        >
-                                          {isDone ? <span className="text-sm">🔥</span> : ""}
-                                        </div>
-                                        <span className="text-xs font-medium text-muted-foreground">
-                                          {DAY_LBLS[i]}
-                                        </span>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            );
-                          });
-                        })()
-                      )}
-                    </div>
-                  </TabsContent>
-                </Tabs>
-
-                <AnimatePresence>
-                  {showXpPopup.visible && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -100, scale: 0.5 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 100, scale: 0.5 }}
-                      transition={{ duration: 0.4, type: "spring", damping: 10 }}
-                      className="fixed left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 pointer-events-none z-50"
-                    >
-                      <div className="text-5xl font-bold text-green-400 drop-shadow-lg">+5xp</div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-                
-                <div className="flex justify-between mt-auto pt-6">
-                  <Button 
-                    variant="ghost" 
-                    size="icon"
-                    onClick={() => setEditStep(skill.levelPosition === 1 ? 0 : 1)}
-                    className="h-10 w-10 bg-muted/50 hover:bg-muted"
-                    data-testid="button-prev-step-2"
-                  >
-                    <ChevronLeft className="h-5 w-5" />
-                  </Button>
-                  <Button 
                     onClick={() => setIsEditDialogOpen(false)}
+                    disabled={!editTitle.trim()}
                     className="border-0"
                     data-testid="button-save-edit"
                   >
@@ -2098,6 +2087,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 </div>
               </motion.div>
             )}
+
           </AnimatePresence>
         </div>
       </DialogContent>
