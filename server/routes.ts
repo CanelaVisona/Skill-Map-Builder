@@ -2,7 +2,8 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { db } from "./db";
-import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema, insertSpaceRepetitionPracticeSchema, skills } from "@shared/schema";
+import { eq } from "drizzle-orm";
+import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema, insertSpaceRepetitionPracticeSchema, type InsertSpaceRepetitionPractice, type SpaceRepetitionPractice, skills, areas, projects, spaceRepetitionPractices } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import cookieParser from "cookie-parser";
 import crypto from "crypto";
@@ -731,6 +732,13 @@ export async function registerRoutes(
           parentSkillId: validatedSkill.parentSkillId || undefined,
         });
         
+        // Recalculate available statuses per Rule 1 (new node always locked, existing available unchanged)
+        await storage.recalculateAvailableStatus(skillLevel, {
+          areaId: validatedSkill.areaId || undefined,
+          projectId: validatedSkill.projectId || undefined,
+          parentSkillId: validatedSkill.parentSkillId || undefined,
+        });
+        
         res.status(201).json(skill);
       } else {
         // Manual insertion - use client-provided values but enforce first node rules
@@ -781,6 +789,13 @@ export async function registerRoutes(
         
         // Recalculate Y coordinates for all nodes in the area/project/parent
         await storage.recalculateYCoordinates({
+          areaId: validatedSkill.areaId || undefined,
+          projectId: validatedSkill.projectId || undefined,
+          parentSkillId: validatedSkill.parentSkillId || undefined,
+        });
+        
+        // Recalculate available statuses (for duplicated nodes, ensures correct status/opacity)
+        await storage.recalculateAvailableStatus(skillLevel, {
           areaId: validatedSkill.areaId || undefined,
           projectId: validatedSkill.projectId || undefined,
           parentSkillId: validatedSkill.parentSkillId || undefined,
@@ -1006,6 +1021,9 @@ export async function registerRoutes(
       
       // Recalculate final nodes in the affected level after deletion
       await storage.recalculateFinalNodes(deletedLevel, parentInfo);
+      
+      // Recalculate available statuses per Rule 3 (deleted available node, next becomes available or previous)
+      await storage.recalculateAvailableStatus(deletedLevel, parentInfo);
       
       res.status(204).send();
     } catch (error: any) {
@@ -1312,55 +1330,21 @@ export async function registerRoutes(
 
       const neighbor = sameLevelSkills[neighborIndex];
       
-      // Find which node currently has available status before swap
-      const availableNodeBefore = sameLevelSkills.find(s => s.status === "available");
-      const availableLevelPos = availableNodeBefore?.levelPosition;
-      
       // Swap Y coordinates and levelPosition
       const tempY = existingSkill.y;
       const neighborY = neighbor.y;
       const tempLevelPosition = existingSkill.levelPosition;
       const neighborLevelPosition = neighbor.levelPosition;
-
-      // After swap, determine which nodes will be at which positions
-      let updatedSkillNewLevelPos = neighborLevelPosition;
-      let updatedNeighborNewLevelPos = tempLevelPosition;
       
       // Update both skills with swapped coordinates and positions
-      let updatedSkill = await storage.updateSkill(req.params.id, { 
+      const updatedSkill = await storage.updateSkill(req.params.id, { 
         y: neighborY,
         levelPosition: neighborLevelPosition
       });
-      let updatedNeighbor = await storage.updateSkill(neighbor.id, { 
+      const updatedNeighbor = await storage.updateSkill(neighbor.id, { 
         y: tempY,
         levelPosition: tempLevelPosition
       });
-
-      // Update statuses: available status should follow the position, not the node
-      if (availableLevelPos) {
-        // The node now at availableLevelPos should become available
-        // The node that moved away from availableLevelPos should become locked
-        
-        if (updatedSkillNewLevelPos === availableLevelPos && existingSkill.status !== "available") {
-          // updatedSkill is now at the available position
-          updatedSkill = await storage.updateSkill(req.params.id, { status: "available" });
-        } else if (updatedSkillNewLevelPos === availableLevelPos && existingSkill.status === "available") {
-          // updatedSkill is still at the position it was at, no status change needed
-        } else if (tempLevelPosition === availableLevelPos && existingSkill.status === "available") {
-          // existingSkill had available and moved away, so it should become locked
-          updatedSkill = await storage.updateSkill(req.params.id, { status: "locked" });
-        }
-        
-        if (updatedNeighborNewLevelPos === availableLevelPos && neighbor.status !== "available") {
-          // updatedNeighbor is now at the available position
-          updatedNeighbor = await storage.updateSkill(neighbor.id, { status: "available" });
-        } else if (updatedNeighborNewLevelPos === availableLevelPos && neighbor.status === "available") {
-          // updatedNeighbor is still at the position it was at, no status change needed
-        } else if (neighborLevelPosition === availableLevelPos && neighbor.status === "available") {
-          // neighbor had available and moved away, so it should become locked
-          updatedNeighbor = await storage.updateSkill(neighbor.id, { status: "locked" });
-        }
-      }
 
       // Recalculate final node for this level only
       const parentInfo = {
@@ -1369,6 +1353,9 @@ export async function registerRoutes(
       };
       
       await storage.recalculateFinalNodes(currentLevel, parentInfo);
+      
+      // Recalculate available statuses per Rule 2 (status follows position on reorder)
+      await storage.recalculateAvailableStatus(currentLevel, parentInfo);
 
       // Fetch all updated skills of the level to return to client
       const updatedAllSkills = parentType === "area" 
@@ -3377,11 +3364,162 @@ export async function registerRoutes(
     }
   });
 
+  // Book API Routes
+  app.get("/api/books", requireAuth, async (req, res) => {
+    try {
+      const archived = req.query.archived === "true" ? true : req.query.archived === "false" ? false : undefined;
+      const books = await storage.getBooks(req.userId!, archived);
+      res.json(books);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/books", requireAuth, async (req, res) => {
+    try {
+      const { title, author, totalPages, mode, goalDays } = req.body;
+      if (!title || !author || !totalPages) {
+        return res.status(400).json({ message: "Título, autor y total de páginas son requeridos" });
+      }
+
+      const book = await storage.createBook({
+        title,
+        author,
+        totalPages: parseInt(totalPages),
+        mode: mode || "chapter",
+        goalDays: goalDays || [0, 1, 2, 3, 4, 5],
+        userId: req.userId!,
+      } as any);
+
+      res.status(201).json(book);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/books/:id", requireAuth, async (req, res) => {
+    try {
+      const book = await storage.getBook(req.params.id);
+      if (!book || book.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para editar este libro" });
+      }
+
+      const updated = await storage.updateBook(req.params.id, req.body);
+      if (!updated) {
+        return res.status(404).json({ message: "Libro no encontrado" });
+      }
+
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/books/:id", requireAuth, async (req, res) => {
+    try {
+      const book = await storage.getBook(req.params.id);
+      if (!book || book.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para eliminar este libro" });
+      }
+
+      await storage.deleteBook(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/books/:id/archive", requireAuth, async (req, res) => {
+    try {
+      const book = await storage.getBook(req.params.id);
+      if (!book || book.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para archivar este libro" });
+      }
+
+      const updated = await storage.archiveBook(req.params.id);
+      if (!updated) {
+        return res.status(404).json({ message: "Libro no encontrado" });
+      }
+
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/books/:id/unarchive", requireAuth, async (req, res) => {
+    try {
+      const book = await storage.getBook(req.params.id);
+      if (!book || book.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para restaurar este libro" });
+      }
+
+      const updated = await storage.unarchiveBook(req.params.id);
+      if (!updated) {
+        return res.status(404).json({ message: "Libro no encontrado" });
+      }
+
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/books/:id/sessions", requireAuth, async (req, res) => {
+    try {
+      const book = await storage.getBook(req.params.id);
+      if (!book || book.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para ver este libro" });
+      }
+
+      const sessions = await storage.getBookSessions(req.params.id);
+      res.json(sessions);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/books/:id/sessions", requireAuth, async (req, res) => {
+    try {
+      const book = await storage.getBook(req.params.id);
+      if (!book || book.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para agregar sesiones a este libro" });
+      }
+
+      const { date, page } = req.body;
+      if (!date || page === undefined) {
+        return res.status(400).json({ message: "Fecha y página son requeridas" });
+      }
+
+      const session = await storage.createBookSession({
+        bookId: req.params.id,
+        date,
+        page: parseInt(page),
+      } as any);
+
+      res.status(201).json(session);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/books/:bookId/sessions/:sessionId", requireAuth, async (req, res) => {
+    try {
+      const book = await storage.getBook(req.params.bookId);
+      if (!book || book.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para eliminar esta sesión" });
+      }
+
+      await storage.deleteBookSession(req.params.sessionId);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Admin: Fix all node statuses consistent with unlockedLevel
   app.post("/api/admin/fix-statuses", async (req, res) => {
     try {
-      const { areas: areasTable, projects: projectsTable } = (await import("@shared/schema")).default;
-      
       // Get all areas and recalculate
       const allAreas = await db.select().from(areas);
       let fixedCount = 0;

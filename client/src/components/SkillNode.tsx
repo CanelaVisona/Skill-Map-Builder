@@ -31,9 +31,10 @@ interface SkillNodeProps {
   onClick: () => void;
   isFirstOfLevel?: boolean;
   isOnboardingTarget?: boolean;
+  availableNodePosition?: number | null;
 }
 
-export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboardingTarget }: SkillNodeProps) {
+export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboardingTarget, availableNodePosition }: SkillNodeProps) {
   const isInicioNode = skill.title.toLowerCase() === "inicio"; // "inicio" nodes are text-only, not interactive
   
   const { 
@@ -115,6 +116,19 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const shouldForceLock = isFinalNodeByPosition && skill.status !== "mastered" && !allOthersMastered;
   const isLocked = isFirstNodeOfLevel ? false : (skill.status === "locked" || shouldForceLock);
   const isMastered = isFirstNodeOfLevel ? true : skill.status === "mastered";
+
+  // Calculate distance-based opacity for locked nodes (Rule 6)
+  let lockedNodeOpacity = 1; // default
+  if (isLocked && availableNodePosition !== undefined && availableNodePosition !== null) {
+    const distance = (skill.levelPosition ?? 0) - availableNodePosition;
+    if (distance === 1) {
+      lockedNodeOpacity = 0.7;
+    } else if (distance === 2) {
+      lockedNodeOpacity = 0.55;
+    } else if (distance >= 3) {
+      lockedNodeOpacity = 0.35;
+    }
+  }
 
   // Detect if node has default name (generated Nodo X format)
   const hasDefaultName = skill.title.startsWith("Nodo ") || skill.title === "Next challenge" || skill.title === "Next objetive quest" || skill.title === "Objective quest";
@@ -1112,6 +1126,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             initial={{
               scale: skill.status === "available" ? 1 : (isMastered ? 1.05 : 1),
               boxShadow: skill.status === "available" ? "0 0 0px 1px rgba(255, 255, 255, 1)" : "none",
+              opacity: isLocked ? lockedNodeOpacity : 1,
             }}
             animate={{
               scale: isMastered ? 1.05 : skill.status === "available" ? [1, 1.3, 1] : 1,
@@ -1120,6 +1135,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 "0 0 0px 1.5px rgba(255, 255, 255, 1)",
                 "0 0 0px 1px rgba(255, 255, 255, 1)"
               ] : "none",
+              opacity: isLocked ? lockedNodeOpacity : 1,
             }}
             transition={{
               scale: skill.status === "available" ? {
@@ -1131,7 +1147,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 duration: 2,
                 repeat: Infinity,
                 repeatType: "loop"
-              } : { duration: 0 }
+              } : { duration: 0 },
+              opacity: { duration: 0.3 }
             }}
             className={cn(
               "w-10 h-10 rounded-full border-2 flex items-center justify-center relative",
@@ -1165,11 +1182,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
           {/* Final Node Star Icon - only show when star is active AND final node is mastered */}
           {isStarActive && skillsInLevel.find(s => s.levelPosition === Math.max(...skillsInLevel.map(s => s.levelPosition || 0)))?.status === "mastered" && (
-            <div className="absolute -top-1 -right-1 z-30">
+            <div className="absolute -top-1 -right-1 z-30" title="Nodo final del área">
               <Star 
                 size={14} 
                 className="fill-amber-400 text-amber-400 drop-shadow-lg" 
-                title="Nodo final del área"
               />
             </div>
           )}

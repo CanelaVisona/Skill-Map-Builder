@@ -9,8 +9,9 @@ import { HabitStreakModal } from "@/components/HabitStreakModal";
 import { SpaceRepetitionModal } from "@/components/SpaceRepetitionModal";
 import { ProgressModal } from "@/components/ProgressModal";
 import { ProgressBar } from "@/components/ProgressBar";
+import { BookTracker } from "@/components/BookTracker";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Mountain, Image, Grid, Flame, Dumbbell, Star } from "lucide-react";
+import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Mountain, Image, Grid, Flame, Dumbbell, Star, Bookmark } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -79,7 +80,7 @@ function calculateVisibleLevels(skills: Skill[], endOfAreaLevel?: number): Set<n
   return visibleLevels;
 }
 
-function TopRightControls({ onOpenGuide, onOpenDesigner, onOpenProgress, onOpenHabits, onOpenStrength }: { onOpenGuide: () => void; onOpenDesigner: () => void; onOpenProgress: () => void; onOpenHabits: () => void; onOpenStrength: () => void }) {
+function TopRightControls({ onOpenGuide, onOpenDesigner, onOpenProgress, onOpenHabits, onOpenStrength, onOpenBookTracker }: { onOpenGuide: () => void; onOpenDesigner: () => void; onOpenProgress: () => void; onOpenHabits: () => void; onOpenStrength: () => void; onOpenBookTracker: () => void }) {
   const { theme, setTheme, resolvedTheme } = useTheme();
   const currentTheme = resolvedTheme || theme;
   const { openDiary } = useDiary();
@@ -133,6 +134,13 @@ function TopRightControls({ onOpenGuide, onOpenDesigner, onOpenProgress, onOpenH
         title="Space Repetition"
       >
         <Dumbbell className="h-5 w-5" />
+      </button>
+      <button
+        className="text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+        onClick={onOpenBookTracker}
+        title="Book Tracker"
+      >
+        <Bookmark className="h-5 w-5" />
       </button>
     </div>
   );
@@ -5493,6 +5501,35 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
   );
 }
 
+function BookTrackerModalWrapper({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          key="book-tracker-modal"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+          onClick={() => onOpenChange(false)}
+        >
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.95, opacity: 0 }}
+            className="overflow-hidden rounded-3xl border border-border/50 bg-background max-w-md w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-0 py-0">
+              <BookTracker />
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
 function QuestDiary() {
   const { isDiaryOpen, closeDiary } = useDiary();
   const queryClient = useQueryClient();
@@ -5918,6 +5955,16 @@ function SkillCanvas() {
     // DEBUG: Log subskill visible skills with coordinate details
     console.log("[SkillCanvas SubSkills] visibleSkills:", visibleSkills.map(s => `level:${s.level} pos:${s.levelPosition} x:${s.x} y:${s.y} title:${s.title}`));
 
+    // Calculate availableNodePosition for each level (Rule 6: distance-based opacity)
+    const availableNodesByLevel = new Map<number, number | null>();
+    visibleSkills.forEach((skill: Skill) => {
+      if (!availableNodesByLevel.has(skill.level)) {
+        const levelSkills = visibleSkills.filter((s: Skill) => s.level === skill.level);
+        const availableNode = levelSkills.find((s: Skill) => s.status === "available");
+        availableNodesByLevel.set(skill.level, availableNode?.levelPosition ?? null);
+      }
+    });
+
     const firstSkillOfLevel = new Set<string>();
     const levelGroups = new Map<number, typeof visibleSkills>();
     
@@ -6108,6 +6155,7 @@ function SkillCanvas() {
                         onClick={handleClick}
                         isFirstOfLevel={firstSkillOfLevel.has(skill.id)}
                         isOnboardingTarget={index === 0}
+                        availableNodePosition={availableNodesByLevel.get(skill.level) ?? null}
                       />
                     );
                   })}
@@ -6147,6 +6195,16 @@ function SkillCanvas() {
     y: s.y,
     status: s.status
   })));
+
+  // Calculate availableNodePosition for each level (Rule 6: distance-based opacity)
+  const availableNodesByLevel = new Map<number, number | null>();
+  visibleSkills.forEach((skill: Skill) => {
+    if (!availableNodesByLevel.has(skill.level)) {
+      const levelSkills = visibleSkills.filter((s: Skill) => s.level === skill.level);
+      const availableNode = levelSkills.find((s: Skill) => s.status === "available");
+      availableNodesByLevel.set(skill.level, availableNode?.levelPosition ?? null);
+    }
+  });
 
   // Find the first skill of each level (lowest Y position per level)
   const firstSkillOfLevel = new Set<string>();
@@ -6583,6 +6641,7 @@ function SkillCanvas() {
                       onClick={handleClick}
                       isFirstOfLevel={firstSkillOfLevel.has(skill.id)}
                       isOnboardingTarget={index === 0}
+                      availableNodePosition={availableNodesByLevel.get(skill.level) ?? null}
                     />
                   );
                 })}
@@ -6602,6 +6661,7 @@ export default function SkillTreePage() {
   const [isProgressOpen, setIsProgressOpen] = useState(false);
   const [isHabitsOpen, setIsHabitsOpen] = useState(false);
   const [isStrengthOpen, setIsStrengthOpen] = useState(false);
+  const [isBookTrackerOpen, setIsBookTrackerOpen] = useState(false);
   
   const handleCompleteOnboarding = () => {
     if (user?.id) {
@@ -6615,11 +6675,12 @@ export default function SkillTreePage() {
       <SkillTreeProvider>
         <MenuProvider>
           <div className="flex h-screen w-full bg-background text-foreground overflow-hidden font-body selection:bg-primary/30">
-            <TopRightControls onOpenGuide={openGuide} onOpenDesigner={() => setIsDesignerOpen(true)} onOpenProgress={() => setIsProgressOpen(true)} onOpenHabits={() => setIsHabitsOpen(true)} onOpenStrength={() => setIsStrengthOpen(true)} />
+            <TopRightControls onOpenGuide={openGuide} onOpenDesigner={() => setIsDesignerOpen(true)} onOpenProgress={() => setIsProgressOpen(true)} onOpenHabits={() => setIsHabitsOpen(true)} onOpenStrength={() => setIsStrengthOpen(true)} onOpenBookTracker={() => setIsBookTrackerOpen(true)} />
             <ProgressModal open={isProgressOpen} onOpenChange={setIsProgressOpen} />
             <SkillDesigner open={isDesignerOpen} onOpenChange={setIsDesignerOpen} />
             <HabitStreakModal open={isHabitsOpen} onOpenChange={setIsHabitsOpen} />
             <SpaceRepetitionModal open={isStrengthOpen} onOpenChange={setIsStrengthOpen} />
+            <BookTrackerModalWrapper open={isBookTrackerOpen} onOpenChange={setIsBookTrackerOpen} />
             <AreaMenu />
             <SkillCanvas />
             <QuestDiary />

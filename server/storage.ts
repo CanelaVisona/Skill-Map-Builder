@@ -1,7 +1,7 @@
-import { eq, and, asc } from "drizzle-orm";
+import { eq, and, asc, isNull, isNotNull } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db, pool } from "./db";
-import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, globalSkills, habits, habitRecords, spaceRepetitionPractices } from "@shared/schema";
+import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions } from "@shared/schema";
 
 export interface IStorage {
   // Users
@@ -41,6 +41,7 @@ export interface IStorage {
   recalculateNodeStatuses(level: number, options: { areaId?: string; projectId?: string; parentSkillId?: string }): Promise<void>;
   recalculateNodeStatusesAfterReorder(level: number, options: { areaId?: string; projectId?: string; parentSkillId?: string }): Promise<void>;
   recalculateYCoordinates(options: { areaId?: string; projectId?: string; parentSkillId?: string }): Promise<void>;
+  recalculateAvailableStatus(level: number, options: { areaId?: string; projectId?: string; parentSkillId?: string }): Promise<void>;
   generateLevelWithSkills(areaId: string, level: number, startY: number): Promise<{ updatedArea: Area; createdSkills: Skill[] }>;
   generateProjectLevelWithSkills(projectId: string, level: number, startY: number): Promise<{ updatedProject: Project; createdSkills: Skill[] }>;
 
@@ -187,6 +188,21 @@ export interface IStorage {
   createSpaceRepetitionPractice(practice: InsertSpaceRepetitionPractice & { userId: string }): Promise<SpaceRepetitionPractice>;
   updateSpaceRepetitionPractice(id: string, practice: Partial<InsertSpaceRepetitionPractice>): Promise<SpaceRepetitionPractice | undefined>;
   deleteSpaceRepetitionPractice(id: string): Promise<void>;
+
+  // Book Reading Tracker
+  getBooks(userId: string, archived?: boolean): Promise<Book[]>;
+  getBook(id: string): Promise<Book | undefined>;
+  createBook(book: InsertBook & { userId: string }): Promise<Book>;
+  updateBook(id: string, book: Partial<InsertBook>): Promise<Book | undefined>;
+  deleteBook(id: string): Promise<void>;
+  archiveBook(id: string): Promise<Book | undefined>;
+  unarchiveBook(id: string): Promise<Book | undefined>;
+  
+  // Book Reading Sessions
+  getBookSessions(bookId: string): Promise<BookReadingSession[]>;
+  getBookSessionsByDate(bookId: string, date: string): Promise<BookReadingSession[]>;
+  createBookSession(session: InsertBookReadingSession): Promise<BookReadingSession>;
+  deleteBookSession(id: string): Promise<void>;
 }
 
 export class DbStorage implements IStorage {
@@ -585,6 +601,75 @@ export class DbStorage implements IStorage {
     // Execute with parameterized query
     const cleanParams = params.filter((p) => p !== undefined);
     await pool.query(updateSql, cleanParams);
+  }
+
+  async recalculateAvailableStatus(
+    level: number,
+    options: { areaId?: string; projectId?: string; parentSkillId?: string }
+  ): Promise<void> {
+    const { areaId, projectId, parentSkillId } = options;
+
+    // Get all skills in this level, sorted by levelPosition
+    const levelSkills = await db.select().from(skills).where(
+      and(
+        eq(skills.level, level),
+        areaId ? eq(skills.areaId, areaId) : undefined,
+        projectId ? eq(skills.projectId, projectId) : undefined,
+        parentSkillId ? eq(skills.parentSkillId, parentSkillId) : undefined
+      )
+    ).orderBy(asc(skills.levelPosition));
+
+    if (levelSkills.length === 0) return;
+
+    // Step 1: Ensure auto-complete nodes (isAutoComplete=1) are always mastered
+    for (const skill of levelSkills) {
+      if (skill.isAutoComplete === 1 && skill.status !== "mastered") {
+        await db.update(skills)
+          .set({ status: "mastered" })
+          .where(eq(skills.id, skill.id));
+      }
+    }
+
+    // Step 2: Get non-auto-complete nodes for available status calculation
+    const nonAutoSkills = levelSkills.filter(s => s.isAutoComplete !== 1);
+    
+    if (nonAutoSkills.length === 0) {
+      // All nodes are auto-complete, nothing more to do
+      return;
+    }
+
+    // Step 3: Find last consecutive mastered node in non-auto nodes
+    let lastConsecutiveMasteredIndex = -1;
+    for (let i = 0; i < nonAutoSkills.length; i++) {
+      if (nonAutoSkills[i].status === "mastered") {
+        lastConsecutiveMasteredIndex = i;
+      } else {
+        break; // Chain is broken
+      }
+    }
+
+    // Step 4: Set available node and lock all others
+    // The first non-mastered non-auto node becomes available
+    let availableNodeSet = false;
+    for (let i = 0; i < nonAutoSkills.length; i++) {
+      const skill = nonAutoSkills[i];
+      let newStatus: "mastered" | "available" | "locked";
+      
+      if (i <= lastConsecutiveMasteredIndex) {
+        newStatus = "mastered";
+      } else if (!availableNodeSet) {
+        newStatus = "available";
+        availableNodeSet = true;
+      } else {
+        newStatus = "locked";
+      }
+
+      if (skill.status !== newStatus) {
+        await db.update(skills)
+          .set({ status: newStatus })
+          .where(eq(skills.id, skill.id));
+      }
+    }
   }
 
   async recalculateNodeStatusesAfterReorder(
@@ -1333,7 +1418,7 @@ export class DbStorage implements IStorage {
     const id = randomUUID();
     console.log('[storage.createGlobalSkill] Creating with id:', id, 'skill:', skill);
     try {
-      const result = await db.insert(globalSkills).values({ id, ...skill }).returning();
+      const result = await db.insert(globalSkills).values({ id, ...skill } as any).returning();
       console.log('[storage.createGlobalSkill] Created:', result[0]);
       return result[0];
     } catch (error) {
@@ -1344,7 +1429,7 @@ export class DbStorage implements IStorage {
 
   async updateGlobalSkill(id: string, skill: Partial<InsertGlobalSkill>): Promise<GlobalSkill | undefined> {
     const result = await db.update(globalSkills)
-      .set({ ...skill, updatedAt: new Date() })
+      .set({ ...skill, updatedAt: new Date() } as any)
       .where(eq(globalSkills.id, id))
       .returning();
     return result[0];
@@ -1450,7 +1535,7 @@ export class DbStorage implements IStorage {
     }
 
     const result = await db.update(globalSkills)
-      .set({ completed: true, completedAt: new Date(), updatedAt: new Date() })
+      .set({ completed: 1 as any, completedAt: new Date(), updatedAt: new Date() })
       .where(eq(globalSkills.id, id))
       .returning();
 
@@ -1462,7 +1547,7 @@ export class DbStorage implements IStorage {
     if (!skill) return undefined;
 
     const result = await db.update(globalSkills)
-      .set({ completed: false, completedAt: null, updatedAt: new Date() })
+      .set({ completed: 0 as any, completedAt: null, updatedAt: new Date() })
       .where(eq(globalSkills.id, id))
       .returning();
 
@@ -1485,7 +1570,7 @@ export class DbStorage implements IStorage {
       ...habit,
       scheduledDays: Array.isArray(habit.scheduledDays) ? habit.scheduledDays : [0,1,2,3,4,5,6]
     };
-    const result = await db.insert(habits).values({ id, ...safeData }).returning();
+    const result = await db.insert(habits).values({ id, ...safeData } as any).returning();
     return result[0];
   }
 
@@ -1496,7 +1581,7 @@ export class DbStorage implements IStorage {
       updatedAt: new Date()
     };
     const result = await db.update(habits)
-      .set(safeData)
+      .set(safeData as any)
       .where(eq(habits.id, id))
       .returning();
     return result[0];
@@ -1566,10 +1651,10 @@ export class DbStorage implements IStorage {
     const id = randomUUID();
     const safeData = {
       ...practice,
-      completedIntervals: Array.isArray(practice.completedIntervals) ? practice.completedIntervals : []
+      completedIntervals: Array.isArray(practice.completedIntervals) ? practice.completedIntervals : [] as any
     };
     const result = await db.insert(spaceRepetitionPractices)
-      .values({ id, ...safeData })
+      .values({ id, ...safeData } as any)
       .returning();
     return result[0];
   }
@@ -1581,7 +1666,7 @@ export class DbStorage implements IStorage {
       updatedAt: new Date()
     };
     const result = await db.update(spaceRepetitionPractices)
-      .set(safeData)
+      .set(safeData as any)
       .where(eq(spaceRepetitionPractices.id, id))
       .returning();
     return result[0];
@@ -1589,6 +1674,97 @@ export class DbStorage implements IStorage {
 
   async deleteSpaceRepetitionPractice(id: string): Promise<void> {
     await db.delete(spaceRepetitionPractices).where(eq(spaceRepetitionPractices.id, id));
+  }
+
+  // Book Reading Tracker
+  async getBooks(userId: string, archived?: boolean): Promise<Book[]> {
+    if (archived === true) {
+      // Only archived books
+      return await db.select().from(booksLibrary)
+        .where(and(eq(booksLibrary.userId, userId), isNotNull(booksLibrary.archivedAt)));
+    } else if (archived === false) {
+      // Only active books (not archived)
+      return await db.select().from(booksLibrary)
+        .where(and(eq(booksLibrary.userId, userId), isNull(booksLibrary.archivedAt)));
+    }
+    
+    // Return all books (both archived and active)
+    return await db.select().from(booksLibrary)
+      .where(eq(booksLibrary.userId, userId));
+  }
+
+  async getBook(id: string): Promise<Book | undefined> {
+    const result = await db.select().from(booksLibrary)
+      .where(eq(booksLibrary.id, id));
+    return result[0];
+  }
+
+  async createBook(book: InsertBook & { userId: string }): Promise<Book> {
+    const id = randomUUID();
+    const safeData = {
+      ...book,
+      goalDays: Array.isArray(book.goalDays) ? book.goalDays : [0, 1, 2, 3, 4, 5]
+    };
+    const result = await db.insert(booksLibrary)
+      .values({ id, ...safeData } as any)
+      .returning();
+    return result[0];
+  }
+
+  async updateBook(id: string, book: Partial<InsertBook>): Promise<Book | undefined> {
+    const safeData = {
+      ...book,
+      goalDays: book.goalDays ? (Array.isArray(book.goalDays) ? book.goalDays : [0, 1, 2, 3, 4, 5]) : undefined,
+      updatedAt: new Date()
+    };
+    const result = await db.update(booksLibrary)
+      .set(safeData as any)
+      .where(eq(booksLibrary.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteBook(id: string): Promise<void> {
+    await db.delete(booksLibrary).where(eq(booksLibrary.id, id));
+  }
+
+  async archiveBook(id: string): Promise<Book | undefined> {
+    const result = await db.update(booksLibrary)
+      .set({ archivedAt: new Date(), updatedAt: new Date() })
+      .where(eq(booksLibrary.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async unarchiveBook(id: string): Promise<Book | undefined> {
+    const result = await db.update(booksLibrary)
+      .set({ archivedAt: null, updatedAt: new Date() })
+      .where(eq(booksLibrary.id, id))
+      .returning();
+    return result[0];
+  }
+
+  // Book Reading Sessions
+  async getBookSessions(bookId: string): Promise<BookReadingSession[]> {
+    return await db.select().from(bookReadingSessions)
+      .where(eq(bookReadingSessions.bookId, bookId));
+  }
+
+  async getBookSessionsByDate(bookId: string, date: string): Promise<BookReadingSession[]> {
+    return await db.select().from(bookReadingSessions)
+      .where(and(eq(bookReadingSessions.bookId, bookId), eq(bookReadingSessions.date, date)));
+  }
+
+  async createBookSession(session: InsertBookReadingSession): Promise<BookReadingSession> {
+    const id = randomUUID();
+    const result = await db.insert(bookReadingSessions)
+      .values({ id, ...session } as any)
+      .returning();
+    return result[0];
+  }
+
+  async deleteBookSession(id: string): Promise<void> {
+    await db.delete(bookReadingSessions).where(eq(bookReadingSessions.id, id));
   }
 }
 

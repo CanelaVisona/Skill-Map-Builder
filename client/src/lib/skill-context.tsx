@@ -3805,6 +3805,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       // Mark reordering complete to allow auto-unlock effects again
       isReordering.current = false;
       console.log("[reorderSkillWithinLevel] Reorder complete, local state updated");
+      
+      // Fetch fresh data from backend to ensure all recalculated values (status, opacity) are correct
+      await refreshAllAreas();
     } catch (error) {
       console.error("Error reordering skill within level:", error);
       isReordering.current = false;

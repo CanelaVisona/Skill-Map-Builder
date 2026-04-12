@@ -239,6 +239,30 @@ export const spaceRepetitionPractices = pgTable("space_repetition_practices", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+// ============ BOOK READING TRACKER TABLES ============
+
+export const booksLibrary = pgTable("books_library", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  author: text("author").notNull().default(""),
+  totalPages: integer("total_pages").notNull(),
+  mode: text("mode").notNull().$type<"pages" | "chapters">().default("pages"),
+  goalDays: jsonb("goal_days").notNull().$type<number[]>().default([0, 1, 2, 3, 4, 5]),
+  archivedAt: timestamp("archived_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const bookReadingSessions = pgTable("book_reading_sessions", {
+  id: varchar("id").primaryKey(),
+  bookId: varchar("book_id").notNull().references(() => booksLibrary.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  date: varchar("date").notNull(), // YYYY-MM-DD format
+  page: integer("page").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertSessionSchema = createInsertSchema(sessions).omit({ id: true });
 export const insertAreaSchema = createInsertSchema(areas);
@@ -328,9 +352,15 @@ export type GlobalSkill = typeof globalSkills.$inferSelect;
 export const insertHabitSchema = createInsertSchema(habits).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertHabitRecordSchema = createInsertSchema(habitRecords).omit({ id: true, createdAt: true });
 export const insertSpaceRepetitionPracticeSchema = createInsertSchema(spaceRepetitionPractices).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertBooksLibrarySchema = createInsertSchema(booksLibrary).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertBookReadingSessionSchema = createInsertSchema(bookReadingSessions).omit({ id: true, createdAt: true });
 export type InsertHabit = z.infer<typeof insertHabitSchema>;
 export type Habit = typeof habits.$inferSelect;
 export type InsertHabitRecord = z.infer<typeof insertHabitRecordSchema>;
 export type HabitRecord = typeof habitRecords.$inferSelect;
 export type InsertSpaceRepetitionPractice = z.infer<typeof insertSpaceRepetitionPracticeSchema>;
 export type SpaceRepetitionPractice = typeof spaceRepetitionPractices.$inferSelect;
+export type InsertBook = z.infer<typeof insertBooksLibrarySchema>;
+export type Book = typeof booksLibrary.$inferSelect;
+export type InsertBookReadingSession = z.infer<typeof insertBookReadingSessionSchema>;
+export type BookReadingSession = typeof bookReadingSessions.$inferSelect;

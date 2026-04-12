@@ -154,10 +154,6 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
     // Rule 1: Node 1 (levelPosition === 1) - disable both arrows
     if (skill.levelPosition === 1) return false;
     
-    // Rule 2: Final node - disable down arrow
-    const maxLevelPosition = Math.max(...skillsInLevel.map(s => s.levelPosition || 0));
-    if (skill.isFinalNode === 1 || skill.levelPosition === maxLevelPosition) return false;
-    
     const sorted = [...skillsInLevel].sort((a, b) => a.y - b.y);
     const index = sorted.findIndex(s => s.id === skillId);
     if (index >= sorted.length - 1) return false;
