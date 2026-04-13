@@ -3487,18 +3487,37 @@ export async function registerRoutes(
       }
 
       const { date, page } = req.body;
-      if (!date || page === undefined) {
-        return res.status(400).json({ message: "Fecha y página son requeridas" });
+      
+      // Debug logging
+      console.log("[POST /api/books/:id/sessions] Received body:", JSON.stringify(req.body));
+      console.log("[POST /api/books/:id/sessions] Date:", date, "Type:", typeof date);
+      console.log("[POST /api/books/:id/sessions] Page:", page, "Type:", typeof page);
+      
+      if (!date || page === undefined || page === null) {
+        return res.status(400).json({ 
+          message: "Fecha y página son requeridas",
+          received: { date, page, dateType: typeof date, pageType: typeof page }
+        });
+      }
+
+      const parsedPage = parseInt(String(page));
+      if (isNaN(parsedPage) || parsedPage <= 0) {
+        return res.status(400).json({ 
+          message: "Página debe ser un número válido mayor a 0",
+          received: { page, parsedPage }
+        });
       }
 
       const session = await storage.createBookSession({
         bookId: req.params.id,
+        userId: req.userId,
         date,
-        page: parseInt(page),
+        page: parsedPage,
       } as any);
 
       res.status(201).json(session);
     } catch (error: any) {
+      console.error("[POST /api/books/:id/sessions] Error:", error);
       res.status(500).json({ message: error.message });
     }
   });

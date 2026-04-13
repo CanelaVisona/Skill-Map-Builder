@@ -68,6 +68,14 @@ function formatDate(dateStr: string): string {
   return d + "/" + m + "/" + y.slice(2);
 }
 
+// Format date for timeline: dd/mm (or dd/mm/yy if year differs from current)
+function formatDateWithMonth(dateStr: string): string {
+  const [y, m, d] = dateStr.split("-");
+  const currentYear = new Date().getFullYear().toString();
+  const isCurrentYear = y === currentYear;
+  return isCurrentYear ? `${d}/${m}` : `${d}/${m}/${y.slice(2)}`;
+}
+
 function getUniqueDates(sessions: BookSession[]): string[] {
   return [...new Set(sessions.map((s) => s.date))].sort();
 }
@@ -98,55 +106,82 @@ function getPrevPage(sessions: BookSession[]): number {
   return p.length ? Math.max(...p.map((s) => s.page)) : 0;
 }
 
+// Get the current display page for progress indicator: today's max OR previous max
+function getCurrentDisplayPage(sessions: BookSession[]): number {
+  const todayPages = getTodaySessions(sessions).map((s) => s.page);
+  if (todayPages.length > 0) {
+    return Math.max(...todayPages);
+  }
+  return getPrevPage(sessions);
+}
+
 // Complex registration logic: calculates which sessions to save based on rules
+// Returns { sessions: newSessions, didChange: boolean, registerPageNumber: number }
 function calculateSessionsForPage(
   currentSessions: BookSession[],
   newPage: number,
   today: string
-): BookSession[] {
-  const todaySessions = currentSessions.filter((s) => s.date === today).map((s) => s.page).sort((a, b) => a - b);
-  
-  // Rule 1: No duplicates
-  if (todaySessions.includes(newPage)) {
-    return currentSessions; // No change
+): { sessions: BookSession[]; didChange: boolean } {
+  if (newPage <= 0) {
+    return { sessions: currentSessions, didChange: false };
   }
-  
-  if (todaySessions.length === 0) {
-    // First registration of the day
-    return [...currentSessions, { id: "", date: today, page: newPage, createdAt: "", bookId: "", userId: "" }];
+
+  const todaySessionPages = currentSessions
+    .filter((s) => s.date === today)
+    .map((s) => s.page)
+    .sort((a, b) => a - b);
+
+  // Rule 1: Ignore if same number already exists today
+  if (todaySessionPages.includes(newPage)) {
+    return { sessions: currentSessions, didChange: false };
   }
-  
-  const minPage = Math.min(...todaySessions);
-  const maxPage = Math.max(...todaySessions);
-  
-  // Rule 2: Smaller than all
+
+  // First registration of the day
+  if (todaySessionPages.length === 0) {
+    return {
+      sessions: [
+        ...currentSessions,
+        { id: "", date: today, page: newPage } as BookSession,
+      ],
+      didChange: true,
+    };
+  }
+
+  const minPage = todaySessionPages[0];
+  const maxPage = todaySessionPages[todaySessionPages.length - 1];
+
+  // Rule 2: Smaller than all - delete all today sessions, save only new
   if (newPage < minPage) {
-    // Delete all today sessions, save only new smaller number
-    return [
-      ...currentSessions.filter((s) => s.date !== today),
-      { id: "", date: today, page: newPage, createdAt: "", bookId: "", userId: "" }
-    ];
+    return {
+      sessions: [
+        ...currentSessions.filter((s) => s.date !== today),
+        { id: "", date: today, page: newPage } as BookSession,
+      ],
+      didChange: true,
+    };
   }
-  
-  // Rule 3: Between two registrations (smaller than last, but not smaller than all)
-  if (newPage < maxPage && newPage > minPage) {
-    // Delete only the last (maximum) registration
-    const nonLastToday = currentSessions.filter((s) => !(s.date === today && s.page === maxPage));
-    return [
-      ...nonLastToday,
-      { id: "", date: today, page: newPage, createdAt: "", bookId: "", userId: "" }
-    ];
+
+  // Rule 3: Between min and max - delete last (max) and save new
+  if (newPage < maxPage) {
+    return {
+      sessions: [
+        ...currentSessions.filter(
+          (s) => !(s.date === today && s.page === maxPage)
+        ),
+        { id: "", date: today, page: newPage } as BookSession,
+      ],
+      didChange: true,
+    };
   }
-  
-  // Rule 4: Greater than all - add as new registration
-  if (newPage > maxPage) {
-    return [
+
+  // Rule 4: Greater than max - add as new registration
+  return {
+    sessions: [
       ...currentSessions,
-      { id: "", date: today, page: newPage, createdAt: "", bookId: "", userId: "" }
-    ];
-  }
-  
-  return currentSessions; // fallback
+      { id: "", date: today, page: newPage } as BookSession,
+    ],
+    didChange: true,
+  };
 }
 
 function computeStreak(book: Book): {
@@ -249,13 +284,26 @@ function useLongPress(callback: () => void, duration = 500) {
 }
 
 // SVG Track Component with manual drag implementation
-function SVGTrack({ book, sessions, onDragStart }: { book: Book; sessions: BookSession[]; onDragStart?: () => void }) {
+function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; sessions: BookSession[]; onDragStart?: () => void; onPreviewPage?: (page: number) => void }) {
   const today = todayStr();
   const todayColor = getColorForDate(sessions, today);
   const prevPage = getPrevPage(sessions);
   const outer = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [currentPage, setCurrentPage] = useState(Math.max(...(getTodaySessions(sessions).map((s) => s.page) || [prevPage])));
+  const todayPages = getTodaySessions(sessions).map((s) => s.page).sort((a, b) => a - b);
+  const lastRegisteredToday = todayPages.length > 0 ? todayPages[todayPages.length - 1] : null;
+  
+  // currentPage is the PREVIEW (where cursor is during drag), starts at lastRegisteredToday or prevPage
+  const [currentPage, setCurrentPage] = useState(
+    lastRegisteredToday !== null ? lastRegisteredToday : prevPage
+  );
+  
+  // Update currentPage initial value when sessions change
+  useEffect(() => {
+    const todayPages = getTodaySessions(sessions).map((s) => s.page).sort((a, b) => a - b);
+    const lastRegistered = todayPages.length > 0 ? todayPages[todayPages.length - 1] : null;
+    setCurrentPage(lastRegistered !== null ? lastRegistered : getPrevPage(sessions));
+  }, [sessions]);
 
   const handleDrag = (clientX: number) => {
     if (!outer.current) return;
@@ -263,7 +311,9 @@ function SVGTrack({ book, sessions, onDragStart }: { book: Book; sessions: BookS
     const x = clientX - rect.left;
     const ratio = Math.max(0, Math.min(1, x / rect.width));
     const newPage = Math.round(ratio * book.totalPages);
-    setCurrentPage(Math.max(0, Math.min(newPage, book.totalPages)));
+    const previewPage = Math.max(0, Math.min(newPage, book.totalPages));
+    setCurrentPage(previewPage);
+    onPreviewPage?.(previewPage);
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -281,6 +331,7 @@ function SVGTrack({ book, sessions, onDragStart }: { book: Book; sessions: BookS
 
   const handleMouseUp = () => {
     setIsDragging(false);
+    // NO registration here - only preview
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -302,6 +353,7 @@ function SVGTrack({ book, sessions, onDragStart }: { book: Book; sessions: BookS
 
   const handleTouchEnd = () => {
     setIsDragging(false);
+    // NO registration here - only preview
   };
 
   useEffect(() => {
@@ -386,18 +438,32 @@ function SVGTrack({ book, sessions, onDragStart }: { book: Book; sessions: BookS
     liveSegRect.setAttribute("width", String(Math.max(0, px(Math.max(...todayPages, currentPage)) - px(prevPage))));
     svg.appendChild(liveSegRect);
 
-    // Today's intermediate markers
-    todayPages.forEach((page, i) => {
-      if (i < todayPages.length - 1) {
-        const mark = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-        mark.setAttribute("cx", String(px(page)));
-        mark.setAttribute("cy", String(TY));
-        mark.setAttribute("r", "8");
-        mark.setAttribute("fill", todayColor);
-        mark.setAttribute("stroke", "var(--color-background)");
-        mark.setAttribute("stroke-width", "2");
-        svg.appendChild(mark);
-      }
+    // Small markers for past days' maximums
+    pastDates.forEach((date) => {
+      const maxPage = Math.max(
+        ...sessions.filter((s) => s.date === date).map((s) => s.page)
+      );
+      const col = getColorForDate(sessions, date);
+      const marker = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      marker.setAttribute("cx", String(px(maxPage)));
+      marker.setAttribute("cy", String(TY));
+      marker.setAttribute("r", "4");
+      marker.setAttribute("fill", col);
+      marker.setAttribute("stroke", "var(--color-background)");
+      marker.setAttribute("stroke-width", "1.5");
+      svg.appendChild(marker);
+    });
+
+    // Today's markers for ALL sessions (including final/last registered)
+    todayPages.forEach((page) => {
+      const mark = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      mark.setAttribute("cx", String(px(page)));
+      mark.setAttribute("cy", String(TY));
+      mark.setAttribute("r", "5");
+      mark.setAttribute("fill", todayColor);
+      mark.setAttribute("stroke", "var(--color-background)");
+      mark.setAttribute("stroke-width", "1.5");
+      svg.appendChild(mark);
     });
 
     // Main thumb circle (responsive, min 16px radius)
@@ -451,21 +517,22 @@ function BookCardWithLongPress({
   onDetail,
   onDelete,
   onEdit,
-  onRegisterPage,
   onArchive,
+  onRegisterPage,
 }: {
   book: Book;
   sessions: BookSession[];
   onDetail: () => void;
   onDelete: () => void;
   onEdit: () => void;
-  onRegisterPage: () => void;
   onArchive: () => void;
+  onRegisterPage: (bookId: string, page: number) => void;
 }) {
   const [showMenu, setShowMenu] = useState(false);
+  const [previewPage, setPreviewPage] = useState<number>(0);
   const longPressHandler = useLongPress(() => setShowMenu(true), 800);
   const { streak, daysDisplay } = computeStreak(book);
-  const prevPage = getPrevPage(sessions);
+  const currentPage = getCurrentDisplayPage(sessions);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const DRAG_THRESHOLD = 5;
 
@@ -532,30 +599,61 @@ function BookCardWithLongPress({
           <span className="text-xs text-muted-foreground block">{book.author}</span>
         </div>
         <span className="text-xs bg-green-500/30 text-green-700 dark:text-green-400 px-2 py-1 rounded-full font-bold flex-shrink-0 whitespace-nowrap">
-          {prevPage}/{book.totalPages}
+          {currentPage}/{book.totalPages}
         </span>
       </div>
 
       {/* SVG Track */}
       <div className="mb-3">
-        <SVGTrack book={book} sessions={sessions} onDragStart={longPressHandler.cancel} />
+            <SVGTrack 
+              book={book} 
+              sessions={sessions} 
+              onDragStart={longPressHandler.cancel}
+              onPreviewPage={setPreviewPage}
+            />
       </div>
 
-      {/* Streak */}
+      {/* Register Button */}
+      <div className="mb-3">
+        <Button
+          onClick={(e) => {
+            e.stopPropagation();
+            if (previewPage > 0) {
+              onRegisterPage(book.id, previewPage);
+              setPreviewPage(0);
+            }
+          }}
+          disabled={previewPage === 0}
+          className="w-full rounded-xl bg-green-500/20 text-green-700 dark:text-green-400 hover:bg-green-500/30 border border-green-500/50 text-xs h-10 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Registrar {previewPage > 0 ? `${previewPage}/${book.totalPages}` : ''}
+        </Button>
+      </div>
+
       <div className="text-xs font-medium text-foreground mb-2">
         {streak} día{streak !== 1 ? "s" : ""} 🔥
       </div>
 
-      {/* Próximo día a leer */}
-      {nextDayCircle && (
-        <div className="flex gap-1 mb-2">
-          <div
-            className="w-5 h-5 rounded-full border-2 border-dashed border-green-600 flex items-center justify-center text-[10px]"
-          >
-            <span className="text-green-600">+1</span>
-          </div>
-        </div>
-      )}
+      {/* Racha de lectura */}
+      <div className="flex gap-1 mb-2 flex-wrap">
+        {daysDisplay.map((day, idx) =>
+          day.read ? (
+            <div
+              key={idx}
+              className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center text-[14px]"
+            >
+              🔥
+            </div>
+          ) : day.isNext ? (
+            <div
+              key={idx}
+              className="w-5 h-5 rounded-full border-2 border-dashed border-green-600 flex items-center justify-center text-[10px]"
+            >
+              <span className="text-green-600">+1</span>
+            </div>
+          ) : null
+        )}
+      </div>
 
       {/* Botones */}
       {showMenu ? (
@@ -605,17 +703,7 @@ function BookCardWithLongPress({
             Eliminar
           </Button>
         </motion.div>
-      ) : (
-        <Button
-          onClick={(e) => {
-            e.stopPropagation();
-            onRegisterPage();
-          }}
-          className="w-full rounded-xl bg-green-500/20 text-green-700 dark:text-green-400 hover:bg-green-500/30 border border-green-500/50 text-xs h-12 min-h-12"
-        >
-          Registrar
-        </Button>
-      )}
+      ) : null}
     </motion.div>
   );
 }
@@ -647,6 +735,12 @@ function DetailPanel({
   // Get today's sessions
   const todaySessions = getTodaySessions(sessions);
   const todayMaxPage = todaySessions.length > 0 ? Math.max(...todaySessions.map((s) => s.page)) : null;
+  const todayPages = todaySessions.length > 0 
+    ? todaySessions
+        .map((s) => s.page)
+        .sort((a, b) => a - b)
+        .join(" · ")
+    : null;
   
   // Count unique dates with sessions
   const uniqueReadDates = getUniqueDates(sessions).length;
@@ -654,7 +748,8 @@ function DetailPanel({
   // Get max page ever read (for progress metric)
   const maxPageEver = sessions.length > 0 ? Math.max(...sessions.map((s) => s.page)) : 0;
   
-  // Remove duplicate sessions (keep only highest page per date)
+  // Remove duplicate sessions (keep only highest page per date) - for reference only
+  // But display ALL sessions in the list
   const sessionsNoDups: BookSession[] = [];
   const dateMap = new Map<string, BookSession>();
   sessions.forEach((s) => {
@@ -664,7 +759,9 @@ function DetailPanel({
     }
   });
   dateMap.forEach((v) => sessionsNoDups.push(v));
-  const sortedSessions = sessionsNoDups.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  
+  // For display, show ALL sessions (including multiple per day)
+  const sortedSessions = sessions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   return (
     <div className="flex flex-col h-full bg-background">
@@ -704,13 +801,13 @@ function DetailPanel({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-muted-foreground/20 px-4 py-4 space-y-4">
+      <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-muted-foreground/10 px-4 py-4 space-y-4">
         {/* Hoy Banner */}
         <div className="border border-yellow-500/40 bg-yellow-500/10 rounded-lg px-2.5 py-1.5 text-center">
           <div className="text-lg mb-0.5">🔥</div>
           <p className="text-xs font-black text-yellow-500/90 mb-0.5">Hoy</p>
-          {todayMaxPage !== null ? (
-            <p className="text-xs text-yellow-500/80">¡Estás en {book.mode === "chapters" ? "el capítulo" : "la página"} {todayMaxPage}!</p>
+          {todayPages !== null ? (
+            <p className="text-xs text-yellow-500/80">¡Estás en {book.mode === "chapters" ? "los capítulos" : "las páginas"} {todayPages}!</p>
           ) : (
             <p className="text-xs text-yellow-500/80">¡Hoy es el día!</p>
           )}
@@ -738,7 +835,7 @@ function DetailPanel({
                     >
                       {day.read ? "🔥" : "+1"}
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1">{day.date.split("-").slice(2).join("/")}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{formatDateWithMonth(day.date)}</p>
                   </div>
                 );
               })}
@@ -780,6 +877,8 @@ function DetailPanel({
           </div>
         )}
       </div>
+
+
     </div>
   );
 }
@@ -846,7 +945,7 @@ function AddPanel({
         <h2 className="text-lg font-semibold text-foreground">{editingBook ? "Editar Libro" : "Agregar Libro"}</h2>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-5 space-y-3 scrollbar-thin scrollbar-thumb-muted-foreground/20">
+      <div className="flex-1 overflow-y-auto p-5 space-y-3 scrollbar-thin scrollbar-thumb-muted-foreground/10">
         <Input placeholder="Título" value={title} onChange={(e) => setTitle(e.target.value)} />
         <Input placeholder="Autor" value={author} onChange={(e) => setAuthor(e.target.value)} />
 
@@ -963,17 +1062,18 @@ function ArchivedPanel({
           </button>
           <div className="min-w-0 flex-1">
             <h2 className="font-black text-base sm:text-lg text-yellow-700 dark:text-yellow-300 flex items-center gap-2 flex-wrap">
-              <span>⚔️ Conquistados</span>
+              <Swords className="h-5 w-5 text-green-700 dark:text-green-400" />
+              <span>Experiencias</span>
             </h2>
             <p className="mt-1 text-xs sm:text-sm text-yellow-600/70 dark:text-yellow-400/70">
-              ¡Felicidades! Terminaste estos libros
+              Viviste estos libros
             </p>
           </div>
         </div>
       </div>
 
       {/* Books List */}
-      <div className="px-3 sm:px-5 py-3 flex flex-col gap-2 flex-1 overflow-y-auto">
+      <div className="px-3 sm:px-5 py-3 flex flex-col gap-2 flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-muted-foreground/10">
         {!books || books.length === 0 ? (
           <p className="text-sm text-yellow-600/70 dark:text-yellow-400/70 py-4">
             No hay libros archivados
@@ -1001,7 +1101,7 @@ function ArchivedPanel({
                     <span className="text-xs text-muted-foreground block">{book.author}</span>
                   </div>
                   <span className="text-xs bg-yellow-500/30 text-yellow-700 dark:text-yellow-400 px-2 py-1 rounded-full font-bold flex-shrink-0 whitespace-nowrap">
-                    {prevPage}/{book.totalPages}
+                    {getCurrentDisplayPage(book.sessions || [])}/{book.totalPages}
                   </span>
                 </div>
                 <div className="flex gap-2 mt-2">
@@ -1157,42 +1257,73 @@ export function BookTracker() {
     mutationFn: async ({ bookId, page }: { bookId: string; page: number }) => {
       const book = books.find((b) => b.id === bookId);
       if (!book) throw new Error("Book not found");
+      
+      // Ensure page is a valid number
+      const validatedPage = Math.round(Number(page));
+      if (validatedPage <= 0 || isNaN(validatedPage)) throw new Error("Invalid page number");
+      
+      console.log("[registerPage] Starting registration", { bookId, page, validatedPage });
 
       const sessions = book.sessions || [];
       const today = todayStr();
       
+      console.log("[registerPage] Today:", today, "Current sessions:", sessions);
+      
       // Calculate final sessions based on complex registration logic
-      const finalSessions = calculateSessionsForPage(sessions, page, today);
+      const { sessions: finalSessions, didChange } = calculateSessionsForPage(sessions, validatedPage, today);
       
       // If no change, don't make request
-      if (finalSessions === sessions) {
-        return;
+      if (!didChange) {
+        console.log("[registerPage] No change detected, skipping POST");
+        return { page: validatedPage, noChange: true };
       }
 
-      // Get today's sessions that will be deleted or modified
+      // Get today's sessions that will be deleted
       const todaySessions = sessions.filter((s) => s.date === today);
       const finalTodaySessions = finalSessions.filter((s) => s.date === today);
 
+      console.log("[registerPage] Sessions to delete:", todaySessions.filter(s => !finalTodaySessions.find(fs => fs.page === s.page)));
+      
       // Delete sessions that are no longer in final state
       for (const session of todaySessions) {
         if (!finalTodaySessions.find((s) => s.page === session.page)) {
-          await fetch(`/api/books/${bookId}/sessions?date=${today}&page=${session.page}`, {
+          console.log("[registerPage] Deleting session:", session.id);
+          await fetch(`/api/books/${bookId}/sessions/${session.id}`, {
             method: "DELETE",
             headers: { "Content-Type": "application/json" },
-          });
+          }).catch((e) => console.error("Failed to delete session:", e));
         }
       }
 
       // Add new session
+      const payload = { date: today, page: validatedPage };
+      console.log("[registerPage] Posting to /api/books/:id/sessions");
+      console.log("[registerPage] Payload:", JSON.stringify(payload));
+      console.log("[registerPage] Date type:", typeof payload.date, "Page type:", typeof payload.page);
+      
       const res = await fetch(`/api/books/${bookId}/sessions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date: today, page }),
+        body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error("Failed to register page");
+      
+      const responseText = await res.text();
+      console.log("[registerPage] Response status:", res.status);
+      console.log("[registerPage] Response body:", responseText);
+      
+      if (!res.ok) {
+        try {
+          const errorData = JSON.parse(responseText);
+          console.error("[registerPage] Error response:", errorData);
+        } catch {
+          console.error("[registerPage] Error (not JSON):", responseText);
+        }
+        throw new Error("Failed to register page");
+      }
       
       // Auto-archive if completed
-      if (page === book.totalPages) {
+      if (validatedPage === book.totalPages) {
+        console.log("[registerPage] Auto-archiving book");
         const archiveRes = await fetch(`/api/books/${bookId}/archive`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -1200,9 +1331,10 @@ export function BookTracker() {
         if (!archiveRes.ok) console.error("Failed to auto-archive book");
       }
       
-      return res.json();
+      return JSON.parse(responseText);
     },
     onSuccess: () => {
+      console.log("[registerPage] Mutation successful, invalidating queries");
       queryClient.invalidateQueries({ queryKey: ["/api/books"] });
     },
   });
@@ -1229,7 +1361,7 @@ export function BookTracker() {
           </div>
 
           {/* Book List */}
-          <div className="flex-1 overflow-y-auto px-5 py-3 flex flex-col gap-2 scrollbar-thin scrollbar-thumb-muted-foreground/20">
+          <div className="flex-1 overflow-y-auto px-5 py-3 flex flex-col gap-2 scrollbar-thin scrollbar-thumb-muted-foreground/10">
             {isLoading ? (
               <div className="p-4 text-center text-sm text-muted-foreground">Cargando libros...</div>
             ) : books.length === 0 ? (
@@ -1251,15 +1383,8 @@ export function BookTracker() {
                     setEditingBookId(book.id);
                     setCurrentPanel("add");
                   }}
-                  onRegisterPage={() => {
-                    const lastSession = getTodaySessions(book.sessions || []);
-                    const currentMaxPage = lastSession.length > 0
-                      ? Math.max(...lastSession.map((s) => s.page))
-                      : getPrevPage(book.sessions || []);
-                    const nextPage = Math.min(currentMaxPage + 1, book.totalPages);
-                    registerPage.mutate({ bookId: book.id, page: nextPage });
-                  }}
                   onArchive={() => archiveBook.mutate(book.id)}
+                  onRegisterPage={(bookId, page) => registerPage.mutate({ bookId, page })}
                 />
               ))
             )}
@@ -1269,7 +1394,7 @@ export function BookTracker() {
           <div className="border-t border-border/30 flex items-center justify-end px-4 sm:px-6 py-3 gap-2">
             <button
               onClick={() => setCurrentPanel("archived")}
-              className="inline-flex items-center justify-center rounded-full bg-purple-500/20 p-2 text-purple-700 hover:opacity-80 dark:text-purple-400 active:opacity-60 transition-colors touch-manipulation h-9 w-9"
+              className="inline-flex items-center justify-center rounded-full bg-green-500/20 p-2 text-green-700 hover:opacity-80 dark:text-green-400 active:opacity-60 transition-colors touch-manipulation h-9 w-9"
               title="Libros archivados"
             >
               <Swords className="h-4 w-4" />
