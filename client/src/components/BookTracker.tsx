@@ -290,7 +290,6 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
   const prevPage = getPrevPage(sessions);
   const outer = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const isDraggingTouchRef = useRef(false);
   const todayPages = getTodaySessions(sessions).map((s) => s.page).sort((a, b) => a - b);
   const lastRegisteredToday = todayPages.length > 0 ? todayPages[todayPages.length - 1] : null;
   
@@ -306,49 +305,61 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
     setCurrentPage(lastRegistered !== null ? lastRegistered : getPrevPage(sessions));
   }, [sessions]);
 
-  // Exclusive touch handler for iOS compatibility
+  // Exclusive touch handler for iOS compatibility with real-time dimension calculation
   useEffect(() => {
     const el = outer.current;
     if (!el) return;
 
-    const W = el.clientWidth || 300;
     const PAD = 0;
-    const trackW = W - PAD * 2;
+    const touchStartX = { current: 0 };
+    const touchStartY = { current: 0 };
+    const isDragging = { current: false };
+    const DRAG_THRESHOLD = 8;
     const total = book.totalPages || 1;
 
-    const updatePageFromTouch = (touch: Touch) => {
+    const onTouchStart = (e: TouchEvent) => {
+      touchStartX.current = e.touches[0].clientX;
+      touchStartY.current = e.touches[0].clientY;
+      isDragging.current = false;
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      const dx = Math.abs(e.touches[0].clientX - touchStartX.current);
+      const dy = Math.abs(e.touches[0].clientY - touchStartY.current);
+      
+      // Only start dragging if threshold exceeded
+      if (!isDragging.current) {
+        if (dx < DRAG_THRESHOLD && dy < DRAG_THRESHOLD) return;
+        isDragging.current = true;
+        onDragStart?.();
+      }
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Calculate dimensions in real-time
       const rect = el.getBoundingClientRect();
-      const relX = touch.clientX - rect.left - PAD;
-      const ratio = Math.max(0, Math.min(1, relX / trackW));
+      const actualTrackWidth = rect.width - PAD * 2;
+      const relX = e.touches[0].clientX - rect.left - PAD;
+      const ratio = Math.max(0, Math.min(1, relX / actualTrackWidth));
       const newPage = Math.round(ratio * total);
       const previewPage = Math.max(0, Math.min(newPage, total));
+      
       setCurrentPage(previewPage);
       onPreviewPage?.(previewPage);
     };
 
-    const onTouchStart = (e: TouchEvent) => {
-      isDraggingTouchRef.current = true;
-      onDragStart?.();
-      if (e.touches.length > 0) {
-        updatePageFromTouch(e.touches[0]);
+    const onTouchEnd = (e: TouchEvent) => {
+      if (isDragging.current) {
+        e.stopPropagation();
+        e.preventDefault();
       }
-    };
-
-    const onTouchMove = (e: TouchEvent) => {
-      if (!isDraggingTouchRef.current) return;
-      e.preventDefault();
-      if (e.touches.length > 0) {
-        updatePageFromTouch(e.touches[0]);
-      }
-    };
-
-    const onTouchEnd = () => {
-      isDraggingTouchRef.current = false;
+      isDragging.current = false;
     };
 
     el.addEventListener("touchstart", onTouchStart, { passive: true });
     el.addEventListener("touchmove", onTouchMove, { passive: false });
-    el.addEventListener("touchend", onTouchEnd, { passive: true });
+    el.addEventListener("touchend", onTouchEnd, { passive: false });
 
     return () => {
       el.removeEventListener("touchstart", onTouchStart);
@@ -688,7 +699,12 @@ function BookCardWithLongPress({
       </div>
 
       {/* SVG Track */}
-      <div className="mb-3" data-slider="true" onTouchEnd={(e) => e.stopPropagation()}>
+      <div 
+        className="mb-3" 
+        data-slider="true" 
+        onTouchStart={(e) => e.stopPropagation()}
+        onTouchEnd={(e) => e.stopPropagation()}
+      >
             <SVGTrack 
               book={book} 
               sessions={sessions} 
@@ -703,6 +719,9 @@ function BookCardWithLongPress({
           onClick={(e) => {
             e.stopPropagation();
             handleRegister();
+          }}
+          onTouchStart={(e) => {
+            e.stopPropagation();
           }}
           onTouchEnd={(e) => {
             e.stopPropagation();
