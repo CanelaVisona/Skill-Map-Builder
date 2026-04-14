@@ -161,12 +161,12 @@ function calculateSessionsForPage(
     };
   }
 
-  // Rule 3: Between min and max - delete last (max) and save new
+  // Rule 3: Between min and max - delete all sessions greater than new, and save new
   if (newPage < maxPage) {
     return {
       sessions: [
         ...currentSessions.filter(
-          (s) => !(s.date === today && s.page === maxPage)
+          (s) => !(s.date === today && s.page > newPage)
         ),
         { id: "", date: today, page: newPage } as BookSession,
       ],
@@ -373,7 +373,7 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
     const rect = outer.current.getBoundingClientRect();
     const x = clientX - rect.left;
     const ratio = Math.max(0, Math.min(1, x / rect.width));
-    const newPage = Math.round(ratio * book.totalPages);
+    const newPage = ratio * book.totalPages; // Keep float for smooth animation
     const previewPage = Math.max(0, Math.min(newPage, book.totalPages));
     setCurrentPage(previewPage);
     onPreviewPage?.(previewPage);
@@ -602,6 +602,8 @@ function BookCardWithLongPress({
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
   const hasMoveDetected = useRef(false);
+  // Track last registered page to reset button state when user moves circle
+  const lastRegisteredPage = useRef<number | null>(null);
 
   const handleClick = () => {
     if (!showMenu) {
@@ -611,12 +613,22 @@ function BookCardWithLongPress({
 
   const handleRegister = () => {
     if (previewPage > 0) {
-      onRegisterPage(book.id, Math.round(previewPage));
+      const pageToRegister = Math.round(previewPage);
+      onRegisterPage(book.id, pageToRegister);
+      lastRegisteredPage.current = pageToRegister;
       setPreviewPage(0);
       setJustRegistered(true);
-      setTimeout(() => setJustRegistered(false), 1500);
     }
   };
+
+  // Reset button state when user moves circle away from last registered position
+  useEffect(() => {
+    if (justRegistered && lastRegisteredPage.current !== null) {
+      if (Math.round(previewPage) !== lastRegisteredPage.current) {
+        setJustRegistered(false);
+      }
+    }
+  }, [previewPage, justRegistered]);
 
   // Exclusive touch-based long press
   const onCardTouchStart = (e: React.TouchEvent) => {
@@ -1145,20 +1157,48 @@ function ArchivedPanel({
   onUnarchive: (bookId: string) => void;
   onDelete: (bookId: string) => void;
 }) {
+  const [showButtonsForBook, setShowButtonsForBook] = useState<Record<string, boolean>>({});
   const longPressTimers = useRef<Record<string, NodeJS.Timeout>>({});
+  const touchStartX = useRef<Record<string, number>>({});
+  const touchStartY = useRef<Record<string, number>>({});
+  const hasMoveDetected = useRef<Record<string, boolean>>({});
 
-  const handleBookPressStart = (bookId: string) => {
-    const timer = setTimeout(() => {
-      // Show menu on long press
+  const handleBookTouchStart = (bookId: string, e: React.TouchEvent) => {
+    touchStartX.current[bookId] = e.touches[0].clientX;
+    touchStartY.current[bookId] = e.touches[0].clientY;
+    hasMoveDetected.current[bookId] = false;
+
+    longPressTimers.current[bookId] = setTimeout(() => {
+      if (!hasMoveDetected.current[bookId]) {
+        setShowButtonsForBook(prev => ({ ...prev, [bookId]: true }));
+        navigator.vibrate?.(50);
+      }
     }, 500);
-    longPressTimers.current[bookId] = timer;
   };
 
-  const handleBookPressEnd = (bookId: string) => {
-    const timer = longPressTimers.current[bookId];
-    if (timer) {
-      clearTimeout(timer);
+  const handleBookTouchMove = (bookId: string, e: React.TouchEvent) => {
+    const dx = Math.abs(e.touches[0].clientX - touchStartX.current[bookId]);
+    const dy = Math.abs(e.touches[0].clientY - touchStartY.current[bookId]);
+    
+    if (dx > 8 || dy > 8) {
+      hasMoveDetected.current[bookId] = true;
+      if (longPressTimers.current[bookId]) {
+        clearTimeout(longPressTimers.current[bookId]);
+        delete longPressTimers.current[bookId];
+      }
+    }
+  };
+
+  const handleBookTouchEnd = (bookId: string) => {
+    if (longPressTimers.current[bookId]) {
+      clearTimeout(longPressTimers.current[bookId]);
       delete longPressTimers.current[bookId];
+    }
+  };
+
+  const handleBookClick = (bookId: string) => {
+    if (!showButtonsForBook[bookId]) {
+      onDetail(bookId);
     }
   };
 
@@ -1200,18 +1240,17 @@ function ArchivedPanel({
         ) : (
           books.map((book) => {
             const prevPage = getPrevPage(book.sessions || []);
+            const showButtons = showButtonsForBook[book.id] || false;
             return (
               <motion.button
                 key={book.id}
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
-                onClick={() => onDetail(book.id)}
-                onMouseDown={() => handleBookPressStart(book.id)}
-                onMouseUp={() => handleBookPressEnd(book.id)}
-                onMouseLeave={() => handleBookPressEnd(book.id)}
-                onTouchStart={() => handleBookPressStart(book.id)}
-                onTouchEnd={() => handleBookPressEnd(book.id)}
-                onTouchCancel={() => handleBookPressEnd(book.id)}
+                onClick={() => handleBookClick(book.id)}
+                onTouchStart={(e) => handleBookTouchStart(book.id, e)}
+                onTouchMove={(e) => handleBookTouchMove(book.id, e)}
+                onTouchEnd={() => handleBookTouchEnd(book.id)}
+                onTouchCancel={() => handleBookTouchEnd(book.id)}
                 className="w-full text-left rounded-2xl border-2 border-yellow-400/50 px-3 sm:px-4 py-2.5 sm:py-3 bg-gradient-to-br from-yellow-500/20 via-amber-500/10 to-yellow-500/10 hover:border-yellow-400 hover:from-yellow-500/30 hover:via-amber-500/20 active:scale-95 transition-all shadow-md hover:shadow-lg hover:shadow-yellow-500/20 touch-manipulation"
               >
                 <div className="flex items-center gap-2 sm:gap-3 mb-1.5 sm:mb-2 flex-wrap">
@@ -1223,27 +1262,29 @@ function ArchivedPanel({
                     {getCurrentDisplayPage(book.sessions || [])}/{book.totalPages}
                   </span>
                 </div>
-                <div className="flex gap-2 mt-2">
-                  <Button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onUnarchive(book.id);
-                    }}
-                    className="flex-1 rounded-lg bg-green-500/20 text-green-700 dark:text-green-400 hover:bg-green-500/30 border border-green-500/50 text-xs h-8"
-                  >
-                    Restaurar
-                  </Button>
-                  <Button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDelete(book.id);
-                    }}
-                    className="flex-1 rounded-lg bg-red-500/20 text-red-700 dark:text-red-400 hover:bg-red-500/30 border border-red-500/50 text-xs h-8"
-                  >
-                    <Trash2 className="h-3 w-3 mr-1" />
-                    Eliminar
-                  </Button>
-                </div>
+                {showButtons && (
+                  <div className="flex gap-2 mt-2">
+                    <Button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onUnarchive(book.id);
+                      }}
+                      className="flex-1 rounded-lg bg-green-500/20 text-green-700 dark:text-green-400 hover:bg-green-500/30 border border-green-500/50 text-xs h-8"
+                    >
+                      Restaurar
+                    </Button>
+                    <Button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDelete(book.id);
+                      }}
+                      className="flex-1 rounded-lg bg-red-500/20 text-red-700 dark:text-red-400 hover:bg-red-500/30 border border-red-500/50 text-xs h-8"
+                    >
+                      <Trash2 className="h-3 w-3 mr-1" />
+                      Eliminar
+                    </Button>
+                  </div>
+                )}
               </motion.button>
             );
           })
