@@ -342,8 +342,8 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
       const actualTrackWidth = rect.width - PAD * 2;
       const relX = e.touches[0].clientX - rect.left - PAD;
       const ratio = Math.max(0, Math.min(1, relX / actualTrackWidth));
-      const newPage = Math.round(ratio * total);
-      const previewPage = Math.max(0, Math.min(newPage, total));
+      const rawValue = ratio * total; // Keep float for smooth animation
+      const previewPage = Math.max(0, Math.min(rawValue, total));
       
       setCurrentPage(previewPage);
       onPreviewPage?.(previewPage);
@@ -541,7 +541,7 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
     circle.setAttribute("stroke-width", "2");
     svg.appendChild(circle);
 
-    // Number above the circle
+    // Number above the circle (always rounded for display)
     const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
     text.setAttribute("x", String(px(maxReg)));
     text.setAttribute("y", String(TY - 18));
@@ -549,7 +549,7 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
     text.setAttribute("font-size", "12");
     text.setAttribute("font-weight", "500");
     text.setAttribute("fill", todayColor);
-    text.textContent = String(currentPage);
+    text.textContent = String(Math.round(currentPage));
     svg.appendChild(text);
 
     // Clean old SVG
@@ -593,6 +593,7 @@ function BookCardWithLongPress({
 }) {
   const [showMenu, setShowMenu] = useState(false);
   const [previewPage, setPreviewPage] = useState<number>(0);
+  const [justRegistered, setJustRegistered] = useState(false);
   const { streak, daysDisplay } = computeStreak(book);
   const currentPage = getCurrentDisplayPage(sessions);
   
@@ -610,8 +611,10 @@ function BookCardWithLongPress({
 
   const handleRegister = () => {
     if (previewPage > 0) {
-      onRegisterPage(book.id, previewPage);
+      onRegisterPage(book.id, Math.round(previewPage));
       setPreviewPage(0);
+      setJustRegistered(true);
+      setTimeout(() => setJustRegistered(false), 1500);
     }
   };
 
@@ -703,7 +706,14 @@ function BookCardWithLongPress({
         className="mb-3" 
         data-slider="true" 
         onTouchStart={(e) => e.stopPropagation()}
-        onTouchEnd={(e) => e.stopPropagation()}
+        onTouchEnd={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+        }}
       >
             <SVGTrack 
               book={book} 
@@ -729,9 +739,13 @@ function BookCardWithLongPress({
             handleRegister();
           }}
           disabled={previewPage === 0}
-          className="w-full rounded-xl bg-green-500/20 text-green-700 dark:text-green-400 hover:bg-green-500/30 border border-green-500/50 text-xs h-10 disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{
+            background: justRegistered ? '#3B6D11' : undefined,
+            color: justRegistered ? 'white' : undefined,
+          }}
+          className="w-full rounded-xl bg-green-500/20 text-green-700 dark:text-green-400 hover:bg-green-500/30 border border-green-500/50 text-xs h-10 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
         >
-          Registrar {previewPage > 0 ? `${previewPage}/${book.totalPages}` : ''}
+          {justRegistered ? 'Registrado ✓' : `Registrar ${previewPage > 0 ? `${Math.round(previewPage)}/${book.totalPages}` : ''}`}
         </Button>
       </div>
 
