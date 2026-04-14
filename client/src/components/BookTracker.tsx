@@ -289,6 +289,7 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
   const todayColor = getColorForDate(sessions, today);
   const prevPage = getPrevPage(sessions);
   const outer = useRef<HTMLDivElement>(null);
+  const circleRef = useRef<SVGCircleElement | null>(null); // Store reference to the circle
   
   // Refs for values that change (avoid dependency changes)
   const onPreviewPageRef = useRef(onPreviewPage);
@@ -314,121 +315,104 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
     setCurrentPage(lastRegistered !== null ? lastRegistered : getPrevPage(sessions));
   }, [sessions]);
 
-  // CRITICAL: Register native touch listeners ONCE with NO dependencies
-  // This prevents React from re-registering passive listeners that interfere
+  // CRITICAL: Unified Pointer Events for mouse, touch, and Windows touchscreen
+  // Pointer events are registered ONLY on the circle, not the entire SVG container
+  // setPointerCapture ensures drag continues even if pointer moves outside circle
+  // Re-registers whenever circle reference updates (when SVG re-renders)
   useEffect(() => {
-    const el = outer.current;
-    console.log('[SVGTrack] Registering native touch listeners - ref:', el);
-    if (!el) return;
+    const container = outer.current;
+    const circle = circleRef.current;
+    
+    if (!container || !circle) {
+      console.log('[SVGTrack] Circle not yet available for Pointer Events');
+      return;
+    }
 
+    console.log('[SVGTrack] Registering Pointer Events only on circle');
+    
     let startX = 0;
     let startY = 0;
     let dragging = false;
+    let pointerId: number | null = null;
     const DRAG_THRESHOLD = 8;
     const PAD = 0;
 
-    const onTouchStart = (e: TouchEvent) => {
-      console.log('[SVGTrack] Native touchstart');
-      startX = e.touches[0].clientX;
-      startY = e.touches[0].clientY;
+    const onPointerDown = (e: PointerEvent) => {
+      console.log('[SVGTrack] Pointer down on circle');
+      e.stopPropagation(); // Don't activate card click
+      circle.setPointerCapture(e.pointerId); // Capture events even outside circle
+      pointerId = e.pointerId;
+      startX = e.clientX;
+      startY = e.clientY;
       dragging = false;
+      setIsDragging(true);
+      onDragStart?.();
     };
 
-    const onTouchMove = (e: TouchEvent) => {
-      const dx = Math.abs(e.touches[0].clientX - startX);
-      const dy = Math.abs(e.touches[0].clientY - startY);
+    const onPointerMove = (e: PointerEvent) => {
+      // Only process events from the pointer we're tracking
+      if (pointerId === null || e.pointerId !== pointerId) return;
+
+      const dx = Math.abs(e.clientX - startX);
+      const dy = Math.abs(e.clientY - startY);
+      
+      // Don't start dragging until threshold exceeded
+      if (!dragging && dx < DRAG_THRESHOLD && dy < DRAG_THRESHOLD) return;
       
       if (!dragging) {
-        if (dx < DRAG_THRESHOLD && dy < DRAG_THRESHOLD) return;
         dragging = true;
-        console.log('[SVGTrack] Native drag started');
-        onDragStart?.();
+        console.log('[SVGTrack] Pointer drag started from circle');
       }
 
-      // CRITICAL: preventDefault works because listener is { passive: false }
+      // Prevent default behavior (scrolling, selection, etc.)
       try {
         e.preventDefault();
       } catch (err) {
-        console.warn('[SVGTrack] preventDefault in touchmove:', err);
+        console.warn('[SVGTrack] preventDefault error:', err);
       }
 
-      const rect = el.getBoundingClientRect();
+      const rect = container.getBoundingClientRect();
       const trackW = rect.width - PAD * 2;
-      const relX = e.touches[0].clientX - rect.left - PAD;
+      const relX = e.clientX - rect.left - PAD;
       const ratio = Math.max(0, Math.min(1, relX / trackW));
       const rawValue = ratio * totalPagesRef.current;
       const previewPage = Math.max(0, Math.min(rawValue, totalPagesRef.current));
       
-      console.log('[SVGTrack] Native drag: ratio:', ratio, 'previewPage:', previewPage);
+      console.log('[SVGTrack] Pointer drag: ratio:', ratio, 'previewPage:', previewPage);
       setCurrentPage(previewPage);
       onPreviewPageRef.current?.(previewPage);
     };
 
-    const onTouchEnd = (e: TouchEvent) => {
-      console.log('[SVGTrack] Native touchend, dragging:', dragging);
-      if (dragging) {
-        try {
-          e.preventDefault();
-        } catch (err) {
-          console.warn('[SVGTrack] preventDefault in touchend:', err);
-        }
-      }
+    const onPointerUp = (e: PointerEvent) => {
+      if (pointerId === null || e.pointerId !== pointerId) return;
+      console.log('[SVGTrack] Pointer up');
       dragging = false;
+      pointerId = null;
+      setIsDragging(false);
     };
 
-    // Register native listeners ONLY ONCE
-    console.log('[SVGTrack] addEventListener with { passive: false } for touchmove');
-    el.addEventListener('touchstart', onTouchStart, { passive: true });
-    el.addEventListener('touchmove', onTouchMove, { passive: false });
-    el.addEventListener('touchend', onTouchEnd, { passive: false });
+    const onPointerCancel = (e: PointerEvent) => {
+      if (pointerId === null || e.pointerId !== pointerId) return;
+      console.log('[SVGTrack] Pointer cancel');
+      dragging = false;
+      pointerId = null;
+      setIsDragging(false);
+    };
+
+    // Register Pointer Events ONLY on the circle
+    circle.addEventListener('pointerdown', onPointerDown);
+    circle.addEventListener('pointermove', onPointerMove);
+    circle.addEventListener('pointerup', onPointerUp);
+    circle.addEventListener('pointercancel', onPointerCancel);
 
     return () => {
-      console.log('[SVGTrack] Removing native touch listeners');
-      el.removeEventListener('touchstart', onTouchStart);
-      el.removeEventListener('touchmove', onTouchMove);
-      el.removeEventListener('touchend', onTouchEnd);
+      console.log('[SVGTrack] Removing Pointer Event listeners from circle');
+      circle.removeEventListener('pointerdown', onPointerDown);
+      circle.removeEventListener('pointermove', onPointerMove);
+      circle.removeEventListener('pointerup', onPointerUp);
+      circle.removeEventListener('pointercancel', onPointerCancel);
     };
-  }, []); // EMPTY dependencies - register listeners ONCE
-
-  const handleDrag = (clientX: number) => {
-    if (!outer.current) return;
-    const rect = outer.current.getBoundingClientRect();
-    const x = clientX - rect.left;
-    const ratio = Math.max(0, Math.min(1, x / rect.width));
-    const newPage = ratio * book.totalPages; // Keep float for smooth animation
-    const previewPage = Math.max(0, Math.min(newPage, book.totalPages));
-    setCurrentPage(previewPage);
-    onPreviewPage?.(previewPage);
-  };
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    setIsDragging(true);
-    onDragStart?.();
-    handleDrag(e.clientX);
-  };
-
-  const handleMouseMove = (e: MouseEvent) => {
-    if (isDragging) {
-      onDragStart?.();
-      handleDrag(e.clientX);
-    }
-  };
-
-  const handleMouseUp = () => {
-    setIsDragging(false);
-    // NO registration here - only preview
-  };
-
-  useEffect(() => {
-    if (isDragging) {
-      document.addEventListener("mousemove", handleMouseMove);
-      document.addEventListener("mouseup", handleMouseUp);
-    }
-    return () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [isDragging]);
+  }, [circleRef]); // Re-register when circle reference updates
 
   useEffect(() => {
     if (!outer.current) return;
@@ -529,6 +513,7 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
     const maxReg = currentPage;
     const circleRadius = Math.max(16, W > 414 ? 10 : 16);
     const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    circle.setAttribute("id", "svg-track-circle"); // ID for pointer event capture
     circle.setAttribute("cx", String(px(maxReg)));
     circle.setAttribute("cy", String(TY));
     circle.setAttribute("r", String(circleRadius));
@@ -536,6 +521,9 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
     circle.setAttribute("stroke", "var(--color-background)");
     circle.setAttribute("stroke-width", "2");
     svg.appendChild(circle);
+    
+    // Store circle reference for Pointer Events
+    circleRef.current = circle as any as SVGCircleElement;
 
     // Number above the circle (always rounded for display)
     const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
@@ -556,7 +544,10 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
   return (
     <div
       ref={outer}
+      data-slider="true"
       touch-action="none"
+      onClick={(e) => e.stopPropagation()}
+      onTouchEnd={(e) => e.stopPropagation()}
       style={{
         position: "relative",
         height: "80px",
@@ -564,7 +555,6 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
         cursor: isDragging ? "grabbing" : "grab",
         touchAction: "none",
       }}
-      onMouseDown={handleMouseDown as any}
     />
   );
 }
@@ -704,15 +694,15 @@ function BookCardWithLongPress({
     };
 
     // Register native listeners ONLY
-    card.addEventListener('touchstart', onCardTouchStart, { passive: true });
-    card.addEventListener('touchmove', onCardTouchMove, { passive: true });
-    card.addEventListener('touchend', onCardTouchEnd, { passive: true });
+    card.addEventListener('touchstart' as any, onCardTouchStart, { passive: true });
+    card.addEventListener('touchmove' as any, onCardTouchMove, { passive: true });
+    card.addEventListener('touchend' as any, onCardTouchEnd, { passive: true });
 
     return () => {
       console.log('[BookCard] Removing native touch listeners');
-      card.removeEventListener('touchstart', onCardTouchStart);
-      card.removeEventListener('touchmove', onCardTouchMove);
-      card.removeEventListener('touchend', onCardTouchEnd);
+      card.removeEventListener('touchstart' as any, onCardTouchStart);
+      card.removeEventListener('touchmove' as any, onCardTouchMove);
+      card.removeEventListener('touchend' as any, onCardTouchEnd);
     };
   }, []); // Empty dependencies - register ONCE
 
@@ -1247,9 +1237,9 @@ function ArchivedPanel({
         }
       };
 
-      button.addEventListener('touchstart', handleBookTouchStart, { passive: true });
-      button.addEventListener('touchmove', handleBookTouchMove, { passive: true });
-      button.addEventListener('touchend', handleBookTouchEnd, { passive: true });
+      button.addEventListener('touchstart' as any, handleBookTouchStart, { passive: true });
+      button.addEventListener('touchmove' as any, handleBookTouchMove, { passive: true });
+      button.addEventListener('touchend' as any, handleBookTouchEnd, { passive: true });
 
       listeners.set(button, { touchstart: handleBookTouchStart, touchmove: handleBookTouchMove, touchend: handleBookTouchEnd });
     });
@@ -1257,9 +1247,9 @@ function ArchivedPanel({
     return () => {
       console.log('[ArchivedPanel] Removing native touch listeners');
       listeners.forEach((handlers, button) => {
-        button.removeEventListener('touchstart', handlers.touchstart);
-        button.removeEventListener('touchmove', handlers.touchmove);
-        button.removeEventListener('touchend', handlers.touchend);
+        button.removeEventListener('touchstart' as any, handlers.touchstart);
+        button.removeEventListener('touchmove' as any, handlers.touchmove);
+        button.removeEventListener('touchend' as any, handlers.touchend);
       });
     };
   }, []); // Empty dependencies - register ONCE
@@ -1609,15 +1599,15 @@ export function BookTracker() {
       }
     };
 
-    header.addEventListener('touchstart', handleHeaderTouchStart, { passive: true });
-    header.addEventListener('touchmove', handleHeaderTouchMove, { passive: true });
-    header.addEventListener('touchend', handleHeaderTouchEnd, { passive: true });
+    header.addEventListener('touchstart' as any, handleHeaderTouchStart, { passive: true });
+    header.addEventListener('touchmove' as any, handleHeaderTouchMove, { passive: true });
+    header.addEventListener('touchend' as any, handleHeaderTouchEnd, { passive: true });
 
     return () => {
       console.log('[BookTracker] Removing native header long press');
-      header.removeEventListener('touchstart', handleHeaderTouchStart);
-      header.removeEventListener('touchmove', handleHeaderTouchMove);
-      header.removeEventListener('touchend', handleHeaderTouchEnd);
+      header.removeEventListener('touchstart' as any, handleHeaderTouchStart);
+      header.removeEventListener('touchmove' as any, handleHeaderTouchMove);
+      header.removeEventListener('touchend' as any, handleHeaderTouchEnd);
     };
   }, []);
 
@@ -1643,7 +1633,15 @@ export function BookTracker() {
           </div>
 
           {/* Book List */}
-          <div className="flex-1 overflow-y-auto px-5 py-3 flex flex-col gap-2 scrollbar-thin scrollbar-thumb-muted-foreground/10">
+          <div 
+            className="flex-1 overflow-y-auto px-5 py-3 flex flex-col gap-2 scrollbar-thin scrollbar-thumb-muted-foreground/10"
+            style={{
+              maxHeight: 'calc(100vh - 200px)',
+              overflowY: 'auto',
+              scrollBehavior: 'smooth',
+              WebkitOverflowScrolling: 'touch',
+            }}
+          >
             {isLoading ? (
               <div className="p-4 text-center text-sm text-muted-foreground">Cargando libros...</div>
             ) : books.length === 0 ? (
