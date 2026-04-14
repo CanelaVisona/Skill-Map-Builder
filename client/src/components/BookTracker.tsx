@@ -289,6 +289,15 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
   const todayColor = getColorForDate(sessions, today);
   const prevPage = getPrevPage(sessions);
   const outer = useRef<HTMLDivElement>(null);
+  
+  // Refs for values that change (avoid dependency changes)
+  const onPreviewPageRef = useRef(onPreviewPage);
+  const totalPagesRef = useRef(book.totalPages);
+  
+  // Update refs when props change (without triggering useEffect)
+  useEffect(() => { onPreviewPageRef.current = onPreviewPage; }, [onPreviewPage]);
+  useEffect(() => { totalPagesRef.current = book.totalPages; }, [book.totalPages]);
+
   const [isDragging, setIsDragging] = useState(false);
   const todayPages = getTodaySessions(sessions).map((s) => s.page).sort((a, b) => a - b);
   const lastRegisteredToday = todayPages.length > 0 ? todayPages[todayPages.length - 1] : null;
@@ -305,85 +314,81 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
     setCurrentPage(lastRegistered !== null ? lastRegistered : getPrevPage(sessions));
   }, [sessions]);
 
-  // Exclusive touch handler for iOS compatibility with real-time dimension calculation
+  // CRITICAL: Register native touch listeners ONCE with NO dependencies
+  // This prevents React from re-registering passive listeners that interfere
   useEffect(() => {
     const el = outer.current;
-    console.log('[SVGTrack] Touch useEffect - ref:', el);
+    console.log('[SVGTrack] Registering native touch listeners - ref:', el);
     if (!el) return;
 
-    const PAD = 0;
-    const touchStartX = { current: 0 };
-    const touchStartY = { current: 0 };
-    const isDragging = { current: false };
+    let startX = 0;
+    let startY = 0;
+    let dragging = false;
     const DRAG_THRESHOLD = 8;
-    const total = book.totalPages || 1;
+    const PAD = 0;
 
     const onTouchStart = (e: TouchEvent) => {
-      console.log('[SVGTrack] Touch start at', e.touches[0].clientX);
-      touchStartX.current = e.touches[0].clientX;
-      touchStartY.current = e.touches[0].clientY;
-      isDragging.current = false;
+      console.log('[SVGTrack] Native touchstart');
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      dragging = false;
     };
 
     const onTouchMove = (e: TouchEvent) => {
-      const dx = Math.abs(e.touches[0].clientX - touchStartX.current);
-      const dy = Math.abs(e.touches[0].clientY - touchStartY.current);
+      const dx = Math.abs(e.touches[0].clientX - startX);
+      const dy = Math.abs(e.touches[0].clientY - startY);
       
-      // Only start dragging if threshold exceeded
-      if (!isDragging.current) {
+      if (!dragging) {
         if (dx < DRAG_THRESHOLD && dy < DRAG_THRESHOLD) return;
-        console.log('[SVGTrack] Drag started, dx:', dx, 'dy:', dy);
-        isDragging.current = true;
+        dragging = true;
+        console.log('[SVGTrack] Native drag started');
         onDragStart?.();
       }
 
-      // CRITICAL: preventDefault must be called here with { passive: false }
+      // CRITICAL: preventDefault works because listener is { passive: false }
       try {
         e.preventDefault();
       } catch (err) {
-        console.error('[SVGTrack] preventDefault failed:', err);
+        console.warn('[SVGTrack] preventDefault in touchmove:', err);
       }
-      e.stopPropagation();
 
-      // Calculate dimensions in real-time
       const rect = el.getBoundingClientRect();
-      const actualTrackWidth = rect.width - PAD * 2;
+      const trackW = rect.width - PAD * 2;
       const relX = e.touches[0].clientX - rect.left - PAD;
-      const ratio = Math.max(0, Math.min(1, relX / actualTrackWidth));
-      const rawValue = ratio * total; // Keep float for smooth animation
-      const previewPage = Math.max(0, Math.min(rawValue, total));
+      const ratio = Math.max(0, Math.min(1, relX / trackW));
+      const rawValue = ratio * totalPagesRef.current;
+      const previewPage = Math.max(0, Math.min(rawValue, totalPagesRef.current));
       
-      console.log('[SVGTrack] Drag: ratio:', ratio, 'rawValue:', rawValue, 'previewPage:', previewPage);
+      console.log('[SVGTrack] Native drag: ratio:', ratio, 'previewPage:', previewPage);
       setCurrentPage(previewPage);
-      onPreviewPage?.(previewPage);
+      onPreviewPageRef.current?.(previewPage);
     };
 
     const onTouchEnd = (e: TouchEvent) => {
-      console.log('[SVGTrack] Touch end, isDragging:', isDragging.current);
-      if (isDragging.current) {
-        e.stopPropagation();
+      console.log('[SVGTrack] Native touchend, dragging:', dragging);
+      if (dragging) {
         try {
           e.preventDefault();
         } catch (err) {
-          console.error('[SVGTrack] preventDefault failed on touchend:', err);
+          console.warn('[SVGTrack] preventDefault in touchend:', err);
         }
       }
-      isDragging.current = false;
+      dragging = false;
     };
 
-    // CRITICAL: { passive: false } allows preventDefault() to work
-    console.log('[SVGTrack] Adding touch listeners with passive: false');
-    el.addEventListener("touchstart", onTouchStart, { passive: true });
-    el.addEventListener("touchmove", onTouchMove, { passive: false });
-    el.addEventListener("touchend", onTouchEnd, { passive: false });
+    // Register native listeners ONLY ONCE
+    console.log('[SVGTrack] addEventListener with { passive: false } for touchmove');
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    el.addEventListener('touchend', onTouchEnd, { passive: false });
 
     return () => {
-      console.log('[SVGTrack] Removing touch listeners');
-      el.removeEventListener("touchstart", onTouchStart);
-      el.removeEventListener("touchmove", onTouchMove);
-      el.removeEventListener("touchend", onTouchEnd);
+      console.log('[SVGTrack] Removing native touch listeners');
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+      el.removeEventListener('touchend', onTouchEnd);
     };
-  }, [book.totalPages, onDragStart, onPreviewPage]);
+  }, []); // EMPTY dependencies - register listeners ONCE
 
   const handleDrag = (clientX: number) => {
     if (!outer.current) return;
@@ -551,6 +556,7 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
   return (
     <div
       ref={outer}
+      touch-action="none"
       style={{
         position: "relative",
         height: "80px",
@@ -589,13 +595,13 @@ function BookCardWithLongPress({
   const { streak, daysDisplay } = computeStreak(book);
   const currentPage = getCurrentDisplayPage(sessions);
   
-  // Long press refs for exclusive touch handling
-  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Touch refs for native listener handling
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
   const hasMoveDetected = useRef(false);
   // Track last registered page to reset button state when user moves circle
   const lastRegisteredPage = useRef<number | null>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
   
   // Derive justRegistered from ref (survives re-renders from invalidateQueries)
   const justRegistered = justRegisteredRef.current;
@@ -637,51 +643,80 @@ function BookCardWithLongPress({
     }
   }, [previewPage, justRegisteredCounter]); // Use counter as dep instead of justRegistered
 
-  // Exclusive touch-based long press
-  const onCardTouchStart = (e: React.TouchEvent) => {
-    // Don't trigger long press if touch starts on slider
-    if ((e.target as HTMLElement).closest('[data-slider]')) return;
-
-    touchStartX.current = e.touches[0].clientX;
-    touchStartY.current = e.touches[0].clientY;
-    hasMoveDetected.current = false;
-
-    longPressTimer.current = setTimeout(() => {
-      if (!hasMoveDetected.current) {
-        setShowMenu(true);
-        navigator.vibrate?.(50);
-      }
-    }, 500);
-  };
-
-  const onCardTouchMove = (e: React.TouchEvent) => {
-    const dx = Math.abs(e.touches[0].clientX - touchStartX.current);
-    const dy = Math.abs(e.touches[0].clientY - touchStartY.current);
-    
-    if (dx > 8 || dy > 8) {
-      hasMoveDetected.current = true;
-      if (longPressTimer.current) {
-        clearTimeout(longPressTimer.current);
-        longPressTimer.current = null;
-      }
-    }
-  };
-
-  const onCardTouchEnd = () => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-  };
-
-  // Cleanup on unmount
+  // Exclusive touch-based long press using native listeners ONLY
   useEffect(() => {
-    return () => {
-      if (longPressTimer.current) {
-        clearTimeout(longPressTimer.current);
+    const card = cardRef.current;
+    if (!card) return;
+
+    console.log('[BookCard] Registering native touch listeners for long press');
+
+    const onCardTouchStart = (e: TouchEvent) => {
+      console.log('[BookCard] Native touch start');
+      // Don't trigger long press if touch starts on slider
+      if ((e.target as HTMLElement).closest('[data-slider]')) {
+        console.log('[BookCard] Touch on slider, ignoring long press');
+        return;
+      }
+
+      touchStartX.current = e.touches[0].clientX;
+      touchStartY.current = e.touches[0].clientY;
+      hasMoveDetected.current = false;
+
+      touchStartX.current = e.touches[0].clientX;
+      touchStartY.current = e.touches[0].clientY;
+      hasMoveDetected.current = false;
+
+      const timerId = setTimeout(() => {
+        if (!hasMoveDetected.current) {
+          console.log('[BookCard] Long press detected');
+          setShowMenu(true);
+          navigator.vibrate?.(50);
+        }
+      }, 500);
+      
+      // Store timeout id in refs for cleanup
+      const currentRefs = (cardRef as any).current as any;
+      if (currentRefs) currentRefs._longPressTimer = timerId;
+    };
+
+    const onCardTouchMove = (e: TouchEvent) => {
+      const dx = Math.abs(e.touches[0].clientX - touchStartX.current);
+      const dy = Math.abs(e.touches[0].clientY - touchStartY.current);
+      
+      if (dx > 8 || dy > 8) {
+        console.log('[BookCard] Touch move detected, cancelling long press');
+        hasMoveDetected.current = true;
+        const currentRefs = (cardRef as any).current as any;
+        if (currentRefs && currentRefs._longPressTimer) {
+          clearTimeout(currentRefs._longPressTimer);
+          currentRefs._longPressTimer = null;
+        }
       }
     };
-  }, []);
+
+    const onCardTouchEnd = () => {
+      console.log('[BookCard] Native touch end');
+      const currentRefs = (cardRef as any).current as any;
+      if (currentRefs && currentRefs._longPressTimer) {
+        clearTimeout(currentRefs._longPressTimer);
+        currentRefs._longPressTimer = null;
+      }
+    };
+
+    // Register native listeners ONLY
+    card.addEventListener('touchstart', onCardTouchStart, { passive: true });
+    card.addEventListener('touchmove', onCardTouchMove, { passive: true });
+    card.addEventListener('touchend', onCardTouchEnd, { passive: true });
+
+    return () => {
+      console.log('[BookCard] Removing native touch listeners');
+      card.removeEventListener('touchstart', onCardTouchStart);
+      card.removeEventListener('touchmove', onCardTouchMove);
+      card.removeEventListener('touchend', onCardTouchEnd);
+    };
+  }, []); // Empty dependencies - register ONCE
+
+  // Cleanup on unmount is handled by the native listeners useEffect above
 
   // Determinar color según streak
   let borderColor = "border-green-500/30";
@@ -706,13 +741,11 @@ function BookCardWithLongPress({
 
   return (
     <motion.div
+      ref={cardRef}
       initial={{ opacity: 0, y: -10 }}
       animate={{ opacity: 1, y: 0 }}
       className={`rounded-2xl border ${borderColor} ${bgColor} px-3 py-2.5 mb-2 cursor-pointer ${hoverBorder} transition-all ${activeBg}`}
       onClick={handleClick}
-      onTouchStart={onCardTouchStart}
-      onTouchMove={onCardTouchMove}
-      onTouchEnd={onCardTouchEnd}
     >
       {/* Header con título */}
       <div className="flex items-center gap-2 mb-3">
@@ -744,14 +777,6 @@ function BookCardWithLongPress({
         <Button
           onClick={(e) => {
             e.stopPropagation();
-            handleRegister();
-          }}
-          onTouchStart={(e) => {
-            e.stopPropagation();
-          }}
-          onTouchEnd={(e) => {
-            e.stopPropagation();
-            e.preventDefault();
             handleRegister();
           }}
           disabled={previewPage === 0}
@@ -1162,43 +1187,82 @@ function ArchivedPanel({
   onDelete: (bookId: string) => void;
 }) {
   const [showButtonsForBook, setShowButtonsForBook] = useState<Record<string, boolean>>({});
-  const longPressTimers = useRef<Record<string, NodeJS.Timeout>>({});
+  const panelRef = useRef<HTMLDivElement>(null);
   const touchStartX = useRef<Record<string, number>>({});
   const touchStartY = useRef<Record<string, number>>({});
   const hasMoveDetected = useRef<Record<string, boolean>>({});
 
-  const handleBookTouchStart = (bookId: string, e: React.TouchEvent) => {
-    touchStartX.current[bookId] = e.touches[0].clientX;
-    touchStartY.current[bookId] = e.touches[0].clientY;
-    hasMoveDetected.current[bookId] = false;
+  // Register native touch listeners for archived book items - ONCE on mount
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
 
-    longPressTimers.current[bookId] = setTimeout(() => {
-      if (!hasMoveDetected.current[bookId]) {
-        setShowButtonsForBook(prev => ({ ...prev, [bookId]: true }));
-        navigator.vibrate?.(50);
-      }
-    }, 500);
-  };
+    console.log('[ArchivedPanel] Registering native touch listeners');
 
-  const handleBookTouchMove = (bookId: string, e: React.TouchEvent) => {
-    const dx = Math.abs(e.touches[0].clientX - touchStartX.current[bookId]);
-    const dy = Math.abs(e.touches[0].clientY - touchStartY.current[bookId]);
-    
-    if (dx > 8 || dy > 8) {
-      hasMoveDetected.current[bookId] = true;
-      if (longPressTimers.current[bookId]) {
-        clearTimeout(longPressTimers.current[bookId]);
-        delete longPressTimers.current[bookId];
-      }
-    }
-  };
+    // Find all archived book buttons and register listeners
+    const bookButtons = panel.querySelectorAll('[data-book-id]') as NodeListOf<Element>;
+    const listeners: Map<Element, { touchstart: (e: TouchEvent) => void; touchmove: (e: TouchEvent) => void; touchend: (e: TouchEvent) => void }> = new Map();
 
-  const handleBookTouchEnd = (bookId: string) => {
-    if (longPressTimers.current[bookId]) {
-      clearTimeout(longPressTimers.current[bookId]);
-      delete longPressTimers.current[bookId];
-    }
-  };
+    bookButtons.forEach((button) => {
+      const bookId = (button as HTMLElement).getAttribute('data-book-id');
+      if (!bookId) return;
+
+      const handleBookTouchStart = (e: TouchEvent) => {
+        console.log('[ArchivedPanel] Native touch start on book:', bookId);
+        touchStartX.current[bookId] = e.touches[0].clientX;
+        touchStartY.current[bookId] = e.touches[0].clientY;
+        hasMoveDetected.current[bookId] = false;
+
+        const timerId = setTimeout(() => {
+          if (!hasMoveDetected.current[bookId]) {
+            console.log('[ArchivedPanel] Long press detected on book:', bookId);
+            setShowButtonsForBook(prev => ({ ...prev, [bookId]: true }));
+            navigator.vibrate?.(50);
+          }
+        }, 500);
+        
+        // Store timeout id for cleanup
+        (button as any)._longPressTimer = timerId;
+      };
+
+      const handleBookTouchMove = (e: TouchEvent) => {
+        const dx = Math.abs(e.touches[0].clientX - (touchStartX.current[bookId] || 0));
+        const dy = Math.abs(e.touches[0].clientY - (touchStartY.current[bookId] || 0));
+        
+        if (dx > 8 || dy > 8) {
+          console.log('[ArchivedPanel] Touch move detected on book:', bookId);
+          hasMoveDetected.current[bookId] = true;
+          if ((button as any)._longPressTimer) {
+            clearTimeout((button as any)._longPressTimer);
+            (button as any)._longPressTimer = null;
+          }
+        }
+      };
+
+      const handleBookTouchEnd = () => {
+        console.log('[ArchivedPanel] Native touch end on book:', bookId);
+        if ((button as any)._longPressTimer) {
+          clearTimeout((button as any)._longPressTimer);
+          (button as any)._longPressTimer = null;
+        }
+      };
+
+      button.addEventListener('touchstart', handleBookTouchStart, { passive: true });
+      button.addEventListener('touchmove', handleBookTouchMove, { passive: true });
+      button.addEventListener('touchend', handleBookTouchEnd, { passive: true });
+
+      listeners.set(button, { touchstart: handleBookTouchStart, touchmove: handleBookTouchMove, touchend: handleBookTouchEnd });
+    });
+
+    return () => {
+      console.log('[ArchivedPanel] Removing native touch listeners');
+      listeners.forEach((handlers, button) => {
+        button.removeEventListener('touchstart', handlers.touchstart);
+        button.removeEventListener('touchmove', handlers.touchmove);
+        button.removeEventListener('touchend', handlers.touchend);
+      });
+    };
+  }, []); // Empty dependencies - register ONCE
 
   const handleBookClick = (bookId: string) => {
     if (!showButtonsForBook[bookId]) {
@@ -1206,14 +1270,8 @@ function ArchivedPanel({
     }
   };
 
-  useEffect(() => {
-    return () => {
-      Object.values(longPressTimers.current).forEach(timer => clearTimeout(timer));
-    };
-  }, []);
-
   return (
-    <div className="w-full flex flex-col h-full">
+    <div ref={panelRef} className="w-full flex flex-col h-full">
       {/* Header */}
       <div className="border-b border-yellow-500/30 px-4 sm:px-6 py-5 bg-gradient-to-r from-yellow-500/5 to-amber-500/5">
         <div className="flex items-start gap-3 sm:gap-4">
@@ -1248,13 +1306,10 @@ function ArchivedPanel({
             return (
               <motion.button
                 key={book.id}
+                data-book-id={book.id}
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
                 onClick={() => handleBookClick(book.id)}
-                onTouchStart={(e) => handleBookTouchStart(book.id, e)}
-                onTouchMove={(e) => handleBookTouchMove(book.id, e)}
-                onTouchEnd={() => handleBookTouchEnd(book.id)}
-                onTouchCancel={() => handleBookTouchEnd(book.id)}
                 className="w-full text-left rounded-2xl border-2 border-yellow-400/50 px-3 sm:px-4 py-2.5 sm:py-3 bg-gradient-to-br from-yellow-500/20 via-amber-500/10 to-yellow-500/10 hover:border-yellow-400 hover:from-yellow-500/30 hover:via-amber-500/20 active:scale-95 transition-all shadow-md hover:shadow-lg hover:shadow-yellow-500/20 touch-manipulation"
               >
                 <div className="flex items-center gap-2 sm:gap-3 mb-1.5 sm:mb-2 flex-wrap">
@@ -1507,10 +1562,73 @@ export function BookTracker() {
     ? books.find((b) => b.id === selectedBookId)
     : null;
 
-  // Long press handler para el header
-  const longPressHeader = useLongPress(() => {
-    setCurrentPanel("add");
-  }, 1000);
+  // Refs for header native long press
+  const headerRef = useRef<HTMLDivElement>(null);
+  const headerLongPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const headerTouchStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  // Register native long press on header
+  useEffect(() => {
+    const header = headerRef.current;
+    if (!header) return;
+
+    console.log('[BookTracker] Registering native header long press');
+
+    const handleHeaderTouchStart = (e: TouchEvent) => {
+      console.log('[BookTracker] Header native touch start');
+      const touch = e.touches[0];
+      headerTouchStartRef.current = { x: touch.clientX, y: touch.clientY };
+      
+      headerLongPressTimerRef.current = setTimeout(() => {
+        console.log('[BookTracker] Header long press detected');
+        setCurrentPanel("add");
+      }, 1000);
+    };
+
+    const handleHeaderTouchMove = (e: TouchEvent) => {
+      if (!headerTouchStartRef.current) return;
+      const touch = e.touches[0];
+      const dx = Math.abs(touch.clientX - headerTouchStartRef.current.x);
+      const dy = Math.abs(touch.clientY - headerTouchStartRef.current.y);
+      
+      if (dx > 10 || dy > 10) {
+        console.log('[BookTracker] Header touch move, cancelling long press');
+        if (headerLongPressTimerRef.current) {
+          clearTimeout(headerLongPressTimerRef.current);
+          headerLongPressTimerRef.current = null;
+        }
+      }
+    };
+
+    const handleHeaderTouchEnd = () => {
+      console.log('[BookTracker] Header native touch end');
+      headerTouchStartRef.current = null;
+      if (headerLongPressTimerRef.current) {
+        clearTimeout(headerLongPressTimerRef.current);
+        headerLongPressTimerRef.current = null;
+      }
+    };
+
+    header.addEventListener('touchstart', handleHeaderTouchStart, { passive: true });
+    header.addEventListener('touchmove', handleHeaderTouchMove, { passive: true });
+    header.addEventListener('touchend', handleHeaderTouchEnd, { passive: true });
+
+    return () => {
+      console.log('[BookTracker] Removing native header long press');
+      header.removeEventListener('touchstart', handleHeaderTouchStart);
+      header.removeEventListener('touchmove', handleHeaderTouchMove);
+      header.removeEventListener('touchend', handleHeaderTouchEnd);
+    };
+  }, []);
+
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      if (headerLongPressTimerRef.current) {
+        clearTimeout(headerLongPressTimerRef.current);
+      }
+    };
+  }, []);
 
   return (
     <div className="h-full flex flex-col bg-background text-foreground">
@@ -1518,8 +1636,8 @@ export function BookTracker() {
         <div className="flex flex-col h-full">
           {/* Header con long press para agregar */}
           <div
+            ref={headerRef}
             className="border-b border-border/30 px-5 py-3 cursor-pointer active:bg-muted/50 transition-colors"
-            {...longPressHeader}
           >
             <h2 className="font-black text-lg text-foreground">Mis libros</h2>
           </div>
