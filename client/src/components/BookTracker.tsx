@@ -290,6 +290,7 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
   const prevPage = getPrevPage(sessions);
   const outer = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const isDraggingTouchRef = useRef(false);
   const todayPages = getTodaySessions(sessions).map((s) => s.page).sort((a, b) => a - b);
   const lastRegisteredToday = todayPages.length > 0 ? todayPages[todayPages.length - 1] : null;
   
@@ -304,6 +305,57 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
     const lastRegistered = todayPages.length > 0 ? todayPages[todayPages.length - 1] : null;
     setCurrentPage(lastRegistered !== null ? lastRegistered : getPrevPage(sessions));
   }, [sessions]);
+
+  // Exclusive touch handler for iOS compatibility
+  useEffect(() => {
+    const el = outer.current;
+    if (!el) return;
+
+    const W = el.clientWidth || 300;
+    const PAD = 0;
+    const trackW = W - PAD * 2;
+    const total = book.totalPages || 1;
+
+    const updatePageFromTouch = (touch: Touch) => {
+      const rect = el.getBoundingClientRect();
+      const relX = touch.clientX - rect.left - PAD;
+      const ratio = Math.max(0, Math.min(1, relX / trackW));
+      const newPage = Math.round(ratio * total);
+      const previewPage = Math.max(0, Math.min(newPage, total));
+      setCurrentPage(previewPage);
+      onPreviewPage?.(previewPage);
+    };
+
+    const onTouchStart = (e: TouchEvent) => {
+      isDraggingTouchRef.current = true;
+      onDragStart?.();
+      if (e.touches.length > 0) {
+        updatePageFromTouch(e.touches[0]);
+      }
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (!isDraggingTouchRef.current) return;
+      e.preventDefault();
+      if (e.touches.length > 0) {
+        updatePageFromTouch(e.touches[0]);
+      }
+    };
+
+    const onTouchEnd = () => {
+      isDraggingTouchRef.current = false;
+    };
+
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    el.addEventListener("touchend", onTouchEnd, { passive: true });
+
+    return () => {
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("touchend", onTouchEnd);
+    };
+  }, [book.totalPages, onDragStart, onPreviewPage]);
 
   const handleDrag = (clientX: number) => {
     if (!outer.current) return;
@@ -530,11 +582,14 @@ function BookCardWithLongPress({
 }) {
   const [showMenu, setShowMenu] = useState(false);
   const [previewPage, setPreviewPage] = useState<number>(0);
-  const longPressHandler = useLongPress(() => setShowMenu(true), 800);
   const { streak, daysDisplay } = computeStreak(book);
   const currentPage = getCurrentDisplayPage(sessions);
-  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
-  const DRAG_THRESHOLD = 5;
+  
+  // Long press refs for exclusive touch handling
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
+  const hasMoveDetected = useRef(false);
 
   const handleClick = () => {
     if (!showMenu) {
@@ -542,29 +597,58 @@ function BookCardWithLongPress({
     }
   };
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    const touch = e.touches[0];
-    touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+  const handleRegister = () => {
+    if (previewPage > 0) {
+      onRegisterPage(book.id, previewPage);
+      setPreviewPage(0);
+    }
   };
 
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    if (!touchStartRef.current) return;
-    const touch = e.changedTouches[0];
-    const dx = Math.abs(touch.clientX - touchStartRef.current.x);
-    const dy = Math.abs(touch.clientY - touchStartRef.current.y);
-    
-    // Si movió más del threshold, no navegar
-    if (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD) {
-      touchStartRef.current = null;
-      return;
-    }
-    
-    // Si fue un tap limpio, navegar
-    if (!showMenu) {
-      onDetail();
-    }
-    touchStartRef.current = null;
+  // Exclusive touch-based long press
+  const onCardTouchStart = (e: React.TouchEvent) => {
+    // Don't trigger long press if touch starts on slider
+    if ((e.target as HTMLElement).closest('[data-slider]')) return;
+
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+    hasMoveDetected.current = false;
+
+    longPressTimer.current = setTimeout(() => {
+      if (!hasMoveDetected.current) {
+        setShowMenu(true);
+        navigator.vibrate?.(50);
+      }
+    }, 500);
   };
+
+  const onCardTouchMove = (e: React.TouchEvent) => {
+    const dx = Math.abs(e.touches[0].clientX - touchStartX.current);
+    const dy = Math.abs(e.touches[0].clientY - touchStartY.current);
+    
+    if (dx > 8 || dy > 8) {
+      hasMoveDetected.current = true;
+      if (longPressTimer.current) {
+        clearTimeout(longPressTimer.current);
+        longPressTimer.current = null;
+      }
+    }
+  };
+
+  const onCardTouchEnd = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (longPressTimer.current) {
+        clearTimeout(longPressTimer.current);
+      }
+    };
+  }, []);
 
   // Determinar color según streak
   let borderColor = "border-green-500/30";
@@ -586,11 +670,11 @@ function BookCardWithLongPress({
     <motion.div
       initial={{ opacity: 0, y: -10 }}
       animate={{ opacity: 1, y: 0 }}
-      {...longPressHandler}
       className={`rounded-2xl border ${borderColor} ${bgColor} px-3 py-2.5 mb-2 cursor-pointer ${hoverBorder} transition-all ${activeBg}`}
       onClick={handleClick}
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
+      onTouchStart={onCardTouchStart}
+      onTouchMove={onCardTouchMove}
+      onTouchEnd={onCardTouchEnd}
     >
       {/* Header con título */}
       <div className="flex items-center gap-2 mb-3">
@@ -604,11 +688,11 @@ function BookCardWithLongPress({
       </div>
 
       {/* SVG Track */}
-      <div className="mb-3">
+      <div className="mb-3" data-slider="true" onTouchEnd={(e) => e.stopPropagation()}>
             <SVGTrack 
               book={book} 
               sessions={sessions} 
-              onDragStart={longPressHandler.cancel}
+              onDragStart={() => setShowMenu(false)}
               onPreviewPage={setPreviewPage}
             />
       </div>
@@ -618,10 +702,12 @@ function BookCardWithLongPress({
         <Button
           onClick={(e) => {
             e.stopPropagation();
-            if (previewPage > 0) {
-              onRegisterPage(book.id, previewPage);
-              setPreviewPage(0);
-            }
+            handleRegister();
+          }}
+          onTouchEnd={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            handleRegister();
           }}
           disabled={previewPage === 0}
           className="w-full rounded-xl bg-green-500/20 text-green-700 dark:text-green-400 hover:bg-green-500/30 border border-green-500/50 text-xs h-10 disabled:opacity-50 disabled:cursor-not-allowed"
