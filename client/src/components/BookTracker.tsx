@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -289,17 +289,29 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
   const todayColor = getColorForDate(sessions, today);
   const prevPage = getPrevPage(sessions);
   const outer = useRef<HTMLDivElement>(null);
-  const circleRef = useRef<SVGCircleElement | null>(null); // Store reference to the circle
+  
+  // CRITICAL: Use refs instead of state to prevent re-renders from triggering listener re-registration
+  const circleRef = useRef<SVGCircleElement | null>(null);
+  const textRef = useRef<SVGTextElement | null>(null);
+  const liveSegRef = useRef<SVGRectElement | null>(null);
+  const listenersRegistered = useRef(false);
+  
+  // Tracking if we're currently dragging
+  const isDraggingRef = useRef(false);
   
   // Refs for values that change (avoid dependency changes)
   const onPreviewPageRef = useRef(onPreviewPage);
   const totalPagesRef = useRef(book.totalPages);
+  const prevPageRef = useRef(0);
   
   // Update refs when props change (without triggering useEffect)
   useEffect(() => { onPreviewPageRef.current = onPreviewPage; }, [onPreviewPage]);
   useEffect(() => { totalPagesRef.current = book.totalPages; }, [book.totalPages]);
+  useEffect(() => { prevPageRef.current = getPrevPage(sessions); }, [sessions]);
 
   const [isDragging, setIsDragging] = useState(false);
+  const [svgVersion, setSvgVersion] = useState(0);
+  
   const todayPages = getTodaySessions(sessions).map((s) => s.page).sort((a, b) => a - b);
   const lastRegisteredToday = todayPages.length > 0 ? todayPages[todayPages.length - 1] : null;
   
@@ -309,26 +321,27 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
   );
   
   // Update currentPage initial value when sessions change
+  // IMPORTANT: Don't update while dragging (isDraggingRef indicates active drag)
   useEffect(() => {
+    // Don't reset currentPage while user is dragging the circle
+    if (isDraggingRef.current) {
+      console.log('[SVGTrack] Skipping currentPage update during active drag');
+      return;
+    }
+    
     const todayPages = getTodaySessions(sessions).map((s) => s.page).sort((a, b) => a - b);
     const lastRegistered = todayPages.length > 0 ? todayPages[todayPages.length - 1] : null;
     setCurrentPage(lastRegistered !== null ? lastRegistered : getPrevPage(sessions));
   }, [sessions]);
 
-  // CRITICAL: Unified Pointer Events for mouse, touch, and Windows touchscreen
-  // Pointer events are registered ONLY on the circle, not the entire SVG container
-  // setPointerCapture ensures drag continues even if pointer moves outside circle
-  // Re-registers whenever circle reference updates (when SVG re-renders)
-  useEffect(() => {
-    const container = outer.current;
-    const circle = circleRef.current;
-    
-    if (!container || !circle) {
-      console.log('[SVGTrack] Circle not yet available for Pointer Events');
+  // CRITICAL: Extract listener registration to avoid re-execution on every re-render
+  const registerPointerListeners = useCallback((circle: SVGCircleElement) => {
+    if (!circle || !outer.current) {
+      console.log('[SVGTrack] Cannot register: circle or outer missing');
       return;
     }
 
-    console.log('[SVGTrack] Registering Pointer Events only on circle');
+    console.log('[SVGTrack] Registering Pointer Events ONCE');
     
     let startX = 0;
     let startY = 0;
@@ -336,6 +349,7 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
     let pointerId: number | null = null;
     const DRAG_THRESHOLD = 8;
     const PAD = 0;
+    const container = outer.current;
 
     const onPointerDown = (e: PointerEvent) => {
       console.log('[SVGTrack] Pointer down on circle');
@@ -345,6 +359,7 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
       startX = e.clientX;
       startY = e.clientY;
       dragging = false;
+      isDraggingRef.current = false; // Not dragging until threshold
       setIsDragging(true);
       onDragStart?.();
     };
@@ -361,7 +376,8 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
       
       if (!dragging) {
         dragging = true;
-        console.log('[SVGTrack] Pointer drag started from circle');
+        isDraggingRef.current = true; // NOW we're dragging - lock currentPage updates
+        console.log('[SVGTrack] Pointer drag started from circle - locking currentPage updates');
       }
 
       // Prevent default behavior (scrolling, selection, etc.)
@@ -378,42 +394,132 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
       const rawValue = ratio * totalPagesRef.current;
       const previewPage = Math.max(0, Math.min(rawValue, totalPagesRef.current));
       
-      console.log('[SVGTrack] Pointer drag: ratio:', ratio, 'previewPage:', previewPage);
+      console.log('[DRAG] rawValue (float):', rawValue, 'previewPage after bounds:', previewPage);
       setCurrentPage(previewPage);
+      console.log('[DRAG] callback called with:', previewPage);
       onPreviewPageRef.current?.(previewPage);
     };
 
     const onPointerUp = (e: PointerEvent) => {
       if (pointerId === null || e.pointerId !== pointerId) return;
-      console.log('[SVGTrack] Pointer up');
+      console.log('[SVGTrack] Pointer up - unlocking currentPage updates');
       dragging = false;
       pointerId = null;
+      isDraggingRef.current = false; // Release lock - allow currentPage updates again
       setIsDragging(false);
+      // Explicitly release pointer capture
+      try {
+        circle.releasePointerCapture(e.pointerId);
+        console.log('[SVGTrack] Successfully released pointer capture');
+      } catch (err) {
+        console.warn('[SVGTrack] Error releasing capture:', err);
+      }
     };
 
     const onPointerCancel = (e: PointerEvent) => {
       if (pointerId === null || e.pointerId !== pointerId) return;
-      console.log('[SVGTrack] Pointer cancel');
+      console.log('[SVGTrack] Pointer cancel - unlocking currentPage updates');
       dragging = false;
       pointerId = null;
+      isDraggingRef.current = false; // Release lock - allow currentPage updates again
       setIsDragging(false);
+      // Explicitly release pointer capture
+      try {
+        circle.releasePointerCapture(e.pointerId);
+        console.log('[SVGTrack] Successfully released pointer capture on cancel');
+      } catch (err) {
+        console.warn('[SVGTrack] Error releasing capture on cancel:', err);
+      }
+    };
+
+    // Document-level fallback for pointer events that escape the circle
+    const onDocumentPointerUp = (e: PointerEvent) => {
+      if (pointerId !== null && e.pointerId === pointerId) {
+        console.log('[SVGTrack] Document pointerup fallback triggered');
+        dragging = false;
+        pointerId = null;
+        isDraggingRef.current = false;
+        setIsDragging(false);
+        try {
+          circle.releasePointerCapture(e.pointerId);
+          console.log('[SVGTrack] Released capture via document fallback');
+        } catch (err) {
+          console.warn('[SVGTrack] Error releasing capture from doc:', err);
+        }
+      }
+    };
+
+    const onDocumentPointerCancel = (e: PointerEvent) => {
+      if (pointerId !== null && e.pointerId === pointerId) {
+        console.log('[SVGTrack] Document pointercancel fallback triggered');
+        dragging = false;
+        pointerId = null;
+        isDraggingRef.current = false;
+        setIsDragging(false);
+        try {
+          circle.releasePointerCapture(e.pointerId);
+          console.log('[SVGTrack] Released capture via document cancel fallback');
+        } catch (err) {
+          console.warn('[SVGTrack] Error releasing capture from doc cancel:', err);
+        }
+      }
     };
 
     // Register Pointer Events ONLY on the circle
     circle.addEventListener('pointerdown', onPointerDown);
-    circle.addEventListener('pointermove', onPointerMove);
+    circle.addEventListener('pointermove', onPointerMove, { passive: false });
     circle.addEventListener('pointerup', onPointerUp);
     circle.addEventListener('pointercancel', onPointerCancel);
+    
+    // Register fallbacks at document level
+    document.addEventListener('pointerup', onDocumentPointerUp);
+    document.addEventListener('pointercancel', onDocumentPointerCancel);
 
+    // Return cleanup function
     return () => {
       console.log('[SVGTrack] Removing Pointer Event listeners from circle');
       circle.removeEventListener('pointerdown', onPointerDown);
       circle.removeEventListener('pointermove', onPointerMove);
       circle.removeEventListener('pointerup', onPointerUp);
       circle.removeEventListener('pointercancel', onPointerCancel);
+      document.removeEventListener('pointerup', onDocumentPointerUp);
+      document.removeEventListener('pointercancel', onDocumentPointerCancel);
     };
-  }, [circleRef]); // Re-register when circle reference updates
+  }, [onDragStart]); // Only depends on onDragStart which is stable
 
+  // CRITICAL: Register listeners AFTER SVG is mounted using requestAnimationFrame
+  // This ensures the circle element is in the DOM when we try to register listeners
+  useEffect(() => {
+    if (svgVersion === 0) {
+      console.log('[SVGTrack] Waiting for SVG to be created (version still 0)...');
+      return;
+    }
+
+    console.log('[SVGTrack] SVG ready, scheduling listener registration with RAF, version:', svgVersion);
+
+    // requestAnimationFrame ensures DOM is painted before accessing the element
+    const raf = requestAnimationFrame(() => {
+      const circle = circleRef.current;
+      const container = outer.current;
+
+      if (!circle || !container) {
+        console.error('[SVGTrack] Circle or container still not available after RAF:', { circle, container });
+        return;
+      }
+
+      console.log('[SVGTrack] Registering Pointer Events for version:', svgVersion);
+      
+      // Call the listener registration function
+      registerPointerListeners(circle);
+    });
+
+    return () => {
+      cancelAnimationFrame(raf);
+    };
+  }, [svgVersion]); // Re-register every time SVG is recreated (version changes)
+
+  // CRITICAL: Separate effect to CREATE svg structure (only depends on book/sessions)
+  // This avoids re-registering listeners since circleRef persists
   useEffect(() => {
     if (!outer.current) return;
 
@@ -480,6 +586,9 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
     liveSegRect.setAttribute("x", String(px(prevPage)));
     liveSegRect.setAttribute("width", String(Math.max(0, px(Math.max(...todayPages, currentPage)) - px(prevPage))));
     svg.appendChild(liveSegRect);
+    
+    // Store reference for update during drag
+    liveSegRef.current = liveSegRect;
 
     // Small markers for past days' maximums
     pastDates.forEach((date) => {
@@ -511,19 +620,23 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
 
     // Main thumb circle (responsive, min 16px radius)
     const maxReg = currentPage;
+    const cxValue = px(maxReg);
     const circleRadius = Math.max(16, W > 414 ? 10 : 16);
     const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
     circle.setAttribute("id", "svg-track-circle"); // ID for pointer event capture
-    circle.setAttribute("cx", String(px(maxReg)));
+    circle.setAttribute("cx", String(cxValue));
     circle.setAttribute("cy", String(TY));
     circle.setAttribute("r", String(circleRadius));
     circle.setAttribute("fill", todayColor);
     circle.setAttribute("stroke", "var(--color-background)");
     circle.setAttribute("stroke-width", "2");
     svg.appendChild(circle);
+    console.log('[SVG] Rendering circle with currentPage:', currentPage, 'maxReg:', maxReg, 'cx:', cxValue);
     
-    // Store circle reference for Pointer Events
-    circleRef.current = circle as any as SVGCircleElement;
+    // Store all element references - CRITICAL: this triggers listener registration via svgVersion
+    circleRef.current = circle;
+    prevPageRef.current = prevPage;
+    setSvgVersion(v => v + 1); // Increment version to trigger listener re-registration
 
     // Number above the circle (always rounded for display)
     const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
@@ -534,12 +647,46 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
     text.setAttribute("font-weight", "500");
     text.setAttribute("fill", todayColor);
     text.textContent = String(Math.round(currentPage));
+    text.setAttribute("data-page-label", "true");
     svg.appendChild(text);
+    textRef.current = text;
 
     // Clean old SVG
     outer.current.querySelectorAll("svg").forEach((s) => s.remove());
     outer.current.appendChild(svg);
-  }, [book, sessions, currentPage]);
+  }, [book, sessions]); // CRITICAL: Only rebuild on book/sessions change, NOT on currentPage
+
+  // CRITICAL: Update circle position and text during drag/preview WITHOUT re-creating SVG
+  useEffect(() => {
+    if (!circleRef.current || !outer.current) return;
+
+    const W = outer.current.clientWidth || 300;
+    const TY = 40;
+    const PAD = 0;
+    const trackW = W - PAD * 2;
+    const total = book.totalPages || 1;
+    const px = (p: number) => PAD + (p / total) * trackW;
+
+    // Update circle position
+    const cxValue = px(currentPage);
+    circleRef.current.setAttribute("cx", String(cxValue));
+    console.log('[SVG UPDATE] Updating circle cx to:', cxValue, 'for currentPage:', currentPage);
+
+    // Update text
+    if (textRef.current) {
+      textRef.current.setAttribute("x", String(cxValue));
+      textRef.current.textContent = String(Math.round(currentPage));
+    }
+
+    // Update live segment (today's reading progress line)
+    if (liveSegRef.current) {
+      const prevPagePx = px(prevPageRef.current);
+      const newWidth = Math.max(0, cxValue - prevPagePx);
+      liveSegRef.current.setAttribute("x", String(prevPagePx));
+      liveSegRef.current.setAttribute("width", String(newWidth));
+      console.log('[SVG UPDATE] Updating liveSegRect from', prevPagePx, 'width:', newWidth);
+    }
+  }, [currentPage, book.totalPages]); // Update position when preview changes, but don't rebuild SVG
 
   return (
     <div
@@ -603,6 +750,7 @@ function BookCardWithLongPress({
   };
 
   const handleRegister = () => {
+    console.log('[PARENT] received value:', previewPage, 'type:', typeof previewPage);
     console.log('[BookCard] handleRegister called, previewPage:', previewPage);
     if (previewPage > 0) {
       const pageToRegister = Math.round(previewPage);
@@ -708,6 +856,12 @@ function BookCardWithLongPress({
 
   // Cleanup on unmount is handled by the native listeners useEffect above
 
+  // Wrapper to log preview values received from SVGTrack
+  const handlePreviewPage = (value: number) => {
+    console.log('[PARENT] received preview value:', value, 'type:', typeof value, 'is float?', value % 1 !== 0);
+    setPreviewPage(value);
+  };
+
   // Determinar color según streak
   let borderColor = "border-green-500/30";
   let bgColor = "bg-green-500/5";
@@ -758,7 +912,7 @@ function BookCardWithLongPress({
               book={book} 
               sessions={sessions} 
               onDragStart={() => setShowMenu(false)}
-              onPreviewPage={setPreviewPage}
+              onPreviewPage={handlePreviewPage}
             />
       </div>
 
