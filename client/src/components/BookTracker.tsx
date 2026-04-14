@@ -337,7 +337,12 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
         onDragStart?.();
       }
 
-      e.preventDefault();
+      // CRITICAL: preventDefault must be called here with { passive: false }
+      try {
+        e.preventDefault();
+      } catch (err) {
+        console.error('[SVGTrack] preventDefault failed:', err);
+      }
       e.stopPropagation();
 
       // Calculate dimensions in real-time
@@ -357,16 +362,23 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
       console.log('[SVGTrack] Touch end, isDragging:', isDragging.current);
       if (isDragging.current) {
         e.stopPropagation();
-        e.preventDefault();
+        try {
+          e.preventDefault();
+        } catch (err) {
+          console.error('[SVGTrack] preventDefault failed on touchend:', err);
+        }
       }
       isDragging.current = false;
     };
 
+    // CRITICAL: { passive: false } allows preventDefault() to work
+    console.log('[SVGTrack] Adding touch listeners with passive: false');
     el.addEventListener("touchstart", onTouchStart, { passive: true });
     el.addEventListener("touchmove", onTouchMove, { passive: false });
     el.addEventListener("touchend", onTouchEnd, { passive: false });
 
     return () => {
+      console.log('[SVGTrack] Removing touch listeners');
       el.removeEventListener("touchstart", onTouchStart);
       el.removeEventListener("touchmove", onTouchMove);
       el.removeEventListener("touchend", onTouchEnd);
@@ -571,7 +583,9 @@ function BookCardWithLongPress({
 }) {
   const [showMenu, setShowMenu] = useState(false);
   const [previewPage, setPreviewPage] = useState<number>(0);
-  const [justRegistered, setJustRegistered] = useState(false);
+  // Use both ref (for data persistence across re-renders) and state (for causing re-renders)
+  const justRegisteredRef = useRef(false);
+  const [justRegisteredCounter, setJustRegisteredCounter] = useState(0);
   const { streak, daysDisplay } = computeStreak(book);
   const currentPage = getCurrentDisplayPage(sessions);
   
@@ -582,6 +596,9 @@ function BookCardWithLongPress({
   const hasMoveDetected = useRef(false);
   // Track last registered page to reset button state when user moves circle
   const lastRegisteredPage = useRef<number | null>(null);
+  
+  // Derive justRegistered from ref (survives re-renders from invalidateQueries)
+  const justRegistered = justRegisteredRef.current;
 
   const handleClick = () => {
     if (!showMenu) {
@@ -593,30 +610,32 @@ function BookCardWithLongPress({
     console.log('[BookCard] handleRegister called, previewPage:', previewPage);
     if (previewPage > 0) {
       const pageToRegister = Math.round(previewPage);
-      console.log('[BookCard] Registering page:', pageToRegister);
-      onRegisterPage(book.id, pageToRegister);
+      console.log('[BookCard] Registering page:', pageToRegister, 'for book:', book.title);
+      
+      // FIRST: Set visual state immediately (before server call)
       lastRegisteredPage.current = pageToRegister;
+      justRegisteredRef.current = true;
+      setJustRegisteredCounter(c => c + 1);
+      console.log('[BookCard] Set justRegisteredRef.current = true');
+      
+      // THEN: Call server (which may trigger invalidateQueries and re-renders)
+      onRegisterPage(book.id, pageToRegister);
       setPreviewPage(0);
-      setJustRegistered(true);
-      console.log('[BookCard] setJustRegistered(true)');
+    } else {
+      console.log('[BookCard] previewPage is 0, not registering');
     }
   };
 
   // Reset button state when user moves circle away from last registered position
   useEffect(() => {
-    console.log('[BookCard] justRegistered effect, justRegistered:', justRegistered, 'previewPage:', previewPage, 'lastRegisteredPage:', lastRegisteredPage.current);
     if (justRegistered && lastRegisteredPage.current !== null) {
       if (Math.round(previewPage) !== lastRegisteredPage.current) {
-        console.log('[BookCard] User moved circle, resetting justRegistered');
-        setJustRegistered(false);
+        console.log('[BookCard] User moved circle, resetting justRegistered from', lastRegisteredPage.current, 'to', Math.round(previewPage));
+        justRegisteredRef.current = false;
+        setJustRegisteredCounter(c => c + 1); // Force re-render
       }
     }
-  }, [previewPage, justRegistered]);
-
-  // Log justRegistered changes
-  useEffect(() => {
-    console.log('[BookCard] justRegistered state changed:', justRegistered);
-  }, [justRegistered]);
+  }, [previewPage, justRegisteredCounter]); // Use counter as dep instead of justRegistered
 
   // Exclusive touch-based long press
   const onCardTouchStart = (e: React.TouchEvent) => {
@@ -710,7 +729,7 @@ function BookCardWithLongPress({
       <div 
         className="mb-3" 
         data-slider="true" 
-        style={{ position: "relative" }}
+        style={{ position: "relative", touchAction: "none" }}
       >
             <SVGTrack 
               book={book} 
