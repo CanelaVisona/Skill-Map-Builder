@@ -308,6 +308,7 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
   // Exclusive touch handler for iOS compatibility with real-time dimension calculation
   useEffect(() => {
     const el = outer.current;
+    console.log('[SVGTrack] Touch useEffect - ref:', el);
     if (!el) return;
 
     const PAD = 0;
@@ -318,6 +319,7 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
     const total = book.totalPages || 1;
 
     const onTouchStart = (e: TouchEvent) => {
+      console.log('[SVGTrack] Touch start at', e.touches[0].clientX);
       touchStartX.current = e.touches[0].clientX;
       touchStartY.current = e.touches[0].clientY;
       isDragging.current = false;
@@ -330,6 +332,7 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
       // Only start dragging if threshold exceeded
       if (!isDragging.current) {
         if (dx < DRAG_THRESHOLD && dy < DRAG_THRESHOLD) return;
+        console.log('[SVGTrack] Drag started, dx:', dx, 'dy:', dy);
         isDragging.current = true;
         onDragStart?.();
       }
@@ -345,11 +348,13 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
       const rawValue = ratio * total; // Keep float for smooth animation
       const previewPage = Math.max(0, Math.min(rawValue, total));
       
+      console.log('[SVGTrack] Drag: ratio:', ratio, 'rawValue:', rawValue, 'previewPage:', previewPage);
       setCurrentPage(previewPage);
       onPreviewPage?.(previewPage);
     };
 
     const onTouchEnd = (e: TouchEvent) => {
+      console.log('[SVGTrack] Touch end, isDragging:', isDragging.current);
       if (isDragging.current) {
         e.stopPropagation();
         e.preventDefault();
@@ -397,40 +402,14 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
     // NO registration here - only preview
   };
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    setIsDragging(true);
-    onDragStart?.();
-    if (e.touches.length > 0) {
-      handleDrag(e.touches[0].clientX);
-    }
-    e.preventDefault();
-  };
-
-  const handleTouchMove = (e: TouchEvent) => {
-    if (isDragging && e.touches.length > 0) {
-      onDragStart?.();
-      e.preventDefault();
-      handleDrag(e.touches[0].clientX);
-    }
-  };
-
-  const handleTouchEnd = () => {
-    setIsDragging(false);
-    // NO registration here - only preview
-  };
-
   useEffect(() => {
     if (isDragging) {
       document.addEventListener("mousemove", handleMouseMove);
       document.addEventListener("mouseup", handleMouseUp);
-      document.addEventListener("touchmove", handleTouchMove, { passive: false });
-      document.addEventListener("touchend", handleTouchEnd);
     }
     return () => {
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
-      document.removeEventListener("touchmove", handleTouchMove);
-      document.removeEventListener("touchend", handleTouchEnd);
     };
   }, [isDragging]);
 
@@ -568,7 +547,6 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
         touchAction: "none",
       }}
       onMouseDown={handleMouseDown as any}
-      onTouchStart={handleTouchStart as any}
     />
   );
 }
@@ -612,23 +590,33 @@ function BookCardWithLongPress({
   };
 
   const handleRegister = () => {
+    console.log('[BookCard] handleRegister called, previewPage:', previewPage);
     if (previewPage > 0) {
       const pageToRegister = Math.round(previewPage);
+      console.log('[BookCard] Registering page:', pageToRegister);
       onRegisterPage(book.id, pageToRegister);
       lastRegisteredPage.current = pageToRegister;
       setPreviewPage(0);
       setJustRegistered(true);
+      console.log('[BookCard] setJustRegistered(true)');
     }
   };
 
   // Reset button state when user moves circle away from last registered position
   useEffect(() => {
+    console.log('[BookCard] justRegistered effect, justRegistered:', justRegistered, 'previewPage:', previewPage, 'lastRegisteredPage:', lastRegisteredPage.current);
     if (justRegistered && lastRegisteredPage.current !== null) {
       if (Math.round(previewPage) !== lastRegisteredPage.current) {
+        console.log('[BookCard] User moved circle, resetting justRegistered');
         setJustRegistered(false);
       }
     }
   }, [previewPage, justRegistered]);
+
+  // Log justRegistered changes
+  useEffect(() => {
+    console.log('[BookCard] justRegistered state changed:', justRegistered);
+  }, [justRegistered]);
 
   // Exclusive touch-based long press
   const onCardTouchStart = (e: React.TouchEvent) => {
@@ -692,6 +680,11 @@ function BookCardWithLongPress({
   // Próximo día (solo el punteado con +1)
   const nextDayCircle = daysDisplay.find((d) => d.isNext);
 
+  // Debug log on every render
+  if (justRegistered || previewPage > 0) {
+    console.log('[BookCard] RENDER: justRegistered:', justRegistered, 'previewPage:', previewPage, 'disabled:', previewPage === 0);
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, y: -10 }}
@@ -713,19 +706,11 @@ function BookCardWithLongPress({
         </span>
       </div>
 
-      {/* SVG Track */}
+      {/* SVG Track - NO React touch handlers! Use native listeners only */}
       <div 
         className="mb-3" 
         data-slider="true" 
-        onTouchStart={(e) => e.stopPropagation()}
-        onTouchEnd={(e) => {
-          e.stopPropagation();
-          e.preventDefault();
-        }}
-        onClick={(e) => {
-          e.stopPropagation();
-          e.preventDefault();
-        }}
+        style={{ position: "relative" }}
       >
             <SVGTrack 
               book={book} 
