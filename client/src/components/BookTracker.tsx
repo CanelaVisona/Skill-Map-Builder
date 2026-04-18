@@ -8,14 +8,24 @@ import { ArrowLeft, Trash2, Edit, Swords } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 const GREEN_RAMP = [
+  "#E8F5E9", // muy claro
+  "#D4EAD1",
   "#C0DD97",
+  "#ADCF7D",
   "#97C459",
+  "#89BD4F",
   "#7aad3a",
+  "#6E9F33",
   "#639922",
+  "#5A8D1D",
   "#4f7d1b",
+  "#447116",
   "#3B6D11",
+  "#306B0C",
   "#27500A",
+  "#1E3F07",
   "#173404",
+  "#0F2703",
 ];
 
 const DAY_NAMES = ["Do", "Lu", "Ma", "Mi", "Ju", "Vi", "Sa"];
@@ -80,13 +90,12 @@ function getUniqueDates(sessions: BookSession[]): string[] {
   return [...new Set(sessions.map((s) => s.date))].sort();
 }
 
-function getColorForDate(sessions: BookSession[], date: string): string {
-  const dates = getUniqueDates(sessions);
-  const today = todayStr();
-  const allDatesIncToday = dates.includes(today) ? dates : [...dates, today];
-  const total = allDatesIncToday.length;
-  const idx = allDatesIncToday.indexOf(date);
-  return getGreenForIndex(idx === -1 ? total - 1 : idx, Math.max(total, 2));
+// Get color based on page progress (0 to totalPages)
+function getColorForPage(page: number, totalPages: number): string {
+  if (totalPages <= 1) return GREEN_RAMP[Math.floor(GREEN_RAMP.length / 2)];
+  const ratio = page / totalPages;
+  const idx = Math.round(ratio * (GREEN_RAMP.length - 1));
+  return GREEN_RAMP[Math.min(idx, GREEN_RAMP.length - 1)];
 }
 
 function getGreenForIndex(i: number, total: number): string {
@@ -286,9 +295,11 @@ function useLongPress(callback: () => void, duration = 500) {
 // SVG Track Component with manual drag implementation
 function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; sessions: BookSession[]; onDragStart?: () => void; onPreviewPage?: (page: number) => void }) {
   const today = todayStr();
-  const todayColor = getColorForDate(sessions, today);
   const prevPage = getPrevPage(sessions);
   const outer = useRef<HTMLDivElement>(null);
+  
+  // Track width for gradient calculation
+  const [trackWidth, setTrackWidth] = useState(300);
   
   // CRITICAL: Use refs instead of state to prevent re-renders from triggering listener re-registration
   const circleRef = useRef<SVGCircleElement | null>(null);
@@ -308,6 +319,21 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
   useEffect(() => { onPreviewPageRef.current = onPreviewPage; }, [onPreviewPage]);
   useEffect(() => { totalPagesRef.current = book.totalPages; }, [book.totalPages]);
   useEffect(() => { prevPageRef.current = getPrevPage(sessions); }, [sessions]);
+
+  // Calculate track width from container
+  useEffect(() => {
+    const el = outer.current;
+    if (!el) return;
+    
+    const updateWidth = () => {
+      const PAD = 0;
+      setTrackWidth(el.getBoundingClientRect().width - PAD * 2);
+    };
+    
+    updateWidth();
+    window.addEventListener('resize', updateWidth);
+    return () => window.removeEventListener('resize', updateWidth);
+  }, []);
 
   const [isDragging, setIsDragging] = useState(false);
   const [svgVersion, setSvgVersion] = useState(0);
@@ -539,6 +565,33 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
       return PAD + (p / total) * trackW;
     }
 
+    // Create gradient definition - horizontal gradient from light to dark green
+    const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+    const gradient = document.createElementNS("http://www.w3.org/2000/svg", "linearGradient");
+    gradient.setAttribute("id", `progress-gradient-${book.id}`);
+    gradient.setAttribute("gradientUnits", "userSpaceOnUse");
+    gradient.setAttribute("x1", String(PAD));
+    gradient.setAttribute("y1", "0");
+    gradient.setAttribute("x2", String(PAD + trackW));
+    gradient.setAttribute("y2", "0");
+    
+    // Add color stops for smooth gradient: light → medium → dark
+    const gradientStops = [
+      { offset: "0%", color: "#C0DD97" },
+      { offset: "40%", color: "#7aad3a" },
+      { offset: "100%", color: "#27500A" },
+    ];
+    
+    gradientStops.forEach(({ offset, color }) => {
+      const stop = document.createElementNS("http://www.w3.org/2000/svg", "stop");
+      stop.setAttribute("offset", offset);
+      stop.setAttribute("stop-color", color);
+      gradient.appendChild(stop);
+    });
+    
+    defs.appendChild(gradient);
+    svg.appendChild(defs);
+
     // Background track
     const bg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
     bg.setAttribute("x", String(PAD));
@@ -549,7 +602,7 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
     bg.setAttribute("fill", "var(--color-background-secondary)");
     svg.appendChild(bg);
 
-    // Past day segments
+    // Past day segments - use gradient (same gradient for all segments)
     const pastDates = getUniqueDates(sessions).filter((d) => d < today);
     let cursor = 0;
 
@@ -557,7 +610,6 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
       const maxPage = Math.max(
         ...sessions.filter((s) => s.date === date).map((s) => s.page)
       );
-      const col = getColorForDate(sessions, date);
 
       if (maxPage > cursor) {
         const r = document.createElementNS("http://www.w3.org/2000/svg", "rect");
@@ -566,13 +618,13 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
         r.setAttribute("width", String(Math.max(0, px(maxPage) - px(cursor))));
         r.setAttribute("height", "12");
         r.setAttribute("rx", "6");
-        r.setAttribute("fill", col);
+        r.setAttribute("fill", `url(#progress-gradient-${book.id})`);
         svg.appendChild(r);
         cursor = maxPage;
       }
     });
 
-    // Live segment (today's reading)
+    // Live segment (today's reading) - use same gradient
     const todayPages = getTodaySessions(sessions)
       .map((s) => s.page)
       .sort((a, b) => a - b);
@@ -581,7 +633,7 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
     liveSegRect.setAttribute("y", String(TY - 6));
     liveSegRect.setAttribute("height", "12");
     liveSegRect.setAttribute("rx", "6");
-    liveSegRect.setAttribute("fill", todayColor);
+    liveSegRect.setAttribute("fill", `url(#progress-gradient-${book.id})`);
     liveSegRect.id = "liveseg-" + book.id;
     liveSegRect.setAttribute("x", String(px(prevPage)));
     liveSegRect.setAttribute("width", String(Math.max(0, px(Math.max(...todayPages, currentPage)) - px(prevPage))));
@@ -590,35 +642,34 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
     // Store reference for update during drag
     liveSegRef.current = liveSegRect;
 
-    // Small markers for past days' maximums
+    // Small markers for past days' maximums - fixed dark green color
     pastDates.forEach((date) => {
       const maxPage = Math.max(
         ...sessions.filter((s) => s.date === date).map((s) => s.page)
       );
-      const col = getColorForDate(sessions, date);
       const marker = document.createElementNS("http://www.w3.org/2000/svg", "circle");
       marker.setAttribute("cx", String(px(maxPage)));
       marker.setAttribute("cy", String(TY));
       marker.setAttribute("r", "4");
-      marker.setAttribute("fill", col);
+      marker.setAttribute("fill", "#3B6D11");
       marker.setAttribute("stroke", "var(--color-background)");
       marker.setAttribute("stroke-width", "1.5");
       svg.appendChild(marker);
     });
 
-    // Today's markers for ALL sessions (including final/last registered)
+    // Today's markers for ALL sessions - fixed dark green color
     todayPages.forEach((page) => {
       const mark = document.createElementNS("http://www.w3.org/2000/svg", "circle");
       mark.setAttribute("cx", String(px(page)));
       mark.setAttribute("cy", String(TY));
       mark.setAttribute("r", "5");
-      mark.setAttribute("fill", todayColor);
+      mark.setAttribute("fill", "#3B6D11");
       mark.setAttribute("stroke", "var(--color-background)");
       mark.setAttribute("stroke-width", "1.5");
       svg.appendChild(mark);
     });
 
-    // Main thumb circle (responsive, min 16px radius)
+    // Main thumb circle - fixed dark green color
     const maxReg = currentPage;
     const cxValue = px(maxReg);
     const circleRadius = Math.max(16, W > 414 ? 10 : 16);
@@ -627,7 +678,7 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
     circle.setAttribute("cx", String(cxValue));
     circle.setAttribute("cy", String(TY));
     circle.setAttribute("r", String(circleRadius));
-    circle.setAttribute("fill", todayColor);
+    circle.setAttribute("fill", "#3B6D11");
     circle.setAttribute("stroke", "var(--color-background)");
     circle.setAttribute("stroke-width", "2");
     svg.appendChild(circle);
@@ -638,14 +689,14 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
     prevPageRef.current = prevPage;
     setSvgVersion(v => v + 1); // Increment version to trigger listener re-registration
 
-    // Number above the circle (always rounded for display)
+    // Number above the circle - fixed dark green color
     const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
     text.setAttribute("x", String(px(maxReg)));
     text.setAttribute("y", String(TY - 18));
     text.setAttribute("text-anchor", "middle");
     text.setAttribute("font-size", "12");
     text.setAttribute("font-weight", "500");
-    text.setAttribute("fill", todayColor);
+    text.setAttribute("fill", "#3B6D11");
     text.textContent = String(Math.round(currentPage));
     text.setAttribute("data-page-label", "true");
     svg.appendChild(text);
@@ -667,12 +718,12 @@ function SVGTrack({ book, sessions, onDragStart, onPreviewPage }: { book: Book; 
     const total = book.totalPages || 1;
     const px = (p: number) => PAD + (p / total) * trackW;
 
-    // Update circle position
+    // Update circle position (color stays fixed #3B6D11)
     const cxValue = px(currentPage);
     circleRef.current.setAttribute("cx", String(cxValue));
     console.log('[SVG UPDATE] Updating circle cx to:', cxValue, 'for currentPage:', currentPage);
 
-    // Update text
+    // Update text position and content (color stays fixed #3B6D11)
     if (textRef.current) {
       textRef.current.setAttribute("x", String(cxValue));
       textRef.current.textContent = String(Math.round(currentPage));
@@ -740,6 +791,13 @@ function BookCardWithLongPress({
   const lastRegisteredPage = useRef<number | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   
+  // Ref for setShowMenu to avoid capturing it in closure
+  const setShowMenuRef = useRef(setShowMenu);
+  useEffect(() => { setShowMenuRef.current = setShowMenu; }, [setShowMenu]);
+  
+  // Ref for long press timer
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
   // Derive justRegistered from ref (survives re-renders from invalidateQueries)
   const justRegistered = justRegisteredRef.current;
 
@@ -800,21 +858,13 @@ function BookCardWithLongPress({
       touchStartY.current = e.touches[0].clientY;
       hasMoveDetected.current = false;
 
-      touchStartX.current = e.touches[0].clientX;
-      touchStartY.current = e.touches[0].clientY;
-      hasMoveDetected.current = false;
-
-      const timerId = setTimeout(() => {
+      longPressTimerRef.current = setTimeout(() => {
         if (!hasMoveDetected.current) {
           console.log('[BookCard] Long press detected');
-          setShowMenu(true);
+          setShowMenuRef.current(true);
           navigator.vibrate?.(50);
         }
       }, 500);
-      
-      // Store timeout id in refs for cleanup
-      const currentRefs = (cardRef as any).current as any;
-      if (currentRefs) currentRefs._longPressTimer = timerId;
     };
 
     const onCardTouchMove = (e: TouchEvent) => {
@@ -824,20 +874,18 @@ function BookCardWithLongPress({
       if (dx > 8 || dy > 8) {
         console.log('[BookCard] Touch move detected, cancelling long press');
         hasMoveDetected.current = true;
-        const currentRefs = (cardRef as any).current as any;
-        if (currentRefs && currentRefs._longPressTimer) {
-          clearTimeout(currentRefs._longPressTimer);
-          currentRefs._longPressTimer = null;
+        if (longPressTimerRef.current) {
+          clearTimeout(longPressTimerRef.current);
+          longPressTimerRef.current = null;
         }
       }
     };
 
     const onCardTouchEnd = () => {
       console.log('[BookCard] Native touch end');
-      const currentRefs = (cardRef as any).current as any;
-      if (currentRefs && currentRefs._longPressTimer) {
-        clearTimeout(currentRefs._longPressTimer);
-        currentRefs._longPressTimer = null;
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
       }
     };
 
@@ -1125,7 +1173,7 @@ function DetailPanel({
           ) : (
             <div className="flex justify-center gap-3 flex-wrap">
               {daysDisplay.map((day) => {
-                const color = day.read ? getColorForDate(sessions, day.date) : "#666";
+                const color = day.read ? "#3B6D11" : "#666";
                 return (
                   <div key={day.date} className="flex flex-col items-center">
                     <div

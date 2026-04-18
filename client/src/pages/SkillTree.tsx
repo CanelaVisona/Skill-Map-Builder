@@ -10,8 +10,9 @@ import { SpaceRepetitionModal } from "@/components/SpaceRepetitionModal";
 import { ProgressModal } from "@/components/ProgressModal";
 import { ProgressBar } from "@/components/ProgressBar";
 import { BookTracker } from "@/components/BookTracker";
+import RewiringTracker from "@/components/RewiringTracker";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Mountain, Image, Grid, Flame, Dumbbell, Star, Bookmark } from "lucide-react";
+import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Mountain, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -80,7 +81,7 @@ function calculateVisibleLevels(skills: Skill[], endOfAreaLevel?: number): Set<n
   return visibleLevels;
 }
 
-function TopRightControls({ onOpenGuide, onOpenDesigner, onOpenProgress, onOpenHabits, onOpenStrength, onOpenBookTracker }: { onOpenGuide: () => void; onOpenDesigner: () => void; onOpenProgress: () => void; onOpenHabits: () => void; onOpenStrength: () => void; onOpenBookTracker: () => void }) {
+function TopRightControls({ onOpenGuide, onOpenDesigner, onOpenProgress, onOpenHabits, onOpenStrength, onOpenBookTracker, onOpenRewiringTracker }: { onOpenGuide: () => void; onOpenDesigner: () => void; onOpenProgress: () => void; onOpenHabits: () => void; onOpenStrength: () => void; onOpenBookTracker: () => void; onOpenRewiringTracker: () => void }) {
   const { theme, setTheme, resolvedTheme } = useTheme();
   const currentTheme = resolvedTheme || theme;
   const { openDiary } = useDiary();
@@ -141,6 +142,13 @@ function TopRightControls({ onOpenGuide, onOpenDesigner, onOpenProgress, onOpenH
         title="Book Tracker"
       >
         <Bookmark className="h-5 w-5" />
+      </button>
+      <button
+        className="text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+        onClick={onOpenRewiringTracker}
+        title="Rewiring Tracker"
+      >
+        <Circle className="h-5 w-5" />
       </button>
     </div>
   );
@@ -5530,6 +5538,35 @@ function BookTrackerModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
   );
 }
 
+function RewiringTrackerModalWrapper({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          key="rewiring-tracker-modal"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+          onClick={() => onOpenChange(false)}
+        >
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.95, opacity: 0 }}
+            className="overflow-hidden rounded-3xl border border-border/50 bg-background max-w-md w-full max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-0 py-0">
+              <RewiringTracker onBack={() => onOpenChange(false)} />
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
 function QuestDiary() {
   const { isDiaryOpen, closeDiary } = useDiary();
   const queryClient = useQueryClient();
@@ -6662,6 +6699,7 @@ export default function SkillTreePage() {
   const [isHabitsOpen, setIsHabitsOpen] = useState(false);
   const [isStrengthOpen, setIsStrengthOpen] = useState(false);
   const [isBookTrackerOpen, setIsBookTrackerOpen] = useState(false);
+  const [isRewiringTrackerOpen, setIsRewiringTrackerOpen] = useState(false);
   
   const handleCompleteOnboarding = () => {
     if (user?.id) {
@@ -6675,12 +6713,13 @@ export default function SkillTreePage() {
       <SkillTreeProvider>
         <MenuProvider>
           <div className="flex h-screen w-full bg-background text-foreground overflow-hidden font-body selection:bg-primary/30">
-            <TopRightControls onOpenGuide={openGuide} onOpenDesigner={() => setIsDesignerOpen(true)} onOpenProgress={() => setIsProgressOpen(true)} onOpenHabits={() => setIsHabitsOpen(true)} onOpenStrength={() => setIsStrengthOpen(true)} onOpenBookTracker={() => setIsBookTrackerOpen(true)} />
+            <TopRightControls onOpenGuide={openGuide} onOpenDesigner={() => setIsDesignerOpen(true)} onOpenProgress={() => setIsProgressOpen(true)} onOpenHabits={() => setIsHabitsOpen(true)} onOpenStrength={() => setIsStrengthOpen(true)} onOpenBookTracker={() => setIsBookTrackerOpen(true)} onOpenRewiringTracker={() => setIsRewiringTrackerOpen(true)} />
             <ProgressModal open={isProgressOpen} onOpenChange={setIsProgressOpen} />
             <SkillDesigner open={isDesignerOpen} onOpenChange={setIsDesignerOpen} />
             <HabitStreakModal open={isHabitsOpen} onOpenChange={setIsHabitsOpen} />
             <SpaceRepetitionModal open={isStrengthOpen} onOpenChange={setIsStrengthOpen} />
             <BookTrackerModalWrapper open={isBookTrackerOpen} onOpenChange={setIsBookTrackerOpen} />
+            <RewiringTrackerModalWrapper open={isRewiringTrackerOpen} onOpenChange={setIsRewiringTrackerOpen} />
             <AreaMenu />
             <SkillCanvas />
             <QuestDiary />
