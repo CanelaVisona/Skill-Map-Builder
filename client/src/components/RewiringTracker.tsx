@@ -165,6 +165,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
   const [areas, setAreas] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
   const [availableSkills, setAvailableSkills] = useState<any[]>([]);
+  const [levelCompletingTrackerId, setLevelCompletingTrackerId] = useState<string | null>(null);
   // Load all tracker data on mount
   useEffect(() => {
     const trackerList = JSON.parse(localStorage.getItem("rewiring_tracker_list") || "[]");
@@ -400,40 +401,17 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
       awardSkillXP(data.skillId);
     }
 
-    if (isComplete) {
-      // Archive the tracker
-      const archivedTracker: ArchivedTracker = {
-        id: trackerId,
-        name: data.name,
-        completedDate: new Date().toISOString(),
-        startDate: data.startDate,
-        totalActions: newCount,
-      };
+    // Trigger level completion animation for 3, 6, or 10 actions
+    if ([3, 6, 10].includes(newCount)) {
+      setLevelCompletingTrackerId(trackerId);
+      // Clear the animation state after 2 seconds
+      setTimeout(() => {
+        setLevelCompletingTrackerId(null);
+      }, 2000);
+    }
 
-      // Remove from active trackers
-      const trackerList = availableTrackers.filter((t) => t.id !== trackerId);
-      localStorage.setItem("rewiring_tracker_list", JSON.stringify(trackerList));
-      localStorage.removeItem(`rewiring_tracker_${trackerId}`);
-
-      const newTrackerData = { ...trackerData };
-      delete newTrackerData[trackerId];
-
-      // Add to archived
-      const newArchived = [...archivedTrackers, archivedTracker];
-
-      setAvailableTrackers(trackerList);
-      setArchivedTrackers(newArchived);
-      setTrackerData(newTrackerData);
-
-      // Switch to first available tracker or go back to main
-      if (trackerList.length > 0) {
-        setSelectedTrackerId(trackerList[0].id);
-        setCurrentPanel("main");
-      } else {
-        setSelectedTrackerId(null);
-        setCurrentPanel("main");
-      }
-    } else {
+    // Update tracker data first
+    if (!isComplete) {
       // Regular increment
       setTrackerData({
         ...trackerData,
@@ -443,6 +421,51 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           history: newHistory,
         },
       });
+    } else {
+      // For completion, update data first, then archive after 2 seconds animation
+      setTrackerData({
+        ...trackerData,
+        [trackerId]: {
+          ...data,
+          count: newCount,
+          history: newHistory,
+        },
+      });
+
+      // Wait 2 seconds for animation to complete, then archive
+      setTimeout(() => {
+        const archivedTracker: ArchivedTracker = {
+          id: trackerId,
+          name: data.name,
+          completedDate: new Date().toISOString(),
+          startDate: data.startDate,
+          totalActions: newCount,
+        };
+
+        // Remove from active trackers
+        const trackerList = availableTrackers.filter((t) => t.id !== trackerId);
+        localStorage.setItem("rewiring_tracker_list", JSON.stringify(trackerList));
+        localStorage.removeItem(`rewiring_tracker_${trackerId}`);
+
+        const newTrackerData = { ...trackerData };
+        delete newTrackerData[trackerId];
+
+        // Add to archived
+        const newArchived = [...archivedTrackers, archivedTracker];
+
+        setAvailableTrackers(trackerList);
+        setArchivedTrackers(newArchived);
+        setTrackerData(newTrackerData);
+
+        // Switch to first available tracker or go back to main
+        if (trackerList.length > 0) {
+          setSelectedTrackerId(trackerList[0].id);
+          setCurrentPanel("main");
+        } else {
+          setSelectedTrackerId(null);
+          setCurrentPanel("main");
+        }
+      }, 2000);
     }
   };
 
@@ -519,6 +542,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           onEditingTrackerName={setEditingTrackerName}
           onRenameTracker={handleRenameTracker}
           onSetEditingTrackerId={setEditingTrackerId}
+          levelCompletingTrackerId={levelCompletingTrackerId}
         />
       )}
 
@@ -533,6 +557,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           onRegisterAction={handleIncrement}
           onReset={handleReset}
           onDeleteTracker={handleDeleteTracker}
+          isLevelCompleting={levelCompletingTrackerId === selectedTrackerId}
         />
       )}
 
@@ -562,6 +587,8 @@ function TrackerCard({
   onRenameTracker,
   onDeleteTracker,
   onRegisterAction,
+  onSelectTracker,
+  isLevelCompleting,
 }: {
   tracker: { id: string; name: string };
   data: TrackerData;
@@ -576,6 +603,8 @@ function TrackerCard({
   onRenameTracker: (id: string, name: string) => void;
   onDeleteTracker: (id: string) => void;
   onRegisterAction: (id: string) => void;
+  onSelectTracker: (id: string) => void;
+  isLevelCompleting: boolean;
 }) {
   const level = LEVELS[levelIndex];
   const isComplete = levelIndex === LEVELS.length - 1 && data.count >= level.to;
@@ -583,10 +612,34 @@ function TrackerCard({
   const progressInLevel = data.count - level.from;
   const levelRange = level.to - level.from;
   const progressPercent = Math.min(1, progressInLevel / levelRange);
+  const [animatingLevel, setAnimatingLevel] = useState(false);
+
+  // Handle level completion animation
+  useEffect(() => {
+    if (isLevelCompleting) {
+      setAnimatingLevel(true);
+    }
+  }, [isLevelCompleting]);
 
   const longPressHandler = useLongPress(() => {
-    onContextMenuTrackerId(tracker.id);
+    if (!animatingLevel) {
+      onContextMenuTrackerId(tracker.id);
+    }
   }, 600);
+
+  const handleCardClick = () => {
+    if (!isEditMode && !isContextMenuOpen && !animatingLevel) {
+      onSelectTracker(tracker.id);
+    }
+  };
+
+  // Calculate animation progress for level completion
+  let animatedProgressPercent = progressPercent;
+  let animatedLevel = level;
+  if (animatingLevel) {
+    animatedProgressPercent = 1;
+    animatedLevel = level; // Use current level color for the celebration
+  }
 
   return (
     <motion.div
@@ -598,6 +651,7 @@ function TrackerCard({
         borderColor: level.col,
         background: level.bg,
       }}
+      onClick={handleCardClick}
       {...longPressHandler}
     >
       {isEditMode ? (
@@ -651,22 +705,22 @@ function TrackerCard({
                   r="88"
                   fill="none"
                   strokeWidth="14"
-                  stroke={level.col}
+                  stroke={animatedLevel.col}
                   strokeDasharray={CIRC}
-                  strokeDashoffset={CIRC * (1 - progressPercent)}
+                  strokeDashoffset={CIRC * (1 - animatedProgressPercent)}
                   strokeLinecap="round"
                   className="transition-all"
                   style={{ transform: "rotate(-90deg)", transformOrigin: "105px 105px" }}
-                  animate={{ strokeDashoffset: CIRC * (1 - progressPercent) }}
-                  transition={{ duration: 0.45, ease: [0.4, 0, 0.2, 1] }}
+                  animate={{ strokeDashoffset: CIRC * (1 - animatedProgressPercent) }}
+                  transition={{ duration: animatingLevel ? 0.3 : 0.45, ease: [0.4, 0, 0.2, 1] }}
                 />
               </svg>
               {/* Center text */}
               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <div className="text-3xl font-bold" style={{ color: level.col }}>
+                <div className="text-3xl font-bold" style={{ color: animatedLevel.col }}>
                   {data.count}
                 </div>
-                <div className="text-xs" style={{ color: level.txt }}>
+                <div className="text-xs" style={{ color: animatedLevel.txt }}>
                   de {level.to}
                 </div>
               </div>
@@ -694,10 +748,10 @@ function TrackerCard({
                 e.stopPropagation();
                 onRegisterAction(tracker.id);
               }}
-              disabled={isComplete}
+              disabled={isComplete || animatingLevel}
               className="w-full rounded-xl text-xs h-8"
               style={{
-                background: level.col,
+                background: animatedLevel.col,
                 color: "white",
               }}
             >
@@ -739,6 +793,15 @@ function TrackerCard({
               <Trash2 className="h-3 w-3 mr-1" />
               Eliminar
             </Button>
+            <Button
+              onClick={(e) => {
+                e.stopPropagation();
+                onContextMenuTrackerId(null);
+              }}
+              className="rounded-xl bg-gray-500/20 text-gray-700 dark:text-gray-400 hover:bg-gray-500/30 border border-gray-500/50 text-xs h-8"
+            >
+              Cancelar
+            </Button>
           </motion.div>
         )}
       </AnimatePresence>
@@ -777,6 +840,7 @@ function MainPanel({
   onEditingTrackerName,
   onRenameTracker,
   onSetEditingTrackerId,
+  levelCompletingTrackerId,
 }: {
   trackers: Array<{ id: string; name: string }>;
   trackerData: Record<string, TrackerData>;
@@ -808,6 +872,7 @@ function MainPanel({
   onEditingTrackerName: (name: string) => void;
   onRenameTracker: (id: string, name: string) => void;
   onSetEditingTrackerId: (id: string | null) => void;
+  levelCompletingTrackerId: string | null;
 }) {
   const today = new Date();
   const todayStr = today.toLocaleDateString("es-AR", {
@@ -862,6 +927,8 @@ function MainPanel({
                 onRenameTracker={onRenameTracker}
                 onDeleteTracker={onDeleteTracker}
                 onRegisterAction={onRegisterAction}
+                onSelectTracker={onSelectTracker}
+                isLevelCompleting={levelCompletingTrackerId === tracker.id}
               />
             );
           })
@@ -909,7 +976,7 @@ function MainPanel({
                       onNewTrackerAreaId(e.target.value || null);
                       onNewTrackerSkillId(null);
                     }}
-                    className="mt-2 w-full px-3 py-2.5 border border-border/50 rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 transition-all text-sm"
+                    className="mt-2 w-full px-3 py-2.5 border border-border/50 rounded-lg bg-background text-foreground dark:bg-slate-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 transition-all text-sm"
                   >
                     <option value="">Sin área asignada</option>
                     {areas.map((area) => (
@@ -927,7 +994,7 @@ function MainPanel({
                   <select
                     value={newTrackerProjectId || ""}
                     onChange={(e) => onNewTrackerProjectId(e.target.value || null)}
-                    className="mt-2 w-full px-3 py-2.5 border border-border/50 rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 transition-all text-sm"
+                    className="mt-2 w-full px-3 py-2.5 border border-border/50 rounded-lg bg-background text-foreground dark:bg-slate-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 transition-all text-sm"
                   >
                     <option value="">Sin proyecto asignado</option>
                     {projects.map((project) => (
@@ -946,7 +1013,7 @@ function MainPanel({
                     value={newTrackerSkillId || ""}
                     onChange={(e) => onNewTrackerSkillId(e.target.value || null)}
                     disabled={!newTrackerAreaId}
-                    className="mt-2 w-full px-3 py-2.5 border border-border/50 rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="mt-2 w-full px-3 py-2.5 border border-border/50 rounded-lg bg-background text-foreground dark:bg-slate-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <option value="">Sin skill asignado</option>
                     {availableSkills.map((skill) => (
@@ -1011,7 +1078,7 @@ function MainPanel({
       <div className="border-t border-border/30 flex items-center justify-end px-4 sm:px-6 py-3 gap-2">
         <button
           onClick={onViewArchived}
-          className="inline-flex items-center justify-center rounded-full bg-purple-500/20 p-2 text-purple-700 hover:opacity-80 dark:text-purple-400 active:opacity-60 transition-colors touch-manipulation h-9 w-9"
+          className="inline-flex items-center justify-center rounded-full bg-blue-500/20 p-2 text-blue-700 hover:opacity-80 dark:text-blue-400 active:opacity-60 transition-colors touch-manipulation h-9 w-9"
           title={`Completados (${archivedCount})`}
         >
           <Swords className="h-4 w-4" />
@@ -1028,6 +1095,7 @@ function DetailPanel({
   onRegisterAction,
   onReset,
   onDeleteTracker,
+  isLevelCompleting,
 }: {
   trackerId: string;
   data: TrackerData;
@@ -1035,6 +1103,7 @@ function DetailPanel({
   onRegisterAction: (id: string) => void;
   onReset: (id: string) => void;
   onDeleteTracker: (id: string) => void;
+  isLevelCompleting: boolean;
 }) {
   const levelIndex = getLevelIndex(data.count);
   const currentLevel = LEVELS[levelIndex];
@@ -1044,6 +1113,22 @@ function DetailPanel({
   const progressInLevel = data.count - currentLevel.from;
   const levelRange = currentLevel.to - currentLevel.from;
   const progressPercent = Math.min(1, progressInLevel / levelRange);
+  const [animatingLevel, setAnimatingLevel] = useState(false);
+
+  // Handle level completion animation
+  useEffect(() => {
+    if (isLevelCompleting) {
+      setAnimatingLevel(true);
+    }
+  }, [isLevelCompleting]);
+
+  // Calculate animation progress for level completion
+  let animatedProgressPercent = progressPercent;
+  let animatedLevel = currentLevel;
+  if (animatingLevel) {
+    animatedProgressPercent = 1;
+    animatedLevel = currentLevel; // Use current level color for the celebration
+  }
 
   return (
     <div className="w-full">
@@ -1058,17 +1143,10 @@ function DetailPanel({
         <div className="flex-1">
           <h2 className="font-black text-xl text-foreground">{data.name}</h2>
         </div>
-        <button
-          onClick={() => onDeleteTracker(trackerId)}
-          className="text-red-500 hover:text-red-600 transition-colors"
-          title="Eliminar rastreador"
-        >
-          <Trash2 className="h-5 w-5" />
-        </button>
       </div>
 
       {/* Content */}
-      <div className="px-6 py-5 flex flex-col gap-5">
+      <div className="px-6 py-5 flex flex-col gap-5 bg-background dark:bg-background">
         {/* Circular progress ring */}
         <div className="flex justify-center">
           <div className="relative w-48 h-48">
@@ -1088,14 +1166,14 @@ function DetailPanel({
                 r="88"
                 fill="none"
                 strokeWidth="14"
-                stroke={currentLevel.col}
+                stroke={animatedLevel.col}
                 strokeDasharray={CIRC}
-                strokeDashoffset={CIRC * (1 - progressPercent)}
+                strokeDashoffset={CIRC * (1 - animatedProgressPercent)}
                 strokeLinecap="round"
                 className="transition-all"
                 style={{ transform: "rotate(-90deg)", transformOrigin: "105px 105px" }}
-                animate={{ strokeDashoffset: CIRC * (1 - progressPercent) }}
-                transition={{ duration: 0.45, ease: [0.4, 0, 0.2, 1] }}
+                animate={{ strokeDashoffset: CIRC * (1 - animatedProgressPercent) }}
+                transition={{ duration: animatingLevel ? 0.3 : 0.45, ease: [0.4, 0, 0.2, 1] }}
               />
             </svg>
             {/* Center text */}
@@ -1110,9 +1188,9 @@ function DetailPanel({
         <div className="text-center">
           <div
             className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium"
-            style={{ background: currentLevel.bg, color: currentLevel.txt }}
+            style={{ background: animatedLevel.bg, color: animatedLevel.txt }}
           >
-            Nivel {levelIndex + 1} — {currentLevel.name}
+            Nivel {levelIndex + 1} — {animatedLevel.name}
           </div>
         </div>
 
@@ -1126,25 +1204,25 @@ function DetailPanel({
         {/* Register action button */}
         <motion.button
           onClick={() => onRegisterAction(trackerId)}
-          disabled={isComplete}
+          disabled={isComplete || animatingLevel}
           className="w-full py-3 rounded-full border"
           style={{
-            borderColor: currentLevel.col,
-            background: currentLevel.bg,
-            color: currentLevel.txt,
+            borderColor: animatedLevel.col,
+            background: animatedLevel.bg,
+            color: animatedLevel.txt,
           }}
-          whileTap={isComplete ? {} : { scale: 0.97 }}
+          whileTap={isComplete || animatingLevel ? {} : { scale: 0.97 }}
         >
           + Registrar acción
         </motion.button>
 
         {/* Stats */}
         <div className="grid grid-cols-2 gap-3">
-          <div className="bg-secondary rounded-lg p-4 text-center">
+          <div className="bg-muted/50 dark:bg-muted/40 rounded-lg p-4 text-center border border-border/20 dark:border-border/40">
             <div className="text-2xl font-medium">{levelIndex + 1}</div>
             <div className="text-xs text-muted-foreground mt-1">Nivel actual</div>
           </div>
-          <div className="bg-secondary rounded-lg p-4 text-center">
+          <div className="bg-muted/50 dark:bg-muted/40 rounded-lg p-4 text-center border border-border/20 dark:border-border/40">
             <div className="text-2xl font-medium">
               {isComplete ? "—" : remainingActions}
             </div>
@@ -1256,6 +1334,7 @@ function ArchivedItemCard({
   onRenameArchived,
   onDeleteArchived,
   onContextMenuOpen,
+  onContextMenuClose,
   isContextMenuOpen,
 }: {
   item: ArchivedTracker;
@@ -1267,6 +1346,7 @@ function ArchivedItemCard({
   onRenameArchived: (id: string, name: string) => void;
   onDeleteArchived: (id: string) => void;
   onContextMenuOpen: () => void;
+  onContextMenuClose: () => void;
   isContextMenuOpen: boolean;
 }) {
   const longPressHandler = useLongPress(() => {
@@ -1306,8 +1386,7 @@ function ArchivedItemCard({
                 onCloseEdit();
               }
             }}
-            className="h-8 px-2 text-xs"
-            style={{ background: "#F59E0B", color: "white" }}
+            className="h-8 px-2 text-xs bg-amber-500 hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-700 text-white transition-colors"
           >
             ✓
           </Button>
@@ -1361,6 +1440,15 @@ function ArchivedItemCard({
             >
               <Trash2 className="h-3 w-3 mr-1" />
               Eliminar
+            </Button>
+            <Button
+              onClick={(e) => {
+                e.stopPropagation();
+                onContextMenuClose();
+              }}
+              className="rounded-xl bg-gray-500/20 text-gray-700 dark:text-gray-400 hover:bg-gray-500/30 border border-gray-500/50 text-xs h-8"
+            >
+              Cancelar
             </Button>
           </motion.div>
         )}
@@ -1428,6 +1516,7 @@ function ArchivedPanel({
               onRenameArchived={onRenameArchived}
               onDeleteArchived={onDeleteArchived}
               onContextMenuOpen={() => setContextMenuArchiveId(item.id)}
+              onContextMenuClose={() => setContextMenuArchiveId(null)}
               isContextMenuOpen={contextMenuArchiveId === item.id}
             />
           ))
