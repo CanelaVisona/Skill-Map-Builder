@@ -5788,9 +5788,6 @@ function QuestDiary() {
               <TabsTrigger value="tools" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-tools" title="Tools">
                 <Wrench className="h-5 w-5" />
               </TabsTrigger>
-              <TabsTrigger value="bestiary" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-bestiary" title="Bestiary">
-                <BookOpen className="h-5 w-5" />
-              </TabsTrigger>
             </TabsList>
             
             <div className="flex-1 p-3 sm:p-6 bg-background flex flex-col min-h-0 min-w-0">
@@ -5805,17 +5802,6 @@ function QuestDiary() {
 
               <TabsContent value="skills" className="flex-1 min-h-0 min-w-0 mt-0">
                 <SkillsSection journalLearnings={learnings} journalTools={tools} journalThoughts={thoughts} />
-              </TabsContent>
-              
-              <TabsContent value="bestiary" className="flex-1 min-h-0 min-w-0 mt-0">
-                <BestiarySection
-                  entries={shadows}
-                  isLoading={loadingShadows}
-                  onAdd={(data) => createShadow.mutate(data)}
-                  onEdit={(id, data) => updateShadow.mutate({ id, data })}
-                  onDelete={(id) => deleteShadow.mutate(id)}
-                  onMarkDefeated={(id, defeated) => markShadowDefeated.mutate({ id, defeated })}
-                />
               </TabsContent>
               
               <TabsContent value="learnings" className="flex-1 min-h-0 min-w-0 mt-0">
