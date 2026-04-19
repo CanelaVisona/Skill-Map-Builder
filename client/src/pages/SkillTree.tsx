@@ -12,7 +12,7 @@ import { ProgressBar } from "@/components/ProgressBar";
 import { BookTracker } from "@/components/BookTracker";
 import RewiringTracker from "@/components/RewiringTracker";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Mountain, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle } from "lucide-react";
+import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Mountain, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, LibraryBig } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -141,7 +141,7 @@ function TopRightControls({ onOpenGuide, onOpenDesigner, onOpenProgress, onOpenH
         onClick={onOpenBookTracker}
         title="Book Tracker"
       >
-        <Bookmark className="h-5 w-5" />
+        <LibraryBig className="h-5 w-5" />
       </button>
       <button
         className="text-muted-foreground/40 hover:text-muted-foreground transition-colors"
@@ -5788,6 +5788,9 @@ function QuestDiary() {
               <TabsTrigger value="tools" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-tools" title="Tools">
                 <Wrench className="h-5 w-5" />
               </TabsTrigger>
+              <TabsTrigger value="bestiary" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-bestiary" title="Bestiary">
+                <BookOpen className="h-5 w-5" />
+              </TabsTrigger>
             </TabsList>
             
             <div className="flex-1 p-3 sm:p-6 bg-background flex flex-col min-h-0 min-w-0">
@@ -5802,6 +5805,17 @@ function QuestDiary() {
 
               <TabsContent value="skills" className="flex-1 min-h-0 min-w-0 mt-0">
                 <SkillsSection journalLearnings={learnings} journalTools={tools} journalThoughts={thoughts} />
+              </TabsContent>
+              
+              <TabsContent value="bestiary" className="flex-1 min-h-0 min-w-0 mt-0">
+                <BestiarySection
+                  entries={shadows}
+                  isLoading={loadingShadows}
+                  onAdd={(data) => createShadow.mutate(data)}
+                  onEdit={(id, data) => updateShadow.mutate({ id, data })}
+                  onDelete={(id) => deleteShadow.mutate(id)}
+                  onMarkDefeated={(id, defeated) => markShadowDefeated.mutate({ id, defeated })}
+                />
               </TabsContent>
               
               <TabsContent value="learnings" className="flex-1 min-h-0 min-w-0 mt-0">

@@ -158,7 +158,12 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
   const [isCreatingTracker, setIsCreatingTracker] = useState(false);
   const [contextMenuTrackerId, setContextMenuTrackerId] = useState<string | null>(null);
   const [editingTrackerId, setEditingTrackerId] = useState<string | null>(null);
-  const [editingTrackerName, setEditingTrackerName] = useState("");  const [showXpPopup, setShowXpPopup] = useState<{ visible: boolean }>({ visible: false });
+  const [editingTrackerName, setEditingTrackerName] = useState("");
+  const [editingTrackerAreaId, setEditingTrackerAreaId] = useState<string | null>(null);
+  const [editingTrackerProjectId, setEditingTrackerProjectId] = useState<string | null>(null);
+  const [editingTrackerSkillId, setEditingTrackerSkillId] = useState<string | null>(null);
+  const [editingSkillsForArea, setEditingSkillsForArea] = useState<any[]>([]);
+  const [showXpPopup, setShowXpPopup] = useState<{ visible: boolean }>({ visible: false });
   const [newTrackerAreaId, setNewTrackerAreaId] = useState<string | null>(null);
   const [newTrackerProjectId, setNewTrackerProjectId] = useState<string | null>(null);
   const [newTrackerSkillId, setNewTrackerSkillId] = useState<string | null>(null);
@@ -428,36 +433,51 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
     }
   };
 
-  const handleRenameTracker = async (trackerId: string, newName: string) => {
-    if (!newName.trim()) return;
+  const handleUpdateTracker = async (trackerId: string, updates: { name: string; areaId: string | null; projectId: string | null; skillId: string | null }) => {
+    if (!updates.name.trim()) return;
 
     try {
       const res = await fetch(`/api/rewiring-trackers/${trackerId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newName.trim() }),
+        body: JSON.stringify({
+          name: updates.name.trim(),
+          areaId: updates.areaId,
+          projectId: updates.projectId,
+          skillId: updates.skillId,
+        }),
       });
 
       if (!res.ok) {
-        console.error("Error renaming tracker");
+        console.error("Error updating tracker");
         return;
       }
 
       const updatedTrackers = availableTrackers.map((t) =>
-        t.id === trackerId ? { ...t, name: newName.trim() } : t
+        t.id === trackerId ? { ...t, name: updates.name.trim() } : t
       );
 
       const updatedData = { ...trackerData };
       if (updatedData[trackerId]) {
-        updatedData[trackerId] = { ...updatedData[trackerId], name: newName.trim() };
+        updatedData[trackerId] = {
+          ...updatedData[trackerId],
+          name: updates.name.trim(),
+          areaId: updates.areaId,
+          projectId: updates.projectId,
+          skillId: updates.skillId,
+        };
       }
 
       setAvailableTrackers(updatedTrackers);
       setTrackerData(updatedData);
       setEditingTrackerId(null);
       setContextMenuTrackerId(null);
+      setEditingTrackerName("");
+      setEditingTrackerAreaId(null);
+      setEditingTrackerProjectId(null);
+      setEditingTrackerSkillId(null);
     } catch (error) {
-      console.error("Error renaming tracker:", error);
+      console.error("Error updating tracker:", error);
     }
   };
 
@@ -617,8 +637,16 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           editingTrackerId={editingTrackerId}
           editingTrackerName={editingTrackerName}
           onEditingTrackerName={setEditingTrackerName}
-          onRenameTracker={handleRenameTracker}
+          onUpdateTracker={handleUpdateTracker}
           onSetEditingTrackerId={setEditingTrackerId}
+          editingTrackerAreaId={editingTrackerAreaId}
+          onEditingTrackerAreaId={setEditingTrackerAreaId}
+          editingTrackerProjectId={editingTrackerProjectId}
+          onEditingTrackerProjectId={setEditingTrackerProjectId}
+          editingTrackerSkillId={editingTrackerSkillId}
+          onEditingTrackerSkillId={setEditingTrackerSkillId}
+          editingSkillsForArea={editingSkillsForArea}
+          onEditingSkillsForArea={setEditingSkillsForArea}
           levelCompletingTrackerId={levelCompletingTrackerId}
         />
       )}
@@ -665,11 +693,21 @@ function TrackerCard({
   onContextMenuTrackerId,
   onEditingTrackerName,
   onSetEditingTrackerId,
-  onRenameTracker,
+  onUpdateTracker,
   onDeleteTracker,
   onRegisterAction,
   onSelectTracker,
   isLevelCompleting,
+  areas,
+  projects,
+  editingTrackerAreaId,
+  onEditingTrackerAreaId,
+  editingTrackerProjectId,
+  onEditingTrackerProjectId,
+  editingTrackerSkillId,
+  onEditingTrackerSkillId,
+  editingSkillsForArea,
+  onEditingSkillsForArea,
 }: {
   tracker: { id: string; name: string };
   data: TrackerData;
@@ -681,11 +719,21 @@ function TrackerCard({
   onContextMenuTrackerId: (id: string | null) => void;
   onEditingTrackerName: (name: string) => void;
   onSetEditingTrackerId: (id: string | null) => void;
-  onRenameTracker: (id: string, name: string) => void;
+  onUpdateTracker: (id: string, updates: { name: string; areaId: string | null; projectId: string | null; skillId: string | null }) => void;
   onDeleteTracker: (id: string) => void;
   onRegisterAction: (id: string) => void;
   onSelectTracker: (id: string) => void;
   isLevelCompleting: boolean;
+  areas: any[];
+  projects: any[];
+  editingTrackerAreaId: string | null;
+  onEditingTrackerAreaId: (id: string | null) => void;
+  editingTrackerProjectId: string | null;
+  onEditingTrackerProjectId: (id: string | null) => void;
+  editingTrackerSkillId: string | null;
+  onEditingTrackerSkillId: (id: string | null) => void;
+  editingSkillsForArea: any[];
+  onEditingSkillsForArea: (skills: any[]) => void;
 }) {
   const level = LEVELS[levelIndex];
   const isComplete = levelIndex === LEVELS.length - 1 && data.count >= level.to;
@@ -735,34 +783,122 @@ function TrackerCard({
       {...longPressHandler}
     >
       {isEditMode ? (
-        <div className="flex items-center gap-2">
-          <Input
-            value={editingTrackerName || ""}
-            onChange={(e) => onEditingTrackerNameChange(e.target.value)}
-            placeholder="Nombre del rastreador..."
-            className="flex-1 text-sm h-8"
-            autoFocus
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && editingTrackerName) {
-                onRenameTracker(tracker.id, editingTrackerName);
-              } else if (e.key === "Escape") {
+        <div className="space-y-3 p-3" onClick={(e) => e.stopPropagation()}>
+          {/* Tracker Name */}
+          <div>
+            <Input
+              value={editingTrackerName || ""}
+              onChange={(e) => onEditingTrackerNameChange(e.target.value)}
+              placeholder="Nombre del rastreador..."
+              className="text-sm"
+              autoFocus
+            />
+          </div>
+
+          {/* Area Select */}
+          <div>
+            <label className="text-xs font-semibold text-foreground uppercase tracking-wide">Área</label>
+            <select
+              value={editingTrackerAreaId || ""}
+              onChange={async (e) => {
+                const areaId = e.target.value || null;
+                onEditingTrackerAreaId(areaId);
+                onEditingTrackerSkillId(null);
+                
+                if (areaId) {
+                  try {
+                    const res = await fetch(`/api/global-skills/area/${areaId}`);
+                    const skills = res.ok ? await res.json() : [];
+                    onEditingSkillsForArea(skills);
+                  } catch (error) {
+                    console.error("Error loading skills:", error);
+                    onEditingSkillsForArea([]);
+                  }
+                } else {
+                  onEditingSkillsForArea([]);
+                }
+              }}
+              className="mt-1 w-full px-2 py-1.5 border border-border/50 rounded bg-background text-foreground dark:bg-slate-900 text-xs"
+            >
+              <option value="">Sin área</option>
+              {areas && areas.map((area) => (
+                <option key={area.id} value={area.id}>
+                  {area.icon} {area.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Project Select */}
+          <div>
+            <label className="text-xs font-semibold text-foreground uppercase tracking-wide">Proyecto</label>
+            <select
+              value={editingTrackerProjectId || ""}
+              onChange={(e) => onEditingTrackerProjectId(e.target.value || null)}
+              className="mt-1 w-full px-2 py-1.5 border border-border/50 rounded bg-background text-foreground dark:bg-slate-900 text-xs"
+            >
+              <option value="">Sin proyecto</option>
+              {projects && projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.icon} {project.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Skill Select */}
+          <div>
+            <label className="text-xs font-semibold text-foreground uppercase tracking-wide">Skill</label>
+            <select
+              value={editingTrackerSkillId || ""}
+              onChange={(e) => onEditingTrackerSkillId(e.target.value || null)}
+              disabled={!editingTrackerAreaId}
+              className="mt-1 w-full px-2 py-1.5 border border-border/50 rounded bg-background text-foreground dark:bg-slate-900 text-xs disabled:opacity-50"
+            >
+              <option value="">Sin skill</option>
+              {editingSkillsForArea && editingSkillsForArea.map((skill) => (
+                <option key={skill.id} value={skill.id}>
+                  {skill.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Buttons */}
+          <div className="flex gap-2 pt-2">
+            <Button
+              onClick={(e) => {
+                e.stopPropagation();
                 onSetEditingTrackerId(null);
-              }
-            }}
-          />
-          <Button
-            onClick={(e) => {
-              e.stopPropagation();
-              if (editingTrackerName) {
-                onRenameTracker(tracker.id, editingTrackerName);
-              }
-            }}
-            className="h-8 px-2 text-xs"
-            style={{ background: level.col, color: "white" }}
-          >
-            ✓
-          </Button>
+                onEditingTrackerNameChange("");
+                onEditingTrackerAreaId(null);
+                onEditingTrackerProjectId(null);
+                onEditingTrackerSkillId(null);
+                onEditingSkillsForArea([]);
+              }}
+              variant="outline"
+              className="flex-1 h-7 text-xs"
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (editingTrackerName) {
+                  onUpdateTracker(tracker.id, {
+                    name: editingTrackerName,
+                    areaId: editingTrackerAreaId,
+                    projectId: editingTrackerProjectId,
+                    skillId: editingTrackerSkillId,
+                  });
+                }
+              }}
+              className="flex-1 h-7 text-xs"
+              style={{ background: level.col, color: "white" }}
+            >
+              Guardar
+            </Button>
+          </div>
         </div>
       ) : (
         <>
@@ -851,11 +987,24 @@ function TrackerCard({
             onClick={(e) => e.stopPropagation()}
           >
             <Button
-              onClick={(e) => {
+              onClick={async (e) => {
                 e.stopPropagation();
-                onEditingTrackerName(tracker.name);
+                onEditingTrackerNameChange(tracker.name);
+                onEditingTrackerAreaId(data.areaId || null);
+                onEditingTrackerProjectId(data.projectId || null);
+                onEditingTrackerSkillId(data.skillId || null);
                 onSetEditingTrackerId(tracker.id);
                 onContextMenuTrackerId(null);
+
+                if (data.areaId) {
+                  try {
+                    const res = await fetch(`/api/global-skills/area/${data.areaId}`);
+                    const skills = res.ok ? await res.json() : [];
+                    onEditingSkillsForArea(skills);
+                  } catch (error) {
+                    console.error("Error loading skills:", error);
+                  }
+                }
               }}
               className="rounded-xl bg-blue-500/20 text-blue-700 dark:text-blue-400 hover:bg-blue-500/30 border border-blue-500/50 text-xs h-8"
             >
@@ -918,8 +1067,16 @@ function MainPanel({
   editingTrackerId,
   editingTrackerName,
   onEditingTrackerName,
-  onRenameTracker,
+  onUpdateTracker,
   onSetEditingTrackerId,
+  editingTrackerAreaId,
+  onEditingTrackerAreaId,
+  editingTrackerProjectId,
+  onEditingTrackerProjectId,
+  editingTrackerSkillId,
+  onEditingTrackerSkillId,
+  editingSkillsForArea,
+  onEditingSkillsForArea,
   levelCompletingTrackerId,
 }: {
   trackers: Array<{ id: string; name: string }>;
@@ -950,8 +1107,16 @@ function MainPanel({
   editingTrackerId: string | null;
   editingTrackerName: string | null;
   onEditingTrackerName: (name: string) => void;
-  onRenameTracker: (id: string, name: string) => void;
+  onUpdateTracker: (id: string, updates: { name: string; areaId: string | null; projectId: string | null; skillId: string | null }) => void;
   onSetEditingTrackerId: (id: string | null) => void;
+  editingTrackerAreaId: string | null;
+  onEditingTrackerAreaId: (id: string | null) => void;
+  editingTrackerProjectId: string | null;
+  onEditingTrackerProjectId: (id: string | null) => void;
+  editingTrackerSkillId: string | null;
+  onEditingTrackerSkillId: (id: string | null) => void;
+  editingSkillsForArea: any[];
+  onEditingSkillsForArea: (skills: any[]) => void;
   levelCompletingTrackerId: string | null;
 }) {
   const today = new Date();
@@ -1004,11 +1169,21 @@ function MainPanel({
                 onContextMenuTrackerId={onContextMenuTrackerId}
                 onEditingTrackerName={onEditingTrackerName}
                 onSetEditingTrackerId={onSetEditingTrackerId}
-                onRenameTracker={onRenameTracker}
+                onUpdateTracker={onUpdateTracker}
                 onDeleteTracker={onDeleteTracker}
                 onRegisterAction={onRegisterAction}
                 onSelectTracker={onSelectTracker}
                 isLevelCompleting={levelCompletingTrackerId === tracker.id}
+                areas={areas}
+                projects={projects}
+                editingTrackerAreaId={editingTrackerAreaId}
+                onEditingTrackerAreaId={onEditingTrackerAreaId}
+                editingTrackerProjectId={editingTrackerProjectId}
+                onEditingTrackerProjectId={onEditingTrackerProjectId}
+                editingTrackerSkillId={editingTrackerSkillId}
+                onEditingTrackerSkillId={onEditingTrackerSkillId}
+                editingSkillsForArea={editingSkillsForArea}
+                onEditingSkillsForArea={onEditingSkillsForArea}
               />
             );
           })
