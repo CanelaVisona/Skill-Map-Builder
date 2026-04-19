@@ -166,58 +166,86 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
   const [projects, setProjects] = useState<any[]>([]);
   const [availableSkills, setAvailableSkills] = useState<any[]>([]);
   const [levelCompletingTrackerId, setLevelCompletingTrackerId] = useState<string | null>(null);
+
+  // Function to load trackers from API
+  const reloadTrackers = async () => {
+    try {
+      const res = await fetch("/api/rewiring-trackers");
+      if (res.ok) {
+        const trackersFromApi = await res.json();
+        
+        // Separate archived and active trackers
+        const active = trackersFromApi.filter((t: any) => !t.archivedAt);
+        const archived = trackersFromApi.filter((t: any) => t.archivedAt);
+        
+        // Build availableTrackers list
+        const trackerList = active.map((t: any) => ({ id: t.id, name: t.name }));
+        setAvailableTrackers(trackerList);
+        
+        // Build trackerData
+        const allData: Record<string, TrackerData> = {};
+        for (const tracker of active) {
+          allData[tracker.id] = {
+            count: tracker.count || 0,
+            name: tracker.name,
+            history: [],
+            startDate: tracker.startDate,
+            areaId: tracker.areaId,
+            projectId: tracker.projectId,
+            skillId: tracker.skillId,
+          };
+        }
+        setTrackerData(allData);
+        
+        // Set archived trackers
+        const archivedList = archived.map((t: any) => ({
+          id: t.id,
+          name: t.name,
+          completedDate: t.archivedAt,
+          startDate: t.startDate,
+          totalActions: t.count || 0,
+        }));
+        setArchivedTrackers(archivedList);
+        
+        // Set first tracker as selected if available
+        if (trackerList.length > 0 && !selectedTrackerId) {
+          setSelectedTrackerId(trackerList[0].id);
+        }
+      }
+    } catch (error) {
+      console.error("Error loading trackers:", error);
+    }
+  };
+
   // Load all tracker data from API on mount
   useEffect(() => {
-    const loadTrackers = async () => {
-      try {
-        const res = await fetch("/api/rewiring-trackers");
-        if (res.ok) {
-          const trackersFromApi = await res.json();
-          
-          // Separate archived and active trackers
-          const active = trackersFromApi.filter((t: any) => !t.archivedAt);
-          const archived = trackersFromApi.filter((t: any) => t.archivedAt);
-          
-          // Build availableTrackers list
-          const trackerList = active.map((t: any) => ({ id: t.id, name: t.name }));
-          setAvailableTrackers(trackerList);
-          
-          // Build trackerData
-          const allData: Record<string, TrackerData> = {};
-          for (const tracker of active) {
-            allData[tracker.id] = {
-              count: tracker.count || 0,
-              name: tracker.name,
-              history: [], // Will be loaded when needed
-              startDate: tracker.startDate,
-              areaId: tracker.areaId,
-              projectId: tracker.projectId,
-              skillId: tracker.skillId,
-            };
-          }
-          setTrackerData(allData);
-          
-          // Set archived trackers
-          const archivedList = archived.map((t: any) => ({
-            id: t.id,
-            name: t.name,
-            completedDate: t.archivedAt,
-            startDate: t.startDate,
-            totalActions: t.count || 0,
-          }));
-          setArchivedTrackers(archivedList);
-          
-          // Set first tracker as selected
-          if (trackerList.length > 0) {
-            setSelectedTrackerId(trackerList[0].id);
-          }
-        }
-      } catch (error) {
-        console.error("Error loading trackers:", error);
-      }
-    };
-    loadTrackers();
+    reloadTrackers();
   }, []);
+
+  // Archive completed trackers when component unmounts (modal closes)
+  useEffect(() => {
+    return () => {
+      // On unmount, archive any completed trackers
+      const archiveOnClose = async () => {
+        try {
+          const completedTrackerIds = Object.entries(trackerData)
+            .filter(([_, data]) => data.count >= 10)
+            .map(([id, _]) => id);
+
+          for (const trackerId of completedTrackerIds) {
+            await fetch(`/api/rewiring-trackers/${trackerId}/archive`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+        } catch (error) {
+          console.error("Error archiving trackers on close:", error);
+        }
+      };
+
+      archiveOnClose();
+    };
+  }, [trackerData]);
 
   // Load areas and projects on mount
   useEffect(() => {
@@ -465,67 +493,17 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
       // Trigger level completion animation for 3, 6, or 10 actions
       if ([3, 6, 10].includes(newCount)) {
         setLevelCompletingTrackerId(trackerId);
-        // Clear the animation state after 2 seconds
-        setTimeout(() => {
-          setLevelCompletingTrackerId(null);
-        }, 2000);
       }
 
-      // Update tracker data
-      if (!isComplete) {
-        // Regular increment
-        setTrackerData({
-          ...trackerData,
-          [trackerId]: {
-            ...data,
-            count: newCount,
-            history: newHistory,
-          },
-        });
-      } else {
-        // For completion, update data first, then archive after 2 seconds animation
-        setTrackerData({
-          ...trackerData,
-          [trackerId]: {
-            ...data,
-            count: newCount,
-            history: newHistory,
-          },
-        });
-
-        // Wait 2 seconds for animation to complete, then update UI
-        setTimeout(() => {
-          const archivedTracker: ArchivedTracker = {
-            id: trackerId,
-            name: data.name,
-            completedDate: new Date().toISOString(),
-            startDate: data.startDate,
-            totalActions: newCount,
-          };
-
-          // Remove from active trackers
-          const trackerList = availableTrackers.filter((t) => t.id !== trackerId);
-
-          const newTrackerData = { ...trackerData };
-          delete newTrackerData[trackerId];
-
-          // Add to archived
-          const newArchived = [...archivedTrackers, archivedTracker];
-
-          setAvailableTrackers(trackerList);
-          setArchivedTrackers(newArchived);
-          setTrackerData(newTrackerData);
-
-          // Switch to first available tracker or go back to main
-          if (trackerList.length > 0) {
-            setSelectedTrackerId(trackerList[0].id);
-            setCurrentPanel("main");
-          } else {
-            setSelectedTrackerId(null);
-            setCurrentPanel("main");
-          }
-        }, 2000);
-      }
+      // Always update tracker data (whether complete or not)
+      setTrackerData({
+        ...trackerData,
+        [trackerId]: {
+          ...data,
+          count: newCount,
+          history: newHistory,
+        },
+      });
     } catch (error) {
       console.error("Error incrementing tracker:", error);
     }
@@ -563,9 +541,46 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
     }
   };
 
+  // Archive all completed trackers before closing the parent modal
+  const handleArchivalBeforeClose = async () => {
+    try {
+      // Find all trackers with count >= 10 (completed)
+      const completedTrackerIds = Object.entries(trackerData)
+        .filter(([_, data]) => data.count >= 10)
+        .map(([id, _]) => id);
+
+      // Archive each completed tracker
+      for (const trackerId of completedTrackerIds) {
+        await fetch(`/api/rewiring-trackers/${trackerId}/archive`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      // Clear animation state
+      setLevelCompletingTrackerId(null);
+
+      // Close the parent modal
+      if (onBack) {
+        onBack();
+      }
+    } catch (error) {
+      console.error("Error archiving trackers before close:", error);
+      // Still close even if archival fails
+      if (onBack) {
+        onBack();
+      }
+    }
+  };
+
   const longPressHandler = useLongPress(() => {
     setIsCreatingTracker(true);
   }, 600);
+
+  // Wrap parent's onBack to archive trackers before closing
+  const handleParentClose = () => {
+    handleArchivalBeforeClose();
+  };
 
   return (
     <div className="w-full">
@@ -615,6 +630,10 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           onBack={() => {
             setCurrentPanel("main");
             setSelectedTrackerId(null);
+            // Clear the level completing animation
+            setLevelCompletingTrackerId(null);
+            // Reload trackers to reflect any archival that occurred
+            reloadTrackers();
           }}
           onRegisterAction={handleIncrement}
           onReset={handleReset}
@@ -708,10 +727,9 @@ function TrackerCard({
       key={tracker.id}
       initial={{ opacity: 0, y: -10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="rounded-2xl border px-4 py-4 cursor-pointer transition-all relative group"
+      className="rounded-2xl border px-4 py-4 cursor-pointer transition-all relative group bg-white dark:bg-slate-900"
       style={{
         borderColor: level.col,
-        background: level.bg,
       }}
       onClick={handleCardClick}
       {...longPressHandler}
@@ -810,7 +828,7 @@ function TrackerCard({
                 e.stopPropagation();
                 onRegisterAction(tracker.id);
               }}
-              disabled={isComplete || animatingLevel}
+              disabled={isComplete}
               className="w-full rounded-xl text-xs h-8"
               style={{
                 background: animatedLevel.col,
@@ -1266,14 +1284,14 @@ function DetailPanel({
         {/* Register action button */}
         <motion.button
           onClick={() => onRegisterAction(trackerId)}
-          disabled={isComplete || animatingLevel}
+          disabled={isComplete}
           className="w-full py-3 rounded-full border"
           style={{
             borderColor: animatedLevel.col,
             background: animatedLevel.bg,
             color: animatedLevel.txt,
           }}
-          whileTap={isComplete || animatingLevel ? {} : { scale: 0.97 }}
+          whileTap={isComplete ? {} : { scale: 0.97 }}
         >
           + Registrar acción
         </motion.button>
