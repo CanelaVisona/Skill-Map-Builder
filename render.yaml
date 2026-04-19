@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: skill-map-builder
+    runtime: node
+    startCommand: npm start
+    buildCommand: npm install && npm run build
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: skill_map_db
+          property: connectionString
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: PORT
+        value: 3001
+
+databases:
+  - name: skill_map_db
+    databaseName: skill_map
+    user: skill_map_user
+    plan: free
+    region: Ohio

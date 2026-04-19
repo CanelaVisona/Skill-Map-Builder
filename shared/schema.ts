@@ -263,6 +263,30 @@ export const bookReadingSessions = pgTable("book_reading_sessions", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// ============ REWIRING TRACKER TABLES ============
+
+export const rewiringTrackers = pgTable("rewiring_trackers", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  count: integer("count").notNull().default(0),
+  areaId: varchar("area_id").references(() => areas.id, { onDelete: "set null" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  skillId: varchar("skill_id").references(() => globalSkills.id, { onDelete: "set null" }),
+  startDate: timestamp("start_date").notNull().defaultNow(),
+  archivedAt: timestamp("archived_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const rewiringTrackerRecords = pgTable("rewiring_tracker_records", {
+  id: varchar("id").primaryKey(),
+  trackerId: varchar("tracker_id").notNull().references(() => rewiringTrackers.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  timestamp: timestamp("timestamp").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertSessionSchema = createInsertSchema(sessions).omit({ id: true });
 export const insertAreaSchema = createInsertSchema(areas);
@@ -364,3 +388,10 @@ export type InsertBook = z.infer<typeof insertBooksLibrarySchema>;
 export type Book = typeof booksLibrary.$inferSelect;
 export type InsertBookReadingSession = z.infer<typeof insertBookReadingSessionSchema>;
 export type BookReadingSession = typeof bookReadingSessions.$inferSelect;
+
+export const insertRewiringTrackerSchema = createInsertSchema(rewiringTrackers).omit({ id: true, createdAt: true, updatedAt: true, userId: true });
+export const insertRewiringTrackerRecordSchema = createInsertSchema(rewiringTrackerRecords).omit({ id: true, createdAt: true, userId: true });
+export type InsertRewiringTracker = z.infer<typeof insertRewiringTrackerSchema>;
+export type RewiringTracker = typeof rewiringTrackers.$inferSelect;
+export type InsertRewiringTrackerRecord = z.infer<typeof insertRewiringTrackerRecordSchema>;
+export type RewiringTrackerRecord = typeof rewiringTrackerRecords.$inferSelect;

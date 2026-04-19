@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
-import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema, insertSpaceRepetitionPracticeSchema, type InsertSpaceRepetitionPractice, type SpaceRepetitionPractice, skills, areas, projects, spaceRepetitionPractices } from "@shared/schema";
+import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema, insertSpaceRepetitionPracticeSchema, type InsertSpaceRepetitionPractice, type SpaceRepetitionPractice, skills, areas, projects, spaceRepetitionPractices, rewiringTrackers, rewiringTrackerRecords } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import cookieParser from "cookie-parser";
 import crypto from "crypto";
@@ -3643,6 +3643,172 @@ export async function registerRoutes(
         fixedCount,
         fixes: fixes.slice(0, 50) // Return first 50 fixes
       });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ============ REWIRING TRACKER ROUTES ============
+
+  // Get all trackers for user
+  app.get("/api/rewiring-trackers", requireAuth, async (req, res) => {
+    try {
+      const trackers = await db.select().from(rewiringTrackers).where(eq(rewiringTrackers.userId, req.userId!));
+      res.json(trackers);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Create a new tracker
+  app.post("/api/rewiring-trackers", requireAuth, async (req, res) => {
+    try {
+      const { name, areaId, projectId, skillId } = req.body;
+      const trackerId = crypto.randomUUID();
+
+      const tracker = await db.insert(rewiringTrackers).values({
+        id: trackerId,
+        userId: req.userId!,
+        name,
+        count: 0,
+        areaId: areaId || null,
+        projectId: projectId || null,
+        skillId: skillId || null,
+        startDate: new Date(),
+        archivedAt: null,
+      }).returning();
+
+      res.json(tracker[0]);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Update tracker
+  app.put("/api/rewiring-trackers/:id", requireAuth, async (req, res) => {
+    try {
+      const { name, count, areaId, projectId, skillId } = req.body;
+      const trackerId = req.params.id;
+
+      const tracker = await db.select().from(rewiringTrackers).where(eq(rewiringTrackers.id, trackerId)).limit(1);
+      if (!tracker.length || tracker[0].userId !== req.userId) {
+        res.status(403).json({ message: "No autorizado" });
+        return;
+      }
+
+      const updated = await db.update(rewiringTrackers)
+        .set({
+          name: name ?? tracker[0].name,
+          count: count ?? tracker[0].count,
+          areaId: areaId ?? tracker[0].areaId,
+          projectId: projectId ?? tracker[0].projectId,
+          skillId: skillId ?? tracker[0].skillId,
+          updatedAt: new Date(),
+        })
+        .where(eq(rewiringTrackers.id, trackerId))
+        .returning();
+
+      res.json(updated[0]);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Delete tracker
+  app.delete("/api/rewiring-trackers/:id", requireAuth, async (req, res) => {
+    try {
+      const trackerId = req.params.id;
+
+      const tracker = await db.select().from(rewiringTrackers).where(eq(rewiringTrackers.id, trackerId)).limit(1);
+      if (!tracker.length || tracker[0].userId !== req.userId) {
+        res.status(403).json({ message: "No autorizado" });
+        return;
+      }
+
+      await db.delete(rewiringTrackers).where(eq(rewiringTrackers.id, trackerId));
+      res.json({ message: "Tracker eliminado" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Add action record to tracker (increment)
+  app.post("/api/rewiring-trackers/:id/record", requireAuth, async (req, res) => {
+    try {
+      const trackerId = req.params.id;
+
+      const tracker = await db.select().from(rewiringTrackers).where(eq(rewiringTrackers.id, trackerId)).limit(1);
+      if (!tracker.length || tracker[0].userId !== req.userId) {
+        res.status(403).json({ message: "No autorizado" });
+        return;
+      }
+
+      // Create record
+      const recordId = crypto.randomUUID();
+      await db.insert(rewiringTrackerRecords).values({
+        id: recordId,
+        trackerId,
+        userId: req.userId!,
+        timestamp: new Date(),
+      });
+
+      // Increment count
+      const updated = await db.update(rewiringTrackers)
+        .set({
+          count: tracker[0].count + 1,
+          updatedAt: new Date(),
+        })
+        .where(eq(rewiringTrackers.id, trackerId))
+        .returning();
+
+      // If count reaches 10 (Maestro level), mark as archived
+      if (updated[0].count >= 10) {
+        await db.update(rewiringTrackers)
+          .set({ archivedAt: new Date() })
+          .where(eq(rewiringTrackers.id, trackerId));
+      }
+
+      res.json(updated[0]);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get all records for tracker
+  app.get("/api/rewiring-trackers/:id/records", requireAuth, async (req, res) => {
+    try {
+      const trackerId = req.params.id;
+
+      const tracker = await db.select().from(rewiringTrackers).where(eq(rewiringTrackers.id, trackerId)).limit(1);
+      if (!tracker.length || tracker[0].userId !== req.userId) {
+        res.status(403).json({ message: "No autorizado" });
+        return;
+      }
+
+      const records = await db.select().from(rewiringTrackerRecords).where(eq(rewiringTrackerRecords.trackerId, trackerId));
+      res.json(records);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Archive tracker manually
+  app.post("/api/rewiring-trackers/:id/archive", requireAuth, async (req, res) => {
+    try {
+      const trackerId = req.params.id;
+
+      const tracker = await db.select().from(rewiringTrackers).where(eq(rewiringTrackers.id, trackerId)).limit(1);
+      if (!tracker.length || tracker[0].userId !== req.userId) {
+        res.status(403).json({ message: "No autorizado" });
+        return;
+      }
+
+      const updated = await db.update(rewiringTrackers)
+        .set({ archivedAt: new Date() })
+        .where(eq(rewiringTrackers.id, trackerId))
+        .returning();
+
+      res.json(updated[0]);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

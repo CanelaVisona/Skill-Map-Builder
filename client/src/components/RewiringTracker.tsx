@@ -166,47 +166,58 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
   const [projects, setProjects] = useState<any[]>([]);
   const [availableSkills, setAvailableSkills] = useState<any[]>([]);
   const [levelCompletingTrackerId, setLevelCompletingTrackerId] = useState<string | null>(null);
-  // Load all tracker data on mount
+  // Load all tracker data from API on mount
   useEffect(() => {
-    const trackerList = JSON.parse(localStorage.getItem("rewiring_tracker_list") || "[]");
-    const archivedList = JSON.parse(localStorage.getItem("rewiring_tracker_archived") || "[]");
-    
-    setAvailableTrackers(trackerList);
-    setArchivedTrackers(archivedList);
-
-    // Load all tracker data
-    const allData: Record<string, TrackerData> = {};
-    trackerList.forEach((tracker: { id: string; name: string }) => {
-      const stored = localStorage.getItem(`rewiring_tracker_${tracker.id}`);
-      if (stored) {
-        try {
-          allData[tracker.id] = JSON.parse(stored);
-        } catch (error) {
-          allData[tracker.id] = { count: 0, name: tracker.name, history: [], startDate: new Date().toISOString() };
+    const loadTrackers = async () => {
+      try {
+        const res = await fetch("/api/rewiring-trackers");
+        if (res.ok) {
+          const trackersFromApi = await res.json();
+          
+          // Separate archived and active trackers
+          const active = trackersFromApi.filter((t: any) => !t.archivedAt);
+          const archived = trackersFromApi.filter((t: any) => t.archivedAt);
+          
+          // Build availableTrackers list
+          const trackerList = active.map((t: any) => ({ id: t.id, name: t.name }));
+          setAvailableTrackers(trackerList);
+          
+          // Build trackerData
+          const allData: Record<string, TrackerData> = {};
+          for (const tracker of active) {
+            allData[tracker.id] = {
+              count: tracker.count || 0,
+              name: tracker.name,
+              history: [], // Will be loaded when needed
+              startDate: tracker.startDate,
+              areaId: tracker.areaId,
+              projectId: tracker.projectId,
+              skillId: tracker.skillId,
+            };
+          }
+          setTrackerData(allData);
+          
+          // Set archived trackers
+          const archivedList = archived.map((t: any) => ({
+            id: t.id,
+            name: t.name,
+            completedDate: t.archivedAt,
+            startDate: t.startDate,
+            totalActions: t.count || 0,
+          }));
+          setArchivedTrackers(archivedList);
+          
+          // Set first tracker as selected
+          if (trackerList.length > 0) {
+            setSelectedTrackerId(trackerList[0].id);
+          }
         }
-      } else {
-        allData[tracker.id] = { count: 0, name: tracker.name, history: [], startDate: new Date().toISOString() };
+      } catch (error) {
+        console.error("Error loading trackers:", error);
       }
-    });
-    setTrackerData(allData);
-
-    // Set first tracker as selected
-    if (trackerList.length > 0) {
-      setSelectedTrackerId(trackerList[0].id);
-    }
+    };
+    loadTrackers();
   }, []);
-
-  // Save tracker data to localStorage whenever it changes
-  useEffect(() => {
-    Object.entries(trackerData).forEach(([trackerId, data]) => {
-      localStorage.setItem(`rewiring_tracker_${trackerId}`, JSON.stringify(data));
-    });
-  }, [trackerData]);
-
-  // Save archived trackers to localStorage
-  useEffect(() => {
-    localStorage.setItem("rewiring_tracker_archived", JSON.stringify(archivedTrackers));
-  }, [archivedTrackers]);
 
   // Load areas and projects on mount
   useEffect(() => {
@@ -307,165 +318,216 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
     }
   };
 
-
-  const handleCreateTracker = () => {
+  const handleCreateTracker = async () => {
     if (!newTrackerName.trim()) return;
 
-    const newTrackerId = `tracker_${Date.now()}`;
-    const newTracker = { id: newTrackerId, name: newTrackerName.trim() };
-    const trackerList = [...availableTrackers, newTracker];
+    try {
+      const res = await fetch("/api/rewiring-trackers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newTrackerName.trim(),
+          areaId: newTrackerAreaId,
+          projectId: newTrackerProjectId,
+          skillId: newTrackerSkillId,
+        }),
+      });
 
-    localStorage.setItem("rewiring_tracker_list", JSON.stringify(trackerList));
-    localStorage.setItem(
-      `rewiring_tracker_${newTrackerId}`,
-      JSON.stringify({
-        count: 0,
-        name: newTrackerName.trim(),
-        history: [],
-        startDate: new Date().toISOString(),
-        areaId: newTrackerAreaId,
-        projectId: newTrackerProjectId,
-        skillId: newTrackerSkillId,
-      })
-    );
+      if (!res.ok) {
+        console.error("Error creating tracker");
+        return;
+      }
 
-    setAvailableTrackers(trackerList);
-    setTrackerData({
-      ...trackerData,
-      [newTrackerId]: { count: 0, name: newTrackerName.trim(), history: [], startDate: new Date().toISOString(), areaId: newTrackerAreaId, projectId: newTrackerProjectId, skillId: newTrackerSkillId },
-    });
-    setNewTrackerName("");
-    setNewTrackerAreaId(null);
-    setNewTrackerProjectId(null);
-    setNewTrackerSkillId(null);
-    setSelectedTrackerId(newTrackerId);
-  };
-
-  const handleDeleteTracker = (trackerId: string) => {
-    if (confirm("¿Eliminar este rastreador? Se perderán todos los datos.")) {
-      const trackerList = availableTrackers.filter((t) => t.id !== trackerId);
-      localStorage.setItem("rewiring_tracker_list", JSON.stringify(trackerList));
-      localStorage.removeItem(`rewiring_tracker_${trackerId}`);
-
-      const newTrackerData = { ...trackerData };
-      delete newTrackerData[trackerId];
+      const newTracker = await res.json();
+      const trackerList = [...availableTrackers, { id: newTracker.id, name: newTracker.name }];
 
       setAvailableTrackers(trackerList);
-      setTrackerData(newTrackerData);
-      setContextMenuTrackerId(null);
-      setEditingTrackerId(null);
-
-      // Switch to first available tracker or go back to main panel
-      if (trackerList.length > 0 && trackerId === selectedTrackerId) {
-        setSelectedTrackerId(trackerList[0].id);
-        setCurrentPanel("main");
-      } else if (trackerList.length === 0) {
-        setSelectedTrackerId(null);
-        setCurrentPanel("main");
-      }
+      setTrackerData({
+        ...trackerData,
+        [newTracker.id]: {
+          count: 0,
+          name: newTracker.name,
+          history: [],
+          startDate: newTracker.startDate,
+          areaId: newTracker.areaId,
+          projectId: newTracker.projectId,
+          skillId: newTracker.skillId,
+        },
+      });
+      setNewTrackerName("");
+      setNewTrackerAreaId(null);
+      setNewTrackerProjectId(null);
+      setNewTrackerSkillId(null);
+      setSelectedTrackerId(newTracker.id);
+    } catch (error) {
+      console.error("Error creating tracker:", error);
     }
   };
 
-  const handleRenameTracker = (trackerId: string, newName: string) => {
-    if (!newName.trim()) return;
+  const handleDeleteTracker = async (trackerId: string) => {
+    if (confirm("¿Eliminar este rastreador? Se perderán todos los datos.")) {
+      try {
+        const res = await fetch(`/api/rewiring-trackers/${trackerId}`, {
+          method: "DELETE",
+        });
 
-    const updatedTrackers = availableTrackers.map((t) =>
-      t.id === trackerId ? { ...t, name: newName.trim() } : t
-    );
-    localStorage.setItem("rewiring_tracker_list", JSON.stringify(updatedTrackers));
+        if (!res.ok) {
+          console.error("Error deleting tracker");
+          return;
+        }
 
-    const updatedData = { ...trackerData };
-    if (updatedData[trackerId]) {
-      updatedData[trackerId] = { ...updatedData[trackerId], name: newName.trim() };
-    }
-
-    setAvailableTrackers(updatedTrackers);
-    setTrackerData(updatedData);
-    setEditingTrackerId(null);
-    setContextMenuTrackerId(null);
-  };
-
-  const handleIncrement = (trackerId: string) => {
-    const data = trackerData[trackerId];
-    if (!data) return;
-
-    const newCount = data.count + 1;
-    const newHistory = [...data.history, { timestamp: new Date().toISOString() }];
-
-    // Check if tracker is complete (Maestro level = 10 actions)
-    const levelIndex = getLevelIndex(newCount);
-    const isComplete = levelIndex === LEVELS.length - 1 && newCount >= 10;
-
-    // Award XP if linked to skill
-    if (data.skillId) {
-      awardSkillXP(data.skillId);
-    }
-
-    // Trigger level completion animation for 3, 6, or 10 actions
-    if ([3, 6, 10].includes(newCount)) {
-      setLevelCompletingTrackerId(trackerId);
-      // Clear the animation state after 2 seconds
-      setTimeout(() => {
-        setLevelCompletingTrackerId(null);
-      }, 2000);
-    }
-
-    // Update tracker data first
-    if (!isComplete) {
-      // Regular increment
-      setTrackerData({
-        ...trackerData,
-        [trackerId]: {
-          ...data,
-          count: newCount,
-          history: newHistory,
-        },
-      });
-    } else {
-      // For completion, update data first, then archive after 2 seconds animation
-      setTrackerData({
-        ...trackerData,
-        [trackerId]: {
-          ...data,
-          count: newCount,
-          history: newHistory,
-        },
-      });
-
-      // Wait 2 seconds for animation to complete, then archive
-      setTimeout(() => {
-        const archivedTracker: ArchivedTracker = {
-          id: trackerId,
-          name: data.name,
-          completedDate: new Date().toISOString(),
-          startDate: data.startDate,
-          totalActions: newCount,
-        };
-
-        // Remove from active trackers
         const trackerList = availableTrackers.filter((t) => t.id !== trackerId);
-        localStorage.setItem("rewiring_tracker_list", JSON.stringify(trackerList));
-        localStorage.removeItem(`rewiring_tracker_${trackerId}`);
 
         const newTrackerData = { ...trackerData };
         delete newTrackerData[trackerId];
 
-        // Add to archived
-        const newArchived = [...archivedTrackers, archivedTracker];
-
         setAvailableTrackers(trackerList);
-        setArchivedTrackers(newArchived);
         setTrackerData(newTrackerData);
+        setContextMenuTrackerId(null);
+        setEditingTrackerId(null);
 
-        // Switch to first available tracker or go back to main
-        if (trackerList.length > 0) {
+        // Switch to first available tracker or go back to main panel
+        if (trackerList.length > 0 && trackerId === selectedTrackerId) {
           setSelectedTrackerId(trackerList[0].id);
           setCurrentPanel("main");
-        } else {
+        } else if (trackerList.length === 0) {
           setSelectedTrackerId(null);
           setCurrentPanel("main");
         }
-      }, 2000);
+      } catch (error) {
+        console.error("Error deleting tracker:", error);
+      }
+    }
+  };
+
+  const handleRenameTracker = async (trackerId: string, newName: string) => {
+    if (!newName.trim()) return;
+
+    try {
+      const res = await fetch(`/api/rewiring-trackers/${trackerId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newName.trim() }),
+      });
+
+      if (!res.ok) {
+        console.error("Error renaming tracker");
+        return;
+      }
+
+      const updatedTrackers = availableTrackers.map((t) =>
+        t.id === trackerId ? { ...t, name: newName.trim() } : t
+      );
+
+      const updatedData = { ...trackerData };
+      if (updatedData[trackerId]) {
+        updatedData[trackerId] = { ...updatedData[trackerId], name: newName.trim() };
+      }
+
+      setAvailableTrackers(updatedTrackers);
+      setTrackerData(updatedData);
+      setEditingTrackerId(null);
+      setContextMenuTrackerId(null);
+    } catch (error) {
+      console.error("Error renaming tracker:", error);
+    }
+  };
+
+  const handleIncrement = async (trackerId: string) => {
+    const data = trackerData[trackerId];
+    if (!data) return;
+
+    try {
+      // Call API to record action
+      const res = await fetch(`/api/rewiring-trackers/${trackerId}/record`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      if (!res.ok) {
+        console.error("Error recording action");
+        return;
+      }
+
+      const updatedTracker = await res.json();
+      const newCount = updatedTracker.count;
+      const newHistory = [...data.history, { timestamp: new Date().toISOString() }];
+
+      // Check if tracker is complete (Maestro level = 10 actions)
+      const levelIndex = getLevelIndex(newCount);
+      const isComplete = levelIndex === LEVELS.length - 1 && newCount >= 10;
+
+      // Award XP if linked to skill
+      if (data.skillId) {
+        awardSkillXP(data.skillId);
+      }
+
+      // Trigger level completion animation for 3, 6, or 10 actions
+      if ([3, 6, 10].includes(newCount)) {
+        setLevelCompletingTrackerId(trackerId);
+        // Clear the animation state after 2 seconds
+        setTimeout(() => {
+          setLevelCompletingTrackerId(null);
+        }, 2000);
+      }
+
+      // Update tracker data
+      if (!isComplete) {
+        // Regular increment
+        setTrackerData({
+          ...trackerData,
+          [trackerId]: {
+            ...data,
+            count: newCount,
+            history: newHistory,
+          },
+        });
+      } else {
+        // For completion, update data first, then archive after 2 seconds animation
+        setTrackerData({
+          ...trackerData,
+          [trackerId]: {
+            ...data,
+            count: newCount,
+            history: newHistory,
+          },
+        });
+
+        // Wait 2 seconds for animation to complete, then update UI
+        setTimeout(() => {
+          const archivedTracker: ArchivedTracker = {
+            id: trackerId,
+            name: data.name,
+            completedDate: new Date().toISOString(),
+            startDate: data.startDate,
+            totalActions: newCount,
+          };
+
+          // Remove from active trackers
+          const trackerList = availableTrackers.filter((t) => t.id !== trackerId);
+
+          const newTrackerData = { ...trackerData };
+          delete newTrackerData[trackerId];
+
+          // Add to archived
+          const newArchived = [...archivedTrackers, archivedTracker];
+
+          setAvailableTrackers(trackerList);
+          setArchivedTrackers(newArchived);
+          setTrackerData(newTrackerData);
+
+          // Switch to first available tracker or go back to main
+          if (trackerList.length > 0) {
+            setSelectedTrackerId(trackerList[0].id);
+            setCurrentPanel("main");
+          } else {
+            setSelectedTrackerId(null);
+            setCurrentPanel("main");
+          }
+        }, 2000);
+      }
+    } catch (error) {
+      console.error("Error incrementing tracker:", error);
     }
   };
 
