@@ -321,7 +321,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
   }, [newTrackerAreaId]);
 
   // Award XP to linked skill
-  const awardSkillXP = (skillId: string | null | undefined) => {
+  const awardSkillXP = async (skillId: string | null | undefined) => {
     if (!skillId) return;
 
     if (skillId.startsWith("legacy-")) {
@@ -345,10 +345,27 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
         skillsProgress[skillName].currentXp = newXp;
         skillsProgress[skillName].level = newLevel;
         localStorage.setItem("skillsProgress", JSON.stringify(skillsProgress));
-        setShowXpPopup({ visible: true });
-        setTimeout(() => setShowXpPopup({ visible: false }), 1500);
+      }
+    } else {
+      // Handle global skills via API
+      try {
+        const res = await fetch(`/api/global-skills/${skillId}/add-xp`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ xpAmount: 5 }),
+        });
+
+        if (!res.ok) {
+          console.error("Error updating skill XP:", res.status);
+        }
+      } catch (error) {
+        console.error("Error updating skill XP:", error);
       }
     }
+
+    // Show XP popup in both cases
+    setShowXpPopup({ visible: true });
+    setTimeout(() => setShowXpPopup({ visible: false }), 1500);
   };
 
   const handleCreateTracker = async () => {
@@ -507,7 +524,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
 
       // Award XP if linked to skill
       if (data.skillId) {
-        awardSkillXP(data.skillId);
+        await awardSkillXP(data.skillId);
       }
 
       // Trigger level completion animation for 3, 6, or 10 actions
@@ -936,7 +953,7 @@ function TrackerCard({
                 <div className="text-3xl font-bold" style={{ color: animatedLevel.col }}>
                   {data.count}
                 </div>
-                <div className="text-xs" style={{ color: animatedLevel.txt }}>
+                <div className="text-xs font-semibold text-foreground/80">
                   de {level.to}
                 </div>
               </div>
@@ -948,7 +965,7 @@ function TrackerCard({
             <h3 className="font-bold text-sm text-foreground mb-1 line-clamp-2">{tracker.name}</h3>
             <div className="flex items-center justify-center gap-2 mb-3">
               <span
-                className="text-xs px-2 py-1 rounded-full font-bold text-white"
+                className="text-xs px-2 py-1 rounded-full font-bold text-gray-900"
                 style={{ background: level.col }}
               >
                 {level.name}

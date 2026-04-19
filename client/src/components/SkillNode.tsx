@@ -1478,8 +1478,15 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             </div>
 
             <Tabs value={feedbackActiveTab} onValueChange={(v) => setFeedbackActiveTab(v as "thoughts" | "tools" | "learnings" | "experience" | "habits" | "rewiring")} className="w-full flex flex-col flex-1">
-              <div className="w-full overflow-x-auto scrollbar-none">
-                <TabsList className="flex bg-muted/50 w-max min-w-full gap-0" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+              <div 
+                className="w-full overflow-x-auto" 
+                style={{
+                  WebkitOverflowScrolling: 'touch',
+                  scrollbarWidth: 'thin',
+                  scrollbarColor: 'rgba(0,0,0,0.15) transparent'
+                }}
+              >
+                <TabsList className="flex bg-muted/50 w-max min-w-full gap-0">
                   <TabsTrigger value="thoughts" className="text-xs whitespace-nowrap px-3" data-testid="feedback-tab-thoughts">
                     <Pencil className="h-3 w-3 mr-1" />
                     Thoughts
