@@ -2,7 +2,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { type Skill, type GlobalSkill, useSkillTree } from "@/lib/skill-context";
 import { type JournalThought, type JournalLearning, type JournalTool } from "@shared/schema";
 import { cn } from "@/lib/utils";
-import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus, Star, ChevronRight, ChevronLeft, Wrench, Lightbulb, Flame, Swords, Circle, BowArrow } from "lucide-react";
+import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus, Star, ChevronRight, ChevronLeft, Wrench, Lightbulb, Flame } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import {
@@ -208,7 +208,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
   // Tools & Learnings form state
   const queryClient = useQueryClient();
-  const [feedbackActiveTab, setFeedbackActiveTab] = useState<"thoughts" | "tools" | "learnings" | "experience" | "habits" | "rewiring">("thoughts");
+  const [feedbackActiveTab, setFeedbackActiveTab] = useState<"thoughts" | "tools" | "learnings" | "experience" | "habits">("thoughts");
   const [thoughtTitle, setThoughtTitle] = useState("");
   const [thoughtSentence, setThoughtSentence] = useState("");
   const [toolTitle, setToolTitle] = useState("");
@@ -223,9 +223,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   // Habits state
   const [habitDataWithRecords, setHabitDataWithRecords] = useState<any[]>([]);
   const [showXpPopup, setShowXpPopup] = useState<{ visible: boolean; x: number; y: number }>({ visible: false, x: 0, y: 0 });
-
-  // Rewiring trackers state
-  const [rewiringTrackers, setRewiringTrackers] = useState<any[]>([]);
   
   // Queries for archivements (learnings, tools, thoughts by skillId)
   const { data: skillLearnings = [] } = useQuery({
@@ -300,30 +297,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
     fetchHabitRecords();
   }, [skillHabits, feedbackActiveTab]);
-
-  // Fetch rewiring trackers linked to this area or project
-  useEffect(() => {
-    if (feedbackActiveTab !== "rewiring") return;
-    
-    const fetchRewiringTrackers = async () => {
-      try {
-        const res = await fetch("/api/rewiring-trackers");
-        if (res.ok) {
-          const allTrackers = await res.json();
-          const filtered = allTrackers.filter((t: any) => {
-            const isLinked = (isProject && t.projectId === activeProjectId) || 
-                           (!isProject && t.areaId === activeAreaId);
-            return isLinked && !t.archivedAt;
-          });
-          setRewiringTrackers(filtered);
-        }
-      } catch (error) {
-        console.error("Error fetching rewiring trackers:", error);
-      }
-    };
-    
-    fetchRewiringTrackers();
-  }, [feedbackActiveTab, activeAreaId, activeProjectId, isProject]);
   
   // Experience tab state for editStep 2
   const [experienceSelectedSkill, setExperienceSelectedSkill] = useState<string | null>(null);
@@ -1477,42 +1450,28 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               <span className="text-xs font-medium text-muted-foreground">Journal</span>
             </div>
 
-            <Tabs value={feedbackActiveTab} onValueChange={(v) => setFeedbackActiveTab(v as "thoughts" | "tools" | "learnings" | "experience" | "habits" | "rewiring")} className="w-full flex flex-col flex-1">
-              <div 
-                className="w-full overflow-x-auto" 
-                style={{
-                  WebkitOverflowScrolling: 'touch',
-                  scrollbarWidth: 'thin',
-                  scrollbarColor: 'rgba(0,0,0,0.15) transparent'
-                }}
-              >
-                <TabsList className="flex bg-muted/50 w-max min-w-full gap-0">
-                  <TabsTrigger value="thoughts" className="text-xs whitespace-nowrap px-3" data-testid="feedback-tab-thoughts">
-                    <Pencil className="h-3 w-3 mr-1" />
-                    Thoughts
-                  </TabsTrigger>
-                  <TabsTrigger value="learnings" className="text-xs whitespace-nowrap px-3" data-testid="feedback-tab-learnings">
-                    <Lightbulb className="h-3 w-3 mr-1" />
-                    Learnings
-                  </TabsTrigger>
-                  <TabsTrigger value="experience" className="text-xs whitespace-nowrap px-3" data-testid="feedback-tab-experience">
-                    <BowArrow className="h-3 w-3 mr-1" />
-                    Skills
-                  </TabsTrigger>
-                  <TabsTrigger value="tools" className="text-xs whitespace-nowrap px-3" data-testid="feedback-tab-tools">
-                    <Wrench className="h-3 w-3 mr-1" />
-                    Tools
-                  </TabsTrigger>
-                  <TabsTrigger value="habits" className="text-xs whitespace-nowrap px-3" data-testid="feedback-tab-habits">
-                    <Flame className="h-3 w-3 mr-1" />
-                    Habits
-                  </TabsTrigger>
-                  <TabsTrigger value="rewiring" className="text-xs whitespace-nowrap px-3" data-testid="feedback-tab-rewiring">
-                    <Circle className="h-3 w-3 mr-1" />
-                    Rewiring
-                  </TabsTrigger>
-                </TabsList>
-              </div>
+            <Tabs value={feedbackActiveTab} onValueChange={(v) => setFeedbackActiveTab(v as "thoughts" | "tools" | "learnings" | "experience" | "habits")} className="w-full flex flex-col flex-1">
+              <TabsList className="w-full grid grid-cols-5 bg-muted/50">
+                <TabsTrigger value="thoughts" className="text-xs" data-testid="feedback-tab-thoughts">
+                  <Pencil className="h-3 w-3 mr-1" />
+                  Thoughts
+                </TabsTrigger>
+                <TabsTrigger value="learnings" className="text-xs" data-testid="feedback-tab-learnings">
+                  <Lightbulb className="h-3 w-3 mr-1" />
+                  Learnings
+                </TabsTrigger>
+                <TabsTrigger value="experience" className="text-xs" data-testid="feedback-tab-experience">
+                  <span className="text-xs font-bold mr-1">XP</span>
+                </TabsTrigger>
+                <TabsTrigger value="tools" className="text-xs" data-testid="feedback-tab-tools">
+                  <Wrench className="h-3 w-3 mr-1" />
+                  Tools
+                </TabsTrigger>
+                <TabsTrigger value="habits" className="text-xs" data-testid="feedback-tab-habits">
+                  <Flame className="h-3 w-3 mr-1" />
+                  Habits
+                </TabsTrigger>
+              </TabsList>
               
               <TabsContent value="thoughts" className="mt-4 space-y-3 flex flex-col flex-1">
                 <div className="flex-1">
@@ -1992,124 +1951,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                         );
                       });
                     })()
-                  )}
-                </div>
-              </TabsContent>
-
-              <TabsContent value="rewiring" className="mt-4 space-y-3 flex flex-col flex-1">
-                <div className="flex-1 overflow-y-auto space-y-3 px-1 [&::-webkit-scrollbar]:w-0">
-                  {rewiringTrackers.length === 0 ? (
-                    <p className="text-xs text-muted-foreground text-center py-4">
-                      No rewiring trackers linked to this {isProject ? "project" : "area"}
-                    </p>
-                  ) : (
-                    rewiringTrackers.map((tracker) => {
-                      const CIRC = 2 * Math.PI * 44;
-                      const LEVELS = [
-                        { name: "Iniciante", from: 0, to: 3, col: "#378ADD" },
-                        { name: "Avanzado", from: 3, to: 6, col: "#7F77DD" },
-                        { name: "Maestro", from: 6, to: 10, col: "#BA7517" },
-                      ];
-                      
-                      const getLevelForTracker = () => {
-                        for (let i = LEVELS.length - 1; i >= 0; i--) {
-                          if (tracker.count >= LEVELS[i].from) return LEVELS[i];
-                        }
-                        return LEVELS[0];
-                      };
-                      
-                      const level = getLevelForTracker();
-                      const isComplete = tracker.count >= 10;
-                      const progressInLevel = tracker.count - level.from;
-                      const levelRange = level.to - level.from;
-                      const progressPercent = Math.min(1, progressInLevel / levelRange);
-
-                      return (
-                        <div key={tracker.id} className="rounded-lg border px-3 py-3 bg-muted/30 border-border/30">
-                          {/* Circular Ring - Smaller */}
-                          <div className="flex justify-center mb-2">
-                            <div className="relative w-20 h-20">
-                              <svg viewBox="0 0 110 110" className="w-full h-full">
-                                <circle
-                                  cx="55"
-                                  cy="55"
-                                  r="44"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="7"
-                                  className="text-muted-foreground/20"
-                                />
-                                <motion.circle
-                                  cx="55"
-                                  cy="55"
-                                  r="44"
-                                  fill="none"
-                                  strokeWidth="7"
-                                  stroke={level.col}
-                                  strokeDasharray={CIRC}
-                                  strokeDashoffset={CIRC * (1 - progressPercent)}
-                                  strokeLinecap="round"
-                                  className="transition-all"
-                                  style={{ transform: "rotate(-90deg)", transformOrigin: "55px 55px" }}
-                                  animate={{ strokeDashoffset: CIRC * (1 - progressPercent) }}
-                                  transition={{ duration: 0.45, ease: [0.4, 0, 0.2, 1] }}
-                                />
-                              </svg>
-                              {/* Center text */}
-                              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                                <div className="text-lg font-bold" style={{ color: level.col }}>
-                                  {tracker.count}
-                                </div>
-                                <div className="text-xs" style={{ color: level.col }}>
-                                  de {level.to}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Tracker Name */}
-                          <h4 className="text-xs font-semibold text-foreground text-center truncate mb-1">
-                            {tracker.name}
-                          </h4>
-
-                          {/* Level Badge */}
-                          <div className="flex items-center justify-center mb-2">
-                            <span className="text-xs px-2 py-0.5 rounded-full font-bold text-white" style={{ background: level.col }}>
-                              {level.name}
-                            </span>
-                          </div>
-
-                          {/* Action Button */}
-                          <Button
-                            onClick={async () => {
-                              try {
-                                const res = await fetch(`/api/rewiring-trackers/${tracker.id}/record`, {
-                                  method: "POST",
-                                  headers: { "Content-Type": "application/json" },
-                                });
-                                
-                                if (res.ok) {
-                                  const updated = await res.json();
-                                  setRewiringTrackers((prev) =>
-                                    prev.map((t) => t.id === tracker.id ? { ...t, count: updated.count } : t)
-                                  );
-                                }
-                              } catch (error) {
-                                console.error("Error recording rewiring action:", error);
-                              }
-                            }}
-                            disabled={isComplete}
-                            className="w-full text-xs h-7 rounded-lg"
-                            style={{
-                              background: isComplete ? undefined : level.col,
-                              color: "white",
-                            }}
-                          >
-                            {isComplete ? "¡Completado!" : "+ Acción"}
-                          </Button>
-                        </div>
-                      );
-                    })
                   )}
                 </div>
               </TabsContent>

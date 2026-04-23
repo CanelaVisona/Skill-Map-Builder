@@ -1,4 +1,4 @@
-import { eq, and, asc, isNull, isNotNull } from "drizzle-orm";
+import { eq, and, asc } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db, pool } from "./db";
 import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions } from "@shared/schema";
@@ -190,13 +190,11 @@ export interface IStorage {
   deleteSpaceRepetitionPractice(id: string): Promise<void>;
 
   // Book Reading Tracker
-  getBooks(userId: string, archived?: boolean): Promise<Book[]>;
+  getBooks(userId: string): Promise<Book[]>;
   getBook(id: string): Promise<Book | undefined>;
   createBook(book: InsertBook & { userId: string }): Promise<Book>;
   updateBook(id: string, book: Partial<InsertBook>): Promise<Book | undefined>;
   deleteBook(id: string): Promise<void>;
-  archiveBook(id: string): Promise<Book | undefined>;
-  unarchiveBook(id: string): Promise<Book | undefined>;
   
   // Book Reading Sessions
   getBookSessions(bookId: string): Promise<BookReadingSession[]>;
@@ -1677,18 +1675,7 @@ export class DbStorage implements IStorage {
   }
 
   // Book Reading Tracker
-  async getBooks(userId: string, archived?: boolean): Promise<Book[]> {
-    if (archived === true) {
-      // Only archived books
-      return await db.select().from(booksLibrary)
-        .where(and(eq(booksLibrary.userId, userId), isNotNull(booksLibrary.archivedAt)));
-    } else if (archived === false) {
-      // Only active books (not archived)
-      return await db.select().from(booksLibrary)
-        .where(and(eq(booksLibrary.userId, userId), isNull(booksLibrary.archivedAt)));
-    }
-    
-    // Return all books (both archived and active)
+  async getBooks(userId: string): Promise<Book[]> {
     return await db.select().from(booksLibrary)
       .where(eq(booksLibrary.userId, userId));
   }
@@ -1726,22 +1713,6 @@ export class DbStorage implements IStorage {
 
   async deleteBook(id: string): Promise<void> {
     await db.delete(booksLibrary).where(eq(booksLibrary.id, id));
-  }
-
-  async archiveBook(id: string): Promise<Book | undefined> {
-    const result = await db.update(booksLibrary)
-      .set({ archivedAt: new Date(), updatedAt: new Date() })
-      .where(eq(booksLibrary.id, id))
-      .returning();
-    return result[0];
-  }
-
-  async unarchiveBook(id: string): Promise<Book | undefined> {
-    const result = await db.update(booksLibrary)
-      .set({ archivedAt: null, updatedAt: new Date() })
-      .where(eq(booksLibrary.id, id))
-      .returning();
-    return result[0];
   }
 
   // Book Reading Sessions
