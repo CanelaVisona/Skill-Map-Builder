@@ -3371,6 +3371,163 @@ export async function registerRoutes(
     }
   });
 
+  // Book Reading Tracker
+  app.get("/api/books", requireAuth, async (req, res) => {
+    try {
+      const archived = req.query.archived === "true";
+      const allBooks = await storage.getBooks(req.userId!);
+      
+      // Filter by archived status
+      const filteredBooks = allBooks.filter(book => {
+        const isArchived = book.archivedAt !== null;
+        return archived ? isArchived : !isArchived;
+      });
+      
+      res.json(filteredBooks);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/books", requireAuth, async (req, res) => {
+    try {
+      const data = { ...req.body, userId: req.userId };
+      const book = await storage.createBook(data);
+      res.status(201).json(book);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/books/:id", requireAuth, async (req, res) => {
+    try {
+      const book = await storage.getBook(req.params.id);
+      if (!book) {
+        return res.status(404).json({ message: "Libro no encontrado" });
+      }
+      // Verify ownership
+      if (book.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para acceder a este libro" });
+      }
+      res.json(book);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/books/:id", requireAuth, async (req, res) => {
+    try {
+      const book = await storage.getBook(req.params.id);
+      if (!book) {
+        return res.status(404).json({ message: "Libro no encontrado" });
+      }
+      // Verify ownership
+      if (book.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para modificar este libro" });
+      }
+      
+      const updated = await storage.updateBook(req.params.id, req.body);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/books/:id", requireAuth, async (req, res) => {
+    try {
+      const book = await storage.getBook(req.params.id);
+      if (!book) {
+        return res.status(404).json({ message: "Libro no encontrado" });
+      }
+      // Verify ownership
+      if (book.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para eliminar este libro" });
+      }
+      
+      await storage.deleteBook(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/books/:id/archive", requireAuth, async (req, res) => {
+    try {
+      const book = await storage.getBook(req.params.id);
+      if (!book) {
+        return res.status(404).json({ message: "Libro no encontrado" });
+      }
+      // Verify ownership
+      if (book.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para archivar este libro" });
+      }
+      
+      const updated = await storage.updateBook(req.params.id, { archivedAt: new Date() });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/books/:id/unarchive", requireAuth, async (req, res) => {
+    try {
+      const book = await storage.getBook(req.params.id);
+      if (!book) {
+        return res.status(404).json({ message: "Libro no encontrado" });
+      }
+      // Verify ownership
+      if (book.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para desarchivar este libro" });
+      }
+      
+      const updated = await storage.updateBook(req.params.id, { archivedAt: null });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/books/:id/sessions", requireAuth, async (req, res) => {
+    try {
+      const book = await storage.getBook(req.params.id);
+      if (!book) {
+        return res.status(404).json({ message: "Libro no encontrado" });
+      }
+      // Verify ownership
+      if (book.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para acceder a estas sesiones" });
+      }
+      
+      const sessions = await storage.getBookSessions(req.params.id);
+      res.json(sessions);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/books/:id/sessions", requireAuth, async (req, res) => {
+    try {
+      const book = await storage.getBook(req.params.id);
+      if (!book) {
+        return res.status(404).json({ message: "Libro no encontrado" });
+      }
+      // Verify ownership
+      if (book.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para crear sesiones en este libro" });
+      }
+      
+      const session = await storage.createBookSession({
+        bookId: req.params.id,
+        userId: req.userId!,
+        date: req.body.date,
+        page: req.body.page
+      });
+      res.status(201).json(session);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Admin: Fix all node statuses consistent with unlockedLevel
   app.post("/api/admin/fix-statuses", async (req, res) => {
     try {
