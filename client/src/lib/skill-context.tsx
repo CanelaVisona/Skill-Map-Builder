@@ -647,10 +647,20 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
   // Used after critical operations that generate new levels or move nodes
   const refreshAllAreas = async (): Promise<void> => {
     try {
+      console.log('[refreshAllAreas] Starting fetch from /api/areas');
       const response = await fetch("/api/areas", { credentials: "include" });
       if (!response.ok) return;
       const areasData = await response.json();
       if (!Array.isArray(areasData)) return;
+      
+      // DEBUG: Log raw server data before mapping
+      console.log('[refreshAllAreas] Raw server data from /api/areas:', areasData.map(a => ({
+        name: a.name,
+        endOfAreaLevel: a.endOfAreaLevel,
+        unlockedLevel: a.unlockedLevel,
+        nextLevelToAssign: a.nextLevelToAssign
+      })));
+      
       const normalizedAreas = areasData.map((area: Area) => ({
         ...area,
         skills: ensureFirstNodeRules(area.skills || []),
@@ -1138,9 +1148,11 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
     const newStatus = nextStatus[skill.status];
     
-    // Last node of level can open new levels, UNLESS it has the star (isFinalNode === 1)
-    const hasStar = skill.isFinalNode === 1;
-    const canOpenNewLevels = isLastNodeOfLevel && !hasStar;
+    // Check if star is active (endOfAreaLevel is set to this level)
+    const isStarActive = project.endOfAreaLevel === skill.level;
+    
+    // Last node of level can open new levels, UNLESS it has the star (endOfAreaLevel is set)
+    const canOpenNewLevels = isLastNodeOfLevel && !isStarActive;
     const isOpeningNewLevel = canOpenNewLevels && newStatus === "mastered";
     const isClosingLevel = canOpenNewLevels && skill.status === "mastered" && newStatus === "available";
 
@@ -1151,9 +1163,14 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         body: JSON.stringify({ status: newStatus }),
       });
 
-      if (hasStar && newStatus === "mastered") {
+      // Only archive if star is active (endOfAreaLevel is set on the project)
+      if (isStarActive && newStatus === "mastered") {
         triggerCompleted();
-        await archiveProject(projectId);
+        // Archive project after 5 second delay to show completion before disappearing
+        setTimeout(async () => {
+          await archiveProject(projectId);
+          await refreshAllAreas();
+        }, 5000);
       } else if (newStatus === "mastered") {
         triggerQuestUpdated();
       }

@@ -12,6 +12,7 @@ import type { Habit, HabitRecord, Area, Project } from "@shared/schema";
 interface HabitData extends Habit {
   done: Set<string>;
   bestStreak: number;
+  frozenDates: Set<string>;
 }
 
 interface HabitStreakModalProps {
@@ -38,7 +39,7 @@ function getLocalDateString(date: Date = new Date()): string {
 }
 
 // Helper function to compute streak
-function computeStreakGlobal(done: Set<string>, scheduledDays?: number[], referenceDate?: Date): number {
+function computeStreakGlobal(done: Set<string>, scheduledDays?: number[], referenceDate?: Date, frozenDates: Set<string> = new Set()): number {
   const today = referenceDate || new Date();
   today.setHours(0, 0, 0, 0);
   const todayStr = getLocalDateString(today);
@@ -70,6 +71,10 @@ function computeStreakGlobal(done: Set<string>, scheduledDays?: number[], refere
     if (done.has(x)) {
       s++;
       c.setDate(c.getDate() - 1);
+    } else if (frozenDates.has(x)) {
+      // día congelado, no rompe la racha
+      s++;
+      c.setDate(c.getDate() - 1);
     } else {
       break;
     }
@@ -78,7 +83,7 @@ function computeStreakGlobal(done: Set<string>, scheduledDays?: number[], refere
 }
 
 // Helper function to check if streak is broken
-function isStreakBrokenGlobal(done: Set<string>, scheduledDays?: number[], referenceDate?: Date): boolean {
+function isStreakBrokenGlobal(done: Set<string>, scheduledDays?: number[], referenceDate?: Date, frozenDates: Set<string> = new Set()): boolean {
   const today = referenceDate || new Date();
   today.setHours(0, 0, 0, 0);
   const todayStr = getLocalDateString(today);
@@ -95,7 +100,7 @@ function isStreakBrokenGlobal(done: Set<string>, scheduledDays?: number[], refer
   const todayNotDone = todayScheduled && !done.has(todayStr);
   
   const yesterdayScheduled = days.includes(yesterdayDayOfWeek);
-  const yesterdayNotDone = yesterdayScheduled && !done.has(yesterdayDateStr);
+  const yesterdayNotDone = yesterdayScheduled && !done.has(yesterdayDateStr) && !frozenDates.has(yesterdayDateStr);
   
   return todayNotDone && yesterdayNotDone;
 }
@@ -136,6 +141,13 @@ function computeBestStreakFromRecords(done: Set<string>, scheduledDays?: number[
   }
   
   return best;
+}
+
+// Helper function to count freezes used this month
+function countFreezesThisMonth(frozenDates: Set<string>): number {
+  const now = new Date();
+  const prefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  return Array.from(frozenDates).filter((d) => d.startsWith(prefix)).length;
 }
 
 export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) {
@@ -329,16 +341,21 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
           records.filter((r) => r.completed === 1).map((r) => r.date)
         );
         
+        // Parse frozenDates from habit
+        const frozenDates = new Set<string>(
+          Array.isArray(habit.freezeDates) ? habit.freezeDates : []
+        );
+        
         // Recalculate bestStreak for archived habits based on all records
         let calculatedBestStreak = habit.bestStreak || 0;
         if (habit.endDate && habit.endDate < getLocalDateString() && done.size > 0) {
           const endDateObj = new Date(habit.endDate + "T00:00:00");
-          const streakAtEnd = computeStreakGlobal(done, habit.scheduledDays, endDateObj);
+          const streakAtEnd = computeStreakGlobal(done, habit.scheduledDays, endDateObj, frozenDates);
           const bestEver = computeBestStreakFromRecords(done, habit.scheduledDays);
           calculatedBestStreak = Math.max(calculatedBestStreak, streakAtEnd, bestEver);
         }
         
-        return { ...habit, done, bestStreak: calculatedBestStreak };
+        return { ...habit, done, bestStreak: calculatedBestStreak, frozenDates };
       })
     );
     setHabitsWithRecords(updatedHabits);
@@ -443,6 +460,21 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
         body: JSON.stringify({ endDate }),
       });
       if (!res.ok) throw new Error("Failed to update end date");
+      return res.json();
+    },
+    onSuccess: async () => {
+      await queryClient.refetchQueries({ queryKey: ["habits"] });
+    },
+  });
+
+  const freezeHabitMutation = useMutation({
+    mutationFn: async ({ habitId, frozenDates }: { habitId: string; frozenDates: string[] }) => {
+      const res = await fetch(`/api/habits/${habitId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ freezeDates: frozenDates }),
+      });
+      if (!res.ok) throw new Error("Failed to freeze habit");
       return res.json();
     },
     onSuccess: async () => {
@@ -633,6 +665,15 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                     }
                   );
                 }
+              }}
+              onFreeze={(habitId) => {
+                const habit = habitsWithRecords.find((h) => h.id === habitId);
+                if (!habit) return;
+                const yesterday = new Date();
+                yesterday.setDate(yesterday.getDate() - 1);
+                const yesterdayStr = getLocalDateString(yesterday);
+                const updatedFreezes = [...Array.from(habit.frozenDates), yesterdayStr];
+                freezeHabitMutation.mutate({ habitId, frozenDates: updatedFreezes });
               }}
               isLoading={habitsLoading}
             />
@@ -860,6 +901,7 @@ function MainPanel({
   onAddClick,
   onEditClick,
   onToggle,
+  onFreeze,
   isLoading,
 }: {
   habits: HabitData[];
@@ -869,6 +911,7 @@ function MainPanel({
   onAddClick: () => void;
   onEditClick: (id: string) => void;
   onToggle: (habitId: string) => void;
+  onFreeze: (habitId: string) => void;
   isLoading: boolean;
 }) {
   const today = new Date();
@@ -1004,8 +1047,8 @@ function MainPanel({
           </p>
         ) : (
           habits.map((habit) => {
-            const streak = computeStreakGlobal(habit.done, habit.scheduledDays, today);
-            const broken = isStreakBrokenGlobal(habit.done, habit.scheduledDays, today);
+            const streak = computeStreakGlobal(habit.done, habit.scheduledDays, today, habit.frozenDates);
+            const broken = isStreakBrokenGlobal(habit.done, habit.scheduledDays, today, habit.frozenDates);
             const displayBestStreak = broken ? habit.bestStreak : Math.max(streak, habit.bestStreak);
             const isToday = habit.done.has(todayStr);
 
@@ -1061,6 +1104,26 @@ function MainPanel({
                   </div>
                 )}
 
+                {/* Banner de mejor racha */}
+                <div className="mb-2 rounded-xl bg-purple-500/10 border border-purple-500/20 px-3 py-2 text-center">
+                  <p className="text-xs font-bold text-purple-400">
+                    Mejor racha: {displayBestStreak} días 🔥
+                  </p>
+                  {streak > 0 && streak >= displayBestStreak ? (
+                    <p className="text-xs text-yellow-400">🏆 ¡Nuevo récord!</p>
+                  ) : streak > 0 && streak >= displayBestStreak - 2 ? (
+                    <p className="text-xs text-muted-foreground">¡Estás cerca del récord!</p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">¡Supérala para crear un nuevo récord!</p>
+                  )}
+                  <div className="mt-1.5 h-1 w-full rounded-full bg-purple-500/20">
+                    <div
+                      className="h-full rounded-full bg-purple-500 transition-all"
+                      style={{ width: `${Math.min(100, (streak / Math.max(displayBestStreak, 1)) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+
                 {/* Week circles */}
                 <div className="flex gap-1 sm:gap-1.5 items-center">
                   {weekDays.map((w, i) => {
@@ -1101,9 +1164,30 @@ function MainPanel({
                 </div>
 
                 {broken && (
-                  <div className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
-                    <div className="h-1.5 w-1.5 rounded-full bg-border flex-shrink-0" />
-                    <span>Marcá hoy para empezar una nueva racha</span>
+                  <div>
+                    {(() => {
+                      const yesterday = new Date(today);
+                      yesterday.setDate(yesterday.getDate() - 1);
+                      const yesterdayStr = getLocalDateString(yesterday);
+                      const yesterdayDow = yesterday.getDay() === 0 ? 6 : yesterday.getDay() - 1;
+                      const days = habit.scheduledDays?.length ? habit.scheduledDays : [0,1,2,3,4,5,6];
+                      const canFreeze =
+                        days.includes(yesterdayDow) &&
+                        !habit.frozenDates.has(yesterdayStr) &&
+                        countFreezesThisMonth(habit.frozenDates) < 7;
+
+                      return canFreeze ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onFreeze(habit.id);
+                          }}
+                          className="mt-1 text-xs text-blue-400 border border-blue-400/30 rounded-full px-3 py-1 hover:bg-blue-400/10 transition-colors"
+                        >
+                          🧊 Freeze x7
+                        </button>
+                      ) : null;
+                    })()}
                   </div>
                 )}
               </div>
@@ -2083,8 +2167,8 @@ function ArchivedPanel({
           habits.map((habit) => {
             const today = new Date();
             today.setHours(0, 0, 0, 0);
-            const streak = computeStreakGlobal(habit.done, habit.scheduledDays, today);
-            const broken = isStreakBrokenGlobal(habit.done, habit.scheduledDays, today);
+            const streak = computeStreakGlobal(habit.done, habit.scheduledDays, today, habit.frozenDates);
+            const broken = isStreakBrokenGlobal(habit.done, habit.scheduledDays, today, habit.frozenDates);
             const displayBestStreak = broken ? habit.bestStreak : Math.max(streak, habit.bestStreak);
             const isEditing = editingId === habit.id;
             
@@ -2209,8 +2293,8 @@ function ArchivedDetailPanel({
   today.setHours(0, 0, 0, 0);
   
   // Calculate display best streak
-  const streak = computeStreakGlobal(habit.done, habit.scheduledDays, today);
-  const broken = isStreakBrokenGlobal(habit.done, habit.scheduledDays, today);
+  const streak = computeStreakGlobal(habit.done, habit.scheduledDays, today, habit.frozenDates);
+  const broken = isStreakBrokenGlobal(habit.done, habit.scheduledDays, today, habit.frozenDates);
   const displayBestStreak = broken ? habit.bestStreak : Math.max(streak, habit.bestStreak);
 
   return (

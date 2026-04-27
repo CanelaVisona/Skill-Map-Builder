@@ -481,7 +481,38 @@ export async function registerRoutes(
         res.status(403).json({ message: "No tienes permiso para desarchivar esta área" });
         return;
       }
+      
       const area = await storage.unarchiveArea(req.params.id);
+      
+      // Generate staged levels (N+1, N+2, N+3) after unarchiving
+      if (area && area.unlockedLevel) {
+        const baseLevel = area.unlockedLevel;
+        const stagedLevels = [baseLevel + 1, baseLevel + 2, baseLevel + 3];
+        
+        for (const level of stagedLevels) {
+          try {
+            // Check if level already exists
+            const existingSkills = await storage.getSkills(req.params.id);
+            const hasLevel = existingSkills.some(s => s.level === level);
+            
+            if (!hasLevel) {
+              // Generate the level
+              let startY = 100;
+              if (existingSkills.length > 0) {
+                const lastSkill = existingSkills.reduce((max, s) => s.y > max.y ? s : max, existingSkills[0]);
+                startY = lastSkill.y + 150;
+              }
+              
+              await storage.generateLevelWithSkills(req.params.id, level, startY);
+              console.log(`[unarchive-area] Generated staged level ${level}`);
+            }
+          } catch (error) {
+            console.error(`[unarchive-area] Error generating level ${level}:`, error);
+            // Continue with next level even if one fails
+          }
+        }
+      }
+      
       res.json(area);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -1624,7 +1655,38 @@ export async function registerRoutes(
         res.status(403).json({ message: "No tienes permiso para desarchivar este proyecto" });
         return;
       }
+      
       const project = await storage.unarchiveProject(req.params.id);
+      
+      // Generate staged levels (N+1, N+2, N+3) after unarchiving
+      if (project && project.unlockedLevel) {
+        const baseLevel = project.unlockedLevel;
+        const stagedLevels = [baseLevel + 1, baseLevel + 2, baseLevel + 3];
+        
+        for (const level of stagedLevels) {
+          try {
+            // Check if level already exists
+            const existingSkills = await storage.getProjectSkills(req.params.id);
+            const hasLevel = existingSkills.some(s => s.level === level);
+            
+            if (!hasLevel) {
+              // Generate the level
+              let startY = 100;
+              if (existingSkills.length > 0) {
+                const lastSkill = existingSkills.reduce((max, s) => s.y > max.y ? s : max, existingSkills[0]);
+                startY = lastSkill.y + 150;
+              }
+              
+              await storage.generateProjectLevelWithSkills(req.params.id, level, startY);
+              console.log(`[unarchive-project] Generated staged level ${level}`);
+            }
+          } catch (error) {
+            console.error(`[unarchive-project] Error generating level ${level}:`, error);
+            // Continue with next level even if one fails
+          }
+        }
+      }
+      
       res.json(project);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -3152,7 +3214,14 @@ export async function registerRoutes(
       const habits = await storage.getHabits(req.userId!);
       console.log("[GET /api/habits] Retrieved", habits.length, "habits from storage");
       console.log("[GET /api/habits] Habits data:", JSON.stringify(habits.slice(0, 2), null, 2));
-      res.json(habits);
+      
+      // Parse freezeDates from JSON string to array
+      const habitsWithParsedFreezes = habits.map((habit: any) => ({
+        ...habit,
+        freezeDates: JSON.parse(habit.freezeDates || "[]"),
+      }));
+      
+      res.json(habitsWithParsedFreezes);
     } catch (error: any) {
       console.error("[GET /api/habits] ERROR:", error);
       console.error("[GET /api/habits] Error message:", error.message);
@@ -3189,11 +3258,24 @@ export async function registerRoutes(
         return res.status(403).json({ message: "No tienes permiso para editar este hábito" });
       }
 
-      const updated = await storage.updateHabit(req.params.id, req.body);
+      // Serialize freezeDates if provided
+      const updateData = { ...req.body };
+      if (updateData.freezeDates !== undefined) {
+        updateData.freezeDates = JSON.stringify(updateData.freezeDates);
+      }
+
+      const updated = await storage.updateHabit(req.params.id, updateData);
       if (!updated) {
         return res.status(404).json({ message: "Hábito no encontrado" });
       }
-      res.json(updated);
+      
+      // Parse freezeDates before sending response
+      const response = {
+        ...updated,
+        freezeDates: JSON.parse((updated as any).freezeDates || "[]"),
+      };
+      
+      res.json(response);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -3318,7 +3400,27 @@ export async function registerRoutes(
   app.get("/api/space-repetition", requireAuth, async (req, res) => {
     try {
       const practices = await storage.getSpaceRepetitionPractices(req.userId!);
-      res.json(practices);
+      // Normalize any null values from before the migration
+      const normalized = practices.map((record: any) => {
+        let lostIntervalsArray: number[] = [];
+        if (record.lostIntervals) {
+          try {
+            lostIntervalsArray = typeof record.lostIntervals === "string" 
+              ? JSON.parse(record.lostIntervals)
+              : record.lostIntervals;
+          } catch (e) {
+            lostIntervalsArray = [];
+          }
+        }
+        return {
+          ...record,
+          level: record.level ?? 1,
+          level1CompletedDate: record.level1CompletedDate ?? null,
+          completedIntervalsL2: record.completedIntervalsL2 ?? [],
+          lostIntervals: lostIntervalsArray,
+        };
+      });
+      res.json(normalized);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -3350,7 +3452,23 @@ export async function registerRoutes(
       if (!updated) {
         return res.status(404).json({ message: "Práctica no encontrada" });
       }
-      res.json(updated);
+      
+      // Normalize lostIntervals in response
+      let lostIntervalsArray: number[] = [];
+      if (updated.lostIntervals) {
+        try {
+          lostIntervalsArray = typeof updated.lostIntervals === "string"
+            ? JSON.parse(updated.lostIntervals)
+            : updated.lostIntervals;
+        } catch (e) {
+          lostIntervalsArray = [];
+        }
+      }
+      
+      res.json({
+        ...updated,
+        lostIntervals: lostIntervalsArray,
+      });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

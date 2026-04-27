@@ -213,6 +213,7 @@ export const habits = pgTable("habits", {
   projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
   skillId: varchar("skill_id").references(() => globalSkills.id, { onDelete: "set null" }), // Link to global skill for XP rewards
   scheduledDays: jsonb("scheduled_days").notNull().$type<number[]>().default([0,1,2,3,4,5,6]), // Days of week (0=Mon, 6=Sun)
+  freezeDates: text("freeze_dates").default("[]").notNull(), // Array of frozen dates as JSON string (YYYY-MM-DD format)
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -235,6 +236,10 @@ export const spaceRepetitionPractices = pgTable("space_repetition_practices", {
   completedIntervals: jsonb("completed_intervals").notNull().$type<number[]>().default([]),
   archived: integer("archived").$type<0 | 1>().default(0),
   endDate: varchar("end_date"), // YYYY-MM-DD format, null if not completed
+  level: integer("level").$type<1 | 2>().default(1),
+  level1CompletedDate: varchar("level1_completed_date"), // YYYY-MM-DD format, null until L1 complete
+  completedIntervalsL2: jsonb("completed_intervals_l2").notNull().$type<number[]>().default([]),
+  lostIntervals: text("lost_intervals").notNull().default("[]"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -375,7 +380,11 @@ export type InsertGlobalSkill = z.infer<typeof insertGlobalSkillSchema>;
 export type GlobalSkill = typeof globalSkills.$inferSelect;
 export const insertHabitSchema = createInsertSchema(habits).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertHabitRecordSchema = createInsertSchema(habitRecords).omit({ id: true, createdAt: true });
-export const insertSpaceRepetitionPracticeSchema = createInsertSchema(spaceRepetitionPractices).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertSpaceRepetitionPracticeSchema = createInsertSchema(spaceRepetitionPractices).omit({ id: true, createdAt: true, updatedAt: true }).extend({
+  level: z.enum(["1", "2"]).optional().default("1").transform(v => parseInt(v) as 1 | 2),
+  level1CompletedDate: z.string().optional().nullable(),
+  completedIntervalsL2: z.array(z.number()).optional().default([]),
+});
 export const insertBooksLibrarySchema = createInsertSchema(booksLibrary).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertBookReadingSessionSchema = createInsertSchema(bookReadingSessions).omit({ id: true, createdAt: true });
 export type InsertHabit = z.infer<typeof insertHabitSchema>;

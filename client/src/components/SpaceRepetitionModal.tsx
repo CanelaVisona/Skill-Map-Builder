@@ -13,6 +13,10 @@ interface SpaceRepetitionPractice {
   emoji: string;
   startDate: string;
   completedIntervals: number[];
+  level?: 1 | 2;
+  level1CompletedDate?: string | null;
+  completedIntervalsL2?: number[];
+  lostIntervals?: number[];
 }
 
 interface ArchivedPractice {
@@ -29,8 +33,36 @@ interface SpaceRepetitionModalProps {
   onOpenChange: (open: boolean) => void;
 }
 
-const INTERVALS = [0, 1, 3, 7, 16, 30];
-const INTERVAL_LABELS = ["D0", "D1", "D3", "D7", "D16", "D30"];
+// Level 1 intervals (6 checkpoints)
+const INTERVALS_L1 = [0, 1, 3, 7, 16, 30];
+const LABELS_L1 = ["D0", "D1", "D3", "D7", "D16", "D30"];
+
+// Level 2 intervals (6 checkpoints) - long term retention
+const INTERVALS_L2 = [45, 60, 90, 120, 180, 270];
+const LABELS_L2 = ["D45", "D60", "D90", "D120", "D180", "D270"];
+
+// Backward compatibility
+const INTERVALS = INTERVALS_L1;
+const INTERVAL_LABELS = LABELS_L1;
+
+// Helper functions to get appropriate intervals based on practice level
+function getIntervalsForPractice(practice: SpaceRepetitionPractice): number[] {
+  return (practice.level === 2) ? INTERVALS_L2 : INTERVALS_L1;
+}
+
+function getLabelsForPractice(practice: SpaceRepetitionPractice): string[] {
+  return (practice.level === 2) ? LABELS_L2 : LABELS_L1;
+}
+
+function getReferenceDate(practice: SpaceRepetitionPractice): string {
+  return (practice.level === 2 && practice.level1CompletedDate) 
+    ? practice.level1CompletedDate 
+    : practice.startDate;
+}
+
+function getCompletedIntervals(practice: SpaceRepetitionPractice): number[] {
+  return (practice.level === 2) ? (practice.completedIntervalsL2 || []) : practice.completedIntervals;
+}
 
 function getLocalDateString(date: Date = new Date()): string {
   const year = date.getFullYear();
@@ -59,26 +91,60 @@ function formatDate(dateStr: string): string {
   return date.toLocaleDateString("es-AR", { day: "2-digit", month: "short", year: "numeric" });
 }
 
-type PracticeStatus = "due" | "late" | "expired" | "waiting" | "complete";
+function formatTimeRemaining(daysRemaining: number): string {
+  if (daysRemaining > 2) {
+    return `${daysRemaining} días`;
+  }
+  if (daysRemaining === 1) {
+    return "tomorrow";
+  }
+  if (daysRemaining === 0) {
+    // Calculate hours, minutes and seconds until midnight
+    const now = new Date();
+    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
+    const msUntilMidnight = midnight.getTime() - now.getTime();
+    const hours = Math.floor(msUntilMidnight / (1000 * 60 * 60));
+    const minutes = Math.floor((msUntilMidnight % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((msUntilMidnight % (1000 * 60)) / 1000);
+    return `${hours}h ${minutes}m ${seconds}s`;
+  }
+  return "today";
+}
+
+type PracticeStatus = "waiting" | "expires_soon" | "loss" | "frozen" | "complete" | "level2_waiting";
 
 function calculateStatus(practice: SpaceRepetitionPractice): PracticeStatus {
+  const level = practice.level || 1;
+  
+  // Handle L2 special case
+  if (level === 2 && practice.level1CompletedDate) {
+    return calculateStatusL2(practice);
+  }
+
   const daysSince = calculateDaysSince(practice.startDate);
   const completedIndices = new Set(practice.completedIntervals);
 
-  for (let i = 0; i < INTERVALS.length; i++) {
+  for (let i = 0; i < INTERVALS_L1.length; i++) {
     if (!completedIndices.has(i)) {
-      const targetDay = INTERVALS[i];
-      const tolerance = 2;
-      const expireWindow = 5;
+      const targetDay = INTERVALS_L1[i];
+      const daysUntilDue = targetDay - daysSince;
+      const daysAfterDue = daysSince - targetDay;
 
-      if (daysSince < targetDay) {
+      // More than 2 days before due
+      if (daysUntilDue > 2) {
         return "waiting";
-      } else if (daysSince === targetDay) {
-        return "due";
-      } else if (daysSince <= targetDay + tolerance) {
-        return "late";
-      } else if (daysSince <= targetDay + expireWindow) {
-        return "expired";
+      }
+      // 0-2 days before due or on due day
+      else if (daysUntilDue >= 0) {
+        return "expires_soon";
+      }
+      // 1-2 days after due
+      else if (daysAfterDue <= 2) {
+        return "loss";
+      }
+      // 3+ days after due
+      else if (daysAfterDue > 2) {
+        return "frozen";
       }
     }
   }
@@ -86,9 +152,49 @@ function calculateStatus(practice: SpaceRepetitionPractice): PracticeStatus {
   return "complete";
 }
 
+function calculateStatusL2(practice: SpaceRepetitionPractice): PracticeStatus {
+  // If L1 not complete, shouldn't reach here
+  if (practice.level !== 2 || !practice.level1CompletedDate) {
+    return calculateStatus({ ...practice, level: 1 });
+  }
+
+  const daysSinceL1Complete = calculateDaysSince(practice.level1CompletedDate);
+  
+  // If <15 days since L1 completion
+  if (daysSinceL1Complete < 15) {
+    return "level2_waiting";
+  }
+
+  // L2 has started, apply same logic as L1
+  const completedIndicesL2 = new Set((practice.completedIntervalsL2 || []).map(Number));
+
+  for (let i = 0; i < INTERVALS_L2.length; i++) {
+    if (!completedIndicesL2.has(i)) {
+      const targetDay = INTERVALS_L2[i];
+      const daysUntilDue = targetDay - daysSinceL1Complete;
+      const daysAfterDue = daysSinceL1Complete - targetDay;
+
+      if (daysUntilDue > 2) {
+        return "waiting";
+      } else if (daysUntilDue >= 0) {
+        return "expires_soon";
+      } else if (daysAfterDue <= 2) {
+        return "loss";
+      } else if (daysAfterDue > 2) {
+        return "frozen";
+      }
+    }
+  }
+
+  return "complete";
+}
+
+
 function getNextIntervalIndex(practice: SpaceRepetitionPractice): number {
-  const completedIndices = new Set(practice.completedIntervals);
-  for (let i = 0; i < INTERVALS.length; i++) {
+  const level = practice.level || 1;
+  const intervals = (level === 2) ? INTERVALS_L2 : INTERVALS_L1;
+  const completedIndices = new Set(getCompletedIntervals(practice));
+  for (let i = 0; i < intervals.length; i++) {
     if (!completedIndices.has(i)) {
       return i;
     }
@@ -99,22 +205,29 @@ function getNextIntervalIndex(practice: SpaceRepetitionPractice): number {
 function daysUntilNextInterval(practice: SpaceRepetitionPractice): number {
   const nextIdx = getNextIntervalIndex(practice);
   if (nextIdx === -1) return 0;
-  const daysSince = calculateDaysSince(practice.startDate);
-  const targetDay = INTERVALS[nextIdx];
+  
+  const level = practice.level || 1;
+  const intervals = (level === 2) ? INTERVALS_L2 : INTERVALS_L1;
+  const referenceDate = getReferenceDate(practice);
+  const daysSince = calculateDaysSince(referenceDate);
+  const targetDay = intervals[nextIdx];
   return Math.max(0, targetDay - daysSince);
 }
 
 function getStateColor(status: PracticeStatus): string {
   switch (status) {
-    case "due":
-    case "late":
-      return "bg-yellow-500/20 border-yellow-500 text-yellow-700 dark:text-yellow-400";
-    case "expired":
-      return "bg-red-500/20 border-red-500 text-red-700 dark:text-red-400";
     case "waiting":
       return "bg-blue-500/20 border-blue-500 text-blue-700 dark:text-blue-400";
+    case "expires_soon":
+      return "bg-yellow-500/20 border-yellow-500 text-yellow-700 dark:text-yellow-400";
+    case "loss":
+      return "bg-pink-500/20 border-pink-500 text-pink-700 dark:text-pink-400";
+    case "frozen":
+      return "bg-[#cce8f4]/20 border-[#a8d8ea] text-[#4a9abb] dark:text-[#4a9abb]";
     case "complete":
       return "bg-green-500/20 border-green-500 text-green-700 dark:text-green-400";
+    case "level2_waiting":
+      return "bg-indigo-500/20 border-indigo-500 text-indigo-700 dark:text-indigo-400";
     default:
       return "";
   }
@@ -122,22 +235,108 @@ function getStateColor(status: PracticeStatus): string {
 
 function getStateLabel(status: PracticeStatus): string {
   switch (status) {
-    case "due":
-      return "🔥 Hoy";
-    case "late":
-      return "⚠️ Atrasado";
-    case "expired":
-      return "❌ Expirado";
     case "waiting":
       return "⏳ Esperando";
+    case "expires_soon":
+      return "⚠️ Próximo a vencer";
+    case "loss":
+      return "📉 Pérdida de progreso";
+    case "frozen":
+      return "❄️ Congelado";
     case "complete":
       return "✅ Completado";
+    case "level2_waiting":
+      return "💜 Esperando L2";
   }
+}
+
+function formatTimeMessage(status: PracticeStatus, practice: SpaceRepetitionPractice): string {
+  const nextIdx = getNextIntervalIndex(practice);
+  if (nextIdx === -1) return "";
+
+  const level = practice.level || 1;
+  const intervals = (level === 2) ? INTERVALS_L2 : INTERVALS_L1;
+  const referenceDate = getReferenceDate(practice);
+  const daysSince = calculateDaysSince(referenceDate);
+  const targetDay = intervals[nextIdx];
+  const daysUntilDue = targetDay - daysSince;
+  const timeRemaining = formatTimeRemaining(daysUntilDue);
+
+  switch (status) {
+    case "waiting":
+      return `Transfer available in: ${timeRemaining}`;
+    case "expires_soon":
+      return `Transfer expires in: ${timeRemaining}`;
+    case "loss":
+      return `Loss of progress in: ${timeRemaining}`;
+    case "level2_waiting":
+      return `New level starts in: ${timeRemaining}`;
+    case "frozen":
+    case "complete":
+    default:
+      return "";
+  }
+}
+
+function getStatusMessage(practice: SpaceRepetitionPractice, status: PracticeStatus): string {
+  return formatTimeMessage(status, practice);
 }
 
 interface StorageData {
   practices: SpaceRepetitionPractice[];
   archived: ArchivedPractice[];
+}
+
+// Rollback functions for expired intervals
+function rollbackL1(practice: SpaceRepetitionPractice): Partial<SpaceRepetitionPractice> {
+  if (practice.completedIntervals.length === 0) return {};
+  
+  const intervals = [...practice.completedIntervals];
+  const lastIntervalIdx = intervals.pop()!;
+  
+  // If rolling back D0, recalculate from today
+  if (lastIntervalIdx === 0) {
+    return {
+      startDate: getLocalDateString(),
+      completedIntervals: intervals,
+    };
+  }
+  
+  // For other intervals, move startDate back by the last interval days
+  const lastIntervalDays = INTERVALS_L1[lastIntervalIdx];
+  const currentStart = new Date(practice.startDate);
+  const newStart = new Date(currentStart.getTime() - lastIntervalDays * 24 * 60 * 60 * 1000);
+  
+  return {
+    startDate: getLocalDateString(newStart),
+    completedIntervals: intervals,
+  };
+}
+
+function rollbackL2(practice: SpaceRepetitionPractice): Partial<SpaceRepetitionPractice> {
+  if (!practice.level1CompletedDate || !practice.completedIntervalsL2 || practice.completedIntervalsL2.length === 0) {
+    return {};
+  }
+  
+  const intervals = [...practice.completedIntervalsL2];
+  const lastIntervalIdx = intervals.pop()!;
+  
+  // If rolling back D0, recalculate from L1 completion date
+  if (lastIntervalIdx === 0) {
+    return {
+      completedIntervalsL2: intervals,
+    };
+  }
+  
+  // For other intervals, move level1CompletedDate back by the last interval days
+  const lastIntervalDays = INTERVALS_L2[lastIntervalIdx];
+  const currentL1Date = new Date(practice.level1CompletedDate);
+  const newL1Date = new Date(currentL1Date.getTime() - lastIntervalDays * 24 * 60 * 60 * 1000);
+  
+  return {
+    level1CompletedDate: getLocalDateString(newL1Date),
+    completedIntervalsL2: intervals,
+  };
 }
 
 // Hook para detectar long press
@@ -279,12 +478,48 @@ export function SpaceRepetitionModal({
     }
   }, [open]);
 
+  const checkAndRollbackExpiredIntervals = async (loadedPractices: SpaceRepetitionPractice[]) => {
+    // Silently rollback all frozen practices without UI notification
+    for (const practice of loadedPractices) {
+      // Only check practices that have started (D0 registered)
+      if (practice.completedIntervals.length === 0 && (practice.completedIntervalsL2 || []).length === 0) {
+        continue;
+      }
+
+      const status = calculateStatus(practice);
+
+      // If practice is frozen, execute silent rollback
+      if (status === "frozen") {
+        const isL2 = practice.level === 2;
+        const rollbackData = isL2 ? rollbackL2(practice) : rollbackL1(practice);
+
+        try {
+          const res = await fetch(`/api/space-repetition/${practice.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(rollbackData),
+          });
+          if (res.ok) {
+            const updated = await res.json();
+            // Update local practices state with rolled back version
+            setPractices((prevPractices) =>
+              prevPractices.map((p) => p.id === practice.id ? updated : p)
+            );
+          }
+        } catch (error) {
+          console.error("Error silently rolling back frozen practice:", error);
+        }
+      }
+    }
+  };
+
   const loadPractices = async () => {
     try {
       const res = await fetch("/api/space-repetition");
       if (!res.ok) throw new Error("Error loading practices");
       const data = await res.json();
       setPractices(data);
+      await checkAndRollbackExpiredIntervals(data);
     } catch (error) {
       console.error("Error loading practices:", error);
     }
@@ -343,35 +578,83 @@ export function SpaceRepetitionModal({
       const practice = practices.find((p) => p.id === practiceId);
       if (!practice) return;
 
-      const intervals = new Set(practice.completedIntervals);
-      intervals.add(intervalIndex);
-      const newCompleted = Array.from(intervals).sort();
+      const level = practice.level || 1;
 
-      // Check if all intervals are completed
-      if (newCompleted.length === INTERVALS.length) {
-        // Archive this practice
+      // Handle Level 2 intervals
+      if (level === 2) {
+        const intervalsL2 = new Set(practice.completedIntervalsL2 || []);
+        intervalsL2.add(intervalIndex);
+        const newCompletedL2 = Array.from(intervalsL2).sort();
+
+        // Check if all L2 intervals are completed
+        if (newCompletedL2.length === INTERVALS_L2.length) {
+          // Archive when L2 is complete
+          const res = await fetch(`/api/space-repetition/${practiceId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              completedIntervalsL2: newCompletedL2,
+              archived: 1,
+              endDate: getLocalDateString(),
+              lostIntervals: [],
+            })
+          });
+          if (!res.ok) throw new Error("Error updating practice");
+          const updated = await res.json();
+          
+          setPractices(practices.filter((p) => p.id !== practiceId));
+          setArchived([...archived, {
+            id: practice.id,
+            name: practice.name,
+            emoji: practice.emoji,
+            startDate: practice.startDate,
+            endDate: getLocalDateString(),
+            totalDays: calculateDaysSince(practice.startDate),
+          }]);
+          setNotification("🏆 ¡Nivel 2 completado y archivado!");
+          return;
+        }
+
+        // Regular L2 interval update
         const res = await fetch(`/api/space-repetition/${practiceId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            completedIntervals: newCompleted,
-            archived: 1,
-            endDate: getLocalDateString(),
+            completedIntervalsL2: newCompletedL2,
+            lostIntervals: [],
           })
         });
         if (!res.ok) throw new Error("Error updating practice");
         const updated = await res.json();
         
-        setPractices(practices.filter((p) => p.id !== practiceId));
-        setArchived([...archived, {
-          id: practice.id,
-          name: practice.name,
-          emoji: practice.emoji,
-          startDate: practice.startDate,
-          endDate: getLocalDateString(),
-          totalDays: calculateDaysSince(practice.startDate),
-        }]);
-        setNotification("✅ ¡Práctica completada y archivada!");
+        setPractices(practices.map((p) => p.id === practiceId ? updated : p));
+        return;
+      }
+
+      // Handle Level 1 intervals
+      const intervals = new Set(practice.completedIntervals);
+      intervals.add(intervalIndex);
+      const newCompleted = Array.from(intervals).sort();
+
+      // Check if all L1 intervals are completed
+      if (newCompleted.length === INTERVALS_L1.length) {
+        // Transition to Level 2 instead of archiving
+        const res = await fetch(`/api/space-repetition/${practiceId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            completedIntervals: newCompleted,
+            level: 2,
+            level1CompletedDate: getLocalDateString(),
+            completedIntervalsL2: [],
+            lostIntervals: [],
+          })
+        });
+        if (!res.ok) throw new Error("Error updating practice");
+        const updated = await res.json();
+        
+        setPractices(practices.map((p) => p.id === practiceId ? updated : p));
+        setNotification("🎉 ¡Nivel 1 completado! Iniciando Nivel 2");
         return;
       }
 
@@ -381,6 +664,7 @@ export function SpaceRepetitionModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           completedIntervals: newCompleted,
+          lostIntervals: [],
         })
       });
       if (!res.ok) throw new Error("Error updating practice");
@@ -409,6 +693,42 @@ export function SpaceRepetitionModal({
       setNotification("🔄 ¡Práctica reiniciada!");
     } catch (error) {
       console.error("Error resetting practice:", error);
+    }
+  };
+
+  const handleRecover = async (practiceId: string) => {
+    try {
+      const practice = practices.find((p) => p.id === practiceId);
+      if (!practice) return;
+
+      const nextIdx = getNextIntervalIndex(practice);
+      if (nextIdx === -1) return;
+
+      const level = practice.level || 1;
+      const intervals = (level === 2) ? INTERVALS_L2 : INTERVALS_L1;
+      const targetIntervalDays = intervals[nextIdx];
+
+      // Calculate new start date: today - interval days
+      const today = new Date();
+      const newDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() - targetIntervalDays, 0, 0, 0, 0);
+      const newDateStr = getLocalDateString(newDate);
+
+      const updateData = level === 2 && practice.level1CompletedDate
+        ? { level1CompletedDate: newDateStr }
+        : { startDate: newDateStr };
+
+      const res = await fetch(`/api/space-repetition/${practiceId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updateData),
+      });
+      if (!res.ok) throw new Error("Error recovering practice");
+      const updated = await res.json();
+
+      setPractices(practices.map((p) => p.id === practiceId ? updated : p));
+      setNotification("🔥 ¡Práctica recuperada!");
+    } catch (error) {
+      console.error("Error recovering practice:", error);
     }
   };
 
@@ -450,6 +770,7 @@ export function SpaceRepetitionModal({
               onRegister={(practiceId, intervalIdx) => {
                 toggleInterval(practiceId, intervalIdx);
               }}
+              onRecover={(practiceId) => handleRecover(practiceId)}
             />
           )}
 
@@ -477,6 +798,7 @@ export function SpaceRepetitionModal({
               }}
               onToggleInterval={(idx) => toggleInterval(selectedPractice.id, idx)}
               onReset={() => handleExpiredReset(selectedPractice.id)}
+              onRecover={() => handleRecover(selectedPractice.id)}
             />
           )}
 
@@ -501,6 +823,7 @@ function MainPanel({
   onArchived,
   onDelete,
   onRegister,
+  onRecover,
 }: {
   practices: SpaceRepetitionPractice[];
   activeCount: number;
@@ -510,6 +833,7 @@ function MainPanel({
   onArchived: () => void;
   onDelete: (id: string) => void;
   onRegister: (practiceId: string, intervalIdx: number) => void;
+  onRecover: (practiceId: string) => void;
 }) {
   const today = new Date();
   const todayStr = today.toLocaleDateString("es-AR", {
@@ -522,12 +846,12 @@ function MainPanel({
 
   const practicesWithStatus = practices.map((p) => ({
     ...p,
-    status: calculateStatus(p),
+    status: (p.level === 2) ? calculateStatusL2(p) : calculateStatus(p),
     nextIdx: getNextIntervalIndex(p),
   }));
 
   const pendingPractices = practicesWithStatus.filter(
-    (p) => p.status === "due" || p.status === "late" || p.status === "expired"
+    (p) => p.status === "expires_soon" || p.status === "loss" || p.status === "frozen"
   );
 
   return (
@@ -568,6 +892,7 @@ function MainPanel({
                         onRegister(practice.id, practice.nextIdx);
                       }
                     }}
+                    onRecover={() => onRecover(practice.id)}
                   />
                 ))}
               </div>
@@ -619,46 +944,128 @@ function MainPanel({
   );
 }
 
+// Rock SVG Node Component
+function RockNode() {
+  return (
+    <svg width="28" height="28" viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="rockGrad" cx="35%" cy="30%" r="70%">
+          <stop offset="0%" stopColor="#7a7a7a"/>
+          <stop offset="40%" stopColor="#555"/>
+          <stop offset="100%" stopColor="#2a2a2a"/>
+        </radialGradient>
+        <radialGradient id="rockHighlight" cx="30%" cy="25%" r="40%">
+          <stop offset="0%" stopColor="#999" stopOpacity="0.4"/>
+          <stop offset="100%" stopColor="#999" stopOpacity="0"/>
+        </radialGradient>
+      </defs>
+      <polygon points="5,20 3,13 7,5 14,3 21,4 25,10 26,18 22,24 14,26 7,25" fill="url(#rockGrad)" stroke="#3a3a3a" strokeWidth="1"/>
+      <polygon points="5,20 3,13 7,5 14,3 21,4 25,10 26,18 22,24 14,26 7,25" fill="url(#rockHighlight)"/>
+      <polyline points="11,5 13,10 10,15 12,22" fill="none" stroke="#1a1a1a" strokeWidth="1.2" strokeLinecap="round"/>
+      <polyline points="13,10 17,12 20,11" fill="none" stroke="#1a1a1a" strokeWidth="0.8" strokeLinecap="round"/>
+      <polyline points="10,15 7,17" fill="none" stroke="#222" strokeWidth="0.7" strokeLinecap="round"/>
+      <polygon points="5,20 3,13 7,5 14,3 21,4 25,10 26,18 22,24 14,26 7,25" fill="none" stroke="#666" strokeWidth="0.5" opacity="0.4"/>
+    </svg>
+  );
+}
+
 function PracticeCardWithLongPress({
   practice,
   onDetail,
   onDelete,
   onRegister,
+  onRecover,
 }: {
   practice: SpaceRepetitionPractice & { status: PracticeStatus; nextIdx: number };
   onDetail: () => void;
   onDelete: () => void;
   onRegister: () => void;
+  onRecover?: () => void;
 }) {
   const [showDelete, setShowDelete] = useState(false);
+  const [, setCurrentTime] = useState(Date.now());
   const longPressHandler = useLongPress(() => setShowDelete(true), 800);
   const completedSet = new Set(practice.completedIntervals.map(Number));
+  
+  // Update countdown every second
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+  
+  // Determine card styling based on status
+  let cardBorder = "border-yellow-500/30";
+  let cardBg = "bg-yellow-500/5";
+  let cardHover = "hover:border-yellow-500/50";
+  let cardActive = "active:bg-yellow-500/10";
+  
+  if (practice.status === "frozen") {
+    cardBorder = "border-[#a8d8ea]/30";
+    cardBg = "bg-[#cce8f4]/5";
+    cardHover = "hover:border-[#a8d8ea]/50";
+    cardActive = "active:bg-[#cce8f4]/10";
+  } else if (practice.status === "loss") {
+    cardBorder = "border-pink-500/30";
+    cardBg = "bg-pink-500/5";
+    cardHover = "hover:border-pink-500/50";
+    cardActive = "active:bg-pink-500/10";
+  } else if (practice.status === "expires_soon") {
+    cardBorder = "border-yellow-500/40";
+    cardBg = "bg-yellow-500/10";
+    cardHover = "hover:border-yellow-500/60";
+    cardActive = "active:bg-yellow-500/20";
+  } else if (practice.status === "level2_waiting") {
+    cardBorder = "border-indigo-500/30";
+    cardBg = "bg-indigo-500/5";
+    cardHover = "hover:border-indigo-500/50";
+    cardActive = "active:bg-indigo-500/10";
+  } else if (practice.status === "waiting") {
+    cardBorder = "border-blue-500/30";
+    cardBg = "bg-blue-500/5";
+    cardHover = "hover:border-blue-500/50";
+    cardActive = "active:bg-blue-500/10";
+  }
 
   const handleClick = () => {
-    // No abrir el DetailPanel si estamos mostrando los botones de eliminar
     if (!showDelete) {
       onDetail();
     }
   };
+
+  const statusMessage = formatTimeMessage(practice.status, practice);
+  const lostIntervals = practice.lostIntervals || [];
 
   return (
     <motion.div
       initial={{ opacity: 0, y: -10 }}
       animate={{ opacity: 1, y: 0 }}
       {...longPressHandler}
-      className="rounded-2xl border border-yellow-500/30 bg-yellow-500/5 px-3 py-2.5 mb-2 cursor-pointer hover:border-yellow-500/50 transition-all active:bg-yellow-500/10"
+      className={`rounded-2xl border ${cardBorder} ${cardBg} px-3 py-2.5 mb-2 cursor-pointer ${cardHover} transition-all ${cardActive}`}
       onClick={handleClick}
     >
-      {/* Header con nombre y emoji */}
-      <div className="flex items-center gap-2 mb-3">
+      {/* Header con nombre, emoji y level pill */}
+      <div className="flex items-center gap-2 mb-2">
         <span className="text-lg flex-shrink-0">{practice.emoji}</span>
         <span className="font-bold text-sm text-foreground flex-1">{practice.name}</span>
-        {practice.nextIdx >= 0 && (
-          <span className="text-xs bg-yellow-500/30 text-yellow-700 dark:text-yellow-400 px-2 py-1 rounded-full font-bold">
-            {INTERVAL_LABELS[practice.nextIdx]}
-          </span>
-        )}
+        
+        {/* Level pill */}
+        <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
+          practice.level === 2 
+            ? "bg-purple-500/30 text-purple-700 dark:text-purple-400" 
+            : "bg-yellow-500/30 text-yellow-700 dark:text-yellow-400"
+        }`}>
+          L{practice.level || 1}
+        </span>
       </div>
+
+      {/* Status message */}
+      {statusMessage && (
+        <p className="text-xs text-muted-foreground mb-2 text-right">
+          {statusMessage}
+        </p>
+      )}
 
       {/* Timeline compacta */}
       <div className="mb-3">
@@ -667,8 +1074,12 @@ function PracticeCardWithLongPress({
           <div className="relative flex justify-between items-center px-0">
             {INTERVALS.map((days, idx) => {
               const isDone = completedSet.has(idx);
-              const isNext = idx === practice.nextIdx && (practice.status === "due" || practice.status === "late" || practice.status === "expired");
+              const isNext = idx === practice.nextIdx && (practice.status === "expires_soon" || practice.status === "loss" || practice.status === "frozen");
               const isFinal = idx === INTERVALS.length - 1;
+              const isLost = lostIntervals.includes(idx);
+              
+              // Detect frozen nodes - nodes before the current frozen node
+              const isFrozen = (practice.status === "frozen" || practice.status === "loss") && practice.nextIdx !== -1 && idx < practice.nextIdx;
 
               return (
                 <motion.div
@@ -688,21 +1099,36 @@ function PracticeCardWithLongPress({
                       >
                         <div
                           className={`h-full w-full transition-all ${
-                            completedSet.has(idx) && completedSet.has(idx + 1)
+                            isLost
+                              ? "bg-gradient-to-r from-[#555555aa] to-[#333333aa]"
+                              : isFrozen || (idx < practice.nextIdx && (practice.status === "frozen" || practice.status === "loss"))
+                              ? "bg-gradient-to-r from-[#38bdf8aa] to-[#0ea5e933]"
+                              : completedSet.has(idx) && completedSet.has(idx + 1)
                               ? "bg-green-500"
                               : completedSet.has(idx)
                               ? "bg-gradient-to-r from-green-500 to-border/30"
                               : "bg-border/30"
                           }`}
+                          style={isLost ? { boxShadow: "0 0 4px rgba(51, 51, 51, 0.2)" } : isFrozen || (idx < practice.nextIdx && (practice.status === "frozen" || practice.status === "loss")) ? { background: "linear-gradient(to right, #38bdf8aa, #0ea5e933)", boxShadow: "0 0 4px #38bdf833" } : {}}
                         />
                       </div>
                     )}
 
                     {/* Node */}
                     <div className="relative z-10">
-                      {isDone ? (
-                        <div className="w-6 h-6 rounded-full bg-green-500/20 border-1.5 border-green-500 flex items-center justify-center text-xs font-bold">
-                          ✓
+                      {isLost ? (
+                        <div className="w-6 h-6 flex items-center justify-center">
+                          <RockNode />
+                        </div>
+                      ) : isDone ? (
+                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{
+                          background: "linear-gradient(135deg, #0c2a4a 0%, #0e3460 100%)",
+                          border: "2.5px solid #38bdf8",
+                          boxShadow: "0 0 12px rgba(14, 165, 233, 0.4), 0 0 4px rgba(56, 189, 248, 0.73), inset 0 0 6px rgba(14, 165, 233, 0.13)"
+                        }}>
+                          <span style={{
+                            filter: "hue-rotate(180deg) saturate(1.8) brightness(1.3)"
+                          }}>🔥</span>
                         </div>
                       ) : isNext ? (
                         <div>
@@ -764,6 +1190,16 @@ function PracticeCardWithLongPress({
             Eliminar
           </Button>
         </motion.div>
+      ) : practice.status === "frozen" ? (
+        <Button
+          onClick={(e) => {
+            e.stopPropagation();
+            onRecover?.();
+          }}
+          className="w-full rounded-xl bg-[#cce8f4]/20 text-[#4a9abb] dark:text-[#4a9abb] hover:bg-[#cce8f4]/30 border border-[#a8d8ea] text-xs h-8"
+        >
+          🔥 Recuperar
+        </Button>
       ) : (
         <Button
           onClick={(e) => {
@@ -791,8 +1227,30 @@ function PracticeWaitingCardWithLongPress({
   onDelete: () => void;
 }) {
   const [showDelete, setShowDelete] = useState(false);
+  const [, setCurrentTime] = useState(Date.now());
   const longPressHandler = useLongPress(() => setShowDelete(true), 800);
-  const completedSet = new Set(practice.completedIntervals.map(Number));
+  
+  // Update countdown every second
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+  
+  const intervals = practice.level === 2 ? INTERVALS_L2 : INTERVALS_L1;
+  const labels = practice.level === 2 ? LABELS_L2 : LABELS_L1;
+  const completedSet = new Set(((practice.level === 2 ? practice.completedIntervalsL2 : practice.completedIntervals) ?? []).map(Number));
+  
+  // Determine card styling based on status (level2_waiting or waiting)
+  const isLevel2Waiting = practice.status === "level2_waiting";
+  const borderColor = isLevel2Waiting ? "border-indigo-500/30" : "border-blue-500/30";
+  const bgColor = isLevel2Waiting ? "bg-indigo-500/5" : "bg-blue-500/5";
+  const hoverBorder = isLevel2Waiting ? "hover:border-indigo-500/50" : "hover:border-blue-500/50";
+  const activeBg = isLevel2Waiting ? "active:bg-indigo-500/10" : "active:bg-blue-500/10";
+  const badgeBg = isLevel2Waiting ? "bg-indigo-500/30 text-indigo-700 dark:text-indigo-400" : "bg-blue-500/30 text-blue-700 dark:text-blue-400";
+  const buttonBg = isLevel2Waiting ? "bg-indigo-500/20 text-indigo-700 dark:text-indigo-400 border-indigo-500/50" : "bg-blue-500/20 text-blue-700 dark:text-blue-400 border-blue-500/50";
+  const buttonHover = isLevel2Waiting ? "hover:bg-indigo-500/30" : "hover:bg-blue-500/30";
 
   const handleClick = () => {
     // No abrir el DetailPanel si estamos mostrando los botones de eliminar
@@ -806,14 +1264,17 @@ function PracticeWaitingCardWithLongPress({
       initial={{ opacity: 0, y: -10 }}
       animate={{ opacity: 1, y: 0 }}
       {...longPressHandler}
-      className="rounded-2xl border border-blue-500/30 bg-blue-500/5 px-3 py-2.5 mb-2 cursor-pointer hover:border-blue-500/50 transition-all active:bg-blue-500/10"
+      className={`rounded-2xl border ${borderColor} ${bgColor} px-3 py-2.5 mb-2 cursor-pointer ${hoverBorder} transition-all ${activeBg}`}
       onClick={handleClick}
     >
-      {/* Header con nombre y emoji */}
+      {/* Header con nombre, emoji y level pill */}
       <div className="flex items-center gap-2 mb-3">
         <span className="text-lg flex-shrink-0">{practice.emoji}</span>
         <span className="font-bold text-sm text-foreground flex-1">{practice.name}</span>
-        <span className="text-xs bg-blue-500/30 text-blue-700 dark:text-blue-400 px-2 py-1 rounded-full font-bold">
+        <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${practice.level === 2 ? "bg-purple-500/30 text-purple-700 dark:text-purple-400" : "bg-yellow-500/30 text-yellow-700 dark:text-yellow-400"}`}>
+          L{practice.level}
+        </span>
+        <span className={`text-xs ${badgeBg} px-2 py-1 rounded-full font-bold`}>
           en {daysLeft}d
         </span>
       </div>
@@ -823,9 +1284,9 @@ function PracticeWaitingCardWithLongPress({
         <div className="relative pt-4 pb-3">
           {/* Nodes container */}
           <div className="relative flex justify-between items-center px-0">
-            {INTERVALS.map((days, idx) => {
+            {intervals.map((days, idx) => {
               const isDone = completedSet.has(idx);
-              const isFinal = idx === INTERVALS.length - 1;
+              const isFinal = idx === intervals.length - 1;
 
               return (
                 <motion.div
@@ -838,7 +1299,7 @@ function PracticeWaitingCardWithLongPress({
                   {/* Wrapper que centra la línea con el círculo */}
                   <div className="relative flex items-center justify-center w-full">
                     {/* Connection line to next node */}
-                    {idx < INTERVALS.length - 1 && (
+                    {idx < intervals.length - 1 && (
                       <div
                         className="absolute h-0.5 pointer-events-none"
                         style={{ left: "50%", width: "100%", zIndex: 0 }}
@@ -846,9 +1307,9 @@ function PracticeWaitingCardWithLongPress({
                         <div
                           className={`h-full w-full transition-all ${
                             completedSet.has(idx) && completedSet.has(idx + 1)
-                              ? "bg-green-500"
+                              ? isLevel2Waiting ? "bg-indigo-500" : "bg-green-500"
                               : completedSet.has(idx)
-                              ? "bg-gradient-to-r from-green-500 to-border/30"
+                              ? isLevel2Waiting ? "bg-gradient-to-r from-indigo-500 to-border/30" : "bg-gradient-to-r from-green-500 to-border/30"
                               : "bg-border/30"
                           }`}
                         />
@@ -858,8 +1319,8 @@ function PracticeWaitingCardWithLongPress({
                     {/* Node */}
                     <div className="relative z-10">
                       {isDone ? (
-                        <div className="w-6 h-6 rounded-full bg-green-500/20 border-1.5 border-green-500 flex items-center justify-center text-xs font-bold">
-                          ✓
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border-1.5 ${isLevel2Waiting ? "bg-indigo-500/20 border-indigo-500" : "bg-green-500/20 border-green-500"}`}>
+                          {isLevel2Waiting ? "🔒" : "✓"}
                         </div>
                       ) : isFinal ? (
                         <div className="w-6 h-6 rounded-full bg-muted/50 border-1.5 border-border/30 flex items-center justify-center text-xs">
@@ -873,7 +1334,7 @@ function PracticeWaitingCardWithLongPress({
 
                   {/* Label */}
                   <p className="text-xs font-bold text-muted-foreground mt-1 whitespace-nowrap">
-                    {isFinal ? "D30" : INTERVAL_LABELS[idx]}
+                    {labels[idx]}
                   </p>
                 </motion.div>
               );
@@ -894,7 +1355,7 @@ function PracticeWaitingCardWithLongPress({
               e.stopPropagation();
               setShowDelete(false);
             }}
-            className="flex-1 rounded-xl bg-blue-500/20 text-blue-700 dark:text-blue-400 hover:bg-blue-500/30 border border-blue-500/50 text-xs h-8"
+            className={`flex-1 rounded-xl ${buttonBg} ${buttonHover} border text-xs h-8`}
           >
             Cancelar
           </Button>
@@ -1004,17 +1465,21 @@ function DetailPanel({
   onBack,
   onToggleInterval,
   onReset,
+  onRecover,
 }: {
   practice: SpaceRepetitionPractice;
   onBack: () => void;
   onToggleInterval: (index: number) => void;
   onReset: () => void;
+  onRecover?: () => void;
 }) {
-  const status = calculateStatus(practice);
-  const daysSince = calculateDaysSince(practice.startDate);
+  const status = practice.level === 2 ? calculateStatusL2(practice) : calculateStatus(practice);
+  const refDate = practice.level === 2 && practice.level1CompletedDate ? practice.level1CompletedDate : practice.startDate;
+  const daysSince = calculateDaysSince(refDate);
   const nextIntervalIdx = getNextIntervalIndex(practice);
-  const progress = practice.completedIntervals.length / INTERVALS.length;
-  const completedSet = new Set(practice.completedIntervals.map(Number));
+  const intervals = practice.level === 2 ? INTERVALS_L2 : INTERVALS_L1;
+  const progress = (practice.level === 2 ? practice.completedIntervalsL2?.length || 0 : practice.completedIntervals.length) / intervals.length;
+  const completedSet = new Set(((practice.level === 2 ? practice.completedIntervalsL2 : practice.completedIntervals) ?? []).map(Number));
 
   return (
     <div className="w-full">
@@ -1030,9 +1495,12 @@ function DetailPanel({
           <h2 className="font-black text-xl text-foreground flex items-center gap-2">
             <span>{practice.emoji}</span>
             <span>{practice.name}</span>
+            <span className={`text-xs px-2 py-1 rounded-lg font-bold ${practice.level === 2 ? "bg-purple-500/20 text-purple-700 dark:text-purple-400" : "bg-yellow-500/20 text-yellow-700 dark:text-yellow-400"}`}>
+              L{practice.level}
+            </span>
           </h2>
           <p className="text-xs text-muted-foreground mt-1">
-            Iniciado {practice.startDate} ({daysSince} días)
+            {practice.level === 2 ? "L2 iniciado" : "Iniciado"} {refDate} ({daysSince} días)
           </p>
         </div>
       </div>
@@ -1042,41 +1510,34 @@ function DetailPanel({
         {/* Status Badge */}
         <div className={`rounded-2xl border px-4 py-3 text-center ${getStateColor(status)}`}>
           <p className="font-bold text-sm">{getStateLabel(status)}</p>
-          {status === "due" && <p className="text-xs mt-1">¡Hoy es el día!</p>}
-          {status === "late" && <p className="text-xs mt-1">Atrasado, pero aún registrable</p>}
-          {status === "expired" && <p className="text-xs mt-1">Expirado, se reiniciará</p>}
+          {status === "expires_soon" && <p className="text-xs mt-1">Próximo a vencer, registra pronto</p>}
+          {status === "loss" && <p className="text-xs mt-1">Progreso perdido, pero recuperable</p>}
+          {status === "frozen" && <p className="text-xs mt-1">Congelado, requiere recuperación</p>}
           {status === "waiting" && <p className="text-xs mt-1">Espera el siguiente intervalo</p>}
           {status === "complete" && <p className="text-xs mt-1">¡Completada!</p>}
+          {status === "level2_waiting" && <p className="text-xs mt-1">Esperando 15 días después de L1</p>}
         </div>
 
         {/* Timeline Visual */}
         <TimelineVisual practice={practice} completedSet={completedSet} />
 
         {/* Register Button */}
-        {(status === "due" || status === "late") && nextIntervalIdx >= 0 && (
+        {(status === "expires_soon" || status === "loss") && nextIntervalIdx >= 0 && (
           <Button
             onClick={() => onToggleInterval(nextIntervalIdx)}
             className="w-full rounded-xl bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 hover:bg-yellow-500/30 border border-yellow-500/50"
           >
-            🔥 Registrar {INTERVAL_LABELS[nextIntervalIdx]}
+            ⚠️ Registrar {INTERVAL_LABELS[nextIntervalIdx]}
           </Button>
         )}
 
-        {status === "expired" && nextIntervalIdx >= 0 && (
-          <div className="flex gap-2">
-            <Button
-              onClick={() => onToggleInterval(nextIntervalIdx)}
-              className="flex-1 rounded-xl bg-red-500/20 text-red-700 dark:text-red-400 hover:bg-red-500/30 border border-red-500/50"
-            >
-              🔥 Registrar igual
-            </Button>
-            <Button
-              onClick={onReset}
-              className="flex-1 rounded-xl bg-red-500/20 text-red-700 dark:text-red-400 hover:bg-red-500/30 border border-red-500/50"
-            >
-              🔄 Reiniciar
-            </Button>
-          </div>
+        {status === "frozen" && nextIntervalIdx >= 0 && (
+          <Button
+            onClick={() => onRecover?.()}
+            className="w-full rounded-xl bg-[#cce8f4]/20 text-[#4a9abb] dark:text-[#4a9abb] hover:bg-[#cce8f4]/30 border border-[#a8d8ea]"
+          >
+            ❄️ Recuperar
+          </Button>
         )}
       </div>
     </div>
@@ -1090,8 +1551,10 @@ function TimelineVisual({
   practice: SpaceRepetitionPractice;
   completedSet: Set<number>;
 }) {
-  const status = calculateStatus(practice);
+  const status = practice.level === 2 ? calculateStatusL2(practice) : calculateStatus(practice);
   const nextIdx = getNextIntervalIndex(practice);
+  const intervals = practice.level === 2 ? INTERVALS_L2 : INTERVALS_L1;
+  const labels = practice.level === 2 ? LABELS_L2 : LABELS_L1;
 
   return (
     <div className="space-y-4">
@@ -1102,10 +1565,24 @@ function TimelineVisual({
         <div className="relative pt-8 pb-6">
           {/* Nodes container */}
           <div className="relative flex justify-between items-center px-0">
-            {INTERVALS.map((days, idx) => {
+            {intervals.map((days, idx) => {
               const isDone = completedSet.has(idx);
-              const isNext = idx === nextIdx && (status === "due" || status === "late" || status === "expired");
-              const isFinal = idx === INTERVALS.length - 1;
+              const isNext = idx === nextIdx && (status === "expires_soon" || status === "loss" || status === "frozen");
+              const isFinal = idx === intervals.length - 1;
+              const isLost = (practice.lostIntervals || []).includes(idx);
+              
+              // Detect frozen nodes - nodes before the current frozen node
+              const isFrozen = (status === "frozen" || status === "loss") && nextIdx !== -1 && idx < nextIdx;
+              
+              // Calculate days frozen for progressive opacity
+              let daysFrozen = 0;
+              if (isFrozen) {
+                const refDate = practice.level === 2 && practice.level1CompletedDate ? practice.level1CompletedDate : practice.startDate;
+                daysFrozen = calculateDaysSince(refDate) - intervals[idx];
+              }
+              
+              // Opacity: 50% if 1-2 days frozen, 100% if 3+ days
+              const frozenOpacity = daysFrozen >= 3 ? "opacity-100" : daysFrozen >= 1 ? "opacity-50" : "opacity-0";
 
               return (
                 <motion.div
@@ -1125,21 +1602,46 @@ function TimelineVisual({
                       >
                         <div
                           className={`h-full w-full transition-all ${
-                            completedSet.has(idx) && completedSet.has(idx + 1)
+                            isLost
+                              ? "bg-gradient-to-r from-[#555555aa] to-[#333333aa]"
+                              : isFrozen || (idx < nextIdx && (status === "frozen" || status === "loss"))
+                              ? "bg-gradient-to-r from-[#38bdf8aa] to-[#0ea5e933]"
+                              : completedSet.has(idx) && completedSet.has(idx + 1)
                               ? "bg-gradient-to-r from-green-500 to-green-500"
                               : completedSet.has(idx)
                               ? "bg-gradient-to-r from-green-500 to-border/30"
                               : "bg-border/30"
                           }`}
+                          style={isLost ? { boxShadow: "0 0 4px rgba(51, 51, 51, 0.2)" } : isFrozen || (idx < nextIdx && (status === "frozen" || status === "loss")) ? { background: "linear-gradient(to right, #38bdf8aa, #0ea5e933)", boxShadow: "0 0 4px #38bdf833" } : {}}
                         />
                       </div>
                     )}
 
                     {/* Node */}
                     <div className="relative z-10">
-                      {isDone ? (
-                        <div className="w-10 h-10 rounded-full bg-green-500/20 border-2 border-green-500 flex items-center justify-center text-lg font-bold">
-                          🔥
+                      {isLost ? (
+                        <div className="w-10 h-10 flex items-center justify-center">
+                          <RockNode />
+                        </div>
+                      ) : isDone ? (
+                        <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold" style={{
+                          background: "linear-gradient(135deg, #0c2a4a 0%, #0e3460 100%)",
+                          border: "2.5px solid #38bdf8",
+                          boxShadow: "0 0 12px rgba(14, 165, 233, 0.4), 0 0 4px rgba(56, 189, 248, 0.73), inset 0 0 6px rgba(14, 165, 233, 0.13)"
+                        }}>
+                          <span style={{
+                            filter: "hue-rotate(180deg) saturate(1.8) brightness(1.3)"
+                          }}>🔥</span>
+                        </div>
+                      ) : isFrozen ? (
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold ${frozenOpacity} transition-opacity`} style={{
+                          background: "linear-gradient(135deg, #0c2a4a 0%, #0e3460 100%)",
+                          border: "2.5px solid #38bdf8",
+                          boxShadow: "0 0 12px rgba(14, 165, 233, 0.4), 0 0 4px rgba(56, 189, 248, 0.73), inset 0 0 6px rgba(14, 165, 233, 0.13)"
+                        }}>
+                          <span style={{
+                            filter: "hue-rotate(180deg) saturate(1.8) brightness(1.3)"
+                          }}>🔥</span>
                         </div>
                       ) : isNext ? (
                         <div>
@@ -1165,7 +1667,7 @@ function TimelineVisual({
 
                   {/* Label */}
                   <p className="text-xs font-bold text-muted-foreground mt-2 whitespace-nowrap">
-                    {isFinal ? "D30" : INTERVAL_LABELS[idx]}
+                    {isFinal ? labels[idx] : labels[idx]}
                   </p>
                 </motion.div>
               );
@@ -1177,11 +1679,15 @@ function TimelineVisual({
       {/* Stats */}
       <div className="grid grid-cols-2 gap-2">
         <div className="rounded-xl border border-border/30 bg-muted/30 px-3 py-2 text-center">
-          <p className="text-xl font-bold text-foreground">{practice.completedIntervals.length}/6</p>
+          <p className="text-xl font-bold text-foreground">{practice.level === 2 ? practice.completedIntervalsL2?.length || 0 : practice.completedIntervals.length}/{intervals.length}</p>
           <p className="text-xs text-muted-foreground">Conquistados</p>
         </div>
         <div className="rounded-xl border border-border/30 bg-muted/30 px-3 py-2 text-center">
-          <p className="text-xl font-bold text-foreground">{calculateDaysSince(practice.startDate)}</p>
+          <p className="text-xl font-bold text-foreground">
+            {practice.level === 2 && practice.level1CompletedDate 
+              ? calculateDaysSince(practice.level1CompletedDate) 
+              : calculateDaysSince(practice.startDate)}
+          </p>
           <p className="text-xs text-muted-foreground">Días transcurridos</p>
         </div>
       </div>

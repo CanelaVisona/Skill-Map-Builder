@@ -2377,7 +2377,7 @@ function ProfileSection() {
 
       <div className="flex flex-1 min-h-0 flex-col sm:flex-row gap-5 sm:gap-3">
         <div 
-          className="w-full sm:w-1/2 bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]"
+          className="w-full sm:w-1/2 h-full bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]"
           onTouchStart={handleLeftLongPressStart}
           onTouchEnd={handleLeftLongPressEnd}
           onTouchCancel={handleLeftLongPressEnd}

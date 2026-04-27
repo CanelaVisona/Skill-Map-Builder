@@ -317,6 +317,7 @@ export class DbStorage implements IStorage {
     if (area.levelSubtitles !== undefined) updateData.levelSubtitles = area.levelSubtitles as Record<string, string>;
     if (area.levelSubtitleDescriptions !== undefined) updateData.levelSubtitleDescriptions = area.levelSubtitleDescriptions as Record<string, string>;
     if (area.archived !== undefined) updateData.archived = area.archived as 0 | 1;
+    if (area.endOfAreaLevel !== undefined) updateData.endOfAreaLevel = area.endOfAreaLevel;
     
     const result = await db.update(areas).set(updateData).where(eq(areas.id, id)).returning();
     return result[0];
@@ -868,6 +869,7 @@ export class DbStorage implements IStorage {
     if (project.levelSubtitles !== undefined) updateData.levelSubtitles = project.levelSubtitles as Record<string, string>;
     if (project.levelSubtitleDescriptions !== undefined) updateData.levelSubtitleDescriptions = project.levelSubtitleDescriptions as Record<string, string>;
     if (project.archived !== undefined) updateData.archived = project.archived as 0 | 1;
+    if (project.endOfAreaLevel !== undefined) updateData.endOfAreaLevel = project.endOfAreaLevel;
     
     const result = await db.update(projects).set(updateData).where(eq(projects.id, id)).returning();
     return result[0];
@@ -1649,7 +1651,9 @@ export class DbStorage implements IStorage {
     const id = randomUUID();
     const safeData = {
       ...practice,
-      completedIntervals: Array.isArray(practice.completedIntervals) ? practice.completedIntervals : [] as any
+      completedIntervals: Array.isArray(practice.completedIntervals) ? practice.completedIntervals : [] as any,
+      completedIntervalsL2: Array.isArray(practice.completedIntervalsL2) ? practice.completedIntervalsL2 : [] as any,
+      level: practice.level || 1,
     };
     const result = await db.insert(spaceRepetitionPractices)
       .values({ id, ...safeData } as any)
@@ -1661,6 +1665,7 @@ export class DbStorage implements IStorage {
     const safeData = {
       ...practice,
       completedIntervals: practice.completedIntervals ? (Array.isArray(practice.completedIntervals) ? practice.completedIntervals : []) : undefined,
+      completedIntervalsL2: practice.completedIntervalsL2 ? (Array.isArray(practice.completedIntervalsL2) ? practice.completedIntervalsL2 : []) : undefined,
       updatedAt: new Date()
     };
     const result = await db.update(spaceRepetitionPractices)
