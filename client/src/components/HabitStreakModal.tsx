@@ -702,6 +702,16 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                 setDetailViewDate(newDate);
               }}
               onBack={showMain}
+              onToggleDate={(date) => {
+                const habit = habitsWithRecords.find((h) => h.id === selectedHabitId);
+                if (!habit) return;
+                const isCompleted = habit.done.has(date);
+                toggleHabitMutation.mutate({
+                  habitId: selectedHabitId,
+                  date,
+                  completed: isCompleted ? 0 : 1,
+                });
+              }}
             />
           )}
 
@@ -1398,11 +1408,13 @@ function DetailPanel({
   currentDate,
   onMonthChange,
   onBack,
+  onToggleDate,
 }: {
   habit?: HabitData;
   currentDate: Date;
   onMonthChange: (delta: number) => void;
   onBack: () => void;
+  onToggleDate: (date: string) => void;
 }) {
   if (!habit) return null;
 
@@ -1460,7 +1472,45 @@ function DetailPanel({
     return s;
   };
 
+  const computeBestStreak = (done: Set<string>, scheduledDays?: number[]): number => {
+    const days = (Array.isArray(scheduledDays) && scheduledDays.length > 0)
+      ? scheduledDays
+      : [0, 1, 2, 3, 4, 5, 6];
+
+    const sorted = Array.from(done).sort();
+    let best = 0;
+    let current = 0;
+
+    for (const dateStr of sorted) {
+      const d = new Date(dateStr + "T00:00:00");
+      const dow = d.getDay() === 0 ? 6 : d.getDay() - 1;
+      if (!days.includes(dow)) continue;
+
+      const prev = new Date(d);
+      prev.setDate(prev.getDate() - 1);
+      let prevScheduledFound = false;
+      let prevWasDone = false;
+
+      for (let i = 1; i <= 7; i++) {
+        const p = getLocalDateString(prev);
+        const pdow = prev.getDay() === 0 ? 6 : prev.getDay() - 1;
+        if (days.includes(pdow)) {
+          prevScheduledFound = true;
+          prevWasDone = done.has(p);
+          break;
+        }
+        prev.setDate(prev.getDate() - 1);
+      }
+
+      current = prevWasDone ? current + 1 : 1;
+      if (current > best) best = current;
+    }
+
+    return best;
+  };
+
   const streak = computeStreak(habit.done, habit.scheduledDays);
+  const bestStreak = computeBestStreak(habit.done, habit.scheduledDays);
   const doneInMonth = Array.from(habit.done).filter(
     (d) => d.startsWith(`${year}-${String(month + 1).padStart(2, "0")}`)
   ).length;
@@ -1489,7 +1539,7 @@ function DetailPanel({
         </div>
         <div className="flex-1 rounded-xl bg-muted/50 px-2 sm:px-3 py-2 text-center">
           <div className="font-black text-lg sm:text-xl text-foreground">
-            {habit.bestStreak}
+            {bestStreak}
           </div>
           <div className="text-xs text-muted-foreground uppercase">Mejor</div>
         </div>
@@ -1538,10 +1588,7 @@ function DetailPanel({
 
           {Array.from({ length: dim }).map((_, d) => {
             const day = d + 1;
-            const dateStr = `${year}-${String(month + 1).padStart(
-              2,
-              "0"
-            )}-${String(day).padStart(2, "0")}`;
+            const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
             const dObj = new Date(dateStr + "T12:00:00");
             dObj.setHours(0, 0, 0, 0);
             const isFuture = dObj > today;
@@ -1552,23 +1599,30 @@ function DetailPanel({
             return (
               <div
                 key={day}
-                className={`relative aspect-square rounded-lg flex items-center justify-center text-xs font-medium cursor-pointer transition-all active:scale-95 ${
+                onClick={() => {
+                  if (!isFuture) onToggleDate(dateStr);
+                }}
+                className={`relative aspect-square rounded-lg flex items-center justify-center text-xs font-medium transition-all ${
+                  isFuture
+                    ? "opacity-20 cursor-default"
+                    : "cursor-pointer active:scale-95"
+                } ${
                   isDone
                     ? "bg-gray-900"
                     : isToday && !isDone
                       ? "ring-2 ring-purple-500"
-                      : isFuture
-                        ? "opacity-20"
-                        : isPastMissed
-                          ? "bg-muted/50 border-dashed border border-border/50 opacity-50"
-                          : ""
+                      : isPastMissed
+                        ? "bg-muted/50 border-dashed border border-border/50 opacity-50 hover:opacity-75"
+                        : ""
                 }`}
               >
                 {isDone ? (
                   <span className="text-base">🔥</span>
                 ) : (
                   <span
-                    className={`${isToday ? "text-purple-600 dark:text-purple-400 font-bold" : "text-muted-foreground"}`}
+                    className={`${
+                      isToday ? "text-purple-600 dark:text-purple-400 font-bold" : "text-muted-foreground"
+                    }`}
                   >
                     {day}
                   </span>

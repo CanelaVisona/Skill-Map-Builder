@@ -3402,6 +3402,28 @@ export async function registerRoutes(
       const practices = await storage.getSpaceRepetitionPractices(req.userId!);
       // Normalize any null values from before the migration
       const normalized = practices.map((record: any) => {
+        let completedIntervalsArray: number[] = [];
+        if (record.completedIntervals) {
+          try {
+            completedIntervalsArray = typeof record.completedIntervals === "string" 
+              ? JSON.parse(record.completedIntervals)
+              : record.completedIntervals;
+          } catch (e) {
+            completedIntervalsArray = [];
+          }
+        }
+        
+        let completedIntervalsL2Array: number[] = [];
+        if (record.completedIntervalsL2) {
+          try {
+            completedIntervalsL2Array = typeof record.completedIntervalsL2 === "string"
+              ? JSON.parse(record.completedIntervalsL2)
+              : record.completedIntervalsL2;
+          } catch (e) {
+            completedIntervalsL2Array = [];
+          }
+        }
+        
         let lostIntervalsArray: number[] = [];
         if (record.lostIntervals) {
           try {
@@ -3416,7 +3438,8 @@ export async function registerRoutes(
           ...record,
           level: record.level ?? 1,
           level1CompletedDate: record.level1CompletedDate ?? null,
-          completedIntervalsL2: record.completedIntervalsL2 ?? [],
+          completedIntervals: completedIntervalsArray,
+          completedIntervalsL2: completedIntervalsL2Array,
           lostIntervals: lostIntervalsArray,
         };
       });
@@ -3453,7 +3476,29 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Práctica no encontrada" });
       }
       
-      // Normalize lostIntervals in response
+      // Normalize all array fields in response
+      let completedIntervalsArray: number[] = [];
+      if (updated.completedIntervals) {
+        try {
+          completedIntervalsArray = typeof updated.completedIntervals === "string"
+            ? JSON.parse(updated.completedIntervals)
+            : updated.completedIntervals;
+        } catch (e) {
+          completedIntervalsArray = [];
+        }
+      }
+      
+      let completedIntervalsL2Array: number[] = [];
+      if (updated.completedIntervalsL2) {
+        try {
+          completedIntervalsL2Array = typeof updated.completedIntervalsL2 === "string"
+            ? JSON.parse(updated.completedIntervalsL2)
+            : updated.completedIntervalsL2;
+        } catch (e) {
+          completedIntervalsL2Array = [];
+        }
+      }
+      
       let lostIntervalsArray: number[] = [];
       if (updated.lostIntervals) {
         try {
@@ -3467,6 +3512,8 @@ export async function registerRoutes(
       
       res.json({
         ...updated,
+        completedIntervals: completedIntervalsArray,
+        completedIntervalsL2: completedIntervalsL2Array,
         lostIntervals: lostIntervalsArray,
       });
     } catch (error: any) {

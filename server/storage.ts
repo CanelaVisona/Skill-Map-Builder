@@ -1664,8 +1664,9 @@ export class DbStorage implements IStorage {
   async updateSpaceRepetitionPractice(id: string, practice: Partial<InsertSpaceRepetitionPractice>): Promise<SpaceRepetitionPractice | undefined> {
     const safeData = {
       ...practice,
-      completedIntervals: practice.completedIntervals ? (Array.isArray(practice.completedIntervals) ? practice.completedIntervals : []) : undefined,
-      completedIntervalsL2: practice.completedIntervalsL2 ? (Array.isArray(practice.completedIntervalsL2) ? practice.completedIntervalsL2 : []) : undefined,
+      completedIntervals: practice.completedIntervals ? JSON.stringify(Array.isArray(practice.completedIntervals) ? practice.completedIntervals : []) : undefined,
+      completedIntervalsL2: practice.completedIntervalsL2 ? JSON.stringify(Array.isArray(practice.completedIntervalsL2) ? practice.completedIntervalsL2 : []) : undefined,
+      lostIntervals: practice.lostIntervals ? JSON.stringify(Array.isArray(practice.lostIntervals) ? practice.lostIntervals : []) : undefined,
       updatedAt: new Date()
     };
     const result = await db.update(spaceRepetitionPractices)

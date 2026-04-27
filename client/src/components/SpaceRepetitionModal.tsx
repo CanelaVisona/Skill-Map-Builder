@@ -98,17 +98,15 @@ function formatTimeRemaining(daysRemaining: number): string {
   if (daysRemaining === 1) {
     return "tomorrow";
   }
-  if (daysRemaining === 0) {
-    // Calculate hours, minutes and seconds until midnight
-    const now = new Date();
-    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
-    const msUntilMidnight = midnight.getTime() - now.getTime();
-    const hours = Math.floor(msUntilMidnight / (1000 * 60 * 60));
-    const minutes = Math.floor((msUntilMidnight % (1000 * 60 * 60)) / (1000 * 60));
-    const seconds = Math.floor((msUntilMidnight % (1000 * 60)) / 1000);
-    return `${hours}h ${minutes}m ${seconds}s`;
-  }
-  return "today";
+  // If 0 or negative, calculate hours, minutes and seconds until midnight
+  const now = new Date();
+  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
+  const msUntilMidnight = midnight.getTime() - now.getTime();
+  const diff = Math.floor(msUntilMidnight / 1000);
+  const hours = String(Math.floor(diff / 3600)).padStart(2, '0');
+  const minutes = String(Math.floor((diff % 3600) / 60)).padStart(2, '0');
+  const seconds = String(diff % 60).padStart(2, '0');
+  return `${hours}:${minutes}:${seconds}`;
 }
 
 type PracticeStatus = "waiting" | "expires_soon" | "loss" | "frozen" | "complete" | "level2_waiting";
@@ -123,6 +121,13 @@ function calculateStatus(practice: SpaceRepetitionPractice): PracticeStatus {
 
   const daysSince = calculateDaysSince(practice.startDate);
   const completedIndices = new Set(practice.completedIntervals);
+
+  // If never registered anything, cannot be in loss or frozen
+  if (practice.completedIntervals.length === 0) {
+    if (daysSince === 0) return "expires_soon"; // D0 due today
+    if (daysSince <= 2) return "expires_soon";  // still in window
+    return "waiting"; // waiting for first registration, no penalty
+  }
 
   for (let i = 0; i < INTERVALS_L1.length; i++) {
     if (!completedIndices.has(i)) {
@@ -270,7 +275,7 @@ function formatTimeMessage(status: PracticeStatus, practice: SpaceRepetitionPrac
     case "loss":
       return `Loss of progress in: ${timeRemaining}`;
     case "level2_waiting":
-      return `New level starts in: ${timeRemaining}`;
+      return `Next level starts in: ${timeRemaining}`;
     case "frozen":
     case "complete":
     default:
@@ -483,6 +488,11 @@ export function SpaceRepetitionModal({
     for (const practice of loadedPractices) {
       // Only check practices that have started (D0 registered)
       if (practice.completedIntervals.length === 0 && (practice.completedIntervalsL2 || []).length === 0) {
+        continue;
+      }
+
+      // Do not rollback if completedIntervals is empty
+      if (practice.completedIntervals.length === 0) {
         continue;
       }
 
@@ -985,7 +995,12 @@ function PracticeCardWithLongPress({
   const [showDelete, setShowDelete] = useState(false);
   const [, setCurrentTime] = useState(Date.now());
   const longPressHandler = useLongPress(() => setShowDelete(true), 800);
-  const completedSet = new Set(practice.completedIntervals.map(Number));
+  const completedIntervalsArray = Array.isArray(practice.completedIntervals)
+    ? practice.completedIntervals
+    : typeof practice.completedIntervals === "string"
+    ? JSON.parse(practice.completedIntervals ?? "[]")
+    : [];
+  const completedSet = new Set(completedIntervalsArray.map(Number));
   
   // Update countdown every second
   useEffect(() => {
@@ -995,38 +1010,39 @@ function PracticeCardWithLongPress({
     return () => clearInterval(interval);
   }, []);
   
-  // Determine card styling based on status
-  let cardBorder = "border-yellow-500/30";
-  let cardBg = "bg-yellow-500/5";
-  let cardHover = "hover:border-yellow-500/50";
-  let cardActive = "active:bg-yellow-500/10";
-  
-  if (practice.status === "frozen") {
-    cardBorder = "border-[#a8d8ea]/30";
-    cardBg = "bg-[#cce8f4]/5";
-    cardHover = "hover:border-[#a8d8ea]/50";
-    cardActive = "active:bg-[#cce8f4]/10";
-  } else if (practice.status === "loss") {
-    cardBorder = "border-pink-500/30";
-    cardBg = "bg-pink-500/5";
-    cardHover = "hover:border-pink-500/50";
-    cardActive = "active:bg-pink-500/10";
-  } else if (practice.status === "expires_soon") {
-    cardBorder = "border-yellow-500/40";
-    cardBg = "bg-yellow-500/10";
-    cardHover = "hover:border-yellow-500/60";
-    cardActive = "active:bg-yellow-500/20";
-  } else if (practice.status === "level2_waiting") {
-    cardBorder = "border-indigo-500/30";
-    cardBg = "bg-indigo-500/5";
-    cardHover = "hover:border-indigo-500/50";
-    cardActive = "active:bg-indigo-500/10";
-  } else if (practice.status === "waiting") {
-    cardBorder = "border-blue-500/30";
-    cardBg = "bg-blue-500/5";
-    cardHover = "hover:border-blue-500/50";
-    cardActive = "active:bg-blue-500/10";
-  }
+  // Determine card styling based on status with frozen priority
+  const cardTint =
+    practice.status === "frozen"
+      ? "border-sky-400/70 bg-sky-400/20"
+      : practice.status === "loss"
+        ? "border-red-400/70 bg-red-400/20"
+        : practice.status === "expires_soon"
+          ? "border-yellow-400/70 bg-yellow-400/20"
+          : practice.status === "waiting"
+            ? "border-green-400/70 bg-green-400/20"
+            : "border-border/30 bg-transparent";
+
+  const cardHoverTint =
+    practice.status === "frozen"
+      ? "hover:border-sky-400/90 hover:bg-sky-400/30"
+      : practice.status === "loss"
+        ? "hover:border-red-400/90 hover:bg-red-400/30"
+        : practice.status === "expires_soon"
+          ? "hover:border-yellow-400/90 hover:bg-yellow-400/30"
+          : practice.status === "waiting"
+            ? "hover:border-green-400/90 hover:bg-green-400/30"
+            : "hover:border-border/50";
+
+  const cardActiveTint =
+    practice.status === "frozen"
+      ? "active:bg-sky-400/40"
+      : practice.status === "loss"
+        ? "active:bg-red-400/40"
+        : practice.status === "expires_soon"
+          ? "active:bg-yellow-400/40"
+          : practice.status === "waiting"
+            ? "active:bg-green-400/40"
+            : "active:bg-muted/10";
 
   const handleClick = () => {
     if (!showDelete) {
@@ -1035,14 +1051,28 @@ function PracticeCardWithLongPress({
   };
 
   const statusMessage = formatTimeMessage(practice.status, practice);
-  const lostIntervals = practice.lostIntervals || [];
+  const lostIntervals = Array.isArray(practice.lostIntervals)
+    ? practice.lostIntervals
+    : typeof practice.lostIntervals === "string"
+    ? JSON.parse(practice.lostIntervals ?? "[]")
+    : [];
+
+  // Calculate days until next interval and show Well done message
+  const nextIdx = getNextIntervalIndex(practice);
+  const daysSince = calculateDaysSince(practice.startDate);
+  const intervals = practice.level === 2 ? INTERVALS_L2 : INTERVALS_L1;
+  const daysUntilDue = nextIdx >= 0 ? Math.max(0, intervals[nextIdx] - daysSince) : 0;
+  const lastCompletedLabel = completedSet.size > 0
+    ? LABELS_L1[Array.from(completedSet).sort((a, b) => b - a)[0]]
+    : null;
+  const showWellDone = practice.status === "waiting" && daysUntilDue > 7 && lastCompletedLabel !== null;
 
   return (
     <motion.div
       initial={{ opacity: 0, y: -10 }}
       animate={{ opacity: 1, y: 0 }}
       {...longPressHandler}
-      className={`rounded-2xl border ${cardBorder} ${cardBg} px-3 py-2.5 mb-2 cursor-pointer ${cardHover} transition-all ${cardActive}`}
+      className={`rounded-2xl ${cardTint} px-3 py-2.5 mb-2 cursor-pointer ${cardHoverTint} transition-all ${cardActiveTint}`}
       onClick={handleClick}
     >
       {/* Header con nombre, emoji y level pill */}
@@ -1078,8 +1108,8 @@ function PracticeCardWithLongPress({
               const isFinal = idx === INTERVALS.length - 1;
               const isLost = lostIntervals.includes(idx);
               
-              // Detect frozen nodes - nodes before the current frozen node
-              const isFrozen = (practice.status === "frozen" || practice.status === "loss") && practice.nextIdx !== -1 && idx < practice.nextIdx;
+              // Frozen flame only when status === "frozen" and node is completed
+              const isFrozen = practice.status === "frozen" && isDone && idx < practice.nextIdx;
 
               return (
                 <motion.div
@@ -1101,15 +1131,15 @@ function PracticeCardWithLongPress({
                           className={`h-full w-full transition-all ${
                             isLost
                               ? "bg-gradient-to-r from-[#555555aa] to-[#333333aa]"
-                              : isFrozen || (idx < practice.nextIdx && (practice.status === "frozen" || practice.status === "loss"))
-                              ? "bg-gradient-to-r from-[#38bdf8aa] to-[#0ea5e933]"
-                              : completedSet.has(idx) && completedSet.has(idx + 1)
-                              ? "bg-green-500"
-                              : completedSet.has(idx)
-                              ? "bg-gradient-to-r from-green-500 to-border/30"
-                              : "bg-border/30"
+                              : practice.status === "frozen" && idx < practice.nextIdx
+                                ? "bg-gradient-to-r from-[#38bdf8aa] to-[#0ea5e933]"
+                                : completedSet.has(idx) && completedSet.has(idx + 1)
+                                  ? "bg-green-500"
+                                  : completedSet.has(idx)
+                                    ? "bg-gradient-to-r from-green-500 to-border/30"
+                                    : "bg-border/30"
                           }`}
-                          style={isLost ? { boxShadow: "0 0 4px rgba(51, 51, 51, 0.2)" } : isFrozen || (idx < practice.nextIdx && (practice.status === "frozen" || practice.status === "loss")) ? { background: "linear-gradient(to right, #38bdf8aa, #0ea5e933)", boxShadow: "0 0 4px #38bdf833" } : {}}
+                          style={isLost ? { boxShadow: "0 0 4px rgba(51, 51, 51, 0.2)" } : (practice.status === "frozen" && idx < practice.nextIdx) ? { background: "linear-gradient(to right, #38bdf8aa, #0ea5e933)", boxShadow: "0 0 4px #38bdf833" } : {}}
                         />
                       </div>
                     )}
@@ -1120,7 +1150,7 @@ function PracticeCardWithLongPress({
                         <div className="w-6 h-6 flex items-center justify-center">
                           <RockNode />
                         </div>
-                      ) : isDone ? (
+                      ) : isFrozen ? (
                         <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{
                           background: "linear-gradient(135deg, #0c2a4a 0%, #0e3460 100%)",
                           border: "2.5px solid #38bdf8",
@@ -1129,6 +1159,10 @@ function PracticeCardWithLongPress({
                           <span style={{
                             filter: "hue-rotate(180deg) saturate(1.8) brightness(1.3)"
                           }}>🔥</span>
+                        </div>
+                      ) : isDone ? (
+                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold bg-green-500/20 border-2 border-green-500">
+                          ✓
                         </div>
                       ) : isNext ? (
                         <div>
@@ -1190,6 +1224,10 @@ function PracticeCardWithLongPress({
             Eliminar
           </Button>
         </motion.div>
+      ) : showWellDone ? (
+        <p className="text-center text-sm font-semibold text-green-400 py-1">
+          🎉 Well done! You have finished {lastCompletedLabel}
+        </p>
       ) : practice.status === "frozen" ? (
         <Button
           onClick={(e) => {
@@ -1198,9 +1236,19 @@ function PracticeCardWithLongPress({
           }}
           className="w-full rounded-xl bg-[#cce8f4]/20 text-[#4a9abb] dark:text-[#4a9abb] hover:bg-[#cce8f4]/30 border border-[#a8d8ea] text-xs h-8"
         >
-          🔥 Recuperar
+          🔥 Recover
         </Button>
-      ) : (
+      ) : practice.status === "loss" ? (
+        <Button
+          onClick={(e) => {
+            e.stopPropagation();
+            onRegister();
+          }}
+          className="w-full rounded-xl bg-red-500/20 text-red-700 dark:text-red-400 hover:bg-red-500/30 border border-red-500/50 text-xs h-8"
+        >
+          🔥 Registrar antes de perder progreso
+        </Button>
+      ) : practice.status === "expires_soon" ? (
         <Button
           onClick={(e) => {
             e.stopPropagation();
@@ -1208,9 +1256,9 @@ function PracticeCardWithLongPress({
           }}
           className="w-full rounded-xl bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 hover:bg-yellow-500/30 border border-yellow-500/50 text-xs h-8"
         >
-          🔥 Registrar {practice.nextIdx >= 0 ? INTERVAL_LABELS[practice.nextIdx] : ""}
+          🔥 Continúa el progreso
         </Button>
-      )}
+      ) : null}
     </motion.div>
   );
 }
@@ -1240,17 +1288,50 @@ function PracticeWaitingCardWithLongPress({
   
   const intervals = practice.level === 2 ? INTERVALS_L2 : INTERVALS_L1;
   const labels = practice.level === 2 ? LABELS_L2 : LABELS_L1;
-  const completedSet = new Set(((practice.level === 2 ? practice.completedIntervalsL2 : practice.completedIntervals) ?? []).map(Number));
+  const intervalsToUse = practice.level === 2 ? practice.completedIntervalsL2 : practice.completedIntervals;
+  const intervalsArray = Array.isArray(intervalsToUse)
+    ? intervalsToUse
+    : typeof intervalsToUse === "string"
+    ? JSON.parse(intervalsToUse ?? "[]")
+    : [];
+  const completedSet = new Set(intervalsArray.map(Number));
   
-  // Determine card styling based on status (level2_waiting or waiting)
+  // Determine card styling based on status with frozen priority
+  const cardTint =
+    practice.status === "frozen"
+      ? "border-sky-400/70 bg-sky-400/20"
+      : practice.status === "loss"
+        ? "border-red-400/70 bg-red-400/20"
+        : practice.status === "expires_soon"
+          ? "border-yellow-400/70 bg-yellow-400/20"
+          : practice.status === "waiting"
+            ? "border-green-400/70 bg-green-400/20"
+            : "border-border/30 bg-transparent";
+
+  const cardHoverTint =
+    practice.status === "frozen"
+      ? "hover:border-sky-400/90 hover:bg-sky-400/30"
+      : practice.status === "loss"
+        ? "hover:border-red-400/90 hover:bg-red-400/30"
+        : practice.status === "expires_soon"
+          ? "hover:border-yellow-400/90 hover:bg-yellow-400/30"
+          : practice.status === "waiting"
+            ? "hover:border-green-400/90 hover:bg-green-400/30"
+            : "hover:border-border/50";
+
+  const cardActiveTint =
+    practice.status === "frozen"
+      ? "active:bg-sky-400/40"
+      : practice.status === "loss"
+        ? "active:bg-red-400/40"
+        : practice.status === "expires_soon"
+          ? "active:bg-yellow-400/40"
+          : practice.status === "waiting"
+            ? "active:bg-green-400/40"
+            : "active:bg-muted/10";
+
+  const badgeBg = practice.status === "level2_waiting" ? "bg-indigo-500/30 text-indigo-700 dark:text-indigo-400" : "bg-blue-500/30 text-blue-700 dark:text-blue-400";
   const isLevel2Waiting = practice.status === "level2_waiting";
-  const borderColor = isLevel2Waiting ? "border-indigo-500/30" : "border-blue-500/30";
-  const bgColor = isLevel2Waiting ? "bg-indigo-500/5" : "bg-blue-500/5";
-  const hoverBorder = isLevel2Waiting ? "hover:border-indigo-500/50" : "hover:border-blue-500/50";
-  const activeBg = isLevel2Waiting ? "active:bg-indigo-500/10" : "active:bg-blue-500/10";
-  const badgeBg = isLevel2Waiting ? "bg-indigo-500/30 text-indigo-700 dark:text-indigo-400" : "bg-blue-500/30 text-blue-700 dark:text-blue-400";
-  const buttonBg = isLevel2Waiting ? "bg-indigo-500/20 text-indigo-700 dark:text-indigo-400 border-indigo-500/50" : "bg-blue-500/20 text-blue-700 dark:text-blue-400 border-blue-500/50";
-  const buttonHover = isLevel2Waiting ? "hover:bg-indigo-500/30" : "hover:bg-blue-500/30";
 
   const handleClick = () => {
     // No abrir el DetailPanel si estamos mostrando los botones de eliminar
@@ -1264,7 +1345,7 @@ function PracticeWaitingCardWithLongPress({
       initial={{ opacity: 0, y: -10 }}
       animate={{ opacity: 1, y: 0 }}
       {...longPressHandler}
-      className={`rounded-2xl border ${borderColor} ${bgColor} px-3 py-2.5 mb-2 cursor-pointer ${hoverBorder} transition-all ${activeBg}`}
+      className={`rounded-2xl border ${cardTint} px-3 py-2.5 mb-2 cursor-pointer ${cardHoverTint} transition-all ${cardActiveTint}`}
       onClick={handleClick}
     >
       {/* Header con nombre, emoji y level pill */}
@@ -1355,7 +1436,11 @@ function PracticeWaitingCardWithLongPress({
               e.stopPropagation();
               setShowDelete(false);
             }}
-            className={`flex-1 rounded-xl ${buttonBg} ${buttonHover} border text-xs h-8`}
+            className={`flex-1 rounded-xl border text-xs h-8 ${
+              practice.status === "level2_waiting"
+                ? "bg-indigo-500/20 text-indigo-700 dark:text-indigo-400 border-indigo-500/50 hover:bg-indigo-500/30"
+                : "bg-green-500/20 text-green-700 dark:text-green-400 border-green-500/50 hover:bg-green-500/30"
+            }`}
           >
             Cancelar
           </Button>
@@ -1478,8 +1563,14 @@ function DetailPanel({
   const daysSince = calculateDaysSince(refDate);
   const nextIntervalIdx = getNextIntervalIndex(practice);
   const intervals = practice.level === 2 ? INTERVALS_L2 : INTERVALS_L1;
-  const progress = (practice.level === 2 ? practice.completedIntervalsL2?.length || 0 : practice.completedIntervals.length) / intervals.length;
-  const completedSet = new Set(((practice.level === 2 ? practice.completedIntervalsL2 : practice.completedIntervals) ?? []).map(Number));
+  const intervalsToUse = practice.level === 2 ? practice.completedIntervalsL2 : practice.completedIntervals;
+  const intervalsArray = Array.isArray(intervalsToUse)
+    ? intervalsToUse
+    : typeof intervalsToUse === "string"
+    ? JSON.parse(intervalsToUse ?? "[]")
+    : [];
+  const progress = intervalsArray.length / intervals.length;
+  const completedSet = new Set<number>(intervalsArray.map(Number));
 
   return (
     <div className="w-full">
@@ -1571,8 +1662,8 @@ function TimelineVisual({
               const isFinal = idx === intervals.length - 1;
               const isLost = (practice.lostIntervals || []).includes(idx);
               
-              // Detect frozen nodes - nodes before the current frozen node
-              const isFrozen = (status === "frozen" || status === "loss") && nextIdx !== -1 && idx < nextIdx;
+              // Frozen flame only when status === "frozen" and node is completed
+              const isFrozen = status === "frozen" && isDone && idx < nextIdx;
               
               // Calculate days frozen for progressive opacity
               let daysFrozen = 0;
@@ -1604,15 +1695,15 @@ function TimelineVisual({
                           className={`h-full w-full transition-all ${
                             isLost
                               ? "bg-gradient-to-r from-[#555555aa] to-[#333333aa]"
-                              : isFrozen || (idx < nextIdx && (status === "frozen" || status === "loss"))
-                              ? "bg-gradient-to-r from-[#38bdf8aa] to-[#0ea5e933]"
-                              : completedSet.has(idx) && completedSet.has(idx + 1)
-                              ? "bg-gradient-to-r from-green-500 to-green-500"
-                              : completedSet.has(idx)
-                              ? "bg-gradient-to-r from-green-500 to-border/30"
-                              : "bg-border/30"
+                              : status === "frozen" && idx < nextIdx
+                                ? "bg-gradient-to-r from-[#38bdf8aa] to-[#0ea5e933]"
+                                : completedSet.has(idx) && completedSet.has(idx + 1)
+                                  ? "bg-gradient-to-r from-green-500 to-green-500"
+                                  : completedSet.has(idx)
+                                    ? "bg-gradient-to-r from-green-500 to-border/30"
+                                    : "bg-border/30"
                           }`}
-                          style={isLost ? { boxShadow: "0 0 4px rgba(51, 51, 51, 0.2)" } : isFrozen || (idx < nextIdx && (status === "frozen" || status === "loss")) ? { background: "linear-gradient(to right, #38bdf8aa, #0ea5e933)", boxShadow: "0 0 4px #38bdf833" } : {}}
+                          style={isLost ? { boxShadow: "0 0 4px rgba(51, 51, 51, 0.2)" } : (status === "frozen" && idx < nextIdx) ? { background: "linear-gradient(to right, #38bdf8aa, #0ea5e933)", boxShadow: "0 0 4px #38bdf833" } : {}}
                         />
                       </div>
                     )}
@@ -1623,16 +1714,6 @@ function TimelineVisual({
                         <div className="w-10 h-10 flex items-center justify-center">
                           <RockNode />
                         </div>
-                      ) : isDone ? (
-                        <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold" style={{
-                          background: "linear-gradient(135deg, #0c2a4a 0%, #0e3460 100%)",
-                          border: "2.5px solid #38bdf8",
-                          boxShadow: "0 0 12px rgba(14, 165, 233, 0.4), 0 0 4px rgba(56, 189, 248, 0.73), inset 0 0 6px rgba(14, 165, 233, 0.13)"
-                        }}>
-                          <span style={{
-                            filter: "hue-rotate(180deg) saturate(1.8) brightness(1.3)"
-                          }}>🔥</span>
-                        </div>
                       ) : isFrozen ? (
                         <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold ${frozenOpacity} transition-opacity`} style={{
                           background: "linear-gradient(135deg, #0c2a4a 0%, #0e3460 100%)",
@@ -1642,6 +1723,10 @@ function TimelineVisual({
                           <span style={{
                             filter: "hue-rotate(180deg) saturate(1.8) brightness(1.3)"
                           }}>🔥</span>
+                        </div>
+                      ) : isDone ? (
+                        <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold bg-green-500/20 border-2 border-green-500">
+                          ✓
                         </div>
                       ) : isNext ? (
                         <div>
