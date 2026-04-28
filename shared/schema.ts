@@ -232,6 +232,7 @@ export const spaceRepetitionPractices = pgTable("space_repetition_practices", {
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   emoji: text("emoji").notNull(),
+  subtitle: text("subtitle").default("").notNull(),
   startDate: varchar("start_date").notNull(), // YYYY-MM-DD format
   completedIntervals: jsonb("completed_intervals").notNull().$type<number[]>().default([]),
   archived: integer("archived").$type<0 | 1>().default(0),
