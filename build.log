@@ -5,21 +5,21 @@
 building client...
 [36mvite v7.1.12 [32mbuilding for production...[36m[39m
 transforming...
-[32m✓[39m 2269 modules transformed.
+[32m✓[39m 2271 modules transformed.
 rendering chunks...
 [meta-images] no Replit deployment domain found, skipping meta tag updates
 computing gzip size...
-[2m../dist/public/[22m[32mindex.html                 [39m[1m[2m  1.43 kB[22m[1m[22m[2m │ gzip:   0.57 kB[22m
-[2m../dist/public/[22m[35massets/index-BctV1eCj.css  [39m[1m[2m133.38 kB[22m[1m[22m[2m │ gzip:  20.87 kB[22m
-[2m../dist/public/[22m[36massets/index-BsQBJls7.js   [39m[1m[33m894.31 kB[39m[22m[2m │ gzip: 242.50 kB[22m
+[2m../dist/public/[22m[32mindex.html                 [39m[1m[2m    1.43 kB[22m[1m[22m[2m │ gzip:   0.58 kB[22m
+[2m../dist/public/[22m[35massets/index-C-zcTAmI.css  [39m[1m[2m  180.27 kB[22m[1m[22m[2m │ gzip:  25.67 kB[22m
+[2m../dist/public/[22m[36massets/index-Vks3mxrH.js   [39m[1m[33m1,003.35 kB[39m[22m[2m │ gzip: 267.03 kB[22m
 [33m
 (!) Some chunks are larger than 500 kB after minification. Consider:
 - Using dynamic import() to code-split the application
 - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
 - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
-[32m✓ built in 40.41s[39m
+[32m✓ built in 14.69s[39m
 building server...
 
   dist\index.cjs  1.1mb
 
-Done in 1908ms
+Done in 2023ms

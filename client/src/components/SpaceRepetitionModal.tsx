@@ -11,7 +11,6 @@ interface SpaceRepetitionPractice {
   id: string;
   name: string;
   emoji: string;
-  subtitle: string;
   startDate: string;
   completedIntervals: number[];
   level?: 1 | 2;
@@ -427,16 +426,12 @@ export function SpaceRepetitionModal({
   open,
   onOpenChange,
 }: SpaceRepetitionModalProps) {
-  const [currentPanel, setCurrentPanel] = useState<"main" | "add" | "detail" | "archived" | "edit">("main");
+  const [currentPanel, setCurrentPanel] = useState<"main" | "add" | "detail" | "archived">("main");
   const [practices, setPractices] = useState<SpaceRepetitionPractice[]>([]);
   const [archived, setArchived] = useState<ArchivedPractice[]>([]);
   const [selectedPracticeId, setSelectedPracticeId] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const [newEmoji, setNewEmoji] = useState("💪");
-  const [newSubtitle, setNewSubtitle] = useState("");
-  const [editName, setEditName] = useState("");
-  const [editEmoji, setEditEmoji] = useState("💪");
-  const [editSubtitle, setEditSubtitle] = useState("");
   const [notification, setNotification] = useState<string | null>(null);
   const { theme } = useTheme();
 
@@ -561,8 +556,7 @@ export function SpaceRepetitionModal({
         body: JSON.stringify({
           name: newName.trim(),
           emoji: newEmoji || "💪",
-          subtitle: newSubtitle,
-          startDate: "",
+          startDate: getLocalDateString(),
           completedIntervals: [],
         })
       });
@@ -571,7 +565,6 @@ export function SpaceRepetitionModal({
       setPractices([...practices, newPractice]);
       setNewName("");
       setNewEmoji("💪");
-      setNewSubtitle("");
       setCurrentPanel("main");
     } catch (error) {
       console.error("Error adding practice:", error);
@@ -633,33 +626,13 @@ export function SpaceRepetitionModal({
         }
 
         // Regular L2 interval update
-        // Build update data
-        const updateDataL2: any = {
-          completedIntervalsL2: newCompletedL2,
-          lostIntervals: [],
-        };
-
-        // If registering L2 with delay, recalculate level1CompletedDate
-        if (practice.level1CompletedDate) {
-          const daysSinceL1 = calculateDaysSince(practice.level1CompletedDate);
-          const currentIntervalL2 = INTERVALS_L2[intervalIndex];
-          // If registered late (more than 2 days after due), recalculate level1CompletedDate
-          if (daysSinceL1 > currentIntervalL2 + 2) {
-            const today = new Date();
-            const newDate = new Date(
-              today.getFullYear(),
-              today.getMonth(),
-              today.getDate() - currentIntervalL2,
-              0, 0, 0, 0
-            );
-            updateDataL2.level1CompletedDate = getLocalDateString(newDate);
-          }
-        }
-
         const res = await fetch(`/api/space-repetition/${practiceId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(updateDataL2)
+          body: JSON.stringify({
+            completedIntervalsL2: newCompletedL2,
+            lostIntervals: [],
+          })
         });
         if (!res.ok) throw new Error("Error updating practice");
         const updated = await res.json();
@@ -696,37 +669,13 @@ export function SpaceRepetitionModal({
       }
 
       // Regular interval update
-      // Build update data
-      const updateData: any = {
-        completedIntervals: newCompleted,
-        lostIntervals: [],
-      };
-
-      // If registering D0 and startDate is empty, set it to today
-      if (intervalIndex === 0 && (!practice.startDate || practice.startDate === "")) {
-        updateData.startDate = getLocalDateString();
-      }
-      // If registering with delay (daysSince > interval), recalculate startDate
-      else if (practice.startDate) {
-        const daysSince = calculateDaysSince(practice.startDate);
-        const currentInterval = INTERVALS_L1[intervalIndex];
-        // If registered late (more than 2 days after due), recalculate start date
-        if (daysSince > currentInterval + 2) {
-          const today = new Date();
-          const newDate = new Date(
-            today.getFullYear(),
-            today.getMonth(),
-            today.getDate() - currentInterval,
-            0, 0, 0, 0
-          );
-          updateData.startDate = getLocalDateString(newDate);
-        }
-      }
-
       const res = await fetch(`/api/space-repetition/${practiceId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updateData)
+        body: JSON.stringify({
+          completedIntervals: newCompleted,
+          lostIntervals: [],
+        })
       });
       if (!res.ok) throw new Error("Error updating practice");
       const updated = await res.json();
@@ -793,24 +742,6 @@ export function SpaceRepetitionModal({
     }
   };
 
-  const handleEditPractice = async (practiceId: string, name: string, emoji: string, subtitle: string) => {
-    try {
-      const res = await fetch(`/api/space-repetition/${practiceId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, emoji, subtitle }),
-      });
-      if (!res.ok) throw new Error("Error updating practice");
-      const updated = await res.json();
-      setPractices(practices.map((p) => p.id === practiceId ? updated : p));
-      setNotification("✏️ ¡Práctica actualizada!");
-      setCurrentPanel("main");
-      setSelectedPracticeId(null);
-    } catch (error) {
-      console.error("Error editing practice:", error);
-    }
-  };
-
   if (!open) return null;
 
   const selectedPractice = practices.find((p) => p.id === selectedPracticeId);
@@ -844,16 +775,6 @@ export function SpaceRepetitionModal({
                 setSelectedPracticeId(id);
                 setCurrentPanel("detail");
               }}
-              onEdit={(id) => {
-                const practice = practices.find((p) => p.id === id);
-                if (practice) {
-                  setSelectedPracticeId(id);
-                  setEditName(practice.name);
-                  setEditEmoji(practice.emoji);
-                  setEditSubtitle(practice.subtitle);
-                  setCurrentPanel("edit");
-                }
-              }}
               onArchived={() => setCurrentPanel("archived")}
               onDelete={deletePractice}
               onRegister={(practiceId, intervalIdx) => {
@@ -867,36 +788,14 @@ export function SpaceRepetitionModal({
             <AddPanel
               emoji={newEmoji}
               name={newName}
-              subtitle={newSubtitle}
               onEmojiChange={setNewEmoji}
               onNameChange={setNewName}
-              onSubtitleChange={setNewSubtitle}
               onBack={() => {
                 setNewName("");
                 setNewEmoji("💪");
-                setNewSubtitle("");
                 setCurrentPanel("main");
               }}
               onSubmit={addPractice}
-            />
-          )}
-
-          {currentPanel === "edit" && selectedPractice && (
-            <EditPanel
-              practice={selectedPractice}
-              emoji={editEmoji}
-              name={editName}
-              subtitle={editSubtitle}
-              onEmojiChange={setEditEmoji}
-              onNameChange={setEditName}
-              onSubtitleChange={setEditSubtitle}
-              onBack={() => {
-                setSelectedPracticeId(null);
-                setCurrentPanel("main");
-              }}
-              onSave={(name, emoji, subtitle) => {
-                handleEditPractice(selectedPractice.id, name, emoji, subtitle);
-              }}
             />
           )}
 
@@ -931,7 +830,6 @@ function MainPanel({
   archivedCount,
   onLongPressAdd,
   onDetail,
-  onEdit,
   onArchived,
   onDelete,
   onRegister,
@@ -942,7 +840,6 @@ function MainPanel({
   archivedCount: number;
   onLongPressAdd: () => void;
   onDetail: (id: string) => void;
-  onEdit: (id: string) => void;
   onArchived: () => void;
   onDelete: (id: string) => void;
   onRegister: (practiceId: string, intervalIdx: number) => void;
@@ -999,7 +896,6 @@ function MainPanel({
                     key={practice.id}
                     practice={practice}
                     onDetail={() => onDetail(practice.id)}
-                    onEdit={() => onEdit(practice.id)}
                     onDelete={() => onDelete(practice.id)}
                     onRegister={() => {
                       if (practice.nextIdx >= 0) {
@@ -1028,7 +924,6 @@ function MainPanel({
                         practice={practice}
                         daysLeft={daysLeft}
                         onDetail={() => onDetail(practice.id)}
-                        onEdit={() => onEdit(practice.id)}
                         onDelete={() => onDelete(practice.id)}
                       />
                     );
@@ -1087,26 +982,25 @@ function RockNode() {
 function PracticeCardWithLongPress({
   practice,
   onDetail,
-  onEdit,
   onDelete,
   onRegister,
   onRecover,
 }: {
   practice: SpaceRepetitionPractice & { status: PracticeStatus; nextIdx: number };
   onDetail: () => void;
-  onEdit: () => void;
   onDelete: () => void;
   onRegister: () => void;
   onRecover?: () => void;
 }) {
+  const [showDelete, setShowDelete] = useState(false);
   const [, setCurrentTime] = useState(Date.now());
-  const longPressHandler = useLongPress(() => onEdit(), 800);
+  const longPressHandler = useLongPress(() => setShowDelete(true), 800);
   const completedIntervalsArray = Array.isArray(practice.completedIntervals)
     ? practice.completedIntervals
     : typeof practice.completedIntervals === "string"
     ? JSON.parse(practice.completedIntervals ?? "[]")
     : [];
-  const completedSet = new Set(completedIntervalsArray.map(Number));
+  const completedSet = new Set<number>(completedIntervalsArray.map(Number));
   
   // Update countdown every second
   useEffect(() => {
@@ -1151,7 +1045,9 @@ function PracticeCardWithLongPress({
             : "active:bg-muted/10";
 
   const handleClick = () => {
-    onDetail();
+    if (!showDelete) {
+      onDetail();
+    }
   };
 
   const statusMessage = formatTimeMessage(practice.status, practice);
@@ -1167,7 +1063,7 @@ function PracticeCardWithLongPress({
   const intervals = practice.level === 2 ? INTERVALS_L2 : INTERVALS_L1;
   const daysUntilDue = nextIdx >= 0 ? Math.max(0, intervals[nextIdx] - daysSince) : 0;
   const lastCompletedLabel = completedSet.size > 0
-    ? LABELS_L1[Array.from(completedSet).sort((a, b) => b - a)[0]]
+    ? LABELS_L1[[...completedSet].sort((a: number, b: number) => b - a)[0]]
     : null;
   const showWellDone = practice.status === "waiting" && daysUntilDue > 7 && lastCompletedLabel !== null;
 
@@ -1193,11 +1089,6 @@ function PracticeCardWithLongPress({
           L{practice.level || 1}
         </span>
       </div>
-
-      {/* Subtitle */}
-      {practice.subtitle && (
-        <p className="text-xs text-muted-foreground mt-0.5 mb-1">{practice.subtitle}</p>
-      )}
 
       {/* Status message */}
       {statusMessage && (
@@ -1307,7 +1198,33 @@ function PracticeCardWithLongPress({
       </div>
 
       {/* Botones */}
-      {showWellDone ? (
+      {showDelete ? (
+        <motion.div
+          initial={{ opacity: 0, y: -5 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex gap-2"
+        >
+          <Button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowDelete(false);
+            }}
+            className="flex-1 rounded-xl bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 hover:bg-yellow-500/30 border border-yellow-500/50 text-xs h-8"
+          >
+            Cancelar
+          </Button>
+          <Button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            className="flex-1 rounded-xl bg-red-500/20 text-red-700 dark:text-red-400 hover:bg-red-500/30 border border-red-500/50 text-xs h-8"
+          >
+            <Trash2 className="h-3 w-3 mr-1" />
+            Eliminar
+          </Button>
+        </motion.div>
+      ) : showWellDone ? (
         <p className="text-center text-sm font-semibold text-green-400 py-1">
           🎉 Well done! You have finished {lastCompletedLabel}
         </p>
@@ -1350,15 +1267,16 @@ function PracticeWaitingCardWithLongPress({
   practice,
   daysLeft,
   onDetail,
-  onEdit,
+  onDelete,
 }: {
   practice: SpaceRepetitionPractice & { status: PracticeStatus; nextIdx: number };
   daysLeft: number;
   onDetail: () => void;
-  onEdit: () => void;
+  onDelete: () => void;
 }) {
+  const [showDelete, setShowDelete] = useState(false);
   const [, setCurrentTime] = useState(Date.now());
-  const longPressHandler = useLongPress(() => onEdit(), 800);
+  const longPressHandler = useLongPress(() => setShowDelete(true), 800);
   
   // Update countdown every second
   useEffect(() => {
@@ -1371,12 +1289,12 @@ function PracticeWaitingCardWithLongPress({
   const intervals = practice.level === 2 ? INTERVALS_L2 : INTERVALS_L1;
   const labels = practice.level === 2 ? LABELS_L2 : LABELS_L1;
   const intervalsToUse = practice.level === 2 ? practice.completedIntervalsL2 : practice.completedIntervals;
-  const intervalsArray = Array.isArray(intervalsToUse)
+  const intervalsArray: number[] = Array.isArray(intervalsToUse)
     ? intervalsToUse
     : typeof intervalsToUse === "string"
-    ? JSON.parse(intervalsToUse ?? "[]")
+    ? JSON.parse(intervalsToUse ?? "[]") as number[]
     : [];
-  const completedSet = new Set(intervalsArray.map(Number));
+  const completedSet = new Set<number>(intervalsArray.map(Number));
   
   // Determine card styling based on status with frozen priority
   const cardTint =
@@ -1545,19 +1463,15 @@ function PracticeWaitingCardWithLongPress({
 function AddPanel({
   emoji,
   name,
-  subtitle,
   onEmojiChange,
   onNameChange,
-  onSubtitleChange,
   onBack,
   onSubmit,
 }: {
   emoji: string;
   name: string;
-  subtitle: string;
   onEmojiChange: (emoji: string) => void;
   onNameChange: (name: string) => void;
-  onSubtitleChange: (subtitle: string) => void;
   onBack: () => void;
   onSubmit: () => void;
 }) {
@@ -1609,124 +1523,21 @@ function AddPanel({
           />
         </div>
 
-        {/* Subtitle Input */}
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-2">
-            Subtítulo
-          </label>
-          <Input
-            value={subtitle}
-            onChange={(e) => onSubtitleChange(e.target.value)}
-            placeholder="Descripción opcional..."
-            className="rounded-xl"
-          />
-        </div>
-
         {/* Action Buttons */}
         <div className="flex gap-2 mt-4">
+          <Button
+            onClick={onBack}
+            variant="outline"
+            className="flex-1 rounded-xl"
+          >
+            Cancelar
+          </Button>
           <Button
             onClick={onSubmit}
             disabled={!name.trim()}
-            className="w-full rounded-xl bg-purple-500 hover:bg-purple-600 text-white"
+            className="flex-1 rounded-xl bg-purple-500 hover:bg-purple-600 text-white"
           >
             Crear
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function EditPanel({
-  practice,
-  emoji,
-  name,
-  subtitle,
-  onEmojiChange,
-  onNameChange,
-  onSubtitleChange,
-  onBack,
-  onSave,
-}: {
-  practice: SpaceRepetitionPractice;
-  emoji: string;
-  name: string;
-  subtitle: string;
-  onEmojiChange: (emoji: string) => void;
-  onNameChange: (name: string) => void;
-  onSubtitleChange: (subtitle: string) => void;
-  onBack: () => void;
-  onSave: (name: string, emoji: string, subtitle: string) => void;
-}) {
-  return (
-    <div className="w-full">
-      {/* Header */}
-      <div className="border-b border-border/30 px-6 py-5 flex items-center gap-3">
-        <button
-          onClick={onBack}
-          className="text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </button>
-        <h2 className="font-black text-xl text-foreground">Editar Práctica</h2>
-      </div>
-
-      {/* Content */}
-      <div className="px-6 py-5 flex flex-col gap-4">
-        {/* Emoji Input */}
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-2">
-            Emoji
-          </label>
-          <div className="flex gap-2">
-            <Input
-              value={emoji}
-              onChange={(e) => onEmojiChange(e.target.value.slice(0, 2))}
-              className="text-xl font-black w-16 text-center h-10"
-              maxLength={2}
-            />
-            <Input
-              value={emoji}
-              readOnly
-              className="text-4xl font-black text-center h-10 flex-1 bg-muted"
-            />
-          </div>
-        </div>
-
-        {/* Name Input */}
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-2">
-            Nombre
-          </label>
-          <Input
-            value={name}
-            onChange={(e) => onNameChange(e.target.value)}
-            placeholder="Por ej: Vocabulario, Guitarra..."
-            className="rounded-xl"
-          />
-        </div>
-
-        {/* Subtitle Input */}
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-2">
-            Subtítulo
-          </label>
-          <Input
-            value={subtitle}
-            onChange={(e) => onSubtitleChange(e.target.value)}
-            placeholder="Descripción opcional..."
-            className="rounded-xl"
-          />
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex gap-2 mt-4">
-          <Button
-            onClick={() => onSave(name, emoji, subtitle)}
-            disabled={!name.trim()}
-            className="w-full rounded-xl bg-purple-500 hover:bg-purple-600 text-white"
-          >
-            Guardar
           </Button>
         </div>
       </div>

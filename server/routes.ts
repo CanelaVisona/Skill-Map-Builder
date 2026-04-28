@@ -3438,7 +3438,6 @@ export async function registerRoutes(
           ...record,
           level: record.level ?? 1,
           level1CompletedDate: record.level1CompletedDate ?? null,
-          subtitle: record.subtitle ?? "",
           completedIntervals: completedIntervalsArray,
           completedIntervalsL2: completedIntervalsL2Array,
           lostIntervals: lostIntervalsArray,
