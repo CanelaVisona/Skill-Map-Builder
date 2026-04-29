@@ -229,12 +229,124 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     },
   });
 
+  // Experiences mutations (for entries tied to this source)
+  const createExperience = useMutation({
+    mutationFn: async (data: { name: string; description: string; areaId?: string | null; projectId?: string | null }) => {
+      const res = await fetch("/api/profile/experiences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({ message: "Error al crear experiencia" }));
+        throw new Error(error.message || "Error al crear experiencia");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/profile/experiences`] });
+      queryClient.invalidateQueries({ predicate: (query) => (query.queryKey[0] as string)?.startsWith?.("/api/profile/experiences/by-source") });
+      setIsAdding(false);
+      setName("");
+      setDescription("");
+    },
+  });
+
+  const updateExperience = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { name?: string; description?: string; areaId?: string | null; projectId?: string | null } }) => {
+      const res = await fetch(`/api/profile/experiences/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/profile/experiences`] });
+      queryClient.invalidateQueries({ predicate: (query) => (query.queryKey[0] as string)?.startsWith?.("/api/profile/experiences/by-source") });
+      setEditingEntry(null);
+      setName("");
+      setDescription("");
+    },
+  });
+
+  const deleteExperience = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/profile/experiences/${id}`, { method: "DELETE" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/profile/experiences`] });
+      queryClient.invalidateQueries({ predicate: (query) => (query.queryKey[0] as string)?.startsWith?.("/api/profile/experiences/by-source") });
+    },
+  });
+
+  // Contributions mutations
+  const createContribution = useMutation({
+    mutationFn: async (data: { name: string; description: string; areaId?: string | null; projectId?: string | null }) => {
+      const res = await fetch("/api/profile/contributions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/profile/contributions`] });
+      queryClient.invalidateQueries({ predicate: (query) => (query.queryKey[0] as string)?.startsWith?.("/api/profile/contributions/by-source") });
+      setIsAdding(false);
+      setName("");
+      setDescription("");
+    },
+  });
+
+  const updateContribution = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { name?: string; description?: string; areaId?: string | null; projectId?: string | null } }) => {
+      const res = await fetch(`/api/profile/contributions/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/profile/contributions`] });
+      queryClient.invalidateQueries({ predicate: (query) => (query.queryKey[0] as string)?.startsWith?.("/api/profile/contributions/by-source") });
+      setEditingEntry(null);
+      setName("");
+      setDescription("");
+    },
+  });
+
+  const deleteContribution = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/profile/contributions/${id}`, { method: "DELETE" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/profile/contributions`] });
+      queryClient.invalidateQueries({ predicate: (query) => (query.queryKey[0] as string)?.startsWith?.("/api/profile/contributions/by-source") });
+    },
+  });
+
   const handleAdd = () => {
     if (!name.trim()) return;
     if (activeTab === "description") {
       createDescription.mutate({ name: name.trim(), description: description.trim() });
     } else if (activeTab === "growth") {
       createGrowth.mutate({ name: name.trim(), description: description.trim() });
+    } else if (activeTab === "experiences") {
+      createExperience.mutate({
+        name: name.trim(),
+        description: description.trim(),
+        areaId: sourceType === "area" ? sourceId : null,
+        projectId: sourceType === "project" ? sourceId : null,
+      });
+    } else if (activeTab === "contributions") {
+      createContribution.mutate({
+        name: name.trim(),
+        description: description.trim(),
+        areaId: sourceType === "area" ? sourceId : null,
+        projectId: sourceType === "project" ? sourceId : null,
+      });
     }
   };
 
@@ -244,6 +356,10 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       updateDescription.mutate({ id: editingEntry.id, data: { name: name.trim(), description: description.trim() } });
     } else if (activeTab === "growth") {
       updateGrowth.mutate({ id: editingEntry.id, data: { name: name.trim(), description: description.trim() } });
+    } else if (activeTab === "experiences") {
+      updateExperience.mutate({ id: editingEntry.id, data: { name: name.trim(), description: description.trim(), areaId: sourceType === "area" ? sourceId : null, projectId: sourceType === "project" ? sourceId : null } });
+    } else if (activeTab === "contributions") {
+      updateContribution.mutate({ id: editingEntry.id, data: { name: name.trim(), description: description.trim(), areaId: sourceType === "area" ? sourceId : null, projectId: sourceType === "project" ? sourceId : null } });
     }
   };
 
@@ -314,101 +430,121 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
           </TabsList>
           <div className="mt-4 min-h-[200px]">
             <TabsContent value="description" className="mt-0">
-              <ScrollArea className="h-[250px] pr-4">
+              <ScrollArea className="h-[280px] pr-4">
                 {renderEntryList(descriptions, true, (id) => deleteDescription.mutate(id), handleStartEdit)}
               </ScrollArea>
-              {!isAdding && !editingEntry ? (
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="mt-3 w-full" 
-                  onClick={() => setIsAdding(true)}
-                >
-                  <Plus className="h-4 w-4 mr-1" /> Agregar
-                </Button>
-              ) : (
-                <div className="mt-3 space-y-2 p-3 bg-muted/30 rounded-lg">
-                  <Input
-                    placeholder="Título"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                  />
-                  <Textarea
-                    placeholder="Descripción (opcional)"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    rows={2}
-                  />
-                  <div className="flex gap-2">
-                    <Button size="sm" onClick={editingEntry ? handleSaveEdit : handleAdd}>
-                      {editingEntry ? "Actualizar" : "Guardar"}
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => { setIsAdding(false); handleCancelEdit(); }}>
-                      Cancelar
-                    </Button>
-                  </div>
-                </div>
-              )}
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="mt-3 w-full" 
+                onClick={() => setIsAdding(true)}
+              >
+                <Plus className="h-4 w-4 mr-1" /> Agregar
+              </Button>
             </TabsContent>
 
             <TabsContent value="experiences" className="mt-0">
               <ScrollArea className="h-[280px] pr-4">
-                {renderEntryList(experiences, false)}
+                {renderEntryList(experiences, true, (id) => deleteExperience.mutate(id), handleStartEdit)}
               </ScrollArea>
-              <p className="text-xs text-muted-foreground mt-2">
-                Las experiencias se agregan desde el perfil del Journal
-              </p>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="mt-3 w-full" 
+                onClick={() => setIsAdding(true)}
+              >
+                <Plus className="h-4 w-4 mr-1" /> Agregar
+              </Button>
             </TabsContent>
 
             <TabsContent value="growth" className="mt-0">
-              <ScrollArea className="h-[250px] pr-4">
+              <ScrollArea className="h-[280px] pr-4">
                 {renderEntryList(growth, true, (id) => deleteGrowth.mutate(id), handleStartEdit)}
               </ScrollArea>
-              {!isAdding && !editingEntry ? (
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="mt-3 w-full" 
-                  onClick={() => setIsAdding(true)}
-                >
-                  <Plus className="h-4 w-4 mr-1" /> Agregar
-                </Button>
-              ) : (
-                <div className="mt-3 space-y-2 p-3 bg-muted/30 rounded-lg">
-                  <Input
-                    placeholder="Título"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                  />
-                  <Textarea
-                    placeholder="Descripción (opcional)"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    rows={2}
-                  />
-                  <div className="flex gap-2">
-                    <Button size="sm" onClick={editingEntry ? handleSaveEdit : handleAdd}>
-                      {editingEntry ? "Actualizar" : "Guardar"}
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => { setIsAdding(false); handleCancelEdit(); }}>
-                      Cancelar
-                    </Button>
-                  </div>
-                </div>
-              )}
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="mt-3 w-full" 
+                onClick={() => setIsAdding(true)}
+              >
+                <Plus className="h-4 w-4 mr-1" /> Agregar
+              </Button>
             </TabsContent>
 
             <TabsContent value="contributions" className="mt-0">
               <ScrollArea className="h-[280px] pr-4">
-                {renderEntryList(contributions, false)}
+                {renderEntryList(contributions, true, (id) => deleteContribution.mutate(id), handleStartEdit)}
               </ScrollArea>
-              <p className="text-xs text-muted-foreground mt-2">
-                Las contribuciones se agregan desde el perfil del Journal
-              </p>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="mt-3 w-full" 
+                onClick={() => setIsAdding(true)}
+              >
+                <Plus className="h-4 w-4 mr-1" /> Agregar
+              </Button>
             </TabsContent>
           </div>
         </Tabs>
       </DialogContent>
+
+      {/* Add/Edit Modal Dialog */}
+      <Dialog open={isAdding || !!editingEntry} onOpenChange={(open) => {
+        if (!open) {
+          setIsAdding(false);
+          handleCancelEdit();
+        }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {editingEntry ? "Editar entrada" : "Agregar nueva entrada"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="entry-name" className="text-sm font-medium mb-2 block">
+                Título
+              </Label>
+              <Input
+                id="entry-name"
+                placeholder="Título"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="entry-desc" className="text-sm font-medium mb-2 block">
+                Descripción (opcional)
+              </Label>
+              <Textarea
+                id="entry-desc"
+                placeholder="Descripción"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={3}
+              />
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setIsAdding(false);
+                  handleCancelEdit();
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button 
+                onClick={editingEntry ? handleSaveEdit : handleAdd}
+                disabled={!name.trim()}
+              >
+                {editingEntry ? "Actualizar" : "Guardar"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }
