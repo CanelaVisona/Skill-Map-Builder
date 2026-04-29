@@ -1,7 +1,7 @@
 import { eq, and, asc } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db, pool } from "./db";
-import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions } from "@shared/schema";
+import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, rewiringTrackers, rewiringTrackerRecords } from "@shared/schema";
 
 export interface IStorage {
   // Users
@@ -201,6 +201,16 @@ export interface IStorage {
   getBookSessionsByDate(bookId: string, date: string): Promise<BookReadingSession[]>;
   createBookSession(session: InsertBookReadingSession): Promise<BookReadingSession>;
   deleteBookSession(id: string): Promise<void>;
+
+  // Rewiring Trackers
+  getRewiringTrackers(userId: string): Promise<RewiringTracker[]>;
+  getRewiringTracker(id: string): Promise<RewiringTracker | undefined>;
+  getRewiringTrackerRecords(trackerId: string): Promise<RewiringTrackerRecord[]>;
+  createRewiringTracker(tracker: InsertRewiringTracker & { userId: string; id?: string; history?: Array<{ timestamp: string | Date }> }): Promise<RewiringTracker>;
+  updateRewiringTracker(id: string, tracker: Partial<InsertRewiringTracker>): Promise<RewiringTracker | undefined>;
+  deleteRewiringTracker(id: string): Promise<void>;
+  recordRewiringTrackerAction(trackerId: string, userId: string): Promise<{ tracker: RewiringTracker; record: RewiringTrackerRecord }>;
+  archiveRewiringTracker(id: string): Promise<RewiringTracker | undefined>;
 }
 
 export class DbStorage implements IStorage {
@@ -1742,6 +1752,95 @@ export class DbStorage implements IStorage {
 
   async deleteBookSession(id: string): Promise<void> {
     await db.delete(bookReadingSessions).where(eq(bookReadingSessions.id, id));
+  }
+
+  // Rewiring Trackers
+  async getRewiringTrackers(userId: string): Promise<RewiringTracker[]> {
+    return await db.select().from(rewiringTrackers).where(eq(rewiringTrackers.userId, userId));
+  }
+
+  async getRewiringTracker(id: string): Promise<RewiringTracker | undefined> {
+    const result = await db.select().from(rewiringTrackers).where(eq(rewiringTrackers.id, id));
+    return result[0];
+  }
+
+  async getRewiringTrackerRecords(trackerId: string): Promise<RewiringTrackerRecord[]> {
+    return await db.select().from(rewiringTrackerRecords).where(eq(rewiringTrackerRecords.trackerId, trackerId)).orderBy(asc(rewiringTrackerRecords.timestamp));
+  }
+
+  async createRewiringTracker(tracker: InsertRewiringTracker & { userId: string; id?: string; history?: Array<{ timestamp: string | Date }> }): Promise<RewiringTracker> {
+    const id = tracker.id || randomUUID();
+    const initialCount = typeof tracker.count === "number"
+      ? tracker.count
+      : Array.isArray(tracker.history)
+        ? tracker.history.length
+        : 0;
+    const result = await db.insert(rewiringTrackers).values({
+      id,
+      userId: tracker.userId,
+      name: tracker.name,
+      count: initialCount,
+      areaId: tracker.areaId ?? null,
+      projectId: tracker.projectId ?? null,
+      skillId: tracker.skillId ?? null,
+      startDate: tracker.startDate ?? new Date(),
+      archivedAt: tracker.archivedAt ?? null,
+    } as any).returning();
+
+    if (Array.isArray(tracker.history) && tracker.history.length > 0) {
+      for (const entry of tracker.history) {
+        await db.insert(rewiringTrackerRecords).values({
+          id: randomUUID(),
+          trackerId: id,
+          userId: tracker.userId,
+          timestamp: entry.timestamp instanceof Date ? entry.timestamp : new Date(entry.timestamp),
+        } as any);
+      }
+    }
+
+    return result[0];
+  }
+
+  async updateRewiringTracker(id: string, tracker: Partial<InsertRewiringTracker>): Promise<RewiringTracker | undefined> {
+    const result = await db.update(rewiringTrackers)
+      .set({ ...tracker, updatedAt: new Date() } as any)
+      .where(eq(rewiringTrackers.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteRewiringTracker(id: string): Promise<void> {
+    await db.delete(rewiringTrackers).where(eq(rewiringTrackers.id, id));
+  }
+
+  async recordRewiringTrackerAction(trackerId: string, userId: string): Promise<{ tracker: RewiringTracker; record: RewiringTrackerRecord }> {
+    const tracker = await this.getRewiringTracker(trackerId);
+    if (!tracker) {
+      throw new Error("Tracker not found");
+    }
+
+    const recordId = randomUUID();
+    const [record] = await db.insert(rewiringTrackerRecords).values({
+      id: recordId,
+      trackerId,
+      userId,
+      timestamp: new Date(),
+    } as any).returning();
+
+    const [updatedTracker] = await db.update(rewiringTrackers)
+      .set({ count: (tracker.count || 0) + 1, updatedAt: new Date() } as any)
+      .where(eq(rewiringTrackers.id, trackerId))
+      .returning();
+
+    return { tracker: updatedTracker, record };
+  }
+
+  async archiveRewiringTracker(id: string): Promise<RewiringTracker | undefined> {
+    const result = await db.update(rewiringTrackers)
+      .set({ archivedAt: new Date(), updatedAt: new Date() } as any)
+      .where(eq(rewiringTrackers.id, id))
+      .returning();
+    return result[0];
   }
 }
 

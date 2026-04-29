@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
-import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema, insertSpaceRepetitionPracticeSchema, type InsertSpaceRepetitionPractice, type SpaceRepetitionPractice, skills, areas, projects, spaceRepetitionPractices } from "@shared/schema";
+import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema, insertSpaceRepetitionPracticeSchema, insertRewiringTrackerSchema, type InsertSpaceRepetitionPractice, type SpaceRepetitionPractice, type RewiringTracker, skills, areas, projects, spaceRepetitionPractices } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import cookieParser from "cookie-parser";
 import crypto from "crypto";
@@ -3204,6 +3204,120 @@ export async function registerRoutes(
       });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Rewiring Tracker routes
+  app.get("/api/rewiring-trackers", requireAuth, async (req, res) => {
+    try {
+      const trackers = await storage.getRewiringTrackers(req.userId!);
+      const withHistory = await Promise.all(trackers.map(async (tracker) => {
+        const records = await storage.getRewiringTrackerRecords(tracker.id);
+        return {
+          ...tracker,
+          history: records.map((record) => ({ timestamp: record.timestamp })),
+        };
+      }));
+      res.json(withHistory);
+    } catch (error: any) {
+      console.error("[GET /api/rewiring-trackers] ERROR:", error);
+      res.status(500).json({ message: error.message || "Internal server error" });
+    }
+  });
+
+  app.post("/api/rewiring-trackers", requireAuth, async (req, res) => {
+    try {
+      const validated = insertRewiringTrackerSchema.parse({
+        ...req.body,
+        userId: req.userId,
+      });
+      const tracker = await storage.createRewiringTracker({
+        ...validated,
+        userId: req.userId!,
+        id: req.body.id,
+        history: req.body.history,
+      } as any);
+      const records = await storage.getRewiringTrackerRecords(tracker.id);
+      res.status(201).json({ ...tracker, history: records.map((record) => ({ timestamp: record.timestamp })) });
+    } catch (error: any) {
+      if (error.name === "ZodError") {
+        return res.status(400).json({ message: fromError(error).toString() });
+      }
+      res.status(500).json({ message: error.message || "Internal server error" });
+    }
+  });
+
+  app.put("/api/rewiring-trackers/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getRewiringTracker(req.params.id);
+      if (!existing || existing.userId !== req.userId) {
+        return res.status(404).json({ message: "Tracker not found" });
+      }
+
+      const updateData = {
+        name: req.body.name,
+        areaId: req.body.areaId ?? null,
+        projectId: req.body.projectId ?? null,
+        skillId: req.body.skillId ?? null,
+      };
+
+      const updated = await storage.updateRewiringTracker(req.params.id, updateData as any);
+      if (!updated) {
+        return res.status(404).json({ message: "Tracker not found" });
+      }
+
+      const records = await storage.getRewiringTrackerRecords(updated.id);
+      res.json({ ...updated, history: records.map((record) => ({ timestamp: record.timestamp })) });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Internal server error" });
+    }
+  });
+
+  app.delete("/api/rewiring-trackers/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getRewiringTracker(req.params.id);
+      if (!existing || existing.userId !== req.userId) {
+        return res.status(404).json({ message: "Tracker not found" });
+      }
+
+      await storage.deleteRewiringTracker(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Internal server error" });
+    }
+  });
+
+  app.post("/api/rewiring-trackers/:id/record", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getRewiringTracker(req.params.id);
+      if (!existing || existing.userId !== req.userId) {
+        return res.status(404).json({ message: "Tracker not found" });
+      }
+
+      const { tracker } = await storage.recordRewiringTrackerAction(req.params.id, req.userId!);
+      const records = await storage.getRewiringTrackerRecords(tracker.id);
+      res.json({ ...tracker, history: records.map((record) => ({ timestamp: record.timestamp })) });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Internal server error" });
+    }
+  });
+
+  app.post("/api/rewiring-trackers/:id/archive", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getRewiringTracker(req.params.id);
+      if (!existing || existing.userId !== req.userId) {
+        return res.status(404).json({ message: "Tracker not found" });
+      }
+
+      const archived = await storage.archiveRewiringTracker(req.params.id);
+      if (!archived) {
+        return res.status(404).json({ message: "Tracker not found" });
+      }
+
+      const records = await storage.getRewiringTrackerRecords(archived.id);
+      res.json({ ...archived, history: records.map((record) => ({ timestamp: record.timestamp })) });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Internal server error" });
     }
   });
 
