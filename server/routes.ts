@@ -1035,6 +1035,9 @@ export async function registerRoutes(
       // Delete the skill
       await storage.deleteSkill(req.params.id);
       
+      // Consolidate level positions to be consecutive (1, 2, 3, ... N)
+      await storage.consolidateLevelPositions(deletedLevel, parentInfo);
+      
       // Recalculate Y coordinates for all remaining nodes in the area/project/parent
       await storage.recalculateYCoordinates(parentInfo);
       
@@ -1374,14 +1377,30 @@ export async function registerRoutes(
       const tempLevelPosition = existingSkill.levelPosition;
       const neighborLevelPosition = neighbor.levelPosition;
       
-      // Update both skills with swapped coordinates and positions
+      // Determine status swaps:
+      // If one is available and other is locked, they swap statuses
+      // Otherwise statuses stay the same
+      let newSkillStatus = existingSkill.status;
+      let newNeighborStatus = neighbor.status;
+      
+      if (existingSkill.status === "available" && neighbor.status === "locked") {
+        newSkillStatus = "locked";
+        newNeighborStatus = "available";
+      } else if (existingSkill.status === "locked" && neighbor.status === "available") {
+        newSkillStatus = "available";
+        newNeighborStatus = "locked";
+      }
+      
+      // Update both skills with swapped coordinates, positions, and statuses
       const updatedSkill = await storage.updateSkill(req.params.id, { 
         y: neighborY,
-        levelPosition: neighborLevelPosition
+        levelPosition: neighborLevelPosition,
+        status: newSkillStatus
       });
       const updatedNeighbor = await storage.updateSkill(neighbor.id, { 
         y: tempY,
-        levelPosition: tempLevelPosition
+        levelPosition: tempLevelPosition,
+        status: newNeighborStatus
       });
 
       // Recalculate final node for this level only
@@ -1392,7 +1411,7 @@ export async function registerRoutes(
       
       await storage.recalculateFinalNodes(currentLevel, parentInfo);
       
-      // Recalculate available statuses per Rule 2 (status follows position on reorder)
+      // Recalculate available statuses to ensure consistency (Rule: exactly ONE available per level)
       await storage.recalculateAvailableStatus(currentLevel, parentInfo);
 
       // Fetch all updated skills of the level to return to client

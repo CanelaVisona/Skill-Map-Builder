@@ -42,6 +42,7 @@ export interface IStorage {
   recalculateNodeStatusesAfterReorder(level: number, options: { areaId?: string; projectId?: string; parentSkillId?: string }): Promise<void>;
   recalculateYCoordinates(options: { areaId?: string; projectId?: string; parentSkillId?: string }): Promise<void>;
   recalculateAvailableStatus(level: number, options: { areaId?: string; projectId?: string; parentSkillId?: string }): Promise<void>;
+  consolidateLevelPositions(level: number, options: { areaId?: string; projectId?: string; parentSkillId?: string }): Promise<void>;
   generateLevelWithSkills(areaId: string, level: number, startY: number): Promise<{ updatedArea: Area; createdSkills: Skill[] }>;
   generateProjectLevelWithSkills(projectId: string, level: number, startY: number): Promise<{ updatedProject: Project; createdSkills: Skill[] }>;
 
@@ -630,7 +631,17 @@ export class DbStorage implements IStorage {
 
     if (levelSkills.length === 0) return;
 
-    // Step 1: Ensure auto-complete nodes (isAutoComplete=1) are always mastered
+    // CRITICAL RULE: Skeleton (position 1) MUST ALWAYS be mastered
+    // This is non-negotiable for the level structure
+    if (levelSkills[0].levelPosition === 1) {
+      if (levelSkills[0].status !== "mastered") {
+        await db.update(skills)
+          .set({ status: "mastered" })
+          .where(eq(skills.id, levelSkills[0].id));
+      }
+    }
+
+    // Ensure auto-complete nodes are always mastered
     for (const skill of levelSkills) {
       if (skill.isAutoComplete === 1 && skill.status !== "mastered") {
         await db.update(skills)
@@ -639,37 +650,31 @@ export class DbStorage implements IStorage {
       }
     }
 
-    // Step 2: Get non-auto-complete nodes for available status calculation
-    const nonAutoSkills = levelSkills.filter(s => s.isAutoComplete !== 1);
-    
-    if (nonAutoSkills.length === 0) {
-      // All nodes are auto-complete, nothing more to do
-      return;
-    }
-
-    // Step 3: Find last consecutive mastered node in non-auto nodes
-    let lastConsecutiveMasteredIndex = -1;
-    for (let i = 0; i < nonAutoSkills.length; i++) {
-      if (nonAutoSkills[i].status === "mastered") {
-        lastConsecutiveMasteredIndex = i;
-      } else {
-        break; // Chain is broken
+    // Find the first non-mastered node (starting from position 2)
+    let firstNonMasteredIndex = -1;
+    for (let i = 1; i < levelSkills.length; i++) {  // Start from index 1 (position 2)
+      if (levelSkills[i].status !== "mastered") {
+        firstNonMasteredIndex = i;
+        break;
       }
     }
 
-    // Step 4: Set available node and lock all others
-    // The first non-mastered non-auto node becomes available
-    let availableNodeSet = false;
-    for (let i = 0; i < nonAutoSkills.length; i++) {
-      const skill = nonAutoSkills[i];
+    // Update statuses according to rule: EXACTLY ONE available node
+    // - Position 1 stays mastered (skeleton)
+    // - First non-mastered becomes available
+    // - All others become locked
+    for (let i = 0; i < levelSkills.length; i++) {
+      const skill = levelSkills[i];
       let newStatus: "mastered" | "available" | "locked";
       
-      if (i <= lastConsecutiveMasteredIndex) {
+      if (i === 0) {
+        // Position 1 (skeleton) is ALWAYS mastered
         newStatus = "mastered";
-      } else if (!availableNodeSet) {
+      } else if (i === firstNonMasteredIndex && firstNonMasteredIndex !== -1) {
+        // First non-mastered node becomes available
         newStatus = "available";
-        availableNodeSet = true;
       } else {
+        // All others become locked
         newStatus = "locked";
       }
 
@@ -677,6 +682,35 @@ export class DbStorage implements IStorage {
         await db.update(skills)
           .set({ status: newStatus })
           .where(eq(skills.id, skill.id));
+      }
+    }
+  }
+
+  async consolidateLevelPositions(
+    level: number,
+    options: { areaId?: string; projectId?: string; parentSkillId?: string }
+  ): Promise<void> {
+    const { areaId, projectId, parentSkillId } = options;
+
+    // Get all skills in this level, sorted by Y position (visual order)
+    const levelSkills = await db.select().from(skills).where(
+      and(
+        eq(skills.level, level),
+        areaId ? eq(skills.areaId, areaId) : undefined,
+        projectId ? eq(skills.projectId, projectId) : undefined,
+        parentSkillId ? eq(skills.parentSkillId, parentSkillId) : undefined
+      )
+    ).orderBy(asc(skills.y));
+
+    if (levelSkills.length === 0) return;
+
+    // Update each skill with consecutive levelPosition (1, 2, 3, ...)
+    for (let i = 0; i < levelSkills.length; i++) {
+      const newPosition = i + 1;
+      if (levelSkills[i].levelPosition !== newPosition) {
+        await db.update(skills)
+          .set({ levelPosition: newPosition })
+          .where(eq(skills.id, levelSkills[i].id));
       }
     }
   }

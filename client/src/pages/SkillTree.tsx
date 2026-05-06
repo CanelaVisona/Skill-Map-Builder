@@ -1281,13 +1281,19 @@ function BestiarySection({
 function ToolsSection({ 
   entries,
   isLoading,
-  onDelete 
+  onDelete,
+  onUpdate
 }: { 
   entries: JournalTool[];
   isLoading: boolean;
   onDelete: (id: string) => void;
+  onUpdate?: (id: string, data: { title: string; sentence: string }) => void;
 }) {
   const [viewingEntry, setViewingEntry] = useState<JournalTool | null>(null);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editSentence, setEditSentence] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const longPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   if (isLoading) {
@@ -1297,6 +1303,9 @@ function ToolsSection({
   const handleLeftLongPressStart = (entry: JournalTool) => {
     longPressTimer.current = setTimeout(() => {
       setViewingEntry(entry);
+      setEditTitle(entry.title);
+      setEditSentence(entry.sentence || "");
+      setIsEditMode(false);
     }, 500);
   };
 
@@ -1310,8 +1319,7 @@ function ToolsSection({
   const handleRightLongPressStart = () => {
     if (!viewingEntry) return;
     longPressTimer.current = setTimeout(() => {
-      onDelete(viewingEntry.id);
-      setViewingEntry(null);
+      // Menu is now shown in the dialog
     }, 500);
   };
 
@@ -1319,6 +1327,25 @@ function ToolsSection({
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current);
       longPressTimer.current = null;
+    }
+  };
+
+  const handleDelete = () => {
+    if (viewingEntry) {
+      onDelete(viewingEntry.id);
+      setViewingEntry(null);
+      setShowDeleteConfirm(false);
+    }
+  };
+
+  const handleSaveEdit = () => {
+    if (viewingEntry && onUpdate && editTitle.trim()) {
+      onUpdate(viewingEntry.id, { 
+        title: editTitle.trim(), 
+        sentence: editSentence.trim() 
+      });
+      setViewingEntry(null);
+      setIsEditMode(false);
     }
   };
 
@@ -1400,6 +1427,111 @@ function ToolsSection({
           )}
         </div>
       </div>
+
+      {/* Delete confirmation dialog */}
+      {showDeleteConfirm && viewingEntry && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-background border border-border rounded-lg p-4 max-w-sm">
+            <p className="text-sm text-muted-foreground mb-4">Delete this tool?</p>
+            <div className="flex gap-2">
+              <Button 
+                size="sm" 
+                onClick={handleDelete}
+                className="bg-red-500/20 text-red-700 dark:text-red-400 hover:bg-red-500/30 border border-red-500/50"
+              >
+                Delete
+              </Button>
+              <Button 
+                size="sm" 
+                variant="ghost" 
+                onClick={() => setShowDeleteConfirm(false)}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View/Edit Dialog */}
+      {viewingEntry && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-background border border-border rounded-lg p-4 max-w-md w-full">
+            <div className="flex items-center justify-between border-b border-border/50 pb-2 mb-4">
+              <h3 className="font-medium text-foreground uppercase">{viewingEntry.title}</h3>
+              <div className="flex gap-1">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setIsEditMode(!isEditMode)}
+                  className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+
+            {!isEditMode && viewingEntry.sentence && (
+              <p className="text-sm text-muted-foreground whitespace-pre-line leading-relaxed mb-4">{viewingEntry.sentence}</p>
+            )}
+
+            {isEditMode ? (
+              <div className="space-y-3">
+                <Input
+                  placeholder="Title"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  className="bg-secondary border-border text-foreground"
+                />
+                <Textarea
+                  placeholder="Description"
+                  value={editSentence}
+                  onChange={(e) => setEditSentence(e.target.value)}
+                  rows={3}
+                  className="bg-secondary border-border text-foreground resize-none"
+                />
+                <div className="flex gap-2 pt-2">
+                  <Button 
+                    size="sm" 
+                    onClick={handleSaveEdit}
+                    className="bg-primary text-primary-foreground hover:bg-primary/90"
+                  >
+                    Save
+                  </Button>
+                  <Button 
+                    size="sm" 
+                    variant="ghost" 
+                    onClick={() => setIsEditMode(false)}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <Button 
+                  size="sm" 
+                  variant="ghost" 
+                  onClick={() => setViewingEntry(null)}
+                  className="text-muted-foreground hover:text-foreground w-full"
+                >
+                  Close
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1407,13 +1539,19 @@ function ToolsSection({
 function LearningsSection({ 
   entries,
   isLoading,
-  onDelete 
+  onDelete,
+  onUpdate
 }: { 
   entries: JournalLearning[];
   isLoading: boolean;
   onDelete: (id: string) => void;
+  onUpdate?: (id: string, data: { title: string; sentence: string }) => void;
 }) {
   const [viewingEntry, setViewingEntry] = useState<JournalLearning | null>(null);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editSentence, setEditSentence] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const longPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   if (isLoading) {
@@ -1423,6 +1561,9 @@ function LearningsSection({
   const handleLeftLongPressStart = (entry: JournalLearning) => {
     longPressTimer.current = setTimeout(() => {
       setViewingEntry(entry);
+      setEditTitle(entry.title);
+      setEditSentence(entry.sentence || "");
+      setIsEditMode(false);
     }, 500);
   };
 
@@ -1436,8 +1577,7 @@ function LearningsSection({
   const handleRightLongPressStart = () => {
     if (!viewingEntry) return;
     longPressTimer.current = setTimeout(() => {
-      onDelete(viewingEntry.id);
-      setViewingEntry(null);
+      // Menu is now shown in the dialog
     }, 500);
   };
 
@@ -1445,6 +1585,25 @@ function LearningsSection({
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current);
       longPressTimer.current = null;
+    }
+  };
+
+  const handleDelete = () => {
+    if (viewingEntry) {
+      onDelete(viewingEntry.id);
+      setViewingEntry(null);
+      setShowDeleteConfirm(false);
+    }
+  };
+
+  const handleSaveEdit = () => {
+    if (viewingEntry && onUpdate && editTitle.trim()) {
+      onUpdate(viewingEntry.id, { 
+        title: editTitle.trim(), 
+        sentence: editSentence.trim() 
+      });
+      setViewingEntry(null);
+      setIsEditMode(false);
     }
   };
 
@@ -1526,6 +1685,111 @@ function LearningsSection({
           )}
         </div>
       </div>
+
+      {/* Delete confirmation dialog */}
+      {showDeleteConfirm && viewingEntry && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-background border border-border rounded-lg p-4 max-w-sm">
+            <p className="text-sm text-muted-foreground mb-4">Delete this learning?</p>
+            <div className="flex gap-2">
+              <Button 
+                size="sm" 
+                onClick={handleDelete}
+                className="bg-red-500/20 text-red-700 dark:text-red-400 hover:bg-red-500/30 border border-red-500/50"
+              >
+                Delete
+              </Button>
+              <Button 
+                size="sm" 
+                variant="ghost" 
+                onClick={() => setShowDeleteConfirm(false)}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View/Edit Dialog */}
+      {viewingEntry && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-background border border-border rounded-lg p-4 max-w-md w-full">
+            <div className="flex items-center justify-between border-b border-border/50 pb-2 mb-4">
+              <h3 className="font-medium text-foreground uppercase">{viewingEntry.title}</h3>
+              <div className="flex gap-1">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setIsEditMode(!isEditMode)}
+                  className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+
+            {!isEditMode && viewingEntry.sentence && (
+              <p className="text-sm text-muted-foreground whitespace-pre-line leading-relaxed mb-4">{viewingEntry.sentence}</p>
+            )}
+
+            {isEditMode ? (
+              <div className="space-y-3">
+                <Input
+                  placeholder="Title"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  className="bg-secondary border-border text-foreground"
+                />
+                <Textarea
+                  placeholder="Description"
+                  value={editSentence}
+                  onChange={(e) => setEditSentence(e.target.value)}
+                  rows={3}
+                  className="bg-secondary border-border text-foreground resize-none"
+                />
+                <div className="flex gap-2 pt-2">
+                  <Button 
+                    size="sm" 
+                    onClick={handleSaveEdit}
+                    className="bg-primary text-primary-foreground hover:bg-primary/90"
+                  >
+                    Save
+                  </Button>
+                  <Button 
+                    size="sm" 
+                    variant="ghost" 
+                    onClick={() => setIsEditMode(false)}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <Button 
+                  size="sm" 
+                  variant="ghost" 
+                  onClick={() => setViewingEntry(null)}
+                  className="text-muted-foreground hover:text-foreground w-full"
+                >
+                  Close
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -5823,6 +6087,14 @@ function QuestDiary() {
                   entries={learnings}
                   isLoading={loadingLearnings}
                   onDelete={(id) => deleteLearning.mutate(id)}
+                  onUpdate={async (id, data) => {
+                    await fetch(`/api/journal/learnings/${id}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(data),
+                    });
+                    queryClient.invalidateQueries({ queryKey: ["/api/journal/learnings"] });
+                  }}
                 />
               </TabsContent>
               
@@ -5832,6 +6104,14 @@ function QuestDiary() {
                   isLoading={loadingTools}
                   onDelete={(id) => {
                     fetch(`/api/journal/tools/${id}`, { method: "DELETE" });
+                    queryClient.invalidateQueries({ queryKey: ["/api/journal/tools"] });
+                  }}
+                  onUpdate={async (id, data) => {
+                    await fetch(`/api/journal/tools/${id}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(data),
+                    });
                     queryClient.invalidateQueries({ queryKey: ["/api/journal/tools"] });
                   }}
                 />
