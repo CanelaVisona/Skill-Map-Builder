@@ -925,12 +925,9 @@ export async function registerRoutes(
           await storage.updateSkill(nextNode.id, { status: "available" });
         }
         
-        // Recalculate available statuses to ensure proper sequence after confirmation
-        await storage.recalculateAvailableStatus(existingSkill.level, {
-          areaId: existingSkill.areaId || undefined,
-          projectId: existingSkill.projectId || undefined,
-          parentSkillId: existingSkill.parentSkillId || undefined,
-        });
+        // NOTE: Do NOT call recalculateAvailableStatus() here!
+        // The auto-unlock sequence above is sufficient and correct.
+        // Calling recalculate would cause the confirmed node to be re-locked incorrectly.
       }
 
       // Re-lock logic: when a node is unconfirmed (mastered → available), re-lock the next node
