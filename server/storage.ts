@@ -631,6 +631,20 @@ export class DbStorage implements IStorage {
 
     if (levelSkills.length === 0) return;
 
+    // Get area or project to check unlockedLevel
+    let unlockedLevel = 999; // Default to very high if can't determine
+    if (areaId) {
+      const areaData = await db.select().from(areas).where(eq(areas.id, areaId));
+      if (areaData.length > 0) {
+        unlockedLevel = areaData[0].unlockedLevel;
+      }
+    } else if (projectId) {
+      const projectData = await db.select().from(projects).where(eq(projects.id, projectId));
+      if (projectData.length > 0) {
+        unlockedLevel = projectData[0].unlockedLevel;
+      }
+    }
+
     // CRITICAL RULE: Skeleton (position 1) MUST ALWAYS be mastered
     // This is non-negotiable for the level structure
     if (levelSkills[0].levelPosition === 1) {
@@ -650,7 +664,20 @@ export class DbStorage implements IStorage {
       }
     }
 
-    // Find the first non-mastered node (starting from position 2)
+    // If level is blocked (level > unlockedLevel), all non-skeleton nodes must be locked
+    if (level > unlockedLevel) {
+      for (let i = 1; i < levelSkills.length; i++) {
+        const skill = levelSkills[i];
+        if (skill.status !== "locked") {
+          await db.update(skills)
+            .set({ status: "locked" })
+            .where(eq(skills.id, skill.id));
+        }
+      }
+      return; // Exit early - no available nodes in blocked levels
+    }
+
+    // For unlocked levels: Find the first non-mastered node (starting from position 2)
     let firstNonMasteredIndex = -1;
     for (let i = 1; i < levelSkills.length; i++) {  // Start from index 1 (position 2)
       if (levelSkills[i].status !== "mastered") {
@@ -661,8 +688,8 @@ export class DbStorage implements IStorage {
 
     // Update statuses according to rule: EXACTLY ONE available node
     // - Position 1 stays mastered (skeleton)
-    // - First non-mastered becomes available
-    // - All others become locked
+    // - First non-mastered becomes available (only if not all nodes are mastered)
+    // - All others become locked (unless level is complete)
     for (let i = 0; i < levelSkills.length; i++) {
       const skill = levelSkills[i];
       let newStatus: "mastered" | "available" | "locked";
@@ -670,7 +697,10 @@ export class DbStorage implements IStorage {
       if (i === 0) {
         // Position 1 (skeleton) is ALWAYS mastered
         newStatus = "mastered";
-      } else if (i === firstNonMasteredIndex && firstNonMasteredIndex !== -1) {
+      } else if (firstNonMasteredIndex === -1) {
+        // All nodes are mastered (level complete) - keep them all mastered
+        newStatus = "mastered";
+      } else if (i === firstNonMasteredIndex) {
         // First non-mastered node becomes available
         newStatus = "available";
       } else {

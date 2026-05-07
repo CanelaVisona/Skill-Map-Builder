@@ -234,10 +234,13 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                     const canDown = canMoveDown(skillsInLevel, skill.id);
                                     const availableLevels = getAvailableLevelsForMove(level, maxLevel);
                                     
+                                    // Display status: if level is blocked, all nodes show as locked regardless of actual status
+                                    const displayStatus = isBlocked ? "locked" : skill.status;
+                                    
                                     return (
                                       <div
                                         key={skill.id}
-                                        className={cn("p-2 rounded border border-border bg-card/50 hover:bg-card transition-colors", skill.status === "locked" && "opacity-60")}
+                                        className={cn("p-2 rounded border border-border bg-card/50 hover:bg-card transition-colors", displayStatus === "locked" && "opacity-60")}
                                         onContextMenu={(e) => handleContextMenu(e, skill.id, area.id, null, level)}
                                       >
                                         <div className="flex items-center gap-2 justify-between">
@@ -251,8 +254,8 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                               setEditingLevel(level);
                                             }}
                                           >
-                                            <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{!skill.title ? `Nodo ${skill.levelPosition}` : skill.title}</div>
-                                            {skill.status === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
+                                            <div className={cn("text-sm font-medium", displayStatus === "available" && "text-amber-400")}>{!skill.title ? `Nodo ${skill.levelPosition}` : skill.title}</div>
+                                            {displayStatus === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
                                           </div>
                                           <div className="flex flex-row gap-1">
                                               <Button 
@@ -285,8 +288,8 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                             </div>
                                           </div>
                                           <div className="text-xs text-muted-foreground">
-                                            {skill.status === "mastered" && "✓ Completado"}
-                                            {skill.status === "locked" && "Bloqueado"}
+                                            {displayStatus === "mastered" && "✓ Completado"}
+                                            {displayStatus === "locked" && "Bloqueado"}
                                           </div>
                                         </div>
                                     );
@@ -371,10 +374,13 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                       const canDown = canMoveDown(skillsInLevel, skill.id);
                                       const availableLevels = getAvailableLevelsForMove(level, maxLevel);
                                       
+                                      // Display status: if level is blocked, all nodes show as locked regardless of actual status
+                                      const displayStatus = isBlocked ? "locked" : skill.status;
+                                      
                                       return (
                                         <div
                                           key={skill.id}
-                                          className={cn("p-2 rounded border border-border bg-card/50 hover:bg-card transition-colors", skill.status === "locked" && "opacity-60")}
+                                          className={cn("p-2 rounded border border-border bg-card/50 hover:bg-card transition-colors", displayStatus === "locked" && "opacity-60")}
                                           onContextMenu={(e) => handleContextMenu(e, skill.id, null, project.id, level)}
                                         >
                                           <div className="flex items-center gap-2 justify-between">
@@ -388,8 +394,8 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                 setEditingLevel(level);
                                               }}
                                             >
-                                              <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{!skill.title ? `Nodo ${skill.levelPosition}` : skill.title}</div>
-                                              {skill.status === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
+                                              <div className={cn("text-sm font-medium", displayStatus === "available" && "text-amber-400")}>{!skill.title ? `Nodo ${skill.levelPosition}` : skill.title}</div>
+                                              {displayStatus === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
                                             </div>
                                             <div className="flex flex-row gap-1">
                                                 <Button 
@@ -422,8 +428,8 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                               </div>
                                           </div>
                                           <div className="text-xs text-muted-foreground">
-                                            {skill.status === "mastered" && "✓ Completado"}
-                                            {skill.status === "locked" && "Bloqueado"}
+                                            {displayStatus === "mastered" && "✓ Completado"}
+                                            {displayStatus === "locked" && "Bloqueado"}
                                           </div>
                                         </div>
                                       );
