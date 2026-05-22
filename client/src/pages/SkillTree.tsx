@@ -32,6 +32,7 @@ import { OnboardingGuide, HelpButton, useOnboarding } from "@/components/Onboard
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { SkillsGridJournal } from "@/components/SkillsGridJournal";
 
 function calculateVisibleLevels(skills: Skill[], endOfAreaLevel?: number): Set<number> {
   const visibleLevels = new Set<number>();
@@ -6068,7 +6069,7 @@ function QuestDiary() {
               </TabsContent>
 
               <TabsContent value="skills" className="flex-1 min-h-0 min-w-0 mt-0">
-                <SkillsSection journalLearnings={learnings} journalTools={tools} journalThoughts={thoughts} />
+                <SkillsGridJournal skillId="" />
               </TabsContent>
               
               <TabsContent value="bestiary" className="flex-1 min-h-0 min-w-0 mt-0">

@@ -1,33 +1,56 @@
 import { db } from "./db";
 import { areas, skills, users, journalShadows } from "@shared/schema";
 
+// Helper function to determine area color based on keywords
+function getAreaColor(name: string): string {
+  const lowerName = name.toLowerCase();
+  
+  if (lowerName.includes("música") || lowerName.includes("musica") || lowerName.includes("guitarra") || lowerName.includes("piano")) {
+    return "#c85a2a"; // Orange
+  }
+  if (lowerName.includes("meditación") || lowerName.includes("meditacion") || lowerName.includes("yoga") || lowerName.includes("zen")) {
+    return "#7F77DD"; // Purple
+  }
+  if (lowerName.includes("surf") || lowerName.includes("ola") || lowerName.includes("agua") || lowerName.includes("natación") || lowerName.includes("natacion")) {
+    return "#378ADD"; // Blue
+  }
+  if (lowerName.includes("intelecto") || lowerName.includes("intelectual") || lowerName.includes("lectura") || lowerName.includes("literatura") || lowerName.includes("conocimiento") || lowerName.includes("aprendizaje")) {
+    return "#1D9E75"; // Green
+  }
+  if (lowerName.includes("casa") || lowerName.includes("hogar") || lowerName.includes("cocina") || lowerName.includes("limpieza")) {
+    return "#BA7517"; // Brown
+  }
+  
+  return "#c85a2a"; // Default to orange
+}
+
 const INITIAL_AREAS = [
   {
     id: "guitar",
     name: "Guitarra",
     icon: "Music",
-    color: "text-zinc-800 dark:text-zinc-200",
+    color: getAreaColor("Guitarra"),
     description: "Dominio del instrumento y teoría musical.",
   },
   {
     id: "football",
     name: "Fútbol",
     icon: "Trophy",
-    color: "text-zinc-800 dark:text-zinc-200",
+    color: getAreaColor("Fútbol"),
     description: "Técnica, físico y táctica.",
   },
   {
     id: "literature",
     name: "Literatura",
     icon: "BookOpen",
-    color: "text-zinc-800 dark:text-zinc-200",
+    color: getAreaColor("Literatura"),
     description: "Lectura crítica y escritura creativa.",
   },
   {
     id: "house",
     name: "Casa",
     icon: "Home",
-    color: "text-zinc-800 dark:text-zinc-200",
+    color: getAreaColor("Casa"),
     description: "Mantenimiento, cocina y organización.",
   },
 ];

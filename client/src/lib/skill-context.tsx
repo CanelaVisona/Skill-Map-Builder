@@ -1834,6 +1834,17 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       const id = crypto.randomUUID();
       console.log(`[createArea] Creating area with id="${id}", name="${name}"`);
       
+      // Helper to determine area color based on keywords
+      const getAreaColor = (areaName: string): string => {
+        const lowerName = areaName.toLowerCase();
+        if (lowerName.includes("música") || lowerName.includes("musica") || lowerName.includes("guitarra") || lowerName.includes("piano")) return "#c85a2a";
+        if (lowerName.includes("meditación") || lowerName.includes("meditacion") || lowerName.includes("yoga")) return "#7F77DD";
+        if (lowerName.includes("surf") || lowerName.includes("ola") || lowerName.includes("agua") || lowerName.includes("natación")) return "#378ADD";
+        if (lowerName.includes("intelecto") || lowerName.includes("lectura") || lowerName.includes("literatura")) return "#1D9E75";
+        if (lowerName.includes("casa") || lowerName.includes("hogar") || lowerName.includes("cocina")) return "#BA7517";
+        return "#c85a2a";
+      };
+
       const response = await fetch("/api/areas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1841,7 +1852,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           id,
           name,
           icon,
-          color: "text-zinc-800 dark:text-zinc-200",
+          color: getAreaColor(name),
           description,
           unlockedLevel: 1,
           nextLevelToAssign: 1
