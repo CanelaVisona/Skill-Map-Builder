@@ -28,12 +28,31 @@ export function SkillDiamond({
 }: SkillDiamondProps) {
   const isLocked = skill.status === "locked";
   const isUnlocked = skill.status === "available" || skill.status === "mastered";
+  const level = Math.max(1, skill.level || 1);
+
+  const getStrokeForLevel = (currentLevel: number) => {
+    if (currentLevel >= 5) return { stroke: "#ffe8a0", strokeWidth: 3.5 };
+    if (currentLevel === 4) return { stroke: "#e8c97e", strokeWidth: 2.8 };
+    if (currentLevel === 3) return { stroke: "#c8a96e", strokeWidth: 2 };
+    if (currentLevel === 2) return { stroke: "#8a6a2a", strokeWidth: 1.4 };
+    return { stroke: "#5a4a2a", strokeWidth: 0.8 };
+  };
+
+  const getProgressColorForLevel = (currentLevel: number) => {
+    if (currentLevel >= 5) return "#39ff39";
+    if (currentLevel === 4) return "#2ecc2e";
+    if (currentLevel === 3) return "#24a024";
+    if (currentLevel === 2) return "#1f7a1f";
+    return "#1a5c1a";
+  };
+
+  const getFillOpacityForLevel = (currentLevel: number) => Math.min(0.3 + (currentLevel * 0.15), 1.0);
   
   // Calculate opacity based on XP progress
   // Formula: 0.5 (no progress) + 0.5 * (xp / maxXp) = 1.0 (full progress)
   // Increased base opacity for better visibility
   // Level is provided by skill.level; derive other values for progressive XP (level * 100)
-  const currentLevel = skill.level || Math.floor(skill.currentXp / 100) + 1;
+  const currentLevel = level || Math.floor(skill.currentXp / 100) + 1;
 
   const cumulativeXpToLevelStart = (level: number) => 100 * ((level - 1) * level) / 2;
   const levelStart = cumulativeXpToLevelStart(currentLevel);
@@ -53,12 +72,14 @@ export function SkillDiamond({
   // SVG points for diamond shape
   const points = `${half},2 ${diamondSize - 2},${half} ${half},${diamondSize - 2} 2,${half}`;
 
-  // Always use areaColor for the diamond fill, reduce opacity when locked
+  const strokeStyle = getStrokeForLevel(currentLevel);
+  const fillOpacity = getFillOpacityForLevel(currentLevel);
   const diamondFill = areaColor;
-  const diamondStroke = areaColor;
-  const strokeWidth = selected ? 2 : 1.5;
+  const diamondStroke = strokeStyle.stroke;
   const contrast = getContrastColor(areaColor || "#000");
   const iconColor = isUnlocked ? contrast : contrast;
+  const progressColor = getProgressColorForLevel(currentLevel);
+  const nextLevelLabel = `Lv${currentLevel + 1}`;
 
   return (
     <div
@@ -82,9 +103,10 @@ export function SkillDiamond({
           <polygon
             points={points}
             fill={diamondFill}
+            fillOpacity={fillOpacity}
             stroke={diamondStroke}
-            strokeWidth={strokeWidth * 1.2}
-            opacity={0.9}
+            strokeWidth={strokeStyle.strokeWidth + (selected ? 0.5 : 0)}
+            opacity={0.96}
           />
 
           {/* Icon or lock symbol */}
@@ -147,13 +169,24 @@ export function SkillDiamond({
       </div>
 
       {/* XP Progress bar - GREEN */}
-      <div className="w-12 h-1 rounded-full bg-gray-800 overflow-hidden">
+      <div className="relative mx-auto" style={{ width: `${diamondSize + 10}px` }}>
         <div
-          className="h-full transition-all duration-300 bg-green-500"
-          style={{
-            width: `${progressPercent}%`,
-          }}
-        />
+          className="h-2 w-full rounded-full bg-gray-900/90 border border-gray-700 overflow-hidden shadow-inner"
+        >
+          <div
+            className="h-full transition-all duration-300 rounded-full"
+            style={{
+              width: `${progressPercent}%`,
+              backgroundColor: progressColor,
+            }}
+          />
+        </div>
+        <span
+          className="absolute left-full ml-1 top-1/2 -translate-y-1/2 shrink-0 text-[9px] leading-none font-semibold whitespace-nowrap"
+          style={{ color: "#c8a96e" }}
+        >
+          {nextLevelLabel}
+        </span>
       </div>
 
       {/* Skill name */}

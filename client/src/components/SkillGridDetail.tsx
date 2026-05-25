@@ -18,8 +18,6 @@ interface SkillGridDetailProps {
   onClose?: () => void;
 }
 
-const TIER_NAMES = ["Fundamento", "Rama", "Maestría"];
-
 export function SkillGridDetail({ skill, areaColor, onClose }: SkillGridDetailProps) {
   const [progressPercent, setProgressPercent] = useState(0);
   
@@ -57,6 +55,24 @@ export function SkillGridDetail({ skill, areaColor, onClose }: SkillGridDetailPr
   const isLocked = skill.status === "locked";
   const isUnlocked = skill.status === "available" || skill.status === "mastered";
 
+  const getStrokeForLevel = (currentLevel: number) => {
+    if (currentLevel >= 5) return { stroke: "#ffe8a0", strokeWidth: 3.5 };
+    if (currentLevel === 4) return { stroke: "#e8c97e", strokeWidth: 2.8 };
+    if (currentLevel === 3) return { stroke: "#c8a96e", strokeWidth: 2 };
+    if (currentLevel === 2) return { stroke: "#8a6a2a", strokeWidth: 1.4 };
+    return { stroke: "#5a4a2a", strokeWidth: 0.8 };
+  };
+
+  const getProgressColorForLevel = (currentLevel: number) => {
+    if (currentLevel >= 5) return "#39ff39";
+    if (currentLevel === 4) return "#2ecc2e";
+    if (currentLevel === 3) return "#24a024";
+    if (currentLevel === 2) return "#1f7a1f";
+    return "#1a5c1a";
+  };
+
+  const getFillOpacityForLevel = (currentLevel: number) => Math.min(0.3 + (currentLevel * 0.15), 1.0);
+
   // goalXp now represents LEVEL objective (not XP)
   // 0 = unlimited (no level cap)
   const goalLevel = skill.goalXp > 0 ? skill.goalXp : null;
@@ -66,6 +82,10 @@ export function SkillGridDetail({ skill, areaColor, onClose }: SkillGridDetailPr
   const levelStart = cumulativeXpToLevelStart(currentLevel);
   const xpIntoCurrentLevel = Math.max(0, skill.currentXp - levelStart);
   const xpForThisLevel = Math.max(1, currentLevel * 100);
+  const strokeStyle = getStrokeForLevel(currentLevel);
+  const fillOpacity = getFillOpacityForLevel(currentLevel);
+  const progressColor = getProgressColorForLevel(currentLevel);
+  const nextLevelLabel = `Lv${currentLevel + 1}`;
 
   // Milestones (high level, keep simple)
   const milestones = [
@@ -79,7 +99,7 @@ export function SkillGridDetail({ skill, areaColor, onClose }: SkillGridDetailPr
   const points = `${half},2 ${diamondSize - 2},${half} ${half},${diamondSize - 2} 2,${half}`;
   // Use areaColor for both unlocked and locked diamonds (same as preview)
   const diamondFill = areaColor;
-  const diamondStroke = areaColor;
+  const diamondStroke = strokeStyle.stroke;
   const iconColor = isUnlocked ? "#fff" : "#2e2414";
   const xpPercent = xpIntoCurrentLevel / xpForThisLevel; // progress within current level
   const opacity = 1;
@@ -109,9 +129,10 @@ export function SkillGridDetail({ skill, areaColor, onClose }: SkillGridDetailPr
           <polygon
             points={points}
             fill={diamondFill}
+            fillOpacity={fillOpacity}
             stroke={diamondStroke}
-            strokeWidth="1.5"
-            opacity={0.9}
+            strokeWidth={strokeStyle.strokeWidth}
+            opacity={0.96}
           />
           {isUnlocked ? (
             <g transform={`translate(${half - 7.5},${half - 7.5})`}>
@@ -152,7 +173,7 @@ export function SkillGridDetail({ skill, areaColor, onClose }: SkillGridDetailPr
             <div className="text-center">
               <div className="text-base font-bold" style={{ color: areaColor }}>
                 {/* Show current level and goal level when present: "Lv.X / Y" */}
-                Lv.{currentLevel}{goalLevel ? ` / ${goalLevel}` : ""}
+                {currentLevel}{goalLevel ? ` / ${goalLevel}` : ""}
               </div>
               <div className="text-xs text-muted-foreground uppercase tracking-wider">
                 nivel
@@ -176,13 +197,14 @@ export function SkillGridDetail({ skill, areaColor, onClose }: SkillGridDetailPr
             </div>
           </div>
 
-          {/* XP Progress Bar - GREEN */}
-          <div>
-            <div className="w-full h-0.5 bg-gray-800 rounded-full overflow-hidden">
+          {/* XP Progress Bar */}
+          <div className="mx-auto w-full max-w-[240px]">
+            <div className="h-2 rounded-full bg-gray-900/90 border border-gray-700 overflow-hidden shadow-inner">
               <div
-                className="h-full transition-all duration-300 bg-green-500"
+                className="h-full transition-all duration-300 rounded-full"
                 style={{
                   width: `${progressPercent}%`,
+                  backgroundColor: progressColor,
                 }}
               />
             </div>
@@ -190,8 +212,11 @@ export function SkillGridDetail({ skill, areaColor, onClose }: SkillGridDetailPr
               <span className="text-xs text-muted-foreground">
                 {xpIntoCurrentLevel}
               </span>
-              <span className="text-xs text-muted-foreground">
-                {xpForThisLevel}
+              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                <span>{xpForThisLevel}</span>
+                <span className="relative top-[1px] text-[9px] leading-none font-semibold whitespace-nowrap" style={{ color: "#c8a96e" }}>
+                  {nextLevelLabel}
+                </span>
               </span>
             </div>
           </div>
