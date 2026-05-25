@@ -55,6 +55,7 @@ interface GlobalSkillData {
   level: number;
   areaId: string;
   status: "locked" | "available" | "mastered";
+  createdAt?: string;
 }
 
 interface AreaData {
@@ -111,13 +112,23 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
   const [showGridLongPressOptions, setShowGridLongPressOptions] = useState(false);
   const [gridLongPressAction, setGridLongPressAction] = useState<"create-skill" | "create-area" | null>(null);
 
+  // Helper: determine if an event originates from an interactive element
+  const isInteractiveTarget = (e: React.MouseEvent | React.TouchEvent) => {
+    const target = e.target as HTMLElement | null;
+    return !!target?.closest("input, select, textarea, button, [role=\"button\"]");
+  };
+
+  // If any modal/context menu is open, we should not run grid long-press handlers
+  const anyModalOpen = showNewSkillForm || showCreateAreaProjectForm || showGridLongPressOptions || !!metaSkillId || !!contextMenu;
+
   // Get skills from context
   const { 
     areas,
     projects,
     activeArea,
     activeAreaId: contextActiveAreaId,
-    globalSkills 
+    globalSkills,
+    createGlobalSkill
   } = useSkillTree();
 
   // Determine which area to display
@@ -168,28 +179,30 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
     enabled: !!displayAreaId,
   });
 
-  // Group global skills by level (tier)
-  const skillsByTier = useMemo(() => {
-    const grouped: Record<number, GlobalSkillData[]> = {
-      1: [],
-      2: [],
-      3: [],
-      4: [],
-    };
-
-    globalSkillsForArea.forEach((skill) => {
-      if (skill.level >= 1 && skill.level <= 4) {
-        grouped[skill.level].push(skill);
-      }
+  // Sort journal skills by creation time so new skills are appended toward the bottom
+  const journalSkills = useMemo(() => {
+    return [...globalSkillsForArea].sort((a, b) => {
+      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      if (aTime !== bTime) return aTime - bTime;
+      return (a.name || "").localeCompare(b.name || "");
     });
-
-    // Sort each tier by name for consistency
-    Object.keys(grouped).forEach((key) => {
-      grouped[parseInt(key)].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-    });
-
-    return grouped;
   }, [globalSkillsForArea]);
+
+  const groupSkillsIntoRows = (skills: GlobalSkillData[]) => {
+    const rows: GlobalSkillData[][] = [];
+    let index = 0;
+    let takeTwo = true;
+
+    while (index < skills.length) {
+      const size = takeTwo ? 2 : 1;
+      rows.push(skills.slice(index, index + size));
+      index += size;
+      takeTwo = !takeTwo;
+    }
+
+    return rows;
+  };
 
   // Split areas: active, and inactive
   const activeAreas = areas.filter((a) => activeAreaIds.includes(a.id));
@@ -323,6 +336,9 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
 
   // Long press handlers for new skill
   const handleGridLongPressStart = (e: React.MouseEvent | React.TouchEvent) => {
+    // Ignore long-press if the event comes from an interactive control
+    if (isInteractiveTarget(e)) return;
+
     const x = 'clientX' in e ? e.clientX : e.touches[0].clientX;
     const y = 'clientY' in e ? e.clientY : e.touches[0].clientY;
     setLongPressStart({ x, y });
@@ -373,28 +389,24 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
     }
 
     try {
-      const payload: Record<string, any> = {
-        name: newSkillName,
-        goalXp: levelGoal,
-      };
+      const newSkill = await createGlobalSkill(
+        newSkillName.trim(),
+        newSkillLinkType === "area" ? newSkillLinkId : undefined,
+        newSkillLinkType === "project" ? newSkillLinkId : undefined
+      );
 
-      if (newSkillLinkType === "area") {
-        payload.areaId = newSkillLinkId;
-      } else {
-        payload.projectId = newSkillLinkId;
+      if (!newSkill) {
+        setNewSkillError("Error al crear skill");
+        return;
       }
 
-      const response = await fetch("/api/global-skills", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        setNewSkillError(error.message || "Error al crear skill");
-        return;
+      if (levelGoal > 0) {
+        await fetch(`/api/global-skills/${newSkill.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ goalXp: levelGoal }),
+        });
       }
 
       // Reset form
@@ -525,6 +537,20 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
     }
   };
 
+    // Ensure body pointer events are enabled while any modal is open.
+    // Some 3rd-party layers may set `body.style.pointerEvents = 'none'` which
+    // prevents inputs from receiving focus/clicks. Force it to 'auto' while
+    // our modals/menus are visible and restore previous value afterwards.
+    React.useEffect(() => {
+      if (!anyModalOpen) return;
+
+      const prev = document.body.style.pointerEvents;
+      document.body.style.pointerEvents = "auto";
+      return () => {
+        document.body.style.pointerEvents = prev;
+      };
+    }, [anyModalOpen]);
+
   // Derive areaColor from currentArea
   const areaColor = currentArea?.color || AREA_COLORS[displayAreaId?.toLowerCase()] || "#c85a2a";
 
@@ -551,11 +577,11 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
       <div
         className="overflow-x-auto overflow-y-hidden"
         ref={tabsContainerRef}
-        onMouseDown={handleTabsLongPressStart}
-        onMouseUp={handleTabsLongPressEnd}
-        onMouseLeave={handleTabsLongPressEnd}
-        onTouchStart={handleTabsLongPressStart}
-        onTouchEnd={handleTabsLongPressEnd}
+        onMouseDown={!anyModalOpen ? handleTabsLongPressStart : undefined}
+        onMouseUp={!anyModalOpen ? handleTabsLongPressEnd : undefined}
+        onMouseLeave={!anyModalOpen ? handleTabsLongPressEnd : undefined}
+        onTouchStart={!anyModalOpen ? handleTabsLongPressStart : undefined}
+        onTouchEnd={!anyModalOpen ? handleTabsLongPressEnd : undefined}
         onContextMenu={(e) => e.preventDefault()}
       >
         <div className="w-full flex gap-1 justify-start bg-transparent p-0 min-w-min">
@@ -662,23 +688,33 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
         <div
           ref={gridContainerRef}
           className="flex-1 flex flex-col gap-4 overflow-y-auto pr-2"
-          onMouseDown={!showNewSkillForm && !showCreateAreaProjectForm ? handleGridLongPressStart : undefined}
-          onMouseUp={!showNewSkillForm && !showCreateAreaProjectForm ? handleGridLongPressEnd : undefined}
-          onMouseLeave={!showNewSkillForm && !showCreateAreaProjectForm ? handleGridLongPressEnd : undefined}
-          onTouchStart={!showNewSkillForm && !showCreateAreaProjectForm ? handleGridLongPressStart : undefined}
-          onTouchEnd={!showNewSkillForm && !showCreateAreaProjectForm ? handleGridLongPressEnd : undefined}
+          // Disable long-press handlers while any modal/context menu is open
+          onMouseDown={!anyModalOpen ? handleGridLongPressStart : undefined}
+          onMouseUp={!anyModalOpen ? handleGridLongPressEnd : undefined}
+          onMouseLeave={!anyModalOpen ? handleGridLongPressEnd : undefined}
+          onTouchStart={!anyModalOpen ? handleGridLongPressStart : undefined}
+          onTouchEnd={!anyModalOpen ? handleGridLongPressEnd : undefined}
           onContextMenu={(e) => e.preventDefault()}
         >
-          {[1, 2, 3].map((tier) => (
-            <div key={tier}>
-              <div className="flex flex-wrap justify-center gap-4">
-                {skillsByTier[tier]?.map((skill: GlobalSkillData) => (
+          <div className="flex flex-col items-center gap-4 mx-auto w-full">
+            {groupSkillsIntoRows(journalSkills).map((row, rowIndex) => (
+              <div
+                key={`row-${rowIndex}`}
+                className="flex items-center justify-center gap-8"
+              >
+                {row.map((skill) => (
                   <div
                     key={skill.id}
-                    onMouseDown={(e) => handleMouseDown(skill.id, e)}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      handleMouseDown(skill.id, e);
+                    }}
                     onMouseUp={handleMouseUp}
                     onMouseLeave={handleMouseUp}
-                    onTouchStart={(e) => handleMouseDown(skill.id, e)}
+                    onTouchStart={(e) => {
+                      e.stopPropagation();
+                      handleMouseDown(skill.id, e);
+                    }}
                     onTouchEnd={handleMouseUp}
                   >
                     <SkillDiamond
@@ -699,8 +735,8 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
                   </div>
                 ))}
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
 
         {/* Details Panel - Hidden on mobile, shown as modal */}
@@ -839,10 +875,7 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
                 pointerEvents: "auto",
               }}
               onClick={(e) => e.stopPropagation()}
-              onMouseDown={(e) => e.stopPropagation()}
-              onMouseUp={(e) => e.stopPropagation()}
-              onTouchStart={(e) => e.stopPropagation()}
-              onTouchEnd={(e) => e.stopPropagation()}
+              onPointerDownCapture={(e) => e.stopPropagation()}
             >
               <h2 className="text-lg font-semibold mb-4" style={{ color: "#c8a96e" }}>
                 ¿Qué quieres crear?
@@ -906,10 +939,6 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
               }}
               onClick={(e) => e.stopPropagation()}
               onPointerDownCapture={(e) => e.stopPropagation()}
-              onMouseDown={(e) => e.stopPropagation()}
-              onMouseUp={(e) => e.stopPropagation()}
-              onTouchStart={(e) => e.stopPropagation()}
-              onTouchEnd={(e) => e.stopPropagation()}
             >
               {/* Title */}
               <h2 className="text-lg font-semibold mb-4" style={{ color: "#c8a96e" }}>
@@ -930,17 +959,9 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
                 onChange={(e) => setNewSkillName(e.target.value)}
                 onPointerDown={(e) => {
                   e.stopPropagation();
-                  e.currentTarget.focus();
+                  e.nativeEvent.stopImmediatePropagation();
+                  (e.target as HTMLInputElement).focus();
                 }}
-                onMouseDown={(e) => {
-                  e.stopPropagation();
-                  e.currentTarget.focus();
-                }}
-                onTouchStart={(e) => {
-                  e.stopPropagation();
-                  e.currentTarget.focus();
-                }}
-                onClick={(e) => e.stopPropagation()}
                 autoFocus
                 placeholder="Nombre del skill"
                 className="w-full px-3 py-2 mb-4 rounded text-xs focus:outline-none transition-colors"
@@ -965,7 +986,6 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
                     checked={newSkillUnlimited}
                     onChange={(e) => setNewSkillUnlimited(e.target.checked)}
                     onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => e.stopPropagation()}
                     style={{ pointerEvents: "auto" }}
                   />
                   <label className="text-xs" style={{ color: "#c8a96e" }}>
@@ -981,15 +1001,6 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
                       e.stopPropagation();
                       e.currentTarget.focus();
                     }}
-                    onMouseDown={(e) => {
-                      e.stopPropagation();
-                      e.currentTarget.focus();
-                    }}
-                    onTouchStart={(e) => {
-                      e.stopPropagation();
-                      e.currentTarget.focus();
-                    }}
-                    onClick={(e) => e.stopPropagation()}
                     placeholder="ej: 5"
                     className="w-full px-3 py-2 rounded text-xs focus:outline-none transition-colors"
                     style={{
@@ -1049,7 +1060,7 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
                 <select
                   value={newSkillLinkId}
                   onChange={(e) => setNewSkillLinkId(e.target.value)}
-                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
                   className="w-full px-3 py-2 rounded text-xs focus:outline-none transition-colors"
                   style={{
                     backgroundColor: "#130f09",
@@ -1131,10 +1142,7 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
               width: "90%",
             }}
             onClick={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
-            onMouseUp={(e) => e.stopPropagation()}
-            onTouchStart={(e) => e.stopPropagation()}
-            onTouchEnd={(e) => e.stopPropagation()}
+            onPointerDownCapture={(e) => e.stopPropagation()}
           >
             <h3 className="text-sm font-semibold text-amber-700 mb-4">Agregar meta de nivel</h3>
             <div className="mb-4">
@@ -1144,7 +1152,7 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
                   type="checkbox"
                   checked={metaUnlimited}
                   onChange={(e) => setMetaUnlimited(e.target.checked)}
-                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
                   style={{ pointerEvents: "auto" }}
                 />
                 <label className="text-xs text-amber-700">Sin límite</label>
@@ -1154,7 +1162,10 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
                   type="number"
                   value={goalXpValue}
                   onChange={(e) => setGoalXpValue(e.target.value)}
-                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    (e.currentTarget as HTMLInputElement).focus();
+                  }}
                   placeholder="Nivel a alcanzar"
                   className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded text-xs text-amber-700"
                   style={{ pointerEvents: "auto" }}
@@ -1204,10 +1215,7 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
               }}
               onClick={(e) => e.stopPropagation()}
               onPointerDownCapture={(e) => e.stopPropagation()}
-              onMouseDown={(e) => e.stopPropagation()}
-              onMouseUp={(e) => e.stopPropagation()}
-              onTouchStart={(e) => e.stopPropagation()}
-              onTouchEnd={(e) => e.stopPropagation()}
+              
             >
               {/* Title */}
               <h2 className="text-lg font-semibold mb-4" style={{ color: "#c8a96e" }}>
@@ -1261,17 +1269,9 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
                 onChange={(e) => setCreateFormName(e.target.value)}
                 onPointerDown={(e) => {
                   e.stopPropagation();
-                  e.currentTarget.focus();
+                  e.nativeEvent.stopImmediatePropagation();
+                  (e.target as HTMLInputElement).focus();
                 }}
-                onMouseDown={(e) => {
-                  e.stopPropagation();
-                  e.currentTarget.focus();
-                }}
-                onTouchStart={(e) => {
-                  e.stopPropagation();
-                  e.currentTarget.focus();
-                }}
-                onClick={(e) => e.stopPropagation()}
                 autoFocus
                 placeholder="Nombre"
                 className="w-full px-3 py-2 mb-4 rounded text-xs focus:outline-none transition-colors"
