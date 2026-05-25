@@ -1,5 +1,5 @@
 import React from "react";
-import { cn } from "@/lib/utils";
+import { cn, getContrastColor } from "@/lib/utils";
 
 interface SkillData {
   id: string;
@@ -57,7 +57,8 @@ export function SkillDiamond({
   const diamondFill = areaColor;
   const diamondStroke = areaColor;
   const strokeWidth = selected ? 2 : 1.5;
-  const iconColor = isUnlocked ? "#fff" : "#2e2414";
+  const contrast = getContrastColor(areaColor || "#000");
+  const iconColor = isUnlocked ? contrast : contrast;
 
   return (
     <div
@@ -123,7 +124,7 @@ export function SkillDiamond({
               textAnchor="middle"
               style={{
                 fontSize: "8px",
-                fill: "#0e0c0a",
+                fill: "#fff",
                 fontWeight: 500,
               }}
             >
@@ -156,12 +157,7 @@ export function SkillDiamond({
       </div>
 
       {/* Skill name */}
-      <span
-        className="text-xs text-center leading-tight max-w-full px-0.5 line-clamp-2"
-        style={{
-          color: "#000",
-        }}
-      >
+      <span className="text-xs text-center leading-tight max-w-full px-0.5 line-clamp-2 text-black dark:text-white">
         {skill.title}
       </span>
     </div>

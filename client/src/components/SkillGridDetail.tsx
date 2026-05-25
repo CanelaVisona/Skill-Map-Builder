@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { getContrastColor } from "@/lib/utils";
 import { X } from "lucide-react";
 
 interface SkillData {
@@ -135,7 +136,7 @@ export function SkillGridDetail({ skill, areaColor, onClose }: SkillGridDetailPr
 
       {/* Title & Area */}
       <div className="text-center">
-        <div className="text-sm font-medium text-black" style={{ color: "#000" }}>
+        <div className="text-sm font-medium text-black dark:text-white">
           {skill.title}
         </div>
         <div className="text-xs text-muted-foreground uppercase tracking-wider mt-0.5">
