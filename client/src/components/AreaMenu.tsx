@@ -4,7 +4,7 @@ import { useMenu } from "@/lib/menu-context";
 import { ProgressBar } from "@/components/ProgressBar";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, PanelLeftClose, PanelLeftOpen, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut, Archive, ArchiveRestore, Pencil, Zap, ChevronDown, ChevronRight, Mountain, Compass, Scroll, Eye, Swords, Check, Lock } from "lucide-react";
+import { Plus, PanelLeftClose, PanelLeftOpen, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut, Archive, ArchiveRestore, Pencil, Zap, ChevronDown, ChevronRight, Mountain, Compass, Scroll, Eye, Swords, Lock, LockOpen } from "lucide-react";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "./ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "./ui/alert-dialog";
@@ -14,7 +14,7 @@ import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
 import { ScrollArea } from "./ui/scroll-area";
-import { useState, useEffect, useRef, type MouseEvent, type TouchEvent, type PointerEvent } from "react";
+import { useState, useEffect, useRef, type TouchEvent, type PointerEvent, type CSSProperties, type ReactElement } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 type DialogStep = "choose" | "new-area" | "new-project" | "new-sidequest" | "new-emergent" | "new-experience";
@@ -82,8 +82,64 @@ interface SourceEntry {
 }
 
 interface SourcePower extends SourceEntry {
-  isUnlocked: 0 | 1;
+  isUnlocked: 0 | 1 | 2;
 }
+
+function FlameIcon({ animated }: { animated: boolean }) {
+  const base: CSSProperties = {
+    position: "absolute",
+    bottom: 0,
+    left: "50%",
+    transform: "translateX(-50%)",
+    transformOrigin: "bottom center",
+    borderRadius: "50% 50% 30% 30% / 60% 60% 40% 40%",
+  };
+
+  return (
+    <div style={{ position: "relative", width: 18, height: 22, flexShrink: 0, marginTop: 1 }}>
+      <div
+        className="flame-outer"
+        style={{
+          ...base,
+          width: 12,
+          height: 18,
+          background: "#EF9F27",
+          animation: animated ? "flicker1 0.9s ease-in-out infinite" : "none",
+        }}
+      />
+      <div
+        className="flame-inner"
+        style={{
+          ...base,
+          width: 7,
+          height: 11,
+          background: "#FAC775",
+          bottom: 2,
+          animation: animated ? "flicker2 0.7s ease-in-out infinite" : "none",
+        }}
+      />
+      <div
+        className="flame-core"
+        style={{
+          ...base,
+          width: 3,
+          height: 6,
+          background: "#fff",
+          bottom: 3,
+          opacity: 0.9,
+          animation: animated ? "glow-pulse 0.8s ease-in-out infinite" : "none",
+        }}
+      />
+    </div>
+  );
+}
+
+type PowerRenderState = {
+  cardClass: string;
+  icon: ReactElement;
+  descriptionClass: string;
+  showGlow: boolean;
+};
 
 interface ViewSourceDialogProps {
   isOpen: boolean;
@@ -107,7 +163,8 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
 
   // Pointer-based background long-press handlers
   const handleBackgroundPointerDown = (e: PointerEvent) => {
-    // only start if pointer down on the ScrollArea (not on child that stops propagation)
+    const target = e.target as HTMLElement | null;
+    if (target?.closest("[data-entry-card]") || target?.closest(".power-card")) return;
     backgroundLongPressTimer.current = setTimeout(() => {
       setIsAdding(true);
     }, 1000);
@@ -414,41 +471,49 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
 
   const handleAdd = () => {
     if (!name.trim()) return;
+    let finalName = name.trim();
+    if (activeTab === "powers" && !finalName.startsWith("Puedo")) {
+      finalName = `Puedo ${finalName}`;
+    }
     if (activeTab === "description") {
-      createDescription.mutate({ name: name.trim(), description: description.trim() });
+      createDescription.mutate({ name: finalName, description: description.trim() });
     } else if (activeTab === "growth") {
-      createGrowth.mutate({ name: name.trim(), description: description.trim() });
+      createGrowth.mutate({ name: finalName, description: description.trim() });
     } else if (activeTab === "experiences") {
       createExperience.mutate({
-        name: name.trim(),
+        name: finalName,
         description: description.trim(),
         areaId: sourceType === "area" ? sourceId : null,
         projectId: sourceType === "project" ? sourceId : null,
       });
     } else if (activeTab === "contributions") {
       createContribution.mutate({
-        name: name.trim(),
+        name: finalName,
         description: description.trim(),
         areaId: sourceType === "area" ? sourceId : null,
         projectId: sourceType === "project" ? sourceId : null,
       });
     } else if (activeTab === "powers") {
-      createPower.mutate({ name: name.trim(), description: description.trim() });
+      createPower.mutate({ name: finalName, description: description.trim() });
     }
   };
 
   const handleSaveEdit = () => {
     if (!editingEntry || !name.trim()) return;
+    let finalName = name.trim();
+    if (activeTab === "powers" && !finalName.startsWith("Puedo")) {
+      finalName = `Puedo ${finalName}`;
+    }
     if (activeTab === "description") {
-      updateDescription.mutate({ id: editingEntry.id, data: { name: name.trim(), description: description.trim() } });
+      updateDescription.mutate({ id: editingEntry.id, data: { name: finalName, description: description.trim() } });
     } else if (activeTab === "growth") {
-      updateGrowth.mutate({ id: editingEntry.id, data: { name: name.trim(), description: description.trim() } });
+      updateGrowth.mutate({ id: editingEntry.id, data: { name: finalName, description: description.trim() } });
     } else if (activeTab === "experiences") {
-      updateExperience.mutate({ id: editingEntry.id, data: { name: name.trim(), description: description.trim(), areaId: sourceType === "area" ? sourceId : null, projectId: sourceType === "project" ? sourceId : null } });
+      updateExperience.mutate({ id: editingEntry.id, data: { name: finalName, description: description.trim(), areaId: sourceType === "area" ? sourceId : null, projectId: sourceType === "project" ? sourceId : null } });
     } else if (activeTab === "contributions") {
-      updateContribution.mutate({ id: editingEntry.id, data: { name: name.trim(), description: description.trim(), areaId: sourceType === "area" ? sourceId : null, projectId: sourceType === "project" ? sourceId : null } });
+      updateContribution.mutate({ id: editingEntry.id, data: { name: finalName, description: description.trim(), areaId: sourceType === "area" ? sourceId : null, projectId: sourceType === "project" ? sourceId : null } });
     } else if (activeTab === "powers") {
-      updatePower.mutate({ id: editingEntry.id, data: { name: name.trim(), description: description.trim() } });
+      updatePower.mutate({ id: editingEntry.id, data: { name: finalName, description: description.trim() } });
     }
   };
 
@@ -509,13 +574,33 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     }
   };
 
+  const renderPowerState = (power: SourcePower): PowerRenderState => {
+    if (power.isUnlocked === 0) {
+      return {
+        cardClass: "border-white/7 text-[#444]",
+        icon: <Lock className="h-4 w-4 flex-shrink-0 mt-0.5 text-gray-500" />,
+        descriptionClass: "font-normal text-[11px] mt-0.5 opacity-50 text-[#333]",
+        showGlow: false,
+      };
+    }
+
+    const active = power.isUnlocked === 2;
+
+    return {
+      cardClass: power.isUnlocked === 1 ? "border-white/13 text-[#b0997a]" : "border-[#EF9F27] text-[#FAC775]",
+      icon: power.isUnlocked === 1 ? <LockOpen className="h-4 w-4 flex-shrink-0 mt-0.5 text-[#8a7a60]" /> : <FlameIcon animated={active} />,
+      descriptionClass: power.isUnlocked === 1 ? "font-normal text-[11px] mt-0.5 text-[#6a5a40]" : "font-normal text-[11px] mt-0.5 text-[#EF9F27]",
+      showGlow: active,
+    };
+  };
+
   const renderEntryList = (entries: SourceEntry[], canEdit: boolean, onDelete?: (id: string) => void, onEdit?: (entry: SourceEntry) => void) => (
     <div className="space-y-2">
       {entries.length === 0 ? (
         <p className="text-sm text-muted-foreground">No hay items aún</p>
       ) : (
         entries.map((entry) => (
-          <div key={entry.id} className="p-3 bg-muted/30 rounded-lg group">
+          <div key={entry.id} className="p-3 bg-muted/30 rounded-lg group" data-entry-card>
             <div className="flex items-start justify-between">
               <div className="flex-1 cursor-pointer" onClick={() => canEdit && onEdit && onEdit(entry)}>
                 <h4 className="font-medium text-sm">{entry.name}</h4>
@@ -556,11 +641,11 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
         </DialogHeader>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-2">
           <TabsList className="grid w-full grid-cols-5">
-            <TabsTrigger value="description" className="text-xs">Descripción</TabsTrigger>
+            <TabsTrigger value="description" className="text-xs">Background</TabsTrigger>
+            <TabsTrigger value="powers" className="text-xs">Poderes</TabsTrigger>
             <TabsTrigger value="experiences" className="text-xs">Experiencias</TabsTrigger>
             <TabsTrigger value="growth" className="text-xs">Crecimiento</TabsTrigger>
             <TabsTrigger value="contributions" className="text-xs">Contribución</TabsTrigger>
-            <TabsTrigger value="powers" className="text-xs">Poderes</TabsTrigger>
           </TabsList>
 
           <TabsContent value="description" className="mt-4">
@@ -583,7 +668,12 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
           </TabsContent>
 
           <TabsContent value="experiences" className="mt-4">
-            <ScrollArea className="h-[280px] pr-4">
+            <ScrollArea
+              className="h-[280px] pr-4"
+              onPointerDown={handleBackgroundPointerDown}
+              onPointerUp={handleBackgroundPointerUp}
+              onPointerCancel={handleBackgroundPointerUp}
+            >
               {renderEntryList(experiences, true, (id) => deleteExperience.mutate(id), handleStartEdit)}
             </ScrollArea>
             <Button 
@@ -597,7 +687,12 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
           </TabsContent>
 
           <TabsContent value="growth" className="mt-4">
-            <ScrollArea className="h-[280px] pr-4">
+            <ScrollArea
+              className="h-[280px] pr-4"
+              onPointerDown={handleBackgroundPointerDown}
+              onPointerUp={handleBackgroundPointerUp}
+              onPointerCancel={handleBackgroundPointerUp}
+            >
               {renderEntryList(growth, true, (id) => deleteGrowth.mutate(id), handleStartEdit)}
             </ScrollArea>
             <Button 
@@ -611,7 +706,12 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
           </TabsContent>
 
           <TabsContent value="contributions" className="mt-4">
-            <ScrollArea className="h-[280px] pr-4">
+            <ScrollArea
+              className="h-[280px] pr-4"
+              onPointerDown={handleBackgroundPointerDown}
+              onPointerUp={handleBackgroundPointerUp}
+              onPointerCancel={handleBackgroundPointerUp}
+            >
               {renderEntryList(contributions, true, (id) => deleteContribution.mutate(id), handleStartEdit)}
             </ScrollArea>
             <Button 
@@ -625,17 +725,22 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
           </TabsContent>
 
           <TabsContent value="powers" className="mt-4">
-            <ScrollArea className="h-[280px] pr-4">
+            <ScrollArea
+              className="h-[280px] pr-4"
+              onPointerDown={handleBackgroundPointerDown}
+              onPointerUp={handleBackgroundPointerUp}
+              onPointerCancel={handleBackgroundPointerUp}
+            >
               <div>
                 <div className="mb-4">
                   <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-medium">Poderes · Nivel {Math.floor((powers || []).filter(p => p.isUnlocked === 1).length / 5) + 1}</span>
-                    <span className="text-xs text-muted-foreground">{((powers || []).filter(p => p.isUnlocked === 1).length % 5)} / 5 para subir</span>
+                    <span className="text-sm font-medium">Poderes · Nivel {Math.floor((powers || []).filter(p => p.isUnlocked === 2).length / 5) + 1}</span>
+                    <span className="text-xs text-muted-foreground">{((powers || []).filter(p => p.isUnlocked === 2).length % 5)} / 5 para subir</span>
                   </div>
                   <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
                     <div
                       className="h-full bg-blue-500 rounded-full transition-all duration-300"
-                      style={{ width: `${(((powers || []).filter(p => p.isUnlocked === 1).length % 5) / 5) * 100}%` }}
+                      style={{ width: `${(((powers || []).filter(p => p.isUnlocked === 2).length % 5) / 5) * 100}%` }}
                     />
                   </div>
                 </div>
@@ -645,12 +750,12 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                     <p className="text-sm text-muted-foreground col-span-2">No hay poderes aún (mantener presionado para agregar)</p>
                   ) : (
                     powers.map((power) => {
-                      const isUnlocked = power.isUnlocked === 1;
                       const showContextMenu = powerContextMenuId === power.id;
+                      const state = renderPowerState(power);
                       return (
                         <div
                           key={power.id}
-                          className="relative"
+                          className="relative power-card"
                           onPointerDown={(e) => handlePowerPointerDown(e as PointerEvent, power.id)}
                           onPointerUp={handlePowerMouseUp}
                           onPointerCancel={handlePowerMouseUp}
@@ -661,32 +766,39 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                           <button
                             onClick={() => {
                               if (!powerLongPressCompleted.current) {
-                                updatePower.mutate({ id: power.id, data: { isUnlocked: isUnlocked ? 0 : 1 } });
+                                const next = ((power.isUnlocked + 1) % 3) as 0 | 1 | 2;
+                                updatePower.mutate({ id: power.id, data: { isUnlocked: next } });
                               }
-                              powerLongPressCompleted.current = false;
+                              setTimeout(() => {
+                                powerLongPressCompleted.current = false;
+                              }, 50);
                             }}
-                            className={`w-full p-2 rounded-lg text-xs font-medium transition-all text-left flex items-start gap-2 border ${
-                              isUnlocked
-                                ? "bg-green-500/20 border-green-500/50 text-green-700 hover:bg-green-500/30"
-                                : "bg-gray-500/20 border-gray-500/50 text-gray-600 hover:bg-gray-500/30"
-                            }`}
+                            className={`w-full p-2 rounded-lg text-xs font-medium transition-all text-left flex items-start gap-2 border relative overflow-hidden ${state.cardClass}`}
+                            style={{
+                              background: power.isUnlocked === 0 ? "#0f0b07" : power.isUnlocked === 1 ? "#221a10" : "#2a1a00",
+                            }}
                           >
-                            {isUnlocked ? (
-                              <Check className="h-4 w-4 flex-shrink-0 mt-0.5 text-green-600" />
-                            ) : (
-                              <Lock className="h-4 w-4 flex-shrink-0 mt-0.5 text-gray-500" />
-                            )}
+                            {state.icon}
                             <div className="flex-1 min-w-0">
                               <p className="truncate">{power.name}</p>
+                              {/* status label removed per user request */}
                               {power.description && (
-                                <p className="text-xs opacity-70 truncate">{power.description}</p>
+                                <p className={state.descriptionClass}>{power.description}</p>
                               )}
                             </div>
+                            {state.showGlow && (
+                              <div
+                                style={{ position: "absolute", inset: 0, background: "linear-gradient(135deg,rgba(239,159,39,0.2) 0%,rgba(186,117,23,0.06) 100%)", pointerEvents: "none", animation: "glow-pulse 2.5s ease-in-out infinite", borderRadius: 10 }}
+                              />
+                            )}
                           </button>
 
                           {/* Context Menu on Long Press */}
                           {showContextMenu && (
-                            <div className="absolute right-1 top-1 z-50 flex gap-1 bg-background border rounded-lg p-1 shadow-lg">
+                            <div
+                              className="absolute right-1 top-1 z-50 flex gap-1 bg-background border rounded-lg p-1 shadow-lg"
+                              onPointerDown={(e) => e.stopPropagation()}
+                            >
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();

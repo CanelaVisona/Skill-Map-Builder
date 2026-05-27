@@ -1330,7 +1330,7 @@ export class DbStorage implements IStorage {
       userId: entry.userId,
       areaId: entry.areaId,
       projectId: entry.projectId,
-      isUnlocked: 0 as 0 | 1,
+      isUnlocked: 0 as 0 | 1 | 2,
     };
     const result = await db.insert(sourcePowers).values(entryData).returning();
     return result[0];
@@ -1343,7 +1343,7 @@ export class DbStorage implements IStorage {
     if (entry.userId !== undefined) updateData.userId = entry.userId;
     if (entry.areaId !== undefined) updateData.areaId = entry.areaId;
     if (entry.projectId !== undefined) updateData.projectId = entry.projectId;
-    if (entry.isUnlocked !== undefined) updateData.isUnlocked = entry.isUnlocked as 0 | 1;
+    if (entry.isUnlocked !== undefined) updateData.isUnlocked = entry.isUnlocked as 0 | 1 | 2;
     
     const result = await db.update(sourcePowers).set(updateData).where(eq(sourcePowers.id, id)).returning();
     return result[0];

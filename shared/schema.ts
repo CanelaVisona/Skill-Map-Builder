@@ -157,7 +157,7 @@ export const sourcePowers = pgTable("source_powers", {
   projectId: varchar("project_id"),
   name: text("name").notNull(),
   description: text("description").notNull().default(""),
-  isUnlocked: integer("is_unlocked").$type<0 | 1>().default(0),
+  isUnlocked: integer("is_unlocked").$type<0 | 1 | 2>().default(0),
 });
 
 export const journalLearnings = pgTable("journal_learnings", {
