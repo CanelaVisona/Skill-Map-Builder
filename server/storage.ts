@@ -1,7 +1,7 @@
 import { eq, and, asc } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db, pool } from "./db";
-import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, rewiringTrackers, rewiringTrackerRecords } from "@shared/schema";
+import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourcePowers, type InsertSourcePowers, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourcePowers, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, rewiringTrackers, rewiringTrackerRecords } from "@shared/schema";
 
 export interface IStorage {
   // Users
@@ -130,6 +130,11 @@ export interface IStorage {
   createSourceGrowth(entry: InsertSourceGrowth): Promise<SourceGrowth>;
   updateSourceGrowth(id: string, entry: Partial<InsertSourceGrowth>): Promise<SourceGrowth | undefined>;
   deleteSourceGrowth(id: string): Promise<void>;
+
+  getSourcePowers(userId: string, type: "area" | "project", sourceId: string): Promise<SourcePowers[]>;
+  createSourcePower(entry: InsertSourcePowers): Promise<SourcePowers>;
+  updateSourcePower(id: string, entry: Partial<InsertSourcePowers>): Promise<SourcePowers | undefined>;
+  deleteSourcePower(id: string): Promise<void>;
 
   // Profile - About Entries
   getProfileAboutEntries(userId: string): Promise<ProfileAboutEntry[]>;
@@ -1302,6 +1307,50 @@ export class DbStorage implements IStorage {
 
   async deleteSourceGrowth(id: string): Promise<void> {
     await db.delete(sourceGrowth).where(eq(sourceGrowth.id, id));
+  }
+
+  async getSourcePowers(userId: string, type: "area" | "project", sourceId: string): Promise<SourcePowers[]> {
+    if (type === "area") {
+      return await db.select().from(sourcePowers).where(
+        and(eq(sourcePowers.userId, userId), eq(sourcePowers.areaId, sourceId))
+      );
+    } else {
+      return await db.select().from(sourcePowers).where(
+        and(eq(sourcePowers.userId, userId), eq(sourcePowers.projectId, sourceId))
+      );
+    }
+  }
+
+  async createSourcePower(entry: InsertSourcePowers): Promise<SourcePowers> {
+    const id = randomUUID();
+    const entryData = {
+      id,
+      name: entry.name,
+      description: entry.description,
+      userId: entry.userId,
+      areaId: entry.areaId,
+      projectId: entry.projectId,
+      isUnlocked: 0 as 0 | 1,
+    };
+    const result = await db.insert(sourcePowers).values(entryData).returning();
+    return result[0];
+  }
+
+  async updateSourcePower(id: string, entry: Partial<InsertSourcePowers>): Promise<SourcePowers | undefined> {
+    const updateData: Record<string, any> = {};
+    if (entry.name !== undefined) updateData.name = entry.name;
+    if (entry.description !== undefined) updateData.description = entry.description;
+    if (entry.userId !== undefined) updateData.userId = entry.userId;
+    if (entry.areaId !== undefined) updateData.areaId = entry.areaId;
+    if (entry.projectId !== undefined) updateData.projectId = entry.projectId;
+    if (entry.isUnlocked !== undefined) updateData.isUnlocked = entry.isUnlocked as 0 | 1;
+    
+    const result = await db.update(sourcePowers).set(updateData).where(eq(sourcePowers.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteSourcePower(id: string): Promise<void> {
+    await db.delete(sourcePowers).where(eq(sourcePowers.id, id));
   }
 
   // Profile - Missions

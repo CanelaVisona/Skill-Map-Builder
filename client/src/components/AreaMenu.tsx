@@ -4,7 +4,7 @@ import { useMenu } from "@/lib/menu-context";
 import { ProgressBar } from "@/components/ProgressBar";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, PanelLeftClose, PanelLeftOpen, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut, Archive, ArchiveRestore, Pencil, Zap, ChevronDown, ChevronRight, Mountain, Compass, Scroll, Eye, Swords } from "lucide-react";
+import { Plus, PanelLeftClose, PanelLeftOpen, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut, Archive, ArchiveRestore, Pencil, Zap, ChevronDown, ChevronRight, Mountain, Compass, Scroll, Eye, Swords, Check, Lock } from "lucide-react";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "./ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "./ui/alert-dialog";
@@ -14,7 +14,7 @@ import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
 import { ScrollArea } from "./ui/scroll-area";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type MouseEvent, type TouchEvent, type PointerEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 type DialogStep = "choose" | "new-area" | "new-project" | "new-sidequest" | "new-emergent" | "new-experience";
@@ -74,10 +74,15 @@ const extendedIconMap: Record<string, any> = {
 };
 
 // Types for source view dialog
+
 interface SourceEntry {
   id: string;
   name: string;
   description: string;
+}
+
+interface SourcePower extends SourceEntry {
+  isUnlocked: 0 | 1;
 }
 
 interface ViewSourceDialogProps {
@@ -95,6 +100,25 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
   const [editingEntry, setEditingEntry] = useState<SourceEntry | null>(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [powerContextMenuId, setPowerContextMenuId] = useState<string | null>(null);
+  const powerLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const powerLongPressCompleted = useRef(false);
+  const backgroundLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Pointer-based background long-press handlers
+  const handleBackgroundPointerDown = (e: PointerEvent) => {
+    // only start if pointer down on the ScrollArea (not on child that stops propagation)
+    backgroundLongPressTimer.current = setTimeout(() => {
+      setIsAdding(true);
+    }, 1000);
+  };
+
+  const handleBackgroundPointerUp = () => {
+    if (backgroundLongPressTimer.current) {
+      clearTimeout(backgroundLongPressTimer.current);
+      backgroundLongPressTimer.current = null;
+    }
+  };
 
   // Fetch source descriptions
   const { data: descriptions = [] } = useQuery<SourceEntry[]>({
@@ -132,6 +156,20 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     queryFn: async () => {
       const res = await fetch(`/api/profile/contributions/by-source/${sourceType}/${sourceId}`);
       return res.json();
+    },
+    enabled: isOpen,
+  });
+
+  // Fetch source powers
+  const { data: powers = [], isError: powersError } = useQuery<SourcePower[]>({
+    queryKey: [`/api/source-powers/${sourceType}/${sourceId}`],
+    queryFn: async () => {
+      const res = await fetch(`/api/source-powers/${sourceType}/${sourceId}`);
+      if (!res.ok) {
+        throw new Error(`Failed to fetch powers: ${res.status}`);
+      }
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
     },
     enabled: isOpen,
   });
@@ -327,6 +365,53 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     },
   });
 
+  // Source Powers mutations
+  const createPower = useMutation({
+    mutationFn: async (data: { name: string; description: string }) => {
+      const body = sourceType === "area" 
+        ? { ...data, areaId: sourceId } 
+        : { ...data, projectId: sourceId };
+      const res = await fetch("/api/source-powers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/source-powers/${sourceType}/${sourceId}`] });
+      setIsAdding(false);
+      setName("");
+      setDescription("");
+    },
+  });
+
+  const updatePower = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<SourcePower> }) => {
+      const res = await fetch(`/api/source-powers/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/source-powers/${sourceType}/${sourceId}`] });
+      setEditingEntry(null);
+      setName("");
+      setDescription("");
+    },
+  });
+
+  const deletePower = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/source-powers/${id}`, { method: "DELETE" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/source-powers/${sourceType}/${sourceId}`] });
+    },
+  });
+
   const handleAdd = () => {
     if (!name.trim()) return;
     if (activeTab === "description") {
@@ -347,6 +432,8 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
         areaId: sourceType === "area" ? sourceId : null,
         projectId: sourceType === "project" ? sourceId : null,
       });
+    } else if (activeTab === "powers") {
+      createPower.mutate({ name: name.trim(), description: description.trim() });
     }
   };
 
@@ -360,6 +447,8 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       updateExperience.mutate({ id: editingEntry.id, data: { name: name.trim(), description: description.trim(), areaId: sourceType === "area" ? sourceId : null, projectId: sourceType === "project" ? sourceId : null } });
     } else if (activeTab === "contributions") {
       updateContribution.mutate({ id: editingEntry.id, data: { name: name.trim(), description: description.trim(), areaId: sourceType === "area" ? sourceId : null, projectId: sourceType === "project" ? sourceId : null } });
+    } else if (activeTab === "powers") {
+      updatePower.mutate({ id: editingEntry.id, data: { name: name.trim(), description: description.trim() } });
     }
   };
 
@@ -374,6 +463,50 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     setEditingEntry(null);
     setName("");
     setDescription("");
+  };
+
+  // Long-press handlers for powers
+  const handlePowerPointerDown = (e: PointerEvent, powerId: string) => {
+    e.stopPropagation();
+    powerLongPressCompleted.current = false;
+    if (powerContextMenuId === powerId) {
+      setPowerContextMenuId(null);
+      return;
+    }
+    setPowerContextMenuId(null);
+    powerLongPressTimer.current = setTimeout(() => {
+      setPowerContextMenuId(powerId);
+      powerLongPressCompleted.current = true;
+    }, 1000);
+  };
+
+  const handlePowerMouseUp = () => {
+    if (powerLongPressTimer.current) {
+      clearTimeout(powerLongPressTimer.current);
+      powerLongPressTimer.current = null;
+    }
+  };
+
+  // keep touch handler as fallback but delegate to pointer
+  const handlePowerTouchStart = (e: TouchEvent, powerId: string) => {
+    e.stopPropagation();
+    powerLongPressCompleted.current = false;
+    if (powerContextMenuId === powerId) {
+      setPowerContextMenuId(null);
+      return;
+    }
+    setPowerContextMenuId(null);
+    powerLongPressTimer.current = setTimeout(() => {
+      setPowerContextMenuId(powerId);
+      powerLongPressCompleted.current = true;
+    }, 1000);
+  };
+
+  const handlePowerTouchEnd = () => {
+    if (powerLongPressTimer.current) {
+      clearTimeout(powerLongPressTimer.current);
+      powerLongPressTimer.current = null;
+    }
   };
 
   const renderEntryList = (entries: SourceEntry[], canEdit: boolean, onDelete?: (id: string) => void, onEdit?: (entry: SourceEntry) => void) => (
@@ -422,69 +555,170 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
           <DialogTitle>{sourceName}</DialogTitle>
         </DialogHeader>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-2">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="description" className="text-xs">Descripción</TabsTrigger>
             <TabsTrigger value="experiences" className="text-xs">Experiencias</TabsTrigger>
             <TabsTrigger value="growth" className="text-xs">Crecimiento</TabsTrigger>
             <TabsTrigger value="contributions" className="text-xs">Contribución</TabsTrigger>
+            <TabsTrigger value="powers" className="text-xs">Poderes</TabsTrigger>
           </TabsList>
-          <div className="mt-4 min-h-[200px]">
-            <TabsContent value="description" className="mt-0">
-              <ScrollArea className="h-[280px] pr-4">
-                {renderEntryList(descriptions, true, (id) => deleteDescription.mutate(id), handleStartEdit)}
-              </ScrollArea>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="mt-3 w-full" 
-                onClick={() => setIsAdding(true)}
-              >
-                <Plus className="h-4 w-4 mr-1" /> Agregar
-              </Button>
-            </TabsContent>
 
-            <TabsContent value="experiences" className="mt-0">
-              <ScrollArea className="h-[280px] pr-4">
-                {renderEntryList(experiences, true, (id) => deleteExperience.mutate(id), handleStartEdit)}
-              </ScrollArea>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="mt-3 w-full" 
-                onClick={() => setIsAdding(true)}
-              >
-                <Plus className="h-4 w-4 mr-1" /> Agregar
-              </Button>
-            </TabsContent>
+          <TabsContent value="description" className="mt-4">
+            <ScrollArea
+              className="h-[280px] pr-4"
+              onPointerDown={handleBackgroundPointerDown}
+              onPointerUp={handleBackgroundPointerUp}
+              onPointerCancel={handleBackgroundPointerUp}
+            >
+              {renderEntryList(descriptions, true, (id) => deleteDescription.mutate(id), handleStartEdit)}
+            </ScrollArea>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="mt-3 w-full" 
+              onClick={() => setIsAdding(true)}
+            >
+              <Plus className="h-4 w-4 mr-1" /> Agregar
+            </Button>
+          </TabsContent>
 
-            <TabsContent value="growth" className="mt-0">
-              <ScrollArea className="h-[280px] pr-4">
-                {renderEntryList(growth, true, (id) => deleteGrowth.mutate(id), handleStartEdit)}
-              </ScrollArea>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="mt-3 w-full" 
-                onClick={() => setIsAdding(true)}
-              >
-                <Plus className="h-4 w-4 mr-1" /> Agregar
-              </Button>
-            </TabsContent>
+          <TabsContent value="experiences" className="mt-4">
+            <ScrollArea className="h-[280px] pr-4">
+              {renderEntryList(experiences, true, (id) => deleteExperience.mutate(id), handleStartEdit)}
+            </ScrollArea>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="mt-3 w-full" 
+              onClick={() => setIsAdding(true)}
+            >
+              <Plus className="h-4 w-4 mr-1" /> Agregar
+            </Button>
+          </TabsContent>
 
-            <TabsContent value="contributions" className="mt-0">
-              <ScrollArea className="h-[280px] pr-4">
-                {renderEntryList(contributions, true, (id) => deleteContribution.mutate(id), handleStartEdit)}
-              </ScrollArea>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="mt-3 w-full" 
-                onClick={() => setIsAdding(true)}
-              >
-                <Plus className="h-4 w-4 mr-1" /> Agregar
-              </Button>
-            </TabsContent>
-          </div>
+          <TabsContent value="growth" className="mt-4">
+            <ScrollArea className="h-[280px] pr-4">
+              {renderEntryList(growth, true, (id) => deleteGrowth.mutate(id), handleStartEdit)}
+            </ScrollArea>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="mt-3 w-full" 
+              onClick={() => setIsAdding(true)}
+            >
+              <Plus className="h-4 w-4 mr-1" /> Agregar
+            </Button>
+          </TabsContent>
+
+          <TabsContent value="contributions" className="mt-4">
+            <ScrollArea className="h-[280px] pr-4">
+              {renderEntryList(contributions, true, (id) => deleteContribution.mutate(id), handleStartEdit)}
+            </ScrollArea>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="mt-3 w-full" 
+              onClick={() => setIsAdding(true)}
+            >
+              <Plus className="h-4 w-4 mr-1" /> Agregar
+            </Button>
+          </TabsContent>
+
+          <TabsContent value="powers" className="mt-4">
+            <ScrollArea className="h-[280px] pr-4">
+              <div>
+                <div className="mb-4">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm font-medium">Poderes · Nivel {Math.floor((powers || []).filter(p => p.isUnlocked === 1).length / 5) + 1}</span>
+                    <span className="text-xs text-muted-foreground">{((powers || []).filter(p => p.isUnlocked === 1).length % 5)} / 5 para subir</span>
+                  </div>
+                  <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-blue-500 rounded-full transition-all duration-300"
+                      style={{ width: `${(((powers || []).filter(p => p.isUnlocked === 1).length % 5) / 5) * 100}%` }}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  {(!powers || powers.length === 0) ? (
+                    <p className="text-sm text-muted-foreground col-span-2">No hay poderes aún (mantener presionado para agregar)</p>
+                  ) : (
+                    powers.map((power) => {
+                      const isUnlocked = power.isUnlocked === 1;
+                      const showContextMenu = powerContextMenuId === power.id;
+                      return (
+                        <div
+                          key={power.id}
+                          className="relative"
+                          onPointerDown={(e) => handlePowerPointerDown(e as PointerEvent, power.id)}
+                          onPointerUp={handlePowerMouseUp}
+                          onPointerCancel={handlePowerMouseUp}
+                          onMouseLeave={handlePowerMouseUp}
+                          onTouchStart={(e) => handlePowerTouchStart(e, power.id)}
+                          onTouchEnd={handlePowerTouchEnd}
+                        >
+                          <button
+                            onClick={() => {
+                              if (!powerLongPressCompleted.current) {
+                                updatePower.mutate({ id: power.id, data: { isUnlocked: isUnlocked ? 0 : 1 } });
+                              }
+                              powerLongPressCompleted.current = false;
+                            }}
+                            className={`w-full p-2 rounded-lg text-xs font-medium transition-all text-left flex items-start gap-2 border ${
+                              isUnlocked
+                                ? "bg-green-500/20 border-green-500/50 text-green-700 hover:bg-green-500/30"
+                                : "bg-gray-500/20 border-gray-500/50 text-gray-600 hover:bg-gray-500/30"
+                            }`}
+                          >
+                            {isUnlocked ? (
+                              <Check className="h-4 w-4 flex-shrink-0 mt-0.5 text-green-600" />
+                            ) : (
+                              <Lock className="h-4 w-4 flex-shrink-0 mt-0.5 text-gray-500" />
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="truncate">{power.name}</p>
+                              {power.description && (
+                                <p className="text-xs opacity-70 truncate">{power.description}</p>
+                              )}
+                            </div>
+                          </button>
+
+                          {/* Context Menu on Long Press */}
+                          {showContextMenu && (
+                            <div className="absolute right-1 top-1 z-50 flex gap-1 bg-background border rounded-lg p-1 shadow-lg">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleStartEdit({ id: power.id, name: power.name, description: power.description });
+                                  setPowerContextMenuId(null);
+                                }}
+                                className="p-1 hover:bg-muted rounded"
+                                title="Editar"
+                              >
+                                <Pencil className="h-4 w-4 text-muted-foreground" />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  deletePower.mutate(power.id);
+                                  setPowerContextMenuId(null);
+                                }}
+                                className="p-1 hover:bg-destructive/20 rounded"
+                                title="Eliminar"
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </ScrollArea>
+          </TabsContent>
         </Tabs>
       </DialogContent>
 

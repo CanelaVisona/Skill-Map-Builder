@@ -150,6 +150,16 @@ export const sourceGrowth = pgTable("source_growth", {
   description: text("description").notNull().default(""),
 });
 
+export const sourcePowers = pgTable("source_powers", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  areaId: varchar("area_id"),
+  projectId: varchar("project_id"),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+  isUnlocked: integer("is_unlocked").$type<0 | 1>().default(0),
+});
+
 export const journalLearnings = pgTable("journal_learnings", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
@@ -343,10 +353,13 @@ export type InsertProfileContribution = z.infer<typeof insertProfileContribution
 export type ProfileContribution = typeof profileContributions.$inferSelect;
 export const insertSourceDescriptionSchema = createInsertSchema(sourceDescriptions).omit({ id: true });
 export const insertSourceGrowthSchema = createInsertSchema(sourceGrowth).omit({ id: true });
+export const insertSourcePowersSchema = createInsertSchema(sourcePowers).omit({ id: true });
 export type InsertSourceDescription = z.infer<typeof insertSourceDescriptionSchema>;
 export type SourceDescription = typeof sourceDescriptions.$inferSelect;
 export type InsertSourceGrowth = z.infer<typeof insertSourceGrowthSchema>;
 export type SourceGrowth = typeof sourceGrowth.$inferSelect;
+export type InsertSourcePowers = z.infer<typeof insertSourcePowersSchema>;
+export type SourcePowers = typeof sourcePowers.$inferSelect;
 export const profileMissions = pgTable("profile_missions", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),

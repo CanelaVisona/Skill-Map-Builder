@@ -214,7 +214,7 @@ export function SkillGridDetail({ skill, areaColor, onClose }: SkillGridDetailPr
               </span>
               <span className="text-xs text-muted-foreground flex items-center gap-1">
                 <span>{xpForThisLevel}</span>
-                <span className="relative top-[1px] text-[9px] leading-none font-semibold whitespace-nowrap" style={{ color: "#c8a96e" }}>
+                <span className="text-[9px] leading-none font-semibold whitespace-nowrap" style={{ color: "#c8a96e" }}>
                   {nextLevelLabel}
                 </span>
               </span>
