@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus, Star, ChevronRight, ChevronLeft, Wrench, Lightbulb, Flame } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
+import { ExperienceGainPopup, type ExperienceGainSnapshot } from "./ExperienceGainPopup";
 import {
   Popover,
   PopoverContent,
@@ -216,8 +217,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [learningTitle, setLearningTitle] = useState("");
   const [learningSentence, setLearningSentence] = useState("");
   const [showPlusOne, setShowPlusOne] = useState<{ visible: boolean; type: "tools" | "learnings" | "thoughts" | "experience"; value?: number }>({ visible: false, type: "tools" });
+  const [experiencePopup, setExperiencePopup] = useState<ExperienceGainSnapshot | null>(null);
   const [levelUpPopupVisible, setLevelUpPopupVisible] = useState(false);
   const levelUpPopupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const experiencePopupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [hasIncompleteSubtasks, setHasIncompleteSubtasks] = useState(false);
   
   // Habits state
@@ -358,6 +361,36 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [xpValue, setXpValue] = useState(skill.experiencePoints ? skill.experiencePoints.toString() : "");
   const [showXpAnimation, setShowXpAnimation] = useState(false);
   const [animatedXpValue, setAnimatedXpValue] = useState("");
+
+  const openExperiencePopup = (snapshot: ExperienceGainSnapshot) => {
+    if (experiencePopupTimer.current) {
+      clearTimeout(experiencePopupTimer.current);
+      experiencePopupTimer.current = null;
+    }
+
+    setExperiencePopup(snapshot);
+    experiencePopupTimer.current = setTimeout(() => {
+      setExperiencePopup(null);
+      experiencePopupTimer.current = null;
+    }, 2500);
+  };
+
+  const closeExperiencePopup = () => {
+    if (experiencePopupTimer.current) {
+      clearTimeout(experiencePopupTimer.current);
+      experiencePopupTimer.current = null;
+    }
+    setExperiencePopup(null);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (experiencePopupTimer.current) {
+        clearTimeout(experiencePopupTimer.current);
+        experiencePopupTimer.current = null;
+      }
+    };
+  }, []);
   const pendingXpValue = useRef<string>("");
   const prevStatus = useRef<string>(skill.status);
   const wasDialogOpen = useRef(false);
@@ -627,6 +660,20 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     
     const xpToAdd = parseInt(xpValue);
     console.log("[handleAddExperience] XP to add:", xpToAdd, "SkillId:", experienceSelectedSkill);
+
+    const buildSnapshot = (
+      skillName: string,
+      xpBefore: number,
+      level: number,
+      xpMax: number | null
+    ): ExperienceGainSnapshot => ({
+      skillName,
+      areaColor,
+      xpBefore,
+      xpAfter: xpBefore + xpToAdd,
+      xpMax,
+      level,
+    });
     
     // Check if it's a legacy skill
     if (experienceSelectedSkill.startsWith("legacy:")) {
@@ -649,6 +696,13 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
         skills[legacySkillName] = { name: legacySkillName, currentXp: 0, level: 1 };
       }
       
+      const legacySnapshot = buildSnapshot(
+        legacySkillName,
+        skills[legacySkillName].currentXp,
+        skills[legacySkillName].level,
+        500
+      );
+
       const xpPerLevel = 500;
       const oldLevel = skills[legacySkillName].level;
       skills[legacySkillName].currentXp += xpToAdd;
@@ -688,14 +742,19 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       
       setXpValue("");
       setExperienceSelectedSkill(null);
-      setShowPlusOne({ visible: true, type: "experience", value: xpToAdd });
-      setTimeout(() => setShowPlusOne({ visible: false, type: "experience" }), 1000);
+      openExperiencePopup(legacySnapshot);
       return;
     }
     
     // GlobalSkill flow
     const currentSkill = availableGlobalSkills.find(s => s.id === experienceSelectedSkill);
     const oldLevel = currentSkill?.level || 1;
+    const globalSnapshot = buildSnapshot(
+      currentSkill?.name || experienceSelectedSkill,
+      currentSkill?.currentXp || 0,
+      currentSkill?.level || 1,
+      currentSkill?.goalXp && currentSkill.goalXp > 0 ? currentSkill.goalXp : null
+    );
     
     try {
       // Use the GlobalSkills API to add XP (with cascade to parent)
@@ -723,8 +782,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
         // Clear inputs and show feedback
         setXpValue("");
         setExperienceSelectedSkill(null);
-        setShowPlusOne({ visible: true, type: "experience", value: xpToAdd });
-        setTimeout(() => setShowPlusOne({ visible: false, type: "experience" }), 1000);
+        openExperiencePopup(globalSnapshot);
       }
     } catch (error) {
       console.error("[handleAddExperience] Error adding XP:", error);
@@ -1693,21 +1751,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                   </PopoverContent>
                 </Popover>
                 <div className="flex justify-end items-center gap-2 pt-4">
-                  <div className="relative">
-                    <AnimatePresence>
-                      {showPlusOne.visible && showPlusOne.type === "experience" && (
-                        <motion.span
-                          initial={{ opacity: 1, y: 0 }}
-                          animate={{ opacity: 0, y: -20 }}
-                          exit={{ opacity: 0 }}
-                          transition={{ duration: 0.8 }}
-                          className="absolute -top-6 -right-2 text-foreground font-medium text-sm pointer-events-none"
-                        >
-                          +{showPlusOne.value}
-                        </motion.span>
-                      )}
-                    </AnimatePresence>
-                  </div>
                   <Button 
                     variant="ghost" 
                     size="sm"
@@ -1721,6 +1764,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                   </Button>
                 </div>
               </TabsContent>
+
+              <ExperienceGainPopup snapshot={experiencePopup} onClose={closeExperiencePopup} />
 
               <AnimatePresence>
                 {levelUpPopupVisible && (
