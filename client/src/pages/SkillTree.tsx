@@ -16,6 +16,7 @@ import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Sk
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
+import { XpPopupProvider } from "@/lib/xp-popup-context";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -6997,21 +6998,23 @@ export default function SkillTreePage() {
   return (
     <DiaryProvider>
       <SkillTreeProvider>
-        <MenuProvider>
-          <div className="flex h-screen w-full bg-background text-foreground overflow-hidden font-body selection:bg-primary/30">
-            <TopRightControls onOpenGuide={openGuide} onOpenDesigner={() => setIsDesignerOpen(true)} onOpenProgress={() => setIsProgressOpen(true)} onOpenHabits={() => setIsHabitsOpen(true)} onOpenStrength={() => setIsStrengthOpen(true)} onOpenBookTracker={() => setIsBookTrackerOpen(true)} onOpenRewiringTracker={() => setIsRewiringTrackerOpen(true)} />
-            <ProgressModal open={isProgressOpen} onOpenChange={setIsProgressOpen} />
-            <SkillDesigner open={isDesignerOpen} onOpenChange={setIsDesignerOpen} />
-            <HabitStreakModal open={isHabitsOpen} onOpenChange={setIsHabitsOpen} />
-            <SpaceRepetitionModal open={isStrengthOpen} onOpenChange={setIsStrengthOpen} />
-            <BookTrackerModalWrapper open={isBookTrackerOpen} onOpenChange={setIsBookTrackerOpen} />
-            <RewiringTrackerModalWrapper open={isRewiringTrackerOpen} onOpenChange={setIsRewiringTrackerOpen} />
-            <AreaMenu />
-            <SkillCanvas />
-            <QuestDiary />
-            <OnboardingGuide isOpen={showOnboarding} onComplete={handleCompleteOnboarding} />
-          </div>
-        </MenuProvider>
+        <XpPopupProvider>
+          <MenuProvider>
+            <div className="flex h-screen w-full bg-background text-foreground overflow-hidden font-body selection:bg-primary/30">
+              <TopRightControls onOpenGuide={openGuide} onOpenDesigner={() => setIsDesignerOpen(true)} onOpenProgress={() => setIsProgressOpen(true)} onOpenHabits={() => setIsHabitsOpen(true)} onOpenStrength={() => setIsStrengthOpen(true)} onOpenBookTracker={() => setIsBookTrackerOpen(true)} onOpenRewiringTracker={() => setIsRewiringTrackerOpen(true)} />
+              <ProgressModal open={isProgressOpen} onOpenChange={setIsProgressOpen} />
+              <SkillDesigner open={isDesignerOpen} onOpenChange={setIsDesignerOpen} />
+              <HabitStreakModal open={isHabitsOpen} onOpenChange={setIsHabitsOpen} />
+              <SpaceRepetitionModal open={isStrengthOpen} onOpenChange={setIsStrengthOpen} />
+              <BookTrackerModalWrapper open={isBookTrackerOpen} onOpenChange={setIsBookTrackerOpen} />
+              <RewiringTrackerModalWrapper open={isRewiringTrackerOpen} onOpenChange={setIsRewiringTrackerOpen} />
+              <AreaMenu />
+              <SkillCanvas />
+              <QuestDiary />
+              <OnboardingGuide isOpen={showOnboarding} onComplete={handleCompleteOnboarding} />
+            </div>
+          </MenuProvider>
+        </XpPopupProvider>
         </SkillTreeProvider>
     </DiaryProvider>
   );

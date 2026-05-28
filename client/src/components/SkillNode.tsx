@@ -5,7 +5,8 @@ import { cn } from "@/lib/utils";
 import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus, Star, ChevronRight, ChevronLeft, Wrench, Lightbulb, Flame } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
-import { ExperienceGainPopup, type ExperienceGainSnapshot } from "./ExperienceGainPopup";
+import { type ExperienceGainSnapshot } from "./ExperienceGainPopup";
+import { useXpPopup } from "@/lib/xp-popup-context";
 import {
   Popover,
   PopoverContent,
@@ -217,15 +218,13 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [learningTitle, setLearningTitle] = useState("");
   const [learningSentence, setLearningSentence] = useState("");
   const [showPlusOne, setShowPlusOne] = useState<{ visible: boolean; type: "tools" | "learnings" | "thoughts" | "experience"; value?: number }>({ visible: false, type: "tools" });
-  const [experiencePopup, setExperiencePopup] = useState<ExperienceGainSnapshot | null>(null);
   const [levelUpPopupVisible, setLevelUpPopupVisible] = useState(false);
   const levelUpPopupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const experiencePopupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [hasIncompleteSubtasks, setHasIncompleteSubtasks] = useState(false);
   
   // Habits state
   const [habitDataWithRecords, setHabitDataWithRecords] = useState<any[]>([]);
-  const [showXpPopup, setShowXpPopup] = useState<{ visible: boolean; x: number; y: number }>({ visible: false, x: 0, y: 0 });
+  const { showXpPopup } = useXpPopup();
   
   // Queries for archivements (learnings, tools, thoughts by skillId)
   const { data: skillLearnings = [] } = useQuery({
@@ -362,35 +361,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [showXpAnimation, setShowXpAnimation] = useState(false);
   const [animatedXpValue, setAnimatedXpValue] = useState("");
 
-  const openExperiencePopup = (snapshot: ExperienceGainSnapshot) => {
-    if (experiencePopupTimer.current) {
-      clearTimeout(experiencePopupTimer.current);
-      experiencePopupTimer.current = null;
-    }
-
-    setExperiencePopup(snapshot);
-    experiencePopupTimer.current = setTimeout(() => {
-      setExperiencePopup(null);
-      experiencePopupTimer.current = null;
-    }, 2500);
-  };
-
-  const closeExperiencePopup = () => {
-    if (experiencePopupTimer.current) {
-      clearTimeout(experiencePopupTimer.current);
-      experiencePopupTimer.current = null;
-    }
-    setExperiencePopup(null);
-  };
-
-  useEffect(() => {
-    return () => {
-      if (experiencePopupTimer.current) {
-        clearTimeout(experiencePopupTimer.current);
-        experiencePopupTimer.current = null;
-      }
-    };
-  }, []);
   const pendingXpValue = useRef<string>("");
   const prevStatus = useRef<string>(skill.status);
   const wasDialogOpen = useRef(false);
@@ -742,7 +712,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       
       setXpValue("");
       setExperienceSelectedSkill(null);
-      openExperiencePopup(legacySnapshot);
+      showXpPopup(legacySnapshot);
       return;
     }
     
@@ -782,7 +752,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
         // Clear inputs and show feedback
         setXpValue("");
         setExperienceSelectedSkill(null);
-        openExperiencePopup(globalSnapshot);
+        showXpPopup(globalSnapshot);
       }
     } catch (error) {
       console.error("[handleAddExperience] Error adding XP:", error);
@@ -1765,8 +1735,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 </div>
               </TabsContent>
 
-              <ExperienceGainPopup snapshot={experiencePopup} onClose={closeExperiencePopup} />
-
               <AnimatePresence>
                 {levelUpPopupVisible && (
                   <motion.div
@@ -1908,8 +1876,18 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                                   
                                   if (xpRes.ok) {
                                     const xpData = await xpRes.json();
-                                    setShowXpPopup({ visible: true, x: window.innerWidth / 2, y: window.innerHeight / 2 });
-                                    setTimeout(() => setShowXpPopup({ visible: false, x: 0, y: 0 }), 1500);
+                                    const linkedSkill = globalSkills.find((skillEntry) => skillEntry.id === habit.skillProgressId || skillEntry.id === habit.subskillId);
+                                    if (linkedSkill) {
+                                      const area = areas.find((areaEntry) => areaEntry.id === linkedSkill.areaId);
+                                      showXpPopup({
+                                        skillName: linkedSkill.name,
+                                        areaColor: area?.color || areaColor,
+                                        xpBefore: linkedSkill.currentXp,
+                                        xpAfter: linkedSkill.currentXp + (xpData?.xpAwarded || 5),
+                                        xpMax: linkedSkill.goalXp || null,
+                                        level: linkedSkill.level,
+                                      });
+                                    }
                                     
                                     if (activeAreaId) {
                                       await queryClient.refetchQueries({ queryKey: ["/api/areas", activeAreaId] });

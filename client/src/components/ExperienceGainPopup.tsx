@@ -134,7 +134,7 @@ export function ExperienceGainPopup({ snapshot, onClose }: ExperienceGainPopupPr
   useEffect(() => {
     if (!snapshot) return;
 
-    const closeTimer = window.setTimeout(onClose, 2500);
+    const closeTimer = window.setTimeout(onClose, 7500);
     return () => window.clearTimeout(closeTimer);
   }, [snapshot, onClose]);
 

@@ -8,6 +8,8 @@ import { ArrowLeft, ChevronLeft, ChevronRight, Eye, Trash2, Plus, Swords, Archiv
 import { useTheme } from "next-themes";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Habit, HabitRecord, Area, Project } from "@shared/schema";
+import { useSkillTree } from "@/lib/skill-context";
+import { useXpPopup } from "@/lib/xp-popup-context";
 
 interface HabitData extends Habit {
   done: Set<string>;
@@ -171,11 +173,12 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
   const [editHabitAreaId, setEditHabitAreaId] = useState<string | null>(null);
   const [editHabitProjectId, setEditHabitProjectId] = useState<string | null>(null);
   const [editHabitScheduledDays, setEditHabitScheduledDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
-  const [showXpPopup, setShowXpPopup] = useState<{ visible: boolean; habitName: string }>({ visible: false, habitName: "" });
   const [newHabitSkillProgressId, setNewHabitSkillProgressId] = useState<string | null>(null);
   const [editHabitSkillProgressId, setEditHabitSkillProgressId] = useState<string | null>(null);
   const { theme } = useTheme();
   const queryClient = useQueryClient();
+  const { globalSkills, refetchGlobalSkills } = useSkillTree();
+  const { showXpPopup } = useXpPopup();
 
   // Fetch habits
   const { data: habits = [], isLoading: habitsLoading } = useQuery({
@@ -646,15 +649,25 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                         // Award XP if habit has a linked skill and is being marked complete
                         if (!isCompleted && habit.skillId) {
                           try {
+                            const linkedSkill = globalSkills.find((skillEntry) => skillEntry.id === habit.skillId);
                             const res = await fetch(`/api/habits/${habitId}/award-xp`, {
                               method: "POST",
                               headers: { "Content-Type": "application/json" },
                             });
                             if (res.ok) {
-                              setShowXpPopup({ visible: true, habitName: habit.name });
-                              setTimeout(() => {
-                                setShowXpPopup({ visible: false, habitName: "" });
-                              }, 1500);
+                              const xpData = await res.json();
+                              if (linkedSkill) {
+                                const area = areas.find((areaEntry) => areaEntry.id === linkedSkill.areaId);
+                                showXpPopup({
+                                  skillName: linkedSkill.name,
+                                  areaColor: area?.color || "#c85a2a",
+                                  xpBefore: linkedSkill.currentXp,
+                                  xpAfter: linkedSkill.currentXp + (xpData?.xpAwarded || 5),
+                                  xpMax: linkedSkill.goalXp || null,
+                                  level: linkedSkill.level,
+                                });
+                              }
+                              await refetchGlobalSkills();
                               await queryClient.refetchQueries({ queryKey: ["skills"] });
                             }
                           } catch (error) {
@@ -882,22 +895,6 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
           )}
         </div>
 
-        {/* +5xp Popup */}
-        <AnimatePresence>
-          {showXpPopup.visible && (
-            <motion.div
-              initial={{ opacity: 0, y: -100, scale: 0.5 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 100, scale: 0.5 }}
-              transition={{ duration: 0.4, type: "spring", damping: 10 }}
-              className="fixed inset-0 flex items-center justify-center pointer-events-none z-[9999]"
-            >
-              <div className="text-5xl font-bold text-green-400 drop-shadow-lg">
-                +5xp
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </DialogContent>
     </Dialog>
   );
