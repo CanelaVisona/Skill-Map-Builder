@@ -1,4 +1,4 @@
-import { eq, and, asc } from "drizzle-orm";
+import { eq, and, asc, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db, pool } from "./db";
 import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourcePowers, type InsertSourcePowers, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourcePowers, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, rewiringTrackers, rewiringTrackerRecords } from "@shared/schema";
@@ -24,6 +24,8 @@ export interface IStorage {
   getArea(id: string): Promise<Area | undefined>;
   createArea(area: InsertArea): Promise<Area>;
   updateArea(id: string, area: Partial<InsertArea>): Promise<Area | undefined>;
+  addAreaXp(areaId: string, delta: number): Promise<Area | undefined>;
+  initializeAreaXpFromMastered(): Promise<void>;
   deleteArea(id: string): Promise<void>;
   archiveArea(id: string): Promise<Area | undefined>;
   unarchiveArea(id: string): Promise<Area | undefined>;
@@ -57,6 +59,7 @@ export interface IStorage {
   getProject(id: string): Promise<Project | undefined>;
   createProject(project: InsertProject): Promise<Project>;
   updateProject(id: string, project: Partial<InsertProject>): Promise<Project | undefined>;
+  addProjectXp(projectId: string, delta: number): Promise<Project | undefined>;
   deleteProject(id: string): Promise<void>;
   archiveProject(id: string): Promise<Project | undefined>;
   unarchiveProject(id: string): Promise<Project | undefined>;
@@ -317,6 +320,7 @@ export class DbStorage implements IStorage {
       levelSubtitles: area.levelSubtitles as Record<string, string>,
       levelSubtitleDescriptions: area.levelSubtitleDescriptions as Record<string, string>,
       archived: (area.archived ?? 0) as 0 | 1,
+      currentXp: area.currentXp ?? 0,
     };
     const result = await db.insert(areas).values(insertData).returning();
     return result[0];
@@ -334,9 +338,49 @@ export class DbStorage implements IStorage {
     if (area.levelSubtitleDescriptions !== undefined) updateData.levelSubtitleDescriptions = area.levelSubtitleDescriptions as Record<string, string>;
     if (area.archived !== undefined) updateData.archived = area.archived as 0 | 1;
     if (area.endOfAreaLevel !== undefined) updateData.endOfAreaLevel = area.endOfAreaLevel;
+    if (area.currentXp !== undefined) updateData.currentXp = area.currentXp;
     
     const result = await db.update(areas).set(updateData).where(eq(areas.id, id)).returning();
     return result[0];
+  }
+
+  async addAreaXp(areaId: string, delta: number): Promise<Area | undefined> {
+    const result = await db
+      .update(areas)
+      .set({ currentXp: sql`${areas.currentXp} + ${delta}` })
+      .where(eq(areas.id, areaId))
+      .returning();
+    return result[0];
+  }
+
+  async initializeAreaXpFromMastered(): Promise<void> {
+    const allAreas = await db.select().from(areas);
+    for (const area of allAreas) {
+      if (area.currentXp === 0) {
+        const masteredCount = await db
+          .select({ count: sql<number>`count(*)` })
+          .from(skills)
+          .where(and(eq(skills.areaId, area.id), eq(skills.status, "mastered")));
+        const count = Number(masteredCount[0]?.count ?? 0);
+        if (count > 0) {
+          await db.update(areas).set({ currentXp: count }).where(eq(areas.id, area.id));
+        }
+      }
+    }
+
+    const allProjects = await db.select().from(projects);
+    for (const project of allProjects) {
+      if (project.currentXp === 0) {
+        const masteredCount = await db
+          .select({ count: sql<number>`count(*)` })
+          .from(skills)
+          .where(and(eq(skills.projectId, project.id), eq(skills.status, "mastered")));
+        const count = Number(masteredCount[0]?.count ?? 0);
+        if (count > 0) {
+          await db.update(projects).set({ currentXp: count }).where(eq(projects.id, project.id));
+        }
+      }
+    }
   }
 
   async deleteArea(id: string): Promise<void> {
@@ -775,7 +819,11 @@ export class DbStorage implements IStorage {
     await db.transaction(async (tx) => {
       // Update area's unlocked level first
       await tx.update(areas)
-        .set({ unlockedLevel: level, nextLevelToAssign: level + 3 })
+        .set({
+          unlockedLevel: level,
+          nextLevelToAssign: level + 3,
+          currentXp: sql`${areas.currentXp} + 1`,
+        })
         .where(eq(areas.id, areaId));
 
       // Create 5 skills for the new level with Spanish default names
@@ -846,7 +894,11 @@ export class DbStorage implements IStorage {
 
     await db.transaction(async (tx) => {
       await tx.update(projects)
-        .set({ unlockedLevel: level, nextLevelToAssign: level + 3 })
+        .set({
+          unlockedLevel: level,
+          nextLevelToAssign: level + 3,
+          currentXp: sql`${projects.currentXp} + 1`,
+        })
         .where(eq(projects.id, projectId));
 
       // Create 5 skills for the new level with Spanish default names
@@ -933,6 +985,7 @@ export class DbStorage implements IStorage {
       levelSubtitleDescriptions: project.levelSubtitleDescriptions as Record<string, string>,
       archived: (project.archived ?? 0) as 0 | 1,
       questType: (project.questType ?? "main") as "main" | "side" | "emergent" | "experience",
+      currentXp: project.currentXp ?? 0,
     };
     const result = await db.insert(projects).values(insertData).returning();
     return result[0];
@@ -949,8 +1002,18 @@ export class DbStorage implements IStorage {
     if (project.levelSubtitleDescriptions !== undefined) updateData.levelSubtitleDescriptions = project.levelSubtitleDescriptions as Record<string, string>;
     if (project.archived !== undefined) updateData.archived = project.archived as 0 | 1;
     if (project.endOfAreaLevel !== undefined) updateData.endOfAreaLevel = project.endOfAreaLevel;
+    if (project.currentXp !== undefined) updateData.currentXp = project.currentXp;
     
     const result = await db.update(projects).set(updateData).where(eq(projects.id, id)).returning();
+    return result[0];
+  }
+
+  async addProjectXp(projectId: string, delta: number): Promise<Project | undefined> {
+    const result = await db
+      .update(projects)
+      .set({ currentXp: sql`${projects.currentXp} + ${delta}` })
+      .where(eq(projects.id, projectId))
+      .returning();
     return result[0];
   }
 

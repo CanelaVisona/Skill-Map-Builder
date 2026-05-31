@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
 import { XpPopupProvider } from "@/lib/xp-popup-context";
+import { AreaXpPopupProvider } from "@/lib/area-xp-popup-context";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -6624,7 +6625,7 @@ function SkillCanvas() {
           <div className="sticky top-0 z-20 py-3 mb-6 -mx-8 px-8">
             <div className="flex justify-end">
               <div className="w-28 flex-shrink-0">
-                <ProgressBar skills={activeItem.skills} size="sm" areaOrProjectId={activeItem.id} />
+                <ProgressBar skills={activeItem.skills} size="sm" areaOrProjectId={activeItem.id} currentXp={activeItem.currentXp} />
               </div>
             </div>
           </div>
@@ -6997,25 +6998,27 @@ export default function SkillTreePage() {
   
   return (
     <DiaryProvider>
-      <SkillTreeProvider>
-        <XpPopupProvider>
-          <MenuProvider>
-            <div className="flex h-screen w-full bg-background text-foreground overflow-hidden font-body selection:bg-primary/30">
-              <TopRightControls onOpenGuide={openGuide} onOpenDesigner={() => setIsDesignerOpen(true)} onOpenProgress={() => setIsProgressOpen(true)} onOpenHabits={() => setIsHabitsOpen(true)} onOpenStrength={() => setIsStrengthOpen(true)} onOpenBookTracker={() => setIsBookTrackerOpen(true)} onOpenRewiringTracker={() => setIsRewiringTrackerOpen(true)} />
-              <ProgressModal open={isProgressOpen} onOpenChange={setIsProgressOpen} />
-              <SkillDesigner open={isDesignerOpen} onOpenChange={setIsDesignerOpen} />
-              <HabitStreakModal open={isHabitsOpen} onOpenChange={setIsHabitsOpen} />
-              <SpaceRepetitionModal open={isStrengthOpen} onOpenChange={setIsStrengthOpen} />
-              <BookTrackerModalWrapper open={isBookTrackerOpen} onOpenChange={setIsBookTrackerOpen} />
-              <RewiringTrackerModalWrapper open={isRewiringTrackerOpen} onOpenChange={setIsRewiringTrackerOpen} />
-              <AreaMenu />
-              <SkillCanvas />
-              <QuestDiary />
-              <OnboardingGuide isOpen={showOnboarding} onComplete={handleCompleteOnboarding} />
-            </div>
-          </MenuProvider>
-        </XpPopupProvider>
+      <AreaXpPopupProvider>
+        <SkillTreeProvider>
+          <XpPopupProvider>
+            <MenuProvider>
+              <div className="flex h-screen w-full bg-background text-foreground overflow-hidden font-body selection:bg-primary/30">
+                <TopRightControls onOpenGuide={openGuide} onOpenDesigner={() => setIsDesignerOpen(true)} onOpenProgress={() => setIsProgressOpen(true)} onOpenHabits={() => setIsHabitsOpen(true)} onOpenStrength={() => setIsStrengthOpen(true)} onOpenBookTracker={() => setIsBookTrackerOpen(true)} onOpenRewiringTracker={() => setIsRewiringTrackerOpen(true)} />
+                <ProgressModal open={isProgressOpen} onOpenChange={setIsProgressOpen} />
+                <SkillDesigner open={isDesignerOpen} onOpenChange={setIsDesignerOpen} />
+                <HabitStreakModal open={isHabitsOpen} onOpenChange={setIsHabitsOpen} />
+                <SpaceRepetitionModal open={isStrengthOpen} onOpenChange={setIsStrengthOpen} />
+                <BookTrackerModalWrapper open={isBookTrackerOpen} onOpenChange={setIsBookTrackerOpen} />
+                <RewiringTrackerModalWrapper open={isRewiringTrackerOpen} onOpenChange={setIsRewiringTrackerOpen} />
+                <AreaMenu />
+                <SkillCanvas />
+                <QuestDiary />
+                <OnboardingGuide isOpen={showOnboarding} onComplete={handleCompleteOnboarding} />
+              </div>
+            </MenuProvider>
+          </XpPopupProvider>
         </SkillTreeProvider>
+      </AreaXpPopupProvider>
     </DiaryProvider>
   );
 }

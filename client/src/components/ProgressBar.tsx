@@ -1,20 +1,24 @@
 import React, { useState, useEffect, useRef } from "react";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import type { Skill } from "@/lib/skill-context";
+import { useAreaXpPopup } from "@/lib/area-xp-popup-context";
+import { calculateAreaLevel, calculateAreaProgressPercentage, countMasteredSkills } from "@/lib/area-progress";
 
 interface ProgressBarProps {
   skills: Skill[];
   size?: "lg" | "sm";
   areaOrProjectId?: string;
+  currentXp?: number;
 }
 
-export function ProgressBar({ skills, size = "lg", areaOrProjectId }: ProgressBarProps) {
+export function ProgressBar({ skills, size = "lg", areaOrProjectId, currentXp }: ProgressBarProps) {
   const [isAnimating, setIsAnimating] = useState(false);
   const [showLevelUp, setShowLevelUp] = useState(false);
   const [showLevelComplete, setShowLevelComplete] = useState(false);
+  const { snapshot: areaXpSnapshot } = useAreaXpPopup();
   const isFirstRenderRef = useRef(true);
   const prevAreaIdRef = useRef<string | undefined>(areaOrProjectId);
-  const prevCompletedRef = useRef(0);
+  const prevXpRef = useRef(0);
   const prevLevelRef = useRef(1);
 
   const getLevelColor = (level: number): string => {
@@ -31,26 +35,19 @@ export function ProgressBar({ skills, size = "lg", areaOrProjectId }: ProgressBa
     return colors[level] || "bg-green-500 dark:bg-green-500";
   };
 
-  const calculateLevel = (completedNodes: number): number => {
-    return Math.floor(completedNodes / 15) + 1;
-  };
-
-  const calculateProgressPercentage = (completedNodes: number): number => {
-    const nodesSinceLastLevel = completedNodes % 15;
-    return (nodesSinceLastLevel / 15) * 100;
-  };
-
-  const total = skills.length;
-  const completed = skills.filter(s => s.status === "mastered").length;
-  const level = calculateLevel(completed);
-  const progressPercentage = calculateProgressPercentage(completed);
+  const completed = countMasteredSkills(skills);
+  const xpValue = currentXp ?? completed;
+  const level = calculateAreaLevel(xpValue);
+  const progressPercentage = calculateAreaProgressPercentage(xpValue);
+  const activeAreaXpSnapshot = areaXpSnapshot?.areaOrProjectId === areaOrProjectId ? areaXpSnapshot : null;
+  const bonusWidth = activeAreaXpSnapshot ? Math.max(0, activeAreaXpSnapshot.progressAfterPct - activeAreaXpSnapshot.progressBeforePct) : 0;
 
   useEffect(() => {
     // En el primer render, solo inicializar sin animar
     if (isFirstRenderRef.current) {
       isFirstRenderRef.current = false;
       prevAreaIdRef.current = areaOrProjectId;
-      prevCompletedRef.current = completed;
+      prevXpRef.current = xpValue;
       prevLevelRef.current = level;
       setIsAnimating(false);
       return;
@@ -59,7 +56,7 @@ export function ProgressBar({ skills, size = "lg", areaOrProjectId }: ProgressBa
     // Si el área cambió, resetear sin animar
     if (areaOrProjectId !== prevAreaIdRef.current) {
       prevAreaIdRef.current = areaOrProjectId;
-      prevCompletedRef.current = completed;
+      prevXpRef.current = xpValue;
       prevLevelRef.current = level;
       setIsAnimating(false);
       setShowLevelComplete(false);
@@ -67,9 +64,9 @@ export function ProgressBar({ skills, size = "lg", areaOrProjectId }: ProgressBa
     }
 
     // Si el progreso aumentó en la misma área, animar
-    if (completed > prevCompletedRef.current) {
+    if (xpValue > prevXpRef.current) {
       setIsAnimating(true);
-      prevCompletedRef.current = completed;
+      prevXpRef.current = xpValue;
       
       // Detectar cambio de nivel
       if (level > prevLevelRef.current) {
@@ -91,7 +88,7 @@ export function ProgressBar({ skills, size = "lg", areaOrProjectId }: ProgressBa
       const timer = setTimeout(() => setIsAnimating(false), 1500);
       return () => clearTimeout(timer);
     }
-  }, [completed, areaOrProjectId, level]);
+  }, [xpValue, areaOrProjectId, level]);
 
   const containerClass = size === "lg" 
     ? "w-full" 
@@ -133,12 +130,28 @@ export function ProgressBar({ skills, size = "lg", areaOrProjectId }: ProgressBa
       {/* Bar container */}
       <div className={`${barHeight} relative rounded-sm overflow-hidden bg-gray-200 dark:bg-gray-700`}>
         {/* Progress fill with animation */}
-        <motion.div
-          className={`h-full transition-all duration-300 ${barColor}`}
-          style={{ width: `${displayWidth}%` }}
-          animate={isAnimating && !showLevelComplete ? { boxShadow: ["0 0 0 0 rgba(249, 115, 22, 0.7)", "0 0 0 8px rgba(249, 115, 22, 0)"] } : {}}
-          transition={{ duration: 1.5 }}
-        />
+        <div className="absolute inset-0">
+          <motion.div
+            className={`h-full transition-all duration-300 ${barColor}`}
+            style={{ width: `${displayWidth}%` }}
+            animate={isAnimating && !showLevelComplete ? { boxShadow: ["0 0 0 0 rgba(249, 115, 22, 0.7)", "0 0 0 8px rgba(249, 115, 22, 0)"] } : {}}
+            transition={{ duration: 1.5 }}
+          />
+
+          <AnimatePresence>
+            {activeAreaXpSnapshot && bonusWidth > 0 && (
+              <motion.div
+                key="area-progress-bonus"
+                initial={{ opacity: 0, left: `${activeAreaXpSnapshot.progressBeforePct}%`, width: `${bonusWidth}%` }}
+                animate={{ opacity: 0.75, left: `${activeAreaXpSnapshot.progressBeforePct}%`, width: `${bonusWidth}%` }}
+                exit={{ opacity: 0, left: `${activeAreaXpSnapshot.progressBeforePct}%`, width: `${bonusWidth}%` }}
+                transition={{ duration: 0.45, ease: [0.4, 0, 0.2, 1] }}
+                className="absolute top-0 h-full"
+                style={{ backgroundColor: activeAreaXpSnapshot.areaColor, mixBlendMode: "screen" }}
+              />
+            )}
+          </AnimatePresence>
+        </div>
         
         {/* Level text integrated inside bar */}
         <div className={`absolute inset-0 flex items-center justify-center ${textSize} font-semibold text-gray-900 dark:text-black pointer-events-none`}>

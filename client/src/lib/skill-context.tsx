@@ -1,5 +1,7 @@
 import { createContext, useContext, useState, useEffect, useRef } from "react";
 import { Music, Trophy, BookOpen, Home } from "lucide-react";
+import { useAreaXpPopup } from "@/lib/area-xp-popup-context";
+import { calculateAreaProgressPercentage } from "@/lib/area-progress";
 
 export type SkillStatus = "locked" | "available" | "mastered";
 
@@ -34,6 +36,7 @@ export interface Area {
   levelSubtitles: Record<string, string>;
   levelSubtitleDescriptions: Record<string, string>;
   endOfAreaLevel?: number;
+  currentXp: number;
   skills: Skill[];
 }
 
@@ -47,6 +50,7 @@ export interface Project {
   levelSubtitles: Record<string, string>;
   levelSubtitleDescriptions: Record<string, string>;
   endOfAreaLevel?: number;
+  currentXp: number;
   skills: Skill[];
   questType?: "main" | "side" | "emergent" | "experience";
 }
@@ -157,6 +161,7 @@ interface SkillTreeContextType {
   createGlobalSkill: (name: string, areaId?: string, projectId?: string, parentSkillId?: string) => Promise<GlobalSkill | null>;
   updateGlobalSkillName: (id: string, name: string) => Promise<GlobalSkill | null>;
   addXpToGlobalSkill: (id: string, xpAmount: number) => Promise<GlobalSkill | null>;
+  addAreaXp: (areaOrProjectId: string, isProject: boolean, delta?: number) => Promise<boolean>;
   deleteGlobalSkill: (id: string) => Promise<void>;
   refetchGlobalSkills: () => Promise<void>;
 }
@@ -202,6 +207,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
   const [globalSkills, setGlobalSkills] = useState<GlobalSkill[]>([]);
   const [globalSkillsLoading, setGlobalSkillsLoading] = useState(true);
   const isReordering = useRef(false);
+
+  const { showAreaXpPopup } = useAreaXpPopup();
+  const areaQuestUpdatedDelayMs = 3300;
+  const areaLevelUpDelayMs = 4300;
 
   const triggerLevelUp = (level: number) => {
     setLevelUpNumber(level);
@@ -837,8 +846,33 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           await archiveArea(areaId);
           await refreshAllAreas();
         }, 5000);
-      } else if (newStatus === "mastered") {
-        triggerQuestUpdated();
+      } else if (newStatus === "mastered" && !isFinalNodeByPosition) {
+        // Trigger area XP popup before quest popup
+        try {
+          const progressBeforePct = calculateAreaProgressPercentage(area.currentXp ?? 0);
+          const progressAfterPct = calculateAreaProgressPercentage((area.currentXp ?? 0) + 1);
+          showAreaXpPopup?.({
+            areaOrProjectId: areaId,
+            scopeName: area.name,
+            areaColor: area.color,
+            progressBeforePct,
+            progressAfterPct,
+            bonusXp: 1,
+            currentXp: area.currentXp ?? 0,
+          });
+        } catch (e) {
+          // ignore
+        }
+
+        setTimeout(() => {
+          triggerQuestUpdated();
+        }, areaQuestUpdatedDelayMs);
+      }
+
+      if (newStatus === "mastered") {
+        void addAreaXp(areaId, false, 1);
+      } else if (skill.status === "mastered" && newStatus === "available") {
+        void addAreaXp(areaId, false, -1);
       }
 
       // Update skills for this level with the server response
@@ -860,9 +894,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       if (isOpeningNewLevel) {
         const newUnlockedLevel = skill.level + 1;
         
-        // Trigger UI feedback immediately (no state change)
-        triggerQuestUpdated();
-        setTimeout(() => triggerLevelUp(newUnlockedLevel), 2500);
+        // Trigger level up after the area popup has had time to animate
+        setTimeout(() => triggerLevelUp(newUnlockedLevel), areaLevelUpDelayMs);
         
         // Generate new level in the background - atomically update state once on completion
         // This endpoint is idempotent, so it's safe to call even if nodes exist
@@ -1171,8 +1204,16 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           await archiveProject(projectId);
           await refreshAllAreas();
         }, 5000);
-      } else if (newStatus === "mastered") {
-        triggerQuestUpdated();
+      } else if (newStatus === "mastered" && !isFinalNodeByPosition) {
+        setTimeout(() => {
+          triggerQuestUpdated();
+        }, areaQuestUpdatedDelayMs);
+      }
+
+      if (newStatus === "mastered") {
+        void addAreaXp(projectId, true, 1);
+      } else if (skill.status === "mastered" && newStatus === "available") {
+        void addAreaXp(projectId, true, -1);
       }
 
       if (isOpeningNewLevel) {
@@ -1191,9 +1232,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           };
         }));
         
-        // Trigger UI feedback immediately
-        triggerQuestUpdated();
-        setTimeout(() => triggerLevelUp(newUnlockedLevel), 2500);
+        // Trigger level up after the area popup has had time to animate
+        setTimeout(() => triggerLevelUp(newUnlockedLevel), areaLevelUpDelayMs);
         
         // Generate new level in the background without blocking
         fetch(`/api/projects/${projectId}/generate-level`, {
@@ -2413,8 +2453,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           s.id === skillId ? { ...s, status: newStatus } : s
         ));
         
-        // Trigger UI feedback immediately
-        triggerQuestUpdated();
+        // Trigger UI feedback after the area popup has had time to animate
+        setTimeout(() => {
+          triggerQuestUpdated();
+        }, 1800);
         
         // Generate new level in the background without blocking
         fetch(`/api/skills/${activeParentSkillId}/subskills/generate-level`, {
@@ -4009,6 +4051,35 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
+  const addAreaXp = async (areaOrProjectId: string, isProject: boolean, delta = 1): Promise<boolean> => {
+    try {
+      const endpoint = isProject
+        ? `/api/projects/${areaOrProjectId}/xp`
+        : `/api/areas/${areaOrProjectId}/xp`;
+
+      const response = await fetch(endpoint, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ delta }),
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to update ${isProject ? "project" : "area"} XP`);
+      }
+
+      if (isProject) {
+        await refreshAllProjects();
+      } else {
+        await refreshAllAreas();
+      }
+      return true;
+    } catch (error) {
+      console.error("Error updating area/project XP:", error);
+      return false;
+    }
+  };
+
   const createGlobalSkill = async (
     name: string, 
     areaId?: string, 
@@ -4178,6 +4249,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       createGlobalSkill,
       updateGlobalSkillName,
       addXpToGlobalSkill,
+      addAreaXp,
       deleteGlobalSkill,
       refetchGlobalSkills
     }}>

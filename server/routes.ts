@@ -419,6 +419,33 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/areas/:id/xp", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { delta } = req.body;
+
+      if (typeof delta !== "number") {
+        res.status(400).json({ error: "delta must be a number" });
+        return;
+      }
+
+      const existingArea = await storage.getArea(id);
+      if (!existingArea) {
+        res.status(404).json({ message: "Area not found" });
+        return;
+      }
+      if (existingArea.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para modificar esta área" });
+        return;
+      }
+
+      await storage.addAreaXp(id, delta);
+      res.sendStatus(204);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.delete("/api/areas/:id", requireAuth, async (req, res) => {
     try {
       const existingArea = await storage.getArea(req.params.id);
@@ -1604,6 +1631,33 @@ export async function registerRoutes(
       }
       const project = await storage.updateProject(req.params.id, req.body);
       res.json(project);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/projects/:id/xp", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { delta } = req.body;
+
+      if (typeof delta !== "number") {
+        res.status(400).json({ error: "delta must be a number" });
+        return;
+      }
+
+      const existingProject = await storage.getProject(id);
+      if (!existingProject) {
+        res.status(404).json({ message: "Project not found" });
+        return;
+      }
+      if (existingProject.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para modificar este proyecto" });
+        return;
+      }
+
+      await storage.addProjectXp(id, delta);
+      res.sendStatus(204);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

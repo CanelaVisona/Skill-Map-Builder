@@ -7,6 +7,8 @@ import { useState, useRef, useEffect } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { type ExperienceGainSnapshot } from "./ExperienceGainPopup";
 import { useXpPopup } from "@/lib/xp-popup-context";
+import { useAreaXpPopup } from "@/lib/area-xp-popup-context";
+import { AREA_PROGRESS_XP_INCREMENT, calculateAreaProgressPercentage, countMasteredSkills } from "@/lib/area-progress";
 import {
   Popover,
   PopoverContent,
@@ -76,12 +78,14 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     getGlobalSkillsForArea,
     getGlobalSkillsForProject,
     createGlobalSkill,
-    addXpToGlobalSkill
+    addXpToGlobalSkill,
+    addAreaXp
   } = useSkillTree();
   
   const isProject = !activeAreaId && !!activeProjectId;
   const activeId = activeAreaId || activeProjectId;
   const isSubSkillView = !!activeParentSkillId;
+  const activeScope = isProject ? activeProject : activeArea;
   
   // Calculate if all nodes in this level are mastered
   const currentSkills = isSubSkillView 
@@ -217,7 +221,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [toolSentence, setToolSentence] = useState("");
   const [learningTitle, setLearningTitle] = useState("");
   const [learningSentence, setLearningSentence] = useState("");
-  const [showPlusOne, setShowPlusOne] = useState<{ visible: boolean; type: "tools" | "learnings" | "thoughts" | "experience"; value?: number }>({ visible: false, type: "tools" });
+  
   const [levelUpPopupVisible, setLevelUpPopupVisible] = useState(false);
   const levelUpPopupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [hasIncompleteSubtasks, setHasIncompleteSubtasks] = useState(false);
@@ -225,6 +229,29 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   // Habits state
   const [habitDataWithRecords, setHabitDataWithRecords] = useState<any[]>([]);
   const { showXpPopup } = useXpPopup();
+  const { showAreaXpPopup } = useAreaXpPopup();
+  const activeScopeSkills = isProject ? (activeProject?.skills || []) : (activeArea?.skills || []);
+  const activeScopeName = isProject ? (activeProject?.name || "Project") : (activeArea?.name || "Area");
+  const activeScopeXp = activeScope?.currentXp ?? countMasteredSkills(activeScopeSkills);
+
+  const triggerAreaProgressPopup = (xpBefore: number = activeScopeXp) => {
+    if (!activeId) {
+      return;
+    }
+
+    const progressBeforePct = calculateAreaProgressPercentage(xpBefore);
+    const progressAfterPct = calculateAreaProgressPercentage(xpBefore + AREA_PROGRESS_XP_INCREMENT);
+
+    showAreaXpPopup({
+      areaOrProjectId: activeId,
+      scopeName: activeScopeName,
+      areaColor,
+      progressBeforePct,
+      progressAfterPct,
+      bonusXp: AREA_PROGRESS_XP_INCREMENT,
+      currentXp: xpBefore,
+    });
+  };
   
   // Queries for archivements (learnings, tools, thoughts by skillId)
   const { data: skillLearnings = [] } = useQuery({
@@ -539,7 +566,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     },
   });
 
-  const handleAddThought = () => {
+  const handleAddThought = async () => {
     console.log("[handleAddThought] Called", {
       thoughtTitle: thoughtTitle.trim(),
       thoughtSentence: thoughtSentence.trim(),
@@ -558,14 +585,22 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     };
     console.log("[handleAddThought] Calling mutation with:", payload);
     
-    createThought.mutate(payload);
-    setThoughtTitle("");
-    setThoughtSentence("");
-    setShowPlusOne({ visible: true, type: "thoughts" });
-    setTimeout(() => setShowPlusOne({ visible: false, type: "thoughts" }), 1000);
+    try {
+      await createThought.mutateAsync(payload);
+      setThoughtTitle("");
+      setThoughtSentence("");
+      if (activeId) {
+        const areaXpUpdated = await addAreaXp(activeId, isProject, AREA_PROGRESS_XP_INCREMENT);
+        if (areaXpUpdated) {
+          triggerAreaProgressPopup();
+        }
+      }
+    } catch {
+      // Mutation error is already handled by the mutation's onError callback.
+    }
   };
 
-  const handleAddLearning = () => {
+  const handleAddLearning = async () => {
     console.log("[handleAddLearning] Called", {
       learningTitle: learningTitle.trim(),
       learningSentence: learningSentence.trim(),
@@ -584,14 +619,22 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     };
     console.log("[handleAddLearning] Calling mutation with:", payload);
     
-    createLearning.mutate(payload);
-    setLearningTitle("");
-    setLearningSentence("");
-    setShowPlusOne({ visible: true, type: "learnings" });
-    setTimeout(() => setShowPlusOne({ visible: false, type: "learnings" }), 1000);
+    try {
+      await createLearning.mutateAsync(payload);
+      setLearningTitle("");
+      setLearningSentence("");
+      if (activeId) {
+        const areaXpUpdated = await addAreaXp(activeId, isProject, AREA_PROGRESS_XP_INCREMENT);
+        if (areaXpUpdated) {
+          triggerAreaProgressPopup();
+        }
+      }
+    } catch {
+      // Mutation error is already handled by the mutation's onError callback.
+    }
   };
 
-  const handleAddTool = () => {
+  const handleAddTool = async () => {
     console.log("[handleAddTool] Called", {
       toolTitle: toolTitle.trim(),
       toolSentence: toolSentence.trim(),
@@ -610,11 +653,19 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     };
     console.log("[handleAddTool] Calling mutation with:", payload);
     
-    createTool.mutate(payload);
-    setToolTitle("");
-    setToolSentence("");
-    setShowPlusOne({ visible: true, type: "tools" });
-    setTimeout(() => setShowPlusOne({ visible: false, type: "tools" }), 1000);
+    try {
+      await createTool.mutateAsync(payload);
+      setToolTitle("");
+      setToolSentence("");
+      if (activeId) {
+        const areaXpUpdated = await addAreaXp(activeId, isProject, AREA_PROGRESS_XP_INCREMENT);
+        if (areaXpUpdated) {
+          triggerAreaProgressPopup();
+        }
+      }
+    } catch {
+      // Mutation error is already handled by the mutation's onError callback.
+    }
   };
 
   const handleAddExperience = async () => {
@@ -753,6 +804,15 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
         setXpValue("");
         setExperienceSelectedSkill(null);
         showXpPopup(globalSnapshot);
+
+        const targetId = currentSkill?.areaId || currentSkill?.projectId;
+        const isTargetProject = !currentSkill?.areaId && !!currentSkill?.projectId;
+        if (targetId) {
+          const areaXpUpdated = await addAreaXp(targetId, isTargetProject, AREA_PROGRESS_XP_INCREMENT);
+          if (areaXpUpdated) {
+            triggerAreaProgressPopup(currentSkill?.currentXp ?? 0);
+          }
+        }
       }
     } catch (error) {
       console.error("[handleAddExperience] Error adding XP:", error);
@@ -1520,21 +1580,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                   />
                 </div>
                 <div className="flex justify-end items-center gap-2 pt-2">
-                  <div className="relative">
-                    <AnimatePresence>
-                      {showPlusOne.visible && showPlusOne.type === "thoughts" && (
-                        <motion.span
-                          initial={{ opacity: 1, y: 0 }}
-                          animate={{ opacity: 0, y: -20 }}
-                          exit={{ opacity: 0 }}
-                          transition={{ duration: 0.8 }}
-                          className="absolute -top-6 -right-2 text-foreground font-medium text-sm pointer-events-none"
-                        >
-                          +1
-                        </motion.span>
-                      )}
-                    </AnimatePresence>
-                  </div>
+                  
                   <Button 
                     variant="ghost" 
                     size="sm"
@@ -1567,21 +1613,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                   />
                 </div>
                 <div className="flex justify-end items-center gap-2 pt-2">
-                  <div className="relative">
-                    <AnimatePresence>
-                      {showPlusOne.visible && showPlusOne.type === "learnings" && (
-                        <motion.span
-                          initial={{ opacity: 1, y: 0 }}
-                          animate={{ opacity: 0, y: -20 }}
-                          exit={{ opacity: 0 }}
-                          transition={{ duration: 0.8 }}
-                          className="absolute -top-6 -right-2 text-foreground font-medium text-sm pointer-events-none"
-                        >
-                          +1
-                        </motion.span>
-                      )}
-                    </AnimatePresence>
-                  </div>
+                  
                   <Button 
                     variant="ghost" 
                     size="sm"
@@ -1767,21 +1799,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                   />
                 </div>
                 <div className="flex justify-end items-center gap-2 pt-2">
-                  <div className="relative">
-                    <AnimatePresence>
-                      {showPlusOne.visible && showPlusOne.type === "tools" && (
-                        <motion.span
-                          initial={{ opacity: 1, y: 0 }}
-                          animate={{ opacity: 0, y: -20 }}
-                          exit={{ opacity: 0 }}
-                          transition={{ duration: 0.8 }}
-                          className="absolute -top-6 -right-2 text-foreground font-medium text-sm pointer-events-none"
-                        >
-                          +1
-                        </motion.span>
-                      )}
-                    </AnimatePresence>
-                  </div>
+                  
                   <Button 
                     variant="ghost" 
                     size="sm"
@@ -2345,21 +2363,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               />
             </div>
             <div className="flex justify-end items-center gap-2 pt-2">
-              <div className="relative">
-                <AnimatePresence>
-                  {showPlusOne.visible && showPlusOne.type === "tools" && (
-                    <motion.span
-                      initial={{ opacity: 1, y: 0 }}
-                      animate={{ opacity: 0, y: -20 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: 0.8 }}
-                      className="absolute -top-6 -right-2 text-foreground font-medium text-sm pointer-events-none"
-                    >
-                      +1
-                    </motion.span>
-                  )}
-                </AnimatePresence>
-              </div>
+              
               <Button 
                 variant="ghost" 
                 size="sm"
@@ -2392,21 +2396,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               />
             </div>
             <div className="flex justify-end items-center gap-2 pt-2">
-              <div className="relative">
-                <AnimatePresence>
-                  {showPlusOne.visible && showPlusOne.type === "learnings" && (
-                    <motion.span
-                      initial={{ opacity: 1, y: 0 }}
-                      animate={{ opacity: 0, y: -20 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: 0.8 }}
-                      className="absolute -top-6 -right-2 text-foreground font-medium text-sm pointer-events-none"
-                    >
-                      +1
-                    </motion.span>
-                  )}
-                </AnimatePresence>
-              </div>
+              
               <Button 
                 variant="ghost" 
                 size="sm"

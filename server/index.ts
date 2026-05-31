@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { storage } from "./storage";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import path from "path";
@@ -113,6 +114,14 @@ app.use((req, res, next) => {
     console.log("✓ Bestiary images directory ready:", imagesDir);
   } catch (error: any) {
     console.error("⚠ Error creating images directory:", error.message);
+  }
+
+  try {
+    console.log("Initializing area/project XP from mastered skills...");
+    await storage.initializeAreaXpFromMastered();
+    console.log("✓ Area/project XP initialized");
+  } catch (error: any) {
+    console.error("⚠ Area/project XP initialization warning:", error.message);
   }
 
   await registerRoutes(httpServer, app);
