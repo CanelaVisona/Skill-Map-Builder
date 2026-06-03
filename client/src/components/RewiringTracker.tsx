@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ArrowLeft, Plus, Trash2, Archive, Edit, Swords } from "lucide-react";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
+import { ExperienceGainPopup, type ExperienceGainSnapshot } from "@/components/ExperienceGainPopup";
 
 interface Level {
   name: string;
@@ -163,7 +164,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
   const [editingTrackerProjectId, setEditingTrackerProjectId] = useState<string | null>(null);
   const [editingTrackerSkillId, setEditingTrackerSkillId] = useState<string | null>(null);
   const [editingSkillsForArea, setEditingSkillsForArea] = useState<any[]>([]);
-  const [showXpPopup, setShowXpPopup] = useState<{ visible: boolean }>({ visible: false });
+  const [xpPopupSnapshot, setXpPopupSnapshot] = useState<ExperienceGainSnapshot | null>(null);
   const [newTrackerAreaId, setNewTrackerAreaId] = useState<string | null>(null);
   const [newTrackerProjectId, setNewTrackerProjectId] = useState<string | null>(null);
   const [newTrackerSkillId, setNewTrackerSkillId] = useState<string | null>(null);
@@ -416,6 +417,11 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
   const awardSkillXP = async (skillId: string | null | undefined) => {
     if (!skillId) return;
 
+    const linkedSkill = availableSkills.find((skillEntry) => skillEntry.id === skillId);
+    const area = areas.find((areaEntry) => areaEntry.id === linkedSkill?.areaId);
+    const xpBefore = linkedSkill?.currentXp || 0;
+    const xpAfter = xpBefore + 5;
+
     if (skillId.startsWith("legacy-")) {
       // Handle legacy skills stored in localStorage
       const skillName = skillId.substring(7); // Remove "legacy-" prefix
@@ -456,8 +462,14 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
     }
 
     // Show XP popup in both cases
-    setShowXpPopup({ visible: true });
-    setTimeout(() => setShowXpPopup({ visible: false }), 1500);
+    setXpPopupSnapshot({
+      skillName: linkedSkill?.name || skillId.replace(/^legacy-/, ""),
+      areaColor: area?.color || "#c85a2a",
+      xpBefore,
+      xpAfter,
+      xpMax: linkedSkill?.goalXp || null,
+      level: linkedSkill?.level || Math.floor(xpBefore / 100) + 1,
+    });
   };
 
   const handleCreateTracker = async () => {
@@ -817,7 +829,6 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           areas={areas}
           projects={projects}
           availableSkills={availableSkills}
-          showXpPopup={showXpPopup}
           onDeleteTracker={handleDeleteTracker}
           onRegisterAction={handleIncrement}
           contextMenuTrackerId={contextMenuTrackerId}
@@ -866,6 +877,8 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           onDeleteArchived={handleDeleteArchived}
         />
       )}
+
+      <ExperienceGainPopup snapshot={xpPopupSnapshot} onClose={() => setXpPopupSnapshot(null)} />
     </div>
   );
 }
@@ -1247,7 +1260,6 @@ function MainPanel({
   areas,
   projects,
   availableSkills,
-  showXpPopup,
   onDeleteTracker,
   onRegisterAction,
   contextMenuTrackerId,
@@ -1287,7 +1299,6 @@ function MainPanel({
   areas: any[];
   projects: any[];
   availableSkills: any[];
-  showXpPopup: { visible: boolean };
   onDeleteTracker: (id: string) => void;
   onRegisterAction: (id: string) => void;
   contextMenuTrackerId: string | null;
@@ -1497,26 +1508,6 @@ function MainPanel({
             </motion.div>
         )}
       </AnimatePresence>
-
-
-
-      {/* +5xp Popup */}
-      <AnimatePresence>
-        {showXpPopup.visible && (
-          <motion.div
-            initial={{ opacity: 0, y: -100, scale: 0.5 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 100, scale: 0.5 }}
-            transition={{ duration: 0.4, type: "spring", damping: 10 }}
-            className="fixed inset-0 flex items-center justify-center pointer-events-none z-[9999]"
-          >
-            <div className="text-5xl font-bold text-green-400 drop-shadow-lg">
-              +5xp
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       {/* Footer - Archived button */}
       <div className="border-t border-border/30 flex items-center justify-end px-4 sm:px-6 py-3 gap-2">
         <button

@@ -846,7 +846,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           await archiveArea(areaId);
           await refreshAllAreas();
         }, 5000);
-      } else if (newStatus === "mastered" && !isFinalNodeByPosition) {
+      } else if (newStatus === "mastered" && !isFinalNodeByPosition && !isOpeningNewLevel) {
         // Trigger area XP popup before quest popup
         try {
           const progressBeforePct = calculateAreaProgressPercentage(area.currentXp ?? 0);
@@ -1204,7 +1204,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           await archiveProject(projectId);
           await refreshAllAreas();
         }, 5000);
-      } else if (newStatus === "mastered" && !isFinalNodeByPosition) {
+      } else if (newStatus === "mastered" && !isFinalNodeByPosition && !isOpeningNewLevel) {
         setTimeout(() => {
           triggerQuestUpdated();
         }, areaQuestUpdatedDelayMs);
