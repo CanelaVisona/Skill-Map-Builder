@@ -417,10 +417,13 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
   const awardSkillXP = async (skillId: string | null | undefined) => {
     if (!skillId) return;
 
-    const linkedSkill = availableSkills.find((skillEntry) => skillEntry.id === skillId);
-    const area = areas.find((areaEntry) => areaEntry.id === linkedSkill?.areaId);
-    const xpBefore = linkedSkill?.currentXp || 0;
-    const xpAfter = xpBefore + 5;
+    const xpAmount = 5;
+    let popupSkillName = skillId.replace(/^legacy-/, "");
+    let popupAreaColor = "#c85a2a";
+    let popupXpBefore = 0;
+    let popupXpAfter = xpAmount;
+    let popupXpMax: number | null = null;
+    let popupLevel = 1;
 
     if (skillId.startsWith("legacy-")) {
       // Handle legacy skills stored in localStorage
@@ -438,19 +441,35 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
 
       if (skillsProgress[skillName]) {
         const currentXp = skillsProgress[skillName].currentXp || 0;
-        const newXp = currentXp + 5;
+        const newXp = currentXp + xpAmount;
         const newLevel = Math.floor(newXp / 100) + 1;
         skillsProgress[skillName].currentXp = newXp;
         skillsProgress[skillName].level = newLevel;
         storage.setItem("skillsProgress", JSON.stringify(skillsProgress));
+
+        popupSkillName = skillsProgress[skillName].name || skillName;
+        popupXpBefore = currentXp;
+        popupXpAfter = newXp;
+        popupLevel = newLevel;
       }
     } else {
       // Handle global skills via API
       try {
+        const skillRes = await fetch(`/api/global-skills/${skillId}`);
+        const linkedSkill = skillRes.ok ? await skillRes.json() : null;
+        const area = areas.find((areaEntry) => areaEntry.id === linkedSkill?.areaId);
+
+        popupSkillName = linkedSkill?.name || popupSkillName;
+        popupAreaColor = area?.color || popupAreaColor;
+        popupXpBefore = linkedSkill?.currentXp || 0;
+        popupXpAfter = popupXpBefore + xpAmount;
+        popupXpMax = linkedSkill?.goalXp || null;
+        popupLevel = linkedSkill?.level || Math.floor(popupXpBefore / 100) + 1;
+
         const res = await fetch(`/api/global-skills/${skillId}/add-xp`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ xpAmount: 5 }),
+          body: JSON.stringify({ xpAmount }),
         });
 
         if (!res.ok) {
@@ -463,12 +482,12 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
 
     // Show XP popup in both cases
     setXpPopupSnapshot({
-      skillName: linkedSkill?.name || skillId.replace(/^legacy-/, ""),
-      areaColor: area?.color || "#c85a2a",
-      xpBefore,
-      xpAfter,
-      xpMax: linkedSkill?.goalXp || null,
-      level: linkedSkill?.level || Math.floor(xpBefore / 100) + 1,
+      skillName: popupSkillName,
+      areaColor: popupAreaColor,
+      xpBefore: popupXpBefore,
+      xpAfter: popupXpAfter,
+      xpMax: popupXpMax,
+      level: popupLevel,
     });
   };
 
