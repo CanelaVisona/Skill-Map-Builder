@@ -292,58 +292,6 @@ interface StorageData {
   archived: ArchivedPractice[];
 }
 
-// Rollback functions for expired intervals
-function rollbackL1(practice: SpaceRepetitionPractice): Partial<SpaceRepetitionPractice> {
-  if (practice.completedIntervals.length === 0) return {};
-  
-  const intervals = [...practice.completedIntervals];
-  const lastIntervalIdx = intervals.pop()!;
-  
-  // If rolling back D0, recalculate from today
-  if (lastIntervalIdx === 0) {
-    return {
-      startDate: getLocalDateString(),
-      completedIntervals: intervals,
-    };
-  }
-  
-  // For other intervals, move startDate back by the last interval days
-  const lastIntervalDays = INTERVALS_L1[lastIntervalIdx];
-  const currentStart = new Date(practice.startDate);
-  const newStart = new Date(currentStart.getTime() - lastIntervalDays * 24 * 60 * 60 * 1000);
-  
-  return {
-    startDate: getLocalDateString(newStart),
-    completedIntervals: intervals,
-  };
-}
-
-function rollbackL2(practice: SpaceRepetitionPractice): Partial<SpaceRepetitionPractice> {
-  if (!practice.level1CompletedDate || !practice.completedIntervalsL2 || practice.completedIntervalsL2.length === 0) {
-    return {};
-  }
-  
-  const intervals = [...practice.completedIntervalsL2];
-  const lastIntervalIdx = intervals.pop()!;
-  
-  // If rolling back D0, recalculate from L1 completion date
-  if (lastIntervalIdx === 0) {
-    return {
-      completedIntervalsL2: intervals,
-    };
-  }
-  
-  // For other intervals, move level1CompletedDate back by the last interval days
-  const lastIntervalDays = INTERVALS_L2[lastIntervalIdx];
-  const currentL1Date = new Date(practice.level1CompletedDate);
-  const newL1Date = new Date(currentL1Date.getTime() - lastIntervalDays * 24 * 60 * 60 * 1000);
-  
-  return {
-    level1CompletedDate: getLocalDateString(newL1Date),
-    completedIntervalsL2: intervals,
-  };
-}
-
 // Hook para detectar long press
 function useLongPress(callback: () => void, duration = 500) {
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -483,53 +431,12 @@ export function SpaceRepetitionModal({
     }
   }, [open]);
 
-  const checkAndRollbackExpiredIntervals = async (loadedPractices: SpaceRepetitionPractice[]) => {
-    // Silently rollback all frozen practices without UI notification
-    for (const practice of loadedPractices) {
-      // Only check practices that have started (D0 registered)
-      if (practice.completedIntervals.length === 0 && (practice.completedIntervalsL2 || []).length === 0) {
-        continue;
-      }
-
-      // Do not rollback if completedIntervals is empty
-      if (practice.completedIntervals.length === 0) {
-        continue;
-      }
-
-      const status = calculateStatus(practice);
-
-      // If practice is frozen, execute silent rollback
-      if (status === "frozen") {
-        const isL2 = practice.level === 2;
-        const rollbackData = isL2 ? rollbackL2(practice) : rollbackL1(practice);
-
-        try {
-          const res = await fetch(`/api/space-repetition/${practice.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(rollbackData),
-          });
-          if (res.ok) {
-            const updated = await res.json();
-            // Update local practices state with rolled back version
-            setPractices((prevPractices) =>
-              prevPractices.map((p) => p.id === practice.id ? updated : p)
-            );
-          }
-        } catch (error) {
-          console.error("Error silently rolling back frozen practice:", error);
-        }
-      }
-    }
-  };
-
   const loadPractices = async () => {
     try {
       const res = await fetch("/api/space-repetition");
       if (!res.ok) throw new Error("Error loading practices");
       const data = await res.json();
       setPractices(data);
-      await checkAndRollbackExpiredIntervals(data);
     } catch (error) {
       console.error("Error loading practices:", error);
     }
