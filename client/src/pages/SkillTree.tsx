@@ -2301,9 +2301,14 @@ function ProfileSection() {
 
   const handleAddExtraInfo = () => {
     if (!selectedEntry || !extraInfo.trim()) return;
-    const newDesc = selectedEntry.description 
-      ? `${selectedEntry.description}\n${extraInfo.trim()}`
-      : extraInfo.trim();
+    const now = new Date();
+    const day = String(now.getDate()).padStart(2, "0");
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const year = now.getFullYear();
+    const newBlock = `${day}/${month}/${year}\n${extraInfo.trim()}`;
+    const newDesc = selectedEntry.description
+      ? `${selectedEntry.description}\n\n${newBlock}`
+      : newBlock;
     if (activeTab === "values") {
       updateValue.mutate({ id: selectedEntry.id, data: { description: newDesc } });
     } else if (activeTab === "likes") {
