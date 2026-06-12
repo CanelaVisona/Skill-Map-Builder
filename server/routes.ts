@@ -852,11 +852,13 @@ export async function registerRoutes(
           parentSkillId: validatedSkill.parentSkillId || undefined,
         });
         
-        // Recalculate available statuses (for duplicated nodes, ensures correct status/opacity)
+        // Recalculate available statuses; when the client provided an explicit status,
+        // pass excludeSkillId so the new skill's status is never overwritten by recalculation
         await storage.recalculateAvailableStatus(skillLevel, {
           areaId: validatedSkill.areaId || undefined,
           projectId: validatedSkill.projectId || undefined,
           parentSkillId: validatedSkill.parentSkillId || undefined,
+          excludeSkillId: req.body.status !== undefined ? skill.id : undefined,
         });
         
         res.status(201).json(skill);
@@ -889,26 +891,33 @@ export async function registerRoutes(
       // Prevent bypassing lock system for positions 2-5
       // Only the auto-unlock system or mastering should change status of locked nodes
       // Exception: fromSubtaskCompletion bypasses this check (when subtasks are completed)
+      // Structural-only patches (y, levelPosition, dependencies, x, isFinalNode — no status field)
+      // must not trigger recalculateAvailableStatus so existing node statuses are preserved.
+      const isStructuralOnlyPatch = !req.body.status && (
+        req.body.dependencies !== undefined ||
+        req.body.y !== undefined ||
+        req.body.levelPosition !== undefined
+      );
+
       if (req.body.status === "available" && existingSkill.status === "locked" && !req.body.fromSubtaskCompletion) {
-        // Verify dependencies are mastered before allowing unlock
+        // Verify the immediate predecessor (node at levelPosition - 1) is mastered
         let allSkills: typeof existingSkill[] = [];
         if (existingSkill.areaId) {
           allSkills = await storage.getSkills(existingSkill.areaId);
         } else if (existingSkill.projectId) {
           allSkills = await storage.getProjectSkills(existingSkill.projectId);
         }
-        const dependencies = (existingSkill.dependencies as string[]) || [];
         
-        if (dependencies.length > 0) {
-          const depsMastered = dependencies.every(depId => {
-            const dep = allSkills.find(s => s.id === depId);
-            return dep && dep.status === "mastered";
-          });
-          
-          if (!depsMastered) {
-            res.status(400).json({ message: "No puedes desbloquear este nodo. Primero domina los nodos anteriores." });
-            return;
-          }
+        // Find the immediate predecessor by levelPosition
+        const predecessor = allSkills.find(s => 
+          s.level === existingSkill.level && 
+          s.levelPosition === (existingSkill.levelPosition ?? 0) - 1
+        );
+        
+        // Check if predecessor exists and is mastered
+        if (predecessor && predecessor.status !== "mastered") {
+          res.status(400).json({ message: "No puedes desbloquear este nodo. Primero domina el nodo anterior." });
+          return;
         }
       }
 
@@ -4035,6 +4044,117 @@ export async function registerRoutes(
         fixes: fixes.slice(0, 50) // Return first 50 fixes
       });
     } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Migration: Fix locked nodes with mastered predecessors
+  app.post("/api/migrations/fix-locked-nodes", async (req, res) => {
+    try {
+      console.log("[migration/fix-locked-nodes] Starting migration...");
+      let fixedCount = 0;
+      const fixes: string[] = [];
+
+      const normalizeLevelSkills = async (
+        ownerLabel: string,
+        level: number,
+        levelSkills: typeof skills.$inferSelect[]
+      ) => {
+        const sortedByPosition = [...levelSkills].sort((a, b) => (a.levelPosition || 0) - (b.levelPosition || 0));
+        if (sortedByPosition.length === 0) return;
+
+        const lastSkill = sortedByPosition[sortedByPosition.length - 1];
+
+        for (let index = 0; index < sortedByPosition.length; index++) {
+          const skill = sortedByPosition[index];
+          const predecessor = index > 0 ? sortedByPosition[index - 1] : null;
+          const expectedIsFinalNode = skill.id === lastSkill.id ? 1 : 0;
+          const currentDeps = typeof skill.dependencies === "string"
+            ? JSON.parse(skill.dependencies)
+            : (skill.dependencies || []);
+          const expectedDeps = predecessor ? [predecessor.id] : [];
+
+          if ((skill.isFinalNode || 0) !== expectedIsFinalNode) {
+            await db.update(skills)
+              .set({ isFinalNode: expectedIsFinalNode as 0 | 1 })
+              .where(eq(skills.id, skill.id));
+            fixedCount++;
+            fixes.push(`${ownerLabel} Level ${level}: isFinalNode fixed for "${skill.title || "(empty)"}" -> ${expectedIsFinalNode}`);
+          }
+
+          const depsNeedFix =
+            currentDeps.length !== expectedDeps.length ||
+            currentDeps.some((depId: string, depIndex: number) => depId !== expectedDeps[depIndex]);
+
+          if (depsNeedFix) {
+            await db.update(skills)
+              .set({ dependencies: expectedDeps })
+              .where(eq(skills.id, skill.id));
+            fixedCount++;
+            fixes.push(`${ownerLabel} Level ${level}: dependencies fixed for "${skill.title || "(empty)"}"`);
+          }
+
+          if (
+            predecessor &&
+            predecessor.status === "mastered" &&
+            skill.status === "locked" &&
+            skill.manualLock !== 1
+          ) {
+            await db.update(skills)
+              .set({ status: "available" })
+              .where(eq(skills.id, skill.id));
+            fixedCount++;
+            fixes.push(`${ownerLabel} Level ${level}: "${skill.title || "(empty)"}" locked→available`);
+          }
+        }
+      };
+
+      // Process all areas
+      const allAreas = await db.select().from(areas);
+      for (const area of allAreas) {
+        const areaSkills = await db.select().from(skills).where(eq(skills.areaId, area.id));
+        
+        // Group by level
+        const skillsByLevel = new Map<number, typeof areaSkills>();
+        for (const skill of areaSkills) {
+          const lv = skill.level || 1;
+          if (!skillsByLevel.has(lv)) skillsByLevel.set(lv, []);
+          skillsByLevel.get(lv)!.push(skill);
+        }
+
+        // Process each level
+        for (const [lvl, lvlSkills] of skillsByLevel) {
+          await normalizeLevelSkills(`Area "${area.name}"`, lvl, lvlSkills);
+        }
+      }
+
+      // Process all projects
+      const allProjects = await db.select().from(projects);
+      for (const project of allProjects) {
+        const projectSkills = await db.select().from(skills).where(eq(skills.projectId, project.id));
+        
+        // Group by level
+        const skillsByLevel = new Map<number, typeof projectSkills>();
+        for (const skill of projectSkills) {
+          const lv = skill.level || 1;
+          if (!skillsByLevel.has(lv)) skillsByLevel.set(lv, []);
+          skillsByLevel.get(lv)!.push(skill);
+        }
+
+        // Process each level
+        for (const [lvl, lvlSkills] of skillsByLevel) {
+          await normalizeLevelSkills(`Project "${project.name}"`, lvl, lvlSkills);
+        }
+      }
+
+      console.log(`[migration/fix-locked-nodes] ✅ Completed. Fixed ${fixedCount} nodes.`);
+      res.json({
+        message: `✅ Migración completada. ${fixedCount} nodos corregidos.`,
+        fixedCount,
+        fixes: fixes.slice(0, 100)
+      });
+    } catch (error: any) {
+      console.error("[migration/fix-locked-nodes] ERROR:", error);
       res.status(500).json({ message: error.message });
     }
   });

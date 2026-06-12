@@ -43,7 +43,7 @@ export interface IStorage {
   recalculateNodeStatuses(level: number, options: { areaId?: string; projectId?: string; parentSkillId?: string }): Promise<void>;
   recalculateNodeStatusesAfterReorder(level: number, options: { areaId?: string; projectId?: string; parentSkillId?: string }): Promise<void>;
   recalculateYCoordinates(options: { areaId?: string; projectId?: string; parentSkillId?: string }): Promise<void>;
-  recalculateAvailableStatus(level: number, options: { areaId?: string; projectId?: string; parentSkillId?: string }): Promise<void>;
+  recalculateAvailableStatus(level: number, options: { areaId?: string; projectId?: string; parentSkillId?: string; excludeSkillId?: string }): Promise<void>;
   consolidateLevelPositions(level: number, options: { areaId?: string; projectId?: string; parentSkillId?: string }): Promise<void>;
   generateLevelWithSkills(areaId: string, level: number, startY: number): Promise<{ updatedArea: Area; createdSkills: Skill[] }>;
   generateProjectLevelWithSkills(projectId: string, level: number, startY: number): Promise<{ updatedProject: Project; createdSkills: Skill[] }>;
@@ -664,9 +664,9 @@ export class DbStorage implements IStorage {
 
   async recalculateAvailableStatus(
     level: number,
-    options: { areaId?: string; projectId?: string; parentSkillId?: string }
+    options: { areaId?: string; projectId?: string; parentSkillId?: string; excludeSkillId?: string }
   ): Promise<void> {
-    const { areaId, projectId, parentSkillId } = options;
+    const { areaId, projectId, parentSkillId, excludeSkillId } = options;
 
     // Get all skills in this level, sorted by levelPosition
     const levelSkills = await db.select().from(skills).where(
@@ -717,6 +717,8 @@ export class DbStorage implements IStorage {
     if (level > unlockedLevel) {
       for (let i = 1; i < levelSkills.length; i++) {
         const skill = levelSkills[i];
+        // Never overwrite status of explicitly-set node
+        if (excludeSkillId && skill.id === excludeSkillId) continue;
         if (skill.status !== "locked") {
           await db.update(skills)
             .set({ status: "locked" })
@@ -735,19 +737,28 @@ export class DbStorage implements IStorage {
       }
     }
 
-    // Update statuses according to rule: EXACTLY ONE available node
+    // Update statuses according to rule:
     // - Position 1 stays mastered (skeleton)
-    // - First non-mastered becomes available (only if not all nodes are mastered)
-    // - All others become locked (unless level is complete)
+    // - Mastered nodes are NEVER downgraded
+    // - First non-mastered node becomes available
+    // - All others become locked
+    // EXCEPTION: skip nodes that have an explicitly client-provided status (excludeSkillId)
     for (let i = 0; i < levelSkills.length; i++) {
       const skill = levelSkills[i];
+
+      // Skip excluded skill — trust its client-provided status
+      if (excludeSkillId && skill.id === excludeSkillId) continue;
+
       let newStatus: "mastered" | "available" | "locked";
-      
+
       if (i === 0) {
         // Position 1 (skeleton) is ALWAYS mastered
         newStatus = "mastered";
       } else if (firstNonMasteredIndex === -1) {
         // All nodes are mastered (level complete) - keep them all mastered
+        newStatus = "mastered";
+      } else if (skill.status === "mastered") {
+        // Never downgrade a mastered node
         newStatus = "mastered";
       } else if (i === firstNonMasteredIndex) {
         // First non-mastered node becomes available

@@ -126,6 +126,82 @@ app.use((req, res, next) => {
 
   await registerRoutes(httpServer, app);
 
+  // Run one-time migration to fix locked nodes with mastered predecessors
+  try {
+    console.log("[startup] Running fix-locked-nodes migration...");
+    const { areas: areasTable, projects: projectsTable, skills: skillsTable } = await import("@shared/schema").then(m => ({ 
+      areas: m.areas,
+      projects: m.projects, 
+      skills: m.skills
+    }));
+    
+    const { eq } = await import("drizzle-orm").then(m => m);
+    let fixedCount = 0;
+
+    // Process all areas
+    const allAreas = await db.select().from(areasTable);
+    for (const area of allAreas) {
+      const areaSkills = await db.select().from(skillsTable).where(eq(skillsTable.areaId, area.id));
+      
+      // Group by level
+      const skillsByLevel = new Map<number, typeof areaSkills>();
+      for (const skill of areaSkills) {
+        const lv = skill.level || 1;
+        if (!skillsByLevel.has(lv)) skillsByLevel.set(lv, []);
+        skillsByLevel.get(lv)!.push(skill);
+      }
+
+      // Process each level
+      for (const [lvl, lvlSkills] of skillsByLevel) {
+        const sortedByPosition = [...lvlSkills].sort((a, b) => (a.levelPosition || 0) - (b.levelPosition || 0));
+        if (sortedByPosition.length < 2) continue;
+
+        const secondToLast = sortedByPosition[sortedByPosition.length - 2];
+        const lastSkill = sortedByPosition[sortedByPosition.length - 1];
+
+        if (secondToLast.status === "mastered" && lastSkill.status === "locked") {
+          await db.update(skillsTable).set({ status: "available" as any }).where(eq(skillsTable.id, lastSkill.id));
+          fixedCount++;
+        }
+      }
+    }
+
+    // Process all projects
+    const allProjects = await db.select().from(projectsTable);
+    for (const project of allProjects) {
+      const projectSkills = await db.select().from(skillsTable).where(eq(skillsTable.projectId, project.id));
+      
+      const skillsByLevel = new Map<number, typeof projectSkills>();
+      for (const skill of projectSkills) {
+        const lv = skill.level || 1;
+        if (!skillsByLevel.has(lv)) skillsByLevel.set(lv, []);
+        skillsByLevel.get(lv)!.push(skill);
+      }
+
+      for (const [lvl, lvlSkills] of skillsByLevel) {
+        const sortedByPosition = [...lvlSkills].sort((a, b) => (a.levelPosition || 0) - (b.levelPosition || 0));
+        if (sortedByPosition.length < 2) continue;
+
+        const secondToLast = sortedByPosition[sortedByPosition.length - 2];
+        const lastSkill = sortedByPosition[sortedByPosition.length - 1];
+
+        if (secondToLast.status === "mastered" && lastSkill.status === "locked") {
+          await db.update(skillsTable).set({ status: "available" as any }).where(eq(skillsTable.id, lastSkill.id));
+          fixedCount++;
+        }
+      }
+    }
+
+    if (fixedCount > 0) {
+      console.log(`[startup] ✅ Migration completed: ${fixedCount} nodes fixed`);
+    } else {
+      console.log(`[startup] ✓ Migration completed: no fixes needed`);
+    }
+  } catch (error: any) {
+    console.error("[startup] ⚠ Migration error:", error.message);
+    // Continue startup even if migration fails
+  }
+
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";

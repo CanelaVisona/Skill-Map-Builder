@@ -746,16 +746,16 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     const skillsInLevel = area.skills.filter(s => s.level === skill.level);
     const maxLevelPosition = Math.max(...skillsInLevel.map(s => s.levelPosition ?? 0));
     const isLastNodeOfLevel = skill.levelPosition === maxLevelPosition;
+    const nodesSortedByPosition = [...skillsInLevel].sort((a, b) => (a.levelPosition ?? 0) - (b.levelPosition ?? 0));
+    const currentNodeIndexByPosition = nodesSortedByPosition.findIndex(s => s.id === skill.id);
+    const predecessorByPosition = currentNodeIndexByPosition > 0 ? nodesSortedByPosition[currentNodeIndexByPosition - 1] : null;
     
     // Check if this is a final node (has star OR is last node by position)
-    // Can only be confirmed if all other nodes in level are mastered
     const isFinalNodeByPosition = isLastNodeOfLevel || skill.isFinalNode === 1;
-    if (isFinalNodeByPosition && skill.status !== "mastered") {
-      const otherNodesInLevel = skillsInLevel.filter(s => s.id !== skill.id);
-      const allOthersMastered = otherNodesInLevel.every(s => s.status === "mastered");
-      if (!allOthersMastered) {
-        return;
-      }
+
+    // Confirmation gate: predecessor in levelPosition chain must be mastered
+    if (skill.status === "available" && predecessorByPosition && predecessorByPosition.status !== "mastered") {
+      return;
     }
 
     // NEW RULE: Node 1 of the active level cannot be unconfirmed
@@ -801,7 +801,6 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       console.log('[unconfirm-check] newStatus:', newStatus);
       console.log('[unconfirm-check] condition:', skill.level === area.unlockedLevel - 1);
       
-      const nodesSortedByPosition = [...skillsInLevel].sort((a, b) => (a.levelPosition ?? 0) - (b.levelPosition ?? 0));
       const currentNodeIndex = nodesSortedByPosition.findIndex(s => s.id === skill.id);
       const nextNode = nodesSortedByPosition[currentNodeIndex + 1];
 
@@ -826,7 +825,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     // Determine if the star is active: only when endOfAreaLevel equals this level
     // isFinalNode: 1 is just an identifier (always on Node 5), not the control
     const isStarActive = area.endOfAreaLevel === skill.level;
-    const canOpenNewLevels = isLastNodeOfLevel && !isStarActive;
+    // Only the true final node may open/close the next level.
+    const canOpenNewLevels = skill.isFinalNode === 1 && !isStarActive;
     const isOpeningNewLevel = canOpenNewLevels && newStatus === "mastered";
     const isClosingLevel = canOpenNewLevels && skill.status === "mastered" && newStatus === "available";
 
@@ -1142,25 +1142,24 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
 
     const skillsInLevel = project.skills.filter(s => s.level === skill.level);
-    const isLastNodeOfLevel = skillsInLevel.length > 0 && 
-      skill.y === Math.max(...skillsInLevel.map(s => s.y));
+    const maxLevelPosition = Math.max(...skillsInLevel.map(s => s.levelPosition ?? 0));
+    const isLastNodeOfLevel = skill.levelPosition === maxLevelPosition;
+    const nodesSortedByPosition = [...skillsInLevel].sort((a, b) => (a.levelPosition ?? 0) - (b.levelPosition ?? 0));
+    const currentNodeIndexByPosition = nodesSortedByPosition.findIndex(s => s.id === skill.id);
+    const predecessorByPosition = currentNodeIndexByPosition > 0 ? nodesSortedByPosition[currentNodeIndexByPosition - 1] : null;
     
     // Check if this is a final node (has star OR is last node by position)
-    // Can only be confirmed if all other nodes in level are mastered
     const isFinalNodeByPosition = isLastNodeOfLevel || skill.isFinalNode === 1;
-    if (isFinalNodeByPosition && skill.status !== "mastered") {
-      const otherNodesInLevel = skillsInLevel.filter(s => s.id !== skill.id);
-      const allOthersMastered = otherNodesInLevel.every(s => s.status === "mastered");
-      if (!allOthersMastered) {
-        return;
-      }
+
+    // Confirmation gate: predecessor in levelPosition chain must be mastered
+    if (skill.status === "available" && predecessorByPosition && predecessorByPosition.status !== "mastered") {
+      return;
     }
 
     // Check if next node has a title (except for final nodes)
     if (skill.status === "available" && !isLastNodeOfLevel && !isFinalNodeByPosition) {
-      const nodesSortedByY = skillsInLevel.sort((a, b) => a.y - b.y);
-      const currentNodeIndex = nodesSortedByY.findIndex(s => s.id === skill.id);
-      const nextNode = nodesSortedByY[currentNodeIndex + 1];
+      const currentNodeIndex = nodesSortedByPosition.findIndex(s => s.id === skill.id);
+      const nextNode = nodesSortedByPosition[currentNodeIndex + 1];
       
       if (nextNode) {
         const hasValidTitle = nextNode.title && 
@@ -1184,8 +1183,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     // Check if star is active (endOfAreaLevel is set to this level)
     const isStarActive = project.endOfAreaLevel === skill.level;
     
-    // Last node of level can open new levels, UNLESS it has the star (endOfAreaLevel is set)
-    const canOpenNewLevels = isLastNodeOfLevel && !isStarActive;
+    // Only the true final node may open/close the next level.
+    const canOpenNewLevels = skill.isFinalNode === 1 && !isStarActive;
     const isOpeningNewLevel = canOpenNewLevels && newStatus === "mastered";
     const isClosingLevel = canOpenNewLevels && skill.status === "mastered" && newStatus === "available";
 
@@ -2363,25 +2362,24 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
 
     const skillsInLevel = subSkills.filter(s => s.level === skill.level);
-    const isLastNodeOfLevel = skillsInLevel.length > 0 && 
-      skill.y === Math.max(...skillsInLevel.map(s => s.y));
+    const maxLevelPosition = Math.max(...skillsInLevel.map(s => s.levelPosition ?? 0));
+    const isLastNodeOfLevel = skill.levelPosition === maxLevelPosition;
+    const nodesSortedByPosition = [...skillsInLevel].sort((a, b) => (a.levelPosition ?? 0) - (b.levelPosition ?? 0));
+    const currentNodeIndexByPosition = nodesSortedByPosition.findIndex(s => s.id === skill.id);
+    const predecessorByPosition = currentNodeIndexByPosition > 0 ? nodesSortedByPosition[currentNodeIndexByPosition - 1] : null;
     
     // Check if this is a final node (has star OR is last node by position)
-    // Can only be confirmed if all other nodes in level are mastered
     const isFinalNodeByPosition = isLastNodeOfLevel || skill.isFinalNode === 1;
-    if (isFinalNodeByPosition && skill.status !== "mastered") {
-      const otherNodesInLevel = skillsInLevel.filter(s => s.id !== skill.id);
-      const allOthersMastered = otherNodesInLevel.every(s => s.status === "mastered");
-      if (!allOthersMastered) {
-        return;
-      }
+
+    // Confirmation gate: predecessor in levelPosition chain must be mastered
+    if (skill.status === "available" && predecessorByPosition && predecessorByPosition.status !== "mastered") {
+      return;
     }
 
     // Check if next node has a title (except for final nodes)
     if (skill.status === "available" && !isLastNodeOfLevel && !isFinalNodeByPosition) {
-      const nodesSortedByY = skillsInLevel.sort((a, b) => a.y - b.y);
-      const currentNodeIndex = nodesSortedByY.findIndex(s => s.id === skill.id);
-      const nextNode = nodesSortedByY[currentNodeIndex + 1];
+      const currentNodeIndex = nodesSortedByPosition.findIndex(s => s.id === skill.id);
+      const nextNode = nodesSortedByPosition[currentNodeIndex + 1];
       
       if (nextNode) {
         const hasValidTitle = nextNode.title && 
@@ -2402,9 +2400,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
     const newStatus = nextStatus[skill.status];
     
-    // Last node of level can open new levels, UNLESS it has the star (isFinalNode === 1)
+    // Only the true final node may open the next level.
     const hasStar = skill.isFinalNode === 1;
-    const canOpenNewLevels = isLastNodeOfLevel && !hasStar;
+    const canOpenNewLevels = hasStar;
     const isOpeningNewLevel = canOpenNewLevels && newStatus === "mastered";
 
     try {
@@ -2747,20 +2745,29 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
     const sameLevelSkills = area.skills
       .filter(s => s.level === clickedSkill.level)
-      .sort((a, b) => a.y - b.y);
+      .sort((a, b) => (a.levelPosition || 0) - (b.levelPosition || 0));
 
-    const finalNode = sameLevelSkills.find(s => s.isFinalNode === 1);
-    const newY = clickedSkill.y + 150;
+    const finalNode = sameLevelSkills[sameLevelSkills.length - 1];
+    const isFinalNode = finalNode?.id === clickedSkill.id;
+    const predecessorSkill = sameLevelSkills.find(s => s.levelPosition === (clickedSkill.levelPosition || 0) - 1);
+    const newLevelPosition = isFinalNode
+      ? (clickedSkill.levelPosition || 0)
+      : (clickedSkill.levelPosition || 0) + 1;
+    const newY = isFinalNode ? clickedSkill.y : clickedSkill.y + 150;
+    const newStatus: SkillStatus = isFinalNode
+      ? (predecessorSkill?.status === "mastered" ? "available" : "locked")
+      : (clickedSkill.status === "mastered" ? "available" : "locked");
 
     try {
-      const nodesToShift = area.skills.filter(s => s.y > clickedSkill.y);
+      // Only shift same-level nodes to avoid corrupting levelPositions in other levels
+      const nodesToShift = area.skills.filter(s =>
+        s.level === clickedSkill.level && (isFinalNode ? s.y >= clickedSkill.y : s.y > clickedSkill.y)
+      );
       for (const node of nodesToShift) {
-        const newNodeY = node.y + 150;
-        const newLevelPosition = (node.levelPosition || 0) + 1;
         await fetch(`/api/skills/${node.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ y: newNodeY, levelPosition: newLevelPosition }),
+          body: JSON.stringify({ y: node.y + 150, levelPosition: (node.levelPosition || 0) + 1 }),
         });
       }
 
@@ -2770,10 +2777,12 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         description: "",
         x: clickedSkill.x,
         y: newY,
-        status: "locked" as SkillStatus,
-        dependencies: [clickedSkill.id],
+        status: newStatus,
+        dependencies: isFinalNode
+          ? (predecessorSkill ? [predecessorSkill.id] : [])
+          : [clickedSkill.id],
         level: clickedSkill.level,
-        levelPosition: (clickedSkill.levelPosition || 0) + 1,
+        levelPosition: newLevelPosition,
         isFinalNode: 0,
         manualLock: 0,
       };
@@ -2785,35 +2794,56 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       });
       const newSkill = await response.json();
 
-      if (finalNode && ensureDependenciesArray(finalNode.dependencies).includes(clickedSkill.id)) {
-        const updatedDeps = ensureDependenciesArray(finalNode.dependencies).map(d => d === clickedSkill.id ? newSkill.id : d);
+      if (isFinalNode) {
+        // Final node should ONLY depend on the new node (the one immediately before it)
+        const finalDeps = [newSkill.id];
         await fetch(`/api/skills/${finalNode.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ dependencies: updatedDeps }),
+          body: JSON.stringify({ dependencies: finalDeps }),
         });
+        setAreas(prev => prev.map(a => {
+          if (a.id !== areaId) return a;
+          return {
+            ...a,
+            skills: [
+              ...a.skills.map(s => {
+                let updated = { ...s };
+                if (s.level === clickedSkill.level && (isFinalNode ? s.y >= clickedSkill.y : s.y > clickedSkill.y)) updated = { ...updated, y: s.y + 150, levelPosition: (s.levelPosition || 0) + 1 };
+                if (s.id === finalNode.id) updated = { ...updated, dependencies: finalDeps };
+                return updated;
+              }),
+              newSkill
+            ]
+          };
+        }));
+      } else {
+        if (finalNode && ensureDependenciesArray(finalNode.dependencies).includes(clickedSkill.id)) {
+          const updatedDeps = ensureDependenciesArray(finalNode.dependencies).map(d => d === clickedSkill.id ? newSkill.id : d);
+          await fetch(`/api/skills/${finalNode.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ dependencies: updatedDeps }),
+          });
+        }
+        setAreas(prev => prev.map(a => {
+          if (a.id !== areaId) return a;
+          return {
+            ...a,
+            skills: [
+              ...a.skills.map(s => {
+                let updated = { ...s };
+                if (s.level === clickedSkill.level && (isFinalNode ? s.y >= clickedSkill.y : s.y > clickedSkill.y)) updated = { ...updated, y: s.y + 150, levelPosition: (s.levelPosition || 0) + 1 };
+                if (finalNode && s.id === finalNode.id && ensureDependenciesArray(finalNode.dependencies).includes(clickedSkill.id)) {
+                  updated = { ...updated, dependencies: ensureDependenciesArray(s.dependencies).map(d => d === clickedSkill.id ? newSkill.id : d) };
+                }
+                return updated;
+              }),
+              newSkill
+            ]
+          };
+        }));
       }
-
-      setAreas(prev => prev.map(a => {
-        if (a.id !== areaId) return a;
-        return {
-          ...a,
-          skills: [
-            ...a.skills.map(s => {
-              let updated = { ...s };
-              if (s.y > clickedSkill.y) {
-                updated = { ...updated, y: s.y + 150, levelPosition: (s.levelPosition || 0) + 1 };
-              }
-              if (finalNode && s.id === finalNode.id && ensureDependenciesArray(finalNode.dependencies).includes(clickedSkill.id)) {
-                const updatedDeps = ensureDependenciesArray(s.dependencies).map(d => d === clickedSkill.id ? newSkill.id : d);
-                updated = { ...updated, dependencies: updatedDeps };
-              }
-              return updated;
-            }),
-            newSkill
-          ]
-        };
-      }));
     } catch (error) {
       console.error("Error adding skill below:", error);
     }
@@ -2828,20 +2858,29 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
     const sameLevelSkills = project.skills
       .filter(s => s.level === clickedSkill.level)
-      .sort((a, b) => a.y - b.y);
+      .sort((a, b) => (a.levelPosition || 0) - (b.levelPosition || 0));
 
-    const finalNode = sameLevelSkills.find(s => s.isFinalNode === 1);
-    const newY = clickedSkill.y + 150;
+    const finalNode = sameLevelSkills[sameLevelSkills.length - 1];
+    const isFinalNode = finalNode?.id === clickedSkill.id;
+    const predecessorSkill = sameLevelSkills.find(s => s.levelPosition === (clickedSkill.levelPosition || 0) - 1);
+    const newLevelPosition = isFinalNode
+      ? (clickedSkill.levelPosition || 0)
+      : (clickedSkill.levelPosition || 0) + 1;
+    const newY = isFinalNode ? clickedSkill.y : clickedSkill.y + 150;
+    const newStatus: SkillStatus = isFinalNode
+      ? (predecessorSkill?.status === "mastered" ? "available" : "locked")
+      : (clickedSkill.status === "mastered" ? "available" : "locked");
 
     try {
-      const nodesToShift = project.skills.filter(s => s.y > clickedSkill.y);
+      // Only shift same-level nodes to avoid corrupting levelPositions in other levels
+      const nodesToShift = project.skills.filter(s =>
+        s.level === clickedSkill.level && (isFinalNode ? s.y >= clickedSkill.y : s.y > clickedSkill.y)
+      );
       for (const node of nodesToShift) {
-        const newNodeY = node.y + 150;
-        const newLevelPosition = (node.levelPosition || 0) + 1;
         await fetch(`/api/skills/${node.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ y: newNodeY, levelPosition: newLevelPosition }),
+          body: JSON.stringify({ y: node.y + 150, levelPosition: (node.levelPosition || 0) + 1 }),
         });
       }
 
@@ -2851,10 +2890,12 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         description: "",
         x: clickedSkill.x,
         y: newY,
-        status: "locked" as SkillStatus,
-        dependencies: [clickedSkill.id],
+        status: newStatus,
+        dependencies: isFinalNode
+          ? (predecessorSkill ? [predecessorSkill.id] : [])
+          : [clickedSkill.id],
         level: clickedSkill.level,
-        levelPosition: (clickedSkill.levelPosition || 0) + 1,
+        levelPosition: newLevelPosition,
         isFinalNode: 0,
         manualLock: 0,
       };
@@ -2866,35 +2907,56 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       });
       const newSkill = await response.json();
 
-      if (finalNode && ensureDependenciesArray(finalNode.dependencies).includes(clickedSkill.id)) {
-        const updatedDeps = ensureDependenciesArray(finalNode.dependencies).map(d => d === clickedSkill.id ? newSkill.id : d);
+      if (isFinalNode) {
+        // Final node should ONLY depend on the new node (the one immediately before it)
+        const finalDeps = [newSkill.id];
         await fetch(`/api/skills/${finalNode.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ dependencies: updatedDeps }),
+          body: JSON.stringify({ dependencies: finalDeps }),
         });
+        setProjects(prev => prev.map(p => {
+          if (p.id !== projectId) return p;
+          return {
+            ...p,
+            skills: [
+              ...p.skills.map(s => {
+                let updated = { ...s };
+                if (s.level === clickedSkill.level && (isFinalNode ? s.y >= clickedSkill.y : s.y > clickedSkill.y)) updated = { ...updated, y: s.y + 150, levelPosition: (s.levelPosition || 0) + 1 };
+                if (s.id === finalNode.id) updated = { ...updated, dependencies: finalDeps };
+                return updated;
+              }),
+              newSkill
+            ]
+          };
+        }));
+      } else {
+        if (finalNode && ensureDependenciesArray(finalNode.dependencies).includes(clickedSkill.id)) {
+          const updatedDeps = ensureDependenciesArray(finalNode.dependencies).map(d => d === clickedSkill.id ? newSkill.id : d);
+          await fetch(`/api/skills/${finalNode.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ dependencies: updatedDeps }),
+          });
+        }
+        setProjects(prev => prev.map(p => {
+          if (p.id !== projectId) return p;
+          return {
+            ...p,
+            skills: [
+              ...p.skills.map(s => {
+                let updated = { ...s };
+                if (s.level === clickedSkill.level && (isFinalNode ? s.y >= clickedSkill.y : s.y > clickedSkill.y)) updated = { ...updated, y: s.y + 150, levelPosition: (s.levelPosition || 0) + 1 };
+                if (finalNode && s.id === finalNode.id && ensureDependenciesArray(finalNode.dependencies).includes(clickedSkill.id)) {
+                  updated = { ...updated, dependencies: ensureDependenciesArray(s.dependencies).map(d => d === clickedSkill.id ? newSkill.id : d) };
+                }
+                return updated;
+              }),
+              newSkill
+            ]
+          };
+        }));
       }
-
-      setProjects(prev => prev.map(p => {
-        if (p.id !== projectId) return p;
-        return {
-          ...p,
-          skills: [
-            ...p.skills.map(s => {
-              let updated = { ...s };
-              if (s.y > clickedSkill.y) {
-                updated = { ...updated, y: s.y + 150, levelPosition: (s.levelPosition || 0) + 1 };
-              }
-              if (finalNode && s.id === finalNode.id && ensureDependenciesArray(finalNode.dependencies).includes(clickedSkill.id)) {
-                const updatedDeps = ensureDependenciesArray(s.dependencies).map(d => d === clickedSkill.id ? newSkill.id : d);
-                updated = { ...updated, dependencies: updatedDeps };
-              }
-              return updated;
-            }),
-            newSkill
-          ]
-        };
-      }));
     } catch (error) {
       console.error("Error adding project skill below:", error);
     }
@@ -3281,9 +3343,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         skillsInLevel.get(skill.level)!.push(skill);
       });
 
-      // Sort skills in each level by Y position
+      // Sort skills in each level by levelPosition (source of truth)
       skillsInLevel.forEach((skills) => {
-        skills.sort((a, b) => a.y - b.y);
+        skills.sort((a, b) => (a.levelPosition || 0) - (b.levelPosition || 0));
       });
 
       area.skills.forEach(skill => {
@@ -3292,23 +3354,21 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
         const levelSkills = skillsInLevel.get(skill.level) || [];
         
-        // Skip first node of level (by levelPosition or by Y position)
+        // Skip first node of level
         // It's always mastered from server and should never be auto-processed
         const skillIndex = levelSkills.findIndex(s => s.id === skill.id);
         const isFirstNodeOfLevel = skill.levelPosition === 1 || skillIndex === 0;
         if (isFirstNodeOfLevel) return;
-        const isLastNodeOfLevel = levelSkills.length > 0 && 
-          skill.y === Math.max(...levelSkills.map(s => s.y));
-        const isFinalNodeByPosition = isLastNodeOfLevel || skill.isFinalNode === 1;
-        const otherNodesInLevel = levelSkills.filter(s => s.id !== skill.id);
-        const allOthersMastered = otherNodesInLevel.every(s => s.status === "mastered");
 
-        // Find the previous skill by Y position in the same level
+        // Final node semantics are explicit via isFinalNode
+        const isFinalNodeByPosition = skill.isFinalNode === 1;
+
+        // Find the previous skill by levelPosition in the same level
         const previousSkill = skillIndex > 0 ? levelSkills[skillIndex - 1] : null;
         const canUnlock = !previousSkill || previousSkill.status === "mastered";
 
-        // Re-lock final nodes that are "available" but shouldn't be
-        if (skill.status === "available" && isFinalNodeByPosition && !allOthersMastered) {
+        // Final nodes should only lock when immediate predecessor is not mastered
+        if (skill.status === "available" && isFinalNodeByPosition && previousSkill && previousSkill.status !== "mastered") {
           updatesToMake.push({ skillId: skill.id, newStatus: "locked" });
           return;
         }
@@ -3325,12 +3385,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         // - It's the first skill in the level (no previous skill), OR
         // - The previous skill is mastered
         
-        // Final nodes can only be unlocked if ALL other nodes in the level are mastered
-        if (isFinalNodeByPosition) {
-          if (canUnlock && allOthersMastered) {
-            updatesToMake.push({ skillId: skill.id, newStatus: "available" });
-          }
-        } else if (canUnlock) {
+        // Final nodes follow the same predecessor rule: previous node mastered => available
+        if (canUnlock) {
           updatesToMake.push({ skillId: skill.id, newStatus: "available" });
         }
       });
@@ -3378,9 +3434,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         skillsInLevel.get(skill.level)!.push(skill);
       });
 
-      // Sort skills in each level by Y position
+      // Sort skills in each level by levelPosition (source of truth)
       skillsInLevel.forEach((skills) => {
-        skills.sort((a, b) => a.y - b.y);
+        skills.sort((a, b) => (a.levelPosition || 0) - (b.levelPosition || 0));
       });
 
       project.skills.forEach(skill => {
@@ -3389,23 +3445,21 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
         const levelSkills = skillsInLevel.get(skill.level) || [];
         
-        // Skip first node of level (by levelPosition or by Y position)
+        // Skip first node of level
         // It's always mastered from server and should never be auto-processed
         const skillIndex = levelSkills.findIndex(s => s.id === skill.id);
         const isFirstNodeOfLevel = skill.levelPosition === 1 || skillIndex === 0;
         if (isFirstNodeOfLevel) return;
-        const isLastNodeOfLevel = levelSkills.length > 0 && 
-          skill.y === Math.max(...levelSkills.map(s => s.y));
-        const isFinalNodeByPosition = isLastNodeOfLevel || skill.isFinalNode === 1;
-        const otherNodesInLevel = levelSkills.filter(s => s.id !== skill.id);
-        const allOthersMastered = otherNodesInLevel.every(s => s.status === "mastered");
 
-        // Find the previous skill by Y position in the same level
+        // Final node semantics are explicit via isFinalNode
+        const isFinalNodeByPosition = skill.isFinalNode === 1;
+
+        // Find the previous skill by levelPosition in the same level
         const previousSkill = skillIndex > 0 ? levelSkills[skillIndex - 1] : null;
         const canUnlock = !previousSkill || previousSkill.status === "mastered";
 
-        // Re-lock final nodes that are "available" but shouldn't be
-        if (skill.status === "available" && isFinalNodeByPosition && !allOthersMastered) {
+        // Final nodes should only lock when immediate predecessor is not mastered
+        if (skill.status === "available" && isFinalNodeByPosition && previousSkill && previousSkill.status !== "mastered") {
           updatesToMake.push({ skillId: skill.id, newStatus: "locked" });
           return;
         }
@@ -3422,12 +3476,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         // - It's the first skill in the level (no previous skill), OR
         // - The previous skill is mastered
         
-        // Final nodes can only be unlocked if ALL other nodes in the level are mastered
-        if (isFinalNodeByPosition) {
-          if (canUnlock && allOthersMastered) {
-            updatesToMake.push({ skillId: skill.id, newStatus: "available" });
-          }
-        } else if (canUnlock) {
+        // Final nodes follow the same predecessor rule: previous node mastered => available
+        if (canUnlock) {
           updatesToMake.push({ skillId: skill.id, newStatus: "available" });
         }
       });
@@ -3474,9 +3524,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       skillsInLevel.get(skill.level)!.push(skill);
     });
 
-    // Sort skills in each level by Y position
+    // Sort skills in each level by levelPosition (source of truth)
     skillsInLevel.forEach((skills) => {
-      skills.sort((a, b) => a.y - b.y);
+      skills.sort((a, b) => (a.levelPosition || 0) - (b.levelPosition || 0));
     });
 
     subSkills.forEach(skill => {
@@ -3485,23 +3535,20 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       const levelSkills = skillsInLevel.get(skill.level) || [];
       const skillIndex = levelSkills.findIndex(s => s.id === skill.id);
       
-      // Skip first node of level (by levelPosition or by Y position)
+      // Skip first node of level
       // It's always mastered from server and should never be auto-processed
       const isFirstNodeOfLevel = skill.levelPosition === 1 || skillIndex === 0;
       if (isFirstNodeOfLevel) return;
 
-      const isLastNodeOfLevel = levelSkills.length > 0 && 
-        skill.y === Math.max(...levelSkills.map(s => s.y));
-      const isFinalNodeByPosition = isLastNodeOfLevel || skill.isFinalNode === 1;
-      const otherNodesInLevel = levelSkills.filter(s => s.id !== skill.id);
-      const allOthersMastered = otherNodesInLevel.every(s => s.status === "mastered");
+      // Final node semantics are explicit via isFinalNode
+      const isFinalNodeByPosition = skill.isFinalNode === 1;
 
-      // Find the previous skill by Y position in the same level
+      // Find the previous skill by levelPosition in the same level
       const previousSkill = skillIndex > 0 ? levelSkills[skillIndex - 1] : null;
       const canUnlock = !previousSkill || previousSkill.status === "mastered";
 
-      // Re-lock final nodes that are "available" but shouldn't be
-      if (skill.status === "available" && isFinalNodeByPosition && !allOthersMastered) {
+      // Final nodes should only lock when immediate predecessor is not mastered
+      if (skill.status === "available" && isFinalNodeByPosition && previousSkill && previousSkill.status !== "mastered") {
         updatesToMake.push({ skillId: skill.id, newStatus: "locked" });
         return;
       }
@@ -3518,12 +3565,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       // - It's the first skill in the level (no previous skill), OR
       // - The previous skill is mastered
       
-      // Final nodes can only be unlocked if ALL other nodes in the level are mastered
-      if (isFinalNodeByPosition) {
-        if (canUnlock && allOthersMastered) {
-          updatesToMake.push({ skillId: skill.id, newStatus: "available" });
-        }
-      } else if (canUnlock) {
+      // Final nodes follow the same predecessor rule: previous node mastered => available
+      if (canUnlock) {
         updatesToMake.push({ skillId: skill.id, newStatus: "available" });
       }
     });
