@@ -992,11 +992,11 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] max-h-[85vh] overflow-hidden p-4 sm:max-w-lg sm:p-6">
+      <DialogContent className="flex w-[calc(100vw-1rem)] max-w-[42rem] max-h-[calc(100dvh-1rem)] flex-col overflow-hidden p-3 sm:w-[min(92vw,42rem)] sm:max-h-[min(90dvh,52rem)] sm:p-5">
         <DialogHeader>
           <DialogTitle>{sourceName}</DialogTitle>
         </DialogHeader>
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-2 flex min-h-0 flex-col">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-2 flex min-h-0 flex-1 flex-col">
           <TabsList className="flex w-full flex-nowrap justify-start gap-1 overflow-x-auto overflow-y-hidden">
             <TabsTrigger value="description" className="shrink-0 text-xs">Background</TabsTrigger>
             <TabsTrigger value="bugs" className="shrink-0 text-xs">Bugs</TabsTrigger>
@@ -1008,7 +1008,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
 
           <TabsContent value="description" className="mt-4 min-h-0">
             <ScrollArea
-              className="h-[min(52vh,280px)] pr-4"
+              className="h-[min(52dvh,320px)] pr-4"
               onPointerDown={handleBackgroundPointerDown}
               onPointerUp={handleBackgroundPointerUp}
               onPointerCancel={handleBackgroundPointerUp}
@@ -1027,7 +1027,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
 
           <TabsContent value="experiences" className="mt-4 min-h-0">
             <ScrollArea
-              className="h-[min(52vh,280px)] pr-4"
+              className="h-[min(52dvh,320px)] pr-4"
               onPointerDown={handleBackgroundPointerDown}
               onPointerUp={handleBackgroundPointerUp}
               onPointerCancel={handleBackgroundPointerUp}
@@ -1046,7 +1046,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
 
           <TabsContent value="growth" className="mt-4 min-h-0">
             <ScrollArea
-              className="h-[min(52vh,280px)] pr-4"
+              className="h-[min(52dvh,320px)] pr-4"
               onPointerDown={handleBackgroundPointerDown}
               onPointerUp={handleBackgroundPointerUp}
               onPointerCancel={handleBackgroundPointerUp}
@@ -1065,7 +1065,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
 
           <TabsContent value="contributions" className="mt-4 min-h-0">
             <ScrollArea
-              className="h-[min(52vh,280px)] pr-4"
+              className="h-[min(52dvh,320px)] pr-4"
               onPointerDown={handleBackgroundPointerDown}
               onPointerUp={handleBackgroundPointerUp}
               onPointerCancel={handleBackgroundPointerUp}
@@ -1084,7 +1084,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
 
           <TabsContent value="powers" className="mt-4 min-h-0">
             <ScrollArea
-              className="h-[min(52vh,280px)] pr-4"
+              className="h-[min(52dvh,320px)] pr-4"
               onPointerDown={handleBackgroundPointerDown}
               onPointerUp={handleBackgroundPointerUp}
               onPointerCancel={handleBackgroundPointerUp}
@@ -1190,9 +1190,10 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
             </ScrollArea>
           </TabsContent>
 
-          <TabsContent value="bugs" className="mt-4 min-h-0 overflow-y-auto pr-1">
-            <div className={`grid gap-3 ${selectedBug ? "grid-cols-1 md:grid-cols-[200px_1fr]" : "grid-cols-1"}`}>
-              <div className="max-h-[min(34vh,260px)] overflow-y-auto border rounded-lg bg-muted/20">
+          <TabsContent value="bugs" className="mt-4 min-h-0">
+            <div className="h-[min(52dvh,320px)] min-h-[260px] pr-1">
+              <div className={`grid h-full gap-3 ${selectedBug ? "grid-cols-1 md:grid-cols-[200px_1fr]" : "grid-cols-1"}`}>
+                <div className="h-full overflow-y-auto border rounded-lg bg-muted/20">
                 {bugs.length === 0 ? (
                   <div className="p-3 text-xs text-muted-foreground">Sin bugs todavía</div>
                 ) : (
@@ -1261,7 +1262,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
 
               {selectedBug && (
                 <div
-                  className="max-h-[min(46vh,420px)] overflow-y-auto border rounded-lg p-3 bg-muted/20"
+                  className="h-full overflow-y-auto border rounded-lg p-3 bg-muted/20"
                   onMouseDown={startBugRecordLongPress}
                   onMouseUp={endBugRecordLongPress}
                   onMouseLeave={endBugRecordLongPress}
@@ -1408,6 +1409,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                   </div>
                 </div>
               )}
+              </div>
             </div>
           </TabsContent>
         </Tabs>
