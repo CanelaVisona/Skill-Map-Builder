@@ -162,6 +162,34 @@ export const sourcePowers = pgTable("source_powers", {
   isUnlocked: integer("is_unlocked").$type<0 | 1 | 2>().default(0),
 });
 
+export const sourceBugs = pgTable("source_bugs", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  areaId: varchar("area_id"),
+  projectId: varchar("project_id"),
+  nombre: text("nombre").notNull(),
+  status: text("status").$type<"activo" | "neutralizado" | "desactivado">().notNull().default("activo"),
+  victoryCount: integer("victory_count").notNull().default(0),
+  desc: text("desc").notNull().default(""),
+  aparece: jsonb("aparece").notNull().$type<string[]>().default([]),
+  disparadores: jsonb("disparadores").notNull().$type<string[]>().default([]),
+  estrategias: jsonb("estrategias").notNull().$type<string[]>().default([]),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const sourceBugRecords = pgTable("source_bug_records", {
+  id: varchar("id").primaryKey(),
+  bugId: varchar("bug_id").notNull().references(() => sourceBugs.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  fecha: varchar("fecha").notNull(),
+  situacion: text("situacion").notNull(),
+  senal: text("senal").notNull(),
+  estrategia: text("estrategia").notNull(),
+  resultado: text("resultado").$type<"victoria" | "empate" | "derrota">().notNull().default("empate"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 export const journalLearnings = pgTable("journal_learnings", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
@@ -356,12 +384,26 @@ export type ProfileContribution = typeof profileContributions.$inferSelect;
 export const insertSourceDescriptionSchema = createInsertSchema(sourceDescriptions).omit({ id: true });
 export const insertSourceGrowthSchema = createInsertSchema(sourceGrowth).omit({ id: true });
 export const insertSourcePowersSchema = createInsertSchema(sourcePowers).omit({ id: true });
+export const insertSourceBugSchema = createInsertSchema(sourceBugs)
+  .omit({ id: true, createdAt: true, updatedAt: true })
+  .extend({
+    status: z.enum(["activo", "neutralizado", "desactivado"]).optional(),
+  });
+export const insertSourceBugRecordSchema = createInsertSchema(sourceBugRecords)
+  .omit({ id: true, createdAt: true })
+  .extend({
+    resultado: z.enum(["victoria", "empate", "derrota"]).optional(),
+  });
 export type InsertSourceDescription = z.infer<typeof insertSourceDescriptionSchema>;
 export type SourceDescription = typeof sourceDescriptions.$inferSelect;
 export type InsertSourceGrowth = z.infer<typeof insertSourceGrowthSchema>;
 export type SourceGrowth = typeof sourceGrowth.$inferSelect;
 export type InsertSourcePowers = z.infer<typeof insertSourcePowersSchema>;
 export type SourcePowers = typeof sourcePowers.$inferSelect;
+export type InsertSourceBug = z.infer<typeof insertSourceBugSchema>;
+export type SourceBug = typeof sourceBugs.$inferSelect;
+export type InsertSourceBugRecord = z.infer<typeof insertSourceBugRecordSchema>;
+export type SourceBugRecord = typeof sourceBugRecords.$inferSelect;
 export const profileMissions = pgTable("profile_missions", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),

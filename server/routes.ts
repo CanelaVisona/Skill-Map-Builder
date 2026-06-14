@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
-import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertSourcePowersSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema, insertSpaceRepetitionPracticeSchema, insertRewiringTrackerSchema, type InsertSpaceRepetitionPractice, type SpaceRepetitionPractice, type RewiringTracker, skills, areas, projects, spaceRepetitionPractices } from "@shared/schema";
+import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertSourcePowersSchema, insertSourceBugSchema, insertSourceBugRecordSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema, insertSpaceRepetitionPracticeSchema, insertRewiringTrackerSchema, type InsertSpaceRepetitionPractice, type SpaceRepetitionPractice, type RewiringTracker, skills, areas, projects, spaceRepetitionPractices } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import cookieParser from "cookie-parser";
 import crypto from "crypto";
@@ -3075,6 +3075,67 @@ export async function registerRoutes(
       res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Source Bugs CRUD
+  app.get("/api/source-bugs/:type/:sourceId", requireAuth, async (req, res) => {
+    try {
+      const { type, sourceId } = req.params;
+      if (type !== "area" && type !== "project") {
+        res.status(400).json({ message: "Invalid type. Must be 'area' or 'project'" });
+        return;
+      }
+      const bugs = await storage.getSourceBugs(req.userId!, type, sourceId);
+      res.json(bugs);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to fetch bugs" });
+    }
+  });
+
+  app.post("/api/source-bugs", requireAuth, async (req, res) => {
+    try {
+      const data = { ...req.body, userId: req.userId };
+      const validated = insertSourceBugSchema.parse(data);
+      const bug = await storage.createSourceBug(validated);
+      res.status(201).json(bug);
+    } catch (error: any) {
+      const validationError = fromError(error);
+      res.status(400).json({ message: validationError.toString() });
+    }
+  });
+
+  app.patch("/api/source-bugs/:id", requireAuth, async (req, res) => {
+    try {
+      const updated = await storage.updateSourceBug(req.params.id, req.body);
+      if (!updated) {
+        res.status(404).json({ message: "Source bug not found" });
+        return;
+      }
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/source-bugs/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteSourceBug(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/source-bugs/:id/records", requireAuth, async (req, res) => {
+    try {
+      const data = { ...req.body, bugId: req.params.id, userId: req.userId };
+      const validated = insertSourceBugRecordSchema.parse(data);
+      const record = await storage.createSourceBugRecord(validated);
+      res.status(201).json(record);
+    } catch (error: any) {
+      const validationError = fromError(error);
+      res.status(400).json({ message: validationError.toString() });
     }
   });
 

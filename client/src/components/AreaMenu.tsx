@@ -85,6 +85,28 @@ interface SourcePower extends SourceEntry {
   isUnlocked: 0 | 1 | 2;
 }
 
+interface SourceBugRecord {
+  id: string;
+  bugId: string;
+  fecha: string;
+  situacion: string;
+  senal: string;
+  estrategia: string;
+  resultado: "victoria" | "empate" | "derrota";
+}
+
+interface SourceBug {
+  id: string;
+  nombre: string;
+  status: "activo" | "neutralizado" | "desactivado";
+  victoryCount: number;
+  desc: string;
+  aparece: string[];
+  disparadores: string[];
+  estrategias: string[];
+  registros: SourceBugRecord[];
+}
+
 function FlameIcon({ animated }: { animated: boolean }) {
   const base: CSSProperties = {
     position: "absolute",
@@ -160,6 +182,52 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
   const powerLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const powerLongPressCompleted = useRef(false);
   const backgroundLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [selectedBugId, setSelectedBugId] = useState<string | null>(null);
+  const [bugMoreOpen, setBugMoreOpen] = useState(false);
+  const [bugContextMenuId, setBugContextMenuId] = useState<string | null>(null);
+  const bugLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bugAddLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bugRecordLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bugLongPressCompleted = useRef(false);
+  const [isBugFormOpen, setIsBugFormOpen] = useState(false);
+  const [editingBug, setEditingBug] = useState<SourceBug | null>(null);
+  const [bugNombre, setBugNombre] = useState("");
+  const [bugStatus, setBugStatus] = useState<"activo" | "neutralizado" | "desactivado">("activo");
+  const [bugDesc, setBugDesc] = useState("");
+  const [bugAparece, setBugAparece] = useState("");
+  const [bugDisparadores, setBugDisparadores] = useState("");
+  const [bugEstrategias, setBugEstrategias] = useState("");
+  const [isBugRecordFormOpen, setIsBugRecordFormOpen] = useState(false);
+  const [recordFecha, setRecordFecha] = useState(new Date().toISOString().slice(0, 10));
+  const [recordSituacion, setRecordSituacion] = useState("");
+  const [recordSenal, setRecordSenal] = useState("");
+  const [recordEstrategia, setRecordEstrategia] = useState("");
+  const [recordResultado, setRecordResultado] = useState<"victoria" | "empate" | "derrota">("victoria");
+  const [isBugStatusMenuOpen, setIsBugStatusMenuOpen] = useState(false);
+
+  const bugStatusLabel: Record<SourceBug["status"], string> = {
+    activo: "Activo",
+    neutralizado: "Neutralizado",
+    desactivado: "Desactivado",
+  };
+
+  const bugStatusColor: Record<SourceBug["status"], string> = {
+    activo: "bg-red-400",
+    neutralizado: "bg-amber-400",
+    desactivado: "bg-emerald-400",
+  };
+
+  const bugResultLabel: Record<SourceBugRecord["resultado"], string> = {
+    victoria: "Victoria",
+    empate: "Empate",
+    derrota: "Derrota",
+  };
+
+  const bugResultColor: Record<SourceBugRecord["resultado"], string> = {
+    victoria: "text-emerald-400",
+    empate: "text-amber-400",
+    derrota: "text-red-400",
+  };
 
   // Pointer-based background long-press handlers
   const handleBackgroundPointerDown = (e: PointerEvent) => {
@@ -227,6 +295,18 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       }
       const data = await res.json();
       return Array.isArray(data) ? data : [];
+    },
+    enabled: isOpen,
+  });
+
+  const { data: bugs = [] } = useQuery<SourceBug[]>({
+    queryKey: [`/api/source-bugs/${sourceType}/${sourceId}`],
+    queryFn: async () => {
+      const res = await fetch(`/api/source-bugs/${sourceType}/${sourceId}`);
+      if (!res.ok) {
+        throw new Error(`Failed to fetch bugs: ${res.status}`);
+      }
+      return res.json();
     },
     enabled: isOpen,
   });
@@ -469,6 +549,123 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     },
   });
 
+  const createBug = useMutation({
+    mutationFn: async (data: {
+      nombre: string;
+      status: "activo" | "neutralizado" | "desactivado";
+      desc: string;
+      aparece: string[];
+      disparadores: string[];
+      estrategias: string[];
+      areaId?: string | null;
+      projectId?: string | null;
+    }) => {
+      const res = await fetch("/api/source-bugs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        throw new Error("No se pudo crear el bug");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/source-bugs/${sourceType}/${sourceId}`] });
+      setIsBugFormOpen(false);
+      setEditingBug(null);
+      setBugNombre("");
+      setBugStatus("activo");
+      setBugDesc("");
+      setBugAparece("");
+      setBugDisparadores("");
+      setBugEstrategias("");
+    },
+  });
+
+  const updateBug = useMutation({
+    mutationFn: async ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: {
+        nombre?: string;
+        status?: "activo" | "neutralizado" | "desactivado";
+        victoryCount?: number;
+        desc?: string;
+        aparece?: string[];
+        disparadores?: string[];
+        estrategias?: string[];
+      };
+    }) => {
+      const res = await fetch(`/api/source-bugs/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        throw new Error("No se pudo actualizar el bug");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/source-bugs/${sourceType}/${sourceId}`] });
+      setIsBugFormOpen(false);
+      setEditingBug(null);
+    },
+  });
+
+  const deleteBug = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/source-bugs/${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        throw new Error("No se pudo eliminar el bug");
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/source-bugs/${sourceType}/${sourceId}`] });
+      setBugContextMenuId(null);
+    },
+  });
+
+  const createBugRecord = useMutation({
+    mutationFn: async ({
+      bugId,
+      data,
+    }: {
+      bugId: string;
+      data: {
+        fecha: string;
+        situacion: string;
+        senal: string;
+        estrategia: string;
+        resultado: "victoria" | "empate" | "derrota";
+      };
+    }) => {
+      const res = await fetch(`/api/source-bugs/${bugId}/records`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        throw new Error("No se pudo crear el registro");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/source-bugs/${sourceType}/${sourceId}`] });
+      setIsBugRecordFormOpen(false);
+      setRecordFecha(new Date().toISOString().slice(0, 10));
+      setRecordSituacion("");
+      setRecordSenal("");
+      setRecordEstrategia("");
+      setRecordResultado("victoria");
+    },
+  });
+
   const handleAdd = () => {
     if (!name.trim()) return;
     let finalName = name.trim();
@@ -529,6 +726,162 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     setName("");
     setDescription("");
   };
+
+  const parseBugList = (value: string) =>
+    value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+  const openNewBugForm = () => {
+    setEditingBug(null);
+    setBugNombre("");
+    setBugStatus("activo");
+    setBugDesc("");
+    setBugAparece("");
+    setBugDisparadores("");
+    setBugEstrategias("");
+    setIsBugFormOpen(true);
+    setBugContextMenuId(null);
+  };
+
+  const openEditBugForm = (bug: SourceBug) => {
+    setEditingBug(bug);
+    setBugNombre(bug.nombre);
+    setBugStatus(bug.status);
+    setBugDesc(bug.desc);
+    setBugAparece(bug.aparece.join(", "));
+    setBugDisparadores(bug.disparadores.join(", "));
+    setBugEstrategias(bug.estrategias.join(", "));
+    setIsBugFormOpen(true);
+    setBugContextMenuId(null);
+  };
+
+  const handleSaveBug = () => {
+    const nombre = bugNombre.trim();
+    if (!nombre) return;
+
+    const payload = {
+      nombre,
+      status: bugStatus,
+      desc: bugDesc.trim(),
+      aparece: parseBugList(bugAparece),
+      disparadores: parseBugList(bugDisparadores),
+      estrategias: parseBugList(bugEstrategias),
+      areaId: sourceType === "area" ? sourceId : null,
+      projectId: sourceType === "project" ? sourceId : null,
+    };
+
+    if (editingBug) {
+      updateBug.mutate({
+        id: editingBug.id,
+        data: {
+          nombre: payload.nombre,
+          status: payload.status,
+          desc: payload.desc,
+          aparece: payload.aparece,
+          disparadores: payload.disparadores,
+          estrategias: payload.estrategias,
+        },
+      });
+      return;
+    }
+
+    createBug.mutate(payload);
+  };
+
+  const handleCreateBugRecord = () => {
+    if (!selectedBugId) return;
+    if (!recordSituacion.trim() || !recordSenal.trim() || !recordEstrategia.trim()) return;
+
+    createBugRecord.mutate({
+      bugId: selectedBugId,
+      data: {
+        fecha: recordFecha,
+        situacion: recordSituacion.trim(),
+        senal: recordSenal.trim(),
+        estrategia: recordEstrategia.trim(),
+        resultado: recordResultado,
+      },
+    });
+  };
+
+  const handleChangeBugStatus = (status: "activo" | "neutralizado" | "desactivado") => {
+    if (!selectedBug) return;
+    updateBug.mutate({
+      id: selectedBug.id,
+      data: { status, victoryCount: 0 },
+    });
+    setIsBugStatusMenuOpen(false);
+  };
+
+  const startBugLongPress = (bugId: string) => {
+    bugLongPressCompleted.current = false;
+    if (bugLongPressTimer.current) {
+      clearTimeout(bugLongPressTimer.current);
+    }
+    bugLongPressTimer.current = setTimeout(() => {
+      setBugContextMenuId((prev) => (prev === bugId ? null : bugId));
+      bugLongPressCompleted.current = true;
+    }, 900);
+  };
+
+  const endBugLongPress = () => {
+    if (bugLongPressTimer.current) {
+      clearTimeout(bugLongPressTimer.current);
+      bugLongPressTimer.current = null;
+    }
+  };
+
+  const startBugAddLongPress = () => {
+    if (bugAddLongPressTimer.current) {
+      clearTimeout(bugAddLongPressTimer.current);
+    }
+    bugAddLongPressTimer.current = setTimeout(() => {
+      openNewBugForm();
+    }, 900);
+  };
+
+  const endBugAddLongPress = () => {
+    if (bugAddLongPressTimer.current) {
+      clearTimeout(bugAddLongPressTimer.current);
+      bugAddLongPressTimer.current = null;
+    }
+  };
+
+  const startBugRecordLongPress = () => {
+    if (!selectedBugId) return;
+    if (bugRecordLongPressTimer.current) {
+      clearTimeout(bugRecordLongPressTimer.current);
+    }
+    bugRecordLongPressTimer.current = setTimeout(() => {
+      setIsBugRecordFormOpen(true);
+    }, 900);
+  };
+
+  const endBugRecordLongPress = () => {
+    if (bugRecordLongPressTimer.current) {
+      clearTimeout(bugRecordLongPressTimer.current);
+      bugRecordLongPressTimer.current = null;
+    }
+  };
+
+  useEffect(() => {
+    if (bugs.length === 0) {
+      setSelectedBugId(null);
+      setBugMoreOpen(false);
+      setBugContextMenuId(null);
+      setIsBugStatusMenuOpen(false);
+      return;
+    }
+
+    if (selectedBugId && !bugs.some((bug) => bug.id === selectedBugId)) {
+      setSelectedBugId(null);
+      setBugMoreOpen(false);
+      setBugContextMenuId(null);
+      setIsBugStatusMenuOpen(false);
+    }
+  }, [bugs, selectedBugId]);
 
   // Long-press handlers for powers
   const handlePowerPointerDown = (e: PointerEvent, powerId: string) => {
@@ -633,24 +986,29 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     </div>
   );
 
+  const selectedBug = bugs.find((bug) => bug.id === selectedBugId) || null;
+  const bugProgressCount = Math.min(selectedBug?.victoryCount || 0, 5);
+  const bugProgressPercent = (bugProgressCount / 5) * 100;
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] max-h-[85vh] overflow-hidden p-4 sm:max-w-lg sm:p-6">
         <DialogHeader>
           <DialogTitle>{sourceName}</DialogTitle>
         </DialogHeader>
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-2">
-          <TabsList className="grid w-full grid-cols-5">
-            <TabsTrigger value="description" className="text-xs">Background</TabsTrigger>
-            <TabsTrigger value="powers" className="text-xs">Poderes</TabsTrigger>
-            <TabsTrigger value="experiences" className="text-xs">Experiencias</TabsTrigger>
-            <TabsTrigger value="growth" className="text-xs">Crecimiento</TabsTrigger>
-            <TabsTrigger value="contributions" className="text-xs">Contribución</TabsTrigger>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-2 flex min-h-0 flex-col">
+          <TabsList className="flex w-full flex-nowrap justify-start gap-1 overflow-x-auto overflow-y-hidden">
+            <TabsTrigger value="description" className="shrink-0 text-xs">Background</TabsTrigger>
+            <TabsTrigger value="bugs" className="shrink-0 text-xs">Bugs</TabsTrigger>
+            <TabsTrigger value="powers" className="shrink-0 text-xs">Poderes</TabsTrigger>
+            <TabsTrigger value="experiences" className="shrink-0 text-xs">Experiencias</TabsTrigger>
+            <TabsTrigger value="growth" className="shrink-0 text-xs">Crecimiento</TabsTrigger>
+            <TabsTrigger value="contributions" className="shrink-0 text-xs">Contribución</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="description" className="mt-4">
+          <TabsContent value="description" className="mt-4 min-h-0">
             <ScrollArea
-              className="h-[280px] pr-4"
+              className="h-[min(52vh,280px)] pr-4"
               onPointerDown={handleBackgroundPointerDown}
               onPointerUp={handleBackgroundPointerUp}
               onPointerCancel={handleBackgroundPointerUp}
@@ -667,9 +1025,9 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
             </Button>
           </TabsContent>
 
-          <TabsContent value="experiences" className="mt-4">
+          <TabsContent value="experiences" className="mt-4 min-h-0">
             <ScrollArea
-              className="h-[280px] pr-4"
+              className="h-[min(52vh,280px)] pr-4"
               onPointerDown={handleBackgroundPointerDown}
               onPointerUp={handleBackgroundPointerUp}
               onPointerCancel={handleBackgroundPointerUp}
@@ -686,9 +1044,9 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
             </Button>
           </TabsContent>
 
-          <TabsContent value="growth" className="mt-4">
+          <TabsContent value="growth" className="mt-4 min-h-0">
             <ScrollArea
-              className="h-[280px] pr-4"
+              className="h-[min(52vh,280px)] pr-4"
               onPointerDown={handleBackgroundPointerDown}
               onPointerUp={handleBackgroundPointerUp}
               onPointerCancel={handleBackgroundPointerUp}
@@ -705,9 +1063,9 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
             </Button>
           </TabsContent>
 
-          <TabsContent value="contributions" className="mt-4">
+          <TabsContent value="contributions" className="mt-4 min-h-0">
             <ScrollArea
-              className="h-[280px] pr-4"
+              className="h-[min(52vh,280px)] pr-4"
               onPointerDown={handleBackgroundPointerDown}
               onPointerUp={handleBackgroundPointerUp}
               onPointerCancel={handleBackgroundPointerUp}
@@ -724,9 +1082,9 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
             </Button>
           </TabsContent>
 
-          <TabsContent value="powers" className="mt-4">
+          <TabsContent value="powers" className="mt-4 min-h-0">
             <ScrollArea
-              className="h-[280px] pr-4"
+              className="h-[min(52vh,280px)] pr-4"
               onPointerDown={handleBackgroundPointerDown}
               onPointerUp={handleBackgroundPointerUp}
               onPointerCancel={handleBackgroundPointerUp}
@@ -831,6 +1189,227 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
               </div>
             </ScrollArea>
           </TabsContent>
+
+          <TabsContent value="bugs" className="mt-4 min-h-0 overflow-y-auto pr-1">
+            <div className={`grid gap-3 ${selectedBug ? "grid-cols-1 md:grid-cols-[200px_1fr]" : "grid-cols-1"}`}>
+              <div className="max-h-[min(34vh,260px)] overflow-y-auto border rounded-lg bg-muted/20">
+                {bugs.length === 0 ? (
+                  <div className="p-3 text-xs text-muted-foreground">Sin bugs todavía</div>
+                ) : (
+                  bugs.map((bug) => (
+                    <div
+                      key={bug.id}
+                      className={`relative p-3 border-b last:border-b-0 cursor-pointer transition-colors ${selectedBugId === bug.id ? "bg-muted" : "hover:bg-muted/40"}`}
+                      onMouseDown={() => startBugLongPress(bug.id)}
+                      onMouseUp={endBugLongPress}
+                      onMouseLeave={endBugLongPress}
+                      onTouchStart={() => startBugLongPress(bug.id)}
+                      onTouchEnd={endBugLongPress}
+                      onClick={() => {
+                        if (bugLongPressCompleted.current) {
+                          bugLongPressCompleted.current = false;
+                          return;
+                        }
+                        const nextSelectedId = selectedBugId === bug.id ? null : bug.id;
+                        setSelectedBugId(nextSelectedId);
+                        setBugMoreOpen(false);
+                        setBugContextMenuId(null);
+                        setIsBugStatusMenuOpen(false);
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-medium uppercase tracking-wide truncate">{bug.nombre}</p>
+                        <span className={`h-2 w-2 rounded-full ${bugStatusColor[bug.status]}`} />
+                      </div>
+
+                      {bugContextMenuId === bug.id && (
+                        <div
+                          className="absolute right-2 top-2 z-20 flex items-center gap-1 border rounded-md bg-background p-1 shadow"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            onClick={() => openEditBugForm(bug)}
+                            className="p-1 hover:bg-muted rounded"
+                            title="Editar"
+                          >
+                            <Pencil className="h-3 w-3 text-muted-foreground" />
+                          </button>
+                          <button
+                            onClick={() => deleteBug.mutate(bug.id)}
+                            className="p-1 hover:bg-destructive/20 rounded"
+                            title="Eliminar"
+                          >
+                            <Trash2 className="h-3 w-3 text-destructive" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+
+                <div
+                  className="flex items-center justify-center p-3 border-t cursor-pointer"
+                  onMouseDown={startBugAddLongPress}
+                  onMouseUp={endBugAddLongPress}
+                  onMouseLeave={endBugAddLongPress}
+                  onTouchStart={startBugAddLongPress}
+                  onTouchEnd={endBugAddLongPress}
+                >
+                  <Plus className="h-4 w-4 text-muted-foreground/70" />
+                </div>
+              </div>
+
+              {selectedBug && (
+                <div
+                  className="max-h-[min(46vh,420px)] overflow-y-auto border rounded-lg p-3 bg-muted/20"
+                  onMouseDown={startBugRecordLongPress}
+                  onMouseUp={endBugRecordLongPress}
+                  onMouseLeave={endBugRecordLongPress}
+                  onTouchStart={startBugRecordLongPress}
+                  onTouchEnd={endBugRecordLongPress}
+                >
+                  <div className="space-y-3">
+                    <div>
+                      <h4 className="text-base font-medium uppercase tracking-wide">{selectedBug.nombre}</h4>
+                      <div className="relative inline-block mt-2">
+                        <button
+                          type="button"
+                          className="text-[11px] px-2 py-1 rounded border uppercase tracking-wide hover:bg-muted"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setIsBugStatusMenuOpen((prev) => !prev);
+                          }}
+                        >
+                          {bugStatusLabel[selectedBug.status]}
+                        </button>
+
+                        {isBugStatusMenuOpen && (
+                          <div
+                            className="absolute left-0 top-full mt-1 z-30 min-w-[140px] rounded-md border bg-background shadow"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <button
+                              type="button"
+                              className="block w-full px-3 py-2 text-left text-xs hover:bg-muted"
+                              onClick={() => handleChangeBugStatus("activo")}
+                            >
+                              Activo
+                            </button>
+                            <button
+                              type="button"
+                              className="block w-full px-3 py-2 text-left text-xs hover:bg-muted"
+                              onClick={() => handleChangeBugStatus("neutralizado")}
+                            >
+                              Neutralizado
+                            </button>
+                            <button
+                              type="button"
+                              className="block w-full px-3 py-2 text-left text-xs hover:bg-muted"
+                              onClick={() => handleChangeBugStatus("desactivado")}
+                            >
+                              Desactivado
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Descripción</p>
+                      <p className="text-sm text-muted-foreground">{selectedBug.desc || "Sin descripción"}</p>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Progreso</p>
+                        <p className="text-[11px] text-muted-foreground">{bugProgressCount} / 5</p>
+                      </div>
+                      <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-blue-500 rounded-full transition-all duration-300"
+                          style={{ width: `${bugProgressPercent}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="text-xs text-muted-foreground hover:text-foreground"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setBugMoreOpen((prev) => !prev);
+                      }}
+                    >
+                      {bugMoreOpen ? "− menos" : "+ más"}
+                    </button>
+
+                    {bugMoreOpen && (
+                      <div className="space-y-2">
+                        <div>
+                          <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Cuándo aparece</p>
+                          <div className="flex flex-wrap gap-1">
+                            {selectedBug.aparece.length === 0 ? (
+                              <span className="text-xs text-muted-foreground">Sin datos</span>
+                            ) : (
+                              selectedBug.aparece.map((item, idx) => (
+                                <span key={`${selectedBug.id}-ap-${idx}`} className="text-xs px-2 py-0.5 rounded border bg-background">{item}</span>
+                              ))
+                            )}
+                          </div>
+                        </div>
+
+                        <div>
+                          <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Disparadores</p>
+                          <div className="flex flex-wrap gap-1">
+                            {selectedBug.disparadores.length === 0 ? (
+                              <span className="text-xs text-muted-foreground">Sin datos</span>
+                            ) : (
+                              selectedBug.disparadores.map((item, idx) => (
+                                <span key={`${selectedBug.id}-di-${idx}`} className="text-xs px-2 py-0.5 rounded border bg-background">{item}</span>
+                              ))
+                            )}
+                          </div>
+                        </div>
+
+                        <div>
+                          <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Estrategias</p>
+                          <div className="flex flex-wrap gap-1">
+                            {selectedBug.estrategias.length === 0 ? (
+                              <span className="text-xs text-muted-foreground">Sin datos</span>
+                            ) : (
+                              selectedBug.estrategias.map((item, idx) => (
+                                <span key={`${selectedBug.id}-es-${idx}`} className="text-xs px-2 py-0.5 rounded border bg-background">{item}</span>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="border-t pt-3">
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Registros</p>
+                      <div className="space-y-2 max-h-[170px] overflow-y-auto pr-1">
+                        {selectedBug.registros.length === 0 ? (
+                          <p className="text-xs text-muted-foreground">Sin registros todavía</p>
+                        ) : (
+                          selectedBug.registros.map((registro) => (
+                            <div key={registro.id} className="p-2 rounded border bg-background">
+                              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                                {registro.fecha} · <span className={bugResultColor[registro.resultado]}>{bugResultLabel[registro.resultado]}</span>
+                              </p>
+                              <p className="text-xs mt-1"><span className="text-muted-foreground">Situación:</span> {registro.situacion}</p>
+                              <p className="text-xs"><span className="text-muted-foreground">Señal:</span> {registro.senal}</p>
+                              <p className="text-xs"><span className="text-muted-foreground">Estrategia:</span> {registro.estrategia}</p>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </TabsContent>
         </Tabs>
       </DialogContent>
 
@@ -886,6 +1465,152 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                 disabled={!name.trim()}
               >
                 {editingEntry ? "Actualizar" : "Guardar"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isBugFormOpen} onOpenChange={setIsBugFormOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingBug ? "Editar bug" : "Nuevo bug"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label htmlFor="bug-nombre" className="text-sm font-medium mb-2 block">Nombre</Label>
+              <Input
+                id="bug-nombre"
+                value={bugNombre}
+                onChange={(e) => setBugNombre(e.target.value)}
+                placeholder="Nombre del bug"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="bug-status" className="text-sm font-medium mb-2 block">Estado</Label>
+              <select
+                id="bug-status"
+                value={bugStatus}
+                onChange={(e) => setBugStatus(e.target.value as "activo" | "neutralizado" | "desactivado")}
+                className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="activo">Activo</option>
+                <option value="neutralizado">Neutralizado</option>
+                <option value="desactivado">Desactivado</option>
+              </select>
+            </div>
+
+            <div>
+              <Label htmlFor="bug-desc" className="text-sm font-medium mb-2 block">Descripción</Label>
+              <Textarea
+                id="bug-desc"
+                value={bugDesc}
+                onChange={(e) => setBugDesc(e.target.value)}
+                rows={2}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="bug-aparece" className="text-sm font-medium mb-2 block">Cuándo aparece (comas)</Label>
+              <Input
+                id="bug-aparece"
+                value={bugAparece}
+                onChange={(e) => setBugAparece(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="bug-disparadores" className="text-sm font-medium mb-2 block">Disparadores (comas)</Label>
+              <Input
+                id="bug-disparadores"
+                value={bugDisparadores}
+                onChange={(e) => setBugDisparadores(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="bug-estrategias" className="text-sm font-medium mb-2 block">Estrategias (comas)</Label>
+              <Input
+                id="bug-estrategias"
+                value={bugEstrategias}
+                onChange={(e) => setBugEstrategias(e.target.value)}
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="outline" onClick={() => setIsBugFormOpen(false)}>Cancelar</Button>
+              <Button onClick={handleSaveBug} disabled={!bugNombre.trim()}>{editingBug ? "Guardar cambios" : "Crear bug"}</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isBugRecordFormOpen} onOpenChange={setIsBugRecordFormOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nuevo registro</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label htmlFor="bug-record-fecha" className="text-sm font-medium mb-2 block">Fecha</Label>
+              <Input
+                id="bug-record-fecha"
+                type="date"
+                value={recordFecha}
+                onChange={(e) => setRecordFecha(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="bug-record-situacion" className="text-sm font-medium mb-2 block">Situación</Label>
+              <Textarea
+                id="bug-record-situacion"
+                value={recordSituacion}
+                onChange={(e) => setRecordSituacion(e.target.value)}
+                rows={2}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="bug-record-senal" className="text-sm font-medium mb-2 block">Señal</Label>
+              <Input
+                id="bug-record-senal"
+                value={recordSenal}
+                onChange={(e) => setRecordSenal(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="bug-record-estrategia" className="text-sm font-medium mb-2 block">Estrategia usada</Label>
+              <Input
+                id="bug-record-estrategia"
+                value={recordEstrategia}
+                onChange={(e) => setRecordEstrategia(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="bug-record-resultado" className="text-sm font-medium mb-2 block">Resultado</Label>
+              <select
+                id="bug-record-resultado"
+                value={recordResultado}
+                onChange={(e) => setRecordResultado(e.target.value as "victoria" | "empate" | "derrota")}
+                className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="victoria">Victoria</option>
+                <option value="empate">Empate</option>
+                <option value="derrota">Derrota</option>
+              </select>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="outline" onClick={() => setIsBugRecordFormOpen(false)}>Cancelar</Button>
+              <Button
+                onClick={handleCreateBugRecord}
+                disabled={!recordSituacion.trim() || !recordSenal.trim() || !recordEstrategia.trim()}
+              >
+                Guardar registro
               </Button>
             </div>
           </div>
