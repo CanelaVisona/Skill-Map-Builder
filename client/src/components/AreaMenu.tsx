@@ -98,7 +98,7 @@ interface SourceBugRecord {
 interface SourceBug {
   id: string;
   nombre: string;
-  status: "activo" | "neutralizado" | "desactivado";
+  status: "identificado" | "debugueando" | "debugueado";
   victoryCount: number;
   desc: string;
   aparece: string[];
@@ -192,7 +192,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
   const [isBugFormOpen, setIsBugFormOpen] = useState(false);
   const [editingBug, setEditingBug] = useState<SourceBug | null>(null);
   const [bugNombre, setBugNombre] = useState("");
-  const [bugStatus, setBugStatus] = useState<"activo" | "neutralizado" | "desactivado">("activo");
+  const [bugStatus, setBugStatus] = useState<"identificado" | "debugueando" | "debugueado">("identificado");
   const [bugDesc, setBugDesc] = useState("");
   const [bugAparece, setBugAparece] = useState("");
   const [bugDisparadores, setBugDisparadores] = useState("");
@@ -206,15 +206,21 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
   const [isBugStatusMenuOpen, setIsBugStatusMenuOpen] = useState(false);
 
   const bugStatusLabel: Record<SourceBug["status"], string> = {
-    activo: "Activo",
-    neutralizado: "Neutralizado",
-    desactivado: "Desactivado",
+    identificado: "Identificado",
+    debugueando: "Debugueando",
+    debugueado: "Debugueado",
   };
 
   const bugStatusColor: Record<SourceBug["status"], string> = {
-    activo: "bg-red-400",
-    neutralizado: "bg-amber-400",
-    desactivado: "bg-emerald-400",
+    identificado: "bg-red-400",
+    debugueando: "bg-amber-400",
+    debugueado: "bg-emerald-400",
+  };
+
+  const bugStatusButtonClass: Record<SourceBug["status"], string> = {
+    identificado: "bg-red-400 border-red-500 text-black",
+    debugueando: "bg-amber-400 border-amber-500 text-black",
+    debugueado: "bg-emerald-400 border-emerald-500 text-black",
   };
 
   const bugResultLabel: Record<SourceBugRecord["resultado"], string> = {
@@ -552,7 +558,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
   const createBug = useMutation({
     mutationFn: async (data: {
       nombre: string;
-      status: "activo" | "neutralizado" | "desactivado";
+      status: "identificado" | "debugueando" | "debugueado";
       desc: string;
       aparece: string[];
       disparadores: string[];
@@ -575,7 +581,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       setIsBugFormOpen(false);
       setEditingBug(null);
       setBugNombre("");
-      setBugStatus("activo");
+      setBugStatus("identificado");
       setBugDesc("");
       setBugAparece("");
       setBugDisparadores("");
@@ -591,7 +597,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       id: string;
       data: {
         nombre?: string;
-        status?: "activo" | "neutralizado" | "desactivado";
+        status?: "identificado" | "debugueando" | "debugueado";
         victoryCount?: number;
         desc?: string;
         aparece?: string[];
@@ -736,7 +742,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
   const openNewBugForm = () => {
     setEditingBug(null);
     setBugNombre("");
-    setBugStatus("activo");
+    setBugStatus("identificado");
     setBugDesc("");
     setBugAparece("");
     setBugDisparadores("");
@@ -806,11 +812,11 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     });
   };
 
-  const handleChangeBugStatus = (status: "activo" | "neutralizado" | "desactivado") => {
+  const handleChangeBugStatus = (status: "identificado" | "debugueando" | "debugueado") => {
     if (!selectedBug) return;
     updateBug.mutate({
       id: selectedBug.id,
-      data: { status, victoryCount: 0 },
+      data: { status, victoryCount: status === "debugueado" ? 5 : 0 },
     });
     setIsBugStatusMenuOpen(false);
   };
@@ -987,7 +993,9 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
   );
 
   const selectedBug = bugs.find((bug) => bug.id === selectedBugId) || null;
-  const bugProgressCount = Math.min(selectedBug?.victoryCount || 0, 5);
+  const bugProgressCount = selectedBug?.status === "debugueado"
+    ? 5
+    : Math.min(selectedBug?.victoryCount || 0, 5);
   const bugProgressPercent = (bugProgressCount / 5) * 100;
 
   return (
@@ -1275,7 +1283,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                       <div className="relative inline-block mt-2">
                         <button
                           type="button"
-                          className="text-[11px] px-2 py-1 rounded border uppercase tracking-wide hover:bg-muted"
+                          className={`text-[11px] px-2 py-1 rounded border uppercase tracking-wide ${bugStatusButtonClass[selectedBug.status]}`}
                           onClick={(e) => {
                             e.stopPropagation();
                             setIsBugStatusMenuOpen((prev) => !prev);
@@ -1291,24 +1299,24 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                           >
                             <button
                               type="button"
-                              className="block w-full px-3 py-2 text-left text-xs hover:bg-muted"
-                              onClick={() => handleChangeBugStatus("activo")}
+                              className={`block w-full px-3 py-2 text-left text-xs ${bugStatusButtonClass["identificado"]}`}
+                              onClick={() => handleChangeBugStatus("identificado")}
                             >
-                              Activo
+                              Identificado
                             </button>
                             <button
                               type="button"
-                              className="block w-full px-3 py-2 text-left text-xs hover:bg-muted"
-                              onClick={() => handleChangeBugStatus("neutralizado")}
+                              className={`block w-full px-3 py-2 text-left text-xs ${bugStatusButtonClass["debugueando"]}`}
+                              onClick={() => handleChangeBugStatus("debugueando")}
                             >
-                              Neutralizado
+                              Debugueando
                             </button>
                             <button
                               type="button"
-                              className="block w-full px-3 py-2 text-left text-xs hover:bg-muted"
-                              onClick={() => handleChangeBugStatus("desactivado")}
+                              className={`block w-full px-3 py-2 text-left text-xs ${bugStatusButtonClass["debugueado"]}`}
+                              onClick={() => handleChangeBugStatus("debugueado")}
                             >
-                              Desactivado
+                              Debugueado
                             </button>
                           </div>
                         )}
@@ -1316,13 +1324,11 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                     </div>
 
                     <div>
-                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Descripción</p>
                       <p className="text-sm text-muted-foreground">{selectedBug.desc || "Sin descripción"}</p>
                     </div>
 
                     <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Progreso</p>
+                      <div className="flex items-center justify-end mb-1">
                         <p className="text-[11px] text-muted-foreground">{bugProgressCount} / 5</p>
                       </div>
                       <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
@@ -1346,44 +1352,38 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
 
                     {bugMoreOpen && (
                       <div className="space-y-2">
-                        <div>
-                          <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Cuándo aparece</p>
-                          <div className="flex flex-wrap gap-1">
-                            {selectedBug.aparece.length === 0 ? (
-                              <span className="text-xs text-muted-foreground">Sin datos</span>
-                            ) : (
-                              selectedBug.aparece.map((item, idx) => (
+                        {selectedBug.aparece.length > 0 && (
+                          <div>
+                            <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Cuándo aparece</p>
+                            <div className="flex flex-wrap gap-1">
+                              {selectedBug.aparece.map((item, idx) => (
                                 <span key={`${selectedBug.id}-ap-${idx}`} className="text-xs px-2 py-0.5 rounded border bg-background">{item}</span>
-                              ))
-                            )}
+                              ))}
+                            </div>
                           </div>
-                        </div>
+                        )}
 
-                        <div>
-                          <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Disparadores</p>
-                          <div className="flex flex-wrap gap-1">
-                            {selectedBug.disparadores.length === 0 ? (
-                              <span className="text-xs text-muted-foreground">Sin datos</span>
-                            ) : (
-                              selectedBug.disparadores.map((item, idx) => (
+                        {selectedBug.disparadores.length > 0 && (
+                          <div>
+                            <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Disparadores</p>
+                            <div className="flex flex-wrap gap-1">
+                              {selectedBug.disparadores.map((item, idx) => (
                                 <span key={`${selectedBug.id}-di-${idx}`} className="text-xs px-2 py-0.5 rounded border bg-background">{item}</span>
-                              ))
-                            )}
+                              ))}
+                            </div>
                           </div>
-                        </div>
+                        )}
 
-                        <div>
-                          <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Estrategias</p>
-                          <div className="flex flex-wrap gap-1">
-                            {selectedBug.estrategias.length === 0 ? (
-                              <span className="text-xs text-muted-foreground">Sin datos</span>
-                            ) : (
-                              selectedBug.estrategias.map((item, idx) => (
+                        {selectedBug.estrategias.length > 0 && (
+                          <div>
+                            <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Estrategias</p>
+                            <div className="flex flex-wrap gap-1">
+                              {selectedBug.estrategias.map((item, idx) => (
                                 <span key={`${selectedBug.id}-es-${idx}`} className="text-xs px-2 py-0.5 rounded border bg-background">{item}</span>
-                              ))
-                            )}
+                              ))}
+                            </div>
                           </div>
-                        </div>
+                        )}
                       </div>
                     )}
 
@@ -1494,12 +1494,12 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
               <select
                 id="bug-status"
                 value={bugStatus}
-                onChange={(e) => setBugStatus(e.target.value as "activo" | "neutralizado" | "desactivado")}
+                  onChange={(e) => setBugStatus(e.target.value as "identificado" | "debugueando" | "debugueado")}
                 className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
               >
-                <option value="activo">Activo</option>
-                <option value="neutralizado">Neutralizado</option>
-                <option value="desactivado">Desactivado</option>
+                  <option value="identificado">Identificado</option>
+                  <option value="debugueando">Debugueando</option>
+                  <option value="debugueado">Debugueado</option>
               </select>
             </div>
 

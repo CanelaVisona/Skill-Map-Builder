@@ -168,7 +168,7 @@ export const sourceBugs = pgTable("source_bugs", {
   areaId: varchar("area_id"),
   projectId: varchar("project_id"),
   nombre: text("nombre").notNull(),
-  status: text("status").$type<"activo" | "neutralizado" | "desactivado">().notNull().default("activo"),
+  status: text("status").$type<"identificado" | "debugueando" | "debugueado">().notNull().default("identificado"),
   victoryCount: integer("victory_count").notNull().default(0),
   desc: text("desc").notNull().default(""),
   aparece: jsonb("aparece").notNull().$type<string[]>().default([]),
@@ -387,7 +387,7 @@ export const insertSourcePowersSchema = createInsertSchema(sourcePowers).omit({ 
 export const insertSourceBugSchema = createInsertSchema(sourceBugs)
   .omit({ id: true, createdAt: true, updatedAt: true })
   .extend({
-    status: z.enum(["activo", "neutralizado", "desactivado"]).optional(),
+    status: z.enum(["identificado", "debugueando", "debugueado"]).optional(),
   });
 export const insertSourceBugRecordSchema = createInsertSchema(sourceBugRecords)
   .omit({ id: true, createdAt: true })

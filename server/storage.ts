@@ -3,6 +3,14 @@ import { randomUUID } from "crypto";
 import { db, pool } from "./db";
 import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourcePowers, type InsertSourcePowers, type SourceBug, type InsertSourceBug, type SourceBugRecord, type InsertSourceBugRecord, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourcePowers, sourceBugs, sourceBugRecords, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, rewiringTrackers, rewiringTrackerRecords } from "@shared/schema";
 
+const normalizeSourceBugStatus = (status: string): "identificado" | "debugueando" | "debugueado" => {
+  if (status === "activo") return "identificado";
+  if (status === "neutralizado") return "debugueando";
+  if (status === "desactivado") return "debugueado";
+  if (status === "debugueando" || status === "debugueado") return status;
+  return "identificado";
+};
+
 export interface IStorage {
   // Users
   createUser(username: string, password: string): Promise<User>;
@@ -1445,12 +1453,21 @@ export class DbStorage implements IStorage {
     const bugIds = bugs.map((bug) => bug.id);
     const records = await db.select().from(sourceBugRecords).where(inArray(sourceBugRecords.bugId, bugIds));
 
-    return bugs.map((bug) => ({
-      ...bug,
-      registros: records
-        .filter((record) => record.bugId === bug.id)
-        .sort((a, b) => b.fecha.localeCompare(a.fecha)),
-    }));
+    return bugs.map((bug) => {
+      const normalizedStatus = normalizeSourceBugStatus(String(bug.status));
+      const normalizedVictoryCount = normalizedStatus === "debugueado"
+        ? 5
+        : Math.min(bug.victoryCount || 0, 5);
+
+      return {
+        ...bug,
+        status: normalizedStatus,
+        victoryCount: normalizedVictoryCount,
+        registros: records
+          .filter((record) => record.bugId === bug.id)
+          .sort((a, b) => b.fecha.localeCompare(a.fecha)),
+      };
+    });
   }
 
   async createSourceBug(entry: InsertSourceBug): Promise<SourceBug> {
@@ -1476,32 +1493,38 @@ export class DbStorage implements IStorage {
     const id = randomUUID();
     const result = await db.insert(sourceBugRecords).values({ id, ...entry }).returning();
 
-    if (entry.resultado === "victoria") {
-      const bugResult = await db.select().from(sourceBugs).where(eq(sourceBugs.id, entry.bugId));
-      const bug = bugResult[0];
+    const bugResult = await db.select().from(sourceBugs).where(eq(sourceBugs.id, entry.bugId));
+    const bug = bugResult[0];
 
-      if (bug && bug.status !== "desactivado") {
-        const nextVictoryCount = (bug.victoryCount || 0) + 1;
-        let nextStatus = bug.status;
-        let storedVictoryCount = nextVictoryCount;
+    if (bug) {
+      let nextStatus = normalizeSourceBugStatus(String(bug.status));
+      let nextVictoryCount = bug.victoryCount || 0;
 
-        if (bug.status === "activo" && nextVictoryCount >= 5) {
-          nextStatus = "neutralizado";
-          storedVictoryCount = 0;
-        } else if (bug.status === "neutralizado" && nextVictoryCount >= 5) {
-          nextStatus = "desactivado";
-          storedVictoryCount = 0;
+      if (bug.status === "identificado") {
+        // The first record starts the debugging phase, but victories count starts from zero there.
+        nextStatus = "debugueando";
+        nextVictoryCount = 0;
+      } else if (bug.status === "debugueando") {
+        if (entry.resultado === "victoria") {
+          nextVictoryCount = Math.min((bug.victoryCount || 0) + 1, 5);
         }
 
-        await db
-          .update(sourceBugs)
-          .set({
-            status: nextStatus,
-            victoryCount: storedVictoryCount,
-            updatedAt: new Date(),
-          })
-          .where(eq(sourceBugs.id, bug.id));
+        if (nextVictoryCount >= 5) {
+          nextStatus = "debugueado";
+          nextVictoryCount = 5;
+        }
+      } else if (bug.status === "debugueado") {
+        nextVictoryCount = 5;
       }
+
+      await db
+        .update(sourceBugs)
+        .set({
+          status: nextStatus,
+          victoryCount: nextVictoryCount,
+          updatedAt: new Date(),
+        })
+        .where(eq(sourceBugs.id, bug.id));
     }
 
     return result[0];
