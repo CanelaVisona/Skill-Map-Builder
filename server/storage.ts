@@ -152,6 +152,8 @@ export interface IStorage {
   updateSourceBug(id: string, entry: Partial<InsertSourceBug>): Promise<SourceBug | undefined>;
   deleteSourceBug(id: string): Promise<void>;
   createSourceBugRecord(entry: InsertSourceBugRecord): Promise<SourceBugRecord>;
+  updateSourceBugRecord(id: string, entry: Partial<InsertSourceBugRecord>): Promise<SourceBugRecord | undefined>;
+  deleteSourceBugRecord(id: string): Promise<void>;
 
   // Profile - About Entries
   getProfileAboutEntries(userId: string): Promise<ProfileAboutEntry[]>;
@@ -1489,45 +1491,77 @@ export class DbStorage implements IStorage {
     await db.delete(sourceBugs).where(eq(sourceBugs.id, id));
   }
 
-  async createSourceBugRecord(entry: InsertSourceBugRecord): Promise<SourceBugRecord> {
-    const id = randomUUID();
-    const result = await db.insert(sourceBugRecords).values({ id, ...entry }).returning();
+  private async recalculateSourceBugProgress(bugId: string): Promise<void> {
+    const records = await db
+      .select()
+      .from(sourceBugRecords)
+      .where(eq(sourceBugRecords.bugId, bugId))
+      .orderBy(asc(sourceBugRecords.fecha), asc(sourceBugRecords.createdAt));
 
-    const bugResult = await db.select().from(sourceBugs).where(eq(sourceBugs.id, entry.bugId));
-    const bug = bugResult[0];
+    let nextStatus: "identificado" | "debugueando" | "debugueado" = "identificado";
+    let nextVictoryCount = 0;
 
-    if (bug) {
-      let nextStatus = normalizeSourceBugStatus(String(bug.status));
-      let nextVictoryCount = bug.victoryCount || 0;
-
-      if (bug.status === "identificado") {
-        // The first record starts the debugging phase, but victories count starts from zero there.
+    for (const record of records) {
+      if (nextStatus === "identificado") {
+        // First historical record moves the bug into debugging; counting starts from zero there.
         nextStatus = "debugueando";
         nextVictoryCount = 0;
-      } else if (bug.status === "debugueando") {
-        if (entry.resultado === "victoria") {
-          nextVictoryCount = Math.min((bug.victoryCount || 0) + 1, 5);
+        continue;
+      }
+
+      if (nextStatus === "debugueando") {
+        if (record.resultado === "victoria") {
+          nextVictoryCount = Math.min(nextVictoryCount + 1, 5);
         }
 
         if (nextVictoryCount >= 5) {
           nextStatus = "debugueado";
           nextVictoryCount = 5;
         }
-      } else if (bug.status === "debugueado") {
-        nextVictoryCount = 5;
+        continue;
       }
 
-      await db
-        .update(sourceBugs)
-        .set({
-          status: nextStatus,
-          victoryCount: nextVictoryCount,
-          updatedAt: new Date(),
-        })
-        .where(eq(sourceBugs.id, bug.id));
+      nextVictoryCount = 5;
     }
 
+    await db
+      .update(sourceBugs)
+      .set({
+        status: nextStatus,
+        victoryCount: nextVictoryCount,
+        updatedAt: new Date(),
+      })
+      .where(eq(sourceBugs.id, bugId));
+  }
+
+  async createSourceBugRecord(entry: InsertSourceBugRecord): Promise<SourceBugRecord> {
+    const id = randomUUID();
+    const result = await db.insert(sourceBugRecords).values({ id, ...entry }).returning();
+
+    await this.recalculateSourceBugProgress(entry.bugId);
+
     return result[0];
+  }
+
+  async updateSourceBugRecord(id: string, entry: Partial<InsertSourceBugRecord>): Promise<SourceBugRecord | undefined> {
+    const result = await db
+      .update(sourceBugRecords)
+      .set(entry)
+      .where(eq(sourceBugRecords.id, id))
+      .returning();
+    if (result[0]) {
+      await this.recalculateSourceBugProgress(result[0].bugId);
+    }
+    return result[0];
+  }
+
+  async deleteSourceBugRecord(id: string): Promise<void> {
+    const existing = await db.select().from(sourceBugRecords).where(eq(sourceBugRecords.id, id));
+    const bugId = existing[0]?.bugId;
+    await db.delete(sourceBugRecords).where(eq(sourceBugRecords.id, id));
+    if (bugId) {
+      await this.recalculateSourceBugProgress(bugId);
+    }
   }
 
   // Profile - Missions

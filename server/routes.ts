@@ -3139,6 +3139,28 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/source-bug-records/:id", requireAuth, async (req, res) => {
+    try {
+      const updated = await storage.updateSourceBugRecord(req.params.id, req.body);
+      if (!updated) {
+        res.status(404).json({ message: "Source bug record not found" });
+        return;
+      }
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/source-bug-records/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteSourceBugRecord(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Skills Progress
   app.get("/api/skills-progress", requireAuth, async (req, res) => {
     try {

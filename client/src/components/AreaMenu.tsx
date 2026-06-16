@@ -188,6 +188,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
   const bugLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bugAddLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bugRecordLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bugRecordItemLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bugLongPressCompleted = useRef(false);
   const [isBugFormOpen, setIsBugFormOpen] = useState(false);
   const [editingBug, setEditingBug] = useState<SourceBug | null>(null);
@@ -203,6 +204,8 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
   const [recordSenal, setRecordSenal] = useState("");
   const [recordEstrategia, setRecordEstrategia] = useState("");
   const [recordResultado, setRecordResultado] = useState<"victoria" | "empate" | "derrota">("victoria");
+  const [editingBugRecord, setEditingBugRecord] = useState<SourceBugRecord | null>(null);
+  const [recordContextMenuId, setRecordContextMenuId] = useState<string | null>(null);
   const [isBugStatusMenuOpen, setIsBugStatusMenuOpen] = useState(false);
 
   const bugStatusLabel: Record<SourceBug["status"], string> = {
@@ -664,11 +667,65 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/source-bugs/${sourceType}/${sourceId}`] });
       setIsBugRecordFormOpen(false);
+      setEditingBugRecord(null);
+      setRecordContextMenuId(null);
       setRecordFecha(new Date().toISOString().slice(0, 10));
       setRecordSituacion("");
       setRecordSenal("");
       setRecordEstrategia("");
       setRecordResultado("victoria");
+    },
+  });
+
+  const updateBugRecord = useMutation({
+    mutationFn: async ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: {
+        fecha?: string;
+        situacion?: string;
+        senal?: string;
+        estrategia?: string;
+        resultado?: "victoria" | "empate" | "derrota";
+      };
+    }) => {
+      const res = await fetch(`/api/source-bug-records/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        throw new Error("No se pudo actualizar el registro");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/source-bugs/${sourceType}/${sourceId}`] });
+      setIsBugRecordFormOpen(false);
+      setEditingBugRecord(null);
+      setRecordContextMenuId(null);
+      setRecordFecha(new Date().toISOString().slice(0, 10));
+      setRecordSituacion("");
+      setRecordSenal("");
+      setRecordEstrategia("");
+      setRecordResultado("victoria");
+    },
+  });
+
+  const deleteBugRecord = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/source-bug-records/${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        throw new Error("No se pudo eliminar el registro");
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/source-bugs/${sourceType}/${sourceId}`] });
+      setRecordContextMenuId(null);
     },
   });
 
@@ -796,9 +853,23 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     createBug.mutate(payload);
   };
 
-  const handleCreateBugRecord = () => {
+  const handleSaveBugRecord = () => {
     if (!selectedBugId) return;
     if (!recordSituacion.trim() || !recordSenal.trim() || !recordEstrategia.trim()) return;
+
+    if (editingBugRecord) {
+      updateBugRecord.mutate({
+        id: editingBugRecord.id,
+        data: {
+          fecha: recordFecha,
+          situacion: recordSituacion.trim(),
+          senal: recordSenal.trim(),
+          estrategia: recordEstrategia.trim(),
+          resultado: recordResultado,
+        },
+      });
+      return;
+    }
 
     createBugRecord.mutate({
       bugId: selectedBugId,
@@ -861,6 +932,12 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       clearTimeout(bugRecordLongPressTimer.current);
     }
     bugRecordLongPressTimer.current = setTimeout(() => {
+      setEditingBugRecord(null);
+      setRecordFecha(new Date().toISOString().slice(0, 10));
+      setRecordSituacion("");
+      setRecordSenal("");
+      setRecordEstrategia("");
+      setRecordResultado("victoria");
       setIsBugRecordFormOpen(true);
     }, 900);
   };
@@ -872,11 +949,39 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     }
   };
 
+  const startBugRecordItemLongPress = (recordId: string) => {
+    if (bugRecordItemLongPressTimer.current) {
+      clearTimeout(bugRecordItemLongPressTimer.current);
+    }
+    bugRecordItemLongPressTimer.current = setTimeout(() => {
+      setRecordContextMenuId((prev) => (prev === recordId ? null : recordId));
+    }, 900);
+  };
+
+  const endBugRecordItemLongPress = () => {
+    if (bugRecordItemLongPressTimer.current) {
+      clearTimeout(bugRecordItemLongPressTimer.current);
+      bugRecordItemLongPressTimer.current = null;
+    }
+  };
+
+  const openEditBugRecordForm = (record: SourceBugRecord) => {
+    setEditingBugRecord(record);
+    setRecordFecha(record.fecha);
+    setRecordSituacion(record.situacion);
+    setRecordSenal(record.senal);
+    setRecordEstrategia(record.estrategia);
+    setRecordResultado(record.resultado);
+    setIsBugRecordFormOpen(true);
+    setRecordContextMenuId(null);
+  };
+
   useEffect(() => {
     if (bugs.length === 0) {
       setSelectedBugId(null);
       setBugMoreOpen(false);
       setBugContextMenuId(null);
+      setRecordContextMenuId(null);
       setIsBugStatusMenuOpen(false);
       return;
     }
@@ -885,6 +990,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       setSelectedBugId(null);
       setBugMoreOpen(false);
       setBugContextMenuId(null);
+      setRecordContextMenuId(null);
       setIsBugStatusMenuOpen(false);
     }
   }, [bugs, selectedBugId]);
@@ -1339,6 +1445,17 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                       </div>
                     </div>
 
+                    {selectedBug.estrategias.length > 0 && (
+                      <div>
+                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Estrategias</p>
+                        <div className="flex flex-wrap gap-1">
+                          {selectedBug.estrategias.map((item, idx) => (
+                            <span key={`${selectedBug.id}-es-top-${idx}`} className="text-xs px-2 py-0.5 rounded border bg-background">{item}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     <button
                       type="button"
                       className="text-xs text-muted-foreground hover:text-foreground"
@@ -1373,17 +1490,6 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                             </div>
                           </div>
                         )}
-
-                        {selectedBug.estrategias.length > 0 && (
-                          <div>
-                            <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Estrategias</p>
-                            <div className="flex flex-wrap gap-1">
-                              {selectedBug.estrategias.map((item, idx) => (
-                                <span key={`${selectedBug.id}-es-${idx}`} className="text-xs px-2 py-0.5 rounded border bg-background">{item}</span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
                       </div>
                     )}
 
@@ -1394,7 +1500,49 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                           <p className="text-xs text-muted-foreground">Sin registros todavía</p>
                         ) : (
                           selectedBug.registros.map((registro) => (
-                            <div key={registro.id} className="p-2 rounded border bg-background">
+                            <div
+                              key={registro.id}
+                              className="relative p-2 rounded border bg-background"
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                                startBugRecordItemLongPress(registro.id);
+                              }}
+                              onMouseUp={(e) => {
+                                e.stopPropagation();
+                                endBugRecordItemLongPress();
+                              }}
+                              onMouseLeave={endBugRecordItemLongPress}
+                              onTouchStart={(e) => {
+                                e.stopPropagation();
+                                startBugRecordItemLongPress(registro.id);
+                              }}
+                              onTouchEnd={(e) => {
+                                e.stopPropagation();
+                                endBugRecordItemLongPress();
+                              }}
+                            >
+                              {recordContextMenuId === registro.id && (
+                                <div
+                                  className="absolute right-2 top-2 z-20 flex items-center gap-1 border rounded-md bg-background p-1 shadow"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <button
+                                    onClick={() => openEditBugRecordForm(registro)}
+                                    className="p-1 hover:bg-muted rounded"
+                                    title="Editar"
+                                  >
+                                    <Pencil className="h-3 w-3 text-muted-foreground" />
+                                  </button>
+                                  <button
+                                    onClick={() => deleteBugRecord.mutate(registro.id)}
+                                    className="p-1 hover:bg-destructive/20 rounded"
+                                    title="Eliminar"
+                                  >
+                                    <Trash2 className="h-3 w-3 text-destructive" />
+                                  </button>
+                                </div>
+                              )}
+
                               <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
                                 {registro.fecha} · <span className={bugResultColor[registro.resultado]}>{bugResultLabel[registro.resultado]}</span>
                               </p>
@@ -1548,10 +1696,23 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isBugRecordFormOpen} onOpenChange={setIsBugRecordFormOpen}>
+      <Dialog
+        open={isBugRecordFormOpen}
+        onOpenChange={(open) => {
+          setIsBugRecordFormOpen(open);
+          if (!open) {
+            setEditingBugRecord(null);
+            setRecordFecha(new Date().toISOString().slice(0, 10));
+            setRecordSituacion("");
+            setRecordSenal("");
+            setRecordEstrategia("");
+            setRecordResultado("victoria");
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Nuevo registro</DialogTitle>
+            <DialogTitle>{editingBugRecord ? "Editar registro" : "Nuevo registro"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div>
@@ -1609,10 +1770,10 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
             <div className="flex justify-end gap-2 pt-1">
               <Button variant="outline" onClick={() => setIsBugRecordFormOpen(false)}>Cancelar</Button>
               <Button
-                onClick={handleCreateBugRecord}
+                onClick={handleSaveBugRecord}
                 disabled={!recordSituacion.trim() || !recordSenal.trim() || !recordEstrategia.trim()}
               >
-                Guardar registro
+                {editingBugRecord ? "Guardar cambios" : "Guardar registro"}
               </Button>
             </div>
           </div>
