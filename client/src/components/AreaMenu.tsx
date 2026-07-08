@@ -4,7 +4,7 @@ import { useMenu } from "@/lib/menu-context";
 import { ProgressBar } from "@/components/ProgressBar";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, PanelLeftClose, PanelLeftOpen, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut, Archive, ArchiveRestore, Pencil, Zap, ChevronDown, ChevronRight, Mountain, Compass, Scroll, Eye, Swords, Lock, LockOpen } from "lucide-react";
+import { Plus, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut, Archive, ArchiveRestore, Pencil, Zap, ChevronDown, ChevronRight, Mountain, Compass, Scroll, Eye, Swords, Lock, LockOpen } from "lucide-react";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "./ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "./ui/alert-dialog";
@@ -1494,7 +1494,28 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                     )}
 
                     <div className="border-t pt-3">
-                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Registros</p>
+                      <div
+                        className="mb-2 inline-flex"
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          startBugRecordLongPress();
+                        }}
+                        onMouseUp={(e) => {
+                          e.stopPropagation();
+                          endBugRecordLongPress();
+                        }}
+                        onMouseLeave={endBugRecordLongPress}
+                        onTouchStart={(e) => {
+                          e.stopPropagation();
+                          startBugRecordLongPress();
+                        }}
+                        onTouchEnd={(e) => {
+                          e.stopPropagation();
+                          endBugRecordLongPress();
+                        }}
+                      >
+                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Registros</p>
+                      </div>
                       <div className="space-y-2 max-h-[170px] overflow-y-auto pr-1">
                         {selectedBug.registros.length === 0 ? (
                           <p className="text-xs text-muted-foreground">Sin registros todavía</p>
@@ -1710,7 +1731,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
           }
         }}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="top-[42%] z-[80] sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{editingBugRecord ? "Editar registro" : "Nuevo registro"}</DialogTitle>
           </DialogHeader>
@@ -2519,14 +2540,15 @@ export function AreaMenu() {
                 )}
               </h1>
             </motion.div>
-            <Button 
-              variant="ghost" 
-              size="icon" 
+            <button
+              type="button"
               onClick={() => setIsOpen(!isOpen)}
-              className="ml-auto"
+              className="ml-auto h-7 w-7 rounded-full bg-transparent flex items-center justify-center"
+              title="Cerrar menú"
+              aria-label="Cerrar menú"
             >
-              <PanelLeftClose size={18} />
-            </Button>
+              <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/70 transition-colors hover:bg-foreground" />
+            </button>
           </div>
 
           <div className="flex-1 overflow-y-auto overflow-x-hidden py-2 space-y-1 px-2 scrollbar-hide overscroll-contain">
@@ -3385,14 +3407,15 @@ export function AreaMenu() {
           transition={{ duration: 0.4, ease: "easeInOut" }}
           className="fixed left-4 top-4 z-30"
         >
-          <Button 
-            variant="ghost" 
-            size="icon" 
+          <button
+            type="button"
             onClick={() => setIsOpen(!isOpen)}
-            className="rounded-lg border border-border bg-card/50 backdrop-blur-xl hover:bg-muted/50 transition-all duration-300"
+            className="h-7 w-7 rounded-full bg-transparent flex items-center justify-center"
+            title="Abrir menú"
+            aria-label="Abrir menú"
           >
-            <PanelLeftOpen size={18} />
-          </Button>
+            <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/70 transition-colors hover:bg-foreground" />
+          </button>
         </motion.div>
       )}
     </>

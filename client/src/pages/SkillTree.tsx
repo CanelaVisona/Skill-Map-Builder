@@ -11,8 +11,9 @@ import { ProgressModal } from "@/components/ProgressModal";
 import { ProgressBar } from "@/components/ProgressBar";
 import { BookTracker } from "@/components/BookTracker";
 import RewiringTracker from "@/components/RewiringTracker";
+import NecesidadesCasa from "../components/NecesidadesCasa";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Mountain, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle } from "lucide-react";
+import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -84,77 +85,134 @@ function calculateVisibleLevels(skills: Skill[], endOfAreaLevel?: number): Set<n
   return visibleLevels;
 }
 
-function TopRightControls({ onOpenGuide, onOpenDesigner, onOpenProgress, onOpenHabits, onOpenStrength, onOpenBookTracker, onOpenRewiringTracker }: { onOpenGuide: () => void; onOpenDesigner: () => void; onOpenProgress: () => void; onOpenHabits: () => void; onOpenStrength: () => void; onOpenBookTracker: () => void; onOpenRewiringTracker: () => void }) {
+function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpenBookTracker, onOpenRewiringTracker, onOpenAllAreaBugs, onOpenHomeNeeds }: { onOpenDesigner: () => void; onOpenHabits: () => void; onOpenStrength: () => void; onOpenBookTracker: () => void; onOpenRewiringTracker: () => void; onOpenAllAreaBugs: () => void; onOpenHomeNeeds: () => void }) {
   const { theme, setTheme, resolvedTheme } = useTheme();
   const currentTheme = resolvedTheme || theme;
   const { openDiary } = useDiary();
+  const [isOpen, setIsOpen] = useState(false);
+
+  const handleAction = (action: () => void) => {
+    action();
+    setIsOpen(false);
+  };
   
   return (
-    <div className="fixed top-4 right-4 z-50 flex flex-col gap-3">
+    <div className="fixed top-4 right-4 z-50 flex flex-col items-end gap-2">
       <button
-        className="text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-        onClick={() => setTheme(currentTheme === "dark" ? "light" : "dark")}
-        data-testid="button-theme-toggle"
+        className="h-7 w-7 rounded-full bg-transparent flex items-center justify-center"
+        onClick={() => setIsOpen((prev) => !prev)}
+        data-testid="button-controls-toggle"
+        title="Abrir controles"
       >
-        {currentTheme === "dark" ? (
-          <Sun className="h-5 w-5" />
-        ) : (
-          <Moon className="h-5 w-5" />
+        <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/70 transition-colors hover:bg-foreground" />
+      </button>
+
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.16, ease: "easeOut" }}
+            className="flex flex-col items-end gap-2 rounded-2xl border border-border/40 bg-background/65 p-2 backdrop-blur-md"
+          >
+            <button
+              className="h-8 w-8 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
+              onClick={() => handleAction(() => setTheme(currentTheme === "dark" ? "light" : "dark"))}
+              data-testid="button-theme-toggle"
+              title="Modo de luz"
+            >
+              {currentTheme === "dark" ? (
+                <Sun className="h-4 w-4 mx-auto" />
+              ) : (
+                <Moon className="h-4 w-4 mx-auto" />
+              )}
+            </button>
+            <button
+              className="h-8 w-8 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
+              onClick={() => handleAction(openDiary)}
+              data-testid="button-diary-toggle"
+              data-onboarding="diary-button"
+              title="Quest Diary"
+            >
+              <BookOpen className="h-4 w-4 mx-auto" />
+            </button>
+            <button
+              className="h-8 w-8 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
+              onClick={() => handleAction(onOpenDesigner)}
+              title="Skill Designer"
+            >
+              <Scroll className="h-4 w-4 mx-auto" />
+            </button>
+            <button
+              className="h-8 w-8 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
+              onClick={() => handleAction(onOpenHabits)}
+              title="Habit Streak"
+            >
+              <Flame className="h-4 w-4 mx-auto" />
+            </button>
+            <button
+              className="h-8 w-8 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
+              onClick={() => handleAction(onOpenStrength)}
+              title="Space Repetition"
+            >
+              <Dumbbell className="h-4 w-4 mx-auto" />
+            </button>
+            <button
+              className="h-8 w-8 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
+              onClick={() => handleAction(onOpenBookTracker)}
+              title="Book Tracker"
+            >
+              <Bookmark className="h-4 w-4 mx-auto" />
+            </button>
+            <button
+              className="h-8 w-8 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
+              onClick={() => handleAction(onOpenRewiringTracker)}
+              title="Rewiring Tracker"
+            >
+              <Circle className="h-4 w-4 mx-auto" />
+            </button>
+            <button
+              className="h-8 w-8 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
+              onClick={() => handleAction(onOpenAllAreaBugs)}
+              title="Bugs de areas"
+            >
+              <span className="inline-block h-0 w-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[10px] border-b-current" />
+            </button>
+            <button
+              className="h-8 w-8 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
+              onClick={() => handleAction(onOpenHomeNeeds)}
+              title="Necesidades de tu casa"
+            >
+              <House className="h-4 w-4 mx-auto" />
+            </button>
+          </motion.div>
         )}
-      </button>
-      <button
-        className="text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-        onClick={openDiary}
-        data-testid="button-diary-toggle"
-        data-onboarding="diary-button"
-        title="Quest Diary"
-      >
-        <BookOpen className="h-5 w-5" />
-      </button>
-      <button
-        className="text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-        onClick={onOpenProgress}
-        title="Progress Tracker"
-      >
-        <Mountain className="h-5 w-5" />
-      </button>
-      <button
-        className="text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-        onClick={onOpenDesigner}
-        title="Skill Designer"
-      >
-        <Scroll className="h-5 w-5" />
-      </button>
-      <button
-        className="text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-        onClick={onOpenHabits}
-        title="Habit Streak"
-      >
-        <Flame className="h-5 w-5" />
-      </button>
-      <button
-        className="text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-        onClick={onOpenStrength}
-        title="Space Repetition"
-      >
-        <Dumbbell className="h-5 w-5" />
-      </button>
-      <button
-        className="text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-        onClick={onOpenBookTracker}
-        title="Book Tracker"
-      >
-        <Bookmark className="h-5 w-5" />
-      </button>
-      <button
-        className="text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-        onClick={onOpenRewiringTracker}
-        title="Rewiring Tracker"
-      >
-        <Circle className="h-5 w-5" />
-      </button>
+      </AnimatePresence>
     </div>
   );
+}
+
+interface SourceBugRecord {
+  id: string;
+  bugId: string;
+  fecha: string;
+  situacion: string;
+  senal: string;
+  estrategia: string;
+  resultado: "victoria" | "empate" | "derrota";
+}
+
+interface SourceBug {
+  id: string;
+  nombre: string;
+  status: "identificado" | "debugueando" | "debugueado";
+  victoryCount: number;
+  desc: string;
+  aparece: string[];
+  disparadores: string[];
+  estrategias: string[];
+  registros: SourceBugRecord[];
 }
 
 type JournalEntry = JournalCharacter | JournalPlace | JournalShadow;
@@ -5839,6 +5897,664 @@ function RewiringTrackerModalWrapper({ open, onOpenChange }: { open: boolean; on
   );
 }
 
+function HomeNeedsModalWrapper({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          key="home-needs-modal"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+          onClick={() => onOpenChange(false)}
+        >
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.95, opacity: 0 }}
+            className="overflow-hidden rounded-3xl border border-border/50 bg-background max-w-5xl w-full max-h-[90dvh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 border-b border-border/50 flex items-center justify-between">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-foreground">Necesidades de tu casa</h3>
+              <button
+                type="button"
+                onClick={() => onOpenChange(false)}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                aria-label="Cerrar modal de casa"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="max-h-[calc(90dvh-70px)] overflow-y-auto overflow-x-hidden p-3 sm:p-4">
+              <NecesidadesCasa />
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const { areas } = useSkillTree();
+  const queryClient = useQueryClient();
+  const [selectedBugRef, setSelectedBugRef] = useState<{ areaId: string; bugId: string } | null>(null);
+  const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
+  const [recordContextMenuId, setRecordContextMenuId] = useState<string | null>(null);
+  const [isRecordFormOpen, setIsRecordFormOpen] = useState(false);
+  const recordAddLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recordItemLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [recordFecha, setRecordFecha] = useState(new Date().toISOString().slice(0, 10));
+  const [recordSituacion, setRecordSituacion] = useState("");
+  const [recordSenal, setRecordSenal] = useState("");
+  const [recordEstrategia, setRecordEstrategia] = useState("");
+  const [recordResultado, setRecordResultado] = useState<"victoria" | "empate" | "derrota">("victoria");
+  const [expandedAreaId, setExpandedAreaId] = useState<string | null>(null);
+
+  const orderedAreas = React.useMemo(
+    () => [...areas].sort((a, b) => a.name.localeCompare(b.name, "es")),
+    [areas],
+  );
+
+  const areaIdsQueryKey = orderedAreas.map((area) => area.id).join("|");
+
+  const { data: areaBugs = [], isLoading, isError } = useQuery<Array<{ areaId: string; areaName: string; bugs: SourceBug[] }>>({
+    queryKey: ["all-area-bugs", areaIdsQueryKey],
+    enabled: open && orderedAreas.length > 0,
+    queryFn: async () => {
+      const results = await Promise.all(
+        orderedAreas.map(async (area) => {
+          const response = await fetch(`/api/source-bugs/area/${area.id}`);
+          if (!response.ok) {
+            throw new Error(`Failed to fetch bugs for area ${area.id}: ${response.status}`);
+          }
+
+          const bugs = await response.json() as SourceBug[];
+          return {
+            areaId: area.id,
+            areaName: area.name,
+            bugs,
+          };
+        }),
+      );
+
+      return results.filter((result) => result.bugs.length > 0);
+    },
+  });
+
+  const selectedAreaGroup = selectedBugRef
+    ? areaBugs.find((group) => group.areaId === selectedBugRef.areaId)
+    : null;
+  const selectedBug = selectedAreaGroup
+    ? selectedAreaGroup.bugs.find((bug) => bug.id === selectedBugRef?.bugId) ?? null
+    : null;
+
+  const createBugRecord = useMutation({
+    mutationFn: async ({
+      bugId,
+      data,
+    }: {
+      bugId: string;
+      data: {
+        fecha: string;
+        situacion: string;
+        senal: string;
+        estrategia: string;
+        resultado: "victoria" | "empate" | "derrota";
+      };
+    }) => {
+      const res = await fetch(`/api/source-bugs/${bugId}/records`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        throw new Error("No se pudo crear el registro");
+      }
+      return res.json();
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["all-area-bugs"] });
+      setIsRecordFormOpen(false);
+      setRecordFecha(new Date().toISOString().slice(0, 10));
+      setRecordSituacion("");
+      setRecordSenal("");
+      setRecordEstrategia("");
+      setRecordResultado("victoria");
+    },
+  });
+
+  const updateBugRecord = useMutation({
+    mutationFn: async ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: {
+        fecha?: string;
+        situacion?: string;
+        senal?: string;
+        estrategia?: string;
+        resultado?: "victoria" | "empate" | "derrota";
+      };
+    }) => {
+      const res = await fetch(`/api/source-bug-records/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        throw new Error("No se pudo actualizar el registro");
+      }
+      return res.json();
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["all-area-bugs"] });
+      setEditingRecordId(null);
+      setIsRecordFormOpen(false);
+      setRecordFecha(new Date().toISOString().slice(0, 10));
+      setRecordSituacion("");
+      setRecordSenal("");
+      setRecordEstrategia("");
+      setRecordResultado("victoria");
+    },
+  });
+
+  const deleteBugRecord = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/source-bug-records/${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        throw new Error("No se pudo eliminar el registro");
+      }
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["all-area-bugs"] });
+      if (editingRecordId) {
+        setEditingRecordId(null);
+        setRecordFecha(new Date().toISOString().slice(0, 10));
+        setRecordSituacion("");
+        setRecordSenal("");
+        setRecordEstrategia("");
+        setRecordResultado("victoria");
+      }
+    },
+  });
+
+  useEffect(() => {
+    if (!open) {
+      setSelectedBugRef(null);
+      setEditingRecordId(null);
+      setRecordContextMenuId(null);
+      setIsRecordFormOpen(false);
+      setExpandedAreaId(null);
+      setRecordFecha(new Date().toISOString().slice(0, 10));
+      setRecordSituacion("");
+      setRecordSenal("");
+      setRecordEstrategia("");
+      setRecordResultado("victoria");
+    }
+  }, [open]);
+
+  useEffect(() => {
+    setEditingRecordId(null);
+    setRecordContextMenuId(null);
+    setIsRecordFormOpen(false);
+  }, [selectedBugRef?.areaId, selectedBugRef?.bugId]);
+
+  const bugStatusLabel: Record<SourceBug["status"], string> = {
+    identificado: "Identificado",
+    debugueando: "Debugueando",
+    debugueado: "Debugueado",
+  };
+
+  const bugStatusColor: Record<SourceBug["status"], string> = {
+    identificado: "bg-red-400",
+    debugueando: "bg-amber-400",
+    debugueado: "bg-emerald-400",
+  };
+
+  const bugResultLabel: Record<SourceBugRecord["resultado"], string> = {
+    victoria: "Victoria",
+    empate: "Empate",
+    derrota: "Derrota",
+  };
+
+  const bugResultColor: Record<SourceBugRecord["resultado"], string> = {
+    victoria: "text-emerald-400",
+    empate: "text-amber-400",
+    derrota: "text-red-400",
+  };
+
+  const handleCreateRecord = () => {
+    if (!selectedBug) return;
+    if (!recordFecha.trim() || !recordSituacion.trim() || !recordSenal.trim() || !recordEstrategia.trim()) return;
+
+    if (editingRecordId) {
+      updateBugRecord.mutate({
+        id: editingRecordId,
+        data: {
+          fecha: recordFecha,
+          situacion: recordSituacion.trim(),
+          senal: recordSenal.trim(),
+          estrategia: recordEstrategia.trim(),
+          resultado: recordResultado,
+        },
+      });
+      return;
+    }
+
+    createBugRecord.mutate({
+      bugId: selectedBug.id,
+      data: {
+        fecha: recordFecha,
+        situacion: recordSituacion.trim(),
+        senal: recordSenal.trim(),
+        estrategia: recordEstrategia.trim(),
+        resultado: recordResultado,
+      },
+    });
+  };
+
+  const openEditRecord = (record: SourceBugRecord) => {
+    setEditingRecordId(record.id);
+    setRecordContextMenuId(null);
+    setIsRecordFormOpen(true);
+    setRecordFecha(record.fecha);
+    setRecordSituacion(record.situacion);
+    setRecordSenal(record.senal);
+    setRecordEstrategia(record.estrategia);
+    setRecordResultado(record.resultado);
+  };
+
+  const resetRecordForm = () => {
+    setEditingRecordId(null);
+    setIsRecordFormOpen(false);
+    setRecordFecha(new Date().toISOString().slice(0, 10));
+    setRecordSituacion("");
+    setRecordSenal("");
+    setRecordEstrategia("");
+    setRecordResultado("victoria");
+  };
+
+  const openNewRecordForm = () => {
+    setEditingRecordId(null);
+    setRecordContextMenuId(null);
+    setIsRecordFormOpen(true);
+    setRecordFecha(new Date().toISOString().slice(0, 10));
+    setRecordSituacion("");
+    setRecordSenal("");
+    setRecordEstrategia("");
+    setRecordResultado("victoria");
+  };
+
+  const startRecordAddLongPress = () => {
+    if (!selectedBug) return;
+    if (recordAddLongPressTimer.current) {
+      clearTimeout(recordAddLongPressTimer.current);
+    }
+    recordAddLongPressTimer.current = setTimeout(() => {
+      openNewRecordForm();
+    }, 900);
+  };
+
+  const endRecordAddLongPress = () => {
+    if (recordAddLongPressTimer.current) {
+      clearTimeout(recordAddLongPressTimer.current);
+      recordAddLongPressTimer.current = null;
+    }
+  };
+
+  const startRecordItemLongPress = (recordId: string) => {
+    if (recordItemLongPressTimer.current) {
+      clearTimeout(recordItemLongPressTimer.current);
+    }
+    recordItemLongPressTimer.current = setTimeout(() => {
+      setRecordContextMenuId((prev) => (prev === recordId ? null : recordId));
+    }, 900);
+  };
+
+  const endRecordItemLongPress = () => {
+    if (recordItemLongPressTimer.current) {
+      clearTimeout(recordItemLongPressTimer.current);
+      recordItemLongPressTimer.current = null;
+    }
+  };
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          key="all-area-bugs-modal"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+          onClick={() => onOpenChange(false)}
+        >
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.95, opacity: 0 }}
+            className="overflow-hidden rounded-3xl border border-border/50 bg-background max-w-4xl w-full max-h-[85dvh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 border-b border-border/50 flex items-center justify-between">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-foreground">Bugs de todas las areas</h3>
+              <button
+                type="button"
+                onClick={() => onOpenChange(false)}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                aria-label="Cerrar modal de bugs"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="p-4 sm:p-5 overflow-y-auto overflow-x-hidden max-h-[calc(85dvh-70px)]">
+              {isLoading ? (
+                <div className="text-sm text-muted-foreground">Cargando bugs...</div>
+              ) : isError ? (
+                <div className="text-sm text-red-500">No se pudieron cargar los bugs de las areas.</div>
+              ) : areaBugs.length === 0 ? (
+                <div className="text-sm text-muted-foreground">No hay bugs registrados en tus areas.</div>
+              ) : selectedBug && selectedAreaGroup ? (
+                <div className="space-y-4 min-w-0">
+                  <div className="flex items-center justify-between gap-3 min-w-0">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-8 px-2 shrink-0"
+                      onClick={() => setSelectedBugRef(null)}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <div className="text-right min-w-0 flex-1">
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide truncate">{selectedAreaGroup.areaName}</p>
+                      <h4 className="text-sm font-semibold uppercase tracking-wide truncate text-foreground">{selectedBug.nombre}</h4>
+                    </div>
+                  </div>
+
+                  <section className="rounded-xl border border-border/50 bg-muted/10 p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
+                        <span className={`h-2 w-2 rounded-full ${bugStatusColor[selectedBug.status]}`} />
+                        {bugStatusLabel[selectedBug.status]}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground">Victorias: {selectedBug.victoryCount ?? 0}</span>
+                    </div>
+
+                    <p className="text-sm text-muted-foreground break-words">{selectedBug.desc || "Sin descripcion"}</p>
+
+                    {selectedBug.estrategias.length > 0 && (
+                      <div>
+                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Estrategias</p>
+                        <div className="flex flex-wrap gap-1 min-w-0">
+                          {selectedBug.estrategias.map((item, idx) => (
+                            <span key={`${selectedBug.id}-es-${idx}`} className="text-xs px-2 py-0.5 rounded border bg-background break-words max-w-full">{item}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {selectedBug.aparece.length > 0 && (
+                      <div>
+                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Cuando aparece</p>
+                        <div className="flex flex-wrap gap-1 min-w-0">
+                          {selectedBug.aparece.map((item, idx) => (
+                            <span key={`${selectedBug.id}-ap-${idx}`} className="text-xs px-2 py-0.5 rounded border bg-background break-words max-w-full">{item}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {selectedBug.disparadores.length > 0 && (
+                      <div>
+                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Disparadores</p>
+                        <div className="flex flex-wrap gap-1 min-w-0">
+                          {selectedBug.disparadores.map((item, idx) => (
+                            <span key={`${selectedBug.id}-di-${idx}`} className="text-xs px-2 py-0.5 rounded border bg-background break-words max-w-full">{item}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </section>
+
+                  <section className="rounded-xl border border-border/50 bg-muted/10 p-4 space-y-3">
+                    <h5 className="text-xs font-semibold uppercase tracking-wide text-foreground">Registros</h5>
+                    <div
+                      className="space-y-2 max-h-[220px] overflow-y-auto pr-1"
+                      onMouseDown={startRecordAddLongPress}
+                      onMouseUp={endRecordAddLongPress}
+                      onMouseLeave={endRecordAddLongPress}
+                      onTouchStart={startRecordAddLongPress}
+                      onTouchEnd={endRecordAddLongPress}
+                    >
+                      {selectedBug.registros.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">Sin registros todavia (long press para agregar)</p>
+                      ) : (
+                        selectedBug.registros.map((registro) => (
+                          <article
+                            key={registro.id}
+                            className="relative rounded-lg border border-border/50 bg-background/60 p-3 min-w-0"
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              startRecordItemLongPress(registro.id);
+                            }}
+                            onMouseUp={(e) => {
+                              e.stopPropagation();
+                              endRecordItemLongPress();
+                            }}
+                            onMouseLeave={endRecordItemLongPress}
+                            onTouchStart={(e) => {
+                              e.stopPropagation();
+                              startRecordItemLongPress(registro.id);
+                            }}
+                            onTouchEnd={(e) => {
+                              e.stopPropagation();
+                              endRecordItemLongPress();
+                            }}
+                          >
+                            <div className="flex items-start justify-between gap-2 min-w-0">
+                              <p className="text-[11px] uppercase tracking-wide text-muted-foreground min-w-0 pr-10 break-words">
+                                {registro.fecha} · <span className={bugResultColor[registro.resultado]}>{bugResultLabel[registro.resultado]}</span>
+                              </p>
+                            </div>
+
+                            {recordContextMenuId === registro.id && (
+                              <div
+                                className="absolute right-2 top-2 z-20 flex items-center gap-1 border rounded-md bg-background p-1 shadow"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => openEditRecord(registro)}
+                                  className="p-1 hover:bg-muted rounded"
+                                  title="Editar"
+                                >
+                                  <Pencil className="h-3 w-3 text-muted-foreground" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => deleteBugRecord.mutate(registro.id)}
+                                  className="p-1 hover:bg-destructive/20 rounded"
+                                  title="Eliminar"
+                                  disabled={deleteBugRecord.isPending}
+                                >
+                                  <Trash2 className="h-3 w-3 text-destructive" />
+                                </button>
+                              </div>
+                            )}
+
+                            <p className="text-xs mt-1 break-words"><span className="text-muted-foreground">Situacion:</span> {registro.situacion}</p>
+                            <p className="text-xs break-words"><span className="text-muted-foreground">Senal:</span> {registro.senal}</p>
+                            <p className="text-xs break-words"><span className="text-muted-foreground">Estrategia:</span> {registro.estrategia}</p>
+                          </article>
+                        ))
+                      )}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">Long press en este bloque para agregar. Long press en un registro para editar/eliminar.</p>
+                  </section>
+
+                  {isRecordFormOpen && (
+                    <section className="rounded-xl border border-border/50 bg-muted/10 p-4 space-y-3 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <h5 className="text-xs font-semibold uppercase tracking-wide text-foreground">
+                        {editingRecordId ? "Editar registro" : "Nuevo registro"}
+                      </h5>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-7 px-2 text-xs"
+                        onClick={resetRecordForm}
+                      >
+                        Cancelar
+                      </Button>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div>
+                        <Label htmlFor="global-record-fecha" className="text-xs text-muted-foreground">Fecha</Label>
+                        <Input
+                          id="global-record-fecha"
+                          type="date"
+                          value={recordFecha}
+                          onChange={(e) => setRecordFecha(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="global-record-resultado" className="text-xs text-muted-foreground">Resultado</Label>
+                        <select
+                          id="global-record-resultado"
+                          value={recordResultado}
+                          onChange={(e) => setRecordResultado(e.target.value as "victoria" | "empate" | "derrota")}
+                          className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                        >
+                          <option value="victoria">Victoria</option>
+                          <option value="empate">Empate</option>
+                          <option value="derrota">Derrota</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="global-record-situacion" className="text-xs text-muted-foreground">Situacion</Label>
+                      <Textarea
+                        id="global-record-situacion"
+                        rows={2}
+                        value={recordSituacion}
+                        onChange={(e) => setRecordSituacion(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="global-record-senal" className="text-xs text-muted-foreground">Senal</Label>
+                      <Textarea
+                        id="global-record-senal"
+                        rows={2}
+                        value={recordSenal}
+                        onChange={(e) => setRecordSenal(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="global-record-estrategia" className="text-xs text-muted-foreground">Estrategia</Label>
+                      <Textarea
+                        id="global-record-estrategia"
+                        rows={2}
+                        value={recordEstrategia}
+                        onChange={(e) => setRecordEstrategia(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="flex justify-end">
+                      <Button
+                        type="button"
+                        onClick={handleCreateRecord}
+                        disabled={
+                          createBugRecord.isPending ||
+                          updateBugRecord.isPending ||
+                          !recordFecha.trim() ||
+                          !recordSituacion.trim() ||
+                          !recordSenal.trim() ||
+                          !recordEstrategia.trim()
+                        }
+                      >
+                        {createBugRecord.isPending || updateBugRecord.isPending
+                          ? "Guardando..."
+                          : editingRecordId
+                            ? "Guardar cambios"
+                            : "Agregar registro"}
+                      </Button>
+                    </div>
+                    </section>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-4 min-w-0">
+                  {areaBugs.map((group) => (
+                    <section key={group.areaId} className="rounded-xl border border-border/50 bg-muted/10 min-w-0 overflow-hidden">
+                      <button
+                        type="button"
+                        className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left border-b border-border/40"
+                        onClick={() => setExpandedAreaId((prev) => (prev === group.areaId ? null : group.areaId))}
+                      >
+                        <h4 className="text-sm font-medium text-foreground min-w-0 truncate pr-2">{group.areaName}</h4>
+                        <span className="inline-flex items-center gap-2 shrink-0">
+                          <span className="text-xs text-muted-foreground">{group.bugs.length} bugs</span>
+                          <ChevronDown
+                            className={`h-4 w-4 text-muted-foreground transition-transform ${expandedAreaId === group.areaId ? "rotate-180" : ""}`}
+                          />
+                        </span>
+                      </button>
+
+                      {expandedAreaId === group.areaId && (
+                        <div className="p-3 grid gap-2">
+                          {group.bugs.map((bug) => (
+                            <article
+                              key={bug.id}
+                              className="rounded-lg border border-border/50 bg-background/60 p-3 cursor-pointer hover:bg-background min-w-0"
+                              onClick={() => setSelectedBugRef({ areaId: group.areaId, bugId: bug.id })}
+                            >
+                              {(() => {
+                                const progressCount = bug.status === "debugueado" ? 5 : Math.min(5, bug.victoryCount ?? 0);
+                                const progressPercent = Math.max(0, Math.min(100, (progressCount / 5) * 100));
+
+                                return (
+                                  <>
+                                    <div className="flex items-center justify-between gap-2 min-w-0">
+                                      <p className="text-xs font-medium uppercase tracking-wide text-foreground truncate min-w-0 flex-1">{bug.nombre}</p>
+                                      <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground shrink-0">
+                                        <span className={`h-2 w-2 rounded-full ${bugStatusColor[bug.status]}`} />
+                                        {bugStatusLabel[bug.status]}
+                                      </span>
+                                    </div>
+
+                                    <div className="mt-2 w-full h-2 bg-muted rounded-full overflow-hidden">
+                                      <div
+                                        className="h-full bg-blue-500 rounded-full transition-all duration-300"
+                                        style={{ width: `${progressPercent}%` }}
+                                      />
+                                    </div>
+                                  </>
+                                );
+                              })()}
+                            </article>
+                          ))}
+                        </div>
+                      )}
+                    </section>
+                  ))}
+                </div>
+              )}
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
 function QuestDiary() {
   const { isDiaryOpen, closeDiary } = useDiary();
   const queryClient = useQueryClient();
@@ -6142,7 +6858,7 @@ function QuestDiary() {
 }
 
 
-function SkillCanvas() {
+function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
   const { 
     activeArea, 
     activeProject, 
@@ -6560,6 +7276,20 @@ function SkillCanvas() {
   const containerHeight = maxY + 200;
   const maxX = visibleSkills.length > 0 ? Math.max(...visibleSkills.map((s: Skill) => s.x), 50) : 50;
   const containerMinWidth = `calc(${maxX}% + 100px)`;
+  const nextPendingSkill = visibleSkills.find((s: Skill) => s.status === "available") || visibleSkills.find((s: Skill) => s.status !== "mastered") || null;
+
+  const scrollToPendingNode = () => {
+    if (!nextPendingSkill) return;
+
+    const targetElement = document.querySelector(`[data-skill-id="${nextPendingSkill.id}"]`);
+    if (!targetElement) return;
+
+    targetElement.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+      inline: "nearest",
+    });
+  };
 
   return (
     <div className="flex-1 relative bg-background flex flex-col overflow-auto">
@@ -6630,7 +7360,15 @@ function SkillCanvas() {
           <div className="sticky top-0 z-20 py-3 mb-6 -mx-8 px-8">
             <div className="flex justify-end">
               <div className="w-28 flex-shrink-0">
-                <ProgressBar skills={activeItem.skills} size="sm" areaOrProjectId={activeItem.id} currentXp={activeItem.currentXp} />
+                <button
+                  type="button"
+                  onClick={onOpenProgress}
+                  className="w-full text-left"
+                  title="Abrir Progress Tracker"
+                  data-testid="button-open-progress-from-bar"
+                >
+                  <ProgressBar skills={activeItem.skills} size="sm" areaOrProjectId={activeItem.id} currentXp={activeItem.currentXp} />
+                </button>
               </div>
             </div>
           </div>
@@ -6980,19 +7718,33 @@ function SkillCanvas() {
           </div>
         </div>
       </div>
+
+      {nextPendingSkill && (
+        <button
+          type="button"
+          onClick={scrollToPendingNode}
+          className="fixed bottom-4 right-4 z-40 h-10 w-10 rounded-full border border-border/40 bg-background/80 text-muted-foreground/70 backdrop-blur-md transition-colors hover:text-foreground"
+          title="Ir al nodo habilitado por confirmar"
+          data-testid="button-scroll-to-pending-node"
+        >
+          <ChevronDown className="h-5 w-5 mx-auto" />
+        </button>
+      )}
     </div>
   );
 }
 
 export default function SkillTreePage() {
   const { user } = useAuth();
-  const { showOnboarding, openGuide, closeGuide, markComplete } = useOnboarding(user?.id?.toString());
+  const { showOnboarding, closeGuide, markComplete } = useOnboarding(user?.id?.toString());
   const [isDesignerOpen, setIsDesignerOpen] = useState(false);
   const [isProgressOpen, setIsProgressOpen] = useState(false);
   const [isHabitsOpen, setIsHabitsOpen] = useState(false);
   const [isStrengthOpen, setIsStrengthOpen] = useState(false);
   const [isBookTrackerOpen, setIsBookTrackerOpen] = useState(false);
   const [isRewiringTrackerOpen, setIsRewiringTrackerOpen] = useState(false);
+  const [isAllAreaBugsOpen, setIsAllAreaBugsOpen] = useState(false);
+  const [isHomeNeedsOpen, setIsHomeNeedsOpen] = useState(false);
   
   const handleCompleteOnboarding = () => {
     if (user?.id) {
@@ -7008,15 +7760,17 @@ export default function SkillTreePage() {
           <XpPopupProvider>
             <MenuProvider>
               <div className="flex h-screen w-full bg-background text-foreground overflow-hidden font-body selection:bg-primary/30">
-                <TopRightControls onOpenGuide={openGuide} onOpenDesigner={() => setIsDesignerOpen(true)} onOpenProgress={() => setIsProgressOpen(true)} onOpenHabits={() => setIsHabitsOpen(true)} onOpenStrength={() => setIsStrengthOpen(true)} onOpenBookTracker={() => setIsBookTrackerOpen(true)} onOpenRewiringTracker={() => setIsRewiringTrackerOpen(true)} />
+                <TopRightControls onOpenDesigner={() => setIsDesignerOpen(true)} onOpenHabits={() => setIsHabitsOpen(true)} onOpenStrength={() => setIsStrengthOpen(true)} onOpenBookTracker={() => setIsBookTrackerOpen(true)} onOpenRewiringTracker={() => setIsRewiringTrackerOpen(true)} onOpenAllAreaBugs={() => setIsAllAreaBugsOpen(true)} onOpenHomeNeeds={() => setIsHomeNeedsOpen(true)} />
                 <ProgressModal open={isProgressOpen} onOpenChange={setIsProgressOpen} />
                 <SkillDesigner open={isDesignerOpen} onOpenChange={setIsDesignerOpen} />
                 <HabitStreakModal open={isHabitsOpen} onOpenChange={setIsHabitsOpen} />
                 <SpaceRepetitionModal open={isStrengthOpen} onOpenChange={setIsStrengthOpen} />
                 <BookTrackerModalWrapper open={isBookTrackerOpen} onOpenChange={setIsBookTrackerOpen} />
                 <RewiringTrackerModalWrapper open={isRewiringTrackerOpen} onOpenChange={setIsRewiringTrackerOpen} />
+                <AllAreaBugsModalWrapper open={isAllAreaBugsOpen} onOpenChange={setIsAllAreaBugsOpen} />
+                <HomeNeedsModalWrapper open={isHomeNeedsOpen} onOpenChange={setIsHomeNeedsOpen} />
                 <AreaMenu />
-                <SkillCanvas />
+                <SkillCanvas onOpenProgress={() => setIsProgressOpen(true)} />
                 <QuestDiary />
                 <OnboardingGuide isOpen={showOnboarding} onComplete={handleCompleteOnboarding} />
               </div>

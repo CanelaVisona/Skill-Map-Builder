@@ -1184,6 +1184,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             isInicioNode ? "cursor-default" : "cursor-pointer"
           )}
           style={{ left: `${skill.x}%`, top: `${skill.y}px` }}
+          data-skill-id={skill.id}
           onClick={handleClick}
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
