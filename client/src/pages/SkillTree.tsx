@@ -6396,7 +6396,17 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
                         ))
                       )}
                     </div>
-                    <p className="text-[11px] text-muted-foreground">Long press en este bloque para agregar. Long press en un registro para editar/eliminar.</p>
+                    <div
+                      className="mt-1 flex items-center justify-center rounded-md border border-dashed border-border/60 bg-background/50 py-2 cursor-pointer select-none"
+                      onMouseDown={startRecordAddLongPress}
+                      onMouseUp={endRecordAddLongPress}
+                      onMouseLeave={endRecordAddLongPress}
+                      onTouchStart={startRecordAddLongPress}
+                      onTouchEnd={endRecordAddLongPress}
+                      title="Mantén presionado para agregar registro"
+                    >
+                      <Plus className="h-4 w-4 text-muted-foreground/80" />
+                    </div>
                   </section>
 
                   {isRecordFormOpen && (
