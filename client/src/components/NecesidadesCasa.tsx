@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
+const HOME_TASKS_STORAGE_KEY = "skill-map-home-needs-tasks-v1";
 
 function computeValue(lastDone: number, periodDays: number) {
   const daysSince = (Date.now() - lastDone) / MS_PER_DAY;
@@ -126,6 +127,51 @@ const INITIAL_TASKS: HomeTask[] = [
     illo: "🛍️",
   },
 ];
+
+function loadStoredTasks(): HomeTask[] {
+  if (typeof window === "undefined") return INITIAL_TASKS;
+
+  try {
+    const raw = window.localStorage.getItem(HOME_TASKS_STORAGE_KEY);
+    if (!raw) return INITIAL_TASKS;
+
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return INITIAL_TASKS;
+
+    const tasks = parsed
+      .map((item) => {
+        const task = item as Partial<HomeTask>;
+        if (
+          typeof task.id !== "number" ||
+          typeof task.icon !== "string" ||
+          typeof task.name !== "string" ||
+          typeof task.freq !== "string" ||
+          typeof task.periodDays !== "number" ||
+          typeof task.lastDone !== "number" ||
+          typeof task.btnText !== "string" ||
+          typeof task.illo !== "string"
+        ) {
+          return null;
+        }
+
+        return {
+          id: task.id,
+          icon: task.icon,
+          name: task.name,
+          freq: task.freq,
+          periodDays: task.periodDays,
+          lastDone: task.lastDone,
+          btnText: task.btnText,
+          illo: task.illo,
+        } satisfies HomeTask;
+      })
+      .filter((task): task is HomeTask => task !== null);
+
+    return tasks.length > 0 ? tasks : INITIAL_TASKS;
+  } catch {
+    return INITIAL_TASKS;
+  }
+}
 
 function MiniBar({ value, color }: { value: number; color: "green" | "yellow" | "orange" | "red" }) {
   return (
@@ -277,10 +323,12 @@ function BigBar({ value, color }: { value: number; color: "green" | "yellow" | "
 }
 
 export default function NecesidadesCasa() {
-  const [tasks, setTasks] = useState(INITIAL_TASKS);
+  const [tasks, setTasks] = useState<HomeTask[]>(() => loadStoredTasks());
   const [selectedId, setSelectedId] = useState(0);
   const [flashing, setFlashing] = useState(false);
   const [, setTick] = useState(0);
+  const [remoteLoaded, setRemoteLoaded] = useState(false);
+  const [remoteSyncEnabled, setRemoteSyncEnabled] = useState(true);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressTriggeredRef = useRef(false);
   const titleLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -288,11 +336,114 @@ export default function NecesidadesCasa() {
   const taskPressStartPointRef = useRef<{ x: number; y: number } | null>(null);
   const titlePointerIdRef = useRef<number | null>(null);
   const titlePressStartPointRef = useRef<{ x: number; y: number } | null>(null);
+  const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const id = setInterval(() => setTick((n) => n + 1), 60_000);
     return () => clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadRemoteTasks = async () => {
+      try {
+        const response = await fetch("/api/home-needs/tasks");
+
+        if (response.status === 401) {
+          if (!cancelled) {
+            setRemoteSyncEnabled(false);
+            setRemoteLoaded(true);
+          }
+          return;
+        }
+
+        if (!response.ok) {
+          if (!cancelled) {
+            setRemoteLoaded(true);
+          }
+          return;
+        }
+
+        const data = (await response.json()) as unknown;
+        if (Array.isArray(data) && data.length > 0 && !cancelled) {
+          const parsed = loadStoredTasks();
+          const safeTasks = data
+            .map((item) => {
+              const task = item as Partial<HomeTask>;
+              if (
+                typeof task.id !== "number" ||
+                typeof task.icon !== "string" ||
+                typeof task.name !== "string" ||
+                typeof task.freq !== "string" ||
+                typeof task.periodDays !== "number" ||
+                typeof task.lastDone !== "number" ||
+                typeof task.btnText !== "string" ||
+                typeof task.illo !== "string"
+              ) {
+                return null;
+              }
+
+              return {
+                id: task.id,
+                icon: task.icon,
+                name: task.name,
+                freq: task.freq,
+                periodDays: task.periodDays,
+                lastDone: task.lastDone,
+                btnText: task.btnText,
+                illo: task.illo,
+              } satisfies HomeTask;
+            })
+            .filter((task): task is HomeTask => task !== null);
+
+          setTasks(safeTasks.length > 0 ? safeTasks : parsed);
+          setSelectedId((prev) => (safeTasks.some((task) => task.id === prev) ? prev : safeTasks[0]?.id ?? 0));
+        }
+
+        if (!cancelled) {
+          setRemoteLoaded(true);
+        }
+      } catch {
+        if (!cancelled) {
+          setRemoteLoaded(true);
+        }
+      }
+    };
+
+    void loadRemoteTasks();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(HOME_TASKS_STORAGE_KEY, JSON.stringify(tasks));
+  }, [tasks]);
+
+  useEffect(() => {
+    if (!remoteLoaded || !remoteSyncEnabled) return;
+
+    if (saveDebounceRef.current) {
+      clearTimeout(saveDebounceRef.current);
+    }
+
+    saveDebounceRef.current = setTimeout(() => {
+      void fetch("/api/home-needs/tasks", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tasks }),
+      });
+    }, 400);
+
+    return () => {
+      if (saveDebounceRef.current) {
+        clearTimeout(saveDebounceRef.current);
+      }
+    };
+  }, [remoteLoaded, remoteSyncEnabled, tasks]);
 
   const liveTask = useCallback((t: HomeTask) => {
     const value = computeValue(t.lastDone, t.periodDays);

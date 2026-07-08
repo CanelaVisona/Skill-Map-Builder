@@ -2784,6 +2784,108 @@ export async function registerRoutes(
     }
   });
 
+  // Home Needs - cross-device sync
+  const HOME_NEEDS_STORAGE_NAME = "__home_needs_tasks__";
+
+  function sanitizeHomeNeedsTasks(input: unknown): Array<{
+    id: number;
+    icon: string;
+    name: string;
+    freq: string;
+    periodDays: number;
+    lastDone: number;
+    btnText: string;
+    illo: string;
+  }> {
+    if (!Array.isArray(input)) return [];
+
+    return input
+      .map((item) => {
+        const task = item as Record<string, unknown>;
+        if (
+          typeof task.id !== "number" ||
+          typeof task.icon !== "string" ||
+          typeof task.name !== "string" ||
+          typeof task.freq !== "string" ||
+          typeof task.periodDays !== "number" ||
+          typeof task.lastDone !== "number" ||
+          typeof task.btnText !== "string" ||
+          typeof task.illo !== "string"
+        ) {
+          return null;
+        }
+
+        return {
+          id: task.id,
+          icon: task.icon,
+          name: task.name,
+          freq: task.freq,
+          periodDays: task.periodDays,
+          lastDone: task.lastDone,
+          btnText: task.btnText,
+          illo: task.illo,
+        };
+      })
+      .filter((task): task is {
+        id: number;
+        icon: string;
+        name: string;
+        freq: string;
+        periodDays: number;
+        lastDone: number;
+        btnText: string;
+        illo: string;
+      } => task !== null);
+  }
+
+  app.get("/api/home-needs/tasks", requireAuth, async (req, res) => {
+    try {
+      const entries = await storage.getProfileAboutEntries(req.userId!);
+      const storageEntry = entries.find((entry) => entry.name === HOME_NEEDS_STORAGE_NAME);
+
+      if (!storageEntry) {
+        res.json([]);
+        return;
+      }
+
+      let parsed: unknown = [];
+      try {
+        parsed = JSON.parse(storageEntry.description || "[]");
+      } catch {
+        parsed = [];
+      }
+
+      res.json(sanitizeHomeNeedsTasks(parsed));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/home-needs/tasks", requireAuth, async (req, res) => {
+    try {
+      const tasks = sanitizeHomeNeedsTasks(req.body?.tasks);
+      const entries = await storage.getProfileAboutEntries(req.userId!);
+      const storageEntry = entries.find((entry) => entry.name === HOME_NEEDS_STORAGE_NAME);
+
+      if (storageEntry) {
+        const updated = await storage.updateProfileAboutEntry(storageEntry.id, {
+          description: JSON.stringify(tasks),
+        });
+        res.json({ ok: true, id: updated?.id ?? storageEntry.id });
+        return;
+      }
+
+      const created = await storage.createProfileAboutEntry({
+        userId: req.userId!,
+        name: HOME_NEEDS_STORAGE_NAME,
+        description: JSON.stringify(tasks),
+      });
+      res.json({ ok: true, id: created.id });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Profile - Experiences
   app.get("/api/profile/experiences", requireAuth, async (req, res) => {
     try {

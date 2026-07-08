@@ -932,6 +932,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       clearTimeout(bugRecordLongPressTimer.current);
     }
     bugRecordLongPressTimer.current = setTimeout(() => {
+      setRecordContextMenuId(null);
       setEditingBugRecord(null);
       setRecordFecha(new Date().toISOString().slice(0, 10));
       setRecordSituacion("");
@@ -1495,7 +1496,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
 
                     <div className="border-t pt-3">
                       <div
-                        className="mb-2 inline-flex"
+                        className="mb-2 flex items-center justify-between gap-2"
                         onMouseDown={(e) => {
                           e.stopPropagation();
                           startBugRecordLongPress();
@@ -1515,6 +1516,25 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                         }}
                       >
                         <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Registros</p>
+                        <button
+                          type="button"
+                          className="inline-flex items-center justify-center rounded border px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setRecordContextMenuId(null);
+                            setEditingBugRecord(null);
+                            setRecordFecha(new Date().toISOString().slice(0, 10));
+                            setRecordSituacion("");
+                            setRecordSenal("");
+                            setRecordEstrategia("");
+                            setRecordResultado("victoria");
+                            setIsBugRecordFormOpen(true);
+                          }}
+                          title="Nuevo registro"
+                          aria-label="Nuevo registro"
+                        >
+                          <Plus className="h-3 w-3" />
+                        </button>
                       </div>
                       <div className="space-y-2 max-h-[170px] overflow-y-auto pr-1">
                         {selectedBug.registros.length === 0 ? (
@@ -1731,7 +1751,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
           }
         }}
       >
-        <DialogContent className="top-[42%] z-[80] sm:max-w-md">
+        <DialogContent className="top-[18%] z-[80] translate-y-0 sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{editingBugRecord ? "Editar registro" : "Nuevo registro"}</DialogTitle>
           </DialogHeader>
