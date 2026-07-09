@@ -207,6 +207,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const levelSubtitleDescriptions = isProject ? (activeProject?.levelSubtitleDescriptions || {}) : (activeArea?.levelSubtitleDescriptions || {});
   const currentSubtitle = levelSubtitles[skill.level.toString()] || "";
   const currentSubtitleDescription = levelSubtitleDescriptions[skill.level.toString()] || "";
+  const trimmedLevelSubtitle = currentSubtitle.trim();
+  const showCompletedLevelSubtitle = isFirstOfLevel && isLevelCompleted && trimmedLevelSubtitle.length > 0;
   const [editSubtitle, setEditSubtitle] = useState(currentSubtitle);
   const [editSubtitleDescription, setEditSubtitleDescription] = useState(currentSubtitleDescription);
   const levelLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1205,7 +1207,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               onMouseLeave={handleLevelLongPressEnd}
               onClick={(e) => e.stopPropagation()}
             >
-              <div>Level {skill.level}</div>
+              <div>{`Level ${skill.level}`}</div>
+              {showCompletedLevelSubtitle && (
+                <div>{trimmedLevelSubtitle}</div>
+              )}
             </div>
           )}
 

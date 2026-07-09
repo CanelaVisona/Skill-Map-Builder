@@ -134,6 +134,37 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
   // Determine which area to display
   const displayAreaId = activeAreaId || contextActiveAreaId || areas[0]?.id || "";
   const currentArea = areas.find((a) => a.id === displayAreaId);
+  const currentAreaVisibleLevelCap = useMemo(() => {
+    if (!currentArea) return null;
+
+    const candidates: number[] = [];
+
+    if (currentArea.unlockedLevel && currentArea.unlockedLevel > 0) {
+      candidates.push(currentArea.unlockedLevel);
+    }
+
+    if (currentArea.endOfAreaLevel && currentArea.endOfAreaLevel > 0) {
+      candidates.push(currentArea.endOfAreaLevel);
+    }
+
+    const statusDerivedCap = (currentArea.skills || [])
+      .filter((s) => s.status === "available" || s.status === "mastered")
+      .reduce((max, s) => Math.max(max, s.level || 1), 0);
+
+    if (statusDerivedCap > 0) {
+      candidates.push(statusDerivedCap);
+    }
+
+    if (candidates.length === 0) return null;
+    return Math.max(1, Math.min(...candidates));
+  }, [currentArea]);
+
+  const clampToUnlockedLevel = (level: number) => {
+    if (!currentAreaVisibleLevelCap || currentAreaVisibleLevelCap < 1) {
+      return Math.max(1, level || 1);
+    }
+    return Math.min(Math.max(1, level || 1), currentAreaVisibleLevelCap);
+  };
 
   // Initialize activeAreaIds on first load - show first area by default
   React.useEffect(() => {
@@ -293,7 +324,7 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
 
     // goalXp now represents LEVEL objective
     const newGoalLevel = metaUnlimited ? 0 : (parseInt(goalXpValue) || 0);
-    const currentLevel = Math.floor(skill.currentXp / 100) + 1;
+    const currentLevel = clampToUnlockedLevel(skill.level || 1);
     
     if (!metaUnlimited && newGoalLevel < currentLevel) {
       alert(`La meta debe ser un nivel mayor o igual a ${currentLevel} (nivel actual)`);
@@ -563,7 +594,7 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
     ? {
         id: globalSelectedSkill.id,
         title: globalSelectedSkill.name,
-        level: globalSelectedSkill.level,
+        level: clampToUnlockedLevel(globalSelectedSkill.level),
         status: globalSelectedSkill.status,
         currentXp: globalSelectedSkill.currentXp,
         goalXp: globalSelectedSkill.goalXp,
@@ -721,7 +752,7 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
                       skill={{
                         id: skill.id,
                         title: skill.name,
-                        level: skill.level,
+                        level: clampToUnlockedLevel(skill.level),
                         status: skill.status,
                         currentXp: skill.currentXp,
                         goalXp: skill.goalXp,

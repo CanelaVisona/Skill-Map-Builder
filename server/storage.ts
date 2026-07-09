@@ -1503,16 +1503,19 @@ export class DbStorage implements IStorage {
 
     for (const record of records) {
       if (nextStatus === "identificado") {
-        // First historical record moves the bug into debugging; counting starts from zero there.
+        // First historical record moves to debugging and also counts toward progress.
         nextStatus = "debugueando";
-        nextVictoryCount = 0;
+        nextVictoryCount = 1;
+
+        if (nextVictoryCount >= 5) {
+          nextStatus = "debugueado";
+          nextVictoryCount = 5;
+        }
         continue;
       }
 
       if (nextStatus === "debugueando") {
-        if (record.resultado === "victoria") {
-          nextVictoryCount = Math.min(nextVictoryCount + 1, 5);
-        }
+        nextVictoryCount = Math.min(nextVictoryCount + 1, 5);
 
         if (nextVictoryCount >= 5) {
           nextStatus = "debugueado";
@@ -1730,7 +1733,21 @@ export class DbStorage implements IStorage {
     const areaSkillIds = new Set(areaSkills.map(s => s.id));
     // Include subskills of area skills
     const subSkills = allUserSkills.filter(s => s.parentSkillId && areaSkillIds.has(s.parentSkillId));
-    return [...areaSkills, ...subSkills];
+    const areaData = await db
+      .select({ unlockedLevel: areas.unlockedLevel })
+      .from(areas)
+      .where(eq(areas.id, areaId));
+    const levelCap = areaData[0]?.unlockedLevel;
+    const scopedSkills = [...areaSkills, ...subSkills];
+
+    if (!levelCap || levelCap < 1) {
+      return scopedSkills;
+    }
+
+    return scopedSkills.map((skill) => ({
+      ...skill,
+      level: Math.min(Math.max(1, skill.level || 1), levelCap),
+    }));
   }
 
   async getGlobalSkillsByProject(userId: string, projectId: string): Promise<GlobalSkill[]> {
@@ -1740,7 +1757,21 @@ export class DbStorage implements IStorage {
     const projectSkillIds = new Set(projectSkills.map(s => s.id));
     // Include subskills of project skills
     const subSkills = allUserSkills.filter(s => s.parentSkillId && projectSkillIds.has(s.parentSkillId));
-    return [...projectSkills, ...subSkills];
+    const projectData = await db
+      .select({ unlockedLevel: projects.unlockedLevel })
+      .from(projects)
+      .where(eq(projects.id, projectId));
+    const levelCap = projectData[0]?.unlockedLevel;
+    const scopedSkills = [...projectSkills, ...subSkills];
+
+    if (!levelCap || levelCap < 1) {
+      return scopedSkills;
+    }
+
+    return scopedSkills.map((skill) => ({
+      ...skill,
+      level: Math.min(Math.max(1, skill.level || 1), levelCap),
+    }));
   }
 
   async getGlobalSkill(id: string): Promise<GlobalSkill | undefined> {
@@ -1784,12 +1815,48 @@ export class DbStorage implements IStorage {
     return level;
   }
 
+  private async getGlobalSkillLevelCap(skill: GlobalSkill): Promise<number | null> {
+    let current: GlobalSkill | undefined = skill;
+    const visited = new Set<string>();
+
+    while (current) {
+      if (current.areaId) {
+        const areaData = await db
+          .select({ unlockedLevel: areas.unlockedLevel })
+          .from(areas)
+          .where(eq(areas.id, current.areaId));
+        return areaData[0]?.unlockedLevel ?? null;
+      }
+
+      if (current.projectId) {
+        const projectData = await db
+          .select({ unlockedLevel: projects.unlockedLevel })
+          .from(projects)
+          .where(eq(projects.id, current.projectId));
+        return projectData[0]?.unlockedLevel ?? null;
+      }
+
+      if (!current.parentSkillId || visited.has(current.parentSkillId)) {
+        break;
+      }
+
+      visited.add(current.parentSkillId);
+      current = await this.getGlobalSkill(current.parentSkillId);
+    }
+
+    return null;
+  }
+
   async addXpToGlobalSkill(id: string, xpAmount: number): Promise<GlobalSkill | undefined> {
     const skill = await this.getGlobalSkill(id);
     if (!skill) return undefined;
 
     const newXp = skill.currentXp + xpAmount;
-    const newLevel = this.calculateLevel(newXp);
+    const calculatedLevel = this.calculateLevel(newXp);
+    const levelCap = await this.getGlobalSkillLevelCap(skill);
+    const newLevel = levelCap && levelCap > 0
+      ? Math.min(calculatedLevel, levelCap)
+      : calculatedLevel;
 
     // Update this skill
     const updated = await db.update(globalSkills)

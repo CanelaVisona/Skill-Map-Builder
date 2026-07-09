@@ -3747,24 +3747,17 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Skill linkeado al hábito no encontrado" });
       }
 
-      const currentXp = skill.currentXp || 0;
-      const newXp = currentXp + xpToAward;
-
-      // Update global skill with new XP and calculate new level
-      let newLevel = skill.level || 1;
-      const xpPerLevel = 100;
-      if (newXp >= (newLevel * xpPerLevel)) {
-        newLevel = Math.floor(newXp / xpPerLevel) + 1;
+      const updatedSkill = await storage.addXpToGlobalSkill(habit.skillId, xpToAward);
+      if (!updatedSkill) {
+        return res.status(404).json({ message: "Skill linkeado al hábito no encontrado" });
       }
-
-      await storage.updateGlobalSkill(habit.skillId, { currentXp: newXp, level: newLevel });
 
       return res.json({
         xpAwarded: xpToAward,
         skillId: habit.skillId,
         skillName: skill.name,
-        newXp: newXp,
-        newLevel: newLevel
+        newXp: updatedSkill.currentXp,
+        newLevel: updatedSkill.level
       });
     } catch (error: any) {
       res.status(500).json({ message: error.message });

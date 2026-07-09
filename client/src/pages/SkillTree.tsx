@@ -36,6 +36,7 @@ import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { SkillsGridJournal } from "@/components/SkillsGridJournal";
+import { LevelNavigationPanel, type LevelNavItem } from "@/components/LevelNavigationPanel";
 
 function SkillsSparkIcon({ className }: { className?: string }) {
   return (
@@ -3801,6 +3802,74 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
   
   // All quests combined
   const allProjects = [...mainQuests, ...sideQuests, ...emergentQuests, ...experienceQuests];
+
+  const getContainerVisibleLevelCap = (container: {
+    unlockedLevel?: number;
+    endOfAreaLevel?: number;
+    skills?: Skill[];
+  }): number | null => {
+    const candidates: number[] = [];
+
+    if (container.unlockedLevel && container.unlockedLevel > 0) {
+      candidates.push(container.unlockedLevel);
+    }
+
+    if (container.endOfAreaLevel && container.endOfAreaLevel > 0) {
+      candidates.push(container.endOfAreaLevel);
+    }
+
+    const statusDerivedCap = (container.skills || [])
+      .filter((s: Skill) => s.status === "available" || s.status === "mastered")
+      .reduce((max: number, s: Skill) => Math.max(max, s.level || 1), 0);
+
+    if (statusDerivedCap > 0) {
+      candidates.push(statusDerivedCap);
+    }
+
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    return Math.max(1, Math.min(...candidates));
+  };
+
+  const getVisibleSkillLevel = (skill: GlobalSkill): number => {
+    const rawLevel = Math.max(1, skill.level || 1);
+    let cursor: GlobalSkill | undefined = skill;
+    const visited = new Set<string>();
+
+    while (cursor) {
+      const areaId = cursor.areaId;
+      if (areaId) {
+        const area = areas.find((a: Area) => a.id === areaId);
+        const cap = area ? getContainerVisibleLevelCap(area) : null;
+        if (cap && cap > 0) {
+          return Math.min(rawLevel, Math.max(1, cap));
+        }
+        break;
+      }
+
+      const projectId = cursor.projectId;
+      if (projectId) {
+        const project = allProjects.find((p: Project) => p.id === projectId);
+        const cap = project ? getContainerVisibleLevelCap(project) : null;
+        if (cap && cap > 0) {
+          return Math.min(rawLevel, Math.max(1, cap));
+        }
+        break;
+      }
+
+      const parentSkillId: string | null | undefined = cursor.parentSkillId;
+      if (!parentSkillId || visited.has(parentSkillId)) {
+        break;
+      }
+
+      visited.add(parentSkillId);
+      cursor = globalSkills.find((s: GlobalSkill) => s.id === parentSkillId);
+    }
+
+    return rawLevel;
+  };
   
   // Handlers for legacy skill long-press
   const handleLegacySkillPointerDown = (e: React.PointerEvent, skillName: string) => {
@@ -4872,7 +4941,8 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
                           ) : (
                             <div className="space-y-2 pl-3 border-l-2 border-zinc-700/50">
                               {incompleteLinkedSkills.map((globalSkill: GlobalSkill) => {
-                                const subXpProgress = calculateXpProgress(globalSkill.currentXp, globalSkill.level);
+                                const visibleSubSkillLevel = getVisibleSkillLevel(globalSkill);
+                                const subXpProgress = calculateXpProgress(globalSkill.currentXp, visibleSubSkillLevel);
                                 return (
                                   <div key={globalSkill.id} className={cn("space-y-1 rounded p-2", globalSkill.completed ? "border-l-2 border-amber-400 bg-amber-900/15" : "")}>
                                     <div className="flex items-center justify-between">
@@ -4881,7 +4951,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
                                         {globalSkill.name}
                                       </span>
                                       <span className={cn("text-xs", globalSkill.completed ? "text-amber-400" : "text-zinc-400")}>
-                                        Lv.<span className="font-medium">{globalSkill.level}</span>
+                                        Lv.<span className="font-medium">{visibleSubSkillLevel}</span>
                                         <span className="ml-1.5">{globalSkill.currentXp}xp</span>
                                       </span>
                                     </div>
@@ -4913,7 +4983,8 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
                 <Accordion type="multiple" className="space-y-2">
                   {parentSkills.map((skill: GlobalSkill) => {
                     const subSkills = getSubSkillsOf(skill.id).filter(s => !s.completed);
-                    const xpProgress = calculateXpProgress(skill.currentXp, skill.level);
+                    const visibleSkillLevel = getVisibleSkillLevel(skill);
+                    const xpProgress = calculateXpProgress(skill.currentXp, visibleSkillLevel);
                     const isPressing = pressingGlobalSkill === skill.id;
                     
                     return (
@@ -4936,7 +5007,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
                                 {skill.name}
                               </span>
                               <span className={cn("text-xs", skill.completed ? "text-amber-400" : "text-zinc-400")}>
-                                Lv.<span className="font-bold">{skill.level}</span>
+                                Lv.<span className="font-bold">{visibleSkillLevel}</span>
                                 <span className="ml-2">{skill.currentXp}xp</span>
                               </span>
                             </div>
@@ -4957,7 +5028,8 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
                           ) : (
                             <div className="space-y-2 pl-3 border-l-2 border-zinc-700/50">
                               {subSkills.map((subSkill: GlobalSkill) => {
-                                const subXpProgress = calculateXpProgress(subSkill.currentXp, subSkill.level);
+                                const visibleSubSkillLevel = getVisibleSkillLevel(subSkill);
+                                const subXpProgress = calculateXpProgress(subSkill.currentXp, visibleSubSkillLevel);
                                 const isPressingThisSubskill = pressingSubskill === subSkill.id;
                                 return (
                                   <div 
@@ -4978,7 +5050,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
                                         {subSkill.name}
                                       </span>
                                       <span className={cn("text-xs", subSkill.completed ? "text-amber-400" : "text-zinc-400")}>
-                                        Lv.<span className="font-medium">{subSkill.level}</span>
+                                        Lv.<span className="font-medium">{visibleSubSkillLevel}</span>
                                         <span className="ml-1.5">{subSkill.currentXp}xp</span>
                                       </span>
                                     </div>
@@ -5729,11 +5801,14 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
                           )}
                           <div className="space-y-2">
                             {skills.map(skill => (
+                              (() => {
+                                const visibleSkillLevel = getVisibleSkillLevel(skill);
+                                return (
                               <div key={skill.id} className="bg-zinc-800/50 rounded p-3">
                                 <div className="flex items-center justify-between">
                                   <span className="text-sm text-zinc-100 font-medium">{skill.name}</span>
                                   <span className="text-xs text-amber-400">
-                                    Lv.{skill.level} • {skill.currentXp} XP
+                                    Lv.{visibleSkillLevel} • {skill.currentXp} XP
                                     {skill.goalXp > 0 && <span> / {skill.goalXp} goal</span>}
                                   </span>
                                 </div>
@@ -5741,6 +5816,8 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
                                   Completed: {skill.completedAt ? formatCompletedDate(skill.completedAt) : 'Unknown date'}
                                 </p>
                               </div>
+                                );
+                              })()
                             ))}
                           </div>
                         </div>
@@ -6899,6 +6976,7 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
     updateProjectSkill
   } = useSkillTree();
   const { isMenuOpen } = useMenu();
+  const isMobile = useIsMobile();
   
   const [isStuckDialogOpen, setIsStuckDialogOpen] = useState(false);
   const [stuckStep, setStuckStep] = useState(0);
@@ -6906,6 +6984,7 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
   const [stuckSkill, setStuckSkill] = useState("");
   const [stuckAction, setStuckAction] = useState("");
   const [stuckTitle, setStuckTitle] = useState("");
+  const [selectedNavLevelId, setSelectedNavLevelId] = useState<string | null>(null);
 
   const handleStuckDialogClose = (open: boolean) => {
     if (!open) {
@@ -7297,6 +7376,46 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
   const maxX = visibleSkills.length > 0 ? Math.max(...visibleSkills.map((s: Skill) => s.x), 50) : 50;
   const containerMinWidth = `calc(${maxX}% + 100px)`;
   const nextPendingSkill = visibleSkills.find((s: Skill) => s.status === "available") || visibleSkills.find((s: Skill) => s.status !== "mastered") || null;
+  const levelSubtitles = isProject ? (activeProject?.levelSubtitles || {}) : (activeArea?.levelSubtitles || {});
+  const navLevels: LevelNavItem[] = Array.from(levelGroups.keys())
+    .sort((a, b) => a - b)
+    .map((level) => {
+      const subtitle = (levelSubtitles[level.toString()] || "").trim();
+      return {
+        id: level.toString(),
+        title: subtitle || `Nivel ${level}`,
+      };
+    });
+  const fallbackNavLevelId = nextPendingSkill ? nextPendingSkill.level.toString() : navLevels[0]?.id ?? null;
+  const activeNavLevelId = selectedNavLevelId && navLevels.some((level) => level.id === selectedNavLevelId)
+    ? selectedNavLevelId
+    : fallbackNavLevelId;
+
+  const handleSelectLevel = (levelId: string) => {
+    setSelectedNavLevelId(levelId);
+    const numericLevel = Number(levelId);
+    if (!Number.isFinite(numericLevel)) return;
+
+    const levelSkills = visibleSkills
+      .filter((skill) => skill.level === numericLevel)
+      .sort((a, b) => a.y - b.y);
+
+    if (levelSkills.length === 0) return;
+
+    const preferredSkill =
+      levelSkills.find((skill) => skill.status === "available") ||
+      levelSkills.find((skill) => skill.status !== "mastered") ||
+      levelSkills[0];
+
+    const targetElement = document.querySelector(`[data-skill-id="${preferredSkill.id}"]`);
+    if (!targetElement) return;
+
+    targetElement.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+      inline: "nearest",
+    });
+  };
 
   const scrollToPendingNode = () => {
     if (!nextPendingSkill) return;
@@ -7313,6 +7432,16 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
 
   return (
     <div className="flex-1 relative bg-background flex flex-col overflow-auto">
+      {!isMobile && navLevels.length > 0 && (
+        <LevelNavigationPanel
+          levels={navLevels}
+          activeLevelId={activeNavLevelId}
+          onSelect={handleSelectLevel}
+          title="NIVELES"
+          side="right"
+          widthPx={300}
+        />
+      )}
       <AnimatePresence>
         {showLevelUp && (
           <motion.div
@@ -7651,7 +7780,6 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
                   }
                   
                   // Get level subtitle
-                  const levelSubtitles = isProject ? (activeProject?.levelSubtitles || {}) : (activeArea?.levelSubtitles || {});
                   const subtitle = levelSubtitles[level.toString()] || "";
                   
                   // Si no hay subtítulo, no mostrar nada

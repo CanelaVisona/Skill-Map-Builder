@@ -4065,14 +4065,34 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     const areaSkills = globalSkills.filter(s => s.areaId === areaId && !s.parentSkillId);
     const areaSkillIds = new Set(areaSkills.map(s => s.id));
     const subSkillsOfArea = globalSkills.filter(s => s.parentSkillId && areaSkillIds.has(s.parentSkillId));
-    return [...areaSkills, ...subSkillsOfArea];
+    const areaUnlockedLevel = areas.find(a => a.id === areaId)?.unlockedLevel;
+    const scopedSkills = [...areaSkills, ...subSkillsOfArea];
+
+    if (!areaUnlockedLevel || areaUnlockedLevel < 1) {
+      return scopedSkills;
+    }
+
+    return scopedSkills.map((skill) => ({
+      ...skill,
+      level: Math.min(Math.max(1, skill.level || 1), areaUnlockedLevel),
+    }));
   };
 
   const getGlobalSkillsForProject = (projectId: string): GlobalSkill[] => {
     const projectSkills = globalSkills.filter(s => s.projectId === projectId && !s.parentSkillId);
     const projectSkillIds = new Set(projectSkills.map(s => s.id));
     const subSkillsOfProject = globalSkills.filter(s => s.parentSkillId && projectSkillIds.has(s.parentSkillId));
-    return [...projectSkills, ...subSkillsOfProject];
+    const projectUnlockedLevel = projects.find(p => p.id === projectId)?.unlockedLevel;
+    const scopedSkills = [...projectSkills, ...subSkillsOfProject];
+
+    if (!projectUnlockedLevel || projectUnlockedLevel < 1) {
+      return scopedSkills;
+    }
+
+    return scopedSkills.map((skill) => ({
+      ...skill,
+      level: Math.min(Math.max(1, skill.level || 1), projectUnlockedLevel),
+    }));
   };
 
   const getSubSkillsOf = (parentSkillId: string): GlobalSkill[] => {
