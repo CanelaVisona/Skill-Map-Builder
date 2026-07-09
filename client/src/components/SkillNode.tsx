@@ -40,6 +40,7 @@ interface SkillNodeProps {
 
 export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboardingTarget, availableNodePosition }: SkillNodeProps) {
   const isInicioNode = skill.title.toLowerCase() === "inicio"; // "inicio" nodes are text-only, not interactive
+  const FIXED_XP_AMOUNT = 10;
   
   const { 
     activeAreaId, 
@@ -384,7 +385,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   });
   
   // XP state
-  const [xpValue, setXpValue] = useState(skill.experiencePoints ? skill.experiencePoints.toString() : "");
+  const [xpValue, setXpValue] = useState(FIXED_XP_AMOUNT.toString());
   const [showXpAnimation, setShowXpAnimation] = useState(false);
   const [animatedXpValue, setAnimatedXpValue] = useState("");
 
@@ -674,12 +675,12 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       experienceSelectedSkill,
     });
     
-    if (!experienceSelectedSkill || !xpValue || parseInt(xpValue) <= 0) {
+    if (!experienceSelectedSkill) {
       console.log("[handleAddExperience] Invalid inputs, returning");
       return;
     }
     
-    const xpToAdd = parseInt(xpValue);
+    const xpToAdd = FIXED_XP_AMOUNT;
     console.log("[handleAddExperience] XP to add:", xpToAdd, "SkillId:", experienceSelectedSkill);
 
     const buildSnapshot = (
@@ -761,7 +762,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
         detail: { skillName: legacySkillName, currentXp: skills[legacySkillName].currentXp }
       }));
       
-      setXpValue("");
+      setXpValue(FIXED_XP_AMOUNT.toString());
       setExperienceSelectedSkill(null);
       showXpPopup(legacySnapshot);
       return;
@@ -801,7 +802,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
         }));
         
         // Clear inputs and show feedback
-        setXpValue("");
+        setXpValue(FIXED_XP_AMOUNT.toString());
         setExperienceSelectedSkill(null);
         showXpPopup(globalSnapshot);
 
@@ -829,7 +830,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       setEditAction(descParts[0] || "");
       setEditWhen(descParts[1] || "");
       setEditFeedback(skill.feedback || "");
-      setXpValue("");
+      setXpValue(FIXED_XP_AMOUNT.toString());
       // First node of level (levelPosition === 1) starts at step 2, skipping title edit
       const initialStep = skill.levelPosition === 1 ? 2 : 0;
       setEditStep(initialStep);
@@ -838,12 +839,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   };
   
   const handleXpConfirm = () => {
-    if (xpValue && parseInt(xpValue) > 0) {
-      setAnimatedXpValue(xpValue);
-      setIsEditDialogOpen(false);
-      setShowXpAnimation(true);
-      setTimeout(() => setShowXpAnimation(false), 1500);
-    }
+    setAnimatedXpValue(FIXED_XP_AMOUNT.toString());
+    setIsEditDialogOpen(false);
+    setShowXpAnimation(true);
+    setTimeout(() => setShowXpAnimation(false), 1500);
   };
 
   const handleTitleLongPressEnd = () => {
@@ -933,11 +932,11 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       ? `${editAction}\n\nWhen: ${editWhen}` 
       : editAction;
     
-    const xpNumber = xpValue ? parseInt(xpValue) : 0;
+    const xpNumber = FIXED_XP_AMOUNT;
     
     // Add XP to skill (before mutations)
-    if (experienceSelectedSkill && xpValue && parseInt(xpValue) > 0) {
-      const xpToAdd = parseInt(xpValue);
+    if (experienceSelectedSkill) {
+      const xpToAdd = FIXED_XP_AMOUNT;
       
       // Check if it's a legacy skill
       if (experienceSelectedSkill.startsWith("legacy:")) {
@@ -1631,21 +1630,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               
               <TabsContent value="experience" className="mt-4 space-y-3 flex flex-col flex-1">
                 <div className="flex items-center justify-center gap-2 py-4">
-                  <Input
-                    type="number"
-                    value={xpValue}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val.length <= 3) {
-                        setXpValue(val);
-                      }
-                    }}
-                    className="w-24 text-center text-lg font-bold border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
-                    placeholder="0"
-                    max={999}
-                    min={1}
-                    data-testid="input-xp-value"
-                  />
+                  <div className="w-24 rounded-md bg-muted/50 px-3 py-2 text-center text-lg font-bold">
+                    {FIXED_XP_AMOUNT}
+                  </div>
                   <span className="text-lg font-medium text-muted-foreground">xp</span>
                 </div>
                 <Popover open={showExperienceSkillSelector} onOpenChange={setShowExperienceSkillSelector}>
@@ -1758,7 +1745,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                     variant="ghost" 
                     size="sm"
                     onClick={handleAddExperience}
-                    disabled={!experienceSelectedSkill || !xpValue || parseInt(xpValue) <= 0}
+                    disabled={!experienceSelectedSkill}
                     className="bg-muted/50 hover:bg-muted"
                     data-testid="button-new-experience"
                   >
