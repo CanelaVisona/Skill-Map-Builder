@@ -50,43 +50,43 @@ export function LevelNavigationPanel({
         style={{ width: isRailHovered ? `${expandedWidth}px` : "20px" }}
       >
         <nav className="max-h-[62vh] overflow-y-auto overflow-x-hidden [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-          <ul className="flex flex-col gap-1 py-1">
-          {levels.map((level) => {
-            const isActive = level.id === activeLevelId;
-            const showLabel = isRailHovered;
+          <ul className="flex flex-col gap-2 py-2">
+            {levels.map((level) => {
+              const isActive = level.id === activeLevelId;
+              const showLabel = isRailHovered;
 
-            return (
-              <li key={level.id} className="relative">
-                <button
-                  type="button"
-                  onClick={() => onSelect(level.id)}
-                  className="group relative block h-2 w-full cursor-pointer"
-                  aria-label={level.title}
-                  title={level.title}
-                >
-                  <span
+              return (
+                <li key={level.id} className="relative h-6">
+                  <button
+                    type="button"
+                    onClick={() => onSelect(level.id)}
+                    className="group relative block h-full w-full cursor-pointer"
+                    aria-label={level.title}
+                    title={level.title}
+                  >
+                    <span
+                      className={[
+                        `absolute ${lineOffsetClass} top-1/2 h-px -translate-y-1/2 rounded-full transition-all duration-200`,
+                        isActive ? "w-4 bg-zinc-100" : "w-3 bg-zinc-300/85 group-hover:w-4 group-hover:bg-zinc-100",
+                      ].join(" ")}
+                    />
+                  </button>
+
+                  <div
                     className={[
-                      `absolute ${lineOffsetClass} top-1/2 h-px -translate-y-1/2 rounded-full transition-all duration-200`,
-                      isActive ? "w-4 bg-zinc-100" : "w-3 bg-zinc-300/85 group-hover:w-4 group-hover:bg-zinc-100",
+                      "pointer-events-none absolute top-1/2 -translate-y-1/2 rounded-md px-2 py-1",
+                      "max-w-[220px] truncate whitespace-nowrap text-[11px]",
+                      "bg-zinc-800/95 text-zinc-100 shadow-[0_8px_22px_rgba(0,0,0,0.35)]",
+                      "transition-all duration-150",
+                      labelOffsetClass,
+                      showLabel ? "opacity-100 translate-x-0" : "opacity-0 translate-x-1",
                     ].join(" ")}
-                  />
-                </button>
-
-                <div
-                  className={[
-                    "pointer-events-none absolute top-1/2 -translate-y-1/2 rounded-md px-2 py-1",
-                    "max-w-[220px] truncate whitespace-nowrap text-[11px]",
-                    "bg-zinc-800/95 text-zinc-100 shadow-[0_8px_22px_rgba(0,0,0,0.35)]",
-                    "transition-all duration-150",
-                    labelOffsetClass,
-                    showLabel ? "opacity-100 translate-x-0" : "opacity-0 translate-x-1",
-                  ].join(" ")}
-                >
-                  {level.title}
-                </div>
-              </li>
-            );
-          })}
+                  >
+                    {level.title}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </nav>
       </div>
