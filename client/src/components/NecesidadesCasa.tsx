@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
+import { useTheme } from "next-themes";
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 const HOME_TASKS_STORAGE_KEY = "skill-map-home-needs-tasks-v1";
@@ -174,14 +175,17 @@ function loadStoredTasks(): HomeTask[] {
 }
 
 function MiniBar({ value, color }: { value: number; color: "green" | "yellow" | "orange" | "red" }) {
+  const { theme, resolvedTheme } = useTheme();
+  const isDark = (resolvedTheme || theme) === "dark";
+
   return (
     <div
       style={{
         height: "6px",
-        background: "#0d1a0d",
+        background: isDark ? "#0d1a0d" : "#e5e7eb",
         borderRadius: "3px",
         overflow: "hidden",
-        border: "1px solid #1a2a1a",
+        border: isDark ? "1px solid #1a2a1a" : "1px solid #d1d5db",
       }}
     >
       <div
@@ -216,6 +220,9 @@ function TaskItem({
   onPressMove: (e: ReactPointerEvent<HTMLDivElement>) => void;
   onPressEnd: (e: ReactPointerEvent<HTMLDivElement>) => void;
 }) {
+  const { theme, resolvedTheme } = useTheme();
+  const isDark = (resolvedTheme || theme) === "dark";
+
   return (
     <div
       onClick={onClick}
@@ -233,9 +240,9 @@ function TaskItem({
         padding: "10px 12px",
         borderRadius: "10px",
         cursor: "pointer",
-        border: isActive ? "1px solid #3d6b3d" : "1px solid transparent",
-        background: isActive ? "#1a2e1a" : "transparent",
-        boxShadow: isActive ? "0 0 12px rgba(74,222,128,0.1)" : "none",
+        border: isActive ? (isDark ? "1px solid #3d6b3d" : "1px solid #86efac") : "1px solid transparent",
+        background: isActive ? (isDark ? "#1a2e1a" : "#ecfdf3") : "transparent",
+        boxShadow: isActive ? (isDark ? "0 0 12px rgba(74,222,128,0.1)" : "0 4px 14px rgba(34,197,94,0.12)") : "none",
         position: "relative",
         transition: "all 0.2s ease",
       }}
@@ -260,8 +267,8 @@ function TaskItem({
           width: "38px",
           height: "38px",
           borderRadius: "8px",
-          background: "#1c2d1c",
-          border: "1px solid #243824",
+          background: isDark ? "#1c2d1c" : "#ecfdf3",
+          border: isDark ? "1px solid #243824" : "1px solid #bbf7d0",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -272,8 +279,8 @@ function TaskItem({
         {task.icon}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: "13px", fontWeight: 600, color: "#e2e8f0", marginBottom: "2px" }}>{task.name}</div>
-        <div style={{ fontSize: "10px", color: "#6b7280", marginBottom: "6px" }}>{task.freq}</div>
+        <div style={{ fontSize: "13px", fontWeight: 600, color: isDark ? "#e2e8f0" : "#0f172a", marginBottom: "2px" }}>{task.name}</div>
+        <div style={{ fontSize: "10px", color: isDark ? "#6b7280" : "#64748b", marginBottom: "6px" }}>{task.freq}</div>
         <MiniBar value={value} color={color} />
       </div>
     </div>
@@ -281,14 +288,17 @@ function TaskItem({
 }
 
 function BigBar({ value, color }: { value: number; color: "green" | "yellow" | "orange" | "red" }) {
+  const { theme, resolvedTheme } = useTheme();
+  const isDark = (resolvedTheme || theme) === "dark";
+
   return (
     <div style={{ width: "100%" }}>
       <div
         style={{
           height: "26px",
-          background: "#0a150a",
+          background: isDark ? "#0a150a" : "#e5e7eb",
           borderRadius: "13px",
-          border: "1px solid #1e3a1e",
+          border: isDark ? "1px solid #1e3a1e" : "1px solid #d1d5db",
           overflow: "hidden",
           position: "relative",
         }}
@@ -323,12 +333,33 @@ function BigBar({ value, color }: { value: number; color: "green" | "yellow" | "
 }
 
 export default function NecesidadesCasa() {
+  const { theme, resolvedTheme } = useTheme();
+  const isDark = (resolvedTheme || theme) === "dark";
+
+  const colors = {
+    pageBg: isDark ? "#0d1117" : "#f5f7fb",
+    shellBorder: isDark ? "1px solid #1e2d1e" : "1px solid #d7dce6",
+    shellShadow: isDark ? "0 0 40px rgba(74,222,128,0.07)" : "0 8px 30px rgba(17,24,39,0.08)",
+    title: isDark ? "#f0fdf4" : "#0f172a",
+    subtitle: isDark ? "#6b7280" : "#64748b",
+    detailCardBg: isDark ? "#0f1a0f" : "#ffffff",
+    detailCardBorder: isDark ? "1px solid #1e3a1e" : "1px solid #d7dce6",
+    detailCircleBg: isDark ? "radial-gradient(circle at 35% 35%, #243824, #0f1a0f)" : "radial-gradient(circle at 35% 35%, #dcfce7, #f8fafc)",
+    detailCircleBorder: isDark ? "2px solid #2d4a2d" : "2px solid #86efac",
+    detailTitle: isDark ? "#f0fdf4" : "#0f172a",
+    detailFreq: isDark ? "#4ade80" : "#15803d",
+  };
+
   const [tasks, setTasks] = useState<HomeTask[]>(() => loadStoredTasks());
   const [selectedId, setSelectedId] = useState(0);
   const [flashing, setFlashing] = useState(false);
   const [, setTick] = useState(0);
   const [remoteLoaded, setRemoteLoaded] = useState(false);
   const [remoteSyncEnabled, setRemoteSyncEnabled] = useState(true);
+  const [isAddFormOpen, setIsAddFormOpen] = useState(false);
+  const [newTaskEmoji, setNewTaskEmoji] = useState("🏠");
+  const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [newTaskPeriodDays, setNewTaskPeriodDays] = useState("7");
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressTriggeredRef = useRef(false);
   const titleLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -569,33 +600,46 @@ export default function NecesidadesCasa() {
     window.alert("Opcion invalida. Usa 1, 2 o 3.");
   }, [deleteTask, editTaskPeriod, editTaskTitle, tasks]);
 
-  const addNewTask = useCallback(() => {
-    const title = window.prompt("Nombre del nuevo componente:", "Nueva tarea de casa");
-    if (title === null) return;
+  const openAddTaskForm = useCallback(() => {
+    setIsAddFormOpen(true);
+    setNewTaskEmoji((prev) => prev.trim() || "🏠");
+    setNewTaskTitle((prev) => prev.trim() || "");
+    setNewTaskPeriodDays((prev) => prev.trim() || "7");
+  }, []);
 
-    const cleanTitle = title.trim();
+  const createNewTaskFromForm = useCallback(() => {
+    const cleanTitle = newTaskTitle.trim();
     if (!cleanTitle) {
-      window.alert("El nombre no puede estar vacio.");
+      window.alert("El titulo no puede estar vacio.");
       return;
     }
 
-    const parsed = askPeriodDays(7);
-    if (parsed === null) return;
+    const parsed = Number(newTaskPeriodDays.replace(",", ".").trim());
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      window.alert("Ingresa un numero mayor a 0 para los dias.");
+      return;
+    }
+
+    const cleanEmoji = newTaskEmoji.trim() || "🏠";
 
     const nextTask: HomeTask = {
       id: Date.now(),
-      icon: "🏠",
+      icon: cleanEmoji,
       name: cleanTitle,
       freq: formatFrequency(parsed),
       periodDays: parsed,
       lastDone: Date.now(),
       btnText: `Marcar ${cleanTitle} como hecho`,
-      illo: "🧽",
+      illo: cleanEmoji,
     };
 
     setTasks((prev) => [nextTask, ...prev]);
     setSelectedId(nextTask.id);
-  }, [askPeriodDays]);
+    setIsAddFormOpen(false);
+    setNewTaskEmoji("🏠");
+    setNewTaskTitle("");
+    setNewTaskPeriodDays("7");
+  }, [newTaskEmoji, newTaskPeriodDays, newTaskTitle]);
 
   const cancelTaskLongPress = useCallback(() => {
     if (longPressTimerRef.current) {
@@ -660,17 +704,17 @@ export default function NecesidadesCasa() {
     titlePressStartPointRef.current = { x: event.clientX, y: event.clientY };
 
     titleLongPressTimerRef.current = setTimeout(() => {
-      addNewTask();
+      openAddTaskForm();
       cancelTitleLongPress();
-    }, 700);
-  }, [addNewTask, cancelTitleLongPress]);
+    }, 550);
+  }, [cancelTitleLongPress, openAddTaskForm]);
 
   const moveTitleLongPress = useCallback((event: ReactPointerEvent<HTMLHeadingElement>) => {
     if (titlePointerIdRef.current !== event.pointerId || !titlePressStartPointRef.current) return;
 
     const dx = Math.abs(event.clientX - titlePressStartPointRef.current.x);
     const dy = Math.abs(event.clientY - titlePressStartPointRef.current.y);
-    if (dx > 8 || dy > 8) {
+    if (dx > 18 || dy > 18) {
       cancelTitleLongPress();
     }
   }, [cancelTitleLongPress]);
@@ -693,8 +737,8 @@ export default function NecesidadesCasa() {
           100% { opacity: 1; transform: scale(1); }
         }
         .ncasa-task-item:hover {
-          background: #1a2e1a !important;
-          border-color: #2d4a2d !important;
+          background: ${isDark ? "#1a2e1a" : "#ecfdf3"} !important;
+          border-color: ${isDark ? "#2d4a2d" : "#86efac"} !important;
         }
         .ncasa-task-item {
           user-select: none;
@@ -725,17 +769,17 @@ export default function NecesidadesCasa() {
       <div
         style={{
           fontFamily: "'Exo 2', 'Segoe UI', sans-serif",
-          background: "#0d1117",
+          background: colors.pageBg,
           borderRadius: "14px",
-          border: "1px solid #1e2d1e",
-          boxShadow: "0 0 40px rgba(74,222,128,0.07)",
+          border: colors.shellBorder,
+          boxShadow: colors.shellShadow,
           width: "100%",
         }}
       >
         <div className="ncasa-grid" style={{ width: "100%", padding: "16px" }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "4px" }}>
-              <h1
+              <div
                 onPointerDown={startTitleLongPress}
                 onPointerMove={moveTitleLongPress}
                 onPointerUp={endTitleLongPress}
@@ -743,24 +787,129 @@ export default function NecesidadesCasa() {
                 onPointerLeave={endTitleLongPress}
                 onContextMenu={(e) => e.preventDefault()}
                 style={{
-                  fontFamily: "'Orbitron', monospace",
-                  fontSize: "15px",
-                  fontWeight: 700,
-                  color: "#f0fdf4",
-                  letterSpacing: "0.04em",
-                  textTransform: "uppercase",
-                  margin: 0,
+                  display: "inline-flex",
+                  padding: "4px 8px",
+                  marginLeft: "-8px",
+                  borderRadius: "8px",
                   userSelect: "none",
                   touchAction: "manipulation",
                   cursor: "pointer",
                 }}
+                title="Long press para agregar componente"
               >
-                Necesidades de tu Casa
-              </h1>
+                <h1
+                  style={{
+                    fontFamily: "'Orbitron', monospace",
+                    fontSize: "15px",
+                    fontWeight: 700,
+                    color: colors.title,
+                    letterSpacing: "0.04em",
+                    textTransform: "uppercase",
+                    margin: 0,
+                  }}
+                >
+                  Necesidades de tu Casa
+                </h1>
+              </div>
             </div>
-            <p style={{ color: "#6b7280", fontSize: "11px", marginBottom: "14px" }}>
+            <p style={{ color: colors.subtitle, fontSize: "11px", marginBottom: "14px" }}>
               Mantene tu casa en buen estado. Long press en una tarea para editarla. Long press en el titulo para agregar.
             </p>
+            {isAddFormOpen && (
+              <div
+                style={{
+                  border: isDark ? "1px solid #2d4a2d" : "1px solid #86efac",
+                  background: isDark ? "#112011" : "#f0fdf4",
+                  borderRadius: "10px",
+                  padding: "10px",
+                  marginBottom: "10px",
+                  display: "grid",
+                  gap: "8px",
+                }}
+              >
+                <div style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: "8px" }}>
+                  <input
+                    value={newTaskEmoji}
+                    onChange={(e) => setNewTaskEmoji(e.target.value)}
+                    maxLength={3}
+                    placeholder="🏠"
+                    style={{
+                      height: "34px",
+                      borderRadius: "8px",
+                      border: isDark ? "1px solid #325a32" : "1px solid #86efac",
+                      background: isDark ? "#0f1a0f" : "#ffffff",
+                      color: colors.title,
+                      textAlign: "center",
+                      fontSize: "18px",
+                    }}
+                  />
+                  <input
+                    value={newTaskTitle}
+                    onChange={(e) => setNewTaskTitle(e.target.value)}
+                    placeholder="Titulo del componente"
+                    style={{
+                      height: "34px",
+                      borderRadius: "8px",
+                      border: isDark ? "1px solid #325a32" : "1px solid #86efac",
+                      background: isDark ? "#0f1a0f" : "#ffffff",
+                      color: colors.title,
+                      padding: "0 10px",
+                      fontSize: "12px",
+                    }}
+                  />
+                </div>
+                <input
+                  value={newTaskPeriodDays}
+                  onChange={(e) => setNewTaskPeriodDays(e.target.value)}
+                  placeholder="Cada cuantos dias se reinicia"
+                  inputMode="decimal"
+                  style={{
+                    height: "34px",
+                    borderRadius: "8px",
+                    border: isDark ? "1px solid #325a32" : "1px solid #86efac",
+                    background: isDark ? "#0f1a0f" : "#ffffff",
+                    color: colors.title,
+                    padding: "0 10px",
+                    fontSize: "12px",
+                  }}
+                />
+                <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddFormOpen(false)}
+                    style={{
+                      height: "30px",
+                      borderRadius: "8px",
+                      border: isDark ? "1px solid #325a32" : "1px solid #86efac",
+                      background: "transparent",
+                      color: colors.subtitle,
+                      padding: "0 10px",
+                      fontSize: "11px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={createNewTaskFromForm}
+                    style={{
+                      height: "30px",
+                      borderRadius: "8px",
+                      border: "none",
+                      background: "linear-gradient(135deg, #16a34a, #22c55e)",
+                      color: "#052e16",
+                      padding: "0 10px",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Agregar
+                  </button>
+                </div>
+              </div>
+            )}
             <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
               {liveTasks.map((t) => (
                 <TaskItem
@@ -780,14 +929,14 @@ export default function NecesidadesCasa() {
 
           <div
             style={{
-              background: "#0f1a0f",
+              background: colors.detailCardBg,
               borderRadius: "12px",
               padding: "20px",
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
               gap: "14px",
-              border: "1px solid #1e3a1e",
+              border: colors.detailCardBorder,
               position: "relative",
               overflow: "hidden",
             }}
@@ -799,7 +948,9 @@ export default function NecesidadesCasa() {
                 left: 0,
                 right: 0,
                 height: "40%",
-                background: "radial-gradient(ellipse at 50% 100%, rgba(74,222,128,0.06) 0%, transparent 70%)",
+                background: isDark
+                  ? "radial-gradient(ellipse at 50% 100%, rgba(74,222,128,0.06) 0%, transparent 70%)"
+                  : "radial-gradient(ellipse at 50% 100%, rgba(34,197,94,0.08) 0%, transparent 70%)",
                 pointerEvents: "none",
               }}
             />
@@ -809,13 +960,15 @@ export default function NecesidadesCasa() {
                 width: "80px",
                 height: "80px",
                 borderRadius: "50%",
-                background: "radial-gradient(circle at 35% 35%, #243824, #0f1a0f)",
+                background: colors.detailCircleBg,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 fontSize: "38px",
-                border: "2px solid #2d4a2d",
-                boxShadow: "0 0 20px rgba(74,222,128,0.15), inset 0 0 20px rgba(0,0,0,0.3)",
+                border: colors.detailCircleBorder,
+                boxShadow: isDark
+                  ? "0 0 20px rgba(74,222,128,0.15), inset 0 0 20px rgba(0,0,0,0.3)"
+                  : "0 0 20px rgba(34,197,94,0.12), inset 0 0 18px rgba(15,23,42,0.06)",
               }}
             >
               {selected.icon}
@@ -827,13 +980,13 @@ export default function NecesidadesCasa() {
                   fontFamily: "'Orbitron', monospace",
                   fontSize: "20px",
                   fontWeight: 700,
-                  color: "#f0fdf4",
+                  color: colors.detailTitle,
                   marginBottom: "4px",
                 }}
               >
                 {selected.name}
               </h2>
-              <p style={{ color: "#4ade80", fontSize: "13px", fontWeight: 500 }}>{selected.freq}</p>
+              <p style={{ color: colors.detailFreq, fontSize: "13px", fontWeight: 500 }}>{selected.freq}</p>
             </div>
 
             <BigBar value={selected.value} color={selected.color} />

@@ -37,6 +37,16 @@ import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { SkillsGridJournal } from "@/components/SkillsGridJournal";
 
+function SkillsSparkIcon({ className }: { className?: string }) {
+  return (
+    <span aria-hidden="true" className={cn("inline-flex items-center justify-center", className)}>
+      <svg viewBox="0 0 24 24" className="h-[84%] w-[84%] fill-black dark:fill-white" focusable="false">
+        <path d="M12 2.5L15.2 8.8L21.5 12L15.2 15.2L12 21.5L8.8 15.2L2.5 12L8.8 8.8L12 2.5Z" />
+      </svg>
+    </span>
+  );
+}
+
 function calculateVisibleLevels(skills: Skill[], endOfAreaLevel?: number): Set<number> {
   const visibleLevels = new Set<number>();
   
@@ -6780,7 +6790,7 @@ function QuestDiary() {
               </TabsTrigger>
               <div className="h-px bg-border/50 my-1 mx-1" />
               <TabsTrigger value="skills" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-skills" title="Skills">
-                <BookOpen className="h-5 w-5" />
+                <SkillsSparkIcon className="h-5 w-5" />
               </TabsTrigger>
               <TabsTrigger value="profile" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-profile" title="Mi Perfil">
                 <User className="h-5 w-5" />
