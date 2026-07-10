@@ -149,6 +149,7 @@ export interface IStorage {
 
   getSourceBugs(userId: string, type: "area" | "project", sourceId: string): Promise<Array<SourceBug & { registros: SourceBugRecord[] }>>;
   getSourceBug(id: string): Promise<SourceBug | undefined>;
+  getSourceBugRecord(id: string): Promise<SourceBugRecord | undefined>;
   createSourceBug(entry: InsertSourceBug): Promise<SourceBug>;
   updateSourceBug(id: string, entry: Partial<InsertSourceBug>): Promise<SourceBug | undefined>;
   deleteSourceBug(id: string): Promise<void>;
@@ -1454,15 +1455,50 @@ export class DbStorage implements IStorage {
     }
 
     const bugIds = bugs.map((bug) => bug.id);
-    const records = await db.select().from(sourceBugRecords).where(inArray(sourceBugRecords.bugId, bugIds));
-    const linkedSkillIds = Array.from(new Set(records.map((record) => record.skillId).filter((skillId): skillId is string => !!skillId)));
-    const linkedSkillNames = linkedSkillIds.length > 0
-      ? await db
-          .select({ id: globalSkills.id, name: globalSkills.name })
-          .from(globalSkills)
-          .where(and(eq(globalSkills.userId, userId), inArray(globalSkills.id, linkedSkillIds)))
-      : [];
-    const skillNameById = new Map(linkedSkillNames.map((skill) => [skill.id, skill.name]));
+
+    let records: Array<SourceBugRecord & { skillName?: string | null }> = [];
+    try {
+      const fetchedRecords = await db.select().from(sourceBugRecords).where(inArray(sourceBugRecords.bugId, bugIds));
+      const linkedSkillIds = Array.from(new Set(fetchedRecords.map((record) => record.skillId).filter((skillId): skillId is string => !!skillId)));
+      const linkedSkillNames = linkedSkillIds.length > 0
+        ? await db
+            .select({ id: globalSkills.id, name: globalSkills.name })
+            .from(globalSkills)
+            .where(and(eq(globalSkills.userId, userId), inArray(globalSkills.id, linkedSkillIds)))
+        : [];
+      const skillNameById = new Map(linkedSkillNames.map((skill) => [skill.id, skill.name]));
+
+      records = fetchedRecords.map((record) => ({
+        ...record,
+        skillName: record.skillId ? (skillNameById.get(record.skillId) ?? null) : null,
+      }));
+    } catch (error: any) {
+      // Backward compatibility: if DB hasn't run migration yet, return records without linked-skill metadata.
+      if (String(error?.message || "").includes("skill_id")) {
+        const fallbackRecords = await db
+          .select({
+            id: sourceBugRecords.id,
+            bugId: sourceBugRecords.bugId,
+            userId: sourceBugRecords.userId,
+            fecha: sourceBugRecords.fecha,
+            situacion: sourceBugRecords.situacion,
+            senal: sourceBugRecords.senal,
+            estrategia: sourceBugRecords.estrategia,
+            resultado: sourceBugRecords.resultado,
+            createdAt: sourceBugRecords.createdAt,
+          })
+          .from(sourceBugRecords)
+          .where(inArray(sourceBugRecords.bugId, bugIds));
+
+        records = fallbackRecords.map((record) => ({
+          ...record,
+          skillId: null,
+          skillName: null,
+        })) as Array<SourceBugRecord & { skillName?: string | null }>;
+      } else {
+        throw error;
+      }
+    }
 
     return bugs.map((bug) => {
       const normalizedStatus = normalizeSourceBugStatus(String(bug.status));
@@ -1476,10 +1512,6 @@ export class DbStorage implements IStorage {
         victoryCount: normalizedVictoryCount,
         registros: records
           .filter((record) => record.bugId === bug.id)
-          .map((record) => ({
-            ...record,
-            skillName: record.skillId ? (skillNameById.get(record.skillId) ?? null) : null,
-          }))
           .sort((a, b) => b.fecha.localeCompare(a.fecha)),
       };
     });
@@ -1487,6 +1519,11 @@ export class DbStorage implements IStorage {
 
   async getSourceBug(id: string): Promise<SourceBug | undefined> {
     const result = await db.select().from(sourceBugs).where(eq(sourceBugs.id, id));
+    return result[0];
+  }
+
+  async getSourceBugRecord(id: string): Promise<SourceBugRecord | undefined> {
+    const result = await db.select().from(sourceBugRecords).where(eq(sourceBugRecords.id, id));
     return result[0];
   }
 
@@ -1894,7 +1931,7 @@ export class DbStorage implements IStorage {
     const skill = await this.getGlobalSkill(id);
     if (!skill) return undefined;
 
-    const newXp = skill.currentXp + xpAmount;
+    const newXp = Math.max(0, skill.currentXp + xpAmount);
     const calculatedLevel = this.calculateLevel(newXp);
     const levelCap = await this.getGlobalSkillLevelCap(skill);
     const newLevel = levelCap && levelCap > 0

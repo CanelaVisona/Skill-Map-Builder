@@ -3295,12 +3295,102 @@ export async function registerRoutes(
 
   app.patch("/api/source-bug-records/:id", requireAuth, async (req, res) => {
     try {
-      const updated = await storage.updateSourceBugRecord(req.params.id, req.body);
+      const existing = await storage.getSourceBugRecord(req.params.id);
+      if (!existing) {
+        res.status(404).json({ message: "Source bug record not found" });
+        return;
+      }
+
+      if (existing.userId && existing.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para modificar este registro" });
+        return;
+      }
+
+      const bug = await storage.getSourceBug(existing.bugId);
+      if (!bug || bug.userId !== req.userId) {
+        res.status(404).json({ message: "Source bug not found" });
+        return;
+      }
+
+      const hasSkillInPayload = Object.prototype.hasOwnProperty.call(req.body, "skillId");
+      const oldSkillId = existing.skillId ?? null;
+      let nextSkillId = oldSkillId;
+
+      if (hasSkillInPayload) {
+        if (typeof req.body.skillId === "string") {
+          const trimmedSkillId = req.body.skillId.trim();
+          nextSkillId = trimmedSkillId.length > 0 ? trimmedSkillId : null;
+        } else {
+          nextSkillId = req.body.skillId ? String(req.body.skillId) : null;
+        }
+      }
+
+      if (hasSkillInPayload && nextSkillId) {
+        const linkedSkill = await storage.getGlobalSkill(nextSkillId);
+        if (!linkedSkill || linkedSkill.userId !== req.userId) {
+          res.status(400).json({ message: "Skill link inválido" });
+          return;
+        }
+
+        if (bug.areaId && linkedSkill.areaId !== bug.areaId) {
+          res.status(400).json({ message: "El skill debe pertenecer al área del bug" });
+          return;
+        }
+
+        if (bug.projectId && linkedSkill.projectId && linkedSkill.projectId !== bug.projectId) {
+          res.status(400).json({ message: "El skill debe pertenecer al proyecto del bug" });
+          return;
+        }
+      }
+
+      const updatePayload = hasSkillInPayload
+        ? { ...req.body, skillId: nextSkillId }
+        : req.body;
+
+      const updated = await storage.updateSourceBugRecord(req.params.id, updatePayload);
       if (!updated) {
         res.status(404).json({ message: "Source bug record not found" });
         return;
       }
-      res.json(updated);
+
+      let xpAward: {
+        xpAmount: number;
+        skillId: string;
+        skillName: string;
+        areaId?: string | null;
+        xpBefore: number;
+        xpAfter: number;
+        xpMax?: number | null;
+        level?: number;
+      } | null = null;
+
+      if (hasSkillInPayload && oldSkillId !== nextSkillId) {
+        if (oldSkillId) {
+          const oldSkill = await storage.getGlobalSkill(oldSkillId);
+          if (oldSkill && oldSkill.userId === req.userId) {
+            await storage.addXpToGlobalSkill(oldSkillId, -10);
+          }
+        }
+
+        if (nextSkillId) {
+          const nextSkillBefore = await storage.getGlobalSkill(nextSkillId);
+          if (nextSkillBefore && nextSkillBefore.userId === req.userId) {
+            const updatedNextSkill = await storage.addXpToGlobalSkill(nextSkillId, 10);
+            xpAward = {
+              xpAmount: 10,
+              skillId: nextSkillId,
+              skillName: nextSkillBefore.name,
+              areaId: nextSkillBefore.areaId,
+              xpBefore: nextSkillBefore.currentXp,
+              xpAfter: updatedNextSkill?.currentXp ?? nextSkillBefore.currentXp + 10,
+              xpMax: nextSkillBefore.goalXp,
+              level: nextSkillBefore.level,
+            };
+          }
+        }
+      }
+
+      res.json(xpAward ? { ...updated, xpAward } : updated);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -3308,6 +3398,24 @@ export async function registerRoutes(
 
   app.delete("/api/source-bug-records/:id", requireAuth, async (req, res) => {
     try {
+      const existing = await storage.getSourceBugRecord(req.params.id);
+      if (!existing) {
+        res.status(404).json({ message: "Source bug record not found" });
+        return;
+      }
+
+      if (existing.userId && existing.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para eliminar este registro" });
+        return;
+      }
+
+      if (existing.skillId) {
+        const linkedSkill = await storage.getGlobalSkill(existing.skillId);
+        if (linkedSkill && linkedSkill.userId === req.userId) {
+          await storage.addXpToGlobalSkill(existing.skillId, -10);
+        }
+      }
+
       await storage.deleteSourceBugRecord(req.params.id);
       res.status(204).send();
     } catch (error: any) {

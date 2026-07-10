@@ -750,7 +750,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
         skillId?: string | null;
         resultado?: "victoria" | "empate" | "derrota";
       };
-    }) => {
+    }): Promise<BugRecordCreateResponse> => {
       const res = await fetch(`/api/source-bug-records/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -761,8 +761,22 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (updatedRecord) => {
       queryClient.invalidateQueries({ queryKey: [`/api/source-bugs/${sourceType}/${sourceId}`] });
+      queryClient.invalidateQueries({ predicate: (query) => (query.queryKey[0] as string)?.startsWith?.("/api/global-skills/") });
+
+      if (updatedRecord?.xpAward) {
+        const areaColor = areas.find((area) => area.id === updatedRecord.xpAward?.areaId)?.color || "#c85a2a";
+        showXpPopup({
+          skillName: updatedRecord.xpAward.skillName,
+          areaColor,
+          xpBefore: updatedRecord.xpAward.xpBefore,
+          xpAfter: updatedRecord.xpAward.xpAfter,
+          xpMax: updatedRecord.xpAward.xpMax ?? null,
+          level: updatedRecord.xpAward.level ?? Math.floor(updatedRecord.xpAward.xpBefore / 100) + 1,
+        });
+      }
+
       setIsBugRecordFormOpen(false);
       setEditingBugRecord(null);
       setRecordContextMenuId(null);
