@@ -1,6 +1,7 @@
 import { useSkillTree, iconMap, type Project, type Area } from "@/lib/skill-context";
 import { useAuth } from "@/lib/auth-context";
 import { useMenu } from "@/lib/menu-context";
+import { useXpPopup } from "@/lib/xp-popup-context";
 import { ProgressBar } from "@/components/ProgressBar";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
@@ -88,11 +89,35 @@ interface SourcePower extends SourceEntry {
 interface SourceBugRecord {
   id: string;
   bugId: string;
+  skillId?: string | null;
+  skillName?: string | null;
   fecha: string;
   situacion: string;
   senal: string;
   estrategia: string;
   resultado: "victoria" | "empate" | "derrota";
+}
+
+interface LinkedGlobalSkill {
+  id: string;
+  name: string;
+  areaId?: string | null;
+  currentXp: number;
+  goalXp?: number | null;
+  level?: number;
+}
+
+interface BugRecordCreateResponse extends SourceBugRecord {
+  xpAward?: {
+    xpAmount: number;
+    skillId: string;
+    skillName: string;
+    areaId?: string | null;
+    xpBefore: number;
+    xpAfter: number;
+    xpMax?: number | null;
+    level?: number;
+  };
 }
 
 interface SourceBug {
@@ -172,6 +197,8 @@ interface ViewSourceDialogProps {
 }
 
 function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }: ViewSourceDialogProps) {
+  const { areas } = useSkillTree();
+  const { showXpPopup } = useXpPopup();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("description");
   const [isAdding, setIsAdding] = useState(false);
@@ -203,6 +230,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
   const [recordSituacion, setRecordSituacion] = useState("");
   const [recordSenal, setRecordSenal] = useState("");
   const [recordEstrategia, setRecordEstrategia] = useState("");
+  const [recordSkillId, setRecordSkillId] = useState("");
   const [recordResultado, setRecordResultado] = useState<"victoria" | "empate" | "derrota">("victoria");
   const [editingBugRecord, setEditingBugRecord] = useState<SourceBugRecord | null>(null);
   const [recordContextMenuId, setRecordContextMenuId] = useState<string | null>(null);
@@ -314,6 +342,21 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       const res = await fetch(`/api/source-bugs/${sourceType}/${sourceId}`);
       if (!res.ok) {
         throw new Error(`Failed to fetch bugs: ${res.status}`);
+      }
+      return res.json();
+    },
+    enabled: isOpen,
+  });
+
+  const { data: linkedSkills = [] } = useQuery<LinkedGlobalSkill[]>({
+    queryKey: [`/api/global-skills/${sourceType}/${sourceId}`],
+    queryFn: async () => {
+      const endpoint = sourceType === "area"
+        ? `/api/global-skills/area/${sourceId}`
+        : `/api/global-skills/project/${sourceId}`;
+      const res = await fetch(endpoint);
+      if (!res.ok) {
+        throw new Error("No se pudieron cargar los skills");
       }
       return res.json();
     },
@@ -651,9 +694,10 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
         situacion: string;
         senal: string;
         estrategia: string;
+        skillId?: string | null;
         resultado: "victoria" | "empate" | "derrota";
       };
-    }) => {
+    }): Promise<BugRecordCreateResponse> => {
       const res = await fetch(`/api/source-bugs/${bugId}/records`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -664,8 +708,22 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (createdRecord) => {
       queryClient.invalidateQueries({ queryKey: [`/api/source-bugs/${sourceType}/${sourceId}`] });
+      queryClient.invalidateQueries({ predicate: (query) => (query.queryKey[0] as string)?.startsWith?.("/api/global-skills/") });
+
+      if (createdRecord?.xpAward) {
+        const areaColor = areas.find((area) => area.id === createdRecord.xpAward?.areaId)?.color || "#c85a2a";
+        showXpPopup({
+          skillName: createdRecord.xpAward.skillName,
+          areaColor,
+          xpBefore: createdRecord.xpAward.xpBefore,
+          xpAfter: createdRecord.xpAward.xpAfter,
+          xpMax: createdRecord.xpAward.xpMax ?? null,
+          level: createdRecord.xpAward.level ?? Math.floor(createdRecord.xpAward.xpBefore / 100) + 1,
+        });
+      }
+
       setIsBugRecordFormOpen(false);
       setEditingBugRecord(null);
       setRecordContextMenuId(null);
@@ -673,6 +731,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       setRecordSituacion("");
       setRecordSenal("");
       setRecordEstrategia("");
+      setRecordSkillId("");
       setRecordResultado("victoria");
     },
   });
@@ -688,6 +747,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
         situacion?: string;
         senal?: string;
         estrategia?: string;
+        skillId?: string | null;
         resultado?: "victoria" | "empate" | "derrota";
       };
     }) => {
@@ -710,6 +770,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       setRecordSituacion("");
       setRecordSenal("");
       setRecordEstrategia("");
+      setRecordSkillId("");
       setRecordResultado("victoria");
     },
   });
@@ -865,6 +926,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
           situacion: recordSituacion.trim(),
           senal: recordSenal.trim(),
           estrategia: recordEstrategia.trim(),
+          skillId: recordSkillId || null,
           resultado: recordResultado,
         },
       });
@@ -878,6 +940,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
         situacion: recordSituacion.trim(),
         senal: recordSenal.trim(),
         estrategia: recordEstrategia.trim(),
+        skillId: recordSkillId || null,
         resultado: recordResultado,
       },
     });
@@ -938,6 +1001,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       setRecordSituacion("");
       setRecordSenal("");
       setRecordEstrategia("");
+      setRecordSkillId("");
       setRecordResultado("victoria");
       setIsBugRecordFormOpen(true);
     }, 900);
@@ -972,6 +1036,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     setRecordSituacion(record.situacion);
     setRecordSenal(record.senal);
     setRecordEstrategia(record.estrategia);
+    setRecordSkillId(record.skillId || "");
     setRecordResultado(record.resultado);
     setIsBugRecordFormOpen(true);
     setRecordContextMenuId(null);
@@ -1527,6 +1592,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                             setRecordSituacion("");
                             setRecordSenal("");
                             setRecordEstrategia("");
+                            setRecordSkillId("");
                             setRecordResultado("victoria");
                             setIsBugRecordFormOpen(true);
                           }}
@@ -1587,6 +1653,9 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                               <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
                                 {registro.fecha} · <span className={bugResultColor[registro.resultado]}>{bugResultLabel[registro.resultado]}</span>
                               </p>
+                              {registro.skillName && (
+                                <p className="text-[11px] text-blue-500 mt-0.5">Skill: {registro.skillName}</p>
+                              )}
                               <p className="text-xs mt-1"><span className="text-muted-foreground">Situación:</span> {registro.situacion}</p>
                               <p className="text-xs"><span className="text-muted-foreground">Señal:</span> {registro.senal}</p>
                               <p className="text-xs"><span className="text-muted-foreground">Estrategia:</span> {registro.estrategia}</p>
@@ -1747,6 +1816,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
             setRecordSituacion("");
             setRecordSenal("");
             setRecordEstrategia("");
+            setRecordSkillId("");
             setRecordResultado("victoria");
           }
         }}
@@ -1792,6 +1862,21 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                 value={recordEstrategia}
                 onChange={(e) => setRecordEstrategia(e.target.value)}
               />
+            </div>
+
+            <div>
+              <Label htmlFor="bug-record-skill" className="text-sm font-medium mb-2 block">Skill linkeado</Label>
+              <select
+                id="bug-record-skill"
+                value={recordSkillId}
+                onChange={(e) => setRecordSkillId(e.target.value)}
+                className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="">Sin link</option>
+                {linkedSkills.map((skill) => (
+                  <option key={skill.id} value={skill.id}>{skill.name}</option>
+                ))}
+              </select>
             </div>
 
             <div>

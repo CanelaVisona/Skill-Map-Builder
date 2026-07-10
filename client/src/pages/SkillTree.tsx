@@ -17,7 +17,7 @@ import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Sk
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
-import { XpPopupProvider } from "@/lib/xp-popup-context";
+import { XpPopupProvider, useXpPopup } from "@/lib/xp-popup-context";
 import { AreaXpPopupProvider } from "@/lib/area-xp-popup-context";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
@@ -207,11 +207,35 @@ function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpen
 interface SourceBugRecord {
   id: string;
   bugId: string;
+  skillId?: string | null;
+  skillName?: string | null;
   fecha: string;
   situacion: string;
   senal: string;
   estrategia: string;
   resultado: "victoria" | "empate" | "derrota";
+}
+
+interface LinkedGlobalSkill {
+  id: string;
+  name: string;
+  areaId?: string | null;
+  currentXp: number;
+  goalXp?: number | null;
+  level?: number;
+}
+
+interface BugRecordCreateResponse extends SourceBugRecord {
+  xpAward?: {
+    xpAmount: number;
+    skillId: string;
+    skillName: string;
+    areaId?: string | null;
+    xpBefore: number;
+    xpAfter: number;
+    xpMax?: number | null;
+    level?: number;
+  };
 }
 
 interface SourceBug {
@@ -6026,6 +6050,7 @@ function HomeNeedsModalWrapper({ open, onOpenChange }: { open: boolean; onOpenCh
 
 function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { areas } = useSkillTree();
+  const { showXpPopup } = useXpPopup();
   const queryClient = useQueryClient();
   const [selectedBugRef, setSelectedBugRef] = useState<{ areaId: string; bugId: string } | null>(null);
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
@@ -6037,6 +6062,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
   const [recordSituacion, setRecordSituacion] = useState("");
   const [recordSenal, setRecordSenal] = useState("");
   const [recordEstrategia, setRecordEstrategia] = useState("");
+  const [recordSkillId, setRecordSkillId] = useState("");
   const [recordResultado, setRecordResultado] = useState<"victoria" | "empate" | "derrota">("victoria");
   const [expandedAreaId, setExpandedAreaId] = useState<string | null>(null);
 
@@ -6078,6 +6104,19 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
     ? selectedAreaGroup.bugs.find((bug) => bug.id === selectedBugRef?.bugId) ?? null
     : null;
 
+  const { data: selectedAreaSkills = [] } = useQuery<LinkedGlobalSkill[]>({
+    queryKey: ["global-skills-by-area-for-bug-record", selectedAreaGroup?.areaId],
+    enabled: open && !!selectedAreaGroup?.areaId,
+    queryFn: async () => {
+      if (!selectedAreaGroup?.areaId) return [];
+      const response = await fetch(`/api/global-skills/area/${selectedAreaGroup.areaId}`);
+      if (!response.ok) {
+        throw new Error("No se pudieron cargar los skills del area");
+      }
+      return response.json();
+    },
+  });
+
   const createBugRecord = useMutation({
     mutationFn: async ({
       bugId,
@@ -6089,9 +6128,10 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
         situacion: string;
         senal: string;
         estrategia: string;
+        skillId?: string | null;
         resultado: "victoria" | "empate" | "derrota";
       };
-    }) => {
+    }): Promise<BugRecordCreateResponse> => {
       const res = await fetch(`/api/source-bugs/${bugId}/records`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -6102,13 +6142,28 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
       }
       return res.json();
     },
-    onSuccess: async () => {
+    onSuccess: async (createdRecord) => {
       await queryClient.invalidateQueries({ queryKey: ["all-area-bugs"] });
+      await queryClient.invalidateQueries({ predicate: (query) => (query.queryKey[0] as string)?.startsWith?.("/api/global-skills/") });
+
+      if (createdRecord?.xpAward) {
+        const areaColor = areas.find((area) => area.id === createdRecord.xpAward?.areaId)?.color || "#c85a2a";
+        showXpPopup({
+          skillName: createdRecord.xpAward.skillName,
+          areaColor,
+          xpBefore: createdRecord.xpAward.xpBefore,
+          xpAfter: createdRecord.xpAward.xpAfter,
+          xpMax: createdRecord.xpAward.xpMax ?? null,
+          level: createdRecord.xpAward.level ?? Math.floor(createdRecord.xpAward.xpBefore / 100) + 1,
+        });
+      }
+
       setIsRecordFormOpen(false);
       setRecordFecha(new Date().toISOString().slice(0, 10));
       setRecordSituacion("");
       setRecordSenal("");
       setRecordEstrategia("");
+      setRecordSkillId("");
       setRecordResultado("victoria");
     },
   });
@@ -6124,6 +6179,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
         situacion?: string;
         senal?: string;
         estrategia?: string;
+        skillId?: string | null;
         resultado?: "victoria" | "empate" | "derrota";
       };
     }) => {
@@ -6145,6 +6201,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
       setRecordSituacion("");
       setRecordSenal("");
       setRecordEstrategia("");
+      setRecordSkillId("");
       setRecordResultado("victoria");
     },
   });
@@ -6166,6 +6223,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
         setRecordSituacion("");
         setRecordSenal("");
         setRecordEstrategia("");
+        setRecordSkillId("");
         setRecordResultado("victoria");
       }
     },
@@ -6228,6 +6286,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
           situacion: recordSituacion.trim(),
           senal: recordSenal.trim(),
           estrategia: recordEstrategia.trim(),
+          skillId: recordSkillId || null,
           resultado: recordResultado,
         },
       });
@@ -6241,6 +6300,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
         situacion: recordSituacion.trim(),
         senal: recordSenal.trim(),
         estrategia: recordEstrategia.trim(),
+        skillId: recordSkillId || null,
         resultado: recordResultado,
       },
     });
@@ -6254,6 +6314,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
     setRecordSituacion(record.situacion);
     setRecordSenal(record.senal);
     setRecordEstrategia(record.estrategia);
+    setRecordSkillId(record.skillId || "");
     setRecordResultado(record.resultado);
   };
 
@@ -6264,6 +6325,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
     setRecordSituacion("");
     setRecordSenal("");
     setRecordEstrategia("");
+    setRecordSkillId("");
     setRecordResultado("victoria");
   };
 
@@ -6275,6 +6337,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
     setRecordSituacion("");
     setRecordSenal("");
     setRecordEstrategia("");
+    setRecordSkillId("");
     setRecordResultado("victoria");
   };
 
@@ -6477,6 +6540,9 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
                             )}
 
                             <p className="text-xs mt-1 break-words"><span className="text-muted-foreground">Situacion:</span> {registro.situacion}</p>
+                            {registro.skillName && (
+                              <p className="text-[11px] text-blue-500 mt-0.5 break-words">Skill: {registro.skillName}</p>
+                            )}
                             <p className="text-xs break-words"><span className="text-muted-foreground">Senal:</span> {registro.senal}</p>
                             <p className="text-xs break-words"><span className="text-muted-foreground">Estrategia:</span> {registro.estrategia}</p>
                           </article>
@@ -6554,6 +6620,21 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
                         onChange={(e) => setRecordSenal(e.target.value)}
                       />
                     </div>
+                    <div>
+                      <Label htmlFor="global-record-skill" className="text-xs text-muted-foreground">Skill linkeado</Label>
+                      <select
+                        id="global-record-skill"
+                        value={recordSkillId}
+                        onChange={(e) => setRecordSkillId(e.target.value)}
+                        className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                      >
+                        <option value="">Sin link</option>
+                        {selectedAreaSkills.map((skill) => (
+                          <option key={skill.id} value={skill.id}>{skill.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
                     <div>
                       <Label htmlFor="global-record-estrategia" className="text-xs text-muted-foreground">Estrategia</Label>
                       <Textarea

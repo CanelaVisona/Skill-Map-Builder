@@ -3233,8 +3233,60 @@ export async function registerRoutes(
     try {
       const data = { ...req.body, bugId: req.params.id, userId: req.userId };
       const validated = insertSourceBugRecordSchema.parse(data);
+
+      if (validated.skillId) {
+        const bug = await storage.getSourceBug(req.params.id);
+        if (!bug || bug.userId !== req.userId) {
+          res.status(404).json({ message: "Source bug not found" });
+          return;
+        }
+
+        const linkedSkill = await storage.getGlobalSkill(validated.skillId);
+        if (!linkedSkill || linkedSkill.userId !== req.userId) {
+          res.status(400).json({ message: "Skill link inválido" });
+          return;
+        }
+
+        if (bug.areaId && linkedSkill.areaId !== bug.areaId) {
+          res.status(400).json({ message: "El skill debe pertenecer al área del bug" });
+          return;
+        }
+
+        if (bug.projectId && linkedSkill.projectId && linkedSkill.projectId !== bug.projectId) {
+          res.status(400).json({ message: "El skill debe pertenecer al proyecto del bug" });
+          return;
+        }
+      }
+
       const record = await storage.createSourceBugRecord(validated);
-      res.status(201).json(record);
+
+      if (!validated.skillId) {
+        res.status(201).json(record);
+        return;
+      }
+
+      const xpAmount = 10;
+      const linkedSkillBefore = await storage.getGlobalSkill(validated.skillId);
+      if (!linkedSkillBefore || linkedSkillBefore.userId !== req.userId) {
+        res.status(201).json(record);
+        return;
+      }
+
+      const updatedSkill = await storage.addXpToGlobalSkill(validated.skillId, xpAmount);
+
+      res.status(201).json({
+        ...record,
+        xpAward: {
+          xpAmount,
+          skillId: validated.skillId,
+          skillName: linkedSkillBefore.name,
+          areaId: linkedSkillBefore.areaId,
+          xpBefore: linkedSkillBefore.currentXp,
+          xpAfter: updatedSkill?.currentXp ?? linkedSkillBefore.currentXp + xpAmount,
+          xpMax: linkedSkillBefore.goalXp,
+          level: linkedSkillBefore.level,
+        },
+      });
     } catch (error: any) {
       const validationError = fromError(error);
       res.status(400).json({ message: validationError.toString() });

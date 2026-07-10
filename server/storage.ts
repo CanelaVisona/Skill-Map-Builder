@@ -148,6 +148,7 @@ export interface IStorage {
   deleteSourcePower(id: string): Promise<void>;
 
   getSourceBugs(userId: string, type: "area" | "project", sourceId: string): Promise<Array<SourceBug & { registros: SourceBugRecord[] }>>;
+  getSourceBug(id: string): Promise<SourceBug | undefined>;
   createSourceBug(entry: InsertSourceBug): Promise<SourceBug>;
   updateSourceBug(id: string, entry: Partial<InsertSourceBug>): Promise<SourceBug | undefined>;
   deleteSourceBug(id: string): Promise<void>;
@@ -1454,6 +1455,14 @@ export class DbStorage implements IStorage {
 
     const bugIds = bugs.map((bug) => bug.id);
     const records = await db.select().from(sourceBugRecords).where(inArray(sourceBugRecords.bugId, bugIds));
+    const linkedSkillIds = Array.from(new Set(records.map((record) => record.skillId).filter((skillId): skillId is string => !!skillId)));
+    const linkedSkillNames = linkedSkillIds.length > 0
+      ? await db
+          .select({ id: globalSkills.id, name: globalSkills.name })
+          .from(globalSkills)
+          .where(and(eq(globalSkills.userId, userId), inArray(globalSkills.id, linkedSkillIds)))
+      : [];
+    const skillNameById = new Map(linkedSkillNames.map((skill) => [skill.id, skill.name]));
 
     return bugs.map((bug) => {
       const normalizedStatus = normalizeSourceBugStatus(String(bug.status));
@@ -1467,21 +1476,55 @@ export class DbStorage implements IStorage {
         victoryCount: normalizedVictoryCount,
         registros: records
           .filter((record) => record.bugId === bug.id)
+          .map((record) => ({
+            ...record,
+            skillName: record.skillId ? (skillNameById.get(record.skillId) ?? null) : null,
+          }))
           .sort((a, b) => b.fecha.localeCompare(a.fecha)),
       };
     });
   }
 
+  async getSourceBug(id: string): Promise<SourceBug | undefined> {
+    const result = await db.select().from(sourceBugs).where(eq(sourceBugs.id, id));
+    return result[0];
+  }
+
   async createSourceBug(entry: InsertSourceBug): Promise<SourceBug> {
     const id = randomUUID();
-    const result = await db.insert(sourceBugs).values({ id, ...entry }).returning();
+    const insertData: typeof sourceBugs.$inferInsert = {
+      id,
+      userId: entry.userId,
+      areaId: entry.areaId,
+      projectId: entry.projectId,
+      nombre: entry.nombre,
+      status: entry.status,
+      victoryCount: entry.victoryCount,
+      desc: entry.desc,
+      aparece: Array.isArray(entry.aparece) ? (entry.aparece as string[]) : [],
+      disparadores: Array.isArray(entry.disparadores) ? (entry.disparadores as string[]) : [],
+      estrategias: Array.isArray(entry.estrategias) ? (entry.estrategias as string[]) : [],
+    };
+    const result = await db.insert(sourceBugs).values(insertData).returning();
     return result[0];
   }
 
   async updateSourceBug(id: string, entry: Partial<InsertSourceBug>): Promise<SourceBug | undefined> {
+    const updateData: Record<string, any> = { updatedAt: new Date() };
+    if (entry.userId !== undefined) updateData.userId = entry.userId;
+    if (entry.areaId !== undefined) updateData.areaId = entry.areaId;
+    if (entry.projectId !== undefined) updateData.projectId = entry.projectId;
+    if (entry.nombre !== undefined) updateData.nombre = entry.nombre;
+    if (entry.status !== undefined) updateData.status = entry.status;
+    if (entry.victoryCount !== undefined) updateData.victoryCount = entry.victoryCount;
+    if (entry.desc !== undefined) updateData.desc = entry.desc;
+    if (entry.aparece !== undefined) updateData.aparece = Array.isArray(entry.aparece) ? (entry.aparece as string[]) : [];
+    if (entry.disparadores !== undefined) updateData.disparadores = Array.isArray(entry.disparadores) ? (entry.disparadores as string[]) : [];
+    if (entry.estrategias !== undefined) updateData.estrategias = Array.isArray(entry.estrategias) ? (entry.estrategias as string[]) : [];
+
     const result = await db
       .update(sourceBugs)
-      .set({ ...entry, updatedAt: new Date() })
+      .set(updateData)
       .where(eq(sourceBugs.id, id))
       .returning();
     return result[0];

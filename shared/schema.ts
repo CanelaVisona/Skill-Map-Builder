@@ -182,6 +182,7 @@ export const sourceBugRecords = pgTable("source_bug_records", {
   id: varchar("id").primaryKey(),
   bugId: varchar("bug_id").notNull().references(() => sourceBugs.id, { onDelete: "cascade" }),
   userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  skillId: varchar("skill_id"),
   fecha: varchar("fecha").notNull(),
   situacion: text("situacion").notNull(),
   senal: text("senal").notNull(),
