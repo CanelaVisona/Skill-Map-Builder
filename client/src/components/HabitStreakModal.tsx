@@ -719,11 +719,46 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                 const habit = habitsWithRecords.find((h) => h.id === selectedHabitId);
                 if (!habit) return;
                 const isCompleted = habit.done.has(date);
-                toggleHabitMutation.mutate({
-                  habitId: selectedHabitId,
-                  date,
-                  completed: isCompleted ? 0 : 1,
-                });
+                toggleHabitMutation.mutate(
+                  {
+                    habitId: selectedHabitId,
+                    date,
+                    completed: isCompleted ? 0 : 1,
+                  },
+                  {
+                    onSuccess: async () => {
+                      // Award XP and show popup when completing from calendar too
+                      if (!isCompleted && habit.skillId) {
+                        try {
+                          const linkedSkill = globalSkills.find((skillEntry) => skillEntry.id === habit.skillId);
+                          const res = await fetch(`/api/habits/${selectedHabitId}/award-xp`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                          });
+
+                          if (res.ok) {
+                            const xpData = await res.json();
+                            if (linkedSkill) {
+                              const area = areas.find((areaEntry) => areaEntry.id === linkedSkill.areaId);
+                              showXpPopup({
+                                skillName: linkedSkill.name,
+                                areaColor: area?.color || "#c85a2a",
+                                xpBefore: linkedSkill.currentXp,
+                                xpAfter: linkedSkill.currentXp + (xpData?.xpAwarded || 5),
+                                xpMax: linkedSkill.goalXp || null,
+                                level: linkedSkill.level,
+                              });
+                            }
+                            await refetchGlobalSkills();
+                            await queryClient.refetchQueries({ queryKey: ["skills"] });
+                          }
+                        } catch (error) {
+                          console.error("Error awarding XP:", error);
+                        }
+                      }
+                    },
+                  }
+                );
               }}
             />
           )}

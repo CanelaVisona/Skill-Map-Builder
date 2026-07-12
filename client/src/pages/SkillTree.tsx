@@ -188,7 +188,13 @@ function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpen
               onClick={() => handleAction(onOpenAllAreaBugs)}
               title="Bugs de areas"
             >
-              <span className="inline-block h-0 w-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[10px] border-b-current" />
+              <svg
+                viewBox="0 0 24 24"
+                className="h-4 w-4 mx-auto"
+                aria-hidden="true"
+              >
+                <path d="M12 5 L19 18 H5 Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+              </svg>
             </button>
             <button
               className="h-8 w-8 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
