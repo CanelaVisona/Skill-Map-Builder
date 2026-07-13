@@ -267,20 +267,33 @@ function TaskItem({
           width: "38px",
           height: "38px",
           borderRadius: "8px",
-          background: isDark ? "#1c2d1c" : "#ecfdf3",
-          border: isDark ? "1px solid #243824" : "1px solid #bbf7d0",
+          background: isDark ? "#102012" : "#e5e7eb",
+          border: isDark ? "1px solid rgba(255,255,255,0.2)" : "1px solid rgba(0,0,0,0.16)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           fontSize: "20px",
           flexShrink: 0,
+          boxShadow: isDark ? "inset 0 0 10px rgba(0,0,0,0.22)" : "inset 0 0 8px rgba(255,255,255,0.25)",
+          position: "relative",
+          overflow: "hidden",
         }}
       >
-        {task.icon}
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: `${value}%`,
+            background: getBarGradient(color),
+            transition: "height 1s linear",
+          }}
+        />
+        <span style={{ position: "relative", zIndex: 1 }}>{task.icon}</span>
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: "13px", fontWeight: 600, color: isDark ? "#e2e8f0" : "#0f172a", marginBottom: "2px" }}>{task.name}</div>
-        <div style={{ fontSize: "10px", color: isDark ? "#6b7280" : "#64748b", marginBottom: "6px" }}>{task.freq}</div>
+        <div style={{ fontSize: "13px", fontWeight: 600, color: isDark ? "#e2e8f0" : "#0f172a", marginBottom: "6px" }}>{task.name}</div>
         <MiniBar value={value} color={color} />
       </div>
     </div>
@@ -960,15 +973,15 @@ export default function NecesidadesCasa() {
                 width: "80px",
                 height: "80px",
                 borderRadius: "50%",
-                background: colors.detailCircleBg,
+                background: getBarGradient(selected.color),
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 fontSize: "38px",
-                border: colors.detailCircleBorder,
+                border: isDark ? "2px solid rgba(255,255,255,0.22)" : "2px solid rgba(0,0,0,0.14)",
                 boxShadow: isDark
-                  ? "0 0 20px rgba(74,222,128,0.15), inset 0 0 20px rgba(0,0,0,0.3)"
-                  : "0 0 20px rgba(34,197,94,0.12), inset 0 0 18px rgba(15,23,42,0.06)",
+                  ? "0 0 20px rgba(74,222,128,0.22), inset 0 0 16px rgba(0,0,0,0.25)"
+                  : "0 0 20px rgba(34,197,94,0.18), inset 0 0 12px rgba(255,255,255,0.22)",
               }}
             >
               {selected.icon}
