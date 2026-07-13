@@ -7834,13 +7834,13 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
                 {Array.from(levelGroups.entries()).sort((a, b) => a[0] - b[0]).flatMap(([level, skills]) => {
                   const sortedByY = [...skills].sort((a, b) => a.y - b.y);
                   const connections = [];
-                  const itemColor = 'color' in activeItem ? (activeItem.color as string) : "text-zinc-800 dark:text-zinc-200";
-                  
+                  const itemColor = 'color' in activeItem ? (activeItem.color as string) : "#fbbf24";
+
                   for (let i = 0; i < sortedByY.length - 1; i++) {
                     const parentSkill = sortedByY[i];
                     const childSkill = sortedByY[i + 1];
                     const isActive = parentSkill.status === "mastered";
-                    
+
                     connections.push(
                       <SkillConnection
                         key={`${parentSkill.id}-${childSkill.id}`}
@@ -7851,7 +7851,7 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
                       />
                     );
                   }
-                  
+
                   return connections;
                 })}
 

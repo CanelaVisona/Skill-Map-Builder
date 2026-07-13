@@ -1204,6 +1204,23 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           await refreshAllAreas();
         }, 5000);
       } else if (newStatus === "mastered" && !isFinalNodeByPosition && !isOpeningNewLevel) {
+        // Trigger quest XP popup before quest updated banner
+        try {
+          const progressBeforePct = calculateAreaProgressPercentage(project.currentXp ?? 0);
+          const progressAfterPct = calculateAreaProgressPercentage((project.currentXp ?? 0) + 1);
+          showAreaXpPopup?.({
+            areaOrProjectId: projectId,
+            scopeName: project.name,
+            areaColor: (project as any).color || "#fbbf24",
+            progressBeforePct,
+            progressAfterPct,
+            bonusXp: 1,
+            currentXp: project.currentXp ?? 0,
+          });
+        } catch (e) {
+          // ignore
+        }
+
         setTimeout(() => {
           triggerQuestUpdated();
         }, areaQuestUpdatedDelayMs);
