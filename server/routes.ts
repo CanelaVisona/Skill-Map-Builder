@@ -1205,17 +1205,17 @@ export async function registerRoutes(
           allSkills = await storage.getProjectSkills(parentId);
         }
 
-        // Update area/project's unlockedLevel
+        // Update area/project's nextLevelToAssign bookkeeping only. unlockedLevel must
+        // NOT be touched here: this endpoint moves a skill into a future/look-ahead
+        // level for editing purposes (Skill Designer), not real player progression.
         if (parentType === "area") {
-          await storage.updateArea(parentId, { 
-            unlockedLevel: targetLevel, 
-            nextLevelToAssign: targetLevel 
-          });
+          const currentArea = await storage.getArea(parentId);
+          const nextLevelToAssign = Math.max(currentArea?.nextLevelToAssign ?? 0, targetLevel + 1);
+          await storage.updateArea(parentId, { nextLevelToAssign });
         } else {
-          await storage.updateProject(parentId, { 
-            unlockedLevel: targetLevel, 
-            nextLevelToAssign: targetLevel 
-          });
+          const currentProject = await storage.getProject(parentId);
+          const nextLevelToAssign = Math.max(currentProject?.nextLevelToAssign ?? 0, targetLevel + 1);
+          await storage.updateProject(parentId, { nextLevelToAssign });
         }
       }
 
@@ -1506,10 +1506,13 @@ export async function registerRoutes(
       
       if (existingLevelSkills.length > 0) {
         console.log(`[generate-level] Level already has nodes, returning existing`);
-        // Level already has nodes - update area's unlockedLevel
+        // Level already has nodes - update area's unlockedLevel, but only if this is
+        // actually the next level to unlock. Calls that pre-stage a future locked level
+        // (level far ahead of unlockedLevel) must not overwrite unlockedLevel.
         // Keep nextLevelToAssign at least 3 levels ahead to allow future level generation
-        const updatedArea = await storage.updateArea(areaId, { 
-          unlockedLevel: level, 
+        const shouldUnlock = level <= existingArea.unlockedLevel + 1;
+        const updatedArea = await storage.updateArea(areaId, {
+          ...(shouldUnlock ? { unlockedLevel: level } : {}),
           nextLevelToAssign: level + 3
         });
         
@@ -1814,9 +1817,12 @@ export async function registerRoutes(
       
       if (existingLevelSkills.length > 0) {
         console.log(`[generate-level-project] Level already has nodes, returning existing`);
-        const updatedProject = await storage.updateProject(projectId, { 
-          unlockedLevel: level, 
-          nextLevelToAssign: level 
+        // Only unlock if this is actually the next level; pre-staging a future locked
+        // level must not overwrite unlockedLevel.
+        const shouldUnlock = level <= existingProject.unlockedLevel + 1;
+        const updatedProject = await storage.updateProject(projectId, {
+          ...(shouldUnlock ? { unlockedLevel: level } : {}),
+          nextLevelToAssign: level
         });
         
         // Ensure proper node states when opening an existing level

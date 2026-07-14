@@ -844,12 +844,19 @@ export class DbStorage implements IStorage {
       calculatedStartY = maxY + 150;
     }
 
+    // Only treat this as a real level-up if `level` is the immediate next level.
+    // Calls that pre-stage a future locked level (level far ahead of the current
+    // unlockedLevel) must not overwrite unlockedLevel, or the designer window ends
+    // up centered on a level the user hasn't actually unlocked.
+    const [currentArea] = await db.select().from(areas).where(eq(areas.id, areaId));
+    const shouldUnlock = currentArea != null && level <= currentArea.unlockedLevel + 1;
+
     // Use a transaction to ensure atomicity
     await db.transaction(async (tx) => {
       // Update area's unlocked level first
       await tx.update(areas)
         .set({
-          unlockedLevel: level,
+          ...(shouldUnlock ? { unlockedLevel: level } : {}),
           nextLevelToAssign: level + 3,
           currentXp: sql`${areas.currentXp} + 1`,
         })
@@ -921,10 +928,15 @@ export class DbStorage implements IStorage {
       calculatedStartY = maxY + 150;
     }
 
+    // Only treat this as a real level-up if `level` is the immediate next level.
+    // Calls that pre-stage a future locked level must not overwrite unlockedLevel.
+    const [currentProject] = await db.select().from(projects).where(eq(projects.id, projectId));
+    const shouldUnlock = currentProject != null && level <= currentProject.unlockedLevel + 1;
+
     await db.transaction(async (tx) => {
       await tx.update(projects)
         .set({
-          unlockedLevel: level,
+          ...(shouldUnlock ? { unlockedLevel: level } : {}),
           nextLevelToAssign: level + 3,
           currentXp: sql`${projects.currentXp} + 1`,
         })
