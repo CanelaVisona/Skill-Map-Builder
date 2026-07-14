@@ -139,6 +139,13 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
   // Detect if node has default name (generated Nodo X format)
   const hasDefaultName = skill.title.startsWith("Nodo ") || skill.title === "Next challenge" || skill.title === "Next objetive quest" || skill.title === "Objective quest";
+
+  // Default-named nodes get a mild extra fade, but distance to the active node stays
+  // the dominant signal: a freshly-added node (necessarily still default-named) must
+  // never look fainter than an already-named node sitting further away.
+  if (isLocked && hasDefaultName) {
+    lockedNodeOpacity *= 0.85;
+  }
   
   // Check if swap would violate mastered/available constraint
   const canMoveUp = (): boolean | null => {
@@ -861,6 +868,14 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       isTitleLongPress.current = false;
       return;
     }
+    // Locked nodes (including not-yet-reached future/staged nodes) must not be
+    // interactable here: without this, tapping a locked node's title could open the
+    // "add a subtask tree?" prompt and attach real (locked-by-default) subskills to it,
+    // leaving it permanently flagged as "has incomplete subtasks" even once it becomes
+    // genuinely available later.
+    if (isLocked) {
+      return;
+    }
     if (!isSubSkillView && !isInicioNode) {
       e.stopPropagation();
       try {
@@ -1131,8 +1146,13 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     }
     lastClickTime.current = now;
     
-    // Allow unlocking manually locked nodes by clicking
-    if (skill.manualLock === 1) {
+    // Allow unlocking manually locked nodes by clicking.
+    // Gate on the node still being "locked": a node can carry a stale manualLock=1
+    // flag (leftover from when it was created as a future/staged placeholder) even
+    // after its status has genuinely become "available" for real play. Without the
+    // status check here, the first click on such a node would re-lock it instead of
+    // confirming it, requiring lock -> unlock -> confirm across three clicks.
+    if (skill.manualLock === 1 && skill.status === "locked") {
       if (isSubSkillView) {
         toggleSubSkillLock(skill.id);
       } else if (isProject) {
@@ -1245,12 +1265,12 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             }}
             className={cn(
               "w-10 h-10 rounded-full border-2 flex items-center justify-center relative",
-              // Locked nodes - with default names have less opacity
-              isLocked && !isLastNodeOfLevel && hasDefaultName && "bg-muted border-muted-foreground/10 text-muted-foreground/30",
-              // Locked nodes - with custom names have more opacity
-              isLocked && !isLastNodeOfLevel && !hasDefaultName && "bg-muted border-muted-foreground/70 text-muted-foreground/90",
-              isLocked && isLastNodeOfLevel && hasDefaultName && "bg-muted border-amber-400/30 text-muted-foreground/30",
-              isLocked && isLastNodeOfLevel && !hasDefaultName && "bg-muted border-amber-400 text-muted-foreground/90",
+              // Locked nodes: border/text saturation stays constant: distance from the
+              // active node (via lockedNodeOpacity above) is the single source of truth
+              // for how faded a locked node looks, so it can't be overridden by whether
+              // the node still has its default "Nodo X" name.
+              isLocked && !isLastNodeOfLevel && "bg-muted border-muted-foreground/70 text-muted-foreground/90",
+              isLocked && isLastNodeOfLevel && "bg-muted border-amber-400 text-muted-foreground/90",
               // Available nodes (not locked, not mastered)
               !isLocked && !isMastered && !isLastNodeOfLevel && "bg-card border-border",
               !isLocked && !isMastered && isLastNodeOfLevel && "bg-card border-amber-400",
@@ -1307,7 +1327,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             >
               {skill.isAutoComplete === 1 || skill.levelPosition === 1 ? "" : skill.title}
             </span>
-            {!isLocked && !isMastered && (
+            {/* Don't show the "ready to confirm" mark alongside the incomplete-subtasks
+                lock icon (hasUnlockedWithIncompleteSubtasks above) — the two signals
+                contradict each other visually. */}
+            {!isLocked && !isMastered && !hasIncompleteSubtasks && (
               <span className="text-2xl font-bold text-amber-400">!</span>
             )}
             {/* XP subtitle - only show when not mastered and has XP > 0 */}

@@ -1428,13 +1428,21 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         }
       }
 
-      // Shift nodes below up by 150px
+      // Shift nodes below up by 150px. Nodes in the deleted skill's own level also need
+      // levelPosition decremented so they stay contiguous (1,2,3...) instead of leaving a
+      // gap (e.g. 1,2,5) — the distance-based opacity in SkillNode reads levelPosition, not
+      // y, so without this a node that visually moved right next to the active node would
+      // still be rendered as if it were still several nodes away.
       const nodesToShift = area.skills.filter(s => s.y > skillToDelete.y);
       for (const node of nodesToShift) {
+        const patchBody: { y: number; levelPosition?: number } = { y: node.y - 150 };
+        if (node.level === skillToDelete.level) {
+          patchBody.levelPosition = (node.levelPosition || 0) - 1;
+        }
         const shiftResponse = await fetch(`/api/skills/${node.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ y: node.y - 150 }),
+          body: JSON.stringify(patchBody),
         });
         if (!shiftResponse.ok) {
           throw new Error(`Error al reposicionar skill: ${shiftResponse.status}`);
@@ -1470,12 +1478,15 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
             
             if (s.y > skillToDelete.y) {
               updated.y = s.y - 150;
+              if (s.level === skillToDelete.level) {
+                updated.levelPosition = (s.levelPosition || 0) - 1;
+              }
             }
 
             if (s.id === newFinalNodeId) {
               updated.isFinalNode = 1;
             }
-            
+
             return updated;
           });
 
@@ -1711,12 +1722,19 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         }
       }
 
+      // Nodes in the deleted skill's own level also need levelPosition decremented so they
+      // stay contiguous (1,2,3...) — see comment in deleteSkill for why this matters for
+      // the distance-based locked-node opacity.
       const nodesToShift = project.skills.filter(s => s.y > skillToDelete.y);
       for (const node of nodesToShift) {
+        const patchBody: { y: number; levelPosition?: number } = { y: node.y - 150 };
+        if (node.level === skillToDelete.level) {
+          patchBody.levelPosition = (node.levelPosition || 0) - 1;
+        }
         const shiftResponse = await fetch(`/api/skills/${node.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ y: node.y - 150 }),
+          body: JSON.stringify(patchBody),
         });
         if (!shiftResponse.ok) {
           throw new Error(`Error al reposicionar skill: ${shiftResponse.status}`);
@@ -1750,12 +1768,15 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
             
             if (s.y > skillToDelete.y) {
               updated.y = s.y - 150;
+              if (s.level === skillToDelete.level) {
+                updated.levelPosition = (s.levelPosition || 0) - 1;
+              }
             }
 
             if (s.id === newFinalNodeId) {
               updated.isFinalNode = 1;
             }
-            
+
             return updated;
           });
 
@@ -2572,12 +2593,19 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         }
       }
 
+      // Nodes in the deleted skill's own level also need levelPosition decremented so they
+      // stay contiguous (1,2,3...) — see comment in deleteSkill for why this matters for
+      // the distance-based locked-node opacity.
       const nodesToShift = subSkills.filter(s => s.y > skillToDelete.y);
       for (const node of nodesToShift) {
+        const patchBody: { y: number; levelPosition?: number } = { y: node.y - 150 };
+        if (node.level === skillToDelete.level) {
+          patchBody.levelPosition = (node.levelPosition || 0) - 1;
+        }
         const shiftResponse = await fetch(`/api/skills/${node.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ y: node.y - 150 }),
+          body: JSON.stringify(patchBody),
         });
         if (!shiftResponse.ok) {
           throw new Error(`Error al reposicionar skill: ${shiftResponse.status}`);
@@ -2609,12 +2637,15 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
             
             if (s.y > skillToDelete.y) {
               updated.y = s.y - 150;
+              if (s.level === skillToDelete.level) {
+                updated.levelPosition = (s.levelPosition || 0) - 1;
+              }
             }
 
             if (s.id === newFinalNodeId) {
               updated.isFinalNode = 1;
             }
-            
+
             return updated;
           });
       });
