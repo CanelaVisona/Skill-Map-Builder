@@ -7,22 +7,40 @@ const HOME_TASKS_STORAGE_KEY = "skill-map-home-needs-tasks-v1";
 
 function computeValue(lastDone: number, periodDays: number) {
   const daysSince = (Date.now() - lastDone) / MS_PER_DAY;
+  const overdueDays = daysSince - periodDays;
+  // Past the 2-day overdue mark the bar goes empty. During the 1-2 day overdue
+  // window (e.g. day 8-9 for a 7-day period) it shows full red. Otherwise (still on
+  // time) it follows the normal countdown fill.
+  if (overdueDays > 2) return 0;
+  if (overdueDays > 0) return 100;
   return Math.max(0, (1 - daysSince / periodDays) * 100);
 }
 
-function computeColor(value: number) {
+type TaskColor = "green" | "yellow" | "orange" | "red" | "empty";
+
+function computeColor(value: number, overdueDays: number): TaskColor {
+  // Explicit "empty" state (not just an unused color) so elements that render color
+  // as a solid fill — not scaled by value, like the big status icon — also go neutral
+  // more than 2 days after the due date, instead of showing a misleadingly solid color.
+  if (overdueDays > 2) return "empty";
+  if (overdueDays > 0) return "red";
   if (value >= 60) return "green";
   if (value >= 40) return "yellow";
-  if (value >= 20) return "orange";
-  return "red";
+  return "orange"; // never red while still on time — red is reserved for the overdue window
 }
 
-function getBarGradient(color: "green" | "yellow" | "orange" | "red") {
+function computeOverdueDays(lastDone: number, periodDays: number) {
+  const daysSince = (Date.now() - lastDone) / MS_PER_DAY;
+  return daysSince - periodDays;
+}
+
+function getBarGradient(color: TaskColor) {
   return {
     green: "linear-gradient(90deg, #16a34a, #4ade80)",
     yellow: "linear-gradient(90deg, #ca8a04, #facc15)",
     orange: "linear-gradient(90deg, #c2410c, #fb923c)",
     red: "linear-gradient(90deg, #991b1b, #ef4444)",
+    empty: "transparent",
   }[color];
 }
 
@@ -174,7 +192,7 @@ function loadStoredTasks(): HomeTask[] {
   }
 }
 
-function MiniBar({ value, color }: { value: number; color: "green" | "yellow" | "orange" | "red" }) {
+function MiniBar({ value, color }: { value: number; color: TaskColor }) {
   const { theme, resolvedTheme } = useTheme();
   const isDark = (resolvedTheme || theme) === "dark";
 
@@ -213,7 +231,7 @@ function TaskItem({
 }: {
   task: HomeTask;
   value: number;
-  color: "green" | "yellow" | "orange" | "red";
+  color: TaskColor;
   isActive: boolean;
   onClick: () => void;
   onPressStart: (e: ReactPointerEvent<HTMLDivElement>) => void;
@@ -300,7 +318,7 @@ function TaskItem({
   );
 }
 
-function BigBar({ value, color }: { value: number; color: "green" | "yellow" | "orange" | "red" }) {
+function BigBar({ value, color }: { value: number; color: TaskColor }) {
   const { theme, resolvedTheme } = useTheme();
   const isDark = (resolvedTheme || theme) === "dark";
 
@@ -491,7 +509,8 @@ export default function NecesidadesCasa() {
 
   const liveTask = useCallback((t: HomeTask) => {
     const value = computeValue(t.lastDone, t.periodDays);
-    return { ...t, value, color: computeColor(value) as "green" | "yellow" | "orange" | "red" };
+    const overdueDays = computeOverdueDays(t.lastDone, t.periodDays);
+    return { ...t, value, color: computeColor(value, overdueDays) };
   }, []);
 
   const liveTasks = tasks.map(liveTask);
