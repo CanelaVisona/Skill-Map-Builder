@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
-import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertSourcePowersSchema, insertSourceBugSchema, insertSourceBugRecordSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema, insertSpaceRepetitionPracticeSchema, insertRewiringTrackerSchema, type InsertSpaceRepetitionPractice, type SpaceRepetitionPractice, type RewiringTracker, skills, areas, projects, spaceRepetitionPractices } from "@shared/schema";
+import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertJournalShadowPageSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertSourcePowersSchema, insertSourceBugSchema, insertSourceBugRecordSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema, insertSpaceRepetitionPracticeSchema, insertRewiringTrackerSchema, type InsertSpaceRepetitionPractice, type SpaceRepetitionPractice, type RewiringTracker, skills, areas, projects, spaceRepetitionPractices } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import cookieParser from "cookie-parser";
 import crypto from "crypto";
@@ -2328,6 +2328,83 @@ export async function registerRoutes(
     }
   });
 
+  // Bestiary beast pages (extra pages beyond the beast's base name/description/image)
+  app.get("/api/journal/shadows/:id/pages", requireAuth, async (req, res) => {
+    try {
+      const shadow = await storage.getJournalShadow(req.params.id);
+      if (!shadow || shadow.userId !== req.userId) {
+        res.status(404).json({ message: "Shadow not found" });
+        return;
+      }
+      const pages = await storage.getJournalShadowPages(req.params.id);
+      res.json(pages);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/journal/shadows/:id/pages", requireAuth, async (req, res) => {
+    try {
+      const shadow = await storage.getJournalShadow(req.params.id);
+      if (!shadow || shadow.userId !== req.userId) {
+        res.status(404).json({ message: "Shadow not found" });
+        return;
+      }
+      const validated = insertJournalShadowPageSchema.parse({
+        description: req.body.description ?? "",
+        imageUrl: req.body.imageUrl ?? null,
+        shadowId: req.params.id,
+        pageOrder: 0,
+      });
+      const page = await storage.createJournalShadowPage(validated);
+      res.status(201).json(page);
+    } catch (error: any) {
+      const validationError = fromError(error);
+      res.status(400).json({ message: validationError.toString() });
+    }
+  });
+
+  app.patch("/api/journal/shadow-pages/:id", requireAuth, async (req, res) => {
+    try {
+      const page = await storage.getJournalShadowPage(req.params.id);
+      if (!page) {
+        res.status(404).json({ message: "Page not found" });
+        return;
+      }
+      const shadow = await storage.getJournalShadow(page.shadowId);
+      if (!shadow || shadow.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para modificar esta página" });
+        return;
+      }
+      const updated = await storage.updateJournalShadowPage(req.params.id, {
+        description: req.body.description,
+        imageUrl: req.body.imageUrl,
+      });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/journal/shadow-pages/:id", requireAuth, async (req, res) => {
+    try {
+      const page = await storage.getJournalShadowPage(req.params.id);
+      if (!page) {
+        res.status(404).json({ message: "Page not found" });
+        return;
+      }
+      const shadow = await storage.getJournalShadow(page.shadowId);
+      if (!shadow || shadow.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para eliminar esta página" });
+        return;
+      }
+      await storage.deleteJournalShadowPage(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Journal - Learnings
   app.get("/api/journal/learnings", requireAuth, async (req, res) => {
     try {
@@ -3739,6 +3816,7 @@ export async function registerRoutes(
         areaId: req.body.areaId ?? null,
         projectId: req.body.projectId ?? null,
         skillId: req.body.skillId ?? null,
+        ...(req.body.targetLevel !== undefined ? { targetLevel: req.body.targetLevel } : {}),
       };
 
       const updated = await storage.updateRewiringTracker(req.params.id, updateData as any);

@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Plus, Trash2, Archive, Edit, Swords } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Archive, Edit, Swords, CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { ExperienceGainPopup, type ExperienceGainSnapshot } from "@/components/ExperienceGainPopup";
 
@@ -17,11 +17,26 @@ interface Level {
   txt: string;
 }
 
-const LEVELS: Level[] = [
-  { name: "Iniciante", from: 0, to: 3, col: "#378ADD", bg: "#E6F1FB", txt: "#185FA5" },
-  { name: "Avanzado", from: 3, to: 6, col: "#7F77DD", bg: "#EEEDFE", txt: "#534AB7" },
-  { name: "Maestro", from: 6, to: 10, col: "#BA7517", bg: "#FAEEDA", txt: "#854F0B" },
-];
+// Legacy default: no explicit target level chosen = reach level 9 (10 total actions),
+// matching the tracker's original fixed 0-3 / 3-6 / 6-10 behavior.
+const DEFAULT_TARGET_LEVEL = 9;
+
+function getTotalActions(targetLevel: number | null | undefined): number {
+  return (targetLevel ?? DEFAULT_TARGET_LEVEL) + 1;
+}
+
+// The 3 named tiers keep the original 30% / 30% / 40% split, just scaled to
+// whatever total the tracker's chosen target level implies (totalActions = level + 1).
+function getLevelsForTotal(totalActions: number): Level[] {
+  const total = Math.max(2, totalActions);
+  const iniTo = Math.min(total - 2, Math.max(1, Math.round(total * 0.3)));
+  const avanTo = Math.min(total - 1, Math.max(iniTo + 1, Math.round(total * 0.6)));
+  return [
+    { name: "Iniciante", from: 0, to: iniTo, col: "#378ADD", bg: "#E6F1FB", txt: "#185FA5" },
+    { name: "Avanzado", from: iniTo, to: avanTo, col: "#7F77DD", bg: "#EEEDFE", txt: "#534AB7" },
+    { name: "Maestro", from: avanTo, to: total, col: "#BA7517", bg: "#FAEEDA", txt: "#854F0B" },
+  ];
+}
 
 const CIRC = 2 * Math.PI * 88;
 
@@ -37,6 +52,7 @@ interface TrackerData {
   areaId?: string | null;
   projectId?: string | null;
   skillId?: string | null;
+  targetLevel?: number | null;
 }
 
 interface ArchivedTracker {
@@ -63,14 +79,40 @@ function formatDateToString(iso: string): string {
   return `${dayName} ${day} ${month} ${year}`;
 }
 
+const CALENDAR_DAY_LBLS = ["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"];
+const FULL_MONTH_NAMES = [
+  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+];
+
+function getLocalDateString(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+// Map each day that had at least one action to the cumulative tracker count
+// reached by the end of that day (the last action's running total).
+function buildDailyProgress(history: HistoryEntry[]): Map<string, number> {
+  const sorted = [...history].sort(
+    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+  );
+  const map = new Map<string, number>();
+  sorted.forEach((entry, idx) => {
+    map.set(getLocalDateString(new Date(entry.timestamp)), idx + 1);
+  });
+  return map;
+}
+
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
   return date.toLocaleDateString("es-AR", { day: "2-digit", month: "short", year: "numeric" });
 }
 
-function getLevelIndex(count: number): number {
-  for (let i = LEVELS.length - 1; i >= 0; i--) {
-    if (count >= LEVELS[i].from) return i;
+function getLevelIndex(count: number, levels: Level[]): number {
+  for (let i = levels.length - 1; i >= 0; i--) {
+    if (count >= levels[i].from) return i;
   }
   return 0;
 }
@@ -150,7 +192,8 @@ function useLongPress(callback: () => void, duration = 500) {
 }
 
 function RewiringTracker({ onBack }: RewiringTrackerProps) {
-  const [currentPanel, setCurrentPanel] = useState<"main" | "detail" | "archived">("main");
+  const [currentPanel, setCurrentPanel] = useState<"main" | "detail" | "archived" | "calendar">("main");
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date());
   const [trackerData, setTrackerData] = useState<Record<string, TrackerData>>({});
   const [archivedTrackers, setArchivedTrackers] = useState<ArchivedTracker[]>([]);
   const [availableTrackers, setAvailableTrackers] = useState<Array<{ id: string; name: string }>>([]);
@@ -163,11 +206,13 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
   const [editingTrackerAreaId, setEditingTrackerAreaId] = useState<string | null>(null);
   const [editingTrackerProjectId, setEditingTrackerProjectId] = useState<string | null>(null);
   const [editingTrackerSkillId, setEditingTrackerSkillId] = useState<string | null>(null);
+  const [editingTrackerTargetLevel, setEditingTrackerTargetLevel] = useState(String(DEFAULT_TARGET_LEVEL));
   const [editingSkillsForArea, setEditingSkillsForArea] = useState<any[]>([]);
   const [xpPopupSnapshot, setXpPopupSnapshot] = useState<ExperienceGainSnapshot | null>(null);
   const [newTrackerAreaId, setNewTrackerAreaId] = useState<string | null>(null);
   const [newTrackerProjectId, setNewTrackerProjectId] = useState<string | null>(null);
   const [newTrackerSkillId, setNewTrackerSkillId] = useState<string | null>(null);
+  const [newTrackerTargetLevel, setNewTrackerTargetLevel] = useState(String(DEFAULT_TARGET_LEVEL));
   const [areas, setAreas] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
   const [availableSkills, setAvailableSkills] = useState<any[]>([]);
@@ -278,6 +323,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
             areaId: tracker.areaId,
             projectId: tracker.projectId,
             skillId: tracker.skillId,
+            targetLevel: tracker.targetLevel,
           };
         }
 
@@ -327,7 +373,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
       const archiveOnClose = async () => {
         try {
           const completedTrackerIds = Object.entries(trackerData)
-            .filter(([_, data]) => data.count >= 10)
+            .filter(([_, data]) => data.count >= getTotalActions(data.targetLevel))
             .map(([id, _]) => id);
 
           for (const trackerId of completedTrackerIds) {
@@ -498,9 +544,14 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
       return;
     }
 
+    const parsedTargetLevel = Number(newTrackerTargetLevel);
+    const targetLevel = Number.isFinite(parsedTargetLevel) && parsedTargetLevel >= 1
+      ? Math.round(parsedTargetLevel)
+      : DEFAULT_TARGET_LEVEL;
+
     try {
       let newTracker: any = null;
-      
+
       console.log("[Rewiring] Attempting API call...");
       // Try to create via API
       try {
@@ -512,6 +563,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
             areaId: newTrackerAreaId,
             projectId: newTrackerProjectId,
             skillId: newTrackerSkillId,
+            targetLevel,
           }),
         });
 
@@ -524,7 +576,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
       } catch (apiError) {
         console.warn("[Rewiring] API error, creating locally:", apiError);
       }
-      
+
       // If API failed or didn't respond, create with local ID
       if (!newTracker) {
         newTracker = {
@@ -535,13 +587,14 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           areaId: newTrackerAreaId,
           projectId: newTrackerProjectId,
           skillId: newTrackerSkillId,
+          targetLevel,
         };
         console.log("[Rewiring] Created local tracker:", newTracker);
       }
-      
+
       const trackerList = [...availableTrackers, { id: newTracker.id, name: newTracker.name }];
       console.log("[Rewiring] New tracker list:", trackerList);
-      
+
       const newTrackerData = {
         count: 0,
         name: newTracker.name,
@@ -550,6 +603,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
         areaId: newTracker.areaId,
         projectId: newTracker.projectId,
         skillId: newTracker.skillId,
+        targetLevel: newTracker.targetLevel,
       };
       console.log("[Rewiring] New tracker data:", newTrackerData);
 
@@ -558,26 +612,27 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
         ...trackerData,
         [newTracker.id]: newTrackerData,
       });
-      
+
       // Save to localStorage
       console.log("[Rewiring] Saving to localStorage...");
       console.log("[Rewiring] storage.setItem('rewiring_tracker_list', ...)", JSON.stringify(trackerList));
       storage.setItem("rewiring_tracker_list", JSON.stringify(trackerList));
       console.log("[Rewiring] storage.setItem('rewiring_tracker_" + newTracker.id + "', ...)", JSON.stringify(newTrackerData));
       storage.setItem(`rewiring_tracker_${newTracker.id}`, JSON.stringify(newTrackerData));
-      
+
       // Verify save
       const verifyList = storage.getItem("rewiring_tracker_list");
       console.log("[Rewiring] ✅ Verified save - rewiring_tracker_list:", verifyList);
       const verifyData = storage.getItem(`rewiring_tracker_${newTracker.id}`);
       console.log("[Rewiring] ✅ Verified save - rewiring_tracker_" + newTracker.id + ":", verifyData);
-      
+
       setNewTrackerName("");
       setNewTrackerAreaId(null);
       setNewTrackerProjectId(null);
       setNewTrackerSkillId(null);
+      setNewTrackerTargetLevel(String(DEFAULT_TARGET_LEVEL));
       setSelectedTrackerId(newTracker.id);
-      
+
       console.log("[Rewiring] Tracker created and saved:", newTracker.id, newTrackerData);
     } catch (error) {
       console.error("[Rewiring] Error creating tracker:", error);
@@ -628,7 +683,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
     }
   };
 
-  const handleUpdateTracker = async (trackerId: string, updates: { name: string; areaId: string | null; projectId: string | null; skillId: string | null }) => {
+  const handleUpdateTracker = async (trackerId: string, updates: { name: string; areaId: string | null; projectId: string | null; skillId: string | null; targetLevel: number }) => {
     if (!updates.name.trim()) return;
 
     try {
@@ -642,6 +697,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
             areaId: updates.areaId,
             projectId: updates.projectId,
             skillId: updates.skillId,
+            targetLevel: updates.targetLevel,
           }),
         });
 
@@ -664,6 +720,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           areaId: updates.areaId,
           projectId: updates.projectId,
           skillId: updates.skillId,
+          targetLevel: updates.targetLevel,
         };
       }
 
@@ -709,18 +766,16 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
       
       const newHistory = [...data.history, { timestamp: new Date().toISOString() }];
 
-      // Check if tracker is complete (Maestro level = 10 actions)
-      const levelIndex = getLevelIndex(newCount);
-      const isComplete = levelIndex === LEVELS.length - 1 && newCount >= 10;
+      // Trigger level completion animation whenever a tier boundary (Iniciante/
+      // Avanzado/Maestro) is crossed, scaled to this tracker's own target level.
+      const levels = getLevelsForTotal(getTotalActions(data.targetLevel));
+      if (levels.some((lvl) => lvl.to === newCount)) {
+        setLevelCompletingTrackerId(trackerId);
+      }
 
       // Award XP if linked to skill
       if (data.skillId) {
         await awardSkillXP(data.skillId);
-      }
-
-      // Trigger level completion animation for 3, 6, or 10 actions
-      if ([3, 6, 10].includes(newCount)) {
-        setLevelCompletingTrackerId(trackerId);
       }
 
       // Always update tracker data (whether complete or not)
@@ -783,9 +838,9 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
   // Archive all completed trackers before closing the parent modal
   const handleArchivalBeforeClose = async () => {
     try {
-      // Find all trackers with count >= 10 (completed)
+      // Find all trackers that reached their own target level (completed)
       const completedTrackerIds = Object.entries(trackerData)
-        .filter(([_, data]) => data.count >= 10)
+        .filter(([_, data]) => data.count >= getTotalActions(data.targetLevel))
         .map(([id, _]) => id);
 
       // Archive each completed tracker
@@ -845,6 +900,8 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           onNewTrackerProjectId={setNewTrackerProjectId}
           newTrackerSkillId={newTrackerSkillId}
           onNewTrackerSkillId={setNewTrackerSkillId}
+          newTrackerTargetLevel={newTrackerTargetLevel}
+          onNewTrackerTargetLevel={setNewTrackerTargetLevel}
           areas={areas}
           projects={projects}
           availableSkills={availableSkills}
@@ -863,6 +920,8 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           onEditingTrackerProjectId={setEditingTrackerProjectId}
           editingTrackerSkillId={editingTrackerSkillId}
           onEditingTrackerSkillId={setEditingTrackerSkillId}
+          editingTrackerTargetLevel={editingTrackerTargetLevel}
+          onEditingTrackerTargetLevel={setEditingTrackerTargetLevel}
           editingSkillsForArea={editingSkillsForArea}
           onEditingSkillsForArea={setEditingSkillsForArea}
           levelCompletingTrackerId={levelCompletingTrackerId}
@@ -885,6 +944,21 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           onReset={handleReset}
           onDeleteTracker={handleDeleteTracker}
           isLevelCompleting={levelCompletingTrackerId === selectedTrackerId}
+          onViewCalendar={() => {
+            setCalendarMonth(new Date());
+            setCurrentPanel("calendar");
+          }}
+        />
+      )}
+
+      {currentPanel === "calendar" && selectedTrackerId && trackerData[selectedTrackerId] && (
+        <CalendarPanel
+          data={trackerData[selectedTrackerId]}
+          month={calendarMonth}
+          onMonthChange={(delta) => {
+            setCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + delta, 1));
+          }}
+          onBack={() => setCurrentPanel("detail")}
         />
       )}
 
@@ -926,6 +1000,8 @@ function TrackerCard({
   onEditingTrackerProjectId,
   editingTrackerSkillId,
   onEditingTrackerSkillId,
+  editingTrackerTargetLevel,
+  onEditingTrackerTargetLevel,
   editingSkillsForArea,
   onEditingSkillsForArea,
 }: {
@@ -939,7 +1015,7 @@ function TrackerCard({
   onContextMenuTrackerId: (id: string | null) => void;
   onEditingTrackerName: (name: string) => void;
   onSetEditingTrackerId: (id: string | null) => void;
-  onUpdateTracker: (id: string, updates: { name: string; areaId: string | null; projectId: string | null; skillId: string | null }) => void;
+  onUpdateTracker: (id: string, updates: { name: string; areaId: string | null; projectId: string | null; skillId: string | null; targetLevel: number }) => void;
   onDeleteTracker: (id: string) => void;
   onRegisterAction: (id: string) => void;
   onSelectTracker: (id: string) => void;
@@ -952,11 +1028,14 @@ function TrackerCard({
   onEditingTrackerProjectId: (id: string | null) => void;
   editingTrackerSkillId: string | null;
   onEditingTrackerSkillId: (id: string | null) => void;
+  editingTrackerTargetLevel: string;
+  onEditingTrackerTargetLevel: (level: string) => void;
   editingSkillsForArea: any[];
   onEditingSkillsForArea: (skills: any[]) => void;
 }) {
-  const level = LEVELS[levelIndex];
-  const isComplete = levelIndex === LEVELS.length - 1 && data.count >= level.to;
+  const levels = getLevelsForTotal(getTotalActions(data.targetLevel));
+  const level = levels[levelIndex];
+  const isComplete = levelIndex === levels.length - 1 && data.count >= level.to;
   const remainingActions = level.to - data.count;
   const progressInLevel = data.count - level.from;
   const levelRange = level.to - level.from;
@@ -1084,6 +1163,28 @@ function TrackerCard({
             </select>
           </div>
 
+          {/* Target Level */}
+          <div>
+            <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
+              ¿Hasta qué nivel querés llegar?
+            </label>
+            <Input
+              type="number"
+              min={1}
+              value={editingTrackerTargetLevel}
+              onChange={(e) => onEditingTrackerTargetLevel(e.target.value)}
+              placeholder="Nivel"
+              className="mt-1 text-sm"
+            />
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              {(() => {
+                const parsed = Number(editingTrackerTargetLevel);
+                const previewLevel = Number.isFinite(parsed) && parsed >= 1 ? Math.round(parsed) : DEFAULT_TARGET_LEVEL;
+                return `Nivel ${previewLevel} = ${getTotalActions(previewLevel)} acciones en total`;
+              })()}
+            </p>
+          </div>
+
           {/* Buttons */}
           <div className="flex gap-2 pt-2">
             <Button
@@ -1094,6 +1195,7 @@ function TrackerCard({
                 onEditingTrackerAreaId(null);
                 onEditingTrackerProjectId(null);
                 onEditingTrackerSkillId(null);
+                onEditingTrackerTargetLevel(String(DEFAULT_TARGET_LEVEL));
                 onEditingSkillsForArea([]);
               }}
               variant="outline"
@@ -1105,11 +1207,16 @@ function TrackerCard({
               onClick={(e) => {
                 e.stopPropagation();
                 if (editingTrackerName) {
+                  const parsedLevel = Number(editingTrackerTargetLevel);
+                  const targetLevel = Number.isFinite(parsedLevel) && parsedLevel >= 1
+                    ? Math.round(parsedLevel)
+                    : DEFAULT_TARGET_LEVEL;
                   onUpdateTracker(tracker.id, {
                     name: editingTrackerName,
                     areaId: editingTrackerAreaId,
                     projectId: editingTrackerProjectId,
                     skillId: editingTrackerSkillId,
+                    targetLevel,
                   });
                 }
               }}
@@ -1213,6 +1320,7 @@ function TrackerCard({
                 onEditingTrackerAreaId(data.areaId || null);
                 onEditingTrackerProjectId(data.projectId || null);
                 onEditingTrackerSkillId(data.skillId || null);
+                onEditingTrackerTargetLevel(String(data.targetLevel ?? DEFAULT_TARGET_LEVEL));
                 onSetEditingTrackerId(tracker.id);
                 onContextMenuTrackerId(null);
 
@@ -1276,6 +1384,8 @@ function MainPanel({
   onNewTrackerProjectId,
   newTrackerSkillId,
   onNewTrackerSkillId,
+  newTrackerTargetLevel,
+  onNewTrackerTargetLevel,
   areas,
   projects,
   availableSkills,
@@ -1294,6 +1404,8 @@ function MainPanel({
   onEditingTrackerProjectId,
   editingTrackerSkillId,
   onEditingTrackerSkillId,
+  editingTrackerTargetLevel,
+  onEditingTrackerTargetLevel,
   editingSkillsForArea,
   onEditingSkillsForArea,
   levelCompletingTrackerId,
@@ -1315,6 +1427,8 @@ function MainPanel({
   onNewTrackerProjectId: (id: string | null) => void;
   newTrackerSkillId: string | null;
   onNewTrackerSkillId: (id: string | null) => void;
+  newTrackerTargetLevel: string;
+  onNewTrackerTargetLevel: (level: string) => void;
   areas: any[];
   projects: any[];
   availableSkills: any[];
@@ -1325,7 +1439,7 @@ function MainPanel({
   editingTrackerId: string | null;
   editingTrackerName: string | null;
   onEditingTrackerName: (name: string) => void;
-  onUpdateTracker: (id: string, updates: { name: string; areaId: string | null; projectId: string | null; skillId: string | null }) => void;
+  onUpdateTracker: (id: string, updates: { name: string; areaId: string | null; projectId: string | null; skillId: string | null; targetLevel: number }) => void;
   onSetEditingTrackerId: (id: string | null) => void;
   editingTrackerAreaId: string | null;
   onEditingTrackerAreaId: (id: string | null) => void;
@@ -1333,6 +1447,8 @@ function MainPanel({
   onEditingTrackerProjectId: (id: string | null) => void;
   editingTrackerSkillId: string | null;
   onEditingTrackerSkillId: (id: string | null) => void;
+  editingTrackerTargetLevel: string;
+  onEditingTrackerTargetLevel: (level: string) => void;
   editingSkillsForArea: any[];
   onEditingSkillsForArea: (skills: any[]) => void;
   levelCompletingTrackerId: string | null;
@@ -1370,7 +1486,7 @@ function MainPanel({
             const data = trackerData[tracker.id];
             if (!data) return null;
 
-            const levelIndex = getLevelIndex(data.count);
+            const levelIndex = getLevelIndex(data.count, getLevelsForTotal(getTotalActions(data.targetLevel)));
             const isEditMode = editingTrackerId === tracker.id;
             const isContextMenuOpen = contextMenuTrackerId === tracker.id;
 
@@ -1400,6 +1516,8 @@ function MainPanel({
                 onEditingTrackerProjectId={onEditingTrackerProjectId}
                 editingTrackerSkillId={editingTrackerSkillId}
                 onEditingTrackerSkillId={onEditingTrackerSkillId}
+                editingTrackerTargetLevel={editingTrackerTargetLevel}
+                onEditingTrackerTargetLevel={onEditingTrackerTargetLevel}
                 editingSkillsForArea={editingSkillsForArea}
                 onEditingSkillsForArea={onEditingSkillsForArea}
               />
@@ -1425,7 +1543,7 @@ function MainPanel({
                 initial={{ scale: 0.95 }}
                 animate={{ scale: 1 }}
                 exit={{ scale: 0.95 }}
-                className="bg-background rounded-2xl border border-border p-6 w-full max-w-sm max-h-96 overflow-y-auto"
+                className="bg-background rounded-2xl border border-border p-6 w-full max-w-sm max-h-[85vh] overflow-y-auto"
                 onClick={(e) => e.stopPropagation()}
               >
                 <h2 className="text-lg font-semibold mb-4">Crear nuevo rastreador</h2>
@@ -1498,6 +1616,28 @@ function MainPanel({
                   <p className="mt-1 text-xs text-muted-foreground">Opcional: linkear a un skill para sumar +5 XP al completar</p>
                 </div>
 
+                {/* Target Level */}
+                <div className="mb-4">
+                  <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
+                    ¿Hasta qué nivel querés llegar?
+                  </label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={newTrackerTargetLevel}
+                    onChange={(e) => onNewTrackerTargetLevel(e.target.value)}
+                    placeholder="Nivel"
+                    className="mt-2"
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {(() => {
+                      const parsed = Number(newTrackerTargetLevel);
+                      const previewLevel = Number.isFinite(parsed) && parsed >= 1 ? Math.round(parsed) : DEFAULT_TARGET_LEVEL;
+                      return `Nivel ${previewLevel} = ${getTotalActions(previewLevel)} acciones en total`;
+                    })()}
+                  </p>
+                </div>
+
                 <div className="flex gap-2">
                   <Button
                     variant="outline"
@@ -1507,6 +1647,7 @@ function MainPanel({
                       onNewTrackerAreaId(null);
                       onNewTrackerProjectId(null);
                       onNewTrackerSkillId(null);
+                      onNewTrackerTargetLevel(String(DEFAULT_TARGET_LEVEL));
                     }}
                     className="flex-1"
                   >
@@ -1549,6 +1690,7 @@ function DetailPanel({
   onReset,
   onDeleteTracker,
   isLevelCompleting,
+  onViewCalendar,
 }: {
   trackerId: string;
   data: TrackerData;
@@ -1557,10 +1699,12 @@ function DetailPanel({
   onReset: (id: string) => void;
   onDeleteTracker: (id: string) => void;
   isLevelCompleting: boolean;
+  onViewCalendar: () => void;
 }) {
-  const levelIndex = getLevelIndex(data.count);
-  const currentLevel = LEVELS[levelIndex];
-  const isMaxLevel = levelIndex === LEVELS.length - 1;
+  const levels = getLevelsForTotal(getTotalActions(data.targetLevel));
+  const levelIndex = getLevelIndex(data.count, levels);
+  const currentLevel = levels[levelIndex];
+  const isMaxLevel = levelIndex === levels.length - 1;
   const isComplete = isMaxLevel && data.count >= currentLevel.to;
   const remainingActions = currentLevel.to - data.count;
   const progressInLevel = data.count - currentLevel.from;
@@ -1596,6 +1740,13 @@ function DetailPanel({
         <div className="flex-1">
           <h2 className="font-black text-xl text-foreground">{data.name}</h2>
         </div>
+        <button
+          onClick={onViewCalendar}
+          className="flex h-9 w-9 items-center justify-center rounded-full border border-border/30 bg-muted hover:bg-muted/80 active:bg-muted/60 transition-colors touch-manipulation flex-shrink-0"
+          title="Ver calendario"
+        >
+          <CalendarDays className="h-4 w-4 text-muted-foreground" />
+        </button>
       </div>
 
       {/* Content */}
@@ -1689,7 +1840,7 @@ function DetailPanel({
             Niveles
           </div>
           <div className="space-y-1">
-            {LEVELS.map((level, idx) => {
+            {levels.map((level, idx) => {
               const isActive = idx === levelIndex;
               const isDone = idx < levelIndex;
               const actionsInLevel = isDone
@@ -1772,6 +1923,143 @@ function DetailPanel({
         >
           Reiniciar todo
         </button>
+      </div>
+    </div>
+  );
+}
+
+function CalendarDayRing({ level, progress }: { level: Level; progress: number }) {
+  const r = 15;
+  const circ = 2 * Math.PI * r;
+  return (
+    <svg viewBox="0 0 36 36" className="absolute inset-0 h-full w-full">
+      <circle cx="18" cy="18" r={r} fill="none" stroke="currentColor" strokeWidth="3" className="text-muted-foreground/20" />
+      <circle
+        cx="18"
+        cy="18"
+        r={r}
+        fill="none"
+        stroke={level.col}
+        strokeWidth="3"
+        strokeDasharray={circ}
+        strokeDashoffset={circ * (1 - progress)}
+        strokeLinecap="round"
+        style={{ transform: "rotate(-90deg)", transformOrigin: "18px 18px" }}
+      />
+    </svg>
+  );
+}
+
+function CalendarPanel({
+  data,
+  month,
+  onMonthChange,
+  onBack,
+}: {
+  data: TrackerData;
+  month: Date;
+  onMonthChange: (delta: number) => void;
+  onBack: () => void;
+}) {
+  const levels = getLevelsForTotal(getTotalActions(data.targetLevel));
+  const dailyProgress = buildDailyProgress(data.history);
+
+  const year = month.getFullYear();
+  const monthIndex = month.getMonth();
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+  const firstDow = new Date(year, monthIndex, 1).getDay();
+  const offset = firstDow === 0 ? 6 : firstDow - 1; // Monday-first offset
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  return (
+    <div className="w-full">
+      {/* Header */}
+      <div className="border-b border-border/30 flex items-center gap-3 px-4 sm:px-6 py-4">
+        <button
+          onClick={onBack}
+          className="flex h-9 w-9 items-center justify-center rounded-full border border-border/30 bg-muted hover:bg-muted/80 active:bg-muted/60 transition-colors touch-manipulation flex-shrink-0"
+        >
+          <ArrowLeft className="h-4 w-4 text-muted-foreground" />
+        </button>
+        <h2 className="font-black text-base sm:text-lg text-foreground flex-1 truncate">{data.name}</h2>
+      </div>
+
+      {/* Month Navigation */}
+      <div className="border-b border-border/30 flex items-center justify-between px-4 sm:px-6 py-2.5 gap-2">
+        <button
+          onClick={() => onMonthChange(-1)}
+          className="flex h-9 w-9 items-center justify-center rounded border border-border/30 bg-muted hover:bg-muted/80 active:bg-muted/60 transition-colors touch-manipulation flex-shrink-0"
+        >
+          <ChevronLeft className="h-4 w-4 text-muted-foreground" />
+        </button>
+        <span className="font-bold text-sm text-foreground capitalize flex-1 text-center">
+          {FULL_MONTH_NAMES[monthIndex]} {year}
+        </span>
+        <button
+          onClick={() => onMonthChange(1)}
+          className="flex h-9 w-9 items-center justify-center rounded border border-border/30 bg-muted hover:bg-muted/80 active:bg-muted/60 transition-colors touch-manipulation flex-shrink-0"
+        >
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+        </button>
+      </div>
+
+      {/* Calendar grid */}
+      <div className="px-3 sm:px-5 py-3">
+        <div className="grid grid-cols-7 gap-1">
+          {CALENDAR_DAY_LBLS.map((lbl) => (
+            <div key={lbl} className="text-center text-xs font-medium text-muted-foreground uppercase mb-1">
+              {lbl}
+            </div>
+          ))}
+
+          {Array.from({ length: offset }).map((_, i) => (
+            <div key={`empty-${i}`} />
+          ))}
+
+          {Array.from({ length: daysInMonth }).map((_, d) => {
+            const day = d + 1;
+            const dateStr = `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+            const dObj = new Date(year, monthIndex, day);
+            const isFuture = dObj > today;
+            const isToday = getLocalDateString(today) === dateStr;
+            const reachedCount = dailyProgress.get(dateStr);
+
+            let ring: { level: Level; progress: number } | null = null;
+            if (reachedCount !== undefined) {
+              const levelIdx = getLevelIndex(reachedCount, levels);
+              const lvl = levels[levelIdx];
+              const range = lvl.to - lvl.from;
+              const progress = range > 0 ? Math.min(1, (reachedCount - lvl.from) / range) : 1;
+              ring = { level: lvl, progress };
+            }
+
+            return (
+              <div
+                key={day}
+                className={`relative aspect-square rounded-lg flex items-center justify-center text-xs font-medium ${
+                  isFuture ? "opacity-30" : "bg-muted/30"
+                } ${isToday ? "ring-2 ring-amber-500" : ""}`}
+              >
+                {ring && <CalendarDayRing level={ring.level} progress={ring.progress} />}
+                <span className={`relative z-10 ${isToday ? "text-amber-600 dark:text-amber-400 font-bold" : ""}`}>
+                  {day}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Legend */}
+      <div className="border-t border-border/30 flex flex-wrap gap-3 px-4 sm:px-5 py-3">
+        {levels.map((lvl) => (
+          <div key={lvl.name} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <div className="h-2.5 w-2.5 rounded-full" style={{ background: lvl.col }} />
+            <span>{lvl.name}</span>
+          </div>
+        ))}
       </div>
     </div>
   );

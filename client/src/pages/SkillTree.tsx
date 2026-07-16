@@ -30,7 +30,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { JournalCharacter, JournalPlace, JournalShadow, JournalLearning, JournalTool, JournalThought } from "@shared/schema";
+import type { JournalCharacter, JournalPlace, JournalShadow, JournalShadowPage, JournalLearning, JournalTool, JournalThought } from "@shared/schema";
 import { OnboardingGuide, HelpButton, useOnboarding } from "@/components/OnboardingGuide";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
@@ -664,6 +664,101 @@ function BestiarySection({
   const leftEntry = entries[currentSpread] || null;
   const rightEntry = entries[currentSpread] || null;
 
+  // Extra pages for the currently viewed beast (page 0 = the beast's own base
+  // name/description/image; pages 1+ come from the journal_shadow_pages table and
+  // share the beast's name but have their own description + image).
+  const [currentPageIdx, setCurrentPageIdx] = useState(0);
+  const [isEditingPage, setIsEditingPage] = useState(false);
+  const [editingPageId, setEditingPageId] = useState<string | null>(null);
+  const [editedPageDescription, setEditedPageDescription] = useState("");
+  const [editedPageImageUrl, setEditedPageImageUrl] = useState("");
+  const [editedPageImagePreview, setEditedPageImagePreview] = useState<string | null>(null);
+
+  // Quick-add affordances: a hover-only photo icon over an empty image area, and a
+  // hover-only "+" icon over an empty description area, so filling in a blank page
+  // doesn't require opening the full edit dialog.
+  const [isAddingDescription, setIsAddingDescription] = useState(false);
+  const [quickDescription, setQuickDescription] = useState("");
+  const quickPhotoInputRef = useRef<HTMLInputElement>(null);
+
+  const queryClient = useQueryClient();
+  const beastId = leftEntry?.id;
+
+  const { data: shadowPages = [] } = useQuery<JournalShadowPage[]>({
+    queryKey: ["/api/journal/shadows", beastId, "pages"],
+    queryFn: async () => {
+      if (!beastId) return [];
+      const res = await fetch(`/api/journal/shadows/${beastId}/pages`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!beastId,
+  });
+
+  const totalPages = 1 + shadowPages.length;
+  const activePage = currentPageIdx === 0
+    ? { description: leftEntry?.description ?? "", imageUrl: leftEntry?.imageUrl ?? null, isBase: true as const, pageId: null as string | null }
+    : {
+        description: shadowPages[currentPageIdx - 1]?.description ?? "",
+        imageUrl: shadowPages[currentPageIdx - 1]?.imageUrl ?? null,
+        isBase: false as const,
+        pageId: shadowPages[currentPageIdx - 1]?.id ?? null,
+      };
+
+  // Reset to the beast's first page whenever the selected beast changes
+  useEffect(() => {
+    setCurrentPageIdx(0);
+  }, [selectedEntryIdx, beastId]);
+
+  // Close the inline quick-add-description input whenever the viewed page changes
+  useEffect(() => {
+    setIsAddingDescription(false);
+    setQuickDescription("");
+  }, [selectedEntryIdx, currentPageIdx]);
+
+  const goToPage = (idx: number) => {
+    if (flipping) return;
+    if (idx < 0) return;
+    if (idx === currentPageIdx) return;
+
+    if (idx >= totalPages) {
+      void handleAddPage();
+      return;
+    }
+
+    setFlipDir(idx > currentPageIdx ? "next" : "prev");
+    setFlipping(true);
+    setTimeout(() => {
+      setCurrentPageIdx(idx);
+      setFlipping(false);
+      setFlipDir(null);
+    }, 700);
+  };
+
+  const handleAddPage = async () => {
+    if (!beastId || flipping) return;
+    setFlipDir("next");
+    setFlipping(true);
+    try {
+      const res = await fetch(`/api/journal/shadows/${beastId}/pages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description: "", imageUrl: null }),
+      });
+      if (res.ok) {
+        await queryClient.invalidateQueries({ queryKey: ["/api/journal/shadows", beastId, "pages"] });
+      }
+    } catch (error) {
+      console.error("[Bestiary] Error adding page:", error);
+    } finally {
+      setTimeout(() => {
+        setCurrentPageIdx((prev) => prev + 1);
+        setFlipping(false);
+        setFlipDir(null);
+      }, 700);
+    }
+  };
+
   const goTo = (idx: number) => {
     // Guard checks
     if (flipping) return;
@@ -754,6 +849,127 @@ function BestiarySection({
     setEditedImagePreview(null);
   };
 
+  const handleStartEditPage = (pageId: string, description: string, imageUrl: string | null) => {
+    setEditingPageId(pageId);
+    setEditedPageDescription(description);
+    setEditedPageImageUrl(imageUrl || "");
+    setIsEditingPage(true);
+  };
+
+  const handleSaveEditPage = async () => {
+    if (!editingPageId) return;
+    try {
+      const res = await fetch(`/api/journal/shadow-pages/${editingPageId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          description: editedPageDescription,
+          imageUrl: editedPageImageUrl || null,
+        }),
+      });
+      if (res.ok && beastId) {
+        await queryClient.invalidateQueries({ queryKey: ["/api/journal/shadows", beastId, "pages"] });
+      }
+    } catch (error) {
+      console.error("[Bestiary] Error saving page:", error);
+    }
+    setIsEditingPage(false);
+    setEditingPageId(null);
+    setEditedPageDescription("");
+    setEditedPageImageUrl("");
+    setEditedPageImagePreview(null);
+  };
+
+  const handleDeleteCurrentPage = async () => {
+    if (!editingPageId) return;
+    if (!confirm("¿Eliminar esta página?")) return;
+    try {
+      const res = await fetch(`/api/journal/shadow-pages/${editingPageId}`, { method: "DELETE" });
+      if (res.ok && beastId) {
+        await queryClient.invalidateQueries({ queryKey: ["/api/journal/shadows", beastId, "pages"] });
+        setCurrentPageIdx((prev) => Math.max(0, prev - 1));
+      }
+    } catch (error) {
+      console.error("[Bestiary] Error deleting page:", error);
+    }
+    setIsEditingPage(false);
+    setEditingPageId(null);
+    setEditedPageDescription("");
+    setEditedPageImageUrl("");
+    setEditedPageImagePreview(null);
+  };
+
+  // Quick-add a photo directly (no dialog): upload the file and save it straight to
+  // whichever page is currently showing.
+  const handleQuickPhotoSelected = async (file: File) => {
+    if (!file || !file.type.startsWith("image/") || !leftEntry) return;
+    try {
+      const compressedFile = await compressImage(file);
+      const formData = new FormData();
+      formData.append("image", compressedFile);
+      const response = await fetch("/api/journal/shadows/upload", {
+        method: "POST",
+        body: formData,
+        signal: AbortSignal.timeout(30000),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message);
+      }
+      const { imageUrl } = await response.json();
+
+      if (activePage.isBase) {
+        onEdit(leftEntry.id, {
+          name: leftEntry.name,
+          action: "",
+          description: leftEntry.description,
+          imageUrl,
+        });
+      } else if (activePage.pageId) {
+        const res = await fetch(`/api/journal/shadow-pages/${activePage.pageId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ description: activePage.description, imageUrl }),
+        });
+        if (res.ok && beastId) {
+          await queryClient.invalidateQueries({ queryKey: ["/api/journal/shadows", beastId, "pages"] });
+        }
+      }
+    } catch (error: any) {
+      console.error("[Bestiary] Error quick-adding photo:", error);
+      alert("Error al subir la imagen: " + error.message);
+    }
+  };
+
+  // Quick-add a description directly (no dialog): save the inline textarea straight
+  // to whichever page is currently showing.
+  const handleQuickAddDescription = async () => {
+    if (!leftEntry || !quickDescription.trim()) return;
+    if (activePage.isBase) {
+      onEdit(leftEntry.id, {
+        name: leftEntry.name,
+        action: "",
+        description: quickDescription,
+        imageUrl: leftEntry.imageUrl || undefined,
+      });
+    } else if (activePage.pageId) {
+      try {
+        const res = await fetch(`/api/journal/shadow-pages/${activePage.pageId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ description: quickDescription, imageUrl: activePage.imageUrl }),
+        });
+        if (res.ok && beastId) {
+          await queryClient.invalidateQueries({ queryKey: ["/api/journal/shadows", beastId, "pages"] });
+        }
+      } catch (error) {
+        console.error("[Bestiary] Error quick-adding description:", error);
+      }
+    }
+    setIsAddingDescription(false);
+    setQuickDescription("");
+  };
+
   const compressImage = (file: File): Promise<File> => {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -812,7 +1028,7 @@ function BestiarySection({
     });
   };
 
-  const handleImageUpload = async (file: File, isEditting: boolean) => {
+  const handleImageUpload = async (file: File, mode: "new" | "edit" | "editPage") => {
     if (!file || !file.type.startsWith("image/")) {
       return;
     }
@@ -821,8 +1037,10 @@ function BestiarySection({
     const reader = new FileReader();
     reader.onload = (e) => {
       const preview = e.target?.result as string;
-      if (isEditting) {
+      if (mode === "edit") {
         setEditedImagePreview(preview);
+      } else if (mode === "editPage") {
+        setEditedPageImagePreview(preview);
       } else {
         setNewImagePreview(preview);
       }
@@ -850,21 +1068,25 @@ function BestiarySection({
       }
 
       const { imageUrl } = await response.json();
-      if (isEditting) {
+      if (mode === "edit") {
         setEditedImageUrl(imageUrl);
-        // Update preview with server-compressed version
         setEditedImagePreview(imageUrl);
+      } else if (mode === "editPage") {
+        setEditedPageImageUrl(imageUrl);
+        setEditedPageImagePreview(imageUrl);
       } else {
         setNewImageUrl(imageUrl);
-        // Update preview with server-compressed version
         setNewImagePreview(imageUrl);
       }
     } catch (error: any) {
       console.error("Upload error:", error);
       alert("Error al subir la imagen: " + error.message);
-      if (isEditting) {
+      if (mode === "edit") {
         setEditedImagePreview(null);
         setEditedImageUrl("");
+      } else if (mode === "editPage") {
+        setEditedPageImagePreview(null);
+        setEditedPageImageUrl("");
       } else {
         setNewImagePreview(null);
         setNewImageUrl("");
@@ -927,7 +1149,7 @@ function BestiarySection({
                   accept="image/*"
                   onChange={(e) => {
                     const file = e.currentTarget.files?.[0];
-                    if (file) handleImageUpload(file, false);
+                    if (file) handleImageUpload(file, "new");
                   }}
                   disabled={isUploadingImage}
                   className="w-full text-xs text-zinc-400 file:bg-zinc-800 file:border file:border-zinc-700 file:rounded file:px-2 file:py-1 file:text-xs file:text-zinc-400 cursor-pointer"
@@ -1157,7 +1379,7 @@ function BestiarySection({
 
           <div className="bestiary-book flex gap-0 w-full h-full">
             {/* Left Page */}
-            <div className="flex-1 max-h-[60vh] lg:h-full bg-black shadow-2xl flex flex-col p-4 sm:p-6 lg:p-8 min-w-0 rounded-l">
+            <div className="group flex-1 max-h-[60vh] lg:h-full bg-black shadow-2xl flex flex-col p-4 sm:p-6 lg:p-8 min-w-0 rounded-l">
               {leftEntry ? (
                 <>
                   <div className="flex items-start justify-between gap-2 mb-2 pb-2 border-b-2 border-white/20 flex-shrink-0">
@@ -1167,15 +1389,65 @@ function BestiarySection({
                     <Button
                       size="sm"
                       variant="ghost"
-                      onClick={() => handleStartEdit(leftEntry)}
+                      onClick={() => {
+                        if (activePage.isBase) {
+                          handleStartEdit(leftEntry);
+                        } else {
+                          handleStartEditPage(activePage.pageId!, activePage.description, activePage.imageUrl);
+                        }
+                      }}
                       className="text-white hover:bg-white/20 flex-shrink-0 px-1"
                     >
                       <Pencil className="h-4 w-4" />
                     </Button>
                   </div>
                   <div className="flex-1 font-serif text-base text-white leading-relaxed overflow-y-auto pr-4 bestiary-description">
-                    <p>{leftEntry.description}</p>
+                    {activePage.description ? (
+                      <p>{activePage.description}</p>
+                    ) : isAddingDescription ? (
+                      <div className="flex flex-col gap-2">
+                        <Textarea
+                          autoFocus
+                          value={quickDescription}
+                          onChange={(e) => setQuickDescription(e.target.value)}
+                          placeholder="Descripción..."
+                          rows={4}
+                          className="bg-zinc-800 border-zinc-700 text-zinc-200 resize-none font-sans text-sm"
+                        />
+                        <div className="flex gap-2">
+                          <Button size="sm" onClick={handleQuickAddDescription} className="bg-white/20 hover:bg-white/30 text-white text-xs h-7">
+                            Guardar
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setIsAddingDescription(false);
+                              setQuickDescription("");
+                            }}
+                            className="text-zinc-400 text-xs h-7"
+                          >
+                            Cancelar
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setIsAddingDescription(true)}
+                        title="Agregar descripción"
+                        className={`flex h-full w-full items-center justify-center transition-opacity ${
+                          isMobile ? "opacity-70" : "opacity-0 group-hover:opacity-100"
+                        }`}
+                      >
+                        <Plus className="h-6 w-6 text-white/50" />
+                      </button>
+                    )}
                   </div>
+                  {totalPages > 1 && (
+                    <div className="text-center text-xs text-white/40 pt-2 flex-shrink-0">
+                      Página {currentPageIdx + 1} / {totalPages}
+                    </div>
+                  )}
                 </>
               ) : (
                 <div className="flex items-center justify-center h-full text-white/50 text-sm">
@@ -1188,19 +1460,63 @@ function BestiarySection({
             <div className="w-full h-1 lg:h-full lg:w-1 bg-gradient-to-b from-gray-800 to-gray-900 shadow-lg" />
 
             {/* Right Page */}
-            <div className="flex-1 max-h-[60vh] lg:h-full bg-black shadow-2xl flex items-center justify-center p-6 sm:p-8 lg:p-12 min-w-0 rounded-r overflow-hidden">
+            <div className="group relative flex-1 max-h-[60vh] lg:h-full bg-black shadow-2xl flex items-center justify-center p-6 sm:p-8 lg:p-12 min-w-0 rounded-r overflow-hidden">
               <div className={`w-full h-full flex items-center justify-center transition-opacity duration-300 ${flipping ? 'opacity-0' : 'opacity-100'}`}>
-                {rightEntry?.imageUrl ? (
-                  <img src={rightEntry.imageUrl} alt={rightEntry.name} className="max-h-full max-w-full object-contain" />
+                {activePage.imageUrl ? (
+                  <img src={activePage.imageUrl} alt={leftEntry?.name} className="max-h-full max-w-full object-contain" />
                 ) : rightEntry ? (
-                  <div className="flex flex-col items-center justify-center text-white/50">
-                    <Image className="h-8 w-8 mb-2" />
-                    <p className="text-xs">{rightEntry.name}</p>
-                  </div>
+                  <>
+                    <input
+                      ref={quickPhotoInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.currentTarget.files?.[0];
+                        if (file) void handleQuickPhotoSelected(file);
+                        e.currentTarget.value = "";
+                      }}
+                    />
+                    <button
+                      onClick={() => quickPhotoInputRef.current?.click()}
+                      title="Agregar foto"
+                      className={`flex flex-col items-center justify-center text-white/50 transition-opacity ${
+                        isMobile ? "opacity-70" : "opacity-0 group-hover:opacity-100"
+                      }`}
+                    >
+                      <Image className="h-8 w-8 mb-2" />
+                      <p className="text-xs">Agregar foto</p>
+                    </button>
+                  </>
                 ) : (
                   <div className="text-white/30 text-xs">— blank page —</div>
                 )}
               </div>
+
+              {leftEntry && (
+                <>
+                  {currentPageIdx > 0 && (
+                    <button
+                      onClick={() => goToPage(currentPageIdx - 1)}
+                      disabled={flipping}
+                      title="Página anterior"
+                      className="absolute bottom-3 left-3 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 border border-white/20 text-white hover:bg-black/80 transition-colors disabled:opacity-40"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => goToPage(currentPageIdx + 1)}
+                    disabled={flipping}
+                    title={currentPageIdx + 1 >= totalPages ? "Agregar página" : "Página siguiente"}
+                    className={`absolute bottom-3 right-3 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 border border-white/20 text-white hover:bg-black/80 transition-colors disabled:opacity-40 ${
+                      currentPageIdx + 1 >= totalPages ? (isMobile ? "opacity-70" : "opacity-0 group-hover:opacity-100") : ""
+                    }`}
+                  >
+                    {currentPageIdx + 1 >= totalPages ? <Plus className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -1236,7 +1552,7 @@ function BestiarySection({
                 accept="image/*"
                 onChange={(e) => {
                   const file = e.currentTarget.files?.[0];
-                  if (file) handleImageUpload(file, false);
+                  if (file) handleImageUpload(file, "new");
                 }}
                 disabled={isUploadingImage}
                 className="w-full text-xs text-zinc-400 file:bg-zinc-800 file:border file:border-zinc-700 file:rounded file:px-2 file:py-1 file:text-xs file:text-zinc-400 cursor-pointer"
@@ -1315,7 +1631,7 @@ function BestiarySection({
                 accept="image/*"
                 onChange={(e) => {
                   const file = e.currentTarget.files?.[0];
-                  if (file) handleImageUpload(file, true);
+                  if (file) handleImageUpload(file, "edit");
                 }}
                 disabled={isUploadingImage}
                 className="w-full text-xs text-zinc-400 file:bg-zinc-800 file:border file:border-zinc-700 file:rounded file:px-2 file:py-1 file:text-xs file:text-zinc-400 cursor-pointer"
@@ -1376,11 +1692,92 @@ function BestiarySection({
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Edit Page Dialog (extra beast pages: description + image only, name stays fixed) */}
+      <Dialog open={isEditingPage} onOpenChange={setIsEditingPage}>
+        <DialogContent className="sm:max-w-md bg-zinc-900 border border-zinc-700">
+          <VisuallyHidden>
+            <DialogTitle>Edit Page</DialogTitle>
+          </VisuallyHidden>
+          <div className="space-y-4">
+            <div className="border-b border-zinc-700/50 pb-2">
+              <h3 className="font-medium text-zinc-100">Editar página — {leftEntry?.name}</h3>
+            </div>
+            <Textarea
+              placeholder="Descripción"
+              value={editedPageDescription}
+              onChange={(e) => setEditedPageDescription(e.target.value)}
+              rows={4}
+              className="bg-zinc-800 border-zinc-700 text-zinc-200 resize-none"
+            />
+            <div>
+              <label className="text-xs text-zinc-400 block mb-2">Imagen (opcional)</label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.currentTarget.files?.[0];
+                  if (file) handleImageUpload(file, "editPage");
+                }}
+                disabled={isUploadingImage}
+                className="w-full text-xs text-zinc-400 file:bg-zinc-800 file:border file:border-zinc-700 file:rounded file:px-2 file:py-1 file:text-xs file:text-zinc-400 cursor-pointer"
+              />
+              {editedPageImagePreview && (
+                <div className="mt-2 relative">
+                  <img
+                    src={editedPageImagePreview}
+                    alt="Preview"
+                    className="w-full h-32 object-cover rounded bg-zinc-800"
+                  />
+                  <button
+                    onClick={() => {
+                      setEditedPageImageUrl("");
+                      setEditedPageImagePreview(null);
+                    }}
+                    className="absolute top-1 right-1 bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded"
+                  >
+                    Remover
+                  </button>
+                </div>
+              )}
+            </div>
+            <Input
+              type="text"
+              placeholder="O pega una URL de imagen"
+              value={editedPageImageUrl}
+              onChange={(e) => {
+                setEditedPageImageUrl(e.target.value);
+                if (e.target.value && !editedPageImagePreview) {
+                  setEditedPageImagePreview(e.target.value);
+                }
+              }}
+              disabled={isUploadingImage}
+              className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 disabled:opacity-50"
+            />
+            <div className="flex gap-2">
+              <Button size="sm" onClick={handleSaveEditPage} className="bg-white/20 hover:bg-white/30 text-white">
+                Guardar
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleDeleteCurrentPage}
+                className="bg-red-700 hover:bg-red-800 text-red-50"
+              >
+                <Trash2 className="h-3 w-3 mr-1" />
+                Eliminar página
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setIsEditingPage(false)} className="text-zinc-400">
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-function ToolsSection({ 
+function ToolsSection({
   entries,
   isLoading,
   onDelete,
@@ -6001,7 +6398,7 @@ function RewiringTrackerModalWrapper({ open, onOpenChange }: { open: boolean; on
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.95, opacity: 0 }}
-            className="overflow-hidden rounded-3xl border border-border/50 bg-background max-w-md w-full"
+            className="rounded-3xl border border-border/50 bg-background max-w-md w-full max-h-[85dvh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-0 py-0">

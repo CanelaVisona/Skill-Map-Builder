@@ -102,6 +102,17 @@ export const journalShadows = pgTable("journal_shadows", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// Additional bestiary pages for a beast (beyond its base name/description/image).
+// Each page has its own description + image; the beast's name is shared across all pages.
+export const journalShadowPages = pgTable("journal_shadow_pages", {
+  id: varchar("id").primaryKey(),
+  shadowId: varchar("shadow_id").notNull().references(() => journalShadows.id, { onDelete: "cascade" }),
+  description: text("description").notNull().default(""),
+  imageUrl: text("image_url"),
+  pageOrder: integer("page_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 export const profileValues = pgTable("profile_values", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
@@ -316,6 +327,9 @@ export const rewiringTrackers = pgTable("rewiring_trackers", {
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   count: integer("count").notNull().default(0),
+  // Target level chosen at creation (null = legacy default of 9, i.e. 10 total actions).
+  // Total actions to complete = targetLevel + 1.
+  targetLevel: integer("target_level"),
   areaId: varchar("area_id").references(() => areas.id, { onDelete: "set null" }),
   projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
   skillId: varchar("skill_id").references(() => globalSkills.id, { onDelete: "set null" }),
@@ -341,6 +355,7 @@ export const insertProjectSchema = createInsertSchema(projects);
 export const insertJournalCharacterSchema = createInsertSchema(journalCharacters).omit({ id: true });
 export const insertJournalPlaceSchema = createInsertSchema(journalPlaces).omit({ id: true });
 export const insertJournalShadowSchema = createInsertSchema(journalShadows).omit({ id: true });
+export const insertJournalShadowPageSchema = createInsertSchema(journalShadowPages).omit({ id: true, createdAt: true });
 export const insertProfileValueSchema = createInsertSchema(profileValues).omit({ id: true });
 export const insertProfileLikeSchema = createInsertSchema(profileLikes).omit({ id: true });
 export const insertProfileExperienceSchema = createInsertSchema(profileExperiences).omit({ id: true });
@@ -373,7 +388,9 @@ export type JournalCharacter = typeof journalCharacters.$inferSelect;
 export type InsertJournalPlace = z.infer<typeof insertJournalPlaceSchema>;
 export type JournalPlace = typeof journalPlaces.$inferSelect;
 export type InsertJournalShadow = z.infer<typeof insertJournalShadowSchema>;
+export type InsertJournalShadowPage = z.infer<typeof insertJournalShadowPageSchema>;
 export type JournalShadow = typeof journalShadows.$inferSelect;
+export type JournalShadowPage = typeof journalShadowPages.$inferSelect;
 export type InsertProfileValue = z.infer<typeof insertProfileValueSchema>;
 export type ProfileValue = typeof profileValues.$inferSelect;
 export type InsertProfileLike = z.infer<typeof insertProfileLikeSchema>;

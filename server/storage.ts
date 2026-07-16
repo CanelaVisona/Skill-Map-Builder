@@ -1,7 +1,7 @@
 import { eq, and, asc, sql, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db, pool } from "./db";
-import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourcePowers, type InsertSourcePowers, type SourceBug, type InsertSourceBug, type SourceBugRecord, type InsertSourceBugRecord, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourcePowers, sourceBugs, sourceBugRecords, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, rewiringTrackers, rewiringTrackerRecords } from "@shared/schema";
+import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type JournalShadowPage, type InsertJournalShadowPage, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourcePowers, type InsertSourcePowers, type SourceBug, type InsertSourceBug, type SourceBugRecord, type InsertSourceBugRecord, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, journalShadowPages, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourcePowers, sourceBugs, sourceBugRecords, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, rewiringTrackers, rewiringTrackerRecords } from "@shared/schema";
 
 const normalizeSourceBugStatus = (status: string): "identificado" | "debugueando" | "debugueado" => {
   if (status === "activo") return "identificado";
@@ -92,6 +92,13 @@ export interface IStorage {
   createJournalShadow(shadow: InsertJournalShadow): Promise<JournalShadow>;
   updateJournalShadow(id: string, shadow: Partial<InsertJournalShadow>): Promise<JournalShadow | undefined>;
   deleteJournalShadow(id: string): Promise<void>;
+
+  // Journal - Shadow pages
+  getJournalShadowPages(shadowId: string): Promise<JournalShadowPage[]>;
+  getJournalShadowPage(id: string): Promise<JournalShadowPage | undefined>;
+  createJournalShadowPage(page: InsertJournalShadowPage): Promise<JournalShadowPage>;
+  updateJournalShadowPage(id: string, page: Partial<InsertJournalShadowPage>): Promise<JournalShadowPage | undefined>;
+  deleteJournalShadowPage(id: string): Promise<void>;
 
   // Profile - Values
   getProfileValues(userId: string): Promise<ProfileValue[]>;
@@ -1233,6 +1240,33 @@ export class DbStorage implements IStorage {
     await db.delete(journalShadows).where(eq(journalShadows.id, id));
   }
 
+  // Journal - Shadow pages (bestiary beast extra pages)
+  async getJournalShadowPages(shadowId: string): Promise<JournalShadowPage[]> {
+    return await db.select().from(journalShadowPages).where(eq(journalShadowPages.shadowId, shadowId)).orderBy(asc(journalShadowPages.pageOrder));
+  }
+
+  async getJournalShadowPage(id: string): Promise<JournalShadowPage | undefined> {
+    const result = await db.select().from(journalShadowPages).where(eq(journalShadowPages.id, id));
+    return result[0];
+  }
+
+  async createJournalShadowPage(page: InsertJournalShadowPage): Promise<JournalShadowPage> {
+    const id = randomUUID();
+    const existing = await this.getJournalShadowPages(page.shadowId);
+    const nextOrder = existing.length > 0 ? Math.max(...existing.map((p) => p.pageOrder)) + 1 : 0;
+    const result = await db.insert(journalShadowPages).values({ id, ...page, pageOrder: nextOrder }).returning();
+    return result[0];
+  }
+
+  async updateJournalShadowPage(id: string, page: Partial<InsertJournalShadowPage>): Promise<JournalShadowPage | undefined> {
+    const result = await db.update(journalShadowPages).set(page).where(eq(journalShadowPages.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteJournalShadowPage(id: string): Promise<void> {
+    await db.delete(journalShadowPages).where(eq(journalShadowPages.id, id));
+  }
+
   // Profile - Values
   async getProfileValues(userId: string): Promise<ProfileValue[]> {
     return await db.select().from(profileValues).where(eq(profileValues.userId, userId));
@@ -2263,6 +2297,7 @@ export class DbStorage implements IStorage {
       userId: tracker.userId,
       name: tracker.name,
       count: initialCount,
+      targetLevel: tracker.targetLevel ?? null,
       areaId: tracker.areaId ?? null,
       projectId: tracker.projectId ?? null,
       skillId: tracker.skillId ?? null,
