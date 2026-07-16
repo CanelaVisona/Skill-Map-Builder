@@ -899,7 +899,7 @@ export async function registerRoutes(
         req.body.levelPosition !== undefined
       );
 
-      if (req.body.status === "available" && existingSkill.status === "locked" && !req.body.fromSubtaskCompletion) {
+      if (req.body.status === "available" && existingSkill.status === "locked" && !req.body.fromSubtaskCompletion && !req.body.fromReorder) {
         // Verify the immediate predecessor (node at levelPosition - 1) is mastered
         let allSkills: typeof existingSkill[] = [];
         if (existingSkill.areaId) {

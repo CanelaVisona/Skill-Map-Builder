@@ -1584,14 +1584,26 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     const currentDeps = skill.dependencies;
     const neighborDeps = neighbor.dependencies;
 
+    // levelPosition and status must swap along with y: levelPosition drives both the
+    // "unlock the next node" and confirmation-gate predecessor logic on the server, so
+    // whichever node ends up in the earlier slot must also become the "available" one
+    // (and the other "locked"), or the chain would desync from what's visually shown.
+    const currentLevelPosition = skill.levelPosition;
+    const neighborLevelPosition = neighbor.levelPosition;
+    const currentStatus = skill.status;
+    const neighborStatus = neighbor.status;
+
     try {
       const updates: Promise<Response>[] = [
         fetch(`/api/skills/${skillId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             y: neighborY,
+            levelPosition: neighborLevelPosition,
+            status: neighborStatus,
             dependencies: neighborDeps,
+            fromReorder: true,
             ...(swapFinalNode && isCurrentFinal ? { isFinalNode: 0 } : {}),
             ...(swapFinalNode && isNeighborFinal ? { isFinalNode: 1 } : {})
           }),
@@ -1599,9 +1611,12 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         fetch(`/api/skills/${neighbor.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             y: currentY,
+            levelPosition: currentLevelPosition,
+            status: currentStatus,
             dependencies: currentDeps,
+            fromReorder: true,
             ...(swapFinalNode && isNeighborFinal ? { isFinalNode: 0 } : {}),
             ...(swapFinalNode && isCurrentFinal ? { isFinalNode: 1 } : {})
           }),
@@ -1616,18 +1631,22 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           ...area,
           skills: area.skills.map(s => {
             if (s.id === skillId) {
-              return { 
-                ...s, 
+              return {
+                ...s,
                 y: neighborY,
+                levelPosition: neighborLevelPosition,
+                status: neighborStatus,
                 dependencies: neighborDeps,
                 ...(swapFinalNode && isCurrentFinal ? { isFinalNode: 0 } : {}),
                 ...(swapFinalNode && isNeighborFinal ? { isFinalNode: 1 } : {})
               };
             }
             if (s.id === neighbor.id) {
-              return { 
-                ...s, 
+              return {
+                ...s,
                 y: currentY,
+                levelPosition: currentLevelPosition,
+                status: currentStatus,
                 dependencies: currentDeps,
                 ...(swapFinalNode && isNeighborFinal ? { isFinalNode: 0 } : {}),
                 ...(swapFinalNode && isCurrentFinal ? { isFinalNode: 1 } : {})
@@ -1847,14 +1866,23 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     const currentDeps = skill.dependencies;
     const neighborDeps = neighbor.dependencies;
 
+    // levelPosition and status must swap along with y — see comment in moveSkill.
+    const currentLevelPosition = skill.levelPosition;
+    const neighborLevelPosition = neighbor.levelPosition;
+    const currentStatus = skill.status;
+    const neighborStatus = neighbor.status;
+
     try {
       const updates: Promise<Response>[] = [
         fetch(`/api/skills/${skillId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             y: neighborY,
+            levelPosition: neighborLevelPosition,
+            status: neighborStatus,
             dependencies: neighborDeps,
+            fromReorder: true,
             ...(swapFinalNode && isCurrentFinal ? { isFinalNode: 0 } : {}),
             ...(swapFinalNode && isNeighborFinal ? { isFinalNode: 1 } : {})
           }),
@@ -1862,9 +1890,12 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         fetch(`/api/skills/${neighbor.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             y: currentY,
+            levelPosition: currentLevelPosition,
+            status: currentStatus,
             dependencies: currentDeps,
+            fromReorder: true,
             ...(swapFinalNode && isNeighborFinal ? { isFinalNode: 0 } : {}),
             ...(swapFinalNode && isCurrentFinal ? { isFinalNode: 1 } : {})
           }),
@@ -1879,18 +1910,22 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           ...project,
           skills: project.skills.map(s => {
             if (s.id === skillId) {
-              return { 
-                ...s, 
+              return {
+                ...s,
                 y: neighborY,
+                levelPosition: neighborLevelPosition,
+                status: neighborStatus,
                 dependencies: neighborDeps,
                 ...(swapFinalNode && isCurrentFinal ? { isFinalNode: 0 } : {}),
                 ...(swapFinalNode && isNeighborFinal ? { isFinalNode: 1 } : {})
               };
             }
             if (s.id === neighbor.id) {
-              return { 
-                ...s, 
+              return {
+                ...s,
                 y: currentY,
+                levelPosition: currentLevelPosition,
+                status: currentStatus,
                 dependencies: currentDeps,
                 ...(swapFinalNode && isNeighborFinal ? { isFinalNode: 0 } : {}),
                 ...(swapFinalNode && isCurrentFinal ? { isFinalNode: 1 } : {})
@@ -2734,14 +2769,23 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     const currentDeps = skill.dependencies;
     const neighborDeps = neighbor.dependencies;
 
+    // levelPosition and status must swap along with y — see comment in moveSkill.
+    const currentLevelPosition = skill.levelPosition;
+    const neighborLevelPosition = neighbor.levelPosition;
+    const currentStatus = skill.status;
+    const neighborStatus = neighbor.status;
+
     try {
       await Promise.all([
         fetch(`/api/skills/${skillId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             y: neighborY,
+            levelPosition: neighborLevelPosition,
+            status: neighborStatus,
             dependencies: neighborDeps,
+            fromReorder: true,
             ...(swapFinalNode && isCurrentFinal ? { isFinalNode: 0 } : {}),
             ...(swapFinalNode && isNeighborFinal ? { isFinalNode: 1 } : {})
           }),
@@ -2749,9 +2793,12 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         fetch(`/api/skills/${neighbor.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             y: currentY,
+            levelPosition: currentLevelPosition,
+            status: currentStatus,
             dependencies: currentDeps,
+            fromReorder: true,
             ...(swapFinalNode && isNeighborFinal ? { isFinalNode: 0 } : {}),
             ...(swapFinalNode && isCurrentFinal ? { isFinalNode: 1 } : {})
           }),
@@ -2760,18 +2807,22 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
       setSubSkills(prev => prev.map(s => {
         if (s.id === skillId) {
-          return { 
-            ...s, 
+          return {
+            ...s,
             y: neighborY,
+            levelPosition: neighborLevelPosition,
+            status: neighborStatus,
             dependencies: neighborDeps,
             ...(swapFinalNode && isCurrentFinal ? { isFinalNode: 0 } : {}),
             ...(swapFinalNode && isNeighborFinal ? { isFinalNode: 1 } : {})
           };
         }
         if (s.id === neighbor.id) {
-          return { 
-            ...s, 
+          return {
+            ...s,
             y: currentY,
+            levelPosition: currentLevelPosition,
+            status: currentStatus,
             dependencies: currentDeps,
             ...(swapFinalNode && isNeighborFinal ? { isFinalNode: 0 } : {}),
             ...(swapFinalNode && isCurrentFinal ? { isFinalNode: 1 } : {})
