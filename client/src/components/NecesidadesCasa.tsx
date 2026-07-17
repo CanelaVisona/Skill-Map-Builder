@@ -8,11 +8,12 @@ const HOME_TASKS_STORAGE_KEY = "skill-map-home-needs-tasks-v1";
 function computeValue(lastDone: number, periodDays: number) {
   const daysSince = (Date.now() - lastDone) / MS_PER_DAY;
   const overdueDays = daysSince - periodDays;
-  // Past the 2-day overdue mark the bar goes empty. During the 1-2 day overdue
-  // window (e.g. day 8-9 for a 7-day period) it shows full red. Otherwise (still on
-  // time) it follows the normal countdown fill.
+  // Past the 2-day overdue mark the bar goes empty. During the 0-2 day overdue
+  // window it keeps degrading (100 -> 0) instead of sitting full, so the red
+  // bar visibly drains just like the on-time countdown does. Otherwise (still
+  // on time) it follows the normal countdown fill.
   if (overdueDays > 2) return 0;
-  if (overdueDays > 0) return 100;
+  if (overdueDays > 0) return Math.max(0, 100 * (1 - overdueDays / 2));
   return Math.max(0, (1 - daysSince / periodDays) * 100);
 }
 
@@ -44,12 +45,38 @@ function getBarGradient(color: TaskColor) {
   }[color];
 }
 
+function hexToRgb(hex: string) {
+  const value = parseInt(hex.slice(1), 16);
+  return { r: (value >> 16) & 255, g: (value >> 8) & 255, b: value & 255 };
+}
+
+function mixHex(hexA: string, hexB: string, t: number) {
+  const a = hexToRgb(hexA);
+  const b = hexToRgb(hexB);
+  const r = Math.round(a.r + (b.r - a.r) * t);
+  const g = Math.round(a.g + (b.g - a.g) * t);
+  const bl = Math.round(a.b + (b.b - a.b) * t);
+  return `rgb(${r}, ${g}, ${bl})`;
+}
+
+// Blends the red gradient into the green gradient as `progress` goes 0 -> 1,
+// used to animate the bar slowly filling from red to green on completion.
+function getCompletionGradient(progress: number) {
+  const start = mixHex("#991b1b", "#16a34a", progress);
+  const end = mixHex("#ef4444", "#4ade80", progress);
+  return `linear-gradient(90deg, ${start}, ${end})`;
+}
+
 function daysRemaining(lastDone: number, periodDays: number) {
   const daysSince = (Date.now() - lastDone) / MS_PER_DAY;
   return periodDays - daysSince;
 }
 
-function formatRemaining(days: number) {
+function formatRemaining(days: number, color: TaskColor, overdueDays: number) {
+  if (color === "red") {
+    const overdueWhole = Math.min(2, Math.max(1, Math.ceil(overdueDays)));
+    return `-${overdueWhole}d`;
+  }
   if (days <= 0) return "Vencido";
   if (days < 1) return `${Math.round(days * 24)}h restantes`;
   return `${days.toFixed(1)}d restantes`;
@@ -192,7 +219,7 @@ function loadStoredTasks(): HomeTask[] {
   }
 }
 
-function MiniBar({ value, color }: { value: number; color: TaskColor }) {
+function MiniBar({ value, gradient, instant }: { value: number; gradient: string; instant?: boolean }) {
   const { theme, resolvedTheme } = useTheme();
   const isDark = (resolvedTheme || theme) === "dark";
 
@@ -211,8 +238,8 @@ function MiniBar({ value, color }: { value: number; color: TaskColor }) {
           height: "100%",
           width: `${value}%`,
           borderRadius: "3px",
-          background: getBarGradient(color),
-          transition: "width 1s linear",
+          background: gradient,
+          transition: instant ? "none" : "width 1s linear",
         }}
       />
     </div>
@@ -222,7 +249,8 @@ function MiniBar({ value, color }: { value: number; color: TaskColor }) {
 function TaskItem({
   task,
   value,
-  color,
+  gradient,
+  instant,
   isActive,
   onClick,
   onPressStart,
@@ -231,7 +259,8 @@ function TaskItem({
 }: {
   task: HomeTask;
   value: number;
-  color: TaskColor;
+  gradient: string;
+  instant?: boolean;
   isActive: boolean;
   onClick: () => void;
   onPressStart: (e: ReactPointerEvent<HTMLDivElement>) => void;
@@ -304,21 +333,21 @@ function TaskItem({
             right: 0,
             bottom: 0,
             height: `${value}%`,
-            background: getBarGradient(color),
-            transition: "height 1s linear",
+            background: gradient,
+            transition: instant ? "none" : "height 1s linear",
           }}
         />
         <span style={{ position: "relative", zIndex: 1 }}>{task.icon}</span>
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: "13px", fontWeight: 600, color: isDark ? "#e2e8f0" : "#0f172a", marginBottom: "6px" }}>{task.name}</div>
-        <MiniBar value={value} color={color} />
+        <MiniBar value={value} gradient={gradient} instant={instant} />
       </div>
     </div>
   );
 }
 
-function BigBar({ value, color }: { value: number; color: TaskColor }) {
+function BigBar({ value, gradient, instant }: { value: number; gradient: string; instant?: boolean }) {
   const { theme, resolvedTheme } = useTheme();
   const isDark = (resolvedTheme || theme) === "dark";
 
@@ -339,8 +368,8 @@ function BigBar({ value, color }: { value: number; color: TaskColor }) {
             height: "100%",
             width: `${value}%`,
             borderRadius: "13px",
-            background: getBarGradient(color),
-            transition: "width 1s linear",
+            background: gradient,
+            transition: instant ? "none" : "width 1s linear",
           }}
         />
         <div
@@ -385,6 +414,10 @@ export default function NecesidadesCasa() {
   const [selectedId, setSelectedId] = useState(0);
   const [flashing, setFlashing] = useState(false);
   const [, setTick] = useState(0);
+  const [completingId, setCompletingId] = useState<number | null>(null);
+  const [completingFrom, setCompletingFrom] = useState(0);
+  const [completingProgress, setCompletingProgress] = useState(0);
+  const completionRafRef = useRef<number | null>(null);
   const [remoteLoaded, setRemoteLoaded] = useState(false);
   const [remoteSyncEnabled, setRemoteSyncEnabled] = useState(true);
   const [isAddFormOpen, setIsAddFormOpen] = useState(false);
@@ -510,7 +543,7 @@ export default function NecesidadesCasa() {
   const liveTask = useCallback((t: HomeTask) => {
     const value = computeValue(t.lastDone, t.periodDays);
     const overdueDays = computeOverdueDays(t.lastDone, t.periodDays);
-    return { ...t, value, color: computeColor(value, overdueDays) };
+    return { ...t, value, overdueDays, color: computeColor(value, overdueDays) };
   }, []);
 
   const liveTasks = tasks.map(liveTask);
@@ -518,9 +551,59 @@ export default function NecesidadesCasa() {
 
   if (!selected) return null;
 
+  const displayFor = (task: { id: number; value: number; color: TaskColor }) => {
+    if (completingId === task.id) {
+      return {
+        value: completingFrom + (100 - completingFrom) * completingProgress,
+        gradient: getCompletionGradient(completingProgress),
+        instant: true,
+      };
+    }
+    return { value: task.value, gradient: getBarGradient(task.color), instant: false };
+  };
+
+  const selectedDisplay = displayFor(selected);
+
   const remaining = daysRemaining(selected.lastDone, selected.periodDays);
 
+  const runCompletionAnimation = useCallback((taskId: number, startValue: number) => {
+    const duration = 1400;
+    const startTime = performance.now();
+    setCompletingId(taskId);
+    setCompletingFrom(startValue);
+    setCompletingProgress(0);
+
+    const step = (now: number) => {
+      const t = Math.min(1, (now - startTime) / duration);
+      setCompletingProgress(t);
+      if (t < 1) {
+        completionRafRef.current = requestAnimationFrame(step);
+        return;
+      }
+      setTasks((prev) => prev.map((task) => (task.id === taskId ? { ...task, lastDone: Date.now() } : task)));
+      setCompletingId(null);
+      completionRafRef.current = null;
+      setFlashing(true);
+      setTimeout(() => setFlashing(false), 400);
+    };
+
+    completionRafRef.current = requestAnimationFrame(step);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (completionRafRef.current) cancelAnimationFrame(completionRafRef.current);
+    };
+  }, []);
+
   const markDone = () => {
+    if (completingId !== null) return;
+
+    if (selected.color === "red") {
+      runCompletionAnimation(selected.id, selected.value);
+      return;
+    }
+
     setFlashing(true);
     setTimeout(() => setFlashing(false), 400);
     setTasks((prev) => prev.map((t) => (t.id === selectedId ? { ...t, lastDone: Date.now() } : t)));
@@ -943,19 +1026,23 @@ export default function NecesidadesCasa() {
               </div>
             )}
             <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-              {liveTasks.map((t) => (
+              {liveTasks.map((t) => {
+                const display = displayFor(t);
+                return (
                 <TaskItem
                   key={t.id}
                   task={t}
-                  value={t.value}
-                  color={t.color}
+                  value={display.value}
+                  gradient={display.gradient}
+                  instant={display.instant}
                   isActive={t.id === selectedId}
                   onClick={() => handleTaskClick(t.id)}
                   onPressStart={(e) => startTaskLongPress(t.id, e)}
                   onPressMove={moveTaskLongPress}
                   onPressEnd={endTaskLongPress}
                 />
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -992,7 +1079,7 @@ export default function NecesidadesCasa() {
                 width: "80px",
                 height: "80px",
                 borderRadius: "50%",
-                background: getBarGradient(selected.color),
+                background: selectedDisplay.gradient,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -1021,7 +1108,7 @@ export default function NecesidadesCasa() {
               <p style={{ color: colors.detailFreq, fontSize: "13px", fontWeight: 500 }}>{selected.freq}</p>
             </div>
 
-            <BigBar value={selected.value} color={selected.color} />
+            <BigBar value={selectedDisplay.value} gradient={selectedDisplay.gradient} instant={selectedDisplay.instant} />
 
             <div
               style={{
@@ -1035,7 +1122,7 @@ export default function NecesidadesCasa() {
                 letterSpacing: "0.03em",
               }}
             >
-              {formatRemaining(remaining)}
+              {formatRemaining(remaining, selected.color, selected.overdueDays)}
             </div>
 
             <div className="ncasa-illo" style={{ fontSize: "60px", lineHeight: 1 }}>
@@ -1045,6 +1132,7 @@ export default function NecesidadesCasa() {
             <button
               className={`ncasa-btn${flashing ? " ncasa-flash" : ""}`}
               onClick={markDone}
+              disabled={completingId === selected.id}
               style={{
                 width: "100%",
                 padding: "14px 20px",
@@ -1055,7 +1143,8 @@ export default function NecesidadesCasa() {
                 fontFamily: "'Exo 2', sans-serif",
                 fontSize: "14px",
                 fontWeight: 700,
-                cursor: "pointer",
+                cursor: completingId === selected.id ? "default" : "pointer",
+                opacity: completingId === selected.id ? 0.75 : 1,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -1081,7 +1170,7 @@ export default function NecesidadesCasa() {
               >
                 ✓
               </span>
-              <span>{selected.btnText}</span>
+              <span>{completingId === selected.id ? "Completando..." : selected.btnText}</span>
             </button>
           </div>
         </div>
