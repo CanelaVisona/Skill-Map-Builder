@@ -2,12 +2,14 @@ import { motion, AnimatePresence } from "framer-motion";
 import { type Skill, type GlobalSkill, useSkillTree } from "@/lib/skill-context";
 import { type JournalThought, type JournalLearning, type JournalTool } from "@shared/schema";
 import { cn } from "@/lib/utils";
-import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus, Star, ChevronRight, ChevronLeft, Wrench, Lightbulb, Flame } from "lucide-react";
+import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus, Star, ChevronRight, ChevronLeft, Wrench, Lightbulb, BicepsFlexed } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { type ExperienceGainSnapshot } from "./ExperienceGainPopup";
 import { useXpPopup } from "@/lib/xp-popup-context";
 import { useAreaXpPopup } from "@/lib/area-xp-popup-context";
+import { useBodyProgress, BODY_ZONES, BODY_ZONE_LABELS, type BodyZone, type BodyDimension } from "@/lib/body-progress-context";
+import { useBodyGainPopup } from "@/lib/body-gain-popup-context";
 import { AREA_PROGRESS_XP_INCREMENT, calculateAreaProgressPercentage, countMasteredSkills } from "@/lib/area-progress";
 import {
   Popover,
@@ -231,7 +233,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
   // Tools & Learnings form state
   const queryClient = useQueryClient();
-  const [feedbackActiveTab, setFeedbackActiveTab] = useState<"thoughts" | "tools" | "learnings" | "experience" | "habits">("thoughts");
+  const [feedbackActiveTab, setFeedbackActiveTab] = useState<"thoughts" | "tools" | "learnings" | "experience" | "body">("thoughts");
   const [thoughtTitle, setThoughtTitle] = useState("");
   const [thoughtSentence, setThoughtSentence] = useState("");
   const [toolTitle, setToolTitle] = useState("");
@@ -243,10 +245,13 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const levelUpPopupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [hasIncompleteSubtasks, setHasIncompleteSubtasks] = useState(false);
   
-  // Habits state
-  const [habitDataWithRecords, setHabitDataWithRecords] = useState<any[]>([]);
-  const { showXpPopup } = useXpPopup();
+  const { showXpPopup, hideXpPopup } = useXpPopup();
   const { showAreaXpPopup } = useAreaXpPopup();
+  const { addBodyBlock } = useBodyProgress();
+  const { showBodyGainPopup, hideBodyGainPopup } = useBodyGainPopup();
+  const [selectedBodyDimension, setSelectedBodyDimension] = useState<BodyDimension>("fuerza");
+  const [selectedBodyZone, setSelectedBodyZone] = useState<BodyZone | null>(null);
+  const [showBodyZoneSelector, setShowBodyZoneSelector] = useState(false);
   const activeScopeSkills = isProject ? (activeProject?.skills || []) : (activeArea?.skills || []);
   const activeScopeName = isProject ? (activeProject?.name || "Project") : (activeArea?.name || "Area");
   const activeScopeXp = activeScope?.currentXp ?? countMasteredSkills(activeScopeSkills);
@@ -295,55 +300,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     },
   });
 
-  // Fetch all habits
-  const { data: allHabits = [] } = useQuery({
-    queryKey: ["habits"],
-    queryFn: async () => {
-      const res = await fetch("/api/habits");
-      if (!res.ok) throw new Error("Failed to fetch habits");
-      return res.json();
-    },
-  });
-
-  // Filter habits by current area or project
-  const skillHabits = allHabits.filter((h: any) =>
-    (activeAreaId && h.areaId === activeAreaId) ||
-    (activeProjectId && h.projectId === activeProjectId)
-  );
-
-  // Load year-long habit records for streak calculation
-  useEffect(() => {
-    if (skillHabits.length === 0 || feedbackActiveTab !== "habits") return;
-
-    const fetchHabitRecords = async () => {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const year = today.getFullYear();
-      const startDate = `${year}-01-01`;
-      const endDate = `${year}-12-31`;
-
-      try {
-        const updatedHabits = await Promise.all(
-          skillHabits.map(async (habit: any) => {
-            const res = await fetch(
-              `/api/habit-records/${habit.id}?startDate=${startDate}&endDate=${endDate}`
-            );
-            const records = res.ok ? await res.json() : [];
-            const done = new Set(
-              records.filter((r: any) => r.completed === 1).map((r: any) => r.date)
-            );
-            return { ...habit, done };
-          })
-        );
-        setHabitDataWithRecords(updatedHabits);
-      } catch (error) {
-        console.error("Error loading habit records:", error);
-      }
-    };
-
-    fetchHabitRecords();
-  }, [skillHabits, feedbackActiveTab]);
-  
   // Experience tab state for editStep 2
   const [experienceSelectedSkill, setExperienceSelectedSkill] = useState<string | null>(null);
   const [showExperienceSkillSelector, setShowExperienceSkillSelector] = useState(false);
@@ -780,6 +736,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       
       setXpValue(FIXED_XP_AMOUNT.toString());
       setExperienceSelectedSkill(null);
+      hideBodyGainPopup(); // evita solaparse con el pop-up de fuerza/flexibilidad
       showXpPopup(legacySnapshot);
       return;
     }
@@ -820,6 +777,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
         // Clear inputs and show feedback
         setXpValue(FIXED_XP_AMOUNT.toString());
         setExperienceSelectedSkill(null);
+        hideBodyGainPopup(); // evita solaparse con el pop-up de fuerza/flexibilidad
         showXpPopup(globalSnapshot);
 
         const targetId = currentSkill?.areaId || currentSkill?.projectId;
@@ -834,6 +792,15 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     } catch (error) {
       console.error("[handleAddExperience] Error adding XP:", error);
     }
+  };
+
+  const handleAddBody = () => {
+    if (!selectedBodyZone) return;
+
+    const { before, after } = addBodyBlock(selectedBodyZone, selectedBodyDimension);
+    hideXpPopup(); // evita solaparse con el pop-up de XP si sigue visible
+    showBodyGainPopup({ zone: selectedBodyZone, dimension: selectedBodyDimension, before, after });
+    setSelectedBodyZone(null);
   };
 
   const handleTitleLongPressStart = (e: React.TouchEvent | React.MouseEvent) => {
@@ -1592,7 +1559,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                  size="sm" 
                  className="h-8 w-8 p-0 bg-muted/50 hover:bg-muted ml-auto"
                  onClick={() => setPopoverStep(1)}
-                 title="Thoughts, Learnings, Experience, Tools, Habits"
+                 title="Thoughts, Learnings, Experience, Fuerza, Tools"
                >
                  <ChevronRight className="h-4 w-4" />
                </Button>
@@ -1605,7 +1572,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               <span className="text-xs font-medium text-muted-foreground">Journal</span>
             </div>
 
-            <Tabs value={feedbackActiveTab} onValueChange={(v) => setFeedbackActiveTab(v as "thoughts" | "tools" | "learnings" | "experience" | "habits")} className="w-full flex flex-col flex-1">
+            <Tabs value={feedbackActiveTab} onValueChange={(v) => setFeedbackActiveTab(v as "thoughts" | "tools" | "learnings" | "experience" | "body")} className="w-full flex flex-col flex-1">
               <TabsList className="w-full grid grid-cols-5 bg-muted/50">
                 <TabsTrigger value="thoughts" className="text-xs" data-testid="feedback-tab-thoughts">
                   <Pencil className="h-3 w-3 mr-1" />
@@ -1618,13 +1585,12 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 <TabsTrigger value="experience" className="text-xs" data-testid="feedback-tab-experience">
                   <span className="text-xs font-bold mr-1">XP</span>
                 </TabsTrigger>
+                <TabsTrigger value="body" className="text-xs" data-testid="feedback-tab-body" title="Fuerza / Flexibilidad">
+                  <BicepsFlexed className="h-3 w-3" />
+                </TabsTrigger>
                 <TabsTrigger value="tools" className="text-xs" data-testid="feedback-tab-tools">
                   <Wrench className="h-3 w-3 mr-1" />
                   Tools
-                </TabsTrigger>
-                <TabsTrigger value="habits" className="text-xs" data-testid="feedback-tab-habits">
-                  <Flame className="h-3 w-3 mr-1" />
-                  Habits
                 </TabsTrigger>
               </TabsList>
               
@@ -1822,6 +1788,76 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 </div>
               </TabsContent>
 
+              <TabsContent value="body" className="mt-4 space-y-3 flex flex-col flex-1">
+                <div className="flex gap-2 justify-center">
+                  {(["fuerza", "flex"] as BodyDimension[]).map((dimension) => (
+                    <Button
+                      key={dimension}
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSelectedBodyDimension(dimension)}
+                      className={selectedBodyDimension === dimension ? "bg-primary/20 text-foreground" : "bg-muted/50 hover:bg-muted text-muted-foreground"}
+                      data-testid={`button-body-dimension-${dimension}`}
+                    >
+                      {dimension === "fuerza" ? "Fuerza" : "Flexibilidad"}
+                    </Button>
+                  ))}
+                </div>
+                <Popover open={showBodyZoneSelector} onOpenChange={setShowBodyZoneSelector}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="bg-muted/50 hover:bg-muted w-full"
+                      data-testid="button-select-body-zone"
+                    >
+                      {selectedBodyZone ? `✓ ${BODY_ZONE_LABELS[selectedBodyZone]}` : "Seleccionar componente"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    className="w-56 p-2 border-0 bg-background/95 backdrop-blur-sm z-[9999]"
+                    align="center"
+                    side="top"
+                    sideOffset={8}
+                    collisionPadding={16}
+                  >
+                    <div className="space-y-1">
+                      {BODY_ZONES.map((zone) => (
+                        <Button
+                          key={zone}
+                          variant="ghost"
+                          size="sm"
+                          className={`w-full justify-start h-8 px-3 text-xs font-normal ${
+                            selectedBodyZone === zone ? "bg-muted text-foreground" : "hover:bg-muted/50"
+                          }`}
+                          onClick={() => {
+                            setSelectedBodyZone(zone);
+                            setShowBodyZoneSelector(false);
+                          }}
+                          data-testid={`button-select-body-zone-${zone}`}
+                        >
+                          {BODY_ZONE_LABELS[zone]}
+                        </Button>
+                      ))}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                <div className="flex justify-end items-center gap-2 pt-4">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleAddBody}
+                    disabled={!selectedBodyZone}
+                    className="bg-muted/50 hover:bg-muted"
+                    data-testid="button-add-body"
+                  >
+                    <Plus className="h-3 w-3 mr-1" />
+                    Agregar {selectedBodyDimension === "fuerza" ? "fuerza" : "flexibilidad"}
+                  </Button>
+                </div>
+              </TabsContent>
+
               <AnimatePresence>
                 {levelUpPopupVisible && (
                   <motion.div
@@ -1866,188 +1902,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                     <Plus className="h-3 w-3 mr-1" />
                     New Tool
                   </Button>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="habits" className="mt-4 flex flex-col flex-1 overflow-hidden">
-                <div className="flex-1 overflow-y-auto space-y-2 px-1">
-                  {skillHabits.length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-4">No habits linked to this area/project</p>
-                  ) : (
-                    (() => {
-                      const today = new Date();
-                      today.setHours(0, 0, 0, 0);
-                      const todayStr = today.toISOString().slice(0, 10);
-
-                      const getWeekDays = () => {
-                        const dow = today.getDay();
-                        const mo = dow === 0 ? -6 : 1 - dow;
-                        return Array.from({ length: 7 }, (_, i) => {
-                          const d = new Date(today);
-                          d.setDate(today.getDate() + mo + i);
-                          return d;
-                        });
-                      };
-
-                      const computeStreak = (done: Set<string>): number => {
-                        let s = 0;
-                        const c = new Date(today);
-                        if (done.has(todayStr)) {
-                          s++;
-                          c.setDate(c.getDate() - 1);
-                        } else {
-                          c.setDate(c.getDate() - 1);
-                        }
-                        while (true) {
-                          const x = c.toISOString().slice(0, 10);
-                          if (done.has(x)) {
-                            s++;
-                            c.setDate(c.getDate() - 1);
-                          } else {
-                            break;
-                          }
-                        }
-                        return s;
-                      };
-
-                      const isBroken = (done: Set<string>): boolean => {
-                        const yesterdayStr = new Date(today);
-                        yesterdayStr.setDate(yesterdayStr.getDate() - 1);
-                        const yesterdayDateStr = yesterdayStr.toISOString().slice(0, 10);
-                        return !done.has(todayStr) && !done.has(yesterdayDateStr);
-                      };
-
-                      const weekDays = getWeekDays();
-                      const DAY_LBLS = ["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"];
-
-                      return skillHabits.map((habit: any) => {
-                        const habitData = habitDataWithRecords.find(h => h.id === habit.id);
-                        const done = habitData?.done || new Set();
-                        const streak = computeStreak(done);
-                        const broken = isBroken(done);
-                        const isToday = done.has(todayStr);
-
-                        return (
-                          <div
-                            key={habit.id}
-                            onClick={async () => {
-                              try {
-                                const today2 = new Date().toISOString().slice(0, 10);
-                                const isCompleting = isToday === false;
-                                
-                                await fetch(`/api/habit-records/${habit.id}`, {
-                                  method: "POST",
-                                  headers: { "Content-Type": "application/json" },
-                                  body: JSON.stringify({ date: today2, completed: isToday ? 0 : 1 }),
-                                });
-                                
-                                if (isCompleting && (habit.skillProgressId || habit.subskillId)) {
-                                  const xpRes = await fetch(`/api/habits/${habit.id}/award-xp`, {
-                                    method: "POST",
-                                    headers: { "Content-Type": "application/json" },
-                                  });
-                                  
-                                  if (xpRes.ok) {
-                                    const xpData = await xpRes.json();
-                                    const linkedSkill = globalSkills.find((skillEntry) => skillEntry.id === habit.skillProgressId || skillEntry.id === habit.subskillId);
-                                    if (linkedSkill) {
-                                      const area = areas.find((areaEntry) => areaEntry.id === linkedSkill.areaId);
-                                      showXpPopup({
-                                        skillName: linkedSkill.name,
-                                        areaColor: area?.color || areaColor,
-                                        xpBefore: linkedSkill.currentXp,
-                                        xpAfter: linkedSkill.currentXp + (xpData?.xpAwarded || 5),
-                                        xpMax: linkedSkill.goalXp || null,
-                                        level: linkedSkill.level,
-                                      });
-                                    }
-                                    
-                                    if (activeAreaId) {
-                                      await queryClient.refetchQueries({ queryKey: ["/api/areas", activeAreaId] });
-                                    } else if (activeProjectId) {
-                                      await queryClient.refetchQueries({ queryKey: ["/api/projects", activeProjectId] });
-                                    }
-                                  }
-                                }
-                                
-                                const year = new Date().getFullYear();
-                                const startDate = `${year}-01-01`;
-                                const endDate = `${year}-12-31`;
-                                const recordsRes = await fetch(
-                                  `/api/habit-records/${habit.id}?startDate=${startDate}&endDate=${endDate}`
-                                );
-                                const newRecords = recordsRes.ok ? await recordsRes.json() : [];
-                                const newDone = new Set(
-                                  newRecords.filter((r: any) => r.completed === 1).map((r: any) => r.date)
-                                );
-                                setHabitDataWithRecords((prev: any[]) =>
-                                  prev.map(h => h.id === habit.id ? { ...h, done: newDone } : h)
-                                );
-                                await queryClient.refetchQueries({ queryKey: ["habits"] });
-                              } catch (error) {
-                                console.error("Error toggling habit:", error);
-                              }
-                            }}
-                            className={`cursor-pointer rounded-lg border px-3 py-2 transition-all ${
-                              isToday
-                                ? "border-purple-500 bg-purple-500/10"
-                                : broken
-                                  ? "border-border/30 bg-muted/30"
-                                  : "border-border/30 hover:border-purple-400 hover:bg-purple-500/5"
-                            }`}
-                          >
-                            <div className="flex items-center gap-2 mb-2">
-                              <span className="text-lg flex-shrink-0">{habit.emoji}</span>
-                              <span className="font-bold text-xs text-foreground flex-1 truncate">
-                                {habit.name}
-                              </span>
-                              <span className={`text-xs font-medium flex-shrink-0 ${broken ? "text-muted-foreground" : "text-purple-600 dark:text-purple-400"}`}>
-                                {broken ? "— rota" : `🔥 ${streak}`}
-                              </span>
-                            </div>
-
-                            <div className="flex gap-1 items-center">
-                              {weekDays.map((w, i) => {
-                                const wds = w.toISOString().slice(0, 10);
-                                const wc = new Date(w);
-                                wc.setHours(0, 0, 0, 0);
-                                const isFut = wc > today;
-                                const isTod = wds === todayStr;
-                                const isDone = done.has(wds);
-                                const isMissed = wc < today && !isDone;
-
-                                return (
-                                  <div
-                                    key={i}
-                                    className="flex flex-col items-center gap-0.5 flex-1 text-center"
-                                  >
-                                    <div
-                                      className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium transition-all ${
-                                        isDone
-                                          ? "bg-gray-900 border border-purple-500"
-                                          : isTod
-                                            ? "border-2 border-purple-500 bg-purple-500/20"
-                                            : isMissed
-                                              ? "bg-muted border border-dashed border-border/50 opacity-50"
-                                              : isFut
-                                                ? "border border-border/30 opacity-20"
-                                                : "border border-border/30"
-                                      }`}
-                                    >
-                                      {isDone ? <span className="text-sm">🔥</span> : ""}
-                                    </div>
-                                    <span className="text-xs font-medium text-muted-foreground">
-                                      {DAY_LBLS[i]}
-                                    </span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        );
-                      });
-                    })()
-                  )}
                 </div>
               </TabsContent>
             </Tabs>

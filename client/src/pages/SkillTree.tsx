@@ -13,12 +13,14 @@ import { BookTracker } from "@/components/BookTracker";
 import RewiringTracker from "@/components/RewiringTracker";
 import NecesidadesCasa from "../components/NecesidadesCasa";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House } from "lucide-react";
+import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
 import { XpPopupProvider, useXpPopup } from "@/lib/xp-popup-context";
 import { AreaXpPopupProvider } from "@/lib/area-xp-popup-context";
+import { BodyProgressProvider } from "@/lib/body-progress-context";
+import { BodyGainPopupProvider } from "@/lib/body-gain-popup-context";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -36,6 +38,7 @@ import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { SkillsGridJournal } from "@/components/SkillsGridJournal";
+import { BodyStrengthPanel } from "@/components/BodyStrengthPanel";
 import { LevelNavigationPanel, type LevelNavItem } from "@/components/LevelNavigationPanel";
 
 function SkillsSparkIcon({ className }: { className?: string }) {
@@ -1344,7 +1347,7 @@ function BestiarySection({
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex gap-2 sm:gap-3 lg:gap-4 p-2 sm:p-3 lg:p-4 overflow-hidden bg-zinc-900">
+      <div className="flex-1 flex gap-2 sm:gap-3 lg:gap-4 p-2 sm:p-3 lg:p-4 overflow-y-auto sm:overflow-hidden bg-zinc-900">
         {/* Thumbnail Panel */}
         {showThumbs && !isMobile && (
           <div className="w-24 flex flex-col gap-2 overflow-y-auto border-r border-zinc-800 pr-2">
@@ -1367,7 +1370,7 @@ function BestiarySection({
         )}
 
         {/* Book Spread */}
-        <div className="flex-1 flex flex-col lg:flex-row bestiary-spread w-full">
+        <div className="flex-1 flex bestiary-spread w-full min-h-0">
           {/* Flip Sheet (flying page during animation) */}
           {flipping && (
             <div
@@ -1377,13 +1380,13 @@ function BestiarySection({
             />
           )}
 
-          <div className="bestiary-book flex gap-0 w-full h-full">
+          <div className="bestiary-book flex flex-col sm:flex-row gap-0 w-full h-auto sm:h-full min-h-0">
             {/* Left Page */}
-            <div className="group flex-1 max-h-[60vh] lg:h-full bg-black shadow-2xl flex flex-col p-4 sm:p-6 lg:p-8 min-w-0 rounded-l">
+            <div className="group flex-1 min-h-[240px] sm:min-h-0 min-w-0 bg-black shadow-2xl flex flex-col p-4 sm:p-6 lg:p-8 rounded-t sm:rounded-t-none sm:rounded-l">
               {leftEntry ? (
                 <>
                   <div className="flex items-start justify-between gap-2 mb-2 pb-2 border-b-2 border-white/20 flex-shrink-0">
-                    <h2 className="font-serif text-sm font-bold text-white uppercase">
+                    <h2 className="font-serif text-base sm:text-sm font-bold text-white uppercase">
                       {leftEntry.name}
                     </h2>
                     <Button
@@ -1401,7 +1404,7 @@ function BestiarySection({
                       <Pencil className="h-4 w-4" />
                     </Button>
                   </div>
-                  <div className="flex-1 font-serif text-base text-white leading-relaxed overflow-y-auto pr-4 bestiary-description">
+                  <div className="flex-1 min-h-0 font-serif text-lg sm:text-base text-white leading-relaxed overflow-y-auto pr-4 bestiary-description">
                     {activePage.description ? (
                       <p>{activePage.description}</p>
                     ) : isAddingDescription ? (
@@ -1457,11 +1460,11 @@ function BestiarySection({
             </div>
 
             {/* Spine */}
-            <div className="w-full h-1 lg:h-full lg:w-1 bg-gradient-to-b from-gray-800 to-gray-900 shadow-lg" />
+            <div className="w-full h-1 sm:h-full sm:w-1 bg-gradient-to-b from-gray-800 to-gray-900 shadow-lg" />
 
             {/* Right Page */}
-            <div className="group relative flex-1 max-h-[60vh] lg:h-full bg-black shadow-2xl flex items-center justify-center p-6 sm:p-8 lg:p-12 min-w-0 rounded-r overflow-hidden">
-              <div className={`w-full h-full flex items-center justify-center transition-opacity duration-300 ${flipping ? 'opacity-0' : 'opacity-100'}`}>
+            <div className="group relative flex-1 min-h-[280px] sm:min-h-0 min-w-0 bg-black shadow-2xl flex items-center justify-center p-6 sm:p-8 lg:p-12 rounded-b sm:rounded-b-none sm:rounded-r overflow-hidden">
+              <div className={`absolute inset-0 flex items-center justify-center transition-opacity duration-300 ${flipping ? 'opacity-0' : 'opacity-100'}`}>
                 {activePage.imageUrl ? (
                   <img src={activePage.imageUrl} alt={leftEntry?.name} className="max-h-full max-w-full object-contain" />
                 ) : rightEntry ? (
@@ -7376,6 +7379,9 @@ function QuestDiary() {
               <TabsTrigger value="tools" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-tools" title="Tools">
                 <Wrench className="h-5 w-5" />
               </TabsTrigger>
+              <TabsTrigger value="body" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-body" title="Fuerza">
+                <BicepsFlexed className="h-5 w-5" />
+              </TabsTrigger>
               <TabsTrigger value="bestiary" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-bestiary" title="Bestiary">
                 <BookOpen className="h-5 w-5" />
               </TabsTrigger>
@@ -7443,6 +7449,10 @@ function QuestDiary() {
               
               <TabsContent value="profile" className="flex-1 min-h-0 min-w-0 mt-0">
                 <ProfileSection />
+              </TabsContent>
+
+              <TabsContent value="body" className="flex-1 min-h-0 min-w-0 mt-0">
+                <BodyStrengthPanel />
               </TabsContent>
             </div>
           </Tabs>
@@ -8404,6 +8414,8 @@ export default function SkillTreePage() {
       <AreaXpPopupProvider>
         <SkillTreeProvider>
           <XpPopupProvider>
+          <BodyProgressProvider>
+          <BodyGainPopupProvider>
             <MenuProvider>
               <div className="flex h-screen w-full bg-background text-foreground overflow-hidden font-body selection:bg-primary/30">
                 <TopRightControls onOpenDesigner={() => setIsDesignerOpen(true)} onOpenHabits={() => setIsHabitsOpen(true)} onOpenStrength={() => setIsStrengthOpen(true)} onOpenBookTracker={() => setIsBookTrackerOpen(true)} onOpenRewiringTracker={() => setIsRewiringTrackerOpen(true)} onOpenAllAreaBugs={() => setIsAllAreaBugsOpen(true)} onOpenHomeNeeds={() => setIsHomeNeedsOpen(true)} />
@@ -8421,6 +8433,8 @@ export default function SkillTreePage() {
                 <OnboardingGuide isOpen={showOnboarding} onComplete={handleCompleteOnboarding} />
               </div>
             </MenuProvider>
+          </BodyGainPopupProvider>
+          </BodyProgressProvider>
           </XpPopupProvider>
         </SkillTreeProvider>
       </AreaXpPopupProvider>
