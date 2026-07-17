@@ -1117,7 +1117,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
   const handleTouchStart = () => {
     if (isInicioNode) return; // "inicio" nodes are not interactive
-    if (skill.levelPosition === 1) return; // Node 1 is not interactive
     isLongPress.current = false;
     longPressTimer.current = setTimeout(() => {
       isLongPress.current = true;
@@ -1179,7 +1178,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
   const handleMouseDown = () => {
     if (isInicioNode) return; // "inicio" nodes are not interactive
-    if (skill.levelPosition === 1) return; // Node 1 is not interactive
     isLongPress.current = false;
     longPressTimer.current = setTimeout(() => {
       isLongPress.current = true;
@@ -1358,7 +1356,35 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
           popoverStep === 0 ? "w-64" : "w-96"
         )}
       >
-        {popoverStep === 0 ? (
+        {isFirstNodeOfLevel ? (
+          // Node 1 of each level is always mastered and has no title; its only
+          // available action is adding the next node, and only once that next
+          // node is unlocked (available).
+          <div className="flex justify-center">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-3 text-xs bg-muted/50 hover:bg-muted"
+              disabled={!canAddFromNode}
+              title={!canAddFromNode ? "Solo se puede agregar cuando el siguiente nodo está desbloqueado" : undefined}
+              onClick={() => {
+                if (!canAddFromNode) return;
+                if (isSubSkillView) {
+                  addSubSkillBelow(skill.id, "");
+                } else if (isProject) {
+                  addProjectSkillBelow(activeId, skill.id, "");
+                } else {
+                  addSkillBelow(activeId, skill.id, "");
+                }
+                setIsOpen(false);
+              }}
+              data-testid="button-add-skill-below-node1"
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              Agregar nodo debajo
+            </Button>
+          </div>
+        ) : popoverStep === 0 ? (
           // STEP 1: Menu (current)
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-2">
