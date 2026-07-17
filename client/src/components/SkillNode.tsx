@@ -124,6 +124,13 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const isLocked = isFirstNodeOfLevel ? false : (skill.status === "locked" || shouldForceLock);
   const isMastered = isFirstNodeOfLevel ? true : skill.status === "mastered";
 
+  // Mastered/confirmed nodes can only be used as the source for adding a new node
+  // if they're the one immediately before the currently unlocked ("available") node
+  // in this level. Older confirmed nodes further back in the chain can't spawn new
+  // nodes, since that would let the user branch off history instead of the frontier.
+  const isPredecessorOfAvailable = availableNodePosition != null && skill.levelPosition === availableNodePosition - 1;
+  const canAddFromNode = !isMastered || isPredecessorOfAvailable;
+
   // Calculate distance-based opacity for locked nodes (Rule 6)
   let lockedNodeOpacity = 1; // default
   if (isLocked && availableNodePosition !== undefined && availableNodePosition !== null) {
@@ -1443,7 +1450,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                        variant="ghost"
                        size="sm"
                        className="h-7 px-3 text-xs justify-start font-normal hover:bg-muted/50"
+                       disabled={!canAddFromNode}
+                       title={!canAddFromNode ? "Solo se puede agregar desde el nodo confirmado anterior al desbloqueado" : undefined}
                        onClick={() => {
+                         if (!canAddFromNode) return;
                          if (isSubSkillView) {
                            addSubSkillBelow(skill.id, "");
                          } else if (isProject) {
@@ -1462,7 +1472,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                        variant="ghost"
                        size="sm"
                        className="h-7 px-3 text-xs justify-start font-normal hover:bg-muted/50"
+                       disabled={!canAddFromNode}
+                       title={!canAddFromNode ? "Solo se puede duplicar desde el nodo confirmado anterior al desbloqueado" : undefined}
                        onClick={() => {
+                         if (!canAddFromNode) return;
                          if (isSubSkillView) {
                            duplicateSubSkill(skill);
                          } else if (isProject) {
@@ -1525,27 +1538,27 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                  </Button>
                )}
 
-               {/* Delete button - hide for last node of level (can't delete) */}
-               {!isLastNodeOfLevel && (
-                 <Button 
-                   variant="ghost" 
-                   size="sm" 
-                   className="h-8 w-8 p-0 bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground"
-                   onClick={() => {
-                     if (isSubSkillView) {
-                       deleteSubSkill(skill.id);
-                     } else if (isProject) {
-                       deleteProjectSkill(activeId, skill.id);
-                     } else {
-                       deleteSkill(activeId, skill.id);
-                     }
-                     setIsOpen(false);
-                   }}
-                   data-testid="button-delete"
-                 >
-                   <Trash2 className="h-3 w-3" />
-                 </Button>
-               )}
+               {/* Delete button - deleting the last node of a level promotes the previous
+                   node to final; if that node was already mastered, the context layer
+                   retroactively completes the level and opens the next one. */}
+               <Button
+                 variant="ghost"
+                 size="sm"
+                 className="h-8 w-8 p-0 bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground"
+                 onClick={() => {
+                   if (isSubSkillView) {
+                     deleteSubSkill(skill.id);
+                   } else if (isProject) {
+                     deleteProjectSkill(activeId, skill.id);
+                   } else {
+                     deleteSkill(activeId, skill.id);
+                   }
+                   setIsOpen(false);
+                 }}
+                 data-testid="button-delete"
+               >
+                 <Trash2 className="h-3 w-3" />
+               </Button>
 
                {/* Next button to go to journal tabs step */}
                <Button 

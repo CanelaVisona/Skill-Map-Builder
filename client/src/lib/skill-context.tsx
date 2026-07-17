@@ -189,6 +189,55 @@ function ensureDependenciesArray(deps: any): string[] {
   return [];
 }
 
+const ROMAN_NUMERAL_VALUES: [number, string][] = [
+  [1000, "M"], [900, "CM"], [500, "D"], [400, "CD"],
+  [100, "C"], [90, "XC"], [50, "L"], [40, "XL"],
+  [10, "X"], [9, "IX"], [5, "V"], [4, "IV"], [1, "I"],
+];
+
+function toRomanNumeral(num: number): string {
+  let result = "";
+  let remaining = num;
+  for (const [value, numeral] of ROMAN_NUMERAL_VALUES) {
+    while (remaining >= value) {
+      result += numeral;
+      remaining -= value;
+    }
+  }
+  return result;
+}
+
+function fromRomanNumeral(roman: string): number | null {
+  const digitValues: Record<string, number> = { I: 1, V: 5, X: 10, L: 50, C: 100, D: 500, M: 1000 };
+  const upper = roman.toUpperCase();
+  let total = 0;
+  let previousValue = 0;
+  for (let i = upper.length - 1; i >= 0; i--) {
+    const value = digitValues[upper[i]];
+    if (!value) return null;
+    total += value < previousValue ? -value : value;
+    previousValue = value;
+  }
+  return total > 0 ? total : null;
+}
+
+// Duplicating "Correr" gives "Correr II", duplicating "Correr II" gives "Correr III", etc.
+// The source title's own trailing numeral (if any) is treated as the current count,
+// defaulting to 1 (implicit "I") when the title carries no numeral yet.
+function getNextDuplicateTitle(sourceTitle: string): string {
+  const trimmed = sourceTitle.trim();
+  if (!trimmed) return trimmed;
+
+  const match = trimmed.match(/^(.*?)\s+([IVXLCDM]+)$/i);
+  if (match) {
+    const numeral = fromRomanNumeral(match[2]);
+    if (numeral !== null) {
+      return `${match[1]} ${toRomanNumeral(numeral + 1)}`;
+    }
+  }
+  return `${trimmed} ${toRomanNumeral(2)}`;
+}
+
 export function SkillTreeProvider({ children }: { children: React.ReactNode }): React.ReactElement {
   const [areas, setAreas] = useState<Area[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -1492,6 +1541,62 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
         return { ...area, skills: updatedSkills };
       }));
+
+      // If the node that just inherited final-node status was already mastered, the level
+      // was effectively already completed - it just never got the "confirm final node" pass
+      // because the deleted node was in the way. Retroactively run that same cascade (open
+      // next level / archive area) instead of leaving the level stuck without a next level.
+      // Guarded to the currently active level so deleting a stale final node from an
+      // already-progressed level doesn't re-fire level generation.
+      if (newFinalNodeId) {
+        const newFinalNode = area.skills.find(s => s.id === newFinalNodeId);
+        const completedLevel = skillToDelete.level;
+
+        if (newFinalNode && newFinalNode.status === "mastered" && completedLevel === area.unlockedLevel) {
+          const isStarActive = area.endOfAreaLevel === completedLevel;
+
+          if (isStarActive) {
+            triggerCompleted();
+            setTimeout(async () => {
+              await archiveArea(areaId);
+              await refreshAllAreas();
+            }, 5000);
+          } else {
+            const newUnlockedLevel = completedLevel + 1;
+
+            setTimeout(() => triggerLevelUp(newUnlockedLevel), areaLevelUpDelayMs);
+
+            fetch(`/api/areas/${areaId}/generate-level`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ level: newUnlockedLevel }),
+            }).then(response => {
+              if (!response.ok) {
+                console.error("Failed to generate new level");
+                return;
+              }
+              return response.json().then(({ updatedArea }) => {
+                const nextFutureLevel = updatedArea.nextLevelToAssign;
+                const futureLevelSkills = area.skills.filter(s => s.level === nextFutureLevel);
+
+                if (futureLevelSkills.length === 0) {
+                  fetch(`/api/areas/${areaId}/generate-level`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ level: nextFutureLevel }),
+                  }).catch(error => {
+                    console.warn(`Error creating future level ${nextFutureLevel}:`, error);
+                  });
+                }
+
+                return refreshAllAreas();
+              });
+            }).catch(error => {
+              console.error("Error generating new level after deletion:", error);
+            });
+          }
+        }
+      }
     } catch (error) {
       console.error("Error deleting skill:", error);
       alert(`Error al eliminar skill: ${error instanceof Error ? error.message : "Error desconocido"}`);
@@ -1801,6 +1906,59 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
         return { ...project, skills: updatedSkills };
       }));
+
+      // If the node that just inherited final-node status was already mastered, the level
+      // was effectively already completed - see matching comment in deleteSkill. Guarded to
+      // the currently active level so an already-progressed level doesn't re-fire generation.
+      if (newFinalNodeId) {
+        const newFinalNode = project.skills.find(s => s.id === newFinalNodeId);
+        const completedLevel = skillToDelete.level;
+
+        if (newFinalNode && newFinalNode.status === "mastered" && completedLevel === project.unlockedLevel) {
+          const isStarActive = project.endOfAreaLevel === completedLevel;
+
+          if (isStarActive) {
+            triggerCompleted();
+            setTimeout(async () => {
+              await archiveProject(projectId);
+              await refreshAllAreas();
+            }, 5000);
+          } else {
+            const newUnlockedLevel = completedLevel + 1;
+
+            setProjects(prev => prev.map(p => {
+              if (p.id !== projectId) return p;
+              return { ...p, unlockedLevel: newUnlockedLevel, nextLevelToAssign: newUnlockedLevel };
+            }));
+
+            setTimeout(() => triggerLevelUp(newUnlockedLevel), areaLevelUpDelayMs);
+
+            fetch(`/api/projects/${projectId}/generate-level`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ level: newUnlockedLevel }),
+            }).then(response => {
+              if (!response.ok) {
+                console.error("Failed to generate new level");
+                return;
+              }
+
+              const nextFutureLevel = newUnlockedLevel + 3;
+              fetch(`/api/projects/${projectId}/generate-level`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ level: nextFutureLevel }),
+              }).catch(error => {
+                console.warn(`Error creating future level ${nextFutureLevel}:`, error);
+              });
+
+              return refreshAllProjects();
+            }).catch(error => {
+              console.error("Error generating new level after deletion:", error);
+            });
+          }
+        }
+      }
     } catch (error) {
       console.error("Error deleting project skill:", error);
       alert(`Error al eliminar skill del proyecto: ${error instanceof Error ? error.message : "Error desconocido"}`);
@@ -2684,6 +2842,64 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
             return updated;
           });
       });
+
+      // If the node that just inherited final-node status was already mastered, the level
+      // was effectively already completed - see matching comment in deleteSkill. Sub-skill
+      // levels have no unlockedLevel field, so use "next level not generated yet" as the
+      // stand-in guard against re-firing completion on an already-progressed level.
+      if (newFinalNodeId) {
+        const newFinalNode = subSkills.find(s => s.id === newFinalNodeId);
+        const completedLevel = skillToDelete.level;
+        const nextLevelAlreadyExists = subSkills.some(s => s.level === completedLevel + 1);
+
+        if (newFinalNode && newFinalNode.status === "mastered" && !nextLevelAlreadyExists && activeParentSkillId) {
+          triggerCompleted();
+
+          await fetch(`/api/skills/${activeParentSkillId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: "available", fromSubtaskCompletion: true }),
+          });
+
+          setAreas(prev => prev.map(area => ({
+            ...area,
+            skills: area.skills.map(s => s.id === activeParentSkillId ? { ...s, status: "available" as SkillStatus } : s)
+          })));
+          setProjects(prev => prev.map(project => ({
+            ...project,
+            skills: project.skills.map(s => s.id === activeParentSkillId ? { ...s, status: "available" as SkillStatus } : s)
+          })));
+
+          setTimeout(() => {
+            triggerQuestUpdated();
+          }, 1800);
+
+          const newLevel = completedLevel + 1;
+          fetch(`/api/skills/${activeParentSkillId}/subskills/generate-level`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ level: newLevel }),
+          }).then(response => {
+            if (!response.ok) {
+              console.error("Failed to generate new subskill level");
+              return;
+            }
+            return response.json().then(({ createdSkills }) => {
+              const normalizedCreatedSkills = ensureFirstNodeRules(createdSkills);
+              setSubSkills(prev => {
+                const existingIds = new Set(prev.map((s: Skill) => s.id));
+                const newSkills = normalizedCreatedSkills.filter((s: Skill) => !existingIds.has(s.id));
+                const guardedNewSkills = newSkills.map(s =>
+                  s.levelPosition === 1 ? { ...s, status: "mastered" as SkillStatus, title: "" } : s
+                );
+                return [...prev, ...guardedNewSkills];
+              });
+            });
+          }).catch(error => {
+            console.error("Error generating new subskill level after deletion:", error);
+          });
+        }
+      }
     } catch (error) {
       console.error("Error deleting sub-skill:", error);
       alert(`Error al eliminar sub-skill: ${error instanceof Error ? error.message : "Error desconocido"}`);
@@ -3133,297 +3349,20 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
-  // Helper function to find the next node by Y coordinate in the same level
-  const getNextNodeByY = (skills: Skill[], skill: Skill): Skill | undefined => {
-    const sameLevelSkills = skills
-      .filter(s => s.level === skill.level)
-      .sort((a, b) => a.y - b.y);
-    
-    const nextNode = sameLevelSkills.find(s => s.y > skill.y);
-    return nextNode;
-  };
-
+  // Duplicating a node behaves exactly like adding a new node below it (same
+  // eligibility rules, same insertion/status logic) - the only difference is that
+  // the new node is pre-titled after the source node's name plus the next roman numeral.
   const duplicateSkill = async (areaId: string, skill: Skill) => {
-    const area = areas.find(a => a.id === areaId);
-    if (!area) return;
-
-    const sameLevelSkills = area.skills
-      .filter(s => s.level === skill.level)
-      .sort((a, b) => a.y - b.y);
-
-    const finalNode = sameLevelSkills.find(s => s.isFinalNode === 1);
-    const nextNode = getNextNodeByY(area.skills, skill);
-    const newY = skill.y + 150;
-
-    try {
-      const nodesToShift = area.skills.filter(s => s.y > skill.y);
-      for (const node of nodesToShift) {
-        const newNodeY = node.y + 150;
-        const newLevelPosition = (node.levelPosition || 0) + 1;
-        await fetch(`/api/skills/${node.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ y: newNodeY, levelPosition: newLevelPosition }),
-        });
-      }
-
-      // Determine status for duplicated node based on next node
-      let duplicatedStatus: SkillStatus = "locked";
-      let nextNodeStatusUpdate: { needsUpdate: boolean; newStatus?: SkillStatus } = { needsUpdate: false };
-
-      if (skill.status === "mastered" && nextNode && nextNode.status === "available") {
-        duplicatedStatus = "available";
-        nextNodeStatusUpdate = { needsUpdate: true, newStatus: "locked" };
-        console.log(`[duplicateSkill] Intelligent status replication: duplicated=${duplicatedStatus}, nextNode will be locked`);
-      }
-
-      const newSkillData = {
-        areaId,
-        title: skill.title,
-        description: skill.description,
-        feedback: skill.feedback,
-        x: skill.x,
-        y: newY,
-        status: duplicatedStatus,
-        dependencies: [skill.id],
-        level: skill.level,
-        levelPosition: (skill.levelPosition || 0) + 1,
-        isFinalNode: 0,
-        manualLock: 0,
-      };
-
-      const response = await fetch("/api/skills", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newSkillData),
-      });
-      const newSkill = await response.json();
-
-      // Update next node status if needed (intelligent replication)
-      if (nextNodeStatusUpdate.needsUpdate && nextNode && nextNodeStatusUpdate.newStatus) {
-        await fetch(`/api/skills/${nextNode.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: nextNodeStatusUpdate.newStatus }),
-        });
-      }
-
-      if (finalNode && ensureDependenciesArray(finalNode.dependencies).includes(skill.id)) {
-        const updatedDeps = ensureDependenciesArray(finalNode.dependencies).map(d => d === skill.id ? newSkill.id : d);
-        await fetch(`/api/skills/${finalNode.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ dependencies: updatedDeps }),
-        });
-      }
-
-      // Recalculate final nodes for the affected level
-      await fetch(`/api/areas/${areaId}/recalculate-level-final-nodes`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ level: skill.level }),
-      });
-
-      // After all operations complete, refresh entire area from server
-      console.log("[duplicateSkill] Duplication complete, refreshing area from server...");
-      await refreshAllAreas();
-    } catch (error) {
-      console.error("Error duplicating skill:", error);
-    }
+    await addSkillBelow(areaId, skill.id, getNextDuplicateTitle(skill.title));
   };
 
   const duplicateProjectSkill = async (projectId: string, skill: Skill) => {
-    const project = projects.find(p => p.id === projectId);
-    if (!project) return;
-
-    const sameLevelSkills = project.skills
-      .filter(s => s.level === skill.level)
-      .sort((a, b) => a.y - b.y);
-
-    const finalNode = sameLevelSkills.find(s => s.isFinalNode === 1);
-    const nextNode = getNextNodeByY(project.skills, skill);
-    const newY = skill.y + 150;
-
-    try {
-      const nodesToShift = project.skills.filter(s => s.y > skill.y);
-      for (const node of nodesToShift) {
-        const newNodeY = node.y + 150;
-        const newLevelPosition = (node.levelPosition || 0) + 1;
-        await fetch(`/api/skills/${node.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ y: newNodeY, levelPosition: newLevelPosition }),
-        });
-      }
-
-      // Determine status for duplicated node based on next node
-      let duplicatedStatus: SkillStatus = "locked";
-      let nextNodeStatusUpdate: { needsUpdate: boolean; newStatus?: SkillStatus } = { needsUpdate: false };
-
-      if (skill.status === "mastered" && nextNode && nextNode.status === "available") {
-        duplicatedStatus = "available";
-        nextNodeStatusUpdate = { needsUpdate: true, newStatus: "locked" };
-        console.log(`[duplicateProjectSkill] Intelligent status replication: duplicated=${duplicatedStatus}, nextNode will be locked`);
-      }
-
-      const newSkillData = {
-        projectId,
-        title: skill.title,
-        description: skill.description,
-        feedback: skill.feedback,
-        x: skill.x,
-        y: newY,
-        status: duplicatedStatus,
-        dependencies: [skill.id],
-        level: skill.level,
-        levelPosition: (skill.levelPosition || 0) + 1,
-        isFinalNode: 0,
-        manualLock: 0,
-      };
-
-      const response = await fetch("/api/skills", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newSkillData),
-      });
-      const newSkill = await response.json();
-
-      // Update next node status if needed (intelligent replication)
-      if (nextNodeStatusUpdate.needsUpdate && nextNode && nextNodeStatusUpdate.newStatus) {
-        await fetch(`/api/skills/${nextNode.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: nextNodeStatusUpdate.newStatus }),
-        });
-      }
-
-      if (finalNode && ensureDependenciesArray(finalNode.dependencies).includes(skill.id)) {
-        const updatedDeps = ensureDependenciesArray(finalNode.dependencies).map(d => d === skill.id ? newSkill.id : d);
-        await fetch(`/api/skills/${finalNode.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ dependencies: updatedDeps }),
-        });
-      }
-
-      // Recalculate final nodes for the affected level
-      await fetch(`/api/projects/${projectId}/recalculate-level-final-nodes`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ level: skill.level }),
-      });
-
-      // After all operations complete, refresh entire projects from server
-      console.log("[duplicateProjectSkill] Duplication complete, refreshing projects from server...");
-      await refreshAllProjects();
-    } catch (error) {
-      console.error("Error duplicating project skill:", error);
-    }
+    await addProjectSkillBelow(projectId, skill.id, getNextDuplicateTitle(skill.title));
   };
 
   const duplicateSubSkill = async (skill: Skill) => {
     if (!activeParentSkillId) return;
-
-    const sameLevelSkills = subSkills
-      .filter(s => s.level === skill.level)
-      .sort((a, b) => a.y - b.y);
-
-    const finalNode = sameLevelSkills.find(s => s.isFinalNode === 1);
-    const nextNode = getNextNodeByY(subSkills, skill);
-    const newY = skill.y + 150;
-
-    try {
-      const nodesToShift = subSkills.filter(s => s.y > skill.y);
-      for (const node of nodesToShift) {
-        const newNodeY = node.y + 150;
-        const newLevelPosition = (node.levelPosition || 0) + 1;
-        await fetch(`/api/skills/${node.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ y: newNodeY, levelPosition: newLevelPosition }),
-        });
-      }
-
-      // Determine status for duplicated node based on next node
-      let duplicatedStatus: SkillStatus = "locked";
-      let nextNodeStatusUpdate: { needsUpdate: boolean; newStatus?: SkillStatus } = { needsUpdate: false };
-
-      if (skill.status === "mastered" && nextNode && nextNode.status === "available") {
-        duplicatedStatus = "available";
-        nextNodeStatusUpdate = { needsUpdate: true, newStatus: "locked" };
-        console.log(`[duplicateSubSkill] Intelligent status replication: duplicated=${duplicatedStatus}, nextNode will be locked`);
-      }
-
-      const newSkillData = {
-        parentSkillId: activeParentSkillId,
-        title: skill.title,
-        description: skill.description,
-        feedback: skill.feedback,
-        x: skill.x,
-        y: newY,
-        status: duplicatedStatus,
-        dependencies: [skill.id],
-        level: skill.level,
-        levelPosition: (skill.levelPosition || 0) + 1,
-        isFinalNode: 0,
-        manualLock: 0,
-      };
-
-      const response = await fetch("/api/skills", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newSkillData),
-      });
-      const newSkill = await response.json();
-
-      // Update next node status if needed (intelligent replication)
-      if (nextNodeStatusUpdate.needsUpdate && nextNode && nextNodeStatusUpdate.newStatus) {
-        await fetch(`/api/skills/${nextNode.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: nextNodeStatusUpdate.newStatus }),
-        });
-      }
-
-      if (finalNode && ensureDependenciesArray(finalNode.dependencies).includes(skill.id)) {
-        const updatedDeps = ensureDependenciesArray(finalNode.dependencies).map(d => d === skill.id ? newSkill.id : d);
-        await fetch(`/api/skills/${finalNode.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ dependencies: updatedDeps }),
-        });
-      }
-
-      setSubSkills(prev => [
-        ...prev.map(s => {
-          let updated = { ...s };
-          if (s.y > skill.y) {
-            updated = { ...updated, y: s.y + 150, levelPosition: (s.levelPosition || 0) + 1 };
-          }
-          if (finalNode && s.id === finalNode.id && ensureDependenciesArray(finalNode.dependencies).includes(skill.id)) {
-            const updatedDeps = ensureDependenciesArray(s.dependencies).map(d => d === skill.id ? newSkill.id : d);
-            updated = { ...updated, dependencies: updatedDeps };
-          }
-          // Apply intelligent status replication to local state
-          if (nextNodeStatusUpdate.needsUpdate && s.id === nextNode?.id && nextNodeStatusUpdate.newStatus) {
-            updated = { ...updated, status: nextNodeStatusUpdate.newStatus };
-          }
-          return updated;
-        }),
-        newSkill
-      ]);
-
-      // Recalculate final nodes for the affected level
-      if (activeParentSkillId) {
-        await fetch(`/api/sub-skills/${activeParentSkillId}/recalculate-level-final-nodes`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ level: skill.level }),
-        });
-      }
-    } catch (error) {
-      console.error("Error duplicating sub-skill:", error);
-    }
+    await addSubSkillBelow(skill.id, getNextDuplicateTitle(skill.title));
   };
 
   // Auto-unlock logic for areas (also re-locks final nodes that shouldn't be available)

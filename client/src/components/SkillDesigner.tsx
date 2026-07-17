@@ -170,6 +170,20 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
     return true;
   };
 
+  // Mastered/confirmed nodes can only be used as the source for adding a new node
+  // if they're the one immediately before the currently unlocked ("available") node
+  // in this level. Older confirmed nodes further back in the chain can't spawn new
+  // nodes, since that would let the user branch off history instead of the frontier.
+  const canAddFromNode = (skillsInLevel: any[], skillId: string): boolean => {
+    const skill = skillsInLevel.find(s => s.id === skillId);
+    if (!skill) return false;
+    if (skill.status !== "mastered") return true;
+
+    const availableSkill = skillsInLevel.find(s => s.status === "available");
+    if (!availableSkill) return false;
+    return skill.levelPosition === (availableSkill.levelPosition ?? 0) - 1;
+  };
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -276,9 +290,10 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                               >
                                                 <ChevronDown className="w-4 h-4" />
                                               </Button>
-                                              <Button 
-                                                size="sm" 
-                                                variant="ghost" 
+                                              <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                disabled={!canAddFromNode(skillsInLevel, skill.id)}
                                                 onClick={() => addSkillBelow(area.id, skill.id, '')}
                                                 className="h-8 w-8"
                                                 title="Añadir nodo debajo"
@@ -416,9 +431,10 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                 >
                                                   <ChevronDown className="w-4 h-4" />
                                                 </Button>
-                                                <Button 
-                                                  size="sm" 
-                                                  variant="ghost" 
+                                                <Button
+                                                  size="sm"
+                                                  variant="ghost"
+                                                  disabled={!canAddFromNode(skillsInLevel, skill.id)}
                                                   onClick={() => addProjectSkillBelow(project.id, skill.id, '')}
                                                   className="h-8 w-8"
                                                   title="Añadir nodo debajo"
@@ -550,9 +566,10 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                   <ChevronDown className="w-4 h-4" />
                                                 </Button>
                                               </div>
-                                              <Button 
-                                                size="sm" 
-                                                variant="ghost" 
+                                              <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                disabled={!canAddFromNode(skillsInLevel, skill.id)}
                                                 onClick={() => addProjectSkillBelow(project.id, skill.id, '')}
                                                 className="h-8 w-8"
                                                 title="Añadir nodo debajo"
@@ -681,9 +698,10 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                             >
                                               <ChevronDown className="w-4 h-4" />
                                             </Button>
-                                            <Button 
-                                              size="sm" 
-                                              variant="ghost" 
+                                            <Button
+                                              size="sm"
+                                              variant="ghost"
+                                              disabled={!canAddFromNode(skillsInLevel, skill.id)}
                                               onClick={() => addProjectSkillBelow(project.id, skill.id, '')}
                                               className="h-8 w-8"
                                               title="Añadir nodo debajo"
