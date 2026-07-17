@@ -3816,6 +3816,8 @@ export async function registerRoutes(
         areaId: req.body.areaId ?? null,
         projectId: req.body.projectId ?? null,
         skillId: req.body.skillId ?? null,
+        bodyZone: req.body.bodyZone ?? null,
+        bodyDimension: req.body.bodyDimension ?? null,
         ...(req.body.targetLevel !== undefined ? { targetLevel: req.body.targetLevel } : {}),
       };
 
@@ -3874,6 +3876,42 @@ export async function registerRoutes(
 
       const records = await storage.getRewiringTrackerRecords(archived.id);
       res.json({ ...archived, history: records.map((record) => ({ timestamp: record.timestamp })) });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Internal server error" });
+    }
+  });
+
+  // Body progress (Fuerza/Flexibilidad) routes
+  app.get("/api/body-progress", requireAuth, async (req, res) => {
+    try {
+      const rows = await storage.getBodyProgress(req.userId!);
+      res.json(rows);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Internal server error" });
+    }
+  });
+
+  app.put("/api/body-progress", requireAuth, async (req, res) => {
+    try {
+      const { zone, dimension, lvl, val } = req.body;
+      const validZones = ["brazos", "abdomen", "piernas", "mente"];
+      const validDimensions = ["fuerza", "flex"];
+      if (!validZones.includes(zone) || !validDimensions.includes(dimension)) {
+        return res.status(400).json({ message: "zone/dimension inválidos" });
+      }
+      if (typeof lvl !== "number" || typeof val !== "number") {
+        return res.status(400).json({ message: "lvl/val deben ser numéricos" });
+      }
+
+      const row = await storage.upsertBodyProgress({
+        id: `${req.userId}:${zone}:${dimension}`,
+        userId: req.userId!,
+        zone,
+        dimension,
+        lvl,
+        val,
+      });
+      res.json(row);
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Internal server error" });
     }

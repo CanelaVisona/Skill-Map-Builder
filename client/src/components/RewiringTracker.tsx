@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { ArrowLeft, Plus, Trash2, Archive, Edit, Swords, CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { ExperienceGainPopup, type ExperienceGainSnapshot } from "@/components/ExperienceGainPopup";
+import { useBodyProgress, BODY_LINK_OPTIONS, parseBodyLink, type BodyLinkValue } from "@/lib/body-progress-context";
+import { useBodyGainPopup } from "@/lib/body-gain-popup-context";
 
 interface Level {
   name: string;
@@ -52,6 +54,8 @@ interface TrackerData {
   areaId?: string | null;
   projectId?: string | null;
   skillId?: string | null;
+  bodyZone?: string | null;
+  bodyDimension?: string | null;
   targetLevel?: number | null;
 }
 
@@ -206,13 +210,34 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
   const [editingTrackerAreaId, setEditingTrackerAreaId] = useState<string | null>(null);
   const [editingTrackerProjectId, setEditingTrackerProjectId] = useState<string | null>(null);
   const [editingTrackerSkillId, setEditingTrackerSkillId] = useState<string | null>(null);
+  const [editingTrackerBodyLink, setEditingTrackerBodyLink] = useState<BodyLinkValue>("");
   const [editingTrackerTargetLevel, setEditingTrackerTargetLevel] = useState(String(DEFAULT_TARGET_LEVEL));
   const [editingSkillsForArea, setEditingSkillsForArea] = useState<any[]>([]);
   const [xpPopupSnapshot, setXpPopupSnapshot] = useState<ExperienceGainSnapshot | null>(null);
+  const { addBodyBlock } = useBodyProgress();
+  const { showBodyGainPopup } = useBodyGainPopup();
   const [newTrackerAreaId, setNewTrackerAreaId] = useState<string | null>(null);
   const [newTrackerProjectId, setNewTrackerProjectId] = useState<string | null>(null);
   const [newTrackerSkillId, setNewTrackerSkillId] = useState<string | null>(null);
+  const [newTrackerBodyLink, setNewTrackerBodyLink] = useState<BodyLinkValue>("");
   const [newTrackerTargetLevel, setNewTrackerTargetLevel] = useState(String(DEFAULT_TARGET_LEVEL));
+
+  // Muestra el pop-up de crecimiento corporal; si en la misma confirmación ya se mostró el de
+  // XP (que acá es local, no el contexto compartido), espera a que termine de leerse.
+  const growLinkedBody = (bodyZone: string | null | undefined, bodyDimension: string | null | undefined, xpWasShown: boolean) => {
+    const link = parseBodyLink(bodyZone && bodyDimension ? `${bodyZone}:${bodyDimension}` : null);
+    if (!link) return;
+    const run = () => {
+      const { before, after } = addBodyBlock(link.zone, link.dimension);
+      setXpPopupSnapshot(null);
+      showBodyGainPopup({ zone: link.zone, dimension: link.dimension, before, after });
+    };
+    if (xpWasShown) {
+      setTimeout(run, 1800);
+    } else {
+      run();
+    }
+  };
   const [areas, setAreas] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
   const [availableSkills, setAvailableSkills] = useState<any[]>([]);
@@ -295,6 +320,8 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
                   areaId: storageData?.areaId ?? null,
                   projectId: storageData?.projectId ?? null,
                   skillId: storageData?.skillId ?? null,
+                  bodyZone: storageData?.bodyZone ?? null,
+                  bodyDimension: storageData?.bodyDimension ?? null,
                   history: Array.isArray(storageData?.history) ? storageData.history : [],
                 }),
               });
@@ -323,6 +350,8 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
             areaId: tracker.areaId,
             projectId: tracker.projectId,
             skillId: tracker.skillId,
+            bodyZone: tracker.bodyZone,
+            bodyDimension: tracker.bodyDimension,
             targetLevel: tracker.targetLevel,
           };
         }
@@ -548,6 +577,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
     const targetLevel = Number.isFinite(parsedTargetLevel) && parsedTargetLevel >= 1
       ? Math.round(parsedTargetLevel)
       : DEFAULT_TARGET_LEVEL;
+    const newTrackerBodyLinkParsed = parseBodyLink(newTrackerBodyLink);
 
     try {
       let newTracker: any = null;
@@ -563,6 +593,8 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
             areaId: newTrackerAreaId,
             projectId: newTrackerProjectId,
             skillId: newTrackerSkillId,
+            bodyZone: newTrackerBodyLinkParsed?.zone ?? null,
+            bodyDimension: newTrackerBodyLinkParsed?.dimension ?? null,
             targetLevel,
           }),
         });
@@ -587,6 +619,8 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           areaId: newTrackerAreaId,
           projectId: newTrackerProjectId,
           skillId: newTrackerSkillId,
+          bodyZone: newTrackerBodyLinkParsed?.zone ?? null,
+          bodyDimension: newTrackerBodyLinkParsed?.dimension ?? null,
           targetLevel,
         };
         console.log("[Rewiring] Created local tracker:", newTracker);
@@ -603,6 +637,8 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
         areaId: newTracker.areaId,
         projectId: newTracker.projectId,
         skillId: newTracker.skillId,
+        bodyZone: newTracker.bodyZone,
+        bodyDimension: newTracker.bodyDimension,
         targetLevel: newTracker.targetLevel,
       };
       console.log("[Rewiring] New tracker data:", newTrackerData);
@@ -630,6 +666,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
       setNewTrackerAreaId(null);
       setNewTrackerProjectId(null);
       setNewTrackerSkillId(null);
+      setNewTrackerBodyLink("");
       setNewTrackerTargetLevel(String(DEFAULT_TARGET_LEVEL));
       setSelectedTrackerId(newTracker.id);
 
@@ -683,7 +720,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
     }
   };
 
-  const handleUpdateTracker = async (trackerId: string, updates: { name: string; areaId: string | null; projectId: string | null; skillId: string | null; targetLevel: number }) => {
+  const handleUpdateTracker = async (trackerId: string, updates: { name: string; areaId: string | null; projectId: string | null; skillId: string | null; bodyZone?: string | null; bodyDimension?: string | null; targetLevel: number }) => {
     if (!updates.name.trim()) return;
 
     try {
@@ -697,6 +734,8 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
             areaId: updates.areaId,
             projectId: updates.projectId,
             skillId: updates.skillId,
+            bodyZone: updates.bodyZone ?? null,
+            bodyDimension: updates.bodyDimension ?? null,
             targetLevel: updates.targetLevel,
           }),
         });
@@ -720,6 +759,8 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           areaId: updates.areaId,
           projectId: updates.projectId,
           skillId: updates.skillId,
+          bodyZone: updates.bodyZone ?? null,
+          bodyDimension: updates.bodyDimension ?? null,
           targetLevel: updates.targetLevel,
         };
       }
@@ -732,7 +773,8 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
       setEditingTrackerAreaId(null);
       setEditingTrackerProjectId(null);
       setEditingTrackerSkillId(null);
-      
+      setEditingTrackerBodyLink("");
+
       // Save to localStorage
       storage.setItem("rewiring_tracker_list", JSON.stringify(updatedTrackers));
       if (updatedData[trackerId]) {
@@ -777,6 +819,9 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
       if (data.skillId) {
         await awardSkillXP(data.skillId);
       }
+
+      // Grow linked body component (fuerza/flexibilidad), if any
+      growLinkedBody(data.bodyZone, data.bodyDimension, !!data.skillId);
 
       // Always update tracker data (whether complete or not)
       const updatedData = {
@@ -900,6 +945,8 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           onNewTrackerProjectId={setNewTrackerProjectId}
           newTrackerSkillId={newTrackerSkillId}
           onNewTrackerSkillId={setNewTrackerSkillId}
+          newTrackerBodyLink={newTrackerBodyLink}
+          onNewTrackerBodyLinkChange={setNewTrackerBodyLink}
           newTrackerTargetLevel={newTrackerTargetLevel}
           onNewTrackerTargetLevel={setNewTrackerTargetLevel}
           areas={areas}
@@ -920,6 +967,8 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           onEditingTrackerProjectId={setEditingTrackerProjectId}
           editingTrackerSkillId={editingTrackerSkillId}
           onEditingTrackerSkillId={setEditingTrackerSkillId}
+          editingTrackerBodyLink={editingTrackerBodyLink}
+          onEditingTrackerBodyLinkChange={setEditingTrackerBodyLink}
           editingTrackerTargetLevel={editingTrackerTargetLevel}
           onEditingTrackerTargetLevel={setEditingTrackerTargetLevel}
           editingSkillsForArea={editingSkillsForArea}
@@ -1000,6 +1049,8 @@ function TrackerCard({
   onEditingTrackerProjectId,
   editingTrackerSkillId,
   onEditingTrackerSkillId,
+  editingTrackerBodyLink,
+  onEditingTrackerBodyLinkChange,
   editingTrackerTargetLevel,
   onEditingTrackerTargetLevel,
   editingSkillsForArea,
@@ -1015,7 +1066,7 @@ function TrackerCard({
   onContextMenuTrackerId: (id: string | null) => void;
   onEditingTrackerName: (name: string) => void;
   onSetEditingTrackerId: (id: string | null) => void;
-  onUpdateTracker: (id: string, updates: { name: string; areaId: string | null; projectId: string | null; skillId: string | null; targetLevel: number }) => void;
+  onUpdateTracker: (id: string, updates: { name: string; areaId: string | null; projectId: string | null; skillId: string | null; bodyZone?: string | null; bodyDimension?: string | null; targetLevel: number }) => void;
   onDeleteTracker: (id: string) => void;
   onRegisterAction: (id: string) => void;
   onSelectTracker: (id: string) => void;
@@ -1028,6 +1079,8 @@ function TrackerCard({
   onEditingTrackerProjectId: (id: string | null) => void;
   editingTrackerSkillId: string | null;
   onEditingTrackerSkillId: (id: string | null) => void;
+  editingTrackerBodyLink: BodyLinkValue;
+  onEditingTrackerBodyLinkChange: (value: BodyLinkValue) => void;
   editingTrackerTargetLevel: string;
   onEditingTrackerTargetLevel: (level: string) => void;
   editingSkillsForArea: any[];
@@ -1163,6 +1216,23 @@ function TrackerCard({
             </select>
           </div>
 
+          {/* Body Component Select */}
+          <div>
+            <label className="text-xs font-semibold text-foreground uppercase tracking-wide">Componente corporal</label>
+            <select
+              value={editingTrackerBodyLink}
+              onChange={(e) => onEditingTrackerBodyLinkChange(e.target.value as BodyLinkValue)}
+              className="mt-1 w-full px-2 py-1.5 border border-border/50 rounded bg-background text-foreground dark:bg-slate-900 text-xs"
+            >
+              <option value="">Sin componente</option>
+              {BODY_LINK_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* Target Level */}
           <div>
             <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
@@ -1195,6 +1265,7 @@ function TrackerCard({
                 onEditingTrackerAreaId(null);
                 onEditingTrackerProjectId(null);
                 onEditingTrackerSkillId(null);
+                onEditingTrackerBodyLinkChange("");
                 onEditingTrackerTargetLevel(String(DEFAULT_TARGET_LEVEL));
                 onEditingSkillsForArea([]);
               }}
@@ -1211,11 +1282,14 @@ function TrackerCard({
                   const targetLevel = Number.isFinite(parsedLevel) && parsedLevel >= 1
                     ? Math.round(parsedLevel)
                     : DEFAULT_TARGET_LEVEL;
+                  const editingBodyLink = parseBodyLink(editingTrackerBodyLink);
                   onUpdateTracker(tracker.id, {
                     name: editingTrackerName,
                     areaId: editingTrackerAreaId,
                     projectId: editingTrackerProjectId,
                     skillId: editingTrackerSkillId,
+                    bodyZone: editingBodyLink?.zone ?? null,
+                    bodyDimension: editingBodyLink?.dimension ?? null,
                     targetLevel,
                   });
                 }
@@ -1320,6 +1394,7 @@ function TrackerCard({
                 onEditingTrackerAreaId(data.areaId || null);
                 onEditingTrackerProjectId(data.projectId || null);
                 onEditingTrackerSkillId(data.skillId || null);
+                onEditingTrackerBodyLinkChange(data.bodyZone && data.bodyDimension ? (`${data.bodyZone}:${data.bodyDimension}` as BodyLinkValue) : "");
                 onEditingTrackerTargetLevel(String(data.targetLevel ?? DEFAULT_TARGET_LEVEL));
                 onSetEditingTrackerId(tracker.id);
                 onContextMenuTrackerId(null);
@@ -1384,6 +1459,8 @@ function MainPanel({
   onNewTrackerProjectId,
   newTrackerSkillId,
   onNewTrackerSkillId,
+  newTrackerBodyLink,
+  onNewTrackerBodyLinkChange,
   newTrackerTargetLevel,
   onNewTrackerTargetLevel,
   areas,
@@ -1404,6 +1481,8 @@ function MainPanel({
   onEditingTrackerProjectId,
   editingTrackerSkillId,
   onEditingTrackerSkillId,
+  editingTrackerBodyLink,
+  onEditingTrackerBodyLinkChange,
   editingTrackerTargetLevel,
   onEditingTrackerTargetLevel,
   editingSkillsForArea,
@@ -1427,6 +1506,8 @@ function MainPanel({
   onNewTrackerProjectId: (id: string | null) => void;
   newTrackerSkillId: string | null;
   onNewTrackerSkillId: (id: string | null) => void;
+  newTrackerBodyLink: BodyLinkValue;
+  onNewTrackerBodyLinkChange: (value: BodyLinkValue) => void;
   newTrackerTargetLevel: string;
   onNewTrackerTargetLevel: (level: string) => void;
   areas: any[];
@@ -1439,7 +1520,7 @@ function MainPanel({
   editingTrackerId: string | null;
   editingTrackerName: string | null;
   onEditingTrackerName: (name: string) => void;
-  onUpdateTracker: (id: string, updates: { name: string; areaId: string | null; projectId: string | null; skillId: string | null; targetLevel: number }) => void;
+  onUpdateTracker: (id: string, updates: { name: string; areaId: string | null; projectId: string | null; skillId: string | null; bodyZone?: string | null; bodyDimension?: string | null; targetLevel: number }) => void;
   onSetEditingTrackerId: (id: string | null) => void;
   editingTrackerAreaId: string | null;
   onEditingTrackerAreaId: (id: string | null) => void;
@@ -1447,6 +1528,8 @@ function MainPanel({
   onEditingTrackerProjectId: (id: string | null) => void;
   editingTrackerSkillId: string | null;
   onEditingTrackerSkillId: (id: string | null) => void;
+  editingTrackerBodyLink: BodyLinkValue;
+  onEditingTrackerBodyLinkChange: (value: BodyLinkValue) => void;
   editingTrackerTargetLevel: string;
   onEditingTrackerTargetLevel: (level: string) => void;
   editingSkillsForArea: any[];
@@ -1516,6 +1599,8 @@ function MainPanel({
                 onEditingTrackerProjectId={onEditingTrackerProjectId}
                 editingTrackerSkillId={editingTrackerSkillId}
                 onEditingTrackerSkillId={onEditingTrackerSkillId}
+                editingTrackerBodyLink={editingTrackerBodyLink}
+                onEditingTrackerBodyLinkChange={onEditingTrackerBodyLinkChange}
                 editingTrackerTargetLevel={editingTrackerTargetLevel}
                 onEditingTrackerTargetLevel={onEditingTrackerTargetLevel}
                 editingSkillsForArea={editingSkillsForArea}
@@ -1616,6 +1701,24 @@ function MainPanel({
                   <p className="mt-1 text-xs text-muted-foreground">Opcional: linkear a un skill para sumar +5 XP al completar</p>
                 </div>
 
+                {/* Body Component Select */}
+                <div className="mb-4">
+                  <label className="text-xs font-semibold text-foreground uppercase tracking-wide">Componente corporal a linkear</label>
+                  <select
+                    value={newTrackerBodyLink}
+                    onChange={(e) => onNewTrackerBodyLinkChange(e.target.value as BodyLinkValue)}
+                    className="mt-2 w-full px-3 py-2.5 border border-border/50 rounded-lg bg-background text-foreground dark:bg-slate-900 dark:text-foreground focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 transition-all text-sm"
+                  >
+                    <option value="">Sin componente asignado</option>
+                    {BODY_LINK_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-xs text-muted-foreground">Opcional: linkear a un componente de fuerza/flexibilidad para hacerlo crecer al completar</p>
+                </div>
+
                 {/* Target Level */}
                 <div className="mb-4">
                   <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
@@ -1647,6 +1750,7 @@ function MainPanel({
                       onNewTrackerAreaId(null);
                       onNewTrackerProjectId(null);
                       onNewTrackerSkillId(null);
+                      onNewTrackerBodyLinkChange("");
                       onNewTrackerTargetLevel(String(DEFAULT_TARGET_LEVEL));
                     }}
                     className="flex-1"

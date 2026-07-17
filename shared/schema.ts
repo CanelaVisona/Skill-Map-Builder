@@ -194,6 +194,8 @@ export const sourceBugRecords = pgTable("source_bug_records", {
   bugId: varchar("bug_id").notNull().references(() => sourceBugs.id, { onDelete: "cascade" }),
   userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
   skillId: varchar("skill_id"),
+  bodyZone: text("body_zone").$type<"brazos" | "abdomen" | "piernas" | "mente" | null>(),
+  bodyDimension: text("body_dimension").$type<"fuerza" | "flex" | null>(),
   fecha: varchar("fecha").notNull(),
   situacion: text("situacion").notNull(),
   senal: text("senal").notNull(),
@@ -264,6 +266,8 @@ export const habits = pgTable("habits", {
   areaId: varchar("area_id").references(() => areas.id, { onDelete: "set null" }),
   projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
   skillId: varchar("skill_id").references(() => globalSkills.id, { onDelete: "set null" }), // Link to global skill for XP rewards
+  bodyZone: text("body_zone").$type<"brazos" | "abdomen" | "piernas" | "mente" | null>(), // Link to body component for strength/flex growth
+  bodyDimension: text("body_dimension").$type<"fuerza" | "flex" | null>(),
   scheduledDays: jsonb("scheduled_days").notNull().$type<number[]>().default([0,1,2,3,4,5,6]), // Days of week (0=Mon, 6=Sun)
   freezeDates: text("freeze_dates").default("[]").notNull(), // Array of frozen dates as JSON string (YYYY-MM-DD format)
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -284,6 +288,8 @@ export const spaceRepetitionPractices = pgTable("space_repetition_practices", {
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   emoji: text("emoji").notNull(),
+  bodyZone: text("body_zone").$type<"brazos" | "abdomen" | "piernas" | "mente" | null>(), // Link to body component for strength/flex growth
+  bodyDimension: text("body_dimension").$type<"fuerza" | "flex" | null>(),
   startDate: varchar("start_date").notNull(), // YYYY-MM-DD format
   completedIntervals: jsonb("completed_intervals").notNull().$type<number[]>().default([]),
   archived: integer("archived").$type<0 | 1>().default(0),
@@ -333,6 +339,8 @@ export const rewiringTrackers = pgTable("rewiring_trackers", {
   areaId: varchar("area_id").references(() => areas.id, { onDelete: "set null" }),
   projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
   skillId: varchar("skill_id").references(() => globalSkills.id, { onDelete: "set null" }),
+  bodyZone: text("body_zone").$type<"brazos" | "abdomen" | "piernas" | "mente" | null>(), // Link to body component for strength/flex growth
+  bodyDimension: text("body_dimension").$type<"fuerza" | "flex" | null>(),
   startDate: timestamp("start_date").notNull().defaultNow(),
   archivedAt: timestamp("archived_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -346,6 +354,22 @@ export const rewiringTrackerRecords = pgTable("rewiring_tracker_records", {
   timestamp: timestamp("timestamp").notNull().defaultNow(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
+
+// ============ BODY PROGRESS (Fuerza/Flexibilidad) ============
+// id determinístico `${userId}:${zone}:${dimension}` — una fila por combinación, permite
+// upsert directo (buscar por id) sin índice único compuesto aparte.
+export const bodyProgress = pgTable("body_progress", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  zone: text("zone").$type<"brazos" | "abdomen" | "piernas" | "mente">().notNull(),
+  dimension: text("dimension").$type<"fuerza" | "flex">().notNull(),
+  lvl: integer("lvl").notNull().default(1),
+  val: integer("val").notNull().default(0),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertBodyProgressSchema = createInsertSchema(bodyProgress).omit({ updatedAt: true });
+export type InsertBodyProgress = z.infer<typeof insertBodyProgressSchema>;
+export type BodyProgressRow = typeof bodyProgress.$inferSelect;
 
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertSessionSchema = createInsertSchema(sessions).omit({ id: true });

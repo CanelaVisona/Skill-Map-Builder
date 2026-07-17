@@ -10,6 +10,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import type { Habit, HabitRecord, Area, Project } from "@shared/schema";
 import { useSkillTree } from "@/lib/skill-context";
 import { useXpPopup } from "@/lib/xp-popup-context";
+import { useBodyProgress, BODY_LINK_OPTIONS, parseBodyLink, type BodyLinkValue } from "@/lib/body-progress-context";
+import { useBodyGainPopup } from "@/lib/body-gain-popup-context";
 
 interface HabitData extends Habit {
   done: Set<string>;
@@ -175,10 +177,31 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
   const [editHabitScheduledDays, setEditHabitScheduledDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
   const [newHabitSkillProgressId, setNewHabitSkillProgressId] = useState<string | null>(null);
   const [editHabitSkillProgressId, setEditHabitSkillProgressId] = useState<string | null>(null);
+  const [newHabitBodyLink, setNewHabitBodyLink] = useState<BodyLinkValue>("");
+  const [editHabitBodyLink, setEditHabitBodyLink] = useState<BodyLinkValue>("");
   const { theme } = useTheme();
   const queryClient = useQueryClient();
   const { globalSkills, refetchGlobalSkills } = useSkillTree();
-  const { showXpPopup } = useXpPopup();
+  const { showXpPopup, hideXpPopup } = useXpPopup();
+  const { addBodyBlock } = useBodyProgress();
+  const { showBodyGainPopup, hideBodyGainPopup } = useBodyGainPopup();
+
+  // Muestra el pop-up de crecimiento corporal; si en la misma confirmación ya se mostró el de
+  // XP, espera a que termine de leerse en vez de solaparse (mismo criterio que SkillNode.tsx).
+  const growLinkedBody = (bodyZone: string | null | undefined, bodyDimension: string | null | undefined, xpWasShown: boolean) => {
+    const link = parseBodyLink(bodyZone && bodyDimension ? `${bodyZone}:${bodyDimension}` : null);
+    if (!link) return;
+    const run = () => {
+      const { before, after } = addBodyBlock(link.zone, link.dimension);
+      hideXpPopup();
+      showBodyGainPopup({ zone: link.zone, dimension: link.dimension, before, after });
+    };
+    if (xpWasShown) {
+      setTimeout(run, 1800);
+    } else {
+      run();
+    }
+  };
 
   // Fetch habits
   const { data: habits = [], isLoading: habitsLoading } = useQuery({
@@ -408,6 +431,8 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       areaId?: string | null;
       projectId?: string | null;
       skillId?: string | null;
+      bodyZone?: string | null;
+      bodyDimension?: string | null;
       scheduledDays: number[];
     }) => {
       const res = await fetch("/api/habits", {
@@ -432,6 +457,8 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       areaId?: string | null;
       projectId?: string | null;
       skillId?: string | null;
+      bodyZone?: string | null;
+      bodyDimension?: string | null;
       scheduledDays?: number[];
     }) => {
       const res = await fetch(`/api/habits/${data.id}`, {
@@ -444,6 +471,8 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
           areaId: data.areaId,
           projectId: data.projectId,
           skillId: data.skillId,
+          bodyZone: data.bodyZone,
+          bodyDimension: data.bodyDimension,
           scheduledDays: data.scheduledDays,
         }),
       });
@@ -580,6 +609,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
   };
   const showAdd = () => {
     setNewHabitSkillProgressId(null);
+    setNewHabitBodyLink("");
     showPanel("add");
   };
   const showArchived = () => showPanel("archived");
@@ -593,6 +623,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       setEditHabitAreaId(habit.areaId || null);
       setEditHabitProjectId(habit.projectId || null);
       setEditHabitSkillProgressId(habit.skillId || null);
+      setEditHabitBodyLink(habit.bodyZone && habit.bodyDimension ? (`${habit.bodyZone}:${habit.bodyDimension}` as BodyLinkValue) : "");
       setEditHabitScheduledDays(habit.scheduledDays || [0, 1, 2, 3, 4, 5, 6]);
       showPanel("edit");
     }
@@ -604,6 +635,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
     setNewHabitAreaId(null);
     setNewHabitProjectId(null);
     setNewHabitSkillProgressId(null);
+    setNewHabitBodyLink("");
     setNewHabitScheduledDays([0, 1, 2, 3, 4, 5, 6]);
   };
   const resetEditForm = () => {
@@ -613,6 +645,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
     setEditHabitAreaId(null);
     setEditHabitProjectId(null);
     setEditHabitSkillProgressId(null);
+    setEditHabitBodyLink("");
     setEditHabitScheduledDays([0, 1, 2, 3, 4, 5, 6]);
     setSelectedHabitId(null);
   };
@@ -658,6 +691,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                               const xpData = await res.json();
                               if (linkedSkill) {
                                 const area = areas.find((areaEntry) => areaEntry.id === linkedSkill.areaId);
+                                hideBodyGainPopup();
                                 showXpPopup({
                                   skillName: linkedSkill.name,
                                   areaColor: area?.color || "#c85a2a",
@@ -673,6 +707,9 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                           } catch (error) {
                             console.error("Error awarding XP:", error);
                           }
+                        }
+                        if (!isCompleted) {
+                          growLinkedBody(habit.bodyZone, habit.bodyDimension, !!habit.skillId);
                         }
                       },
                     }
@@ -740,6 +777,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                             const xpData = await res.json();
                             if (linkedSkill) {
                               const area = areas.find((areaEntry) => areaEntry.id === linkedSkill.areaId);
+                              hideBodyGainPopup();
                               showXpPopup({
                                 skillName: linkedSkill.name,
                                 areaColor: area?.color || "#c85a2a",
@@ -756,6 +794,9 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                           console.error("Error awarding XP:", error);
                         }
                       }
+                      if (!isCompleted) {
+                        growLinkedBody(habit.bodyZone, habit.bodyDimension, !!habit.skillId);
+                      }
                     },
                   }
                 );
@@ -771,6 +812,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
               areaId={newHabitAreaId}
               projectId={newHabitProjectId}
               skillId={newHabitSkillProgressId}
+              bodyLink={newHabitBodyLink}
               areas={areas}
               projects={projects}
               skills={newPanelSkills}
@@ -782,6 +824,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
               onAreaIdChange={setNewHabitAreaId}
               onProjectIdChange={setNewHabitProjectId}
               onSkillIdChange={setNewHabitSkillProgressId}
+              onBodyLinkChange={setNewHabitBodyLink}
               onBack={() => {
                 resetForm();
                 showMain();
@@ -789,6 +832,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
               onSubmit={async () => {
                 if (newHabitName.trim()) {
                   try {
+                    const bodyLink = parseBodyLink(newHabitBodyLink);
                     await createHabitMutation.mutateAsync({
                       emoji: newHabitEmoji || "⭐",
                       name: newHabitName.trim(),
@@ -796,6 +840,8 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                       areaId: newHabitAreaId,
                       projectId: newHabitProjectId,
                       skillId: newHabitSkillProgressId,
+                      bodyZone: bodyLink?.zone ?? null,
+                      bodyDimension: bodyLink?.dimension ?? null,
                       scheduledDays: newHabitScheduledDays,
                     });
                     resetForm();
@@ -820,6 +866,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
               areaId={editHabitAreaId}
               projectId={editHabitProjectId}
               skillId={editHabitSkillProgressId}
+              bodyLink={editHabitBodyLink}
               areas={areas}
               projects={projects}
               skills={editPanelSkills}
@@ -831,6 +878,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
               onAreaIdChange={setEditHabitAreaId}
               onProjectIdChange={setEditHabitProjectId}
               onSkillIdChange={setEditHabitSkillProgressId}
+              onBodyLinkChange={setEditHabitBodyLink}
               onBack={() => {
                 resetEditForm();
                 showMain();
@@ -838,6 +886,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
               onSubmit={async () => {
                 if (editHabitName.trim() && selectedHabitId) {
                   try {
+                    const bodyLink = parseBodyLink(editHabitBodyLink);
                     await updateHabitMutation.mutateAsync({
                       id: selectedHabitId,
                       emoji: editHabitEmoji || "⭐",
@@ -846,6 +895,8 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                       areaId: editHabitAreaId,
                       projectId: editHabitProjectId,
                       skillId: editHabitSkillProgressId,
+                      bodyZone: bodyLink?.zone ?? null,
+                      bodyDimension: bodyLink?.dimension ?? null,
                       scheduledDays: editHabitScheduledDays,
                     });
                     resetEditForm();
@@ -1677,6 +1728,7 @@ function AddPanel({
   areaId,
   projectId,
   skillId,
+  bodyLink,
   areas,
   projects,
   skills,
@@ -1686,6 +1738,7 @@ function AddPanel({
   onAreaIdChange,
   onProjectIdChange,
   onSkillIdChange,
+  onBodyLinkChange,
   scheduledDays,
   onScheduledDaysChange,
   onBack,
@@ -1698,6 +1751,7 @@ function AddPanel({
   areaId: string | null;
   projectId: string | null;
   skillId: string | null;
+  bodyLink: BodyLinkValue;
   areas: Area[];
   projects: Project[];
   skills: any[];
@@ -1707,6 +1761,7 @@ function AddPanel({
   onAreaIdChange: (id: string | null) => void;
   onProjectIdChange: (id: string | null) => void;
   onSkillIdChange: (id: string | null) => void;
+  onBodyLinkChange: (value: BodyLinkValue) => void;
   scheduledDays: number[];
   onScheduledDaysChange: (days: number[]) => void;
   onBack: () => void;
@@ -1894,6 +1949,29 @@ function AddPanel({
             Opcional: linkear a un skill para sumar XP al completar
           </p>
         </div>
+
+        {/* Body Component Select */}
+        <div>
+          <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
+            Componente corporal a linkear
+          </label>
+          <select
+            value={bodyLink}
+            onChange={(e) => onBodyLinkChange(e.target.value as BodyLinkValue)}
+            disabled={isLoading}
+            className="mt-2 w-full px-3 py-2.5 border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm appearance-none cursor-pointer touch-manipulation"
+          >
+            <option value="">Sin componente asignado</option>
+            {BODY_LINK_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Opcional: linkear a un componente de fuerza/flexibilidad para hacerlo crecer al completar
+          </p>
+        </div>
       </div>
 
       {/* Footer */}
@@ -1926,6 +2004,7 @@ function EditPanel({
   areaId,
   projectId,
   skillId,
+  bodyLink,
   areas,
   projects,
   skills,
@@ -1935,6 +2014,7 @@ function EditPanel({
   onAreaIdChange,
   onProjectIdChange,
   onSkillIdChange,
+  onBodyLinkChange,
   scheduledDays,
   onScheduledDaysChange,
   onBack,
@@ -1949,6 +2029,7 @@ function EditPanel({
   areaId: string | null;
   projectId: string | null;
   skillId: string | null;
+  bodyLink: BodyLinkValue;
   areas: Area[];
   projects: Project[];
   skills: any[];
@@ -1958,6 +2039,7 @@ function EditPanel({
   onAreaIdChange: (id: string | null) => void;
   onProjectIdChange: (id: string | null) => void;
   onSkillIdChange: (id: string | null) => void;
+  onBodyLinkChange: (value: BodyLinkValue) => void;
   scheduledDays: number[];
   onScheduledDaysChange: (days: number[]) => void;
   onBack: () => void;
@@ -2141,6 +2223,29 @@ function EditPanel({
           </select>
           <p className="mt-1 text-xs text-muted-foreground">
             Opcional: linkear a un skill para sumar XP al completar
+          </p>
+        </div>
+
+        {/* Body Component Select */}
+        <div>
+          <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
+            Componente corporal a linkear
+          </label>
+          <select
+            value={bodyLink}
+            onChange={(e) => onBodyLinkChange(e.target.value as BodyLinkValue)}
+            disabled={isLoading}
+            className="mt-2 w-full px-3 py-2.5 border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm appearance-none cursor-pointer touch-manipulation"
+          >
+            <option value="">Sin componente asignado</option>
+            {BODY_LINK_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Opcional: linkear a un componente de fuerza/flexibilidad para hacerlo crecer al completar
           </p>
         </div>
       </div>

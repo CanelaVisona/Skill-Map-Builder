@@ -6,6 +6,9 @@ import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { ArrowLeft, Plus, Trash2, Archive } from "lucide-react";
 import { useTheme } from "next-themes";
 import { motion, AnimatePresence } from "framer-motion";
+import { useBodyProgress, BODY_LINK_OPTIONS, parseBodyLink, type BodyLinkValue } from "@/lib/body-progress-context";
+import { useBodyGainPopup } from "@/lib/body-gain-popup-context";
+import { useXpPopup } from "@/lib/xp-popup-context";
 
 interface SpaceRepetitionPractice {
   id: string;
@@ -17,6 +20,8 @@ interface SpaceRepetitionPractice {
   level1CompletedDate?: string | null;
   completedIntervalsL2?: number[];
   lostIntervals?: number[];
+  bodyZone?: string | null;
+  bodyDimension?: string | null;
 }
 
 interface ArchivedPractice {
@@ -380,8 +385,21 @@ export function SpaceRepetitionModal({
   const [selectedPracticeId, setSelectedPracticeId] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const [newEmoji, setNewEmoji] = useState("💪");
+  const [newBodyLink, setNewBodyLink] = useState<BodyLinkValue>("");
   const [notification, setNotification] = useState<string | null>(null);
   const { theme } = useTheme();
+  const { addBodyBlock } = useBodyProgress();
+  const { showBodyGainPopup } = useBodyGainPopup();
+  const { hideXpPopup } = useXpPopup();
+
+  // Muestra el pop-up de crecimiento corporal para el componente linkeado a la práctica.
+  const growLinkedBody = (bodyZone: string | null | undefined, bodyDimension: string | null | undefined) => {
+    const link = parseBodyLink(bodyZone && bodyDimension ? `${bodyZone}:${bodyDimension}` : null);
+    if (!link) return;
+    const { before, after } = addBodyBlock(link.zone, link.dimension);
+    hideXpPopup();
+    showBodyGainPopup({ zone: link.zone, dimension: link.dimension, before, after });
+  };
 
   // Función para migrar datos de localStorage a la API
   const migrateLocalStorageData = async () => {
@@ -465,6 +483,8 @@ export function SpaceRepetitionModal({
           emoji: newEmoji || "💪",
           startDate: getLocalDateString(),
           completedIntervals: [],
+          bodyZone: parseBodyLink(newBodyLink)?.zone ?? null,
+          bodyDimension: parseBodyLink(newBodyLink)?.dimension ?? null,
         })
       });
       if (!res.ok) throw new Error("Error creating practice");
@@ -472,6 +492,7 @@ export function SpaceRepetitionModal({
       setPractices([...practices, newPractice]);
       setNewName("");
       setNewEmoji("💪");
+      setNewBodyLink("");
       setCurrentPanel("main");
     } catch (error) {
       console.error("Error adding practice:", error);
@@ -529,6 +550,7 @@ export function SpaceRepetitionModal({
             totalDays: calculateDaysSince(practice.startDate),
           }]);
           setNotification("🏆 ¡Nivel 2 completado y archivado!");
+          growLinkedBody(practice.bodyZone, practice.bodyDimension);
           return;
         }
 
@@ -543,8 +565,9 @@ export function SpaceRepetitionModal({
         });
         if (!res.ok) throw new Error("Error updating practice");
         const updated = await res.json();
-        
+
         setPractices(practices.map((p) => p.id === practiceId ? updated : p));
+        growLinkedBody(practice.bodyZone, practice.bodyDimension);
         return;
       }
 
@@ -572,6 +595,7 @@ export function SpaceRepetitionModal({
         
         setPractices(practices.map((p) => p.id === practiceId ? updated : p));
         setNotification("🎉 ¡Nivel 1 completado! Iniciando Nivel 2");
+        growLinkedBody(practice.bodyZone, practice.bodyDimension);
         return;
       }
 
@@ -586,8 +610,9 @@ export function SpaceRepetitionModal({
       });
       if (!res.ok) throw new Error("Error updating practice");
       const updated = await res.json();
-      
+
       setPractices(practices.map((p) => p.id === practiceId ? updated : p));
+      growLinkedBody(practice.bodyZone, practice.bodyDimension);
     } catch (error) {
       console.error("Error toggling interval:", error);
     }
@@ -695,11 +720,14 @@ export function SpaceRepetitionModal({
             <AddPanel
               emoji={newEmoji}
               name={newName}
+              bodyLink={newBodyLink}
               onEmojiChange={setNewEmoji}
               onNameChange={setNewName}
+              onBodyLinkChange={setNewBodyLink}
               onBack={() => {
                 setNewName("");
                 setNewEmoji("💪");
+                setNewBodyLink("");
                 setCurrentPanel("main");
               }}
               onSubmit={addPractice}
@@ -1370,15 +1398,19 @@ function PracticeWaitingCardWithLongPress({
 function AddPanel({
   emoji,
   name,
+  bodyLink,
   onEmojiChange,
   onNameChange,
+  onBodyLinkChange,
   onBack,
   onSubmit,
 }: {
   emoji: string;
   name: string;
+  bodyLink: BodyLinkValue;
   onEmojiChange: (emoji: string) => void;
   onNameChange: (name: string) => void;
+  onBodyLinkChange: (value: BodyLinkValue) => void;
   onBack: () => void;
   onSubmit: () => void;
 }) {
@@ -1428,6 +1460,28 @@ function AddPanel({
             placeholder="Por ej: Vocabulario, Guitarra..."
             className="rounded-xl"
           />
+        </div>
+
+        {/* Body Component Select */}
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-2">
+            Componente corporal a linkear
+          </label>
+          <select
+            value={bodyLink}
+            onChange={(e) => onBodyLinkChange(e.target.value as BodyLinkValue)}
+            className="w-full h-10 px-3 rounded-xl border border-border/50 bg-background text-foreground text-sm"
+          >
+            <option value="">Sin componente asignado</option>
+            {BODY_LINK_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Opcional: linkear a un componente de fuerza/flexibilidad para hacerlo crecer al registrar un intervalo
+          </p>
         </div>
 
         {/* Action Buttons */}

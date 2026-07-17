@@ -19,8 +19,8 @@ import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
 import { XpPopupProvider, useXpPopup } from "@/lib/xp-popup-context";
 import { AreaXpPopupProvider } from "@/lib/area-xp-popup-context";
-import { BodyProgressProvider } from "@/lib/body-progress-context";
-import { BodyGainPopupProvider } from "@/lib/body-gain-popup-context";
+import { BodyProgressProvider, useBodyProgress, BODY_LINK_OPTIONS, parseBodyLink, type BodyLinkValue } from "@/lib/body-progress-context";
+import { BodyGainPopupProvider, useBodyGainPopup } from "@/lib/body-gain-popup-context";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -218,6 +218,8 @@ interface SourceBugRecord {
   bugId: string;
   skillId?: string | null;
   skillName?: string | null;
+  bodyZone?: string | null;
+  bodyDimension?: string | null;
   fecha: string;
   situacion: string;
   senal: string;
@@ -6456,7 +6458,9 @@ function HomeNeedsModalWrapper({ open, onOpenChange }: { open: boolean; onOpenCh
 
 function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { areas } = useSkillTree();
-  const { showXpPopup } = useXpPopup();
+  const { showXpPopup, hideXpPopup } = useXpPopup();
+  const { addBodyBlock } = useBodyProgress();
+  const { showBodyGainPopup, hideBodyGainPopup } = useBodyGainPopup();
   const queryClient = useQueryClient();
   const [selectedBugRef, setSelectedBugRef] = useState<{ areaId: string; bugId: string } | null>(null);
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
@@ -6469,6 +6473,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
   const [recordSenal, setRecordSenal] = useState("");
   const [recordEstrategia, setRecordEstrategia] = useState("");
   const [recordSkillId, setRecordSkillId] = useState("");
+  const [recordBodyLink, setRecordBodyLink] = useState<BodyLinkValue>("");
   const [recordResultado, setRecordResultado] = useState<"victoria" | "empate" | "derrota">("victoria");
   const [expandedAreaId, setExpandedAreaId] = useState<string | null>(null);
 
@@ -6535,6 +6540,8 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
         senal: string;
         estrategia: string;
         skillId?: string | null;
+        bodyZone?: string | null;
+        bodyDimension?: string | null;
         resultado: "victoria" | "empate" | "derrota";
       };
     }): Promise<BugRecordCreateResponse> => {
@@ -6554,6 +6561,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
 
       if (createdRecord?.xpAward) {
         const areaColor = areas.find((area) => area.id === createdRecord.xpAward?.areaId)?.color || "#c85a2a";
+        hideBodyGainPopup();
         showXpPopup({
           skillName: createdRecord.xpAward.skillName,
           areaColor,
@@ -6564,12 +6572,27 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
         });
       }
 
+      const bodyLink = parseBodyLink(
+        createdRecord?.bodyZone && createdRecord?.bodyDimension
+          ? `${createdRecord.bodyZone}:${createdRecord.bodyDimension}`
+          : null
+      );
+      if (bodyLink) {
+        const growBody = () => {
+          const { before, after } = addBodyBlock(bodyLink.zone, bodyLink.dimension);
+          hideXpPopup();
+          showBodyGainPopup({ zone: bodyLink.zone, dimension: bodyLink.dimension, before, after });
+        };
+        createdRecord?.xpAward ? setTimeout(growBody, 1800) : growBody();
+      }
+
       setIsRecordFormOpen(false);
       setRecordFecha(new Date().toISOString().slice(0, 10));
       setRecordSituacion("");
       setRecordSenal("");
       setRecordEstrategia("");
       setRecordSkillId("");
+      setRecordBodyLink("");
       setRecordResultado("victoria");
     },
   });
@@ -6586,6 +6609,8 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
         senal?: string;
         estrategia?: string;
         skillId?: string | null;
+        bodyZone?: string | null;
+        bodyDimension?: string | null;
         resultado?: "victoria" | "empate" | "derrota";
       };
     }): Promise<BugRecordCreateResponse> => {
@@ -6699,6 +6724,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
     if (!recordFecha.trim() || !recordSituacion.trim() || !recordSenal.trim() || !recordEstrategia.trim()) return;
 
     if (editingRecordId) {
+      const editingBodyLink = parseBodyLink(recordBodyLink);
       updateBugRecord.mutate({
         id: editingRecordId,
         data: {
@@ -6707,12 +6733,15 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
           senal: recordSenal.trim(),
           estrategia: recordEstrategia.trim(),
           skillId: recordSkillId || null,
+          bodyZone: editingBodyLink?.zone ?? null,
+          bodyDimension: editingBodyLink?.dimension ?? null,
           resultado: recordResultado,
         },
       });
       return;
     }
 
+    const bodyLink = parseBodyLink(recordBodyLink);
     createBugRecord.mutate({
       bugId: selectedBug.id,
       data: {
@@ -6721,6 +6750,8 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
         senal: recordSenal.trim(),
         estrategia: recordEstrategia.trim(),
         skillId: recordSkillId || null,
+        bodyZone: bodyLink?.zone ?? null,
+        bodyDimension: bodyLink?.dimension ?? null,
         resultado: recordResultado,
       },
     });
@@ -6735,6 +6766,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
     setRecordSenal(record.senal);
     setRecordEstrategia(record.estrategia);
     setRecordSkillId(record.skillId || "");
+    setRecordBodyLink(record.bodyZone && record.bodyDimension ? (`${record.bodyZone}:${record.bodyDimension}` as BodyLinkValue) : "");
     setRecordResultado(record.resultado);
   };
 
@@ -6746,6 +6778,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
     setRecordSenal("");
     setRecordEstrategia("");
     setRecordSkillId("");
+    setRecordBodyLink("");
     setRecordResultado("victoria");
   };
 
@@ -6758,6 +6791,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
     setRecordSenal("");
     setRecordEstrategia("");
     setRecordSkillId("");
+    setRecordBodyLink("");
     setRecordResultado("victoria");
   };
 
@@ -7051,6 +7085,20 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
                         <option value="">Sin link</option>
                         {selectedAreaSkills.map((skill) => (
                           <option key={skill.id} value={skill.id}>{skill.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <Label htmlFor="global-record-body" className="text-xs text-muted-foreground">Componente corporal a linkear</Label>
+                      <select
+                        id="global-record-body"
+                        value={recordBodyLink}
+                        onChange={(e) => setRecordBodyLink(e.target.value as BodyLinkValue)}
+                        className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                      >
+                        <option value="">Sin componente</option>
+                        {BODY_LINK_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
                         ))}
                       </select>
                     </div>

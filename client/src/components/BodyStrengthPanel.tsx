@@ -58,6 +58,7 @@ export function BodyStrengthPanel() {
         .bsp-chip:nth-child(3) { animation-delay: -4.8s; }
         .bsp-chip:nth-child(4) { animation-delay: -1.2s; }
         .bsp-blk[data-full="true"] { box-shadow: 0 0 6px -1px var(--bsp-accent); }
+        .bsp-chip-text { text-shadow: 0 1px 3px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.6); }
         .bsp-nerves { animation: bsp-nerve 6s linear infinite; }
         .bsp-slot-brazos { top: 20%; left: 1%; }
         .bsp-slot-abdomen { top: 43%; right: 1%; }
@@ -161,26 +162,19 @@ export function BodyStrengthPanel() {
             return (
               <div
                 key={zone}
-                className={`bsp-chip absolute w-[clamp(120px,15vw,152px)] rounded-[11px] border px-[10px] py-[9px] shadow-[0_8px_26px_-14px_#000] ${ZONE_SLOT_CLASS[zone]}`}
-                style={{
-                  background: "linear-gradient(180deg, rgba(24,36,58,.95), rgba(15,24,40,.95))",
-                  borderColor: "#26374f",
-                  ["--bsp-accent" as string]: accent,
-                }}
+                className={`bsp-chip absolute w-[clamp(120px,15vw,152px)] ${ZONE_SLOT_CLASS[zone]}`}
+                style={{ ["--bsp-accent" as string]: accent }}
                 data-testid={`chip-body-${zone}-${mode}`}
               >
-                <div className="text-[8px] uppercase tracking-[0.18em]" style={{ color: "#8296B4" }}>
-                  {BODY_ZONE_LABELS[zone]}
-                </div>
                 <div className="flex items-baseline justify-between gap-1.5">
-                  <span className="text-[12px] font-semibold" style={{ color: accent }}>
-                    {MODE_LABELS[mode]}
+                  <span className="bsp-chip-text text-[12px] font-semibold" style={{ color: accent }}>
+                    {BODY_ZONE_LABELS[zone]}
                   </span>
-                  <span className="text-[8.5px]" style={{ color: accent }}>
+                  <span className="bsp-chip-text text-[9px] font-medium" style={{ color: accent }}>
                     N{p.lvl}
                   </span>
                 </div>
-                <div className="my-[6px] flex gap-[2px]">
+                <div className="mt-[6px] flex gap-[2px]">
                   {Array.from({ length: BODY_BLOCKS }).map((_, i) => (
                     <span
                       key={i}
@@ -192,9 +186,6 @@ export function BodyStrengthPanel() {
                       }}
                     />
                   ))}
-                </div>
-                <div className="text-[8px] uppercase tracking-[0.18em]" style={{ color: "#8296B4" }}>
-                  {p.val}/{BODY_BLOCKS}
                 </div>
               </div>
             );

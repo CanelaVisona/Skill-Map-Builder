@@ -1,7 +1,7 @@
 import { eq, and, asc, sql, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db, pool } from "./db";
-import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type JournalShadowPage, type InsertJournalShadowPage, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourcePowers, type InsertSourcePowers, type SourceBug, type InsertSourceBug, type SourceBugRecord, type InsertSourceBugRecord, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, journalShadowPages, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourcePowers, sourceBugs, sourceBugRecords, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, rewiringTrackers, rewiringTrackerRecords } from "@shared/schema";
+import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type JournalShadowPage, type InsertJournalShadowPage, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourcePowers, type InsertSourcePowers, type SourceBug, type InsertSourceBug, type SourceBugRecord, type InsertSourceBugRecord, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, type BodyProgressRow, type InsertBodyProgress, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, journalShadowPages, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourcePowers, sourceBugs, sourceBugRecords, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, rewiringTrackers, rewiringTrackerRecords, bodyProgress } from "@shared/schema";
 
 const normalizeSourceBugStatus = (status: string): "identificado" | "debugueando" | "debugueado" => {
   if (status === "activo") return "identificado";
@@ -2301,6 +2301,8 @@ export class DbStorage implements IStorage {
       areaId: tracker.areaId ?? null,
       projectId: tracker.projectId ?? null,
       skillId: tracker.skillId ?? null,
+      bodyZone: tracker.bodyZone ?? null,
+      bodyDimension: tracker.bodyDimension ?? null,
       startDate: tracker.startDate ?? new Date(),
       archivedAt: tracker.archivedAt ?? null,
     } as any).returning();
@@ -2358,6 +2360,26 @@ export class DbStorage implements IStorage {
       .set({ archivedAt: new Date(), updatedAt: new Date() } as any)
       .where(eq(rewiringTrackers.id, id))
       .returning();
+    return result[0];
+  }
+
+  // Body Progress (Fuerza/Flexibilidad)
+  async getBodyProgress(userId: string): Promise<BodyProgressRow[]> {
+    return await db.select().from(bodyProgress).where(eq(bodyProgress.userId, userId));
+  }
+
+  async upsertBodyProgress(row: InsertBodyProgress): Promise<BodyProgressRow> {
+    const existing = await db.select().from(bodyProgress).where(eq(bodyProgress.id, row.id)).limit(1);
+
+    if (existing[0]) {
+      const result = await db.update(bodyProgress)
+        .set({ lvl: row.lvl, val: row.val, updatedAt: new Date() })
+        .where(eq(bodyProgress.id, row.id))
+        .returning();
+      return result[0];
+    }
+
+    const result = await db.insert(bodyProgress).values(row as any).returning();
     return result[0];
   }
 }
