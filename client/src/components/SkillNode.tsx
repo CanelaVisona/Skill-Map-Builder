@@ -250,8 +250,14 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const { addBodyBlock } = useBodyProgress();
   const { showBodyGainPopup, hideBodyGainPopup } = useBodyGainPopup();
   const [selectedBodyDimension, setSelectedBodyDimension] = useState<BodyDimension>("fuerza");
-  const [selectedBodyZone, setSelectedBodyZone] = useState<BodyZone | null>(null);
+  const [selectedBodyZones, setSelectedBodyZones] = useState<BodyZone[]>([]);
   const [showBodyZoneSelector, setShowBodyZoneSelector] = useState(false);
+
+  const toggleBodyZone = (zone: BodyZone) => {
+    setSelectedBodyZones((prev) =>
+      prev.includes(zone) ? prev.filter((z) => z !== zone) : [...prev, zone]
+    );
+  };
   const activeScopeSkills = isProject ? (activeProject?.skills || []) : (activeArea?.skills || []);
   const activeScopeName = isProject ? (activeProject?.name || "Project") : (activeArea?.name || "Area");
   const activeScopeXp = activeScope?.currentXp ?? countMasteredSkills(activeScopeSkills);
@@ -795,12 +801,24 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   };
 
   const handleAddBody = () => {
-    if (!selectedBodyZone) return;
+    if (selectedBodyZones.length === 0) return;
 
-    const { before, after } = addBodyBlock(selectedBodyZone, selectedBodyDimension);
     hideXpPopup(); // evita solaparse con el pop-up de XP si sigue visible
-    showBodyGainPopup({ zone: selectedBodyZone, dimension: selectedBodyDimension, before, after });
-    setSelectedBodyZone(null);
+
+    // Un bloque por componente elegido. Si son varios, los pop-ups se muestran de a uno
+    // (mismo criterio de 1800ms que ya se usa entre el pop-up de XP y el de cuerpo) para que
+    // no se solapen entre sí.
+    selectedBodyZones.forEach((zone, index) => {
+      const { before, after } = addBodyBlock(zone, selectedBodyDimension);
+      const show = () => showBodyGainPopup({ zone, dimension: selectedBodyDimension, before, after });
+      if (index === 0) {
+        show();
+      } else {
+        setTimeout(show, index * 1800);
+      }
+    });
+
+    setSelectedBodyZones([]);
   };
 
   const handleTitleLongPressStart = (e: React.TouchEvent | React.MouseEvent) => {
@@ -1812,7 +1830,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                       className="bg-muted/50 hover:bg-muted w-full"
                       data-testid="button-select-body-zone"
                     >
-                      {selectedBodyZone ? `✓ ${BODY_ZONE_LABELS[selectedBodyZone]}` : "Seleccionar componente"}
+                      {selectedBodyZones.length > 0
+                        ? `✓ ${selectedBodyZones.map((z) => BODY_ZONE_LABELS[z]).join(", ")}`
+                        : "Seleccionar componente(s)"}
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent
@@ -1829,14 +1849,12 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                           variant="ghost"
                           size="sm"
                           className={`w-full justify-start h-8 px-3 text-xs font-normal ${
-                            selectedBodyZone === zone ? "bg-muted text-foreground" : "hover:bg-muted/50"
+                            selectedBodyZones.includes(zone) ? "bg-muted text-foreground" : "hover:bg-muted/50"
                           }`}
-                          onClick={() => {
-                            setSelectedBodyZone(zone);
-                            setShowBodyZoneSelector(false);
-                          }}
+                          onClick={() => toggleBodyZone(zone)}
                           data-testid={`button-select-body-zone-${zone}`}
                         >
+                          {selectedBodyZones.includes(zone) ? "✓ " : ""}
                           {BODY_ZONE_LABELS[zone]}
                         </Button>
                       ))}
@@ -1848,7 +1866,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                     variant="ghost"
                     size="sm"
                     onClick={handleAddBody}
-                    disabled={!selectedBodyZone}
+                    disabled={selectedBodyZones.length === 0}
                     className="bg-muted/50 hover:bg-muted"
                     data-testid="button-add-body"
                   >

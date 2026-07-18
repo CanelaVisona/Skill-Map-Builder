@@ -1665,7 +1665,7 @@ export class DbStorage implements IStorage {
 
   async createSourceBugRecord(entry: InsertSourceBugRecord): Promise<SourceBugRecord> {
     const id = randomUUID();
-    const result = await db.insert(sourceBugRecords).values({ id, ...entry }).returning();
+    const result = await db.insert(sourceBugRecords).values({ id, ...entry } as any).returning();
 
     await this.recalculateSourceBugProgress(entry.bugId);
 
@@ -1675,7 +1675,7 @@ export class DbStorage implements IStorage {
   async updateSourceBugRecord(id: string, entry: Partial<InsertSourceBugRecord>): Promise<SourceBugRecord | undefined> {
     const result = await db
       .update(sourceBugRecords)
-      .set(entry)
+      .set(entry as any)
       .where(eq(sourceBugRecords.id, id))
       .returning();
     if (result[0]) {
@@ -2301,8 +2301,7 @@ export class DbStorage implements IStorage {
       areaId: tracker.areaId ?? null,
       projectId: tracker.projectId ?? null,
       skillId: tracker.skillId ?? null,
-      bodyZone: tracker.bodyZone ?? null,
-      bodyDimension: tracker.bodyDimension ?? null,
+      bodyLinks: Array.isArray(tracker.bodyLinks) ? tracker.bodyLinks : [],
       startDate: tracker.startDate ?? new Date(),
       archivedAt: tracker.archivedAt ?? null,
     } as any).returning();

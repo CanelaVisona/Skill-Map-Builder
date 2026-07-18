@@ -3816,8 +3816,7 @@ export async function registerRoutes(
         areaId: req.body.areaId ?? null,
         projectId: req.body.projectId ?? null,
         skillId: req.body.skillId ?? null,
-        bodyZone: req.body.bodyZone ?? null,
-        bodyDimension: req.body.bodyDimension ?? null,
+        bodyLinks: Array.isArray(req.body.bodyLinks) ? req.body.bodyLinks : [],
         ...(req.body.targetLevel !== undefined ? { targetLevel: req.body.targetLevel } : {}),
       };
 
