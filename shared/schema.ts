@@ -274,6 +274,7 @@ export const habits = pgTable("habits", {
   skillId: varchar("skill_id").references(() => globalSkills.id, { onDelete: "set null" }), // Link to global skill for XP rewards
   bodyLinks: jsonb("body_links").notNull().$type<BodyLink[]>().default([]), // Link a componentes corporales para crecimiento de fuerza/flex
   scheduledDays: jsonb("scheduled_days").notNull().$type<number[]>().default([0,1,2,3,4,5,6]), // Days of week (0=Mon, 6=Sun)
+  habitType: text("habit_type").notNull().default("mini").$type<"mini" | "deep">(), // "mini" = corta duración/casi diaria, "deep" = actividades más largas y menos frecuentes
   freezeDates: text("freeze_dates").default("[]").notNull(), // Array of frozen dates as JSON string (YYYY-MM-DD format)
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

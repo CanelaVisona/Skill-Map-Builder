@@ -170,12 +170,14 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
   const [newHabitAreaId, setNewHabitAreaId] = useState<string | null>(null);
   const [newHabitProjectId, setNewHabitProjectId] = useState<string | null>(null);
   const [newHabitScheduledDays, setNewHabitScheduledDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
+  const [newHabitType, setNewHabitType] = useState<"mini" | "deep">("mini");
   const [editHabitEmoji, setEditHabitEmoji] = useState("");
   const [editHabitName, setEditHabitName] = useState("");
   const [editHabitEndDate, setEditHabitEndDate] = useState("");
   const [editHabitAreaId, setEditHabitAreaId] = useState<string | null>(null);
   const [editHabitProjectId, setEditHabitProjectId] = useState<string | null>(null);
   const [editHabitScheduledDays, setEditHabitScheduledDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
+  const [editHabitType, setEditHabitType] = useState<"mini" | "deep">("mini");
   const [newHabitSkillProgressId, setNewHabitSkillProgressId] = useState<string | null>(null);
   const [editHabitSkillProgressId, setEditHabitSkillProgressId] = useState<string | null>(null);
   const [newHabitBodyLinks, setNewHabitBodyLinks] = useState<BodyLink[]>([]);
@@ -348,19 +350,12 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
 
     const updatedHabits = await Promise.all(
       habitsToFetch.map(async (habit: Habit) => {
-        // For archived habits, load all records; for active habits, load current year only
-        let startDate: string;
-        let endDate: string;
-
-        if (habit.endDate && habit.endDate < getLocalDateString()) {
-          // Archived habit: load from year 2000 to the end date
-          startDate = "2000-01-01";
-          endDate = habit.endDate;
-        } else {
-          // Active habit: load current year
-          startDate = `${year}-01-01`;
-          endDate = `${year}-12-31`;
-        }
+        // Siempre cargamos el historial completo: la "mejor racha" necesita ver
+        // todo lo hecho alguna vez, no solo el año en curso (ese recorte era lo
+        // que hacía que la mejor racha se "perdiera" para hábitos activos).
+        const startDate = "2000-01-01";
+        const isArchived = !!habit.endDate && habit.endDate < getLocalDateString();
+        const endDate = isArchived ? habit.endDate! : `${year}-12-31`;
 
         const res = await fetch(
           `/api/habit-records/${habit.id}?startDate=${startDate}&endDate=${endDate}`
@@ -369,21 +364,23 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
         const done = new Set(
           records.filter((r) => r.completed === 1).map((r) => r.date)
         );
-        
+
         // Parse frozenDates from habit
         const frozenDates = new Set<string>(
           Array.isArray(habit.freezeDates) ? habit.freezeDates : []
         );
-        
-        // Recalculate bestStreak for archived habits based on all records
+
+        // La mejor racha real = máximo entre la racha vigente (a hoy, o a la
+        // fecha de archivado) y la mejor racha histórica calculada sobre todos
+        // los registros. Se calcula siempre, no solo para hábitos archivados.
         let calculatedBestStreak = habit.bestStreak || 0;
-        if (habit.endDate && habit.endDate < getLocalDateString() && done.size > 0) {
-          const endDateObj = new Date(habit.endDate + "T00:00:00");
-          const streakAtEnd = computeStreakGlobal(done, habit.scheduledDays, endDateObj, frozenDates);
+        if (done.size > 0) {
+          const referenceDate = isArchived ? new Date(habit.endDate! + "T00:00:00") : new Date();
+          const streakAtReference = computeStreakGlobal(done, habit.scheduledDays, referenceDate, frozenDates);
           const bestEver = computeBestStreakFromRecords(done, habit.scheduledDays);
-          calculatedBestStreak = Math.max(calculatedBestStreak, streakAtEnd, bestEver);
+          calculatedBestStreak = Math.max(calculatedBestStreak, streakAtReference, bestEver);
         }
-        
+
         return { ...habit, done, bestStreak: calculatedBestStreak, frozenDates };
       })
     );
@@ -436,6 +433,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       skillId?: string | null;
       bodyLinks?: BodyLink[];
       scheduledDays: number[];
+      habitType: "mini" | "deep";
     }) => {
       const res = await fetch("/api/habits", {
         method: "POST",
@@ -461,6 +459,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       skillId?: string | null;
       bodyLinks?: BodyLink[];
       scheduledDays?: number[];
+      habitType?: "mini" | "deep";
     }) => {
       const res = await fetch(`/api/habits/${data.id}`, {
         method: "PATCH",
@@ -474,6 +473,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
           skillId: data.skillId,
           bodyLinks: data.bodyLinks,
           scheduledDays: data.scheduledDays,
+          habitType: data.habitType,
         }),
       });
       if (!res.ok) throw new Error("Failed to update habit");
@@ -625,6 +625,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       setEditHabitSkillProgressId(habit.skillId || null);
       setEditHabitBodyLinks(habit.bodyLinks ?? []);
       setEditHabitScheduledDays(habit.scheduledDays || [0, 1, 2, 3, 4, 5, 6]);
+      setEditHabitType(habit.habitType || "mini");
       showPanel("edit");
     }
   };
@@ -637,6 +638,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
     setNewHabitSkillProgressId(null);
     setNewHabitBodyLinks([]);
     setNewHabitScheduledDays([0, 1, 2, 3, 4, 5, 6]);
+    setNewHabitType("mini");
   };
   const resetEditForm = () => {
     setEditHabitEmoji("");
@@ -647,6 +649,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
     setEditHabitSkillProgressId(null);
     setEditHabitBodyLinks([]);
     setEditHabitScheduledDays([0, 1, 2, 3, 4, 5, 6]);
+    setEditHabitType("mini");
     setSelectedHabitId(null);
   };
 
@@ -818,6 +821,8 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
               skills={newPanelSkills}
               scheduledDays={newHabitScheduledDays}
               onScheduledDaysChange={setNewHabitScheduledDays}
+              habitType={newHabitType}
+              onHabitTypeChange={setNewHabitType}
               onEmojiChange={setNewHabitEmoji}
               onNameChange={setNewHabitName}
               onEndDateChange={setNewHabitEndDate}
@@ -841,6 +846,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                       skillId: newHabitSkillProgressId,
                       bodyLinks: newHabitBodyLinks,
                       scheduledDays: newHabitScheduledDays,
+                      habitType: newHabitType,
                     });
                     resetForm();
                     showMain();
@@ -870,6 +876,8 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
               skills={editPanelSkills}
               scheduledDays={editHabitScheduledDays}
               onScheduledDaysChange={setEditHabitScheduledDays}
+              habitType={editHabitType}
+              onHabitTypeChange={setEditHabitType}
               onEmojiChange={setEditHabitEmoji}
               onNameChange={setEditHabitName}
               onEndDateChange={setEditHabitEndDate}
@@ -894,6 +902,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                       skillId: editHabitSkillProgressId,
                       bodyLinks: editHabitBodyLinks,
                       scheduledDays: editHabitScheduledDays,
+                      habitType: editHabitType,
                     });
                     resetEditForm();
                     showMain();
@@ -982,6 +991,230 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
   );
 }
 
+// Paleta por tipo de hábito: mini (violeta, casi diario) vs deep (teal, menos frecuente/más largo)
+const HABIT_THEME = {
+  mini: {
+    activeBorder: "border-purple-500 bg-purple-500/10",
+    hoverBorder: "hover:border-purple-400 hover:bg-purple-500/5",
+    badge: "bg-purple-500/20 text-purple-700 dark:text-purple-400",
+    bannerBg: "bg-purple-500/10 border-purple-500/20",
+    bannerText: "text-purple-400",
+    barFill: "bg-purple-500",
+    barBg: "bg-purple-500/20",
+    circleDone: "border-purple-500",
+    circleToday: "border-purple-500 bg-purple-500/20",
+  },
+  deep: {
+    activeBorder: "border-teal-500 bg-teal-500/10",
+    hoverBorder: "hover:border-teal-400 hover:bg-teal-500/5",
+    badge: "bg-teal-500/20 text-teal-700 dark:text-teal-400",
+    bannerBg: "bg-teal-500/10 border-teal-500/20",
+    bannerText: "text-teal-400",
+    barFill: "bg-teal-500",
+    barBg: "bg-teal-500/20",
+    circleDone: "border-teal-500",
+    circleToday: "border-teal-500 bg-teal-500/20",
+  },
+} as const;
+
+function HabitCard({
+  habit,
+  today,
+  todayStr,
+  weekDays,
+  onToggle,
+  onDetailed,
+  onFreeze,
+  onPressStart,
+  onPressEnd,
+}: {
+  habit: HabitData;
+  today: Date;
+  todayStr: string;
+  weekDays: Date[];
+  onToggle: (habitId: string) => void;
+  onDetailed: (id: string) => void;
+  onFreeze: (habitId: string) => void;
+  onPressStart: (habitId: string) => void;
+  onPressEnd: (habitId: string) => void;
+}) {
+  const theme = HABIT_THEME[habit.habitType === "deep" ? "deep" : "mini"];
+  const streak = computeStreakGlobal(habit.done, habit.scheduledDays, today, habit.frozenDates);
+  const broken = isStreakBrokenGlobal(habit.done, habit.scheduledDays, today, habit.frozenDates);
+  const displayBestStreak = broken ? habit.bestStreak : Math.max(streak, habit.bestStreak);
+  const isToday = habit.done.has(todayStr);
+  const scheduledDays = habit.scheduledDays?.length ? habit.scheduledDays : [0, 1, 2, 3, 4, 5, 6];
+
+  // Progreso de la semana actual: cuántos de los días agendados ya se completaron
+  let weekTotal = 0;
+  let weekCompleted = 0;
+  weekDays.forEach((w, i) => {
+    if (scheduledDays.includes(i)) {
+      weekTotal++;
+      if (habit.done.has(getLocalDateString(w))) weekCompleted++;
+    }
+  });
+
+  return (
+    <div
+      onClick={() => onToggle(habit.id)}
+      onMouseDown={() => onPressStart(habit.id)}
+      onMouseUp={() => onPressEnd(habit.id)}
+      onMouseLeave={() => onPressEnd(habit.id)}
+      onTouchStart={() => onPressStart(habit.id)}
+      onTouchEnd={() => onPressEnd(habit.id)}
+      className={`cursor-pointer rounded-2xl border px-3 sm:px-3.5 py-3 transition-all active:opacity-75 touch-manipulation ${
+        isToday
+          ? theme.activeBorder
+          : broken
+            ? "border-border/30 bg-muted/30"
+            : `border-border/30 ${theme.hoverBorder}`
+      }`}
+    >
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <span className="text-lg sm:text-xl flex-shrink-0">{habit.emoji}</span>
+        <span className="font-bold text-xs sm:text-sm text-foreground flex-1 min-w-0 truncate">
+          {habit.name}
+        </span>
+        <span
+          className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium flex-shrink-0 whitespace-nowrap ${
+            broken
+              ? "border border-border/50 bg-muted text-muted-foreground"
+              : theme.badge
+          }`}
+        >
+          {broken ? "— racha rota" : `🔥 ${streak}`}
+        </span>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onDetailed(habit.id);
+          }}
+          className="ml-1 flex h-8 w-8 sm:h-7 sm:w-7 items-center justify-center rounded-full border border-border/30 bg-muted hover:border-purple-400 hover:bg-purple-500/10 active:bg-purple-500/20 transition-colors flex-shrink-0 touch-manipulation"
+          title="Ver historial"
+        >
+          <Eye className="h-4 w-4 sm:h-3.5 sm:w-3.5 text-muted-foreground" />
+        </button>
+      </div>
+
+      {/* Scheduled days */}
+      {habit.scheduledDays && habit.scheduledDays.length > 0 && habit.scheduledDays.length < 7 && (
+        <div className="mb-2 text-xs text-muted-foreground">
+          Días: <span className="font-medium text-foreground">
+            {habit.scheduledDays.map((d) => DAY_LBLS[d]).join(", ")}
+          </span>
+        </div>
+      )}
+
+      {/* Banner de mejor racha */}
+      <div className={`mb-2 rounded-xl border px-3 py-2 text-center ${theme.bannerBg}`}>
+        <p className={`text-xs font-bold ${theme.bannerText}`}>
+          Mejor racha: {displayBestStreak} días 🔥
+        </p>
+        {streak > 0 && streak >= displayBestStreak ? (
+          <p className="text-xs text-yellow-400">🏆 ¡Nuevo récord!</p>
+        ) : streak > 0 && streak >= displayBestStreak - 2 ? (
+          <p className="text-xs text-muted-foreground">¡Estás cerca del récord!</p>
+        ) : (
+          <p className="text-xs text-muted-foreground">¡Supérala para crear un nuevo récord!</p>
+        )}
+        <div className={`mt-1.5 h-1 w-full rounded-full ${theme.barBg}`}>
+          <div
+            className={`h-full rounded-full transition-all ${theme.barFill}`}
+            style={{ width: `${Math.min(100, (streak / Math.max(displayBestStreak, 1)) * 100)}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Week circles: los días agendados se ven con prioridad, el resto se atenúa */}
+      <div className="flex gap-1 sm:gap-1.5 items-center">
+        {weekDays.map((w, i) => {
+          const wds = getLocalDateString(w);
+          const wc = new Date(w);
+          wc.setHours(0, 0, 0, 0);
+          const isFut = wc > today;
+          const isTod = wds === todayStr;
+          const isDone = habit.done.has(wds);
+          const isMissed = wc < today && !isDone;
+          const isScheduled = scheduledDays.includes(i);
+
+          return (
+            <div
+              key={i}
+              className={`flex flex-col items-center gap-1 flex-1 transition-opacity ${
+                isScheduled ? "" : "opacity-30"
+              }`}
+            >
+              <div
+                className={`h-7 w-7 sm:h-8 sm:w-8 rounded-full flex items-center justify-center text-xs sm:text-sm font-medium transition-all ${
+                  isDone
+                    ? `bg-gray-900 ${theme.circleDone} border-2`
+                    : isTod
+                      ? `border-2 ${theme.circleToday}`
+                      : isMissed
+                        ? "bg-muted border-dashed border-2 border-border/50 opacity-50"
+                        : isFut
+                          ? "border border-border/30 opacity-20"
+                          : "border border-border/30"
+                }`}
+              >
+                {isDone ? <span className="text-sm">🔥</span> : ""}
+              </div>
+              <span className="text-xs font-medium text-muted-foreground uppercase">
+                {DAY_LBLS[i]}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Barra semanal: se completa cuando se cumplen todas las veces agendadas esa semana */}
+      <div className="mt-2">
+        <div className="flex gap-1">
+          {Array.from({ length: Math.max(weekTotal, 1) }).map((_, i) => (
+            <div
+              key={i}
+              className={`h-1.5 flex-1 rounded-full transition-all ${
+                i < weekCompleted ? theme.barFill : theme.barBg
+              }`}
+            />
+          ))}
+        </div>
+        <p className="mt-1 text-xs text-muted-foreground text-center">
+          {weekCompleted}/{weekTotal} esta semana
+        </p>
+      </div>
+
+      {broken && (
+        <div>
+          {(() => {
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+            const yesterdayStr = getLocalDateString(yesterday);
+            const yesterdayDow = yesterday.getDay() === 0 ? 6 : yesterday.getDay() - 1;
+            const canFreeze =
+              scheduledDays.includes(yesterdayDow) &&
+              !habit.frozenDates.has(yesterdayStr) &&
+              countFreezesThisMonth(habit.frozenDates) < 7;
+
+            return canFreeze ? (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onFreeze(habit.id);
+                }}
+                className="mt-1 text-xs text-blue-400 border border-blue-400/30 rounded-full px-3 py-1 hover:bg-blue-400/10 transition-colors"
+              >
+                🧊 Freeze x7
+              </button>
+            ) : null;
+          })()}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MainPanel({
   habits,
   onDetailed,
@@ -1030,6 +1263,8 @@ function MainPanel({
   })}`;
 
   const doneCount = habits.filter((h) => h.done.has(todayStr)).length;
+  const miniHabits = habits.filter((h) => h.habitType !== "deep");
+  const deepHabits = habits.filter((h) => h.habitType === "deep");
 
   const todayStr2 = today.toLocaleDateString("es-AR", {
     weekday: "long",
@@ -1126,8 +1361,8 @@ function MainPanel({
         </div>
       </div>
 
-      {/* Habits List */}
-      <div className="px-3 sm:px-5 py-3 flex flex-col gap-2 sm:gap-1.5 max-h-80 overflow-y-auto">
+      {/* Habits List: separadas en Mini tareas (rápidas) y Deep tareas (más largas/infrecuentes) */}
+      <div className="px-3 sm:px-5 py-3 flex flex-col gap-4 max-h-80 overflow-y-auto">
         {isLoading ? (
           <p className="text-sm text-muted-foreground">Cargando hábitos...</p>
         ) : habits.length === 0 ? (
@@ -1135,153 +1370,51 @@ function MainPanel({
             No tienes hábitos aún. ¡Crea uno para empezar!
           </p>
         ) : (
-          habits.map((habit) => {
-            const streak = computeStreakGlobal(habit.done, habit.scheduledDays, today, habit.frozenDates);
-            const broken = isStreakBrokenGlobal(habit.done, habit.scheduledDays, today, habit.frozenDates);
-            const displayBestStreak = broken ? habit.bestStreak : Math.max(streak, habit.bestStreak);
-            const isToday = habit.done.has(todayStr);
-
-            return (
-              <div
-                key={habit.id}
-                onClick={() => onToggle(habit.id)}
-                onMouseDown={() => handleHabitPressStart(habit.id)}
-                onMouseUp={() => handleHabitPressEnd(habit.id)}
-                onMouseLeave={() => handleHabitPressEnd(habit.id)}
-                onTouchStart={() => handleHabitPressStart(habit.id)}
-                onTouchEnd={() => handleHabitPressEnd(habit.id)}
-                className={`cursor-pointer rounded-2xl border px-3 sm:px-3.5 py-3 transition-all active:opacity-75 touch-manipulation ${
-                  isToday
-                    ? "border-purple-500 bg-purple-500/10"
-                    : broken
-                      ? "border-border/30 bg-muted/30"
-                      : "border-border/30 hover:border-purple-400 hover:bg-purple-500/5"
-                }`}
-              >
-                <div className="flex items-center gap-2 mb-3 flex-wrap">
-                  <span className="text-lg sm:text-xl flex-shrink-0">{habit.emoji}</span>
-                  <span className="font-bold text-xs sm:text-sm text-foreground flex-1 min-w-0 truncate">
-                    {habit.name}
-                  </span>
-                  <span
-                    className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium flex-shrink-0 whitespace-nowrap ${
-                      broken
-                        ? "border border-border/50 bg-muted text-muted-foreground"
-                        : "bg-purple-500/20 text-purple-700 dark:text-purple-400"
-                    }`}
-                  >
-                    {broken ? "— racha rota" : `🔥 ${streak}`}
-                  </span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDetailed(habit.id);
-                    }}
-                    className="ml-1 flex h-8 w-8 sm:h-7 sm:w-7 items-center justify-center rounded-full border border-border/30 bg-muted hover:border-purple-400 hover:bg-purple-500/10 active:bg-purple-500/20 transition-colors flex-shrink-0 touch-manipulation"
-                    title="Ver historial"
-                  >
-                    <Eye className="h-4 w-4 sm:h-3.5 sm:w-3.5 text-muted-foreground" />
-                  </button>
-                </div>
-
-                {/* Scheduled days */}
-                {habit.scheduledDays && habit.scheduledDays.length > 0 && habit.scheduledDays.length < 7 && (
-                  <div className="mb-2 text-xs text-muted-foreground">
-                    Días: <span className="font-medium text-foreground">
-                      {habit.scheduledDays.map((d) => DAY_LBLS[d]).join(", ")}
-                    </span>
-                  </div>
-                )}
-
-                {/* Banner de mejor racha */}
-                <div className="mb-2 rounded-xl bg-purple-500/10 border border-purple-500/20 px-3 py-2 text-center">
-                  <p className="text-xs font-bold text-purple-400">
-                    Mejor racha: {displayBestStreak} días 🔥
-                  </p>
-                  {streak > 0 && streak >= displayBestStreak ? (
-                    <p className="text-xs text-yellow-400">🏆 ¡Nuevo récord!</p>
-                  ) : streak > 0 && streak >= displayBestStreak - 2 ? (
-                    <p className="text-xs text-muted-foreground">¡Estás cerca del récord!</p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">¡Supérala para crear un nuevo récord!</p>
-                  )}
-                  <div className="mt-1.5 h-1 w-full rounded-full bg-purple-500/20">
-                    <div
-                      className="h-full rounded-full bg-purple-500 transition-all"
-                      style={{ width: `${Math.min(100, (streak / Math.max(displayBestStreak, 1)) * 100)}%` }}
-                    />
-                  </div>
-                </div>
-
-                {/* Week circles */}
-                <div className="flex gap-1 sm:gap-1.5 items-center">
-                  {weekDays.map((w, i) => {
-                    const wds = getLocalDateString(w);
-                    const wc = new Date(w);
-                    wc.setHours(0, 0, 0, 0);
-                    const isFut = wc > today;
-                    const isTod = wds === todayStr;
-                    const isDone = habit.done.has(wds);
-                    const isMissed = wc < today && !isDone;
-
-                    return (
-                      <div
-                        key={i}
-                        className="flex flex-col items-center gap-1 flex-1"
-                      >
-                        <div
-                          className={`h-7 w-7 sm:h-8 sm:w-8 rounded-full flex items-center justify-center text-xs sm:text-sm font-medium transition-all ${
-                            isDone
-                              ? "bg-gray-900 border-purple-500 border-2"
-                              : isTod
-                                ? "border-2 border-purple-500 bg-purple-500/20"
-                                : isMissed
-                                  ? "bg-muted border-dashed border-2 border-border/50 opacity-50"
-                                  : isFut
-                                    ? "border border-border/30 opacity-20"
-                                    : "border border-border/30"
-                          }`}
-                        >
-                          {isDone ? <span className="text-sm">🔥</span> : ""}
-                        </div>
-                        <span className="text-xs font-medium text-muted-foreground uppercase">
-                          {DAY_LBLS[i]}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {broken && (
-                  <div>
-                    {(() => {
-                      const yesterday = new Date(today);
-                      yesterday.setDate(yesterday.getDate() - 1);
-                      const yesterdayStr = getLocalDateString(yesterday);
-                      const yesterdayDow = yesterday.getDay() === 0 ? 6 : yesterday.getDay() - 1;
-                      const days = habit.scheduledDays?.length ? habit.scheduledDays : [0,1,2,3,4,5,6];
-                      const canFreeze =
-                        days.includes(yesterdayDow) &&
-                        !habit.frozenDates.has(yesterdayStr) &&
-                        countFreezesThisMonth(habit.frozenDates) < 7;
-
-                      return canFreeze ? (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onFreeze(habit.id);
-                          }}
-                          className="mt-1 text-xs text-blue-400 border border-blue-400/30 rounded-full px-3 py-1 hover:bg-blue-400/10 transition-colors"
-                        >
-                          🧊 Freeze x7
-                        </button>
-                      ) : null;
-                    })()}
-                  </div>
-                )}
+          <>
+            {miniHabits.length > 0 && (
+              <div className="flex flex-col gap-2 sm:gap-1.5">
+                <h3 className="text-xs font-bold uppercase tracking-wide text-purple-700 dark:text-purple-400">
+                  ⚡ Mini tareas
+                </h3>
+                {miniHabits.map((habit) => (
+                  <HabitCard
+                    key={habit.id}
+                    habit={habit}
+                    today={today}
+                    todayStr={todayStr}
+                    weekDays={weekDays}
+                    onToggle={onToggle}
+                    onDetailed={onDetailed}
+                    onFreeze={onFreeze}
+                    onPressStart={handleHabitPressStart}
+                    onPressEnd={handleHabitPressEnd}
+                  />
+                ))}
               </div>
-            );
-          })
+            )}
+
+            {deepHabits.length > 0 && (
+              <div className="flex flex-col gap-2 sm:gap-1.5">
+                <h3 className="text-xs font-bold uppercase tracking-wide text-teal-700 dark:text-teal-400">
+                  🌊 Deep tareas
+                </h3>
+                {deepHabits.map((habit) => (
+                  <HabitCard
+                    key={habit.id}
+                    habit={habit}
+                    today={today}
+                    todayStr={todayStr}
+                    weekDays={weekDays}
+                    onToggle={onToggle}
+                    onDetailed={onDetailed}
+                    onFreeze={onFreeze}
+                    onPressStart={handleHabitPressStart}
+                    onPressEnd={handleHabitPressEnd}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -1510,86 +1643,12 @@ function DetailPanel({
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const computeStreak = (done: Set<string>, scheduledDays?: number[]): number => {
-    // Default to all days if not provided or invalid
-    const days = (Array.isArray(scheduledDays) && scheduledDays.length > 0) ? scheduledDays : [0, 1, 2, 3, 4, 5, 6];
-    
-    let s = 0;
-    const c = new Date(today);
-    const todayDayOfWeek = c.getDay() === 0 ? 6 : c.getDay() - 1; // Convert to 0=Mon, 6=Sun
-    
-    // Check if today is a scheduled day
-    if (days.includes(todayDayOfWeek) && done.has(getLocalDateString(today))) {
-      s++;
-      c.setDate(c.getDate() - 1);
-    } else {
-      c.setDate(c.getDate() - 1);
-    }
-    
-    // Go back through days, counting streaks only on scheduled days
-    let maxIterations = 1000; // Safety limit to prevent infinite loops
-    while (maxIterations > 0) {
-      maxIterations--;
-      const x = getLocalDateString(c);
-      const dayOfWeek = c.getDay() === 0 ? 6 : c.getDay() - 1; // Convert to 0=Mon, 6=Sun
-      
-      // If this day is NOT scheduled, skip it (continue to previous day)
-      if (!days.includes(dayOfWeek)) {
-        c.setDate(c.getDate() - 1);
-        continue;
-      }
-      
-      // If this day IS scheduled
-      if (done.has(x)) {
-        s++;
-        c.setDate(c.getDate() - 1);
-      } else {
-        // This is a scheduled day but wasn't completed - streak broken
-        break;
-      }
-    }
-    return s;
-  };
-
-  const computeBestStreak = (done: Set<string>, scheduledDays?: number[]): number => {
-    const days = (Array.isArray(scheduledDays) && scheduledDays.length > 0)
-      ? scheduledDays
-      : [0, 1, 2, 3, 4, 5, 6];
-
-    const sorted = Array.from(done).sort();
-    let best = 0;
-    let current = 0;
-
-    for (const dateStr of sorted) {
-      const d = new Date(dateStr + "T00:00:00");
-      const dow = d.getDay() === 0 ? 6 : d.getDay() - 1;
-      if (!days.includes(dow)) continue;
-
-      const prev = new Date(d);
-      prev.setDate(prev.getDate() - 1);
-      let prevScheduledFound = false;
-      let prevWasDone = false;
-
-      for (let i = 1; i <= 7; i++) {
-        const p = getLocalDateString(prev);
-        const pdow = prev.getDay() === 0 ? 6 : prev.getDay() - 1;
-        if (days.includes(pdow)) {
-          prevScheduledFound = true;
-          prevWasDone = done.has(p);
-          break;
-        }
-        prev.setDate(prev.getDate() - 1);
-      }
-
-      current = prevWasDone ? current + 1 : 1;
-      if (current > best) best = current;
-    }
-
-    return best;
-  };
-
-  const streak = computeStreak(habit.done, habit.scheduledDays);
-  const bestStreak = computeBestStreak(habit.done, habit.scheduledDays);
+  // Misma lógica que el resto de los paneles (computeStreakGlobal/computeBestStreakFromRecords):
+  // antes esta vista recalculaba la racha con una copia local que ignoraba los días congelados,
+  // lo que la desalineaba de "Mejor racha" mostrada en la lista principal.
+  const streak = computeStreakGlobal(habit.done, habit.scheduledDays, today, habit.frozenDates);
+  const broken = isStreakBrokenGlobal(habit.done, habit.scheduledDays, today, habit.frozenDates);
+  const bestStreak = broken ? habit.bestStreak : Math.max(streak, habit.bestStreak);
   const doneInMonth = Array.from(habit.done).filter(
     (d) => d.startsWith(`${year}-${String(month + 1).padStart(2, "0")}`)
   ).length;
@@ -1737,6 +1796,8 @@ function AddPanel({
   onBodyLinksChange,
   scheduledDays,
   onScheduledDaysChange,
+  habitType,
+  onHabitTypeChange,
   onBack,
   onSubmit,
   isLoading,
@@ -1760,6 +1821,8 @@ function AddPanel({
   onBodyLinksChange: (links: BodyLink[]) => void;
   scheduledDays: number[];
   onScheduledDaysChange: (days: number[]) => void;
+  habitType: "mini" | "deep";
+  onHabitTypeChange: (type: "mini" | "deep") => void;
   onBack: () => void;
   onSubmit: () => void;
   isLoading: boolean;
@@ -1827,6 +1890,40 @@ function AddPanel({
           </p>
         </div>
 
+        {/* Habit Type Selector */}
+        <div>
+          <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
+            Tipo de hábito *
+          </label>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <button
+              onClick={() => onHabitTypeChange("mini")}
+              disabled={isLoading}
+              className={`py-2.5 px-2 rounded-lg font-semibold text-xs sm:text-sm transition-all active:scale-95 touch-manipulation ${
+                habitType === "mini"
+                  ? "bg-purple-600 text-white border-2 border-purple-600"
+                  : "border-2 border-border/30 bg-background text-foreground hover:border-purple-400"
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
+            >
+              ⚡ Mini
+            </button>
+            <button
+              onClick={() => onHabitTypeChange("deep")}
+              disabled={isLoading}
+              className={`py-2.5 px-2 rounded-lg font-semibold text-xs sm:text-sm transition-all active:scale-95 touch-manipulation ${
+                habitType === "deep"
+                  ? "bg-teal-600 text-white border-2 border-teal-600"
+                  : "border-2 border-border/30 bg-background text-foreground hover:border-teal-400"
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
+            >
+              🌊 Deep
+            </button>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Mini: rápido, casi diario. Deep: lleva más tiempo, unas pocas veces por semana.
+          </p>
+        </div>
+
         {/* End Date Input */}
         <div>
           <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
@@ -1862,7 +1959,7 @@ function AddPanel({
                   }
                 }}
                 disabled={isLoading || (scheduledDays.length === 1 && scheduledDays.includes(index))}
-                className={`py-2.5 sm:py-2 px-1 rounded-lg font-semibold text-xs sm:text-sm transition-all active:scale-95 touch-manipulation ${ 
+                className={`py-2.5 sm:py-2 px-1 rounded-lg font-semibold text-xs sm:text-sm transition-all active:scale-95 touch-manipulation ${
                   scheduledDays.includes(index)
                     ? "bg-purple-600 text-white border-2 border-purple-600"
                     : "border-2 border-border/30 bg-background text-foreground hover:border-purple-400"
@@ -2001,6 +2098,8 @@ function EditPanel({
   onBodyLinksChange,
   scheduledDays,
   onScheduledDaysChange,
+  habitType,
+  onHabitTypeChange,
   onBack,
   onSubmit,
   onDelete,
@@ -2026,6 +2125,8 @@ function EditPanel({
   onBodyLinksChange: (links: BodyLink[]) => void;
   scheduledDays: number[];
   onScheduledDaysChange: (days: number[]) => void;
+  habitType: "mini" | "deep";
+  onHabitTypeChange: (type: "mini" | "deep") => void;
   onBack: () => void;
   onSubmit: () => void;
   onDelete: () => void;
@@ -2089,6 +2190,40 @@ function EditPanel({
             className="mt-2 w-full px-3 py-2.5 border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm touch-manipulation"
             required
           />
+        </div>
+
+        {/* Habit Type Selector */}
+        <div>
+          <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
+            Tipo de hábito *
+          </label>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <button
+              onClick={() => onHabitTypeChange("mini")}
+              disabled={isLoading}
+              className={`py-2.5 px-2 rounded-lg font-semibold text-xs sm:text-sm transition-all active:scale-95 touch-manipulation ${
+                habitType === "mini"
+                  ? "bg-purple-600 text-white border-2 border-purple-600"
+                  : "border-2 border-border/30 bg-background text-foreground hover:border-purple-400"
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
+            >
+              ⚡ Mini
+            </button>
+            <button
+              onClick={() => onHabitTypeChange("deep")}
+              disabled={isLoading}
+              className={`py-2.5 px-2 rounded-lg font-semibold text-xs sm:text-sm transition-all active:scale-95 touch-manipulation ${
+                habitType === "deep"
+                  ? "bg-teal-600 text-white border-2 border-teal-600"
+                  : "border-2 border-border/30 bg-background text-foreground hover:border-teal-400"
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
+            >
+              🌊 Deep
+            </button>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Mini: rápido, casi diario. Deep: lleva más tiempo, unas pocas veces por semana.
+          </p>
         </div>
 
         {/* End Date Input */}
