@@ -2,10 +2,13 @@ import { useSkillTree, iconMap, type Project, type Area } from "@/lib/skill-cont
 import { useAuth } from "@/lib/auth-context";
 import { useMenu } from "@/lib/menu-context";
 import { useXpPopup } from "@/lib/xp-popup-context";
+import { useBodyProgress } from "@/lib/body-progress-context";
+import type { BodyLink } from "@/components/BodyLinkPicker";
+import { useToast } from "@/hooks/use-toast";
 import { ProgressBar } from "@/components/ProgressBar";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut, Archive, ArchiveRestore, Pencil, Zap, ChevronDown, ChevronRight, Mountain, Compass, Scroll, Eye, Swords, Lock, LockOpen } from "lucide-react";
+import { Plus, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut, Archive, ArchiveRestore, Pencil, Zap, ChevronDown, ChevronRight, Mountain, Compass, Scroll, Eye, Swords, Lock, Target, Shield, Star, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor } from "lucide-react";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "./ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "./ui/alert-dialog";
@@ -15,7 +18,7 @@ import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
 import { ScrollArea } from "./ui/scroll-area";
-import { useState, useEffect, useRef, type TouchEvent, type PointerEvent, type CSSProperties, type ReactElement } from "react";
+import { useState, useEffect, useRef, type TouchEvent, type PointerEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 type DialogStep = "choose" | "new-area" | "new-project" | "new-sidequest" | "new-emergent" | "new-experience";
@@ -61,6 +64,18 @@ function getIconForTitle(title: string): string {
   return "Home";
 }
 
+// Stable, varied icon per power so unlocked/locked powers read as distinct
+// abilities instead of a single repeated flame glyph.
+const POWER_ICON_PALETTE = [Target, Shield, Star, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor];
+
+function getPowerIcon(id: string) {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  }
+  return POWER_ICON_PALETTE[hash % POWER_ICON_PALETTE.length];
+}
+
 const extendedIconMap: Record<string, any> = {
   ...iconMap,
   Dumbbell,
@@ -91,6 +106,7 @@ interface SourceBugRecord {
   bugId: string;
   skillId?: string | null;
   skillName?: string | null;
+  bodyLinks?: BodyLink[];
   fecha: string;
   situacion: string;
   senal: string;
@@ -132,59 +148,11 @@ interface SourceBug {
   registros: SourceBugRecord[];
 }
 
-function FlameIcon({ animated }: { animated: boolean }) {
-  const base: CSSProperties = {
-    position: "absolute",
-    bottom: 0,
-    left: "50%",
-    transform: "translateX(-50%)",
-    transformOrigin: "bottom center",
-    borderRadius: "50% 50% 30% 30% / 60% 60% 40% 40%",
-  };
-
-  return (
-    <div style={{ position: "relative", width: 18, height: 22, flexShrink: 0, marginTop: 1 }}>
-      <div
-        className="flame-outer"
-        style={{
-          ...base,
-          width: 12,
-          height: 18,
-          background: "#EF9F27",
-          animation: animated ? "flicker1 0.9s ease-in-out infinite" : "none",
-        }}
-      />
-      <div
-        className="flame-inner"
-        style={{
-          ...base,
-          width: 7,
-          height: 11,
-          background: "#FAC775",
-          bottom: 2,
-          animation: animated ? "flicker2 0.7s ease-in-out infinite" : "none",
-        }}
-      />
-      <div
-        className="flame-core"
-        style={{
-          ...base,
-          width: 3,
-          height: 6,
-          background: "#fff",
-          bottom: 3,
-          opacity: 0.9,
-          animation: animated ? "glow-pulse 0.8s ease-in-out infinite" : "none",
-        }}
-      />
-    </div>
-  );
-}
-
 type PowerRenderState = {
   cardClass: string;
-  icon: ReactElement;
-  descriptionClass: string;
+  chipClass: string;
+  iconColorClass: string;
+  showLock: boolean;
   showGlow: boolean;
 };
 
@@ -199,6 +167,8 @@ interface ViewSourceDialogProps {
 function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }: ViewSourceDialogProps) {
   const { areas } = useSkillTree();
   const { showXpPopup } = useXpPopup();
+  const { addBodyBlock } = useBodyProgress();
+  const { toast } = useToast();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("description");
   const [isAdding, setIsAdding] = useState(false);
@@ -669,7 +639,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
   });
 
   const deleteBug = useMutation({
-    mutationFn: async (id: string) => {
+    mutationFn: async ({ id }: { id: string; registros: SourceBugRecord[] }) => {
       const res = await fetch(`/api/source-bugs/${id}`, {
         method: "DELETE",
       });
@@ -677,8 +647,13 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
         throw new Error("No se pudo eliminar el bug");
       }
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: [`/api/source-bugs/${sourceType}/${sourceId}`] });
+      // Borrar el bug elimina en cascada todos sus registros; hay que revertir el cuerpo
+      // sumado por cada uno de ellos (sin pop-up, es una baja silenciosa).
+      variables.registros.forEach((registro) => {
+        (registro.bodyLinks ?? []).forEach((link) => addBodyBlock(link.zone, link.dimension, -1));
+      });
       setBugContextMenuId(null);
     },
   });
@@ -790,7 +765,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
   });
 
   const deleteBugRecord = useMutation({
-    mutationFn: async (id: string) => {
+    mutationFn: async ({ id }: { id: string; bodyLinks: BodyLink[] }) => {
       const res = await fetch(`/api/source-bug-records/${id}`, {
         method: "DELETE",
       });
@@ -798,17 +773,23 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
         throw new Error("No se pudo eliminar el registro");
       }
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: [`/api/source-bugs/${sourceType}/${sourceId}`] });
+      // El registro había sumado un bloque de cuerpo por componente linkeado al crearse;
+      // al eliminarlo hay que revertirlo (sin pop-up, es una baja silenciosa).
+      if (Array.isArray(variables.bodyLinks) && variables.bodyLinks.length > 0) {
+        variables.bodyLinks.forEach((link) => addBodyBlock(link.zone, link.dimension, -1));
+      }
       setRecordContextMenuId(null);
     },
   });
 
   const handleAdd = () => {
     if (!name.trim()) return;
-    let finalName = name.trim();
-    if (activeTab === "powers" && !finalName.startsWith("Puedo")) {
-      finalName = `Puedo ${finalName}`;
+    const finalName = name.trim();
+    if (activeTab === "powers" && finalName.split(/\s+/).filter(Boolean).length > 3) {
+      toast({ title: "Título muy largo", description: "Los poderes usan un máximo de 3 palabras.", variant: "destructive" });
+      return;
     }
     if (activeTab === "description") {
       createDescription.mutate({ name: finalName, description: description.trim() });
@@ -835,9 +816,10 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
 
   const handleSaveEdit = () => {
     if (!editingEntry || !name.trim()) return;
-    let finalName = name.trim();
-    if (activeTab === "powers" && !finalName.startsWith("Puedo")) {
-      finalName = `Puedo ${finalName}`;
+    const finalName = name.trim();
+    if (activeTab === "powers" && finalName.split(/\s+/).filter(Boolean).length > 3) {
+      toast({ title: "Título muy largo", description: "Los poderes usan un máximo de 3 palabras.", variant: "destructive" });
+      return;
     }
     if (activeTab === "description") {
       updateDescription.mutate({ id: editingEntry.id, data: { name: finalName, description: description.trim() } });
@@ -1122,9 +1104,10 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
   const renderPowerState = (power: SourcePower): PowerRenderState => {
     if (power.isUnlocked === 0) {
       return {
-        cardClass: "border-white/7 text-[#444]",
-        icon: <Lock className="h-4 w-4 flex-shrink-0 mt-0.5 text-gray-500" />,
-        descriptionClass: "font-normal text-[11px] mt-0.5 opacity-50 text-[#333]",
+        cardClass: "border-white/7 text-[#5a5648]",
+        chipClass: "bg-white/[0.03] border-white/10",
+        iconColorClass: "text-[#5a5648]",
+        showLock: true,
         showGlow: false,
       };
     }
@@ -1132,9 +1115,10 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     const active = power.isUnlocked === 2;
 
     return {
-      cardClass: power.isUnlocked === 1 ? "border-white/13 text-[#b0997a]" : "border-[#EF9F27] text-[#FAC775]",
-      icon: power.isUnlocked === 1 ? <LockOpen className="h-4 w-4 flex-shrink-0 mt-0.5 text-[#8a7a60]" /> : <FlameIcon animated={active} />,
-      descriptionClass: power.isUnlocked === 1 ? "font-normal text-[11px] mt-0.5 text-[#6a5a40]" : "font-normal text-[11px] mt-0.5 text-[#EF9F27]",
+      cardClass: active ? "border-[#EF9F27] text-[#FAC775]" : "border-white/13 text-[#b0997a]",
+      chipClass: active ? "bg-gradient-to-b from-[#FAC775] to-[#EF9F27] border-transparent" : "bg-white/[0.05] border-white/15",
+      iconColorClass: active ? "text-[#1A1206]" : "text-[#c9a876]",
+      showLock: false,
       showGlow: active,
     };
   };
@@ -1183,6 +1167,9 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     ? 5
     : Math.min(selectedBug?.victoryCount || 0, 5);
   const bugProgressPercent = (bugProgressCount / 5) * 100;
+
+  const masteredPowerCount = (powers || []).filter((p) => p.isUnlocked === 2).length;
+  const powerLevelProgress = masteredPowerCount % 5;
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -1286,14 +1273,18 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
               <div>
                 <div className="mb-4">
                   <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-medium">Poderes · Nivel {Math.floor((powers || []).filter(p => p.isUnlocked === 2).length / 5) + 1}</span>
-                    <span className="text-xs text-muted-foreground">{((powers || []).filter(p => p.isUnlocked === 2).length % 5)} / 5 para subir</span>
+                    <span className="text-sm font-medium">Poderes · Nivel {Math.floor(masteredPowerCount / 5) + 1}</span>
+                    <span className="text-xs text-muted-foreground">{powerLevelProgress} / 5 para subir</span>
                   </div>
-                  <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-blue-500 rounded-full transition-all duration-300"
-                      style={{ width: `${(((powers || []).filter(p => p.isUnlocked === 2).length % 5) / 5) * 100}%` }}
-                    />
+                  <div className="flex gap-1">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <div
+                        key={i}
+                        className={`h-[3px] flex-1 rounded-full transition-all duration-300 ${
+                          i < powerLevelProgress ? "bg-gradient-to-r from-[#9A5E17] via-[#EF9F27] to-[#FAC775]" : "bg-white/10"
+                        }`}
+                      />
+                    ))}
                   </div>
                 </div>
 
@@ -1304,6 +1295,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                     powers.map((power) => {
                       const showContextMenu = powerContextMenuId === power.id;
                       const state = renderPowerState(power);
+                      const PowerIcon = getPowerIcon(power.id);
                       return (
                         <div
                           key={power.id}
@@ -1325,18 +1317,22 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                                 powerLongPressCompleted.current = false;
                               }, 50);
                             }}
-                            className={`w-full p-2 rounded-lg text-xs font-medium transition-all text-left flex items-start gap-2 border relative overflow-hidden ${state.cardClass}`}
+                            title={power.description || undefined}
+                            className={`w-full min-h-[52px] p-2 rounded-lg text-xs font-medium transition-all text-left flex items-center gap-2 border relative overflow-hidden ${state.cardClass}`}
                             style={{
                               background: power.isUnlocked === 0 ? "#0f0b07" : power.isUnlocked === 1 ? "#221a10" : "#2a1a00",
                             }}
                           >
-                            {state.icon}
+                            <span className={`relative flex h-7 w-7 flex-none items-center justify-center rounded-md border ${state.chipClass}`}>
+                              <PowerIcon className={`h-3.5 w-3.5 ${state.iconColorClass}`} />
+                              {state.showLock && (
+                                <span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full border border-white/15 bg-[#1D1911]">
+                                  <Lock className="h-2 w-2 text-[#7A7161]" />
+                                </span>
+                              )}
+                            </span>
                             <div className="flex-1 min-w-0">
                               <p className="truncate">{power.name}</p>
-                              {/* status label removed per user request */}
-                              {power.description && (
-                                <p className={state.descriptionClass}>{power.description}</p>
-                              )}
                             </div>
                             {state.showGlow && (
                               <div
@@ -1430,7 +1426,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                             <Pencil className="h-3 w-3 text-muted-foreground" />
                           </button>
                           <button
-                            onClick={() => deleteBug.mutate(bug.id)}
+                            onClick={() => deleteBug.mutate({ id: bug.id, registros: bug.registros })}
                             className="p-1 hover:bg-destructive/20 rounded"
                             title="Eliminar"
                           >
@@ -1655,7 +1651,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                                     <Pencil className="h-3 w-3 text-muted-foreground" />
                                   </button>
                                   <button
-                                    onClick={() => deleteBugRecord.mutate(registro.id)}
+                                    onClick={() => deleteBugRecord.mutate({ id: registro.id, bodyLinks: registro.bodyLinks ?? [] })}
                                     className="p-1 hover:bg-destructive/20 rounded"
                                     title="Eliminar"
                                   >
@@ -1711,6 +1707,9 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                 value={name}
                 onChange={(e) => setName(e.target.value)}
               />
+              {activeTab === "powers" && (
+                <p className="text-xs text-muted-foreground mt-1">Máximo 3 palabras</p>
+              )}
             </div>
             <div>
               <Label htmlFor="entry-desc" className="text-sm font-medium mb-2 block">

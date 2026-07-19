@@ -49,11 +49,13 @@ interface SkillData {
 interface GlobalSkillData {
   id: string;
   name: string;
+  description?: string;
   skillId: string;
   currentXp: number;
   goalXp: number;
   level: number;
   areaId: string;
+  projectId?: string | null;
   status: "locked" | "available" | "mastered";
   createdAt?: string;
 }
@@ -77,9 +79,18 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; skillId: string } | null>(null);
   const [areaContextMenu, setAreaContextMenu] = useState<{ x: number; y: number; areaId: string } | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [metaSkillId, setMetaSkillId] = useState<string | null>(null);
-  const [goalXpValue, setGoalXpValue] = useState<string>("");
-  const [metaUnlimited, setMetaUnlimited] = useState(false);
+
+  // Edit Skill Modal (name, description, area/project, meta, delete)
+  const [editSkillId, setEditSkillId] = useState<string | null>(null);
+  const [editName, setEditName] = useState<string>("");
+  const [editDescription, setEditDescription] = useState<string>("");
+  const [editLinkType, setEditLinkType] = useState<"area" | "project">("area");
+  const [editLinkId, setEditLinkId] = useState<string>("");
+  const [editGoalUnlimited, setEditGoalUnlimited] = useState(false);
+  const [editGoalValue, setEditGoalValue] = useState<string>("");
+  const [editError, setEditError] = useState<string>("");
+  const skillRefs = React.useRef<Record<string, HTMLDivElement | null>>({});
+
   const [showNewSkillForm, setShowNewSkillForm] = useState(false);
   const [newSkillName, setNewSkillName] = useState<string>("");
   const [newSkillXpMax, setNewSkillXpMax] = useState<string>("");
@@ -119,7 +130,7 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
   };
 
   // If any modal/context menu is open, we should not run grid long-press handlers
-  const anyModalOpen = showNewSkillForm || showCreateAreaProjectForm || showGridLongPressOptions || !!metaSkillId || !!contextMenu;
+  const anyModalOpen = showNewSkillForm || showCreateAreaProjectForm || showGridLongPressOptions || !!editSkillId || !!contextMenu;
 
   // Get skills from context
   const { 
@@ -285,8 +296,33 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
 
   const handleLongPress = (skillId: string, e: React.MouseEvent | React.TouchEvent) => {
     e.preventDefault();
-    const x = 'clientX' in e ? e.clientX : e.touches[0].clientX;
-    const y = 'clientY' in e ? e.clientY : e.touches[0].clientY;
+
+    const menuWidth = 120;
+    const menuHeight = 40;
+    const margin = 8;
+    const el = skillRefs.current[skillId];
+
+    let x: number;
+    let y: number;
+
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      x = rect.left + rect.width / 2 - menuWidth / 2;
+      y = rect.bottom + 6;
+
+      if (y + menuHeight > window.innerHeight - margin) {
+        // No entra debajo del rombo: abrir arriba
+        y = rect.top - menuHeight - 6;
+      }
+    } else {
+      // Fallback: posición del puntero/touch
+      x = ('clientX' in e ? e.clientX : e.touches[0].clientX) - menuWidth / 2;
+      y = ('clientY' in e ? e.clientY : e.touches[0].clientY) + 6;
+    }
+
+    x = Math.min(Math.max(margin, x), window.innerWidth - menuWidth - margin);
+    y = Math.min(Math.max(margin, y), window.innerHeight - menuHeight - margin);
+
     setContextMenu({ x, y, skillId });
   };
 
@@ -302,50 +338,80 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
     }
   };
 
-  const handleAddMeta = (skillId: string) => {
+  const handleOpenEdit = (skillId: string) => {
     const skill = globalSkillsForArea.find((s) => s.id === skillId);
-    if (skill) {
-      setMetaSkillId(skillId);
-      setGoalXpValue(String(skill.goalXp || ""));
-      setMetaUnlimited(!skill.goalXp || skill.goalXp === 0);
-      setContextMenu(null);
-    }
+    if (!skill) return;
+    setEditSkillId(skillId);
+    setEditName(skill.name);
+    setEditDescription(skill.description || "");
+    setEditLinkType(skill.projectId ? "project" : "area");
+    setEditLinkId(skill.projectId || skill.areaId || "");
+    setEditGoalUnlimited(!skill.goalXp || skill.goalXp === 0);
+    setEditGoalValue(String(skill.goalXp || ""));
+    setEditError("");
+    setContextMenu(null);
   };
 
-  const handleSaveMeta = async () => {
-    if (!metaSkillId) return;
-    
-    // Find the skill to get currentLevel for validation
-    const skill = globalSkillsForArea.find((s) => s.id === metaSkillId);
+  const closeEditModal = () => {
+    setEditSkillId(null);
+    setEditName("");
+    setEditDescription("");
+    setEditLinkType("area");
+    setEditLinkId("");
+    setEditGoalUnlimited(false);
+    setEditGoalValue("");
+    setEditError("");
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editSkillId) return;
+
+    const skill = globalSkillsForArea.find((s) => s.id === editSkillId);
     if (!skill) {
-      console.error("Skill not found");
+      setEditError("Skill no encontrado");
       return;
     }
 
-    // goalXp now represents LEVEL objective
-    const newGoalLevel = metaUnlimited ? 0 : (parseInt(goalXpValue) || 0);
+    if (!editName.trim()) {
+      setEditError("El nombre del skill es requerido");
+      return;
+    }
+
+    if (!editLinkId) {
+      setEditError(editLinkType === "area" ? "Selecciona un área" : "Selecciona un proyecto");
+      return;
+    }
+
+    const newGoalLevel = editGoalUnlimited ? 0 : (parseInt(editGoalValue) || 0);
     const currentLevel = clampToUnlockedLevel(skill.level || 1);
-    
-    if (!metaUnlimited && newGoalLevel < currentLevel) {
-      alert(`La meta debe ser un nivel mayor o igual a ${currentLevel} (nivel actual)`);
+
+    if (!editGoalUnlimited && newGoalLevel < currentLevel) {
+      setEditError(`La meta debe ser un nivel mayor o igual a ${currentLevel} (nivel actual)`);
       return;
     }
 
     try {
-      const response = await fetch(`/api/global-skills/${metaSkillId}`, {
+      const response = await fetch(`/api/global-skills/${editSkillId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ goalXp: newGoalLevel }),
+        body: JSON.stringify({
+          name: editName.trim(),
+          description: editDescription,
+          areaId: editLinkType === "area" ? editLinkId : null,
+          projectId: editLinkType === "project" ? editLinkId : null,
+          goalXp: newGoalLevel,
+        }),
       });
       if (response.ok) {
-        setMetaSkillId(null);
-        setGoalXpValue("");
-        setMetaUnlimited(false);
-        refetch(); // Use refetch instead of reload
+        closeEditModal();
+        refetch();
+      } else {
+        setEditError("Error al guardar los cambios");
       }
     } catch (error) {
-      console.error("Error saving meta:", error);
+      console.error("Error saving skill edits:", error);
+      setEditError("Error al guardar los cambios");
     }
   };
 
@@ -358,6 +424,7 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
       });
       if (response.ok) {
         setContextMenu(null);
+        closeEditModal();
         refetch(); // Use refetch instead of reload
       }
     } catch (error) {
@@ -736,6 +803,7 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
                 {row.map((skill) => (
                   <div
                     key={skill.id}
+                    ref={(el) => { skillRefs.current[skill.id] = el; }}
                     onMouseDown={(e) => {
                       e.stopPropagation();
                       handleMouseDown(skill.id, e);
@@ -815,29 +883,19 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
               border: "1px solid #3a2a14",
               borderRadius: "4px",
               boxShadow: "0 4px 6px rgba(0,0,0,0.3)",
-              minWidth: "140px",
+              minWidth: "120px",
             }}
             onClick={(e) => e.stopPropagation()}
           >
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                handleAddMeta(contextMenu.skillId);
+                handleOpenEdit(contextMenu.skillId);
               }}
               className="block w-full text-left px-3 py-2 text-xs hover:bg-amber-700/20 transition-colors"
               style={{ color: "#c8a96e" }}
             >
-              Agregar meta
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDeleteSkill(contextMenu.skillId);
-              }}
-              className="block w-full text-left px-3 py-2 text-xs hover:bg-red-700/20 transition-colors"
-              style={{ color: "#ff6b6b" }}
-            >
-              Borrar
+              Editar
             </button>
           </div>
         </>
@@ -1149,76 +1207,244 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
         document.body
       )}
 
-      {/* Meta Modal */}
-      {metaSkillId && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(0,0,0,0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 2000,
-          }}
-          onClick={() => setMetaSkillId(null)}
-        >
+      {/* Edit Skill Modal */}
+      {editSkillId && ReactDOM.createPortal(
+        <>
           <div
-            style={{
-              backgroundColor: "#1a1410",
-              border: "1px solid #2a1e0e",
-              borderRadius: "8px",
-              padding: "20px",
-              maxWidth: "400px",
-              width: "90%",
-            }}
-            onClick={(e) => e.stopPropagation()}
-            onPointerDownCapture={(e) => e.stopPropagation()}
+            className="fixed inset-0"
+            style={{ backgroundColor: "rgba(0,0,0,0.5)", zIndex: 9998, pointerEvents: "auto" }}
+            onClick={closeEditModal}
+          />
+          <div
+            className="fixed inset-0 flex items-center justify-center p-4"
+            style={{ zIndex: 9999, pointerEvents: "auto" }}
           >
-            <h3 className="text-sm font-semibold text-amber-700 mb-4">Agregar meta de nivel</h3>
-            <div className="mb-4">
-              <div className="flex items-center gap-2 mb-2">
-                <label className="text-xs text-amber-700">Meta de nivel</label>
-                <input
-                  type="checkbox"
-                  checked={metaUnlimited}
-                  onChange={(e) => setMetaUnlimited(e.target.checked)}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  style={{ pointerEvents: "auto" }}
-                />
-                <label className="text-xs text-amber-700">Sin límite</label>
-              </div>
-              {!metaUnlimited && (
-                <input
-                  type="number"
-                  value={goalXpValue}
-                  onChange={(e) => setGoalXpValue(e.target.value)}
-                  onPointerDown={(e) => {
-                    e.stopPropagation();
-                    (e.currentTarget as HTMLInputElement).focus();
-                  }}
-                  placeholder="Nivel a alcanzar"
-                  className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded text-xs text-amber-700"
-                  style={{ pointerEvents: "auto" }}
-                />
+            <div
+              className="rounded-lg p-6 max-w-md w-full max-h-[90vh] overflow-y-auto custom-scrollbar"
+              style={{
+                backgroundColor: "#0e0c0a",
+                border: "1px solid #3a2a14",
+                pointerEvents: "auto",
+              }}
+              onClick={(e) => e.stopPropagation()}
+              onPointerDownCapture={(e) => e.stopPropagation()}
+            >
+              {/* Title */}
+              <h2 className="text-lg font-semibold mb-4" style={{ color: "#c8a96e" }}>
+                Editar skill
+              </h2>
+
+              {/* Error message */}
+              {editError && (
+                <div className="mb-4 p-2 rounded text-xs" style={{ backgroundColor: "#c85a2a", color: "#0e0c0a" }}>
+                  {editError}
+                </div>
               )}
-            </div>
-            <div className="flex gap-2">
+
+              {/* Skill name input */}
+              <label className="text-xs block mb-2" style={{ color: "#c8a96e" }}>
+                Nombre
+              </label>
+              <input
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  e.nativeEvent.stopImmediatePropagation();
+                  (e.target as HTMLInputElement).focus();
+                }}
+                placeholder="Nombre del skill"
+                className="w-full px-3 py-2 mb-4 rounded text-xs focus:outline-none transition-colors"
+                style={{
+                  backgroundColor: "#130f09",
+                  border: "1px solid #3a2a14",
+                  color: "#c8a96e",
+                  pointerEvents: "auto",
+                }}
+                onFocus={(e) => (e.currentTarget.style.borderColor = "#c8a96e")}
+                onBlur={(e) => (e.currentTarget.style.borderColor = "#3a2a14")}
+              />
+
+              {/* Description textarea */}
+              <label className="text-xs block mb-2" style={{ color: "#c8a96e" }}>
+                Descripción
+              </label>
+              <textarea
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  e.nativeEvent.stopImmediatePropagation();
+                  (e.target as HTMLTextAreaElement).focus();
+                }}
+                placeholder="Descripción del skill (opcional)"
+                rows={3}
+                className="w-full px-3 py-2 mb-4 rounded text-xs focus:outline-none transition-colors resize-none"
+                style={{
+                  backgroundColor: "#130f09",
+                  border: "1px solid #3a2a14",
+                  color: "#c8a96e",
+                  pointerEvents: "auto",
+                }}
+                onFocus={(e) => (e.currentTarget.style.borderColor = "#c8a96e")}
+                onBlur={(e) => (e.currentTarget.style.borderColor = "#3a2a14")}
+              />
+
+              {/* Link Type Selector */}
+              <div className="mb-4">
+                <label className="text-xs block mb-2" style={{ color: "#c8a96e" }}>
+                  Linkeado a
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setEditLinkType("area");
+                      setEditLinkId("");
+                    }}
+                    className="flex-1 px-3 py-2 rounded text-xs transition-colors"
+                    style={{
+                      backgroundColor: editLinkType === "area" ? "#c85a2a" : "#130f09",
+                      border: editLinkType === "area" ? "2px solid #c8a96e" : "1px solid #3a2a14",
+                      color: editLinkType === "area" ? "#0e0c0a" : "#c8a96e",
+                    }}
+                  >
+                    Área
+                  </button>
+                  <button
+                    onClick={() => {
+                      setEditLinkType("project");
+                      setEditLinkId("");
+                    }}
+                    className="flex-1 px-3 py-2 rounded text-xs transition-colors"
+                    style={{
+                      backgroundColor: editLinkType === "project" ? "#c85a2a" : "#130f09",
+                      border: editLinkType === "project" ? "2px solid #c8a96e" : "1px solid #3a2a14",
+                      color: editLinkType === "project" ? "#0e0c0a" : "#c8a96e",
+                    }}
+                  >
+                    Proyecto
+                  </button>
+                </div>
+              </div>
+
+              {/* Area/Project Selector */}
+              <div className="mb-4">
+                <label className="text-xs block mb-2" style={{ color: "#c8a96e" }}>
+                  {editLinkType === "area" ? "Selecciona un área" : "Selecciona un proyecto"}
+                </label>
+                <select
+                  value={editLinkId}
+                  onChange={(e) => setEditLinkId(e.target.value)}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  className="w-full px-3 py-2 rounded text-xs focus:outline-none transition-colors"
+                  style={{
+                    backgroundColor: "#130f09",
+                    border: "1px solid #3a2a14",
+                    color: "#c8a96e",
+                    pointerEvents: "auto",
+                  }}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = "#c8a96e")}
+                  onBlur={(e) => (e.currentTarget.style.borderColor = "#3a2a14")}
+                >
+                  <option value="">
+                    {editLinkType === "area" ? "-- Selecciona un área --" : "-- Selecciona un proyecto --"}
+                  </option>
+                  {editLinkType === "area"
+                    ? areas.map((area) => (
+                        <option key={area.id} value={area.id}>
+                          {area.name}
+                        </option>
+                      ))
+                    : projects.map((project) => (
+                        <option key={project.id} value={project.id}>
+                          {project.name}
+                        </option>
+                      ))}
+                </select>
+              </div>
+
+              {/* Meta de nivel */}
+              <div className="mb-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <label className="text-xs" style={{ color: "#c8a96e" }}>
+                    Meta de nivel
+                  </label>
+                  <input
+                    type="checkbox"
+                    checked={editGoalUnlimited}
+                    onChange={(e) => setEditGoalUnlimited(e.target.checked)}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    style={{ pointerEvents: "auto" }}
+                  />
+                  <label className="text-xs" style={{ color: "#c8a96e" }}>
+                    Sin límite
+                  </label>
+                </div>
+                {!editGoalUnlimited && (
+                  <input
+                    type="number"
+                    value={editGoalValue}
+                    onChange={(e) => setEditGoalValue(e.target.value)}
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      e.currentTarget.focus();
+                    }}
+                    placeholder="Nivel a alcanzar"
+                    className="w-full px-3 py-2 rounded text-xs focus:outline-none transition-colors"
+                    style={{
+                      backgroundColor: "#130f09",
+                      border: "1px solid #3a2a14",
+                      color: "#c8a96e",
+                      pointerEvents: "auto",
+                    }}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = "#c8a96e")}
+                    onBlur={(e) => (e.currentTarget.style.borderColor = "#3a2a14")}
+                  />
+                )}
+              </div>
+
+              {/* Delete button */}
               <button
-                onClick={handleSaveMeta}
-                className="flex-1 px-3 py-2 bg-amber-700 text-white text-xs rounded hover:bg-amber-600"
+                onClick={() => editSkillId && handleDeleteSkill(editSkillId)}
+                className="w-full px-3 py-2 mb-4 rounded text-xs font-semibold transition-colors hover:bg-red-700/20"
+                style={{
+                  backgroundColor: "transparent",
+                  border: "1px solid #5a2a2a",
+                  color: "#ff6b6b",
+                }}
               >
-                Guardar
+                Eliminar skill
               </button>
-              <button
-                onClick={() => setMetaSkillId(null)}
-                className="flex-1 px-3 py-2 bg-gray-700 text-white text-xs rounded hover:bg-gray-600"
-              >
-                Cancelar
-              </button>
+
+              {/* Buttons */}
+              <div className="flex gap-2 justify-end">
+                <button
+                  onClick={closeEditModal}
+                  className="px-3 py-2 rounded text-xs transition-colors"
+                  style={{
+                    backgroundColor: "transparent",
+                    border: "1px solid #5a4a2a",
+                    color: "#5a4a2a",
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleSaveEdit}
+                  className="px-3 py-2 rounded text-xs font-semibold transition-colors"
+                  style={{
+                    backgroundColor: "#c85a2a",
+                    color: "#0e0c0a",
+                  }}
+                >
+                  Guardar
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </>,
+        document.body
       )}
 
       {/* Create Area/Project Modal */}

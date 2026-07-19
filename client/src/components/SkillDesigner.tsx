@@ -349,7 +349,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                 return (
                   <AccordionItem key={project.id} value={`project-${project.id}`}>
                     <AccordionTrigger className="hover:no-underline">
-                      <span className="font-semibold">{project.name} (Quest Principal)</span>
+                      <span className="font-semibold">{project.name}</span>
                     </AccordionTrigger>
                     <AccordionContent>
                       <Accordion type="single" collapsible className="w-full pl-4">
@@ -488,7 +488,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                 return (
                   <AccordionItem key={project.id} value={`project-${project.id}`}>
                     <AccordionTrigger className="hover:no-underline">
-                      <span className="font-semibold">{project.name} (Quest Secundaria)</span>
+                      <span className="font-semibold">{project.name}</span>
                     </AccordionTrigger>
                     <AccordionContent>
                       <Accordion type="single" collapsible className="w-full pl-4">

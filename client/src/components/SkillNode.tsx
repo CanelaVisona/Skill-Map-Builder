@@ -1286,9 +1286,20 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
           {/* Final Node Star Icon - only show when star is active AND final node is mastered */}
           {isStarActive && skillsInLevel.find(s => s.levelPosition === Math.max(...skillsInLevel.map(s => s.levelPosition || 0)))?.status === "mastered" && (
             <div className="absolute -top-1 -right-1 z-30" title="Nodo final del área">
-              <Star 
-                size={14} 
-                className="fill-amber-400 text-amber-400 drop-shadow-lg" 
+              <Star
+                size={14}
+                className="fill-amber-400 text-amber-400 drop-shadow-lg"
+              />
+            </div>
+          )}
+
+          {/* Completion Star - permanent badge on every node once the area/project this
+              node belongs to has been fully conquered (its star node was mastered) */}
+          {skill.hasCompletionStar === 1 && (
+            <div className="absolute -bottom-1 -right-1 z-30" title="Quest conquistada">
+              <Star
+                size={12}
+                className="fill-amber-300 text-amber-500 drop-shadow-lg"
               />
             </div>
           )}

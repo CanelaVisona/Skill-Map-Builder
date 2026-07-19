@@ -497,6 +497,24 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/areas/:id/mark-completion-star", requireAuth, async (req, res) => {
+    try {
+      const existingArea = await storage.getArea(req.params.id);
+      if (!existingArea) {
+        res.status(404).json({ message: "Area not found" });
+        return;
+      }
+      if (existingArea.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para modificar esta área" });
+        return;
+      }
+      await storage.markAreaSkillsCompletionStar(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.patch("/api/areas/:id/unarchive", requireAuth, async (req, res) => {
     try {
       const existingArea = await storage.getArea(req.params.id);
@@ -1721,6 +1739,24 @@ export async function registerRoutes(
       }
       const project = await storage.archiveProject(req.params.id);
       res.json(project);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/projects/:id/mark-completion-star", requireAuth, async (req, res) => {
+    try {
+      const existingProject = await storage.getProject(req.params.id);
+      if (!existingProject) {
+        res.status(404).json({ message: "Project not found" });
+        return;
+      }
+      if (existingProject.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para modificar este proyecto" });
+        return;
+      }
+      await storage.markProjectSkillsCompletionStar(req.params.id);
+      res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

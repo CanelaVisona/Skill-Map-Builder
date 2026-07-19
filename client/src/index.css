@@ -163,18 +163,6 @@ h1, h2, h3, h4, h5, h6 {
   background-color: rgba(113, 113, 122, 0.7);
 }
 
-@keyframes flicker1 {
-  0%, 100% { transform: scaleY(1) scaleX(1); }
-  25% { transform: scaleY(1.08) scaleX(0.96); }
-  75% { transform: scaleY(0.95) scaleX(1.04); }
-}
-
-@keyframes flicker2 {
-  0%, 100% { transform: scaleY(1) scaleX(1); }
-  33% { transform: scaleY(1.1) scaleX(0.94); }
-  66% { transform: scaleY(0.93) scaleX(1.05); }
-}
-
 @keyframes glow-pulse {
   0%, 100% { opacity: 0.45; }
   50% { opacity: 0.8; }

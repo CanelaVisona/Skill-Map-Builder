@@ -208,6 +208,12 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
     });
   };
 
+  // Revierte silenciosamente (sin pop-up) el bloque de cuerpo otorgado por una confirmación
+  // que se está deshaciendo (hábito desconfirmado).
+  const shrinkLinkedBody = (links: BodyLink[]) => {
+    links.forEach((link) => addBodyBlock(link.zone, link.dimension, -1));
+  };
+
   // Fetch habits
   const { data: habits = [], isLoading: habitsLoading } = useQuery({
     queryKey: ["habits"],
@@ -713,6 +719,8 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                         }
                         if (!isCompleted) {
                           growLinkedBody(habit.bodyLinks ?? [], !!habit.skillId);
+                        } else {
+                          shrinkLinkedBody(habit.bodyLinks ?? []);
                         }
                       },
                     }
@@ -799,6 +807,8 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                       }
                       if (!isCompleted) {
                         growLinkedBody(habit.bodyLinks ?? [], !!habit.skillId);
+                      } else {
+                        shrinkLinkedBody(habit.bodyLinks ?? []);
                       }
                     },
                   }
@@ -1045,14 +1055,14 @@ function HabitCard({
   const isToday = habit.done.has(todayStr);
   const scheduledDays = habit.scheduledDays?.length ? habit.scheduledDays : [0, 1, 2, 3, 4, 5, 6];
 
-  // Progreso de la semana actual: cuántos de los días agendados ya se completaron
+  // Progreso de la semana actual: el objetivo (weekTotal) son los días agendados, pero una
+  // confirmación en un día no agendado también debe reflejarse en la barra (weekCompleted
+  // cuenta cualquier día hecho, agendado o no).
   let weekTotal = 0;
   let weekCompleted = 0;
   weekDays.forEach((w, i) => {
-    if (scheduledDays.includes(i)) {
-      weekTotal++;
-      if (habit.done.has(getLocalDateString(w))) weekCompleted++;
-    }
+    if (scheduledDays.includes(i)) weekTotal++;
+    if (habit.done.has(getLocalDateString(w))) weekCompleted++;
   });
 
   return (
@@ -1168,10 +1178,12 @@ function HabitCard({
         })}
       </div>
 
-      {/* Barra semanal: se completa cuando se cumplen todas las veces agendadas esa semana */}
+      {/* Barra semanal: se completa cuando se cumplen todas las veces agendadas esa semana.
+          Si se confirman más días de los agendados, se agregan segmentos extra dinámicamente
+          para reflejar el excedente en vez de recortarlo. */}
       <div className="mt-2">
         <div className="flex gap-1">
-          {Array.from({ length: Math.max(weekTotal, 1) }).map((_, i) => (
+          {Array.from({ length: Math.max(weekCompleted, weekTotal, 1) }).map((_, i) => (
             <div
               key={i}
               className={`h-1.5 flex-1 rounded-full transition-all ${
@@ -1988,7 +2000,7 @@ function AddPanel({
             <option value="">Sin área asignada</option>
             {areas.map((area) => (
               <option key={area.id} value={area.id}>
-                {area.icon} {area.name}
+                {area.name}
               </option>
             ))}
           </select>
@@ -2011,7 +2023,7 @@ function AddPanel({
             <option value="">Sin proyecto asignado</option>
             {projects.map((project) => (
               <option key={project.id} value={project.id}>
-                {project.icon} {project.name}
+                {project.name}
               </option>
             ))}
           </select>
@@ -2290,7 +2302,7 @@ function EditPanel({
             <option value="">Sin área asignada</option>
             {areas.map((area) => (
               <option key={area.id} value={area.id}>
-                {area.icon} {area.name}
+                {area.name}
               </option>
             ))}
           </select>
@@ -2313,7 +2325,7 @@ function EditPanel({
             <option value="">Sin proyecto asignado</option>
             {projects.map((project) => (
               <option key={project.id} value={project.id}>
-                {project.icon} {project.name}
+                {project.name}
               </option>
             ))}
           </select>

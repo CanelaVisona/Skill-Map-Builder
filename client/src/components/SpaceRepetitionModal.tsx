@@ -507,11 +507,23 @@ export function SpaceRepetitionModal({
 
   const deletePractice = async (id: string) => {
     try {
+      const practice = practices.find((p) => p.id === id);
       const res = await fetch(`/api/space-repetition/${id}`, {
         method: "DELETE"
       });
       if (!res.ok) throw new Error("Error deleting practice");
       setPractices(practices.filter((p) => p.id !== id));
+
+      // Cada intervalo confirmado sumó un bloque de cuerpo por componente linkeado; al
+      // eliminar la práctica hay que revertir todo lo acumulado (sin pop-up, es una baja silenciosa).
+      const links = Array.isArray(practice?.bodyLinks) ? practice!.bodyLinks : [];
+      if (practice && links.length > 0) {
+        const confirmedIntervals =
+          (practice.completedIntervals?.length || 0) + (practice.completedIntervalsL2?.length || 0);
+        if (confirmedIntervals > 0) {
+          links.forEach((link) => addBodyBlock(link.zone, link.dimension, -confirmedIntervals));
+        }
+      }
     } catch (error) {
       console.error("Error deleting practice:", error);
     }

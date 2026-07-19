@@ -47,6 +47,8 @@ export interface IStorage {
   deleteSkill(id: string): Promise<void>;
   countSkillsInLevel(areaId: string, level: number): Promise<number>;
   countProjectSkillsInLevel(projectId: string, level: number): Promise<number>;
+  markAreaSkillsCompletionStar(areaId: string): Promise<void>;
+  markProjectSkillsCompletionStar(projectId: string): Promise<void>;
   recalculateFinalNodes(level: number, options: { areaId?: string; projectId?: string; parentSkillId?: string }): Promise<void>;
   recalculateNodeStatuses(level: number, options: { areaId?: string; projectId?: string; parentSkillId?: string }): Promise<void>;
   recalculateNodeStatusesAfterReorder(level: number, options: { areaId?: string; projectId?: string; parentSkillId?: string }): Promise<void>;
@@ -420,6 +422,10 @@ export class DbStorage implements IStorage {
   async unarchiveArea(id: string): Promise<Area | undefined> {
     const result = await db.update(areas).set({ archived: 0 as 0 | 1 }).where(eq(areas.id, id)).returning();
     return result[0];
+  }
+
+  async markAreaSkillsCompletionStar(areaId: string): Promise<void> {
+    await db.update(skills).set({ hasCompletionStar: 1 as 0 | 1 }).where(eq(skills.areaId, areaId));
   }
 
   // Skills
@@ -1079,6 +1085,10 @@ export class DbStorage implements IStorage {
     return result[0];
   }
 
+  async markProjectSkillsCompletionStar(projectId: string): Promise<void> {
+    await db.update(skills).set({ hasCompletionStar: 1 as 0 | 1 }).where(eq(skills.projectId, projectId));
+  }
+
   // Sub-skills
   async getSubSkills(parentSkillId: string): Promise<Skill[]> {
     return await db.select().from(skills).where(eq(skills.parentSkillId, parentSkillId));
@@ -1629,28 +1639,17 @@ export class DbStorage implements IStorage {
 
     for (const record of records) {
       if (nextStatus === "identificado") {
-        // First historical record moves to debugging and also counts toward progress.
+        // First historical record moves the bug into debugging, regardless of its result.
         nextStatus = "debugueando";
-        nextVictoryCount = 1;
-
-        if (nextVictoryCount >= 5) {
-          nextStatus = "debugueado";
-          nextVictoryCount = 5;
-        }
-        continue;
       }
 
-      if (nextStatus === "debugueando") {
+      if (nextStatus === "debugueando" && record.resultado === "victoria") {
         nextVictoryCount = Math.min(nextVictoryCount + 1, 5);
 
         if (nextVictoryCount >= 5) {
           nextStatus = "debugueado";
-          nextVictoryCount = 5;
         }
-        continue;
       }
-
-      nextVictoryCount = 5;
     }
 
     await db

@@ -109,7 +109,7 @@ function applyServerRows(rows: BodyProgressServerRow[]): BodyProgressState {
 interface BodyProgressContextValue {
   progress: BodyProgressState;
   getZoneProgress: (zone: BodyZone, dimension: BodyDimension) => ZoneProgress;
-  addBodyBlock: (zone: BodyZone, dimension: BodyDimension) => { before: ZoneProgress; after: ZoneProgress };
+  addBodyBlock: (zone: BodyZone, dimension: BodyDimension, blocks?: number) => { before: ZoneProgress; after: ZoneProgress };
   resetAll: () => void;
   refetch: () => void;
 }
@@ -157,16 +157,16 @@ export function BodyProgressProvider({ children }: { children: ReactNode }) {
 
   const getZoneProgress = (zone: BodyZone, dimension: BodyDimension) => progress[bodyKeyFor(zone, dimension)];
 
-  const addBodyBlock = (zone: BodyZone, dimension: BodyDimension) => {
+  // `blocks` acepta valores negativos para revertir crecimiento previamente otorgado
+  // (p.ej. al desconfirmar un hábito o eliminar un registro que ya había sumado bloques).
+  const addBodyBlock = (zone: BodyZone, dimension: BodyDimension, blocks: number = 1) => {
     const key = bodyKeyFor(zone, dimension);
     const before = progress[key];
-    let { lvl, val } = before;
-    val += 1;
-    if (val >= BODY_BLOCKS) {
-      lvl += 1;
-      val -= BODY_BLOCKS;
-    }
-    const after: ZoneProgress = { lvl, val };
+    const totalUnits = Math.max(0, (before.lvl - 1) * BODY_BLOCKS + before.val + blocks);
+    const after: ZoneProgress = {
+      lvl: 1 + Math.floor(totalUnits / BODY_BLOCKS),
+      val: totalUnits % BODY_BLOCKS,
+    };
     setProgress((prev) => ({ ...prev, [key]: after }));
     persistToServer(zone, dimension, after);
     return { before, after };

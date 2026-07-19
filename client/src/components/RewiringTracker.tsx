@@ -1167,7 +1167,7 @@ function TrackerCard({
               <option value="">Sin área</option>
               {areas && areas.map((area) => (
                 <option key={area.id} value={area.id}>
-                  {area.icon} {area.name}
+                  {area.name}
                 </option>
               ))}
             </select>
@@ -1184,7 +1184,7 @@ function TrackerCard({
               <option value="">Sin proyecto</option>
               {projects && projects.map((project) => (
                 <option key={project.id} value={project.id}>
-                  {project.icon} {project.name}
+                  {project.name}
                 </option>
               ))}
             </select>
@@ -1638,7 +1638,7 @@ function MainPanel({
                     <option value="">Sin área asignada</option>
                     {areas.map((area) => (
                       <option key={area.id} value={area.id}>
-                        {area.icon} {area.name}
+                        {area.name}
                       </option>
                     ))}
                   </select>
@@ -1656,7 +1656,7 @@ function MainPanel({
                     <option value="">Sin proyecto asignado</option>
                     {projects.map((project) => (
                       <option key={project.id} value={project.id}>
-                        {project.icon} {project.name}
+                        {project.name}
                       </option>
                     ))}
                   </select>

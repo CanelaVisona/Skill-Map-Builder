@@ -20,6 +20,7 @@ export interface Skill {
   manualLock?: number;
   isFinalNode?: number;
   isAutoComplete?: number;
+  hasCompletionStar?: number;
   level: number;
   levelPosition?: number;
   experiencePoints?: number;
@@ -140,6 +141,7 @@ interface SkillTreeContextType {
   showLevelUp: boolean;
   levelUpNumber: number;
   showCompleted: boolean;
+  questCompletedCelebration: { name: string; type: "area" | "project" } | null;
   showQuestUpdated: boolean;
   renameArea: (areaId: string, newName: string) => Promise<void>;
   renameProject: (projectId: string, newName: string) => Promise<void>;
@@ -252,6 +254,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
   const [showLevelUp, setShowLevelUp] = useState(false);
   const [levelUpNumber, setLevelUpNumber] = useState(0);
   const [showCompleted, setShowCompleted] = useState(false);
+  const [questCompletedCelebration, setQuestCompletedCelebration] = useState<{ name: string; type: "area" | "project" } | null>(null);
   const [showQuestUpdated, setShowQuestUpdated] = useState(false);
   const [globalSkills, setGlobalSkills] = useState<GlobalSkill[]>([]);
   const [globalSkillsLoading, setGlobalSkillsLoading] = useState(true);
@@ -260,6 +263,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
   const { showAreaXpPopup } = useAreaXpPopup();
   const areaQuestUpdatedDelayMs = 3300;
   const areaLevelUpDelayMs = 4300;
+  const questCompletionArchiveDelayMs = 3000;
 
   const triggerLevelUp = (level: number) => {
     setLevelUpNumber(level);
@@ -270,6 +274,38 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
   const triggerCompleted = () => {
     setShowCompleted(true);
     setTimeout(() => setShowCompleted(false), 2000);
+  };
+
+  // Celebration shown when an area/project's star (final) node is mastered, right before
+  // it gets archived into "Quests Conquistados" questCompletionArchiveDelayMs later.
+  const triggerQuestCompletedCelebration = (name: string, type: "area" | "project") => {
+    setQuestCompletedCelebration({ name, type });
+    setTimeout(() => setQuestCompletedCelebration(null), questCompletionArchiveDelayMs);
+  };
+
+  // Marks every skill node (all levels) of a completed area with a permanent completion
+  // star, visible even after the area is archived into "Quests Conquistados".
+  const markAreaSkillsCompleted = async (areaId: string) => {
+    try {
+      await fetch(`/api/areas/${areaId}/mark-completion-star`, { method: "PATCH" });
+      setAreas(prev => prev.map(a =>
+        a.id === areaId ? { ...a, skills: a.skills.map(s => ({ ...s, hasCompletionStar: 1 })) } : a
+      ));
+    } catch (error) {
+      console.error("Error marking area skills as completed:", error);
+    }
+  };
+
+  // Same as markAreaSkillsCompleted, for projects/quests.
+  const markProjectSkillsCompleted = async (projectId: string) => {
+    try {
+      await fetch(`/api/projects/${projectId}/mark-completion-star`, { method: "PATCH" });
+      setProjects(prev => prev.map(p =>
+        p.id === projectId ? { ...p, skills: p.skills.map(s => ({ ...s, hasCompletionStar: 1 })) } : p
+      ));
+    } catch (error) {
+      console.error("Error marking project skills as completed:", error);
+    }
   };
 
   const triggerQuestUpdated = () => {
@@ -888,13 +924,17 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
       const updatedLevelSkills = await response.json();
 
-      if (isStarActive && newStatus === "mastered") {
-        triggerCompleted();
-        // Archive area after 5 second delay to show completion before disappearing
+      // isStarActive is level-wide (endOfAreaLevel only tracks a level number), so it's
+      // true for every node in a starred level -- gate on isFinalNodeByPosition too, or
+      // mastering any earlier node in that level would prematurely archive the area.
+      if (isStarActive && isFinalNodeByPosition && newStatus === "mastered") {
+        await markAreaSkillsCompleted(areaId);
+        triggerQuestCompletedCelebration(area.name, "area");
+        // Archive area after the celebration delay so it has time to play out
         setTimeout(async () => {
           await archiveArea(areaId);
           await refreshAllAreas();
-        }, 5000);
+        }, questCompletionArchiveDelayMs);
       } else if (newStatus === "mastered" && !isFinalNodeByPosition && !isOpeningNewLevel) {
         // Trigger area XP popup before quest popup
         try {
@@ -1244,14 +1284,17 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         body: JSON.stringify({ status: newStatus }),
       });
 
-      // Only archive if star is active (endOfAreaLevel is set on the project)
-      if (isStarActive && newStatus === "mastered") {
-        triggerCompleted();
-        // Archive project after 5 second delay to show completion before disappearing
+      // Only archive if star is active AND this is the actual final node -- isStarActive
+      // alone is level-wide (true for every node in a starred level), so without the
+      // isFinalNodeByPosition check, mastering any earlier node would prematurely archive.
+      if (isStarActive && isFinalNodeByPosition && newStatus === "mastered") {
+        await markProjectSkillsCompleted(projectId);
+        triggerQuestCompletedCelebration(project.name, "project");
+        // Archive project after the celebration delay so it has time to play out
         setTimeout(async () => {
           await archiveProject(projectId);
           await refreshAllAreas();
-        }, 5000);
+        }, questCompletionArchiveDelayMs);
       } else if (newStatus === "mastered" && !isFinalNodeByPosition && !isOpeningNewLevel) {
         // Trigger quest XP popup before quest updated banner
         try {
@@ -1556,11 +1599,12 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           const isStarActive = area.endOfAreaLevel === completedLevel;
 
           if (isStarActive) {
-            triggerCompleted();
+            await markAreaSkillsCompleted(areaId);
+            triggerQuestCompletedCelebration(area.name, "area");
             setTimeout(async () => {
               await archiveArea(areaId);
               await refreshAllAreas();
-            }, 5000);
+            }, questCompletionArchiveDelayMs);
           } else {
             const newUnlockedLevel = completedLevel + 1;
 
@@ -1918,11 +1962,12 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           const isStarActive = project.endOfAreaLevel === completedLevel;
 
           if (isStarActive) {
-            triggerCompleted();
+            await markProjectSkillsCompleted(projectId);
+            triggerQuestCompletedCelebration(project.name, "project");
             setTimeout(async () => {
               await archiveProject(projectId);
               await refreshAllAreas();
-            }, 5000);
+            }, questCompletionArchiveDelayMs);
           } else {
             const newUnlockedLevel = completedLevel + 1;
 
@@ -4331,6 +4376,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       showLevelUp,
       levelUpNumber,
       showCompleted,
+      questCompletedCelebration,
       showQuestUpdated,
       sideQuests,
       archivedSideQuests,

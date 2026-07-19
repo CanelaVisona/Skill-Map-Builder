@@ -87,12 +87,12 @@ export function SkillGridDetail({ skill, areaColor, onClose }: SkillGridDetailPr
   const progressColor = getProgressColorForLevel(currentLevel);
   const nextLevelLabel = `Lv${currentLevel + 1}`;
 
-  // Milestones (high level, keep simple)
-  const milestones = [
-    { label: "Primeros pasos", done: skill.currentXp > 0 },
-    { label: `Nivel ${currentLevel} alcanzado`, done: skill.level >= currentLevel },
-    { label: goalLevel ? `Llegar a nivel ${goalLevel}` : "Sin meta de nivel", done: goalLevel ? skill.level >= goalLevel : false },
-  ];
+  // Milestones: solo subidas de nivel reales, desde nivel 1 hasta el nivel actual (o la meta, si es mayor)
+  const maxDisplayLevel = goalLevel ? Math.max(goalLevel, currentLevel) : currentLevel;
+  const milestones = Array.from({ length: maxDisplayLevel }, (_, i) => {
+    const lvl = i + 1;
+    return { label: `Nivel ${lvl}`, done: currentLevel >= lvl };
+  });
 
   const diamondSize = 56;
   const half = diamondSize / 2;

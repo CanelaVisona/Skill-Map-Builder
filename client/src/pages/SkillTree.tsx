@@ -5,6 +5,7 @@ import { AreaMenu } from "@/components/AreaMenu";
 import { SkillNode } from "@/components/SkillNode";
 import { SkillConnection } from "@/components/SkillConnection";
 import { SkillDesigner } from "@/components/SkillDesigner";
+import { QuestCompletedCelebration } from "@/components/QuestCompletedCelebration";
 import { HabitStreakModal } from "@/components/HabitStreakModal";
 import { SpaceRepetitionModal } from "@/components/SpaceRepetitionModal";
 import { ProgressModal } from "@/components/ProgressModal";
@@ -5919,7 +5920,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
                     <option value="">None</option>
                     {getAllAvailableAreas().map(area => (
                       <option key={area.id} value={area.id}>
-                        {area.icon} {area.name}
+                        {area.name}
                       </option>
                     ))}
                   </select>
@@ -5939,7 +5940,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
                     <option value="">None</option>
                     {getAllAvailableProjects().map(project => (
                       <option key={project.id} value={project.id}>
-                        {project.icon} {project.name}
+                        {project.name}
                       </option>
                     ))}
                   </select>
@@ -6654,7 +6655,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
   });
 
   const deleteBugRecord = useMutation({
-    mutationFn: async (id: string) => {
+    mutationFn: async ({ id }: { id: string; bodyLinks: BodyLink[] }) => {
       const res = await fetch(`/api/source-bug-records/${id}`, {
         method: "DELETE",
       });
@@ -6662,8 +6663,13 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
         throw new Error("No se pudo eliminar el registro");
       }
     },
-    onSuccess: async () => {
+    onSuccess: async (_data, variables) => {
       await queryClient.invalidateQueries({ queryKey: ["all-area-bugs"] });
+      // El registro había sumado un bloque de cuerpo por componente linkeado al crearse;
+      // al eliminarlo hay que revertirlo (sin pop-up, es una baja silenciosa).
+      if (Array.isArray(variables.bodyLinks) && variables.bodyLinks.length > 0) {
+        variables.bodyLinks.forEach((link) => addBodyBlock(link.zone, link.dimension, -1));
+      }
       if (editingRecordId) {
         setEditingRecordId(null);
         setRecordFecha(new Date().toISOString().slice(0, 10));
@@ -6886,7 +6892,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
                         <span className={`h-2 w-2 rounded-full ${bugStatusColor[selectedBug.status]}`} />
                         {bugStatusLabel[selectedBug.status]}
                       </span>
-                      <span className="text-[11px] text-muted-foreground">Victorias: {selectedBug.victoryCount ?? 0}</span>
+                      <span className="text-[11px] text-muted-foreground">Registros: {selectedBug.registros?.length ?? 0}</span>
                     </div>
 
                     <p className="text-sm text-muted-foreground break-words">{selectedBug.desc || "Sin descripcion"}</p>
@@ -6981,7 +6987,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => deleteBugRecord.mutate(registro.id)}
+                                  onClick={() => deleteBugRecord.mutate({ id: registro.id, bodyLinks: registro.bodyLinks ?? [] })}
                                   className="p-1 hover:bg-destructive/20 rounded"
                                   title="Eliminar"
                                   disabled={deleteBugRecord.isPending}
@@ -7516,6 +7522,7 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
     showLevelUp,
     levelUpNumber,
     showCompleted,
+    questCompletedCelebration,
     showQuestUpdated,
     addSkill,
     updateSkill,
@@ -7720,6 +7727,7 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
             </motion.div>
           )}
         </AnimatePresence>
+        <QuestCompletedCelebration celebration={questCompletedCelebration} />
         <AnimatePresence>
           {showQuestUpdated && (
             <motion.div
@@ -8028,6 +8036,7 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
           </motion.div>
         )}
       </AnimatePresence>
+      <QuestCompletedCelebration celebration={questCompletedCelebration} />
       <AnimatePresence>
         {showQuestUpdated && (
           <motion.div
