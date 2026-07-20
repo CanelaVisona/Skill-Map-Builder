@@ -793,10 +793,6 @@ function BestiarySection({
     }
   }, [entries.length]);
 
-  // Auto-hide thumbnails on mobile, show on desktop
-  useEffect(() => {
-    setShowThumbs(!isMobile);
-  }, [isMobile]);
 
   const handleAddBeast = () => {
     if (!newName.trim()) {
@@ -1108,8 +1104,8 @@ function BestiarySection({
 
   if (entries.length === 0) {
     return (
-      <div className="h-full flex flex-col bg-zinc-900">
-        <div className="flex items-center justify-between p-3 bg-zinc-950 border-b border-zinc-800">
+      <div className="h-full flex flex-col bg-white dark:bg-zinc-900">
+        <div className="flex items-center justify-between p-3 bg-zinc-100 dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-800">
           <div className="flex-1" />
           <Button
             size="sm"
@@ -1121,35 +1117,35 @@ function BestiarySection({
         </div>
         <div className="flex-1 flex items-center justify-center text-center">
           <div>
-            <BookOpen className="h-16 w-16 text-zinc-600 mx-auto mb-4" />
+            <BookOpen className="h-16 w-16 text-zinc-400 dark:text-zinc-600 mx-auto mb-4" />
             <p className="text-zinc-500 text-sm">No hay bestias registradas</p>
-            <p className="text-zinc-600 text-xs mt-2">Usa el botón "Agregar" para comenzar</p>
+            <p className="text-zinc-400 dark:text-zinc-600 text-xs mt-2">Usa el botón "Agregar" para comenzar</p>
           </div>
         </div>
         <Dialog open={isAdding} onOpenChange={setIsAdding}>
-          <DialogContent className="sm:max-w-md bg-zinc-900 border border-zinc-700">
+          <DialogContent className="sm:max-w-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700">
             <VisuallyHidden>
               <DialogTitle>Add Beast</DialogTitle>
             </VisuallyHidden>
             <div className="space-y-4">
-              <div className="border-b border-zinc-700/50 pb-2">
-                <h3 className="font-medium text-zinc-100">Agregar Bestia</h3>
+              <div className="border-b border-zinc-200 dark:border-zinc-700/50 pb-2">
+                <h3 className="font-medium text-zinc-900 dark:text-zinc-100">Agregar Bestia</h3>
               </div>
               <Input
                 placeholder="NOMBRE"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value.toUpperCase())}
-                className="uppercase bg-zinc-800 border-zinc-700 text-zinc-200"
+                className="uppercase bg-zinc-50 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-zinc-200"
               />
               <Textarea
                 placeholder="Descripción"
                 value={newDescription}
                 onChange={(e) => setNewDescription(e.target.value)}
                 rows={4}
-                className="bg-zinc-800 border-zinc-700 text-zinc-200 resize-none"
+                className="bg-zinc-50 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-zinc-200 resize-none"
               />
               <div>
-                <label className="text-xs text-zinc-400 block mb-2">Imagen (opcional)</label>
+                <label className="text-xs text-zinc-500 dark:text-zinc-400 block mb-2">Imagen (opcional)</label>
                 <input
                   type="file"
                   accept="image/*"
@@ -1158,14 +1154,14 @@ function BestiarySection({
                     if (file) handleImageUpload(file, "new");
                   }}
                   disabled={isUploadingImage}
-                  className="w-full text-xs text-zinc-400 file:bg-zinc-800 file:border file:border-zinc-700 file:rounded file:px-2 file:py-1 file:text-xs file:text-zinc-400 cursor-pointer"
+                  className="w-full text-xs text-zinc-500 dark:text-zinc-400 file:bg-zinc-100 dark:file:bg-zinc-800 file:border file:border-zinc-300 dark:file:border-zinc-700 file:rounded file:px-2 file:py-1 file:text-xs file:text-zinc-500 dark:file:text-zinc-400 cursor-pointer"
                 />
                 {newImagePreview && (
                   <div className="mt-2 relative">
                     <img
                       src={newImagePreview}
                       alt="Preview"
-                      className="w-full h-32 object-cover rounded bg-zinc-800"
+                      className="w-full h-32 object-cover rounded bg-zinc-100 dark:bg-zinc-800"
                     />
                     <button
                       onClick={() => {
@@ -1190,18 +1186,18 @@ function BestiarySection({
                   }
                 }}
                 disabled={isUploadingImage}
-                className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 disabled:opacity-50"
+                className="bg-zinc-50 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-zinc-200 placeholder:text-zinc-500 disabled:opacity-50"
               />
               <div className="flex gap-2">
-                <Button 
-                  size="sm" 
-                  onClick={handleAddBeast} 
+                <Button
+                  size="sm"
+                  onClick={handleAddBeast}
                   disabled={isUploadingImage || !newName.trim()}
                   className="bg-amber-700 hover:bg-amber-800 text-amber-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isUploadingImage ? "Subiendo..." : "Agregar"}
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => setIsAdding(false)} className="text-zinc-400">
+                <Button size="sm" variant="ghost" onClick={() => setIsAdding(false)} className="text-zinc-500 dark:text-zinc-400">
                   Cancelar
                 </Button>
               </div>
@@ -1213,7 +1209,7 @@ function BestiarySection({
   }
 
   return (
-    <div className="h-full flex flex-col bg-zinc-900">
+    <div className="h-full flex flex-col bg-white dark:bg-zinc-900">
       <style>{`
         @keyframes bestiaryFlipSheetNext {
           0% { transform: rotateY(0deg); box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
@@ -1228,12 +1224,10 @@ function BestiarySection({
         .bestiary-spread {
           perspective: 1800px;
           position: relative;
-          background-color: #000000;
         }
         .bestiary-book {
           transform-style: preserve-3d;
           transition: none;
-          background-color: #000000;
         }
         .bestiary-flip-sheet {
           position: absolute;
@@ -1243,6 +1237,9 @@ function BestiarySection({
           background-color: #000000;
           transform-style: preserve-3d;
           z-index: 10;
+        }
+        :root:not(.dark) .bestiary-flip-sheet {
+          background-color: #ffffff;
         }
         .bestiary-flip-sheet.flipping-next {
           left: 50%;
@@ -1268,49 +1265,41 @@ function BestiarySection({
         .bestiary-description::-webkit-scrollbar-thumb:hover {
           background: rgba(120, 113, 108, 0.8);
         }
-        /* Force bestiary pages to be black */
-        .bestiary-spread > div > div:first-child,
-        .bestiary-spread > div > div:last-child {
-          background-color: #000000 !important;
-          color: #ffffff !important;
-        }
       `}</style>
 
       {/* Toolbar */}
-      <div className="flex items-center justify-between p-2 sm:p-3 border-b border-zinc-800 gap-1.5 sm:gap-3">
-        <div className="flex gap-1">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => goTo(0)}
-            disabled={flipping || isLoading || entries.length === 0 || selectedEntryIdx === 0}
-            className="text-xs text-zinc-200 border-zinc-700 hover:bg-zinc-800 px-2"
-          >
-            ⏮
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => goTo(selectedEntryIdx - 1)}
-            disabled={flipping || isLoading || entries.length === 0 || selectedEntryIdx === 0}
-            className="text-xs text-zinc-200 border-zinc-700 hover:bg-zinc-800 px-2"
-          >
-            ◀
-          </Button>
-        </div>
-
+      <div className="flex items-center gap-1 p-1.5 border-b border-zinc-200 dark:border-zinc-800">
         <Button
-          size="sm"
-          variant={showThumbs ? "default" : "outline"}
-          onClick={() => setShowThumbs(!showThumbs)}
-          disabled={flipping || isLoading}
-          className="px-2"
-          title={showThumbs ? "Ocultar thumbnails" : "Mostrar thumbnails"}
+          size="icon"
+          variant="outline"
+          onClick={() => goTo(0)}
+          disabled={flipping || isLoading || entries.length === 0 || selectedEntryIdx === 0}
+          className="h-6 w-6 text-[10px] text-zinc-700 dark:text-zinc-200 border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 shrink-0"
         >
-          <Grid className="h-4 w-4" />
+          ⏮
+        </Button>
+        <Button
+          size="icon"
+          variant="outline"
+          onClick={() => goTo(selectedEntryIdx - 1)}
+          disabled={flipping || isLoading || entries.length === 0 || selectedEntryIdx === 0}
+          className="h-6 w-6 text-[10px] text-zinc-700 dark:text-zinc-200 border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 shrink-0"
+        >
+          ◀
         </Button>
 
-        <div className="flex-1 h-0.5 sm:h-1 bg-zinc-700 rounded-full overflow-hidden">
+        <Button
+          size="icon"
+          variant={showThumbs ? "default" : "outline"}
+          onClick={() => setShowThumbs((prev) => !prev)}
+          disabled={flipping || isLoading}
+          className="h-6 w-6 shrink-0"
+          title={showThumbs ? "Ocultar miniaturas" : "Mostrar miniaturas"}
+        >
+          <Grid className="h-3.5 w-3.5" />
+        </Button>
+
+        <div className="flex-1 h-0.5 bg-zinc-300 dark:bg-zinc-700 rounded-full overflow-hidden mx-0.5">
           <div
             className="h-full bg-amber-600 transition-all duration-300"
             style={{
@@ -1319,51 +1308,56 @@ function BestiarySection({
           />
         </div>
 
-        <div className="flex gap-1">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => goTo(selectedEntryIdx + 1)}
-            disabled={flipping || isLoading || entries.length === 0 || selectedEntryIdx === entries.length - 1}
-            className="text-xs text-zinc-200 border-zinc-700 hover:bg-zinc-800 px-2"
-          >
-            ▶
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => goTo(entries.length - 1)}
-            disabled={flipping || isLoading || entries.length === 0 || selectedEntryIdx === entries.length - 1}
-            className="text-xs text-zinc-200 border-zinc-700 hover:bg-zinc-800 px-2"
-          >
-            ⏭
-          </Button>
-        </div>
+        <Button
+          size="icon"
+          variant="outline"
+          onClick={() => goTo(selectedEntryIdx + 1)}
+          disabled={flipping || isLoading || entries.length === 0 || selectedEntryIdx === entries.length - 1}
+          className="h-6 w-6 text-[10px] text-zinc-700 dark:text-zinc-200 border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 shrink-0"
+        >
+          ▶
+        </Button>
+        <Button
+          size="icon"
+          variant="outline"
+          onClick={() => goTo(entries.length - 1)}
+          disabled={flipping || isLoading || entries.length === 0 || selectedEntryIdx === entries.length - 1}
+          className="h-6 w-6 text-[10px] text-zinc-700 dark:text-zinc-200 border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 shrink-0"
+        >
+          ⏭
+        </Button>
 
         <Button
-          size="sm"
+          size="icon"
           onClick={() => setIsAdding(true)}
-          className="bg-amber-700 hover:bg-amber-800 text-amber-50 text-xs px-3"
+          className="h-6 w-6 bg-amber-700 hover:bg-amber-800 text-amber-50 shrink-0"
+          title="Agregar bestia"
         >
-          + Agregar
+          <Plus className="h-3.5 w-3.5" />
         </Button>
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex gap-2 sm:gap-3 lg:gap-4 p-2 sm:p-3 lg:p-4 overflow-y-auto sm:overflow-hidden bg-zinc-900">
+      <div className="flex-1 flex flex-col sm:flex-row gap-2 sm:gap-3 p-2 sm:p-3 overflow-y-auto sm:overflow-hidden bg-white dark:bg-zinc-900">
         {/* Thumbnail Panel */}
-        {showThumbs && !isMobile && (
-          <div className="w-24 flex flex-col gap-2 overflow-y-auto border-r border-zinc-800 pr-2">
+        {showThumbs && (
+          <div
+            className={
+              isMobile
+                ? "flex flex-row gap-1.5 overflow-x-auto border-b border-zinc-200 dark:border-zinc-800 pb-2"
+                : "w-16 flex flex-col gap-1.5 overflow-y-auto border-r border-zinc-200 dark:border-zinc-800 pr-2"
+            }
+          >
             {entries.map((entry, idx) => (
               <button
                 key={entry.id}
                 onClick={() => {
                   goTo(idx);
                 }}
-                className={`p-2 rounded text-xs text-center font-mono transition-colors ${
+                className={`shrink-0 p-1.5 rounded text-[10px] text-center font-mono transition-colors ${
                   idx === selectedEntryIdx
                     ? "bg-amber-700 text-amber-50"
-                    : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+                    : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
                 }`}
               >
                 {entry.name.substring(0, 8).toUpperCase()}
@@ -1385,11 +1379,11 @@ function BestiarySection({
 
           <div className="bestiary-book flex flex-col sm:flex-row gap-0 w-full h-auto sm:h-full min-h-0">
             {/* Left Page */}
-            <div className="group flex-1 min-h-[240px] sm:min-h-0 min-w-0 bg-black shadow-2xl flex flex-col p-4 sm:p-6 lg:p-8 rounded-t sm:rounded-t-none sm:rounded-l">
+            <div className="group flex-1 sm:flex-[1.25] min-h-[320px] sm:min-h-0 min-w-0 bg-white dark:bg-black shadow-2xl flex flex-col p-4 sm:p-6 lg:p-7 rounded-t sm:rounded-t-none sm:rounded-l">
               {leftEntry ? (
                 <>
-                  <div className="flex items-start justify-between gap-2 mb-2 pb-2 border-b-2 border-white/20 flex-shrink-0">
-                    <h2 className="font-serif text-base sm:text-sm font-bold text-white uppercase">
+                  <div className="flex items-start justify-between gap-2 mb-2 pb-2 border-b-2 border-zinc-900/20 dark:border-white/20 flex-shrink-0">
+                    <h2 className="font-serif text-base sm:text-sm font-bold text-zinc-900 dark:text-white uppercase">
                       {leftEntry.name}
                     </h2>
                     <Button
@@ -1402,12 +1396,12 @@ function BestiarySection({
                           handleStartEditPage(activePage.pageId!, activePage.description, activePage.imageUrl);
                         }
                       }}
-                      className="text-white hover:bg-white/20 flex-shrink-0 px-1"
+                      className="text-zinc-900 hover:bg-zinc-900/10 dark:text-white dark:hover:bg-white/20 flex-shrink-0 px-1"
                     >
                       <Pencil className="h-4 w-4" />
                     </Button>
                   </div>
-                  <div className="flex-1 min-h-0 font-serif text-lg sm:text-base text-white leading-relaxed overflow-y-auto pr-4 bestiary-description">
+                  <div className="flex-1 min-h-0 font-serif text-lg sm:text-base lg:text-lg text-zinc-900 dark:text-white leading-relaxed overflow-y-auto pr-4 bestiary-description">
                     {activePage.description ? (
                       <p>{activePage.description}</p>
                     ) : isAddingDescription ? (
@@ -1418,10 +1412,10 @@ function BestiarySection({
                           onChange={(e) => setQuickDescription(e.target.value)}
                           placeholder="Descripción..."
                           rows={4}
-                          className="bg-zinc-800 border-zinc-700 text-zinc-200 resize-none font-sans text-sm"
+                          className="bg-zinc-100 border-zinc-300 text-zinc-900 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-200 resize-none font-sans text-sm"
                         />
                         <div className="flex gap-2">
-                          <Button size="sm" onClick={handleQuickAddDescription} className="bg-white/20 hover:bg-white/30 text-white text-xs h-7">
+                          <Button size="sm" onClick={handleQuickAddDescription} className="bg-zinc-900/10 hover:bg-zinc-900/20 text-zinc-900 dark:bg-white/20 dark:hover:bg-white/30 dark:text-white text-xs h-7">
                             Guardar
                           </Button>
                           <Button
@@ -1431,7 +1425,7 @@ function BestiarySection({
                               setIsAddingDescription(false);
                               setQuickDescription("");
                             }}
-                            className="text-zinc-400 text-xs h-7"
+                            className="text-zinc-500 dark:text-zinc-400 text-xs h-7"
                           >
                             Cancelar
                           </Button>
@@ -1445,28 +1439,28 @@ function BestiarySection({
                           isMobile ? "opacity-70" : "opacity-0 group-hover:opacity-100"
                         }`}
                       >
-                        <Plus className="h-6 w-6 text-white/50" />
+                        <Plus className="h-6 w-6 text-zinc-900/50 dark:text-white/50" />
                       </button>
                     )}
                   </div>
                   {totalPages > 1 && (
-                    <div className="text-center text-xs text-white/40 pt-2 flex-shrink-0">
+                    <div className="text-center text-xs text-zinc-900/40 dark:text-white/40 pt-2 flex-shrink-0">
                       Página {currentPageIdx + 1} / {totalPages}
                     </div>
                   )}
                 </>
               ) : (
-                <div className="flex items-center justify-center h-full text-white/50 text-sm">
+                <div className="flex items-center justify-center h-full text-zinc-900/50 dark:text-white/50 text-sm">
                   — blank page —
                 </div>
               )}
             </div>
 
             {/* Spine */}
-            <div className="w-full h-1 sm:h-full sm:w-1 bg-gradient-to-b from-gray-800 to-gray-900 shadow-lg" />
+            <div className="w-full h-1 sm:h-full sm:w-1 bg-gradient-to-b from-gray-300 to-gray-400 dark:from-gray-800 dark:to-gray-900 shadow-lg" />
 
             {/* Right Page */}
-            <div className="group relative flex-1 min-h-[280px] sm:min-h-0 min-w-0 bg-black shadow-2xl flex items-center justify-center p-6 sm:p-8 lg:p-12 rounded-b sm:rounded-b-none sm:rounded-r overflow-hidden">
+            <div className="group relative flex-1 sm:flex-[0.9] min-h-[220px] sm:min-h-0 min-w-0 bg-white dark:bg-black shadow-2xl flex items-center justify-center p-4 sm:p-6 lg:p-8 rounded-b sm:rounded-b-none sm:rounded-r overflow-hidden">
               <div className={`absolute inset-0 flex items-center justify-center transition-opacity duration-300 ${flipping ? 'opacity-0' : 'opacity-100'}`}>
                 {activePage.imageUrl ? (
                   <img src={activePage.imageUrl} alt={leftEntry?.name} className="max-h-full max-w-full object-contain" />
@@ -1486,7 +1480,7 @@ function BestiarySection({
                     <button
                       onClick={() => quickPhotoInputRef.current?.click()}
                       title="Agregar foto"
-                      className={`flex flex-col items-center justify-center text-white/50 transition-opacity ${
+                      className={`flex flex-col items-center justify-center text-zinc-900/50 dark:text-white/50 transition-opacity ${
                         isMobile ? "opacity-70" : "opacity-0 group-hover:opacity-100"
                       }`}
                     >
@@ -1495,7 +1489,7 @@ function BestiarySection({
                     </button>
                   </>
                 ) : (
-                  <div className="text-white/30 text-xs">— blank page —</div>
+                  <div className="text-zinc-900/30 dark:text-white/30 text-xs">— blank page —</div>
                 )}
               </div>
 
@@ -1506,7 +1500,7 @@ function BestiarySection({
                       onClick={() => goToPage(currentPageIdx - 1)}
                       disabled={flipping}
                       title="Página anterior"
-                      className="absolute bottom-3 left-3 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 border border-white/20 text-white hover:bg-black/80 transition-colors disabled:opacity-40"
+                      className="absolute bottom-3 left-3 flex h-8 w-8 items-center justify-center rounded-full bg-white/70 dark:bg-black/60 border border-zinc-900/20 dark:border-white/20 text-zinc-900 dark:text-white hover:bg-white/90 dark:hover:bg-black/80 transition-colors disabled:opacity-40"
                     >
                       <ChevronLeft className="h-4 w-4" />
                     </button>
@@ -1515,7 +1509,7 @@ function BestiarySection({
                     onClick={() => goToPage(currentPageIdx + 1)}
                     disabled={flipping}
                     title={currentPageIdx + 1 >= totalPages ? "Agregar página" : "Página siguiente"}
-                    className={`absolute bottom-3 right-3 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 border border-white/20 text-white hover:bg-black/80 transition-colors disabled:opacity-40 ${
+                    className={`absolute bottom-3 right-3 flex h-8 w-8 items-center justify-center rounded-full bg-white/70 dark:bg-black/60 border border-zinc-900/20 dark:border-white/20 text-zinc-900 dark:text-white hover:bg-white/90 dark:hover:bg-black/80 transition-colors disabled:opacity-40 ${
                       currentPageIdx + 1 >= totalPages ? (isMobile ? "opacity-70" : "opacity-0 group-hover:opacity-100") : ""
                     }`}
                   >
@@ -1530,29 +1524,29 @@ function BestiarySection({
 
       {/* Add Dialog */}
       <Dialog open={isAdding} onOpenChange={setIsAdding}>
-        <DialogContent className="sm:max-w-md bg-zinc-900 border border-zinc-700">
+        <DialogContent className="sm:max-w-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700">
           <VisuallyHidden>
             <DialogTitle>Add Beast</DialogTitle>
           </VisuallyHidden>
           <div className="space-y-4">
-            <div className="border-b border-zinc-700/50 pb-2">
-              <h3 className="font-medium text-zinc-100">Agregar Bestia</h3>
+            <div className="border-b border-zinc-200 dark:border-zinc-700/50 pb-2">
+              <h3 className="font-medium text-zinc-900 dark:text-zinc-100">Agregar Bestia</h3>
             </div>
             <Input
               placeholder="NOMBRE"
               value={newName}
               onChange={(e) => setNewName(e.target.value.toUpperCase())}
-              className="uppercase bg-zinc-800 border-zinc-700 text-zinc-200"
+              className="uppercase bg-zinc-50 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-zinc-200"
             />
             <Textarea
               placeholder="Descripción"
               value={newDescription}
               onChange={(e) => setNewDescription(e.target.value)}
               rows={4}
-              className="bg-zinc-800 border-zinc-700 text-zinc-200 resize-none"
+              className="bg-zinc-50 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-zinc-200 resize-none"
             />
             <div>
-              <label className="text-xs text-zinc-400 block mb-2">Imagen (opcional)</label>
+              <label className="text-xs text-zinc-500 dark:text-zinc-400 block mb-2">Imagen (opcional)</label>
               <input
                 type="file"
                 accept="image/*"
@@ -1561,14 +1555,14 @@ function BestiarySection({
                   if (file) handleImageUpload(file, "new");
                 }}
                 disabled={isUploadingImage}
-                className="w-full text-xs text-zinc-400 file:bg-zinc-800 file:border file:border-zinc-700 file:rounded file:px-2 file:py-1 file:text-xs file:text-zinc-400 cursor-pointer"
+                className="w-full text-xs text-zinc-500 dark:text-zinc-400 file:bg-zinc-100 dark:file:bg-zinc-800 file:border file:border-zinc-300 dark:file:border-zinc-700 file:rounded file:px-2 file:py-1 file:text-xs file:text-zinc-500 dark:file:text-zinc-400 cursor-pointer"
               />
               {newImagePreview && (
                 <div className="mt-2 relative">
                   <img
                     src={newImagePreview}
                     alt="Preview"
-                    className="w-full h-32 object-cover rounded bg-zinc-800"
+                    className="w-full h-32 object-cover rounded bg-zinc-100 dark:bg-zinc-800"
                   />
                   <button
                     onClick={() => {
@@ -1593,13 +1587,13 @@ function BestiarySection({
                 }
               }}
               disabled={isUploadingImage}
-              className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 disabled:opacity-50"
+              className="bg-zinc-50 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-zinc-200 placeholder:text-zinc-500 disabled:opacity-50"
             />
             <div className="flex gap-2">
               <Button size="sm" onClick={handleAddBeast} className="bg-amber-700 hover:bg-amber-800 text-amber-50">
                 Agregar
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setIsAdding(false)} className="text-zinc-400">
+              <Button size="sm" variant="ghost" onClick={() => setIsAdding(false)} className="text-zinc-500 dark:text-zinc-400">
                 Cancelar
               </Button>
             </div>
@@ -1609,29 +1603,29 @@ function BestiarySection({
 
       {/* Edit Dialog */}
       <Dialog open={isEditing} onOpenChange={setIsEditing}>
-        <DialogContent className="sm:max-w-md bg-zinc-900 border border-zinc-700">
+        <DialogContent className="sm:max-w-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700">
           <VisuallyHidden>
             <DialogTitle>Edit Beast</DialogTitle>
           </VisuallyHidden>
           <div className="space-y-4">
-            <div className="border-b border-zinc-700/50 pb-2">
-              <h3 className="font-medium text-zinc-100">Editar Bestia</h3>
+            <div className="border-b border-zinc-200 dark:border-zinc-700/50 pb-2">
+              <h3 className="font-medium text-zinc-900 dark:text-zinc-100">Editar Bestia</h3>
             </div>
             <Input
               placeholder="NOMBRE"
               value={editedName}
               onChange={(e) => setEditedName(e.target.value.toUpperCase())}
-              className="uppercase bg-zinc-800 border-zinc-700 text-zinc-200"
+              className="uppercase bg-zinc-50 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-zinc-200"
             />
             <Textarea
               placeholder="Descripción"
               value={editedDescription}
               onChange={(e) => setEditedDescription(e.target.value)}
               rows={4}
-              className="bg-zinc-800 border-zinc-700 text-zinc-200 resize-none"
+              className="bg-zinc-50 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-zinc-200 resize-none"
             />
             <div>
-              <label className="text-xs text-zinc-400 block mb-2">Imagen (opcional)</label>
+              <label className="text-xs text-zinc-500 dark:text-zinc-400 block mb-2">Imagen (opcional)</label>
               <input
                 type="file"
                 accept="image/*"
@@ -1640,14 +1634,14 @@ function BestiarySection({
                   if (file) handleImageUpload(file, "edit");
                 }}
                 disabled={isUploadingImage}
-                className="w-full text-xs text-zinc-400 file:bg-zinc-800 file:border file:border-zinc-700 file:rounded file:px-2 file:py-1 file:text-xs file:text-zinc-400 cursor-pointer"
+                className="w-full text-xs text-zinc-500 dark:text-zinc-400 file:bg-zinc-100 dark:file:bg-zinc-800 file:border file:border-zinc-300 dark:file:border-zinc-700 file:rounded file:px-2 file:py-1 file:text-xs file:text-zinc-500 dark:file:text-zinc-400 cursor-pointer"
               />
               {editedImagePreview && (
                 <div className="mt-2 relative">
                   <img
                     src={editedImagePreview}
                     alt="Preview"
-                    className="w-full h-32 object-cover rounded bg-zinc-800"
+                    className="w-full h-32 object-cover rounded bg-zinc-100 dark:bg-zinc-800"
                   />
                   <button
                     onClick={() => {
@@ -1672,26 +1666,26 @@ function BestiarySection({
                 }
               }}
               disabled={isUploadingImage}
-              className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 disabled:opacity-50"
+              className="bg-zinc-50 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-zinc-200 placeholder:text-zinc-500 disabled:opacity-50"
             />
             <div className="flex gap-2">
-              <Button size="sm" onClick={handleSaveEdit} className="bg-white/20 hover:bg-white/30 text-white">
+              <Button size="sm" onClick={handleSaveEdit} className="bg-zinc-900/10 hover:bg-zinc-900/20 text-zinc-900 dark:bg-white/20 dark:hover:bg-white/30 dark:text-white">
                 Guardar
               </Button>
-              <Button 
-                size="sm" 
+              <Button
+                size="sm"
                 onClick={() => {
                   if (editingId) {
                     onDelete(editingId);
                     setIsEditing(false);
                   }
-                }} 
+                }}
                 className="bg-red-700 hover:bg-red-800 text-red-50"
               >
                 <Trash2 className="h-3 w-3 mr-1" />
                 Eliminar
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setIsEditing(false)} className="text-zinc-400">
+              <Button size="sm" variant="ghost" onClick={() => setIsEditing(false)} className="text-zinc-500 dark:text-zinc-400">
                 Cancelar
               </Button>
             </div>
@@ -1701,23 +1695,23 @@ function BestiarySection({
 
       {/* Edit Page Dialog (extra beast pages: description + image only, name stays fixed) */}
       <Dialog open={isEditingPage} onOpenChange={setIsEditingPage}>
-        <DialogContent className="sm:max-w-md bg-zinc-900 border border-zinc-700">
+        <DialogContent className="sm:max-w-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700">
           <VisuallyHidden>
             <DialogTitle>Edit Page</DialogTitle>
           </VisuallyHidden>
           <div className="space-y-4">
-            <div className="border-b border-zinc-700/50 pb-2">
-              <h3 className="font-medium text-zinc-100">Editar página — {leftEntry?.name}</h3>
+            <div className="border-b border-zinc-200 dark:border-zinc-700/50 pb-2">
+              <h3 className="font-medium text-zinc-900 dark:text-zinc-100">Editar página — {leftEntry?.name}</h3>
             </div>
             <Textarea
               placeholder="Descripción"
               value={editedPageDescription}
               onChange={(e) => setEditedPageDescription(e.target.value)}
               rows={4}
-              className="bg-zinc-800 border-zinc-700 text-zinc-200 resize-none"
+              className="bg-zinc-50 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-zinc-200 resize-none"
             />
             <div>
-              <label className="text-xs text-zinc-400 block mb-2">Imagen (opcional)</label>
+              <label className="text-xs text-zinc-500 dark:text-zinc-400 block mb-2">Imagen (opcional)</label>
               <input
                 type="file"
                 accept="image/*"
@@ -1726,14 +1720,14 @@ function BestiarySection({
                   if (file) handleImageUpload(file, "editPage");
                 }}
                 disabled={isUploadingImage}
-                className="w-full text-xs text-zinc-400 file:bg-zinc-800 file:border file:border-zinc-700 file:rounded file:px-2 file:py-1 file:text-xs file:text-zinc-400 cursor-pointer"
+                className="w-full text-xs text-zinc-500 dark:text-zinc-400 file:bg-zinc-100 dark:file:bg-zinc-800 file:border file:border-zinc-300 dark:file:border-zinc-700 file:rounded file:px-2 file:py-1 file:text-xs file:text-zinc-500 dark:file:text-zinc-400 cursor-pointer"
               />
               {editedPageImagePreview && (
                 <div className="mt-2 relative">
                   <img
                     src={editedPageImagePreview}
                     alt="Preview"
-                    className="w-full h-32 object-cover rounded bg-zinc-800"
+                    className="w-full h-32 object-cover rounded bg-zinc-100 dark:bg-zinc-800"
                   />
                   <button
                     onClick={() => {
@@ -1758,10 +1752,10 @@ function BestiarySection({
                 }
               }}
               disabled={isUploadingImage}
-              className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 disabled:opacity-50"
+              className="bg-zinc-50 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-zinc-200 placeholder:text-zinc-500 disabled:opacity-50"
             />
             <div className="flex gap-2">
-              <Button size="sm" onClick={handleSaveEditPage} className="bg-white/20 hover:bg-white/30 text-white">
+              <Button size="sm" onClick={handleSaveEditPage} className="bg-zinc-900/10 hover:bg-zinc-900/20 text-zinc-900 dark:bg-white/20 dark:hover:bg-white/30 dark:text-white">
                 Guardar
               </Button>
               <Button
@@ -1772,7 +1766,7 @@ function BestiarySection({
                 <Trash2 className="h-3 w-3 mr-1" />
                 Eliminar página
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setIsEditingPage(false)} className="text-zinc-400">
+              <Button size="sm" variant="ghost" onClick={() => setIsEditingPage(false)} className="text-zinc-500 dark:text-zinc-400">
                 Cancelar
               </Button>
             </div>

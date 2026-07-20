@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { createPortal } from "react-dom";
 import { Sparkles } from "lucide-react";
 import { calculateAreaLevel, calculateAreaProgressPercentage } from "@/lib/area-progress";
+import { usePopupPalette } from "@/lib/popup-theme";
 
 import type { AreaXpPopupSnapshot } from "@/lib/area-xp-popup-context";
 
@@ -11,6 +12,8 @@ interface AreaLevelGainPopupProps {
 }
 
 export function AreaLevelGainPopup({ snapshot, onClose }: AreaLevelGainPopupProps) {
+  const palette = usePopupPalette();
+
   if (!snapshot || typeof document === "undefined") {
     return null;
   }
@@ -67,8 +70,8 @@ export function AreaLevelGainPopup({ snapshot, onClose }: AreaLevelGainPopupProp
             transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
             className="w-[min(92vw,356px)] rounded-[4px] border px-[16px] py-[14px] shadow-[0_18px_40px_rgba(0,0,0,0.45)]"
             style={{
-              backgroundColor: "#0e0c0a",
-              borderColor: "#3a2a14",
+              backgroundColor: palette.bg,
+              borderColor: palette.border,
             }}
           >
             <div className="flex items-center gap-2">
@@ -76,7 +79,7 @@ export function AreaLevelGainPopup({ snapshot, onClose }: AreaLevelGainPopupProp
                 <svg viewBox="0 0 32 32" className="absolute inset-0 h-full w-full">
                   <polygon
                     points="16,2 30,16 16,30 2,16"
-                    fill="#15110b"
+                    fill={palette.surfaceInset}
                     stroke={snapshot.areaColor}
                     strokeWidth="1.5"
                   />
@@ -85,21 +88,21 @@ export function AreaLevelGainPopup({ snapshot, onClose }: AreaLevelGainPopupProp
               </div>
 
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[13px] font-medium text-[#c8a96e]">{snapshot.scopeName}</div>
-                <div className="truncate text-[10px] uppercase tracking-[0.12em] text-[#7a6942]">
+                <div className="truncate text-[13px] font-medium" style={{ color: palette.text }}>{snapshot.scopeName}</div>
+                <div className="truncate text-[10px] uppercase tracking-[0.12em]" style={{ color: palette.textMuted }}>
                   Area progress boosted
                 </div>
               </div>
 
               <div
-                className="shrink-0 rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#c8a96e]"
-                style={{ borderColor: "#3a2a14", backgroundColor: "#15110b" }}
+                className="shrink-0 rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em]"
+                style={{ borderColor: palette.border, backgroundColor: palette.surfaceInset, color: palette.text }}
               >
                 +{snapshot.bonusXp}
               </div>
             </div>
 
-            <div className="mt-3 text-center text-[13px] font-medium text-[#c8a96e]">
+            <div className="mt-3 text-center text-[13px] font-medium" style={{ color: palette.text }}>
               +{snapshot.bonusXp} XP
             </div>
 
@@ -114,7 +117,7 @@ export function AreaLevelGainPopup({ snapshot, onClose }: AreaLevelGainPopupProp
                   const isNewlyFilled = i >= prevFilledBlocks && i < filledBlocks;
 
                   return (
-                    <div key={i} className="flex-1 h-full overflow-hidden rounded-sm bg-[#1e180e]">
+                    <div key={i} className="flex-1 h-full overflow-hidden rounded-sm" style={{ backgroundColor: palette.blockEmpty }}>
                       {isAlreadyFilled && (
                         <div style={{ width: '100%', height: '100%', backgroundColor: getLevelColorHex(level) }} />
                       )}
@@ -134,7 +137,7 @@ export function AreaLevelGainPopup({ snapshot, onClose }: AreaLevelGainPopupProp
                 })}
               </div>
 
-              <div className="mt-2 flex items-center justify-between text-[9px] text-[#5a4a2a]">
+              <div className="mt-2 flex items-center justify-between text-[9px]" style={{ color: palette.textDim }}>
                 <span>{progressBefore.toFixed(0)}%</span>
                 <span>{progressAfter.toFixed(0)}%</span>
               </div>

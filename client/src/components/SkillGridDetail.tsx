@@ -10,6 +10,7 @@ interface SkillData {
   currentXp: number;
   goalXp: number;
   areaName: string;
+  description?: string;
 }
 
 interface SkillGridDetailProps {
@@ -164,6 +165,13 @@ export function SkillGridDetail({ skill, areaColor, onClose }: SkillGridDetailPr
           {skill.areaName}
         </div>
       </div>
+
+      {/* Description */}
+      {skill.description && (
+        <div className="text-xs text-center leading-relaxed text-muted-foreground whitespace-pre-wrap">
+          {skill.description}
+        </div>
+      )}
 
       {/* Divider */}
       <div className="border-t border-gray-700" />

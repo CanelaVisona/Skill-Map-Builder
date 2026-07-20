@@ -21,6 +21,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { usePopupPalette } from "@/lib/popup-theme";
 
 export interface ExperienceGainSnapshot {
   skillName: string;
@@ -77,6 +78,7 @@ export function ExperienceGainPopup({ snapshot, onClose }: ExperienceGainPopupPr
   const [barTransitionMs, setBarTransitionMs] = useState(1000);
   const [displayBlocks, setDisplayBlocks] = useState(0);
   const [animationStage, setAnimationStage] = useState<"initial" | "fill" | "afterReset">("initial");
+  const palette = usePopupPalette();
 
   useEffect(() => {
     if (!snapshot) {
@@ -202,8 +204,8 @@ export function ExperienceGainPopup({ snapshot, onClose }: ExperienceGainPopupPr
             transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
             className="w-[min(92vw,356px)] rounded-[4px] border px-[16px] py-[14px] shadow-[0_18px_40px_rgba(0,0,0,0.45)]"
             style={{
-              backgroundColor: "#0e0c0a",
-              borderColor: "#3a2a14",
+              backgroundColor: palette.bg,
+              borderColor: palette.border,
             }}
           >
             <div className="flex items-center gap-2">
@@ -211,7 +213,7 @@ export function ExperienceGainPopup({ snapshot, onClose }: ExperienceGainPopupPr
                 <svg viewBox="0 0 32 32" className="absolute inset-0 h-full w-full">
                   <polygon
                     points="16,2 30,16 16,30 2,16"
-                    fill="#15110b"
+                    fill={palette.surfaceInset}
                     stroke={snapshot.areaColor}
                     strokeWidth="1.5"
                   />
@@ -220,18 +222,18 @@ export function ExperienceGainPopup({ snapshot, onClose }: ExperienceGainPopupPr
               </div>
 
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[13px] font-medium text-[#c8a96e]">{snapshot.skillName}</div>
+                <div className="truncate text-[13px] font-medium" style={{ color: palette.text }}>{snapshot.skillName}</div>
               </div>
 
               <div
-                className="shrink-0 rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#c8a96e]"
-                style={{ borderColor: "#3a2a14", backgroundColor: "#15110b" }}
+                className="shrink-0 rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em]"
+                style={{ borderColor: palette.border, backgroundColor: palette.surfaceInset, color: palette.text }}
               >
                 Lv {currentLevel}
               </div>
             </div>
 
-            <div className="mt-3 text-center text-[13px] font-medium text-[#c8a96e]">
+            <div className="mt-3 text-center text-[13px] font-medium" style={{ color: palette.text }}>
               {xpBefore} → {xpAfter} XP
             </div>
 
@@ -244,7 +246,7 @@ export function ExperienceGainPopup({ snapshot, onClose }: ExperienceGainPopupPr
                     : index >= filledBlocksBefore && index < displayBlocks;
 
                   return (
-                    <div key={index} className="flex-1 h-full overflow-hidden rounded-sm bg-[#1e180e]">
+                    <div key={index} className="flex-1 h-full overflow-hidden rounded-sm" style={{ backgroundColor: palette.blockEmpty }}>
                       {isFilledBefore && (
                         <div style={{ width: "100%", height: "100%", backgroundColor: progressColor }} />
                       )}
@@ -268,7 +270,7 @@ export function ExperienceGainPopup({ snapshot, onClose }: ExperienceGainPopupPr
                 })}
               </div>
 
-              <div className="mt-2 flex items-center justify-between text-[9px] text-[#5a4a2a]">
+              <div className="mt-2 flex items-center justify-between text-[9px]" style={{ color: palette.textDim }}>
                 <span>
                   {xpInCurrentLevel} / {XP_PER_LEVEL}
                 </span>
@@ -282,10 +284,11 @@ export function ExperienceGainPopup({ snapshot, onClose }: ExperienceGainPopupPr
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.3 }}
-                    className="mt-2 inline-flex rounded-[3px] border px-[10px] py-[4px] text-[11px] font-medium text-[#c8a96e]"
+                    className="mt-2 inline-flex rounded-[3px] border px-[10px] py-[4px] text-[11px] font-medium"
                     style={{
-                      backgroundColor: "#1a1208",
-                      borderColor: "#c8a96e",
+                      backgroundColor: palette.levelUpBg,
+                      borderColor: palette.text,
+                      color: palette.text,
                       borderWidth: "0.5px",
                     }}
                   >

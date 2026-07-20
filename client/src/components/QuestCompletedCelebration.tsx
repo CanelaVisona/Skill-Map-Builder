@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { createPortal } from "react-dom";
 import { Star, Trophy } from "lucide-react";
+import { usePopupPalette } from "@/lib/popup-theme";
 
 interface QuestCompletedCelebrationProps {
   celebration: { name: string; type: "area" | "project" } | null;
@@ -23,6 +24,8 @@ const particles = Array.from({ length: PARTICLE_COUNT }).map((_, i) => {
 });
 
 export function QuestCompletedCelebration({ celebration }: QuestCompletedCelebrationProps) {
+  const palette = usePopupPalette();
+
   if (typeof document === "undefined") {
     return null;
   }
@@ -78,24 +81,24 @@ export function QuestCompletedCelebration({ celebration }: QuestCompletedCelebra
               exit={{ opacity: 0, scale: 0.85, y: -8 }}
               transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
               className="relative w-[min(88vw,340px)] rounded-lg border px-6 py-6 text-center shadow-[0_20px_60px_rgba(0,0,0,0.5)]"
-              style={{ backgroundColor: "#0e0c0a", borderColor: "#3a2a14" }}
+              style={{ backgroundColor: palette.bg, borderColor: palette.border }}
             >
               <motion.div
                 className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full"
-                style={{ backgroundColor: "#1e180e", border: "1.5px solid #c8a96e" }}
+                style={{ backgroundColor: palette.blockEmpty, border: `1.5px solid ${palette.text}` }}
                 animate={{ scale: [1, 1.12, 1] }}
                 transition={{ duration: 1.2, repeat: 2, ease: "easeInOut" }}
               >
                 <Trophy className="h-7 w-7 text-amber-400" strokeWidth={2} />
               </motion.div>
 
-              <div className="text-[11px] uppercase tracking-[0.16em] text-[#7a6942]">
+              <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: palette.textMuted }}>
                 {title}
               </div>
-              <div className="mt-1 truncate text-lg font-bold text-[#c8a96e]">
+              <div className="mt-1 truncate text-lg font-bold" style={{ color: palette.text }}>
                 {celebration.name}
               </div>
-              <div className="mt-2 text-[11px] text-[#5a4a2a]">
+              <div className="mt-2 text-[11px]" style={{ color: palette.textDim }}>
                 Archivada en Quests Conquistados
               </div>
             </motion.div>

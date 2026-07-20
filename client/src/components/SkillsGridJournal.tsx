@@ -666,6 +666,7 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
         currentXp: globalSelectedSkill.currentXp,
         goalXp: globalSelectedSkill.goalXp,
         areaName: currentArea?.name || "",
+        description: globalSelectedSkill.description || "",
       }
     : null;
 
@@ -863,7 +864,7 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
       )}
 
       {/* Context Menu for Skills */}
-      {contextMenu && (
+      {contextMenu && ReactDOM.createPortal(
         <>
           <div
             style={{
@@ -898,11 +899,12 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
               Editar
             </button>
           </div>
-        </>
+        </>,
+        document.body
       )}
 
       {/* Context Menu for Area Tabs */}
-      {areaContextMenu && (
+      {areaContextMenu && ReactDOM.createPortal(
         <>
           <div
             style={{
@@ -937,7 +939,8 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
               Ocultar área
             </button>
           </div>
-        </>
+        </>,
+        document.body
       )}
 
       {/* Grid Long Press Options Modal */}
