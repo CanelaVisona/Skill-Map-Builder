@@ -1199,7 +1199,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
           {/* Level Marker */}
           {isFirstOfLevel && (
             <div
-              className="absolute right-14 top-1/2 -translate-y-1/2 max-w-[38vw] sm:max-w-[220px] text-xs font-semibold text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-2xl border border-border cursor-pointer select-none"
+              className="absolute right-14 top-1/2 -translate-y-1/2 max-w-[38vw] sm:max-w-[220px] md:max-w-[300px] lg:max-w-[380px] text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-2xl border border-border cursor-pointer select-none"
               onTouchStart={handleLevelLongPressStart}
               onTouchEnd={handleLevelLongPressEnd}
               onTouchCancel={handleLevelLongPressEnd}
@@ -1208,9 +1208,11 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               onMouseLeave={handleLevelLongPressEnd}
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="whitespace-nowrap">{`Level ${skill.level}`}</div>
+              <div className="whitespace-nowrap text-xs font-semibold">{`Level ${skill.level}`}</div>
               {showCompletedLevelSubtitle && (
-                <div className="whitespace-normal break-words leading-snug">{trimmedLevelSubtitle}</div>
+                <div className="whitespace-normal break-words leading-snug font-normal italic tracking-wide text-muted-foreground/80 text-[9px] sm:text-[10px] md:text-[11px]">
+                  {trimmedLevelSubtitle}
+                </div>
               )}
             </div>
           )}

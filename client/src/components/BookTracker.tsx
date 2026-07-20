@@ -1116,7 +1116,7 @@ function DetailPanel({
   const sortedSessions = sessions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   return (
-    <div className="flex flex-col h-full bg-background">
+    <div className="flex flex-col h-full min-h-0 bg-background">
       {/* Header */}
       <div className="border-b border-border/30 px-5 py-3 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -1286,7 +1286,7 @@ function AddPanel({
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-0">
       <div className="bg-background border-b border-border/30 px-5 py-3 flex items-center gap-2">
         <button
           onClick={onBack}
@@ -1463,7 +1463,7 @@ function ArchivedPanel({
   };
 
   return (
-    <div ref={panelRef} className="w-full flex flex-col h-full">
+    <div ref={panelRef} className="w-full flex flex-col h-full min-h-0">
       {/* Header */}
       <div className="border-b border-yellow-500/30 px-4 sm:px-6 py-5 bg-gradient-to-r from-yellow-500/5 to-amber-500/5">
         <div className="flex items-start gap-3 sm:gap-4">
@@ -1823,9 +1823,9 @@ export function BookTracker() {
   }, []);
 
   return (
-    <div className="h-full flex flex-col bg-background text-foreground">
+    <div className="h-full min-h-0 flex flex-col bg-background text-foreground">
       {currentPanel === "main" && (
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col h-full min-h-0">
           {/* Header con long press para agregar */}
           <div
             ref={headerRef}
