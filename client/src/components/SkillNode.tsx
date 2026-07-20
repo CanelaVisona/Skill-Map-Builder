@@ -1199,7 +1199,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
           {/* Level Marker */}
           {isFirstOfLevel && (
             <div
-              className="absolute right-14 top-1/2 -translate-y-1/2 max-w-[38vw] sm:max-w-[220px] md:max-w-[300px] lg:max-w-[380px] text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-2xl border border-border cursor-pointer select-none"
+              className="absolute right-14 top-1/2 -translate-y-1/2 w-max max-w-[38vw] sm:max-w-[220px] md:max-w-[300px] lg:max-w-[380px] text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-2xl border border-border cursor-pointer select-none"
               onTouchStart={handleLevelLongPressStart}
               onTouchEnd={handleLevelLongPressEnd}
               onTouchCancel={handleLevelLongPressEnd}
