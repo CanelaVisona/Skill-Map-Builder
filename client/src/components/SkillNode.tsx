@@ -80,7 +80,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     globalSkills,
     getGlobalSkillsForArea,
     getGlobalSkillsForProject,
-    createGlobalSkill,
     addXpToGlobalSkill,
     addAreaXp
   } = useSkillTree();
@@ -380,14 +379,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     : activeProjectId 
       ? getGlobalSkillsForProject(activeProjectId) 
       : [];
-
-  // State for subskill creation/selection in subtitle dialog
-  const [newSubskillName, setNewSubskillName] = useState("");
-  const [selectedSubskillId, setSelectedSubskillId] = useState<string | null>(null);
-  const [showSubskillCreator, setShowSubskillCreator] = useState(false);
-
-  // Get parent skills (not subskills) for the current area/quest
-  const parentGlobalSkills = availableGlobalSkills.filter(s => !s.parentSkillId);
 
   // Show XP animation when skill becomes mastered
   useEffect(() => {
@@ -2088,18 +2079,11 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       </DialogContent>
     </Dialog>
 
-    <Dialog open={isSubtitleDialogOpen} onOpenChange={(open) => {
-      setIsSubtitleDialogOpen(open);
-      if (!open) {
-        setNewSubskillName("");
-        setSelectedSubskillId(null);
-        setShowSubskillCreator(false);
-      }
-    }}>
+    <Dialog open={isSubtitleDialogOpen} onOpenChange={setIsSubtitleDialogOpen}>
       <DialogContent className="sm:max-w-[400px] border-0 shadow-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-lg font-medium">Subtítulo del Nivel {skill.level}</DialogTitle>
-          <DialogDescription className="sr-only">Edit level subtitle and subskills</DialogDescription>
+          <DialogDescription className="sr-only">Edit level subtitle</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="grid gap-2">
@@ -2124,88 +2108,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
               data-testid="input-edit-subtitle-description"
             />
-          </div>
-
-          {/* SubSkill Section */}
-          <div className="border-t pt-4">
-            <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3 block">
-              SubSkills para este nivel
-            </Label>
-            
-            {/* Existing subskills list */}
-            {parentGlobalSkills.length > 0 && (
-              <div className="space-y-1 mb-3">
-                <p className="text-xs text-muted-foreground mb-2">Seleccionar skill existente:</p>
-                {parentGlobalSkills.map((gSkill) => (
-                  <Button
-                    key={gSkill.id}
-                    variant={selectedSubskillId === gSkill.id ? "default" : "ghost"}
-                    size="sm"
-                    className="w-full justify-start text-left h-auto py-2"
-                    onClick={() => setSelectedSubskillId(selectedSubskillId === gSkill.id ? null : gSkill.id)}
-                  >
-                    <div className="flex flex-col items-start">
-                      <span className="text-sm">{gSkill.name}</span>
-                      <span className="text-xs text-muted-foreground">Lv.{gSkill.level} • {gSkill.currentXp}xp</span>
-                    </div>
-                  </Button>
-                ))}
-              </div>
-            )}
-
-            {/* Create new subskill */}
-            {showSubskillCreator ? (
-              <div className="space-y-2 bg-muted/30 p-3 rounded-lg">
-                <Input
-                  value={newSubskillName}
-                  onChange={(e) => setNewSubskillName(e.target.value)}
-                  placeholder="Nombre del nuevo skill..."
-                  className="border-0 bg-muted/50 focus-visible:ring-0"
-                />
-                <div className="flex gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setShowSubskillCreator(false);
-                      setNewSubskillName("");
-                    }}
-                    className="flex-1 bg-muted/50"
-                  >
-                    Cancelar
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={async () => {
-                      if (newSubskillName.trim()) {
-                        console.log('[SkillNode] Creating skill with activeAreaId:', activeAreaId, 'activeProjectId:', activeProjectId);
-                        await createGlobalSkill(
-                          newSubskillName.trim(),
-                          activeAreaId || undefined,
-                          activeProjectId || undefined
-                        );
-                        setNewSubskillName("");
-                        setShowSubskillCreator(false);
-                      }
-                    }}
-                    disabled={!newSubskillName.trim()}
-                    className="flex-1"
-                  >
-                    Crear Skill
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowSubskillCreator(true)}
-                className="w-full bg-muted/30 hover:bg-muted/50"
-              >
-                <Plus className="h-3 w-3 mr-1" />
-                Agregar nuevo Skill
-              </Button>
-            )}
           </div>
         </div>
         <div className="flex gap-2 pt-2">
