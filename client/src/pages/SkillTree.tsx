@@ -3569,10 +3569,10 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
                                   setSelectedSubtaskId(null);
                                   setSelectedSubtasks([]);
                                 }}
-                                className={`w-full text-left px-3 py-1.5 rounded-md text-xs font-medium transition-colors hover:bg-muted/50 flex items-center justify-between ${expandedLevels.has(levelKey) ? "bg-muted/30 text-foreground" : "text-muted-foreground"}`}
+                                className={`w-full text-left px-3 py-1.5 rounded-md text-xs font-medium transition-colors hover:bg-muted/50 flex items-center justify-between gap-2 ${expandedLevels.has(levelKey) ? "bg-muted/30 text-foreground" : "text-muted-foreground"}`}
                               >
-                                <span>{levelLabel}</span>
-                                <span className="text-xs">
+                                <span className="min-w-0 break-words">{levelLabel}</span>
+                                <span className="text-xs shrink-0">
                                   {expandedLevels.has(levelKey) ? "▼" : "▶"} {levelSkills.length}
                                 </span>
                               </button>
@@ -6369,10 +6369,10 @@ function BookTrackerModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.95, opacity: 0 }}
-            className="overflow-hidden rounded-3xl border border-border/50 bg-background max-w-md w-full"
+            className="overflow-hidden rounded-3xl border border-border/50 bg-background max-w-md w-full h-[85dvh] max-h-[85dvh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="px-0 py-0">
+            <div className="flex-1 min-h-0 flex flex-col">
               <BookTracker />
             </div>
           </motion.div>
@@ -8376,8 +8376,8 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
                     >
                       {questText.replace(":", "")}
                     </div>
-                    <div 
-                      className={`font-bold mt-1 ${isNewOrUpdatedQuest ? 'text-amber-300' : 'text-muted-foreground'}`}
+                    <div
+                      className={`font-bold mt-1 break-words ${isNewOrUpdatedQuest ? 'text-amber-300' : 'text-muted-foreground'}`}
                       style={{
                         ...(isNewOrUpdatedQuest && {
                           textShadow: "0 0 15px rgba(251, 191, 36, 0.6), 0 0 30px rgba(251, 191, 36, 0.3)",
