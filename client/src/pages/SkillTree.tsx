@@ -8359,9 +8359,15 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
                       !isMenuOpen && "block",
                       isMenuOpen && "md:block hidden"
                     )}
-                    style={{ 
+                    style={{
                       top: `${midY}px`,
-                      maxWidth: `${maxWidthPercent}%`,
+                      // Sized in vw (true device viewport), not "%" of the containing block:
+                      // this canvas can sit inside scrollable/percentage-sized ancestors whose
+                      // own rendered width isn't the real screen width, so a "%" max-width can
+                      // resolve against a container narrower than the actual viewport and clip
+                      // long subtitles on phones (e.g. iPhone XR). "calc(100vw - 24px)" also
+                      // guarantees it never crosses the right edge of the real screen.
+                      maxWidth: `min(calc(100vw - 24px), ${maxWidthPercent}vw, 640px)`,
                     }}
                   >
                     <div 

@@ -1199,7 +1199,21 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
           {/* Level Marker */}
           {isFirstOfLevel && (
             <div
-              className="absolute right-14 top-1/2 -translate-y-1/2 w-max max-w-[38vw] sm:max-w-[220px] md:max-w-[300px] lg:max-w-[380px] text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-2xl border border-border cursor-pointer select-none"
+              className="absolute right-14 top-1/2 -translate-y-1/2 w-max text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-2xl border border-border cursor-pointer select-none"
+              style={{
+                // This badge sits to the LEFT of the node, growing further left as its
+                // content gets wider — but it lives inside the node's own tiny (~40px)
+                // absolutely-positioned wrapper, which is NOT the same width as the
+                // screen. A viewport-percent or fixed max-width can't "know" how close
+                // the node is to the left edge of the screen, so on a node positioned
+                // near the left (or on narrow phones like the iPhone XR) the badge can
+                // grow past x=0 and get clipped by the canvas's scroll container.
+                // skill.x is the node's own horizontal position (0-100, i.e. vw-ish)
+                // in the canvas, so we derive a max-width straight from it: the space
+                // between the screen's left edge and the node, minus the 56px gap
+                // (right-14) and a 24px safety margin, is guaranteed to fit.
+                maxWidth: `clamp(80px, calc(${skill.x}vw - 80px), 380px)`,
+              }}
               onTouchStart={handleLevelLongPressStart}
               onTouchEnd={handleLevelLongPressEnd}
               onTouchCancel={handleLevelLongPressEnd}
