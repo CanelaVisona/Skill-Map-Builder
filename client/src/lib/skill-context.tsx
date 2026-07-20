@@ -834,9 +834,12 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     const nodesSortedByPosition = [...skillsInLevel].sort((a, b) => (a.levelPosition ?? 0) - (b.levelPosition ?? 0));
     const currentNodeIndexByPosition = nodesSortedByPosition.findIndex(s => s.id === skill.id);
     const predecessorByPosition = currentNodeIndexByPosition > 0 ? nodesSortedByPosition[currentNodeIndexByPosition - 1] : null;
-    
-    // Check if this is a final node (has star OR is last node by position)
-    const isFinalNodeByPosition = isLastNodeOfLevel || skill.isFinalNode === 1;
+
+    // Final node is always the current last node by position. Do NOT OR this with the
+    // stored isFinalNode flag: that flag is only reassigned by the add/move/delete code
+    // paths, so if any of them misses a case it goes stale and a non-final node would
+    // wrongly be treated as final (see: confirming a middle node opening the next level).
+    const isFinalNodeByPosition = isLastNodeOfLevel;
 
     // Confirmation gate: predecessor in levelPosition chain must be mastered
     if (skill.status === "available" && predecessorByPosition && predecessorByPosition.status !== "mastered") {
@@ -910,8 +913,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     // Determine if the star is active: only when endOfAreaLevel equals this level
     // isFinalNode: 1 is just an identifier (always on Node 5), not the control
     const isStarActive = area.endOfAreaLevel === skill.level;
-    // Only the true final node may open/close the next level.
-    const canOpenNewLevels = skill.isFinalNode === 1 && !isStarActive;
+    // Only the true final node (by current position) may open/close the next level.
+    const canOpenNewLevels = isFinalNodeByPosition && !isStarActive;
     const isOpeningNewLevel = canOpenNewLevels && newStatus === "mastered";
     const isClosingLevel = canOpenNewLevels && skill.status === "mastered" && newStatus === "available";
 
@@ -1236,9 +1239,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     const nodesSortedByPosition = [...skillsInLevel].sort((a, b) => (a.levelPosition ?? 0) - (b.levelPosition ?? 0));
     const currentNodeIndexByPosition = nodesSortedByPosition.findIndex(s => s.id === skill.id);
     const predecessorByPosition = currentNodeIndexByPosition > 0 ? nodesSortedByPosition[currentNodeIndexByPosition - 1] : null;
-    
-    // Check if this is a final node (has star OR is last node by position)
-    const isFinalNodeByPosition = isLastNodeOfLevel || skill.isFinalNode === 1;
+
+    // Final node is always the current last node by position (see toggleSkillStatus for
+    // why OR-ing with the stored isFinalNode flag caused non-final confirms to open a level).
+    const isFinalNodeByPosition = isLastNodeOfLevel;
 
     // Confirmation gate: predecessor in levelPosition chain must be mastered
     if (skill.status === "available" && predecessorByPosition && predecessorByPosition.status !== "mastered") {
@@ -1271,9 +1275,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     
     // Check if star is active (endOfAreaLevel is set to this level)
     const isStarActive = project.endOfAreaLevel === skill.level;
-    
-    // Only the true final node may open/close the next level.
-    const canOpenNewLevels = skill.isFinalNode === 1 && !isStarActive;
+
+    // Only the true final node (by current position) may open/close the next level.
+    const canOpenNewLevels = isFinalNodeByPosition && !isStarActive;
     const isOpeningNewLevel = canOpenNewLevels && newStatus === "mastered";
     const isClosingLevel = canOpenNewLevels && skill.status === "mastered" && newStatus === "available";
 
@@ -2643,9 +2647,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     const nodesSortedByPosition = [...skillsInLevel].sort((a, b) => (a.levelPosition ?? 0) - (b.levelPosition ?? 0));
     const currentNodeIndexByPosition = nodesSortedByPosition.findIndex(s => s.id === skill.id);
     const predecessorByPosition = currentNodeIndexByPosition > 0 ? nodesSortedByPosition[currentNodeIndexByPosition - 1] : null;
-    
-    // Check if this is a final node (has star OR is last node by position)
-    const isFinalNodeByPosition = isLastNodeOfLevel || skill.isFinalNode === 1;
+
+    // Final node is always the current last node by position (see toggleSkillStatus for
+    // why OR-ing with the stored isFinalNode flag caused non-final confirms to open a level).
+    const isFinalNodeByPosition = isLastNodeOfLevel;
 
     // Confirmation gate: predecessor in levelPosition chain must be mastered
     if (skill.status === "available" && predecessorByPosition && predecessorByPosition.status !== "mastered") {
@@ -2676,8 +2681,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
     const newStatus = nextStatus[skill.status];
     
-    // Only the true final node may open the next level.
-    const hasStar = skill.isFinalNode === 1;
+    // Only the true final node (by current position) may open the next level.
+    const hasStar = isFinalNodeByPosition;
     const canOpenNewLevels = hasStar;
     const isOpeningNewLevel = canOpenNewLevels && newStatus === "mastered";
 
