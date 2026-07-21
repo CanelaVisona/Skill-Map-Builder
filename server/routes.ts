@@ -3353,58 +3353,73 @@ export async function registerRoutes(
       const data = { ...req.body, bugId: req.params.id, userId: req.userId };
       const validated = insertSourceBugRecordSchema.parse(data);
 
-      if (validated.skillId) {
+      const effectiveSkillIds = Array.from(new Set(
+        (validated.skillIds && validated.skillIds.length > 0
+          ? validated.skillIds
+          : validated.skillId ? [validated.skillId] : [])
+      ));
+
+      if (effectiveSkillIds.length > 0) {
         const bug = await storage.getSourceBug(req.params.id);
         if (!bug || bug.userId !== req.userId) {
           res.status(404).json({ message: "Source bug not found" });
           return;
         }
 
-        const linkedSkill = await storage.getGlobalSkill(validated.skillId);
-        if (!linkedSkill || linkedSkill.userId !== req.userId) {
-          res.status(400).json({ message: "Skill link inválido" });
-          return;
-        }
+        for (const skillId of effectiveSkillIds) {
+          const linkedSkill = await storage.getGlobalSkill(skillId);
+          if (!linkedSkill || linkedSkill.userId !== req.userId) {
+            res.status(400).json({ message: "Skill link inválido" });
+            return;
+          }
 
-        if (bug.areaId && linkedSkill.areaId !== bug.areaId) {
-          res.status(400).json({ message: "El skill debe pertenecer al área del bug" });
-          return;
-        }
+          if (bug.areaId && linkedSkill.areaId !== bug.areaId) {
+            res.status(400).json({ message: "El skill debe pertenecer al área del bug" });
+            return;
+          }
 
-        if (bug.projectId && linkedSkill.projectId && linkedSkill.projectId !== bug.projectId) {
-          res.status(400).json({ message: "El skill debe pertenecer al proyecto del bug" });
-          return;
+          if (bug.projectId && linkedSkill.projectId && linkedSkill.projectId !== bug.projectId) {
+            res.status(400).json({ message: "El skill debe pertenecer al proyecto del bug" });
+            return;
+          }
         }
       }
 
-      const record = await storage.createSourceBugRecord(validated);
+      const record = await storage.createSourceBugRecord({
+        ...validated,
+        skillId: effectiveSkillIds[0] ?? null,
+        skillIds: effectiveSkillIds,
+      });
 
-      if (!validated.skillId) {
+      if (effectiveSkillIds.length === 0) {
         res.status(201).json(record);
         return;
       }
 
       const xpAmount = 10;
-      const linkedSkillBefore = await storage.getGlobalSkill(validated.skillId);
-      if (!linkedSkillBefore || linkedSkillBefore.userId !== req.userId) {
-        res.status(201).json(record);
-        return;
-      }
+      const xpAwards = [];
+      for (const skillId of effectiveSkillIds) {
+        const linkedSkillBefore = await storage.getGlobalSkill(skillId);
+        if (!linkedSkillBefore || linkedSkillBefore.userId !== req.userId) continue;
 
-      const updatedSkill = await storage.addXpToGlobalSkill(validated.skillId, xpAmount);
+        const updatedSkill = await storage.addXpToGlobalSkill(skillId, xpAmount);
 
-      res.status(201).json({
-        ...record,
-        xpAward: {
+        xpAwards.push({
           xpAmount,
-          skillId: validated.skillId,
+          skillId,
           skillName: linkedSkillBefore.name,
           areaId: linkedSkillBefore.areaId,
           xpBefore: linkedSkillBefore.currentXp,
           xpAfter: updatedSkill?.currentXp ?? linkedSkillBefore.currentXp + xpAmount,
           xpMax: linkedSkillBefore.goalXp,
           level: linkedSkillBefore.level,
-        },
+        });
+      }
+
+      res.status(201).json({
+        ...record,
+        xpAwards,
+        xpAward: xpAwards[0] ?? null,
       });
     } catch (error: any) {
       const validationError = fromError(error);
@@ -3431,39 +3446,46 @@ export async function registerRoutes(
         return;
       }
 
-      const hasSkillInPayload = Object.prototype.hasOwnProperty.call(req.body, "skillId");
-      const oldSkillId = existing.skillId ?? null;
-      let nextSkillId = oldSkillId;
+      const hasSkillInPayload = Object.prototype.hasOwnProperty.call(req.body, "skillIds")
+        || Object.prototype.hasOwnProperty.call(req.body, "skillId");
+      const oldSkillIds = Array.isArray(existing.skillIds) && existing.skillIds.length > 0
+        ? existing.skillIds
+        : existing.skillId ? [existing.skillId] : [];
+      let nextSkillIds = oldSkillIds;
 
       if (hasSkillInPayload) {
-        if (typeof req.body.skillId === "string") {
+        if (Array.isArray(req.body.skillIds)) {
+          nextSkillIds = Array.from(new Set(req.body.skillIds.filter((id: unknown): id is string => typeof id === "string" && id.length > 0)));
+        } else if (typeof req.body.skillId === "string") {
           const trimmedSkillId = req.body.skillId.trim();
-          nextSkillId = trimmedSkillId.length > 0 ? trimmedSkillId : null;
+          nextSkillIds = trimmedSkillId.length > 0 ? [trimmedSkillId] : [];
         } else {
-          nextSkillId = req.body.skillId ? String(req.body.skillId) : null;
+          nextSkillIds = req.body.skillId ? [String(req.body.skillId)] : [];
         }
       }
 
-      if (hasSkillInPayload && nextSkillId) {
-        const linkedSkill = await storage.getGlobalSkill(nextSkillId);
-        if (!linkedSkill || linkedSkill.userId !== req.userId) {
-          res.status(400).json({ message: "Skill link inválido" });
-          return;
-        }
+      if (hasSkillInPayload && nextSkillIds.length > 0) {
+        for (const skillId of nextSkillIds) {
+          const linkedSkill = await storage.getGlobalSkill(skillId);
+          if (!linkedSkill || linkedSkill.userId !== req.userId) {
+            res.status(400).json({ message: "Skill link inválido" });
+            return;
+          }
 
-        if (bug.areaId && linkedSkill.areaId !== bug.areaId) {
-          res.status(400).json({ message: "El skill debe pertenecer al área del bug" });
-          return;
-        }
+          if (bug.areaId && linkedSkill.areaId !== bug.areaId) {
+            res.status(400).json({ message: "El skill debe pertenecer al área del bug" });
+            return;
+          }
 
-        if (bug.projectId && linkedSkill.projectId && linkedSkill.projectId !== bug.projectId) {
-          res.status(400).json({ message: "El skill debe pertenecer al proyecto del bug" });
-          return;
+          if (bug.projectId && linkedSkill.projectId && linkedSkill.projectId !== bug.projectId) {
+            res.status(400).json({ message: "El skill debe pertenecer al proyecto del bug" });
+            return;
+          }
         }
       }
 
       const updatePayload = hasSkillInPayload
-        ? { ...req.body, skillId: nextSkillId }
+        ? { ...req.body, skillId: nextSkillIds[0] ?? null, skillIds: nextSkillIds }
         : req.body;
 
       const updated = await storage.updateSourceBugRecord(req.params.id, updatePayload);
@@ -3472,7 +3494,7 @@ export async function registerRoutes(
         return;
       }
 
-      let xpAward: {
+      const xpAwards: Array<{
         xpAmount: number;
         skillId: string;
         skillName: string;
@@ -3481,35 +3503,38 @@ export async function registerRoutes(
         xpAfter: number;
         xpMax?: number | null;
         level?: number;
-      } | null = null;
+      }> = [];
 
-      if (hasSkillInPayload && oldSkillId !== nextSkillId) {
-        if (oldSkillId) {
-          const oldSkill = await storage.getGlobalSkill(oldSkillId);
+      if (hasSkillInPayload) {
+        const removedSkillIds = oldSkillIds.filter((id) => !nextSkillIds.includes(id));
+        const addedSkillIds = nextSkillIds.filter((id) => !oldSkillIds.includes(id));
+
+        for (const skillId of removedSkillIds) {
+          const oldSkill = await storage.getGlobalSkill(skillId);
           if (oldSkill && oldSkill.userId === req.userId) {
-            await storage.addXpToGlobalSkill(oldSkillId, -10);
+            await storage.addXpToGlobalSkill(skillId, -10);
           }
         }
 
-        if (nextSkillId) {
-          const nextSkillBefore = await storage.getGlobalSkill(nextSkillId);
+        for (const skillId of addedSkillIds) {
+          const nextSkillBefore = await storage.getGlobalSkill(skillId);
           if (nextSkillBefore && nextSkillBefore.userId === req.userId) {
-            const updatedNextSkill = await storage.addXpToGlobalSkill(nextSkillId, 10);
-            xpAward = {
+            const updatedNextSkill = await storage.addXpToGlobalSkill(skillId, 10);
+            xpAwards.push({
               xpAmount: 10,
-              skillId: nextSkillId,
+              skillId,
               skillName: nextSkillBefore.name,
               areaId: nextSkillBefore.areaId,
               xpBefore: nextSkillBefore.currentXp,
               xpAfter: updatedNextSkill?.currentXp ?? nextSkillBefore.currentXp + 10,
               xpMax: nextSkillBefore.goalXp,
               level: nextSkillBefore.level,
-            };
+            });
           }
         }
       }
 
-      res.json(xpAward ? { ...updated, xpAward } : updated);
+      res.json(xpAwards.length > 0 ? { ...updated, xpAwards, xpAward: xpAwards[0] } : updated);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -3528,10 +3553,14 @@ export async function registerRoutes(
         return;
       }
 
-      if (existing.skillId) {
-        const linkedSkill = await storage.getGlobalSkill(existing.skillId);
+      const existingSkillIds = Array.isArray(existing.skillIds) && existing.skillIds.length > 0
+        ? existing.skillIds
+        : existing.skillId ? [existing.skillId] : [];
+
+      for (const skillId of existingSkillIds) {
+        const linkedSkill = await storage.getGlobalSkill(skillId);
         if (linkedSkill && linkedSkill.userId === req.userId) {
-          await storage.addXpToGlobalSkill(existing.skillId, -10);
+          await storage.addXpToGlobalSkill(skillId, -10);
         }
       }
 
@@ -3847,11 +3876,16 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Tracker not found" });
       }
 
+      const updateSkillIds: string[] = Array.isArray(req.body.skillIds)
+        ? req.body.skillIds
+        : req.body.skillId ? [req.body.skillId] : [];
+
       const updateData = {
         name: req.body.name,
         areaId: req.body.areaId ?? null,
         projectId: req.body.projectId ?? null,
-        skillId: req.body.skillId ?? null,
+        skillId: updateSkillIds[0] ?? null,
+        skillIds: updateSkillIds,
         bodyLinks: Array.isArray(req.body.bodyLinks) ? req.body.bodyLinks : [],
         ...(req.body.targetLevel !== undefined ? { targetLevel: req.body.targetLevel } : {}),
       };
@@ -4050,31 +4084,45 @@ export async function registerRoutes(
         return res.status(403).json({ message: "No tienes permiso para este hábito" });
       }
 
+      const habitSkillIds = Array.isArray(habit.skillIds) && habit.skillIds.length > 0
+        ? habit.skillIds
+        : habit.skillId ? [habit.skillId] : [];
+
       // If no linked skill, just return success
-      if (!habit.skillId) {
-        return res.json({ xpAwarded: 0, message: "Hábito sin skill linkeado" });
+      if (habitSkillIds.length === 0) {
+        return res.json({ xpAwarded: 0, message: "Hábito sin skill linkeado", xpAwards: [] });
       }
 
       const xpToAward = 5;
+      const xpAwards = [];
 
-      // Award XP to global skill if linked
-      const skill = await storage.getGlobalSkill(habit.skillId);
-      
-      if (!skill) {
-        return res.status(404).json({ message: "Skill linkeado al hábito no encontrado" });
+      for (const skillId of habitSkillIds) {
+        const skill = await storage.getGlobalSkill(skillId);
+        if (!skill) continue;
+
+        const updatedSkill = await storage.addXpToGlobalSkill(skillId, xpToAward);
+        if (!updatedSkill) continue;
+
+        xpAwards.push({
+          xpAwarded: xpToAward,
+          skillId,
+          skillName: skill.name,
+          newXp: updatedSkill.currentXp,
+          newLevel: updatedSkill.level,
+        });
       }
 
-      const updatedSkill = await storage.addXpToGlobalSkill(habit.skillId, xpToAward);
-      if (!updatedSkill) {
+      if (xpAwards.length === 0) {
         return res.status(404).json({ message: "Skill linkeado al hábito no encontrado" });
       }
 
       return res.json({
-        xpAwarded: xpToAward,
-        skillId: habit.skillId,
-        skillName: skill.name,
-        newXp: updatedSkill.currentXp,
-        newLevel: updatedSkill.level
+        xpAwarded: xpAwards[0].xpAwarded,
+        skillId: xpAwards[0].skillId,
+        skillName: xpAwards[0].skillName,
+        newXp: xpAwards[0].newXp,
+        newLevel: xpAwards[0].newLevel,
+        xpAwards,
       });
     } catch (error: any) {
       res.status(500).json({ message: error.message });

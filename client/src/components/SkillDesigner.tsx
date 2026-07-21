@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ChevronUp, ChevronDown, Lock, Plus } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { ChevronUp, ChevronDown, Lock, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SkillDesignerProps {
@@ -15,7 +16,7 @@ interface SkillDesignerProps {
 }
 
 export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
-  const { areas, projects, activeAreaId, activeProjectId, updateSkill, updateProjectSkill, updateLevelSubtitle, updateProjectLevelSubtitle, moveSkillToLevel, moveProjectSkillToLevel, reorderSkillWithinLevel, reorderProjectSkillWithinLevel, addSkillBelow, addProjectSkillBelow } = useSkillTree();
+  const { areas, projects, activeAreaId, activeProjectId, updateSkill, updateProjectSkill, updateLevelSubtitle, updateProjectLevelSubtitle, moveSkillToLevel, moveProjectSkillToLevel, reorderSkillWithinLevel, reorderProjectSkillWithinLevel, addSkillBelow, addProjectSkillBelow, deleteSkill, deleteProjectSkill } = useSkillTree();
   const [editingSkillId, setEditingSkillId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
   const [editingAreaId, setEditingAreaId] = useState<string | null>(null);
@@ -31,6 +32,9 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
   // Context menu state for moving skills
   const [contextMenuOpen, setContextMenuOpen] = useState(false);
   const [selectedSkillForMove, setSelectedSkillForMove] = useState<{ skillId: string; areaId: string | null; projectId: string | null; currentLevel: number } | null>(null);
+
+  // Delete confirmation state
+  const [skillPendingDelete, setSkillPendingDelete] = useState<{ skillId: string; areaId: string | null; projectId: string | null; title: string } | null>(null);
   
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -111,6 +115,16 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
     } else if (projectId) {
       await reorderProjectSkillWithinLevel(projectId, skillId, direction);
     }
+  };
+
+  const handleConfirmDeleteSkill = async () => {
+    if (!skillPendingDelete) return;
+    if (skillPendingDelete.areaId) {
+      await deleteSkill(skillPendingDelete.areaId, skillPendingDelete.skillId);
+    } else if (skillPendingDelete.projectId) {
+      await deleteProjectSkill(skillPendingDelete.projectId, skillPendingDelete.skillId);
+    }
+    setSkillPendingDelete(null);
   };
 
   const getAvailableLevelsForMove = (currentLevel: number, maxLevel: number): number[] => {
@@ -300,6 +314,15 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                               >
                                                 <Plus className="w-4 h-4" />
                                               </Button>
+                                              <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                onClick={() => setSkillPendingDelete({ skillId: skill.id, areaId: area.id, projectId: null, title: skill.title || `Nodo ${skill.levelPosition}` })}
+                                                className="h-8 w-8"
+                                                title="Eliminar nodo"
+                                              >
+                                                <Trash2 className="w-4 h-4 text-destructive" />
+                                              </Button>
                                             </div>
                                           </div>
                                           <div className="text-xs text-muted-foreground">
@@ -441,6 +464,15 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                 >
                                                   <Plus className="w-4 h-4" />
                                                 </Button>
+                                                <Button
+                                                  size="sm"
+                                                  variant="ghost"
+                                                  onClick={() => setSkillPendingDelete({ skillId: skill.id, areaId: null, projectId: project.id, title: skill.title || `Nodo ${skill.levelPosition}` })}
+                                                  className="h-8 w-8"
+                                                  title="Eliminar nodo"
+                                                >
+                                                  <Trash2 className="w-4 h-4 text-destructive" />
+                                                </Button>
                                               </div>
                                           </div>
                                           <div className="text-xs text-muted-foreground">
@@ -576,6 +608,15 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                               >
                                                 <Plus className="w-4 h-4" />
                                               </Button>
+                                              <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                onClick={() => setSkillPendingDelete({ skillId: skill.id, areaId: null, projectId: project.id, title: skill.title || `Nodo ${skill.levelPosition}` })}
+                                                className="h-8 w-8"
+                                                title="Eliminar nodo"
+                                              >
+                                                <Trash2 className="w-4 h-4 text-destructive" />
+                                              </Button>
                                             </div>
                                           <div className="text-xs text-muted-foreground">
                                             {skill.status === "mastered" && "✓ Completado"}
@@ -708,6 +749,15 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                             >
                                               <Plus className="w-4 h-4" />
                                             </Button>
+                                            <Button
+                                              size="sm"
+                                              variant="ghost"
+                                              onClick={() => setSkillPendingDelete({ skillId: skill.id, areaId: null, projectId: project.id, title: skill.title || `Nodo ${skill.levelPosition}` })}
+                                              className="h-8 w-8"
+                                              title="Eliminar nodo"
+                                            >
+                                              <Trash2 className="w-4 h-4 text-destructive" />
+                                            </Button>
                                           </div>
                                           <div className="text-xs text-muted-foreground">
                                             {skill.status === "mastered" && "✓ Completado"}
@@ -809,6 +859,27 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Skill Confirmation */}
+      <AlertDialog open={skillPendingDelete !== null} onOpenChange={(isOpen) => !isOpen && setSkillPendingDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar "{skillPendingDelete?.title}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción no se puede deshacer. Se eliminará el nodo y se reajustarán los nodos siguientes.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDeleteSkill}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

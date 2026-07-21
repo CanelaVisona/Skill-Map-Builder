@@ -1512,10 +1512,14 @@ export class DbStorage implements IStorage {
 
     const bugIds = bugs.map((bug) => bug.id);
 
-    let records: Array<SourceBugRecord & { skillName?: string | null }> = [];
+    let records: Array<SourceBugRecord & { skillName?: string | null; skillNames?: string[] }> = [];
     try {
       const fetchedRecords = await db.select().from(sourceBugRecords).where(inArray(sourceBugRecords.bugId, bugIds));
-      const linkedSkillIds = Array.from(new Set(fetchedRecords.map((record) => record.skillId).filter((skillId): skillId is string => !!skillId)));
+      const recordSkillIds = (record: SourceBugRecord) =>
+        Array.isArray(record.skillIds) && record.skillIds.length > 0
+          ? record.skillIds
+          : record.skillId ? [record.skillId] : [];
+      const linkedSkillIds = Array.from(new Set(fetchedRecords.flatMap(recordSkillIds)));
       const linkedSkillNames = linkedSkillIds.length > 0
         ? await db
             .select({ id: globalSkills.id, name: globalSkills.name })
@@ -1524,10 +1528,15 @@ export class DbStorage implements IStorage {
         : [];
       const skillNameById = new Map(linkedSkillNames.map((skill) => [skill.id, skill.name]));
 
-      records = fetchedRecords.map((record) => ({
-        ...record,
-        skillName: record.skillId ? (skillNameById.get(record.skillId) ?? null) : null,
-      }));
+      records = fetchedRecords.map((record) => {
+        const ids = recordSkillIds(record);
+        const names = ids.map((id) => skillNameById.get(id)).filter((name): name is string => !!name);
+        return {
+          ...record,
+          skillName: names[0] ?? null,
+          skillNames: names,
+        };
+      });
     } catch (error: any) {
       // Backward compatibility: if DB hasn't run migration yet, return records without linked-skill metadata.
       if (String(error?.message || "").includes("skill_id")) {
@@ -2300,6 +2309,7 @@ export class DbStorage implements IStorage {
       areaId: tracker.areaId ?? null,
       projectId: tracker.projectId ?? null,
       skillId: tracker.skillId ?? null,
+      skillIds: Array.isArray(tracker.skillIds) ? tracker.skillIds : [],
       bodyLinks: Array.isArray(tracker.bodyLinks) ? tracker.bodyLinks : [],
       startDate: tracker.startDate ?? new Date(),
       archivedAt: tracker.archivedAt ?? null,

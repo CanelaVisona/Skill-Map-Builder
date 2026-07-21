@@ -7,6 +7,7 @@ import { SkillConnection } from "@/components/SkillConnection";
 import { SkillDesigner } from "@/components/SkillDesigner";
 import { QuestCompletedCelebration } from "@/components/QuestCompletedCelebration";
 import { HabitStreakModal } from "@/components/HabitStreakModal";
+import { useHabits } from "@/lib/useHabits";
 import { SpaceRepetitionModal } from "@/components/SpaceRepetitionModal";
 import { ProgressModal } from "@/components/ProgressModal";
 import { ProgressBar } from "@/components/ProgressBar";
@@ -23,18 +24,19 @@ import { AreaXpPopupProvider } from "@/lib/area-xp-popup-context";
 import { BodyProgressProvider, useBodyProgress } from "@/lib/body-progress-context";
 import { BodyGainPopupProvider, useBodyGainPopup } from "@/lib/body-gain-popup-context";
 import { BodyLinkPicker, type BodyLink } from "@/components/BodyLinkPicker";
+import { SkillLinkPicker } from "@/components/SkillLinkPicker";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, useQueries } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { JournalCharacter, JournalPlace, JournalShadow, JournalShadowPage, JournalLearning, JournalTool, JournalThought } from "@shared/schema";
+import type { JournalCharacter, JournalPlace, JournalShadow, JournalShadowPage, JournalLearning, JournalTool, JournalThought, HabitRecord } from "@shared/schema";
 import { OnboardingGuide, HelpButton, useOnboarding } from "@/components/OnboardingGuide";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
@@ -106,11 +108,39 @@ function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpen
   const currentTheme = resolvedTheme || theme;
   const { openDiary } = useDiary();
   const [isOpen, setIsOpen] = useState(false);
+  const { data: habitsData } = useHabits();
 
   const handleAction = (action: () => void) => {
     action();
     setIsOpen(false);
   };
+
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const todayDayOfWeek = now.getDay() === 0 ? 6 : now.getDay() - 1;
+
+  const habitsScheduledToday = (habitsData || []).filter((h) => {
+    if (h.endDate && h.endDate < todayStr) return false;
+    const days = h.scheduledDays?.length ? h.scheduledDays : [0, 1, 2, 3, 4, 5, 6];
+    return days.includes(todayDayOfWeek);
+  });
+
+  const todayRecordQueries = useQueries({
+    queries: habitsScheduledToday.map((h) => ({
+      queryKey: ["habit-records", h.id, todayStr, todayStr],
+      queryFn: async () => {
+        const res = await fetch(`/api/habit-records/${h.id}?startDate=${todayStr}&endDate=${todayStr}`);
+        if (!res.ok) throw new Error("Failed to fetch habit records");
+        return res.json() as Promise<HabitRecord[]>;
+      },
+    })),
+  });
+
+  const completedTodayCount = todayRecordQueries.filter((q) =>
+    (q.data as HabitRecord[] | undefined)?.some((r) => r.date === todayStr && r.completed === 1)
+  ).length;
+
+  const pendingHabitsCount = Math.max(habitsScheduledToday.length - completedTodayCount, 0);
   
   return (
     <div className="fixed top-4 right-4 z-50 flex flex-col items-end gap-2">
@@ -161,11 +191,16 @@ function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpen
               <Scroll className="h-4 w-4 mx-auto" />
             </button>
             <button
-              className="h-8 w-8 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
+              className="relative h-8 w-8 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
               onClick={() => handleAction(onOpenHabits)}
               title="Habit Streak"
             >
               <Flame className="h-4 w-4 mx-auto" />
+              {pendingHabitsCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 text-[10px] font-bold leading-none text-black dark:text-white">
+                  {pendingHabitsCount > 99 ? "99+" : pendingHabitsCount}
+                </span>
+              )}
             </button>
             <button
               className="h-8 w-8 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
@@ -219,7 +254,9 @@ interface SourceBugRecord {
   id: string;
   bugId: string;
   skillId?: string | null;
+  skillIds?: string[];
   skillName?: string | null;
+  skillNames?: string[];
   bodyLinks?: BodyLink[];
   fecha: string;
   situacion: string;
@@ -237,17 +274,20 @@ interface LinkedGlobalSkill {
   level?: number;
 }
 
+interface BugRecordXpAward {
+  xpAmount: number;
+  skillId: string;
+  skillName: string;
+  areaId?: string | null;
+  xpBefore: number;
+  xpAfter: number;
+  xpMax?: number | null;
+  level?: number;
+}
+
 interface BugRecordCreateResponse extends SourceBugRecord {
-  xpAward?: {
-    xpAmount: number;
-    skillId: string;
-    skillName: string;
-    areaId?: string | null;
-    xpBefore: number;
-    xpAfter: number;
-    xpMax?: number | null;
-    level?: number;
-  };
+  xpAward?: BugRecordXpAward;
+  xpAwards?: BugRecordXpAward[];
 }
 
 interface SourceBug {
@@ -6467,25 +6507,53 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
   const [recordSituacion, setRecordSituacion] = useState("");
   const [recordSenal, setRecordSenal] = useState("");
   const [recordEstrategia, setRecordEstrategia] = useState("");
-  const [recordSkillId, setRecordSkillId] = useState("");
+  const [recordSkillIds, setRecordSkillIds] = useState<string[]>([]);
   const [recordBodyLinks, setRecordBodyLinks] = useState<BodyLink[]>([]);
   const [recordResultado, setRecordResultado] = useState<"victoria" | "empate" | "derrota">("victoria");
   const [expandedAreaId, setExpandedAreaId] = useState<string | null>(null);
 
-  const growLinkedBody = (links: BodyLink[], xpWasShown: boolean) => {
+  const growLinkedBody = (links: BodyLink[], xpPopupsShown: number) => {
     links.forEach((link, index) => {
       const run = () => {
         const { before, after } = addBodyBlock(link.zone, link.dimension);
         hideXpPopup();
         showBodyGainPopup({ zone: link.zone, dimension: link.dimension, before, after });
       };
-      const delay = (xpWasShown ? 1800 : 0) + index * 1800;
+      const delay = xpPopupsShown * 1800 + index * 1800;
       if (delay === 0) {
         run();
       } else {
         setTimeout(run, delay);
       }
     });
+  };
+
+  // Shows one XP popup per skill linked to a bug record, staggered 1800ms apart so they
+  // don't overlap. Returns how many popups were shown, so a following growLinkedBody call
+  // can offset itself past them.
+  const showBugRecordXpAwards = (awards: BugRecordXpAward[] | undefined, hadImmediateHide: boolean) => {
+    if (!awards || awards.length === 0) return 0;
+    awards.forEach((award, index) => {
+      const areaColor = areas.find((area) => area.id === award.areaId)?.color || "#c85a2a";
+      const run = () => {
+        if (index === 0 && hadImmediateHide) hideBodyGainPopup();
+        showXpPopup({
+          skillName: award.skillName,
+          areaColor,
+          xpBefore: award.xpBefore,
+          xpAfter: award.xpAfter,
+          xpMax: award.xpMax ?? null,
+          level: award.level ?? Math.floor(award.xpBefore / 100) + 1,
+        });
+      };
+      const delay = index * 1800;
+      if (delay === 0) {
+        run();
+      } else {
+        setTimeout(run, delay);
+      }
+    });
+    return awards.length;
   };
 
   const orderedAreas = React.useMemo(
@@ -6551,6 +6619,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
         senal: string;
         estrategia: string;
         skillId?: string | null;
+        skillIds?: string[];
         bodyLinks?: BodyLink[];
         resultado: "victoria" | "empate" | "derrota";
       };
@@ -6569,27 +6638,16 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
       await queryClient.invalidateQueries({ queryKey: ["all-area-bugs"] });
       await queryClient.invalidateQueries({ predicate: (query) => (query.queryKey[0] as string)?.startsWith?.("/api/global-skills/") });
 
-      if (createdRecord?.xpAward) {
-        const areaColor = areas.find((area) => area.id === createdRecord.xpAward?.areaId)?.color || "#c85a2a";
-        hideBodyGainPopup();
-        showXpPopup({
-          skillName: createdRecord.xpAward.skillName,
-          areaColor,
-          xpBefore: createdRecord.xpAward.xpBefore,
-          xpAfter: createdRecord.xpAward.xpAfter,
-          xpMax: createdRecord.xpAward.xpMax ?? null,
-          level: createdRecord.xpAward.level ?? Math.floor(createdRecord.xpAward.xpBefore / 100) + 1,
-        });
-      }
+      const xpPopupsShown = showBugRecordXpAwards(createdRecord?.xpAwards, true);
 
-      growLinkedBody(Array.isArray(createdRecord?.bodyLinks) ? createdRecord.bodyLinks : [], !!createdRecord?.xpAward);
+      growLinkedBody(Array.isArray(createdRecord?.bodyLinks) ? createdRecord.bodyLinks : [], xpPopupsShown);
 
       setIsRecordFormOpen(false);
       setRecordFecha(new Date().toISOString().slice(0, 10));
       setRecordSituacion("");
       setRecordSenal("");
       setRecordEstrategia("");
-      setRecordSkillId("");
+      setRecordSkillIds([]);
       setRecordBodyLinks([]);
       setRecordResultado("victoria");
     },
@@ -6607,6 +6665,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
         senal?: string;
         estrategia?: string;
         skillId?: string | null;
+        skillIds?: string[];
         bodyLinks?: BodyLink[];
         resultado?: "victoria" | "empate" | "derrota";
       };
@@ -6625,17 +6684,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
       await queryClient.invalidateQueries({ queryKey: ["all-area-bugs"] });
       await queryClient.invalidateQueries({ predicate: (query) => (query.queryKey[0] as string)?.startsWith?.("/api/global-skills/") });
 
-      if (updatedRecord?.xpAward) {
-        const areaColor = areas.find((area) => area.id === updatedRecord.xpAward?.areaId)?.color || "#c85a2a";
-        showXpPopup({
-          skillName: updatedRecord.xpAward.skillName,
-          areaColor,
-          xpBefore: updatedRecord.xpAward.xpBefore,
-          xpAfter: updatedRecord.xpAward.xpAfter,
-          xpMax: updatedRecord.xpAward.xpMax ?? null,
-          level: updatedRecord.xpAward.level ?? Math.floor(updatedRecord.xpAward.xpBefore / 100) + 1,
-        });
-      }
+      showBugRecordXpAwards(updatedRecord?.xpAwards, false);
 
       setEditingRecordId(null);
       setIsRecordFormOpen(false);
@@ -6643,7 +6692,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
       setRecordSituacion("");
       setRecordSenal("");
       setRecordEstrategia("");
-      setRecordSkillId("");
+      setRecordSkillIds([]);
       setRecordResultado("victoria");
     },
   });
@@ -6670,7 +6719,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
         setRecordSituacion("");
         setRecordSenal("");
         setRecordEstrategia("");
-        setRecordSkillId("");
+        setRecordSkillIds([]);
         setRecordResultado("victoria");
       }
     },
@@ -6733,7 +6782,8 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
           situacion: recordSituacion.trim(),
           senal: recordSenal.trim(),
           estrategia: recordEstrategia.trim(),
-          skillId: recordSkillId || null,
+          skillId: recordSkillIds[0] ?? null,
+          skillIds: recordSkillIds,
           bodyLinks: recordBodyLinks,
           resultado: recordResultado,
         },
@@ -6748,7 +6798,8 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
         situacion: recordSituacion.trim(),
         senal: recordSenal.trim(),
         estrategia: recordEstrategia.trim(),
-        skillId: recordSkillId || null,
+        skillId: recordSkillIds[0] ?? null,
+        skillIds: recordSkillIds,
         bodyLinks: recordBodyLinks,
         resultado: recordResultado,
       },
@@ -6763,7 +6814,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
     setRecordSituacion(record.situacion);
     setRecordSenal(record.senal);
     setRecordEstrategia(record.estrategia);
-    setRecordSkillId(record.skillId || "");
+    setRecordSkillIds(record.skillIds?.length ? record.skillIds : record.skillId ? [record.skillId] : []);
     setRecordBodyLinks(Array.isArray(record.bodyLinks) ? record.bodyLinks : []);
     setRecordResultado(record.resultado);
   };
@@ -6775,7 +6826,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
     setRecordSituacion("");
     setRecordSenal("");
     setRecordEstrategia("");
-    setRecordSkillId("");
+    setRecordSkillIds([]);
     setRecordBodyLinks([]);
     setRecordResultado("victoria");
   };
@@ -6788,7 +6839,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
     setRecordSituacion("");
     setRecordSenal("");
     setRecordEstrategia("");
-    setRecordSkillId("");
+    setRecordSkillIds([]);
     setRecordBodyLinks([]);
     setRecordResultado("victoria");
   };
@@ -6992,8 +7043,10 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
                             )}
 
                             <p className="text-xs mt-1 break-words"><span className="text-muted-foreground">Situacion:</span> {registro.situacion}</p>
-                            {registro.skillName && (
-                              <p className="text-[11px] text-blue-500 mt-0.5 break-words">Skill: {registro.skillName}</p>
+                            {(registro.skillNames?.length ? registro.skillNames : registro.skillName ? [registro.skillName] : []).length > 0 && (
+                              <p className="text-[11px] text-blue-500 mt-0.5 break-words">
+                                Skills: {(registro.skillNames?.length ? registro.skillNames : [registro.skillName]).join(", ")}
+                              </p>
                             )}
                             <p className="text-xs break-words"><span className="text-muted-foreground">Senal:</span> {registro.senal}</p>
                             <p className="text-xs break-words"><span className="text-muted-foreground">Estrategia:</span> {registro.estrategia}</p>
@@ -7073,18 +7126,10 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
                       />
                     </div>
                     <div>
-                      <Label htmlFor="global-record-skill" className="text-xs text-muted-foreground">Skill linkeado</Label>
-                      <select
-                        id="global-record-skill"
-                        value={recordSkillId}
-                        onChange={(e) => setRecordSkillId(e.target.value)}
-                        className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
-                      >
-                        <option value="">Sin link</option>
-                        {selectedAreaSkills.map((skill) => (
-                          <option key={skill.id} value={skill.id}>{skill.name}</option>
-                        ))}
-                      </select>
+                      <Label htmlFor="global-record-skill" className="text-xs text-muted-foreground">Skills linkeados</Label>
+                      <div className="mt-1" id="global-record-skill">
+                        <SkillLinkPicker skills={selectedAreaSkills} value={recordSkillIds} onChange={setRecordSkillIds} emptyLabel="Sin skills disponibles" />
+                      </div>
                     </div>
                     <div>
                       <Label htmlFor="global-record-body" className="text-xs text-muted-foreground">Componente corporal a linkear</Label>

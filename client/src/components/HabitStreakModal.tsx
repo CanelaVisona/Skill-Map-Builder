@@ -13,6 +13,7 @@ import { useXpPopup } from "@/lib/xp-popup-context";
 import { useBodyProgress } from "@/lib/body-progress-context";
 import { useBodyGainPopup } from "@/lib/body-gain-popup-context";
 import { BodyLinkPicker, type BodyLink } from "@/components/BodyLinkPicker";
+import { SkillLinkPicker } from "@/components/SkillLinkPicker";
 
 interface HabitData extends Habit {
   done: Set<string>;
@@ -178,8 +179,8 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
   const [editHabitProjectId, setEditHabitProjectId] = useState<string | null>(null);
   const [editHabitScheduledDays, setEditHabitScheduledDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
   const [editHabitType, setEditHabitType] = useState<"mini" | "deep">("mini");
-  const [newHabitSkillProgressId, setNewHabitSkillProgressId] = useState<string | null>(null);
-  const [editHabitSkillProgressId, setEditHabitSkillProgressId] = useState<string | null>(null);
+  const [newHabitSkillIds, setNewHabitSkillIds] = useState<string[]>([]);
+  const [editHabitSkillIds, setEditHabitSkillIds] = useState<string[]>([]);
   const [newHabitBodyLinks, setNewHabitBodyLinks] = useState<BodyLink[]>([]);
   const [editHabitBodyLinks, setEditHabitBodyLinks] = useState<BodyLink[]>([]);
   const { theme } = useTheme();
@@ -192,20 +193,67 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
   // Muestra un pop-up de crecimiento corporal por cada componente linkeado, en secuencia (1800ms
   // entre cada uno, y esperando ese mismo tiempo si en la misma confirmación ya se mostró el de
   // XP) para que no se solapen entre sí ni con el de XP (mismo criterio que SkillNode.tsx).
-  const growLinkedBody = (links: BodyLink[], xpWasShown: boolean) => {
+  const growLinkedBody = (links: BodyLink[], xpPopupsShown: number) => {
     links.forEach((link, index) => {
       const run = () => {
         const { before, after } = addBodyBlock(link.zone, link.dimension);
         hideXpPopup();
         showBodyGainPopup({ zone: link.zone, dimension: link.dimension, before, after });
       };
-      const delay = (xpWasShown ? 1800 : 0) + index * 1800;
+      const delay = xpPopupsShown * 1800 + index * 1800;
       if (delay === 0) {
         run();
       } else {
         setTimeout(run, delay);
       }
     });
+  };
+
+  // Awards XP to every skill linked to a habit, showing one popup per skill in sequence
+  // (1800ms apart, same cadence as growLinkedBody) so they don't overlap. Returns how many
+  // popups were shown, so callers can offset a following growLinkedBody call.
+  const awardHabitXp = async (habitId: string, skillIds: string[]): Promise<number> => {
+    if (skillIds.length === 0) return 0;
+    try {
+      const res = await fetch(`/api/habits/${habitId}/award-xp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) return 0;
+      const xpData = await res.json();
+      const awards: Array<{ skillId: string; skillName: string; newXp: number; newLevel: number; xpAwarded: number }> =
+        Array.isArray(xpData?.xpAwards) ? xpData.xpAwards : [];
+      if (awards.length === 0) return 0;
+
+      awards.forEach((award, index) => {
+        const linkedSkill = globalSkills.find((skillEntry) => skillEntry.id === award.skillId);
+        const area = areas.find((areaEntry: Area) => areaEntry.id === linkedSkill?.areaId);
+        const run = () => {
+          hideBodyGainPopup();
+          showXpPopup({
+            skillName: award.skillName,
+            areaColor: area?.color || "#c85a2a",
+            xpBefore: linkedSkill ? linkedSkill.currentXp : Math.max(0, award.newXp - award.xpAwarded),
+            xpAfter: award.newXp,
+            xpMax: linkedSkill?.goalXp || null,
+            level: award.newLevel,
+          });
+        };
+        const delay = index * 1800;
+        if (delay === 0) {
+          run();
+        } else {
+          setTimeout(run, delay);
+        }
+      });
+
+      await refetchGlobalSkills();
+      await queryClient.refetchQueries({ queryKey: ["skills"] });
+      return awards.length;
+    } catch (error) {
+      console.error("Error awarding XP:", error);
+      return 0;
+    }
   };
 
   // Revierte silenciosamente (sin pop-up) el bloque de cuerpo otorgado por una confirmación
@@ -416,6 +464,9 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       // Rebuild records from fresh habits data
       const freshHabits = queryClient.getQueryData<any[]>(["habits"]) || [];
       await fetchHabitRecords(freshHabits);
+      // Notifica a otros consumidores (p.ej. el badge del ícono de fuego) que los
+      // registros de hoy cambiaron, aunque este modal no lea de la cache de react-query.
+      queryClient.invalidateQueries({ queryKey: ["habit-records"] });
     },
   });
 
@@ -437,6 +488,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       areaId?: string | null;
       projectId?: string | null;
       skillId?: string | null;
+      skillIds?: string[];
       bodyLinks?: BodyLink[];
       scheduledDays: number[];
       habitType: "mini" | "deep";
@@ -463,6 +515,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       areaId?: string | null;
       projectId?: string | null;
       skillId?: string | null;
+      skillIds?: string[];
       bodyLinks?: BodyLink[];
       scheduledDays?: number[];
       habitType?: "mini" | "deep";
@@ -477,6 +530,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
           areaId: data.areaId,
           projectId: data.projectId,
           skillId: data.skillId,
+          skillIds: data.skillIds,
           bodyLinks: data.bodyLinks,
           scheduledDays: data.scheduledDays,
           habitType: data.habitType,
@@ -614,7 +668,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
     showPanel("detail");
   };
   const showAdd = () => {
-    setNewHabitSkillProgressId(null);
+    setNewHabitSkillIds([]);
     setNewHabitBodyLinks([]);
     showPanel("add");
   };
@@ -628,7 +682,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       setEditHabitEndDate(habit.endDate || "");
       setEditHabitAreaId(habit.areaId || null);
       setEditHabitProjectId(habit.projectId || null);
-      setEditHabitSkillProgressId(habit.skillId || null);
+      setEditHabitSkillIds(habit.skillIds?.length ? habit.skillIds : habit.skillId ? [habit.skillId] : []);
       setEditHabitBodyLinks(habit.bodyLinks ?? []);
       setEditHabitScheduledDays(habit.scheduledDays || [0, 1, 2, 3, 4, 5, 6]);
       setEditHabitType(habit.habitType || "mini");
@@ -641,7 +695,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
     setNewHabitEndDate("");
     setNewHabitAreaId(null);
     setNewHabitProjectId(null);
-    setNewHabitSkillProgressId(null);
+    setNewHabitSkillIds([]);
     setNewHabitBodyLinks([]);
     setNewHabitScheduledDays([0, 1, 2, 3, 4, 5, 6]);
     setNewHabitType("mini");
@@ -652,7 +706,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
     setEditHabitEndDate("");
     setEditHabitAreaId(null);
     setEditHabitProjectId(null);
-    setEditHabitSkillProgressId(null);
+    setEditHabitSkillIds([]);
     setEditHabitBodyLinks([]);
     setEditHabitScheduledDays([0, 1, 2, 3, 4, 5, 6]);
     setEditHabitType("mini");
@@ -688,37 +742,11 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                     },
                     {
                       onSuccess: async () => {
-                        // Award XP if habit has a linked skill and is being marked complete
-                        if (!isCompleted && habit.skillId) {
-                          try {
-                            const linkedSkill = globalSkills.find((skillEntry) => skillEntry.id === habit.skillId);
-                            const res = await fetch(`/api/habits/${habitId}/award-xp`, {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                            });
-                            if (res.ok) {
-                              const xpData = await res.json();
-                              if (linkedSkill) {
-                                const area = areas.find((areaEntry) => areaEntry.id === linkedSkill.areaId);
-                                hideBodyGainPopup();
-                                showXpPopup({
-                                  skillName: linkedSkill.name,
-                                  areaColor: area?.color || "#c85a2a",
-                                  xpBefore: linkedSkill.currentXp,
-                                  xpAfter: linkedSkill.currentXp + (xpData?.xpAwarded || 5),
-                                  xpMax: linkedSkill.goalXp || null,
-                                  level: linkedSkill.level,
-                                });
-                              }
-                              await refetchGlobalSkills();
-                              await queryClient.refetchQueries({ queryKey: ["skills"] });
-                            }
-                          } catch (error) {
-                            console.error("Error awarding XP:", error);
-                          }
-                        }
+                        // Award XP if habit has linked skills and is being marked complete
+                        const habitSkillIds = habit.skillIds?.length ? habit.skillIds : habit.skillId ? [habit.skillId] : [];
+                        const xpPopupsShown = !isCompleted ? await awardHabitXp(habitId, habitSkillIds) : 0;
                         if (!isCompleted) {
-                          growLinkedBody(habit.bodyLinks ?? [], !!habit.skillId);
+                          growLinkedBody(habit.bodyLinks ?? [], xpPopupsShown);
                         } else {
                           shrinkLinkedBody(habit.bodyLinks ?? []);
                         }
@@ -776,37 +804,10 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                   {
                     onSuccess: async () => {
                       // Award XP and show popup when completing from calendar too
-                      if (!isCompleted && habit.skillId) {
-                        try {
-                          const linkedSkill = globalSkills.find((skillEntry) => skillEntry.id === habit.skillId);
-                          const res = await fetch(`/api/habits/${selectedHabitId}/award-xp`, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                          });
-
-                          if (res.ok) {
-                            const xpData = await res.json();
-                            if (linkedSkill) {
-                              const area = areas.find((areaEntry) => areaEntry.id === linkedSkill.areaId);
-                              hideBodyGainPopup();
-                              showXpPopup({
-                                skillName: linkedSkill.name,
-                                areaColor: area?.color || "#c85a2a",
-                                xpBefore: linkedSkill.currentXp,
-                                xpAfter: linkedSkill.currentXp + (xpData?.xpAwarded || 5),
-                                xpMax: linkedSkill.goalXp || null,
-                                level: linkedSkill.level,
-                              });
-                            }
-                            await refetchGlobalSkills();
-                            await queryClient.refetchQueries({ queryKey: ["skills"] });
-                          }
-                        } catch (error) {
-                          console.error("Error awarding XP:", error);
-                        }
-                      }
+                      const habitSkillIds = habit.skillIds?.length ? habit.skillIds : habit.skillId ? [habit.skillId] : [];
+                      const xpPopupsShown = !isCompleted ? await awardHabitXp(selectedHabitId, habitSkillIds) : 0;
                       if (!isCompleted) {
-                        growLinkedBody(habit.bodyLinks ?? [], !!habit.skillId);
+                        growLinkedBody(habit.bodyLinks ?? [], xpPopupsShown);
                       } else {
                         shrinkLinkedBody(habit.bodyLinks ?? []);
                       }
@@ -824,7 +825,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
               endDate={newHabitEndDate}
               areaId={newHabitAreaId}
               projectId={newHabitProjectId}
-              skillId={newHabitSkillProgressId}
+              skillIds={newHabitSkillIds}
               bodyLinks={newHabitBodyLinks}
               areas={areas}
               projects={projects}
@@ -838,7 +839,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
               onEndDateChange={setNewHabitEndDate}
               onAreaIdChange={setNewHabitAreaId}
               onProjectIdChange={setNewHabitProjectId}
-              onSkillIdChange={setNewHabitSkillProgressId}
+              onSkillIdsChange={setNewHabitSkillIds}
               onBodyLinksChange={setNewHabitBodyLinks}
               onBack={() => {
                 resetForm();
@@ -853,7 +854,8 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                       endDate: newHabitEndDate || undefined,
                       areaId: newHabitAreaId,
                       projectId: newHabitProjectId,
-                      skillId: newHabitSkillProgressId,
+                      skillId: newHabitSkillIds[0] ?? null,
+                      skillIds: newHabitSkillIds,
                       bodyLinks: newHabitBodyLinks,
                       scheduledDays: newHabitScheduledDays,
                       habitType: newHabitType,
@@ -879,7 +881,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
               endDate={editHabitEndDate}
               areaId={editHabitAreaId}
               projectId={editHabitProjectId}
-              skillId={editHabitSkillProgressId}
+              skillIds={editHabitSkillIds}
               bodyLinks={editHabitBodyLinks}
               areas={areas}
               projects={projects}
@@ -893,7 +895,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
               onEndDateChange={setEditHabitEndDate}
               onAreaIdChange={setEditHabitAreaId}
               onProjectIdChange={setEditHabitProjectId}
-              onSkillIdChange={setEditHabitSkillProgressId}
+              onSkillIdsChange={setEditHabitSkillIds}
               onBodyLinksChange={setEditHabitBodyLinks}
               onBack={() => {
                 resetEditForm();
@@ -909,7 +911,8 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                       endDate: editHabitEndDate || undefined,
                       areaId: editHabitAreaId,
                       projectId: editHabitProjectId,
-                      skillId: editHabitSkillProgressId,
+                      skillId: editHabitSkillIds[0] ?? null,
+                      skillIds: editHabitSkillIds,
                       bodyLinks: editHabitBodyLinks,
                       scheduledDays: editHabitScheduledDays,
                       habitType: editHabitType,
@@ -1054,6 +1057,8 @@ function HabitCard({
   const displayBestStreak = broken ? habit.bestStreak : Math.max(streak, habit.bestStreak);
   const isToday = habit.done.has(todayStr);
   const scheduledDays = habit.scheduledDays?.length ? habit.scheduledDays : [0, 1, 2, 3, 4, 5, 6];
+  const todayDayOfWeek = today.getDay() === 0 ? 6 : today.getDay() - 1;
+  const isScheduledToday = scheduledDays.includes(todayDayOfWeek);
 
   // Progreso de la semana actual: el objetivo (weekTotal) son los días agendados, pero una
   // confirmación en un día no agendado también debe reflejarse en la barra (weekCompleted
@@ -1079,6 +1084,8 @@ function HabitCard({
           : broken
             ? "border-border/30 bg-muted/30"
             : `border-border/30 ${theme.hoverBorder}`
+      } ${
+        isScheduledToday ? "shadow-sm" : "opacity-50 saturate-50"
       }`}
     >
       <div className="flex items-center gap-2 mb-3 flex-wrap">
@@ -1086,6 +1093,9 @@ function HabitCard({
         <span className="font-bold text-xs sm:text-sm text-foreground flex-1 min-w-0 truncate">
           {habit.name}
         </span>
+        {isScheduledToday && !isToday && (
+          <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${theme.barFill}`} title="Programado para hoy" />
+        )}
         <span
           className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium flex-shrink-0 whitespace-nowrap ${
             broken
@@ -1275,8 +1285,18 @@ function MainPanel({
   })}`;
 
   const doneCount = habits.filter((h) => h.done.has(todayStr)).length;
-  const miniHabits = habits.filter((h) => h.habitType !== "deep");
-  const deepHabits = habits.filter((h) => h.habitType === "deep");
+
+  const todayDayOfWeek = today.getDay() === 0 ? 6 : today.getDay() - 1;
+  const isScheduledToday = (h: HabitData) => {
+    const days = h.scheduledDays?.length ? h.scheduledDays : [0, 1, 2, 3, 4, 5, 6];
+    return days.includes(todayDayOfWeek);
+  };
+  // Los hábitos programados para hoy se muestran primero.
+  const sortByToday = (list: HabitData[]) =>
+    [...list].sort((a, b) => Number(isScheduledToday(b)) - Number(isScheduledToday(a)));
+
+  const miniHabits = sortByToday(habits.filter((h) => h.habitType !== "deep"));
+  const deepHabits = sortByToday(habits.filter((h) => h.habitType === "deep"));
 
   const todayStr2 = today.toLocaleDateString("es-AR", {
     weekday: "long",
@@ -1794,7 +1814,7 @@ function AddPanel({
   endDate,
   areaId,
   projectId,
-  skillId,
+  skillIds,
   bodyLinks,
   areas,
   projects,
@@ -1804,7 +1824,7 @@ function AddPanel({
   onEndDateChange,
   onAreaIdChange,
   onProjectIdChange,
-  onSkillIdChange,
+  onSkillIdsChange,
   onBodyLinksChange,
   scheduledDays,
   onScheduledDaysChange,
@@ -1819,7 +1839,7 @@ function AddPanel({
   endDate: string;
   areaId: string | null;
   projectId: string | null;
-  skillId: string | null;
+  skillIds: string[];
   bodyLinks: BodyLink[];
   areas: Area[];
   projects: Project[];
@@ -1829,7 +1849,7 @@ function AddPanel({
   onEndDateChange: (date: string) => void;
   onAreaIdChange: (id: string | null) => void;
   onProjectIdChange: (id: string | null) => void;
-  onSkillIdChange: (id: string | null) => void;
+  onSkillIdsChange: (ids: string[]) => void;
   onBodyLinksChange: (links: BodyLink[]) => void;
   scheduledDays: number[];
   onScheduledDaysChange: (days: number[]) => void;
@@ -2035,23 +2055,13 @@ function AddPanel({
         {/* Skill Select */}
         <div>
           <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
-            Skill a linkear
+            Skills a linkear
           </label>
-          <select
-            value={skillId || ""}
-            onChange={(e) => onSkillIdChange(e.target.value || null)}
-            disabled={isLoading}
-            className="mt-2 w-full px-3 py-2.5 border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm appearance-none cursor-pointer touch-manipulation"
-          >
-            <option value="">Sin skill asignado</option>
-            {skills.map((skill) => (
-              <option key={skill.id} value={skill.id}>
-                {skill.name}
-              </option>
-            ))}
-          </select>
+          <div className="mt-2">
+            <SkillLinkPicker skills={skills} value={skillIds} onChange={onSkillIdsChange} disabled={isLoading} emptyLabel="Sin skills disponibles" />
+          </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            Opcional: linkear a un skill para sumar XP al completar
+            Opcional: linkear a uno o más skills para sumar XP al completar
           </p>
         </div>
 
@@ -2096,7 +2106,7 @@ function EditPanel({
   endDate,
   areaId,
   projectId,
-  skillId,
+  skillIds,
   bodyLinks,
   areas,
   projects,
@@ -2106,7 +2116,7 @@ function EditPanel({
   onEndDateChange,
   onAreaIdChange,
   onProjectIdChange,
-  onSkillIdChange,
+  onSkillIdsChange,
   onBodyLinksChange,
   scheduledDays,
   onScheduledDaysChange,
@@ -2123,7 +2133,7 @@ function EditPanel({
   endDate: string;
   areaId: string | null;
   projectId: string | null;
-  skillId: string | null;
+  skillIds: string[];
   bodyLinks: BodyLink[];
   areas: Area[];
   projects: Project[];
@@ -2133,7 +2143,7 @@ function EditPanel({
   onEndDateChange: (date: string) => void;
   onAreaIdChange: (id: string | null) => void;
   onProjectIdChange: (id: string | null) => void;
-  onSkillIdChange: (id: string | null) => void;
+  onSkillIdsChange: (ids: string[]) => void;
   onBodyLinksChange: (links: BodyLink[]) => void;
   scheduledDays: number[];
   onScheduledDaysChange: (days: number[]) => void;
@@ -2337,23 +2347,13 @@ function EditPanel({
         {/* Skill Select */}
         <div>
           <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
-            Skill a linkear
+            Skills a linkear
           </label>
-          <select
-            value={skillId || ""}
-            onChange={(e) => onSkillIdChange(e.target.value || null)}
-            disabled={isLoading}
-            className="mt-2 w-full px-3 py-2.5 border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm appearance-none cursor-pointer touch-manipulation"
-          >
-            <option value="">Sin skill asignado</option>
-            {skills.map((skill) => (
-              <option key={skill.id} value={skill.id}>
-                {skill.name}
-              </option>
-            ))}
-          </select>
+          <div className="mt-2">
+            <SkillLinkPicker skills={skills} value={skillIds} onChange={onSkillIdsChange} disabled={isLoading} emptyLabel="Sin skills disponibles" />
+          </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            Opcional: linkear a un skill para sumar XP al completar
+            Opcional: linkear a uno o más skills para sumar XP al completar
           </p>
         </div>
 

@@ -202,6 +202,7 @@ export const sourceBugRecords = pgTable("source_bug_records", {
   bugId: varchar("bug_id").notNull().references(() => sourceBugs.id, { onDelete: "cascade" }),
   userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
   skillId: varchar("skill_id"),
+  skillIds: jsonb("skill_ids").notNull().$type<string[]>().default([]),
   bodyLinks: jsonb("body_links").notNull().$type<BodyLink[]>().default([]),
   fecha: varchar("fecha").notNull(),
   situacion: text("situacion").notNull(),
@@ -274,6 +275,7 @@ export const habits = pgTable("habits", {
   areaId: varchar("area_id").references(() => areas.id, { onDelete: "set null" }),
   projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
   skillId: varchar("skill_id").references(() => globalSkills.id, { onDelete: "set null" }), // Link to global skill for XP rewards
+  skillIds: jsonb("skill_ids").notNull().$type<string[]>().default([]), // Multiple skills linked for XP rewards
   bodyLinks: jsonb("body_links").notNull().$type<BodyLink[]>().default([]), // Link a componentes corporales para crecimiento de fuerza/flex
   scheduledDays: jsonb("scheduled_days").notNull().$type<number[]>().default([0,1,2,3,4,5,6]), // Days of week (0=Mon, 6=Sun)
   habitType: text("habit_type").notNull().default("mini").$type<"mini" | "deep">(), // "mini" = corta duración/casi diaria, "deep" = actividades más largas y menos frecuentes
@@ -346,6 +348,7 @@ export const rewiringTrackers = pgTable("rewiring_trackers", {
   areaId: varchar("area_id").references(() => areas.id, { onDelete: "set null" }),
   projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
   skillId: varchar("skill_id").references(() => globalSkills.id, { onDelete: "set null" }),
+  skillIds: jsonb("skill_ids").notNull().$type<string[]>().default([]),
   bodyLinks: jsonb("body_links").notNull().$type<BodyLink[]>().default([]), // Link a componentes corporales para crecimiento de fuerza/flex
   startDate: timestamp("start_date").notNull().defaultNow(),
   archivedAt: timestamp("archived_at"),
@@ -441,6 +444,7 @@ export const insertSourceBugRecordSchema = createInsertSchema(sourceBugRecords)
   .omit({ id: true, createdAt: true })
   .extend({
     resultado: z.enum(["victoria", "empate", "derrota"]).optional(),
+    skillIds: z.array(z.string()).optional().default([]),
   });
 export type InsertSourceDescription = z.infer<typeof insertSourceDescriptionSchema>;
 export type SourceDescription = typeof sourceDescriptions.$inferSelect;
@@ -483,7 +487,9 @@ export type InsertUserSkillsProgress = z.infer<typeof insertUserSkillsProgressSc
 export type UserSkillsProgress = typeof userSkillsProgress.$inferSelect;
 export type InsertGlobalSkill = z.infer<typeof insertGlobalSkillSchema>;
 export type GlobalSkill = typeof globalSkills.$inferSelect;
-export const insertHabitSchema = createInsertSchema(habits).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertHabitSchema = createInsertSchema(habits).omit({ id: true, createdAt: true, updatedAt: true }).extend({
+  skillIds: z.array(z.string()).optional().default([]),
+});
 export const insertHabitRecordSchema = createInsertSchema(habitRecords).omit({ id: true, createdAt: true });
 export const insertSpaceRepetitionPracticeSchema = createInsertSchema(spaceRepetitionPractices).omit({ id: true, createdAt: true, updatedAt: true }).extend({
   level: z.enum(["1", "2"]).optional().default("1").transform(v => parseInt(v) as 1 | 2),
@@ -503,7 +509,9 @@ export type Book = typeof booksLibrary.$inferSelect;
 export type InsertBookReadingSession = z.infer<typeof insertBookReadingSessionSchema>;
 export type BookReadingSession = typeof bookReadingSessions.$inferSelect;
 
-export const insertRewiringTrackerSchema = createInsertSchema(rewiringTrackers).omit({ id: true, createdAt: true, updatedAt: true, userId: true });
+export const insertRewiringTrackerSchema = createInsertSchema(rewiringTrackers).omit({ id: true, createdAt: true, updatedAt: true, userId: true }).extend({
+  skillIds: z.array(z.string()).optional().default([]),
+});
 export const insertRewiringTrackerRecordSchema = createInsertSchema(rewiringTrackerRecords).omit({ id: true, createdAt: true, userId: true });
 export type InsertRewiringTracker = z.infer<typeof insertRewiringTrackerSchema>;
 export type RewiringTracker = typeof rewiringTrackers.$inferSelect;
