@@ -197,7 +197,7 @@ function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpen
             >
               <Flame className="h-4 w-4 mx-auto" />
               {pendingHabitsCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 text-[10px] font-bold leading-none text-black dark:text-white">
+                <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full border border-background bg-black px-1 text-[10px] font-bold leading-none text-white dark:bg-white dark:text-black">
                   {pendingHabitsCount > 99 ? "99+" : pendingHabitsCount}
                 </span>
               )}
