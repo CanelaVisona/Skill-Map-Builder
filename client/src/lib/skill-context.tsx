@@ -1519,7 +1519,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ dependencies: updatedDeps }),
         });
-        if (!patchResponse.ok) {
+        // A 404 here means this child was already removed by a concurrent delete
+        // (e.g. deleting two nodes in the same dependency chain back-to-back before
+        // React state caught up) — nothing left to update, so it's not an error.
+        if (!patchResponse.ok && patchResponse.status !== 404) {
           throw new Error(`Error al actualizar dependencias: ${patchResponse.status}`);
         }
       }
@@ -1540,7 +1543,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(patchBody),
         });
-        if (!shiftResponse.ok) {
+        if (!shiftResponse.ok && shiftResponse.status !== 404) {
           throw new Error(`Error al reposicionar skill: ${shiftResponse.status}`);
         }
       }
@@ -1552,7 +1555,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ isFinalNode: 1 }),
         });
-        if (!finalResponse.ok) {
+        if (!finalResponse.ok && finalResponse.status !== 404) {
           throw new Error(`Error al marcar nodo final: ${finalResponse.status}`);
         }
       }
@@ -1889,7 +1892,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ dependencies: updatedDeps }),
         });
-        if (!patchResponse.ok) {
+        // A 404 here means this child was already removed by a concurrent delete
+        // (e.g. deleting two nodes in the same dependency chain back-to-back before
+        // React state caught up) — nothing left to update, so it's not an error.
+        if (!patchResponse.ok && patchResponse.status !== 404) {
           throw new Error(`Error al actualizar dependencias: ${patchResponse.status}`);
         }
       }
@@ -1908,7 +1914,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(patchBody),
         });
-        if (!shiftResponse.ok) {
+        if (!shiftResponse.ok && shiftResponse.status !== 404) {
           throw new Error(`Error al reposicionar skill: ${shiftResponse.status}`);
         }
       }
@@ -1919,7 +1925,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ isFinalNode: 1 }),
         });
-        if (!finalResponse.ok) {
+        if (!finalResponse.ok && finalResponse.status !== 404) {
           throw new Error(`Error al marcar nodo final: ${finalResponse.status}`);
         }
       }
@@ -2831,7 +2837,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ dependencies: updatedDeps }),
         });
-        if (!patchResponse.ok) {
+        // A 404 here means this child was already removed by a concurrent delete
+        // (e.g. deleting two nodes in the same dependency chain back-to-back before
+        // React state caught up) — nothing left to update, so it's not an error.
+        if (!patchResponse.ok && patchResponse.status !== 404) {
           throw new Error(`Error al actualizar dependencias: ${patchResponse.status}`);
         }
       }
@@ -2850,7 +2859,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(patchBody),
         });
-        if (!shiftResponse.ok) {
+        if (!shiftResponse.ok && shiftResponse.status !== 404) {
           throw new Error(`Error al reposicionar skill: ${shiftResponse.status}`);
         }
       }
@@ -2861,7 +2870,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ isFinalNode: 1 }),
         });
-        if (!finalResponse.ok) {
+        if (!finalResponse.ok && finalResponse.status !== 404) {
           throw new Error(`Error al marcar nodo final: ${finalResponse.status}`);
         }
       }
