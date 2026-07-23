@@ -25,7 +25,7 @@ import { BodyProgressProvider, useBodyProgress } from "@/lib/body-progress-conte
 import { BodyGainPopupProvider, useBodyGainPopup } from "@/lib/body-gain-popup-context";
 import { BodyLinkPicker, type BodyLink } from "@/components/BodyLinkPicker";
 import { SkillLinkPicker } from "@/components/SkillLinkPicker";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -7577,6 +7577,7 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
   const [stuckAction, setStuckAction] = useState("");
   const [stuckTitle, setStuckTitle] = useState("");
   const [selectedNavLevelId, setSelectedNavLevelId] = useState<string | null>(null);
+  const [viewingLevelSubtitle, setViewingLevelSubtitle] = useState<{ subtitle: string; description: string } | null>(null);
 
   const handleStuckDialogClose = (open: boolean) => {
     if (!open) {
@@ -7970,6 +7971,7 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
   const containerMinWidth = `calc(${maxX}% + 100px)`;
   const nextPendingSkill = visibleSkills.find((s: Skill) => s.status === "available") || visibleSkills.find((s: Skill) => s.status !== "mastered") || null;
   const levelSubtitles = isProject ? (activeProject?.levelSubtitles || {}) : (activeArea?.levelSubtitles || {});
+  const levelSubtitleDescriptions = isProject ? (activeProject?.levelSubtitleDescriptions || {}) : (activeArea?.levelSubtitleDescriptions || {});
   const navLevels: LevelNavItem[] = Array.from(levelGroups.keys())
     .sort((a, b) => a - b)
     .map((level) => {
@@ -8375,10 +8377,11 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
                   
                   // Get level subtitle
                   const subtitle = levelSubtitles[level.toString()] || "";
-                  
+                  const subtitleDescription = levelSubtitleDescriptions[level.toString()] || "";
+
                   // Si no hay subtítulo, no mostrar nada
                   if (!subtitle) return [];
-                  
+
                   const isNewOrUpdatedQuest = !levelCompleted;
                   
                   // Calculate max width: leave some space before the node position
@@ -8428,13 +8431,18 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
                       {questText.replace(":", "")}
                     </div>
                     <div
-                      className={`font-bold mt-1 break-words ${isNewOrUpdatedQuest ? 'text-amber-300' : 'text-muted-foreground'}`}
+                      className={`font-bold mt-1 break-words ${isNewOrUpdatedQuest ? 'text-amber-300' : 'text-muted-foreground'} ${subtitleDescription ? 'cursor-pointer hover:underline' : ''}`}
                       style={{
                         ...(isNewOrUpdatedQuest && {
                           textShadow: "0 0 15px rgba(251, 191, 36, 0.6), 0 0 30px rgba(251, 191, 36, 0.3)",
                         }),
                         letterSpacing: "0.05em",
                         fontSize: "clamp(0.875rem, 3vw, 1.125rem)"
+                      }}
+                      onClick={(e) => {
+                        if (!subtitleDescription) return;
+                        e.stopPropagation();
+                        setViewingLevelSubtitle({ subtitle, description: subtitleDescription });
                       }}
                     >
                       {subtitle}
@@ -8478,6 +8486,17 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
           <ChevronDown className="h-5 w-5 mx-auto" />
         </button>
       )}
+
+      <Dialog open={!!viewingLevelSubtitle} onOpenChange={(open) => !open && setViewingLevelSubtitle(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{viewingLevelSubtitle?.subtitle}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+            {viewingLevelSubtitle?.description}
+          </p>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

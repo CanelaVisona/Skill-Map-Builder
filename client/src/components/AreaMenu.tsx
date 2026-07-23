@@ -6,6 +6,7 @@ import { useBodyProgress } from "@/lib/body-progress-context";
 import type { BodyLink } from "@/components/BodyLinkPicker";
 import { useToast } from "@/hooks/use-toast";
 import { ProgressBar } from "@/components/ProgressBar";
+import { PowerCelebration, type PowerCelebrationState } from "@/components/PowerCelebration";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut, Archive, ArchiveRestore, Pencil, Zap, ChevronDown, ChevronRight, Mountain, Compass, Scroll, Eye, Swords, Lock, Target, Shield, Star, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor } from "lucide-react";
@@ -178,6 +179,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
   const [powerContextMenuId, setPowerContextMenuId] = useState<string | null>(null);
   const powerLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const powerLongPressCompleted = useRef(false);
+  const [powerCelebration, setPowerCelebration] = useState<PowerCelebrationState | null>(null);
   const backgroundLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [selectedBugId, setSelectedBugId] = useState<string | null>(null);
   const [bugMoreOpen, setBugMoreOpen] = useState(false);
@@ -1168,8 +1170,9 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     : Math.min(selectedBug?.victoryCount || 0, 5);
   const bugProgressPercent = (bugProgressCount / 5) * 100;
 
+  const totalPowerCount = (powers || []).length;
   const masteredPowerCount = (powers || []).filter((p) => p.isUnlocked === 2).length;
-  const powerLevelProgress = masteredPowerCount % 5;
+  const unlockedPowerCount = (powers || []).filter((p) => p.isUnlocked >= 1).length;
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -1271,21 +1274,11 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
               onPointerCancel={handleBackgroundPointerUp}
             >
               <div>
-                <div className="mb-4">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-medium">Poderes · Nivel {Math.floor(masteredPowerCount / 5) + 1}</span>
-                    <span className="text-xs text-muted-foreground">{powerLevelProgress} / 5 para subir</span>
-                  </div>
-                  <div className="flex gap-1">
-                    {Array.from({ length: 5 }).map((_, i) => (
-                      <div
-                        key={i}
-                        className={`h-[3px] flex-1 rounded-full transition-all duration-300 ${
-                          i < powerLevelProgress ? "bg-gradient-to-r from-[#9A5E17] via-[#EF9F27] to-[#FAC775]" : "bg-white/10"
-                        }`}
-                      />
-                    ))}
-                  </div>
+                <div className="mb-4 flex items-center justify-between">
+                  <span className="text-sm font-medium">Poderes</span>
+                  <span className="text-xs text-muted-foreground">
+                    <span className="font-medium text-[#FAC775]">{masteredPowerCount}</span> dominados · {unlockedPowerCount} desbloqueados de {totalPowerCount}
+                  </span>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
@@ -1312,6 +1305,13 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                               if (!powerLongPressCompleted.current) {
                                 const next = ((power.isUnlocked + 1) % 3) as 0 | 1 | 2;
                                 updatePower.mutate({ id: power.id, data: { isUnlocked: next } });
+                                if (next === 1) {
+                                  setPowerCelebration({ name: power.name, kind: "unlocked" });
+                                  setTimeout(() => setPowerCelebration(null), 1800);
+                                } else if (next === 2) {
+                                  setPowerCelebration({ name: power.name, kind: "confirmed" });
+                                  setTimeout(() => setPowerCelebration(null), 1800);
+                                }
                               }
                               setTimeout(() => {
                                 powerLongPressCompleted.current = false;
@@ -1918,6 +1918,8 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
           </div>
         </DialogContent>
       </Dialog>
+
+      <PowerCelebration celebration={powerCelebration} />
     </Dialog>
   );
 }
