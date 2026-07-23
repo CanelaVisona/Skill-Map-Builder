@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { ChevronUp, ChevronDown, Lock, Plus, Trash2 } from "lucide-react";
+import { ChevronUp, ChevronDown, Lock, Plus, Trash2, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SkillDesignerProps {
@@ -16,7 +16,7 @@ interface SkillDesignerProps {
 }
 
 export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
-  const { areas, projects, activeAreaId, activeProjectId, updateSkill, updateProjectSkill, updateLevelSubtitle, updateProjectLevelSubtitle, moveSkillToLevel, moveProjectSkillToLevel, reorderSkillWithinLevel, reorderProjectSkillWithinLevel, addSkillBelow, addProjectSkillBelow, deleteSkill, deleteProjectSkill } = useSkillTree();
+  const { areas, projects, activeAreaId, activeProjectId, updateSkill, updateProjectSkill, updateLevelSubtitle, updateProjectLevelSubtitle, moveSkillToLevel, moveProjectSkillToLevel, reorderSkillWithinLevel, reorderProjectSkillWithinLevel, addSkillBelow, addProjectSkillBelow, deleteSkill, deleteProjectSkill, toggleFinalNode, toggleProjectFinalNode } = useSkillTree();
   const [editingSkillId, setEditingSkillId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
   const [editingAreaId, setEditingAreaId] = useState<string | null>(null);
@@ -198,6 +198,15 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
     return skill.levelPosition === (availableSkill.levelPosition ?? 0) - 1;
   };
 
+  // The star toggle only makes sense on the last node of a level - that's the
+  // one whose confirmation can close out the whole area/project.
+  const isLastNodeInLevel = (skillsInLevel: any[], skillId: string): boolean => {
+    const skill = skillsInLevel.find(s => s.id === skillId);
+    if (!skill) return false;
+    const maxLevelPosition = Math.max(...skillsInLevel.map(s => s.levelPosition ?? 0));
+    return skill.levelPosition === maxLevelPosition;
+  };
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -314,6 +323,17 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                               >
                                                 <Plus className="w-4 h-4" />
                                               </Button>
+                                              {isLastNodeInLevel(skillsInLevel, skill.id) && (
+                                                <Button
+                                                  size="sm"
+                                                  variant="ghost"
+                                                  onClick={() => toggleFinalNode(area.id, skill.id)}
+                                                  className="h-8 w-8"
+                                                  title={area.endOfAreaLevel === level ? "Quitar nodo final final" : "Marcar como nodo final final"}
+                                                >
+                                                  <Star className={cn("w-4 h-4", area.endOfAreaLevel === level ? "fill-amber-400 text-amber-400" : "text-muted-foreground")} />
+                                                </Button>
+                                              )}
                                               <Button
                                                 size="sm"
                                                 variant="ghost"
@@ -464,6 +484,17 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                 >
                                                   <Plus className="w-4 h-4" />
                                                 </Button>
+                                                {isLastNodeInLevel(skillsInLevel, skill.id) && (
+                                                  <Button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    onClick={() => toggleProjectFinalNode(project.id, skill.id)}
+                                                    className="h-8 w-8"
+                                                    title={project.endOfAreaLevel === level ? "Quitar nodo final final" : "Marcar como nodo final final"}
+                                                  >
+                                                    <Star className={cn("w-4 h-4", project.endOfAreaLevel === level ? "fill-amber-400 text-amber-400" : "text-muted-foreground")} />
+                                                  </Button>
+                                                )}
                                                 <Button
                                                   size="sm"
                                                   variant="ghost"
@@ -608,6 +639,17 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                               >
                                                 <Plus className="w-4 h-4" />
                                               </Button>
+                                              {isLastNodeInLevel(skillsInLevel, skill.id) && (
+                                                <Button
+                                                  size="sm"
+                                                  variant="ghost"
+                                                  onClick={() => toggleProjectFinalNode(project.id, skill.id)}
+                                                  className="h-8 w-8"
+                                                  title={project.endOfAreaLevel === level ? "Quitar nodo final final" : "Marcar como nodo final final"}
+                                                >
+                                                  <Star className={cn("w-4 h-4", project.endOfAreaLevel === level ? "fill-amber-400 text-amber-400" : "text-muted-foreground")} />
+                                                </Button>
+                                              )}
                                               <Button
                                                 size="sm"
                                                 variant="ghost"
@@ -749,6 +791,17 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                             >
                                               <Plus className="w-4 h-4" />
                                             </Button>
+                                            {isLastNodeInLevel(skillsInLevel, skill.id) && (
+                                              <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                onClick={() => toggleProjectFinalNode(project.id, skill.id)}
+                                                className="h-8 w-8"
+                                                title={project.endOfAreaLevel === level ? "Quitar nodo final final" : "Marcar como nodo final final"}
+                                              >
+                                                <Star className={cn("w-4 h-4", project.endOfAreaLevel === level ? "fill-amber-400 text-amber-400" : "text-muted-foreground")} />
+                                              </Button>
+                                            )}
                                             <Button
                                               size="sm"
                                               variant="ghost"
