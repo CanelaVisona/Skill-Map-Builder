@@ -115,8 +115,8 @@ export function PowerCelebration({ celebration }: PowerCelebrationProps) {
       {celebration && (
         <motion.div
           key="power-unlocked-toast"
-          className="fixed left-1/2 top-4 z-[300] -translate-x-1/2 pointer-events-none"
-          initial={{ opacity: 0, y: -10 }}
+          className="fixed left-1/2 top-1/2 z-[300] -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+          initial={{ opacity: 0, y: -6 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -6 }}
           transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
