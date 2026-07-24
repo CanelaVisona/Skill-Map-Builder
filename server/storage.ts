@@ -1,7 +1,7 @@
 import { eq, and, asc, sql, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db, pool } from "./db";
-import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type JournalShadowPage, type InsertJournalShadowPage, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourcePowers, type InsertSourcePowers, type SourceBug, type InsertSourceBug, type SourceBugRecord, type InsertSourceBugRecord, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, type BodyProgressRow, type InsertBodyProgress, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, journalShadowPages, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourcePowers, sourceBugs, sourceBugRecords, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, rewiringTrackers, rewiringTrackerRecords, bodyProgress } from "@shared/schema";
+import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type JournalShadowPage, type InsertJournalShadowPage, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourceObjective, type InsertSourceObjective, type SourcePowers, type InsertSourcePowers, type SourceBug, type InsertSourceBug, type SourceBugRecord, type InsertSourceBugRecord, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, type BodyProgressRow, type InsertBodyProgress, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, journalShadowPages, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourceObjectives, sourcePowers, sourceBugs, sourceBugRecords, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, rewiringTrackers, rewiringTrackerRecords, bodyProgress } from "@shared/schema";
 
 const normalizeSourceBugStatus = (status: string): "identificado" | "debugueando" | "debugueado" => {
   if (status === "activo") return "identificado";
@@ -150,6 +150,10 @@ export interface IStorage {
   createSourceGrowth(entry: InsertSourceGrowth): Promise<SourceGrowth>;
   updateSourceGrowth(id: string, entry: Partial<InsertSourceGrowth>): Promise<SourceGrowth | undefined>;
   deleteSourceGrowth(id: string): Promise<void>;
+  getSourceObjectives(userId: string, type: "area" | "project", sourceId: string): Promise<SourceObjective[]>;
+  createSourceObjective(entry: InsertSourceObjective): Promise<SourceObjective>;
+  updateSourceObjective(id: string, entry: Partial<InsertSourceObjective>): Promise<SourceObjective | undefined>;
+  deleteSourceObjective(id: string): Promise<void>;
 
   getSourcePowers(userId: string, type: "area" | "project", sourceId: string): Promise<SourcePowers[]>;
   createSourcePower(entry: InsertSourcePowers): Promise<SourcePowers>;
@@ -1455,6 +1459,34 @@ export class DbStorage implements IStorage {
 
   async deleteSourceGrowth(id: string): Promise<void> {
     await db.delete(sourceGrowth).where(eq(sourceGrowth.id, id));
+  }
+
+  // Source Objectives
+  async getSourceObjectives(userId: string, type: "area" | "project", sourceId: string): Promise<SourceObjective[]> {
+    if (type === "area") {
+      return await db.select().from(sourceObjectives).where(
+        and(eq(sourceObjectives.userId, userId), eq(sourceObjectives.areaId, sourceId))
+      );
+    } else {
+      return await db.select().from(sourceObjectives).where(
+        and(eq(sourceObjectives.userId, userId), eq(sourceObjectives.projectId, sourceId))
+      );
+    }
+  }
+
+  async createSourceObjective(entry: InsertSourceObjective): Promise<SourceObjective> {
+    const id = randomUUID();
+    const result = await db.insert(sourceObjectives).values({ id, ...entry }).returning();
+    return result[0];
+  }
+
+  async updateSourceObjective(id: string, entry: Partial<InsertSourceObjective>): Promise<SourceObjective | undefined> {
+    const result = await db.update(sourceObjectives).set(entry).where(eq(sourceObjectives.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteSourceObjective(id: string): Promise<void> {
+    await db.delete(sourceObjectives).where(eq(sourceObjectives.id, id));
   }
 
   async getSourcePowers(userId: string, type: "area" | "project", sourceId: string): Promise<SourcePowers[]> {

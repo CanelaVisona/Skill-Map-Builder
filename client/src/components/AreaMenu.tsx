@@ -294,6 +294,16 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     enabled: isOpen,
   });
 
+  // Fetch source objectives
+  const { data: objectives = [] } = useQuery<SourceEntry[]>({
+    queryKey: [`/api/source-objectives/${sourceType}/${sourceId}`],
+    queryFn: async () => {
+      const res = await fetch(`/api/source-objectives/${sourceType}/${sourceId}`);
+      return res.json();
+    },
+    enabled: isOpen,
+  });
+
   // Fetch source powers
   const { data: powers = [], isError: powersError } = useQuery<SourcePower[]>({
     queryKey: [`/api/source-powers/${sourceType}/${sourceId}`],
@@ -376,6 +386,26 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     },
   });
 
+  const createObjective = useMutation({
+    mutationFn: async (data: { name: string; description: string }) => {
+      const body = sourceType === "area"
+        ? { ...data, areaId: sourceId }
+        : { ...data, projectId: sourceId };
+      const res = await fetch("/api/source-objectives", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/source-objectives/${sourceType}/${sourceId}`] });
+      setIsAdding(false);
+      setName("");
+      setDescription("");
+    },
+  });
+
   const deleteDescription = useMutation({
     mutationFn: async (id: string) => {
       await fetch(`/api/source-descriptions/${id}`, { method: "DELETE" });
@@ -391,6 +421,15 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/source-growth/${sourceType}/${sourceId}`] });
+    },
+  });
+
+  const deleteObjective = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/source-objectives/${id}`, { method: "DELETE" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/source-objectives/${sourceType}/${sourceId}`] });
     },
   });
 
@@ -422,6 +461,23 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/source-growth/${sourceType}/${sourceId}`] });
+      setEditingEntry(null);
+      setName("");
+      setDescription("");
+    },
+  });
+
+  const updateObjective = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { name: string; description: string } }) => {
+      const res = await fetch(`/api/source-objectives/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/source-objectives/${sourceType}/${sourceId}`] });
       setEditingEntry(null);
       setName("");
       setDescription("");
@@ -795,6 +851,8 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     }
     if (activeTab === "description") {
       createDescription.mutate({ name: finalName, description: description.trim() });
+    } else if (activeTab === "objectives") {
+      createObjective.mutate({ name: finalName, description: description.trim() });
     } else if (activeTab === "growth") {
       createGrowth.mutate({ name: finalName, description: description.trim() });
     } else if (activeTab === "experiences") {
@@ -825,6 +883,8 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     }
     if (activeTab === "description") {
       updateDescription.mutate({ id: editingEntry.id, data: { name: finalName, description: description.trim() } });
+    } else if (activeTab === "objectives") {
+      updateObjective.mutate({ id: editingEntry.id, data: { name: finalName, description: description.trim() } });
     } else if (activeTab === "growth") {
       updateGrowth.mutate({ id: editingEntry.id, data: { name: finalName, description: description.trim() } });
     } else if (activeTab === "experiences") {
@@ -1183,6 +1243,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
         <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-2 flex min-h-0 flex-1 flex-col">
           <TabsList className="flex w-full flex-nowrap justify-start gap-1 overflow-x-auto overflow-y-hidden">
             <TabsTrigger value="description" className="shrink-0 text-xs">Background</TabsTrigger>
+            <TabsTrigger value="objectives" className="shrink-0 text-xs">Objetivos</TabsTrigger>
             <TabsTrigger value="bugs" className="shrink-0 text-xs">Bugs</TabsTrigger>
             <TabsTrigger value="powers" className="shrink-0 text-xs">Poderes</TabsTrigger>
             <TabsTrigger value="experiences" className="shrink-0 text-xs">Experiencias</TabsTrigger>
@@ -1199,10 +1260,29 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
             >
               {renderEntryList(descriptions, true, (id) => deleteDescription.mutate(id), handleStartEdit)}
             </ScrollArea>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="mt-3 w-full" 
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3 w-full"
+              onClick={() => setIsAdding(true)}
+            >
+              <Plus className="h-4 w-4 mr-1" /> Agregar
+            </Button>
+          </TabsContent>
+
+          <TabsContent value="objectives" className="mt-4 min-h-0">
+            <ScrollArea
+              className="h-[min(52dvh,320px)] pr-4"
+              onPointerDown={handleBackgroundPointerDown}
+              onPointerUp={handleBackgroundPointerUp}
+              onPointerCancel={handleBackgroundPointerUp}
+            >
+              {renderEntryList(objectives, true, (id) => deleteObjective.mutate(id), handleStartEdit)}
+            </ScrollArea>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3 w-full"
               onClick={() => setIsAdding(true)}
             >
               <Plus className="h-4 w-4 mr-1" /> Agregar
