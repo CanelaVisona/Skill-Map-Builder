@@ -149,13 +149,6 @@ function computeBestStreakFromRecords(done: Set<string>, scheduledDays?: number[
   return best;
 }
 
-// Helper function to count freezes used this month
-function countFreezesThisMonth(frozenDates: Set<string>): number {
-  const now = new Date();
-  const prefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  return Array.from(frozenDates).filter((d) => d.startsWith(prefix)).length;
-}
-
 export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) {
   const [currentPanel, setCurrentPanel] = useState<PanelType>("main");
   const [selectedHabitId, setSelectedHabitId] = useState<string | null>(null);
@@ -559,21 +552,6 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
     },
   });
 
-  const freezeHabitMutation = useMutation({
-    mutationFn: async ({ habitId, frozenDates }: { habitId: string; frozenDates: string[] }) => {
-      const res = await fetch(`/api/habits/${habitId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ freezeDates: frozenDates }),
-      });
-      if (!res.ok) throw new Error("Failed to freeze habit");
-      return res.json();
-    },
-    onSuccess: async () => {
-      await queryClient.refetchQueries({ queryKey: ["habits"] });
-    },
-  });
-
   // Fetch records when modal opens or habits change
   if (open && habitsWithRecords.length === 0 && habits.length > 0) {
     // Initialize daily refresh date on first load
@@ -754,15 +732,6 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                     }
                   );
                 }
-              }}
-              onFreeze={(habitId) => {
-                const habit = habitsWithRecords.find((h) => h.id === habitId);
-                if (!habit) return;
-                const yesterday = new Date();
-                yesterday.setDate(yesterday.getDate() - 1);
-                const yesterdayStr = getLocalDateString(yesterday);
-                const updatedFreezes = [...Array.from(habit.frozenDates), yesterdayStr];
-                freezeHabitMutation.mutate({ habitId, frozenDates: updatedFreezes });
               }}
               isLoading={habitsLoading}
             />
@@ -1037,7 +1006,6 @@ function HabitCard({
   weekDays,
   onToggle,
   onDetailed,
-  onFreeze,
   onPressStart,
   onPressEnd,
 }: {
@@ -1047,7 +1015,6 @@ function HabitCard({
   weekDays: Date[];
   onToggle: (habitId: string) => void;
   onDetailed: (id: string) => void;
-  onFreeze: (habitId: string) => void;
   onPressStart: (habitId: string) => void;
   onPressEnd: (habitId: string) => void;
 }) {
@@ -1061,13 +1028,16 @@ function HabitCard({
 
   let daysRemaining: number | null = null;
   let endProgressPct = 0;
+  let elapsedDaysClamped = 0;
+  let totalDays = 0;
   if (habit.endDate) {
     const start = new Date(habit.createdAt);
     start.setHours(0, 0, 0, 0);
     const end = new Date(habit.endDate + "T00:00:00");
     end.setHours(0, 0, 0, 0);
-    const totalDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000));
+    totalDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000));
     const elapsedDays = Math.round((today.getTime() - start.getTime()) / 86400000);
+    elapsedDaysClamped = Math.min(totalDays, Math.max(0, elapsedDays));
     daysRemaining = Math.ceil((end.getTime() - today.getTime()) / 86400000);
     endProgressPct = Math.min(100, Math.max(0, (elapsedDays / totalDays) * 100));
   }
@@ -1153,6 +1123,10 @@ function HabitCard({
               {Math.round(endProgressPct)}%
             </span>
           </div>
+          <div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground">
+            <span>{elapsedDaysClamped} pasados</span>
+            <span>{Math.max(0, daysRemaining)} faltan</span>
+          </div>
         </div>
       )}
 
@@ -1217,32 +1191,6 @@ function HabitCard({
         </p>
       </div>
 
-      {broken && (
-        <div>
-          {(() => {
-            const yesterday = new Date(today);
-            yesterday.setDate(yesterday.getDate() - 1);
-            const yesterdayStr = getLocalDateString(yesterday);
-            const yesterdayDow = yesterday.getDay() === 0 ? 6 : yesterday.getDay() - 1;
-            const canFreeze =
-              scheduledDays.includes(yesterdayDow) &&
-              !habit.frozenDates.has(yesterdayStr) &&
-              countFreezesThisMonth(habit.frozenDates) < 7;
-
-            return canFreeze ? (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onFreeze(habit.id);
-                }}
-                className="mt-1 text-xs text-blue-400 border border-blue-400/30 rounded-full px-3 py-1 hover:bg-blue-400/10 transition-colors"
-              >
-                🧊 Freeze x7
-              </button>
-            ) : null;
-          })()}
-        </div>
-      )}
     </div>
   );
 }
@@ -1255,7 +1203,6 @@ function MainPanel({
   onAddClick,
   onEditClick,
   onToggle,
-  onFreeze,
   isLoading,
 }: {
   habits: HabitData[];
@@ -1265,7 +1212,6 @@ function MainPanel({
   onAddClick: () => void;
   onEditClick: (id: string) => void;
   onToggle: (habitId: string) => void;
-  onFreeze: (habitId: string) => void;
   isLoading: boolean;
 }) {
   const today = new Date();
@@ -1432,7 +1378,7 @@ function MainPanel({
             {challengeHabits.length > 0 && (
               <div className="flex flex-col gap-2 sm:gap-1.5">
                 <h3 className="text-xs font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400">
-                  🔥 Challenges actuales
+                  🔥 Challanges
                 </h3>
                 {challengeHabits.map((habit) => (
                   <HabitCard
@@ -1443,7 +1389,6 @@ function MainPanel({
                     weekDays={weekDays}
                     onToggle={onToggle}
                     onDetailed={onDetailed}
-                    onFreeze={onFreeze}
                     onPressStart={handleHabitPressStart}
                     onPressEnd={handleHabitPressEnd}
                   />
@@ -1465,7 +1410,6 @@ function MainPanel({
                     weekDays={weekDays}
                     onToggle={onToggle}
                     onDetailed={onDetailed}
-                    onFreeze={onFreeze}
                     onPressStart={handleHabitPressStart}
                     onPressEnd={handleHabitPressEnd}
                   />
@@ -1487,7 +1431,6 @@ function MainPanel({
                     weekDays={weekDays}
                     onToggle={onToggle}
                     onDetailed={onDetailed}
-                    onFreeze={onFreeze}
                     onPressStart={handleHabitPressStart}
                     onPressEnd={handleHabitPressEnd}
                   />
