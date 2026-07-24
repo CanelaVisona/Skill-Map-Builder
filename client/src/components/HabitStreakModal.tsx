@@ -1054,17 +1054,23 @@ function HabitCard({
   const theme = HABIT_THEME[habit.habitType === "deep" ? "deep" : "mini"];
   const streak = computeStreakGlobal(habit.done, habit.scheduledDays, today, habit.frozenDates);
   const broken = isStreakBrokenGlobal(habit.done, habit.scheduledDays, today, habit.frozenDates);
-  const displayBestStreak = broken ? habit.bestStreak : Math.max(streak, habit.bestStreak);
   const isToday = habit.done.has(todayStr);
   const scheduledDays = habit.scheduledDays?.length ? habit.scheduledDays : [0, 1, 2, 3, 4, 5, 6];
   const todayDayOfWeek = today.getDay() === 0 ? 6 : today.getDay() - 1;
   const isScheduledToday = scheduledDays.includes(todayDayOfWeek);
 
-  const daysRemaining = habit.endDate
-    ? Math.ceil(
-        (new Date(habit.endDate + "T00:00:00").getTime() - today.getTime()) / 86400000
-      )
-    : null;
+  let daysRemaining: number | null = null;
+  let endProgressPct = 0;
+  if (habit.endDate) {
+    const start = new Date(habit.createdAt);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(habit.endDate + "T00:00:00");
+    end.setHours(0, 0, 0, 0);
+    const totalDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000));
+    const elapsedDays = Math.round((today.getTime() - start.getTime()) / 86400000);
+    daysRemaining = Math.ceil((end.getTime() - today.getTime()) / 86400000);
+    endProgressPct = Math.min(100, Math.max(0, (elapsedDays / totalDays) * 100));
+  }
 
   // Progreso de la semana actual: el objetivo (weekTotal) son los días agendados, pero una
   // confirmación en un día no agendado también debe reflejarse en la barra (weekCompleted
@@ -1111,13 +1117,6 @@ function HabitCard({
         >
           {broken ? "— racha rota" : `🔥 ${streak}`}
         </span>
-        {daysRemaining !== null && (
-          <span className="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium flex-shrink-0 whitespace-nowrap bg-amber-500/20 text-amber-700 dark:text-amber-400">
-            {daysRemaining > 0
-              ? `⏳ ${daysRemaining} día${daysRemaining === 1 ? "" : "s"}`
-              : "⏳ Último día"}
-          </span>
-        )}
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -1139,24 +1138,20 @@ function HabitCard({
         </div>
       )}
 
-      {/* Banner de mejor racha: solo se muestra una vez que hay una racha superada (> 0) */}
-      {displayBestStreak > 0 && (
-        <div className={`mb-2 rounded-xl border px-3 py-2 text-center ${theme.bannerBg}`}>
-          <p className={`text-xs font-bold ${theme.bannerText}`}>
-            Mejor racha: {displayBestStreak} días 🔥
-          </p>
-          {streak > 0 && streak >= displayBestStreak ? (
-            <p className="text-xs text-yellow-400">🏆 ¡Nuevo récord!</p>
-          ) : streak > 0 && streak >= displayBestStreak - 2 ? (
-            <p className="text-xs text-muted-foreground">¡Estás cerca del récord!</p>
-          ) : (
-            <p className="text-xs text-muted-foreground">¡Supérala para crear un nuevo récord!</p>
-          )}
-          <div className={`mt-1.5 h-1 w-full rounded-full ${theme.barBg}`}>
+      {/* Barra de progreso hasta el endDate */}
+      {daysRemaining !== null && (
+        <div className="mb-6 mt-6">
+          <div className="relative h-1 w-full rounded-full bg-muted-foreground/40">
             <div
-              className={`h-full rounded-full transition-all ${theme.barFill}`}
-              style={{ width: `${Math.min(100, (streak / Math.max(displayBestStreak, 1)) * 100)}%` }}
+              className="h-full rounded-full bg-amber-500/40 transition-all"
+              style={{ width: `${endProgressPct}%` }}
             />
+            <span
+              className="absolute -top-3.5 -translate-x-1/2 whitespace-nowrap text-[10px] font-medium text-amber-600 dark:text-amber-400 transition-all"
+              style={{ left: `${Math.min(96, Math.max(4, endProgressPct))}%` }}
+            >
+              {Math.round(endProgressPct)}%
+            </span>
           </div>
         </div>
       )}
