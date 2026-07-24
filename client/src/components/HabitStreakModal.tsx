@@ -1060,6 +1060,12 @@ function HabitCard({
   const todayDayOfWeek = today.getDay() === 0 ? 6 : today.getDay() - 1;
   const isScheduledToday = scheduledDays.includes(todayDayOfWeek);
 
+  const daysRemaining = habit.endDate
+    ? Math.ceil(
+        (new Date(habit.endDate + "T00:00:00").getTime() - today.getTime()) / 86400000
+      )
+    : null;
+
   // Progreso de la semana actual: el objetivo (weekTotal) son los días agendados, pero una
   // confirmación en un día no agendado también debe reflejarse en la barra (weekCompleted
   // cuenta cualquier día hecho, agendado o no).
@@ -1105,6 +1111,13 @@ function HabitCard({
         >
           {broken ? "— racha rota" : `🔥 ${streak}`}
         </span>
+        {daysRemaining !== null && (
+          <span className="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium flex-shrink-0 whitespace-nowrap bg-amber-500/20 text-amber-700 dark:text-amber-400">
+            {daysRemaining > 0
+              ? `⏳ ${daysRemaining} día${daysRemaining === 1 ? "" : "s"}`
+              : "⏳ Último día"}
+          </span>
+        )}
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -1126,25 +1139,27 @@ function HabitCard({
         </div>
       )}
 
-      {/* Banner de mejor racha */}
-      <div className={`mb-2 rounded-xl border px-3 py-2 text-center ${theme.bannerBg}`}>
-        <p className={`text-xs font-bold ${theme.bannerText}`}>
-          Mejor racha: {displayBestStreak} días 🔥
-        </p>
-        {streak > 0 && streak >= displayBestStreak ? (
-          <p className="text-xs text-yellow-400">🏆 ¡Nuevo récord!</p>
-        ) : streak > 0 && streak >= displayBestStreak - 2 ? (
-          <p className="text-xs text-muted-foreground">¡Estás cerca del récord!</p>
-        ) : (
-          <p className="text-xs text-muted-foreground">¡Supérala para crear un nuevo récord!</p>
-        )}
-        <div className={`mt-1.5 h-1 w-full rounded-full ${theme.barBg}`}>
-          <div
-            className={`h-full rounded-full transition-all ${theme.barFill}`}
-            style={{ width: `${Math.min(100, (streak / Math.max(displayBestStreak, 1)) * 100)}%` }}
-          />
+      {/* Banner de mejor racha: solo se muestra una vez que hay una racha superada (> 0) */}
+      {displayBestStreak > 0 && (
+        <div className={`mb-2 rounded-xl border px-3 py-2 text-center ${theme.bannerBg}`}>
+          <p className={`text-xs font-bold ${theme.bannerText}`}>
+            Mejor racha: {displayBestStreak} días 🔥
+          </p>
+          {streak > 0 && streak >= displayBestStreak ? (
+            <p className="text-xs text-yellow-400">🏆 ¡Nuevo récord!</p>
+          ) : streak > 0 && streak >= displayBestStreak - 2 ? (
+            <p className="text-xs text-muted-foreground">¡Estás cerca del récord!</p>
+          ) : (
+            <p className="text-xs text-muted-foreground">¡Supérala para crear un nuevo récord!</p>
+          )}
+          <div className={`mt-1.5 h-1 w-full rounded-full ${theme.barBg}`}>
+            <div
+              className={`h-full rounded-full transition-all ${theme.barFill}`}
+              style={{ width: `${Math.min(100, (streak / Math.max(displayBestStreak, 1)) * 100)}%` }}
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Week circles: los días agendados se ven con prioridad, el resto se atenúa */}
       <div className="flex gap-1 sm:gap-1.5 items-center">
@@ -1295,8 +1310,24 @@ function MainPanel({
   const sortByToday = (list: HabitData[]) =>
     [...list].sort((a, b) => Number(isScheduledToday(b)) - Number(isScheduledToday(a)));
 
-  const miniHabits = sortByToday(habits.filter((h) => h.habitType !== "deep"));
-  const deepHabits = sortByToday(habits.filter((h) => h.habitType === "deep"));
+  // Un "challenge" es un hábito con fecha de fin definida cuya duración total
+  // (desde que se creó hasta el endDate) es menor a 24 días.
+  const habitDurationDays = (h: HabitData) => {
+    if (!h.endDate) return null;
+    const start = new Date(h.createdAt);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(h.endDate + "T00:00:00");
+    end.setHours(0, 0, 0, 0);
+    return Math.round((end.getTime() - start.getTime()) / 86400000);
+  };
+  const isChallenge = (h: HabitData) => {
+    const duration = habitDurationDays(h);
+    return duration !== null && duration < 24;
+  };
+
+  const challengeHabits = sortByToday(habits.filter((h) => isChallenge(h)));
+  const miniHabits = sortByToday(habits.filter((h) => h.habitType !== "deep" && !isChallenge(h)));
+  const deepHabits = sortByToday(habits.filter((h) => h.habitType === "deep" && !isChallenge(h)));
 
   const todayStr2 = today.toLocaleDateString("es-AR", {
     weekday: "long",
@@ -1393,7 +1424,7 @@ function MainPanel({
         </div>
       </div>
 
-      {/* Habits List: separadas en Mini tareas (rápidas) y Deep tareas (más largas/infrecuentes) */}
+      {/* Habits List: separadas en Challenges actuales (duración < 24 días), Mini tareas (rápidas) y Deep tareas (más largas/infrecuentes) */}
       <div className="px-3 sm:px-5 py-3 flex flex-col gap-4 max-h-80 overflow-y-auto">
         {isLoading ? (
           <p className="text-sm text-muted-foreground">Cargando hábitos...</p>
@@ -1403,6 +1434,28 @@ function MainPanel({
           </p>
         ) : (
           <>
+            {challengeHabits.length > 0 && (
+              <div className="flex flex-col gap-2 sm:gap-1.5">
+                <h3 className="text-xs font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400">
+                  🔥 Challenges actuales
+                </h3>
+                {challengeHabits.map((habit) => (
+                  <HabitCard
+                    key={habit.id}
+                    habit={habit}
+                    today={today}
+                    todayStr={todayStr}
+                    weekDays={weekDays}
+                    onToggle={onToggle}
+                    onDetailed={onDetailed}
+                    onFreeze={onFreeze}
+                    onPressStart={handleHabitPressStart}
+                    onPressEnd={handleHabitPressEnd}
+                  />
+                ))}
+              </div>
+            )}
+
             {miniHabits.length > 0 && (
               <div className="flex flex-col gap-2 sm:gap-1.5">
                 <h3 className="text-xs font-bold uppercase tracking-wide text-purple-700 dark:text-purple-400">
