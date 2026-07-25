@@ -95,10 +95,11 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
 
   const plannedNodesToday = allPlannedNodes.filter((n) => n.plannedDate === todayStr);
 
-  // Prácticas de repetición espaciada que vencen hoy ("expires_soon"): cuentan como tarea de
-  // hoy, pero no hay forma de saber si ya se confirmaron hoy mismo (no se guarda fecha por
-  // intervalo) — una vez confirmadas dejan de figurar como "expires_soon" y simplemente
-  // desaparecen de la lista, en vez de tacharse.
+  // Prácticas de repetición espaciada. El modelo no guarda una fecha por intervalo
+  // confirmado, así que no hay forma exacta de saber "se confirmó hoy" — se aproxima con
+  // updatedAt: si la práctica se tocó hoy y ya no está "expires_soon"/"loss"/"frozen" (o sea,
+  // avanzó al siguiente intervalo), se cuenta como confirmada hoy. Esto puede dar algún falso
+  // positivo si hoy se editó la práctica sin confirmar un intervalo, pero es el caso raro.
   const { data: practicesData } = useQuery({
     queryKey: ["space-repetition"],
     queryFn: async () => {
@@ -109,19 +110,25 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     enabled: open,
   });
 
-  const practicesDueToday = (practicesData || []).filter((p) => {
-    const status = p.level === 2 ? calculateStatusL2(p) : calculateStatus(p);
-    return status === "expires_soon";
-  });
+  const practicesToday = (practicesData || [])
+    .map((p) => {
+      const status = p.level === 2 ? calculateStatusL2(p) : calculateStatus(p);
+      const pending = status === "expires_soon";
+      const updatedToday = p.updatedAt ? getDateStr(new Date(p.updatedAt)) === todayStr : false;
+      const confirmedToday = !pending && status !== "loss" && status !== "frozen" && updatedToday;
+      return { practice: p, done: confirmedToday, include: pending || confirmedToday };
+    })
+    .filter((entry) => entry.include);
 
   const totalHabits = habitItems.length;
   const completedHabits = habitItems.filter((h) => h.done).length;
   const totalNodes = plannedNodesToday.length;
   const completedNodes = plannedNodesToday.filter((n) => n.done).length;
-  const totalPractices = practicesDueToday.length;
+  const totalPractices = practicesToday.length;
+  const completedPractices = practicesToday.filter((p) => p.done).length;
 
   const total = totalHabits + totalNodes + totalPractices;
-  const completed = completedHabits + completedNodes;
+  const completed = completedHabits + completedNodes + completedPractices;
   const progressPct = total > 0 ? (completed / total) * 100 : 0;
 
   const todayLabel = new Date().toLocaleDateString("es-AR", {
@@ -269,12 +276,16 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                 {totalPractices > 0 && (
                   <div className="space-y-1.5">
                     <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                      Repaso espaciado (0/{totalPractices})
+                      Repaso espaciado ({completedPractices}/{totalPractices})
                     </h3>
-                    {practicesDueToday.map((p) => (
+                    {practicesToday.map(({ practice: p, done }) => (
                       <div key={p.id} className="flex items-center gap-2 text-sm">
-                        <span className="h-4 w-4 flex-shrink-0 rounded-full border-2 border-border/50" />
-                        <span>{p.emoji} {p.name}</span>
+                        <span
+                          className={`h-4 w-4 flex-shrink-0 rounded-full border-2 ${
+                            done ? "bg-emerald-500 border-emerald-500" : "border-border/50"
+                          }`}
+                        />
+                        <span className={done ? "line-through text-muted-foreground" : ""}>{p.emoji} {p.name}</span>
                       </div>
                     ))}
                   </div>

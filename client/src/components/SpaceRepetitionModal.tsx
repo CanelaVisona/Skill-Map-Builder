@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +27,7 @@ export interface SpaceRepetitionPractice {
   areaId?: string | null;
   skillIds?: string[];
   bodyLinks?: BodyLink[];
+  updatedAt?: string;
 }
 
 interface ArchivedPractice {
@@ -145,16 +146,12 @@ export function calculateStatus(practice: SpaceRepetitionPractice): PracticeStat
       const daysUntilDue = targetDay - daysSince;
       const daysAfterDue = daysSince - targetDay;
 
-      // La ventana de registro anticipado (hasta 2 días antes) no aplica para D1: el hueco
-      // entre D0 y D1 es de apenas 1 día, así que sin este freno D1 quedaba disponible el
-      // mismo día en que se confirmaba D0. Debe pasar al menos un día real para activarse.
-      const graceWindow = i === 1 ? 0 : 2;
-
-      // More than `graceWindow` days before due
-      if (daysUntilDue > graceWindow) {
+      // Sin ventana de anticipación: el nodo solo se habilita cuando transcurrieron
+      // efectivamente los días correspondientes, nunca antes.
+      if (daysUntilDue > 0) {
         return "waiting";
       }
-      // Within the grace window or on due day
+      // Exactamente en el día de vencimiento
       else if (daysUntilDue >= 0) {
         return "expires_soon";
       }
@@ -194,7 +191,9 @@ export function calculateStatusL2(practice: SpaceRepetitionPractice): PracticeSt
       const daysUntilDue = targetDay - daysSinceL1Complete;
       const daysAfterDue = daysSinceL1Complete - targetDay;
 
-      if (daysUntilDue > 2) {
+      // Sin ventana de anticipación: mismo criterio que L1, el nodo se habilita
+      // solo cuando transcurrieron los días correspondientes.
+      if (daysUntilDue > 0) {
         return "waiting";
       } else if (daysUntilDue >= 0) {
         return "expires_soon";
@@ -428,6 +427,7 @@ export function SpaceRepetitionModal({
   const [newBodyLinks, setNewBodyLinks] = useState<BodyLink[]>([]);
   const [notification, setNotification] = useState<string | null>(null);
   const { theme } = useTheme();
+  const queryClient = useQueryClient();
   const { addBodyBlock } = useBodyProgress();
   const { showBodyGainPopup } = useBodyGainPopup();
   const { showXpPopup, hideXpPopup } = useXpPopup();
@@ -658,6 +658,8 @@ export function SpaceRepetitionModal({
       setCurrentPanel("main");
     } catch (error) {
       console.error("Error adding practice:", error);
+    } finally {
+      queryClient.invalidateQueries({ queryKey: ["space-repetition"] });
     }
   };
 
@@ -695,6 +697,8 @@ export function SpaceRepetitionModal({
       setCurrentPanel("detail");
     } catch (error) {
       console.error("Error updating practice:", error);
+    } finally {
+      queryClient.invalidateQueries({ queryKey: ["space-repetition"] });
     }
   };
 
@@ -719,6 +723,8 @@ export function SpaceRepetitionModal({
       }
     } catch (error) {
       console.error("Error deleting practice:", error);
+    } finally {
+      queryClient.invalidateQueries({ queryKey: ["space-repetition"] });
     }
   };
 
@@ -838,6 +844,11 @@ export function SpaceRepetitionModal({
       }
     } catch (error) {
       console.error("Error toggling interval:", error);
+    } finally {
+      // Otros consumidores (el badge del ícono, el modal de "Progreso de hoy") leen esta
+      // misma lista vía react-query bajo esta key — sin esto quedarían mostrando el estado
+      // viejo de la práctica hasta un refresh completo.
+      queryClient.invalidateQueries({ queryKey: ["space-repetition"] });
     }
   };
 
@@ -858,6 +869,8 @@ export function SpaceRepetitionModal({
       setNotification("🔄 ¡Práctica reiniciada!");
     } catch (error) {
       console.error("Error resetting practice:", error);
+    } finally {
+      queryClient.invalidateQueries({ queryKey: ["space-repetition"] });
     }
   };
 
@@ -894,6 +907,8 @@ export function SpaceRepetitionModal({
       setNotification("🔥 ¡Práctica recuperada!");
     } catch (error) {
       console.error("Error recovering practice:", error);
+    } finally {
+      queryClient.invalidateQueries({ queryKey: ["space-repetition"] });
     }
   };
 
