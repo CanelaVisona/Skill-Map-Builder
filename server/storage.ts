@@ -483,7 +483,8 @@ export class DbStorage implements IStorage {
     if (skill.isFinalNode !== undefined) updateData.isFinalNode = skill.isFinalNode as 0 | 1;
     if (skill.level !== undefined) updateData.level = skill.level;
     if (skill.levelPosition !== undefined) updateData.levelPosition = skill.levelPosition;
-    
+    if (skill.plannedDate !== undefined) updateData.plannedDate = skill.plannedDate;
+
     const result = await db.update(skills).set(updateData).where(eq(skills.id, id)).returning();
     return result[0];
   }

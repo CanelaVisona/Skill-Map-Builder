@@ -10,6 +10,7 @@ import { useXpPopup } from "@/lib/xp-popup-context";
 import { useAreaXpPopup } from "@/lib/area-xp-popup-context";
 import { useBodyProgress, BODY_ZONES, BODY_ZONE_LABELS, type BodyZone, type BodyDimension } from "@/lib/body-progress-context";
 import { useBodyGainPopup } from "@/lib/body-gain-popup-context";
+import { useLevelUpCelebration } from "@/lib/level-up-celebration-context";
 import { AREA_PROGRESS_XP_INCREMENT, calculateAreaProgressPercentage, countMasteredSkills } from "@/lib/area-progress";
 import {
   Popover,
@@ -30,6 +31,49 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Select, SelectTrigger, SelectContent, SelectItem } from "@/components/ui/select";
+import { Calendar } from "@/components/ui/calendar";
+
+const WEEKDAY_NAMES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+const WEEKDAY_IDS = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"];
+const CUSTOM_DATE_VALUE = "__custom__";
+
+interface QuickDateOption {
+  id: string;
+  label: string;
+  value: string;
+}
+
+function formatLocalDate(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+// Hoy, Mañana, then the 6 remaining weekday names in chronological order (starting the day
+// after tomorrow, wrapping around through next week up to — and including — today's own
+// weekday). The day that falls on "Mañana" is skipped since it would just repeat that
+// shortcut. E.g. if today is Tuesday: Hoy, Mañana, Jueves, Viernes, Sábado, Domingo, Lunes,
+// Martes (next week's Tuesday) — Miércoles (tomorrow) is left out.
+function getQuickDateOptions(): QuickDateOption[] {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const options: QuickDateOption[] = [
+    { id: "hoy", label: "Hoy", value: formatLocalDate(today) },
+  ];
+
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  options.push({ id: "manana", label: "Mañana", value: formatLocalDate(tomorrow) });
+
+  const todayDow = today.getDay() === 0 ? 6 : today.getDay() - 1; // Monday = 0 ... Sunday = 6
+  for (let step = 2; step <= 7; step++) {
+    const dow = (todayDow + step) % 7;
+    const date = new Date(today);
+    date.setDate(today.getDate() + step);
+    options.push({ id: WEEKDAY_IDS[dow], label: WEEKDAY_NAMES[dow], value: formatLocalDate(date) });
+  }
+
+  return options;
+}
 
 interface SkillNodeProps {
   skill: Skill;
@@ -208,7 +252,13 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [editStep, setEditStep] = useState(0);
   const [editTitle, setEditTitle] = useState(skill.title);
   const [editAction, setEditAction] = useState(skill.description?.split("\n\nWhen: ")[0] || "");
-  const [editWhen, setEditWhen] = useState(skill.description?.split("\n\nWhen: ")[1] || "");
+  const [editPlannedDate, setEditPlannedDate] = useState(skill.plannedDate || "");
+  const [showCustomCalendar, setShowCustomCalendar] = useState(false);
+  // True right after picking "Elegir fecha" and before a day is actually chosen in the popup
+  // calendar. Without this, the Select's controlled `value` (derived from editPlannedDate,
+  // which hasn't changed yet) would snap back to the previous option on the very next render,
+  // fighting with what the user just clicked and causing the popover to flash open/closed.
+  const [pendingCustomDate, setPendingCustomDate] = useState(false);
   const [editDescription, setEditDescription] = useState(skill.description || "");
   const [editFeedback, setEditFeedback] = useState(skill.feedback || "");
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -240,12 +290,11 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [learningTitle, setLearningTitle] = useState("");
   const [learningSentence, setLearningSentence] = useState("");
   
-  const [levelUpPopupVisible, setLevelUpPopupVisible] = useState(false);
-  const levelUpPopupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [hasIncompleteSubtasks, setHasIncompleteSubtasks] = useState(false);
-  
+
   const { showXpPopup, hideXpPopup } = useXpPopup();
   const { showAreaXpPopup } = useAreaXpPopup();
+  const { showLevelUpCelebration } = useLevelUpCelebration();
   const { addBodyBlock } = useBodyProgress();
   const { showBodyGainPopup, hideBodyGainPopup } = useBodyGainPopup();
   const [selectedBodyDimension, setSelectedBodyDimension] = useState<BodyDimension>("fuerza");
@@ -397,14 +446,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   useEffect(() => {
     wasDialogOpen.current = isEditDialogOpen;
   }, [isEditDialogOpen]);
-
-  useEffect(() => {
-    return () => {
-      if (levelUpPopupTimer.current) {
-        clearTimeout(levelUpPopupTimer.current);
-      }
-    };
-  }, []);
 
   useEffect(() => {
     const checkSubtasks = async () => {
@@ -664,6 +705,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       xpAfter: xpBefore + xpToAdd,
       xpMax,
       level,
+      celebrateLevelUp: true,
     });
     
     // Check if it's a legacy skill
@@ -695,21 +737,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       );
 
       const xpPerLevel = 500;
-      const oldLevel = skills[legacySkillName].level;
       skills[legacySkillName].currentXp += xpToAdd;
       skills[legacySkillName].level = Math.floor(skills[legacySkillName].currentXp / xpPerLevel) + 1;
-      const newLevel = skills[legacySkillName].level;
-      
-      if (newLevel > oldLevel) {
-        if (levelUpPopupTimer.current) {
-          clearTimeout(levelUpPopupTimer.current);
-        }
-        setLevelUpPopupVisible(true);
-        levelUpPopupTimer.current = setTimeout(() => {
-          setLevelUpPopupVisible(false);
-        }, 1800);
-      }
-      
       localStorage.setItem("skillsProgress", JSON.stringify(skills));
       
       // Save to server
@@ -740,7 +769,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     
     // GlobalSkill flow
     const currentSkill = availableGlobalSkills.find(s => s.id === experienceSelectedSkill);
-    const oldLevel = currentSkill?.level || 1;
     const globalSnapshot = buildSnapshot(
       currentSkill?.name || experienceSelectedSkill,
       currentSkill?.currentXp || 0,
@@ -754,18 +782,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       
       if (updatedSkill) {
         console.log("[handleAddExperience] Updated skill via API:", updatedSkill);
-        
-        // Check for level up
-        if (updatedSkill.level > oldLevel) {
-          if (levelUpPopupTimer.current) {
-            clearTimeout(levelUpPopupTimer.current);
-          }
-          setLevelUpPopupVisible(true);
-          levelUpPopupTimer.current = setTimeout(() => {
-            setLevelUpPopupVisible(false);
-          }, 1800);
-        }
-        
+
         // Dispatch event to update UI (for compatibility)
         window.dispatchEvent(new CustomEvent('skillXpAdded', { 
           detail: { skillId: experienceSelectedSkill, currentXp: updatedSkill.currentXp, level: updatedSkill.level }
@@ -820,7 +837,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       setEditTitle(skill.title);
       const descParts = (skill.description || "").split("\n\nWhen: ");
       setEditAction(descParts[0] || "");
-      setEditWhen(descParts[1] || "");
+      setEditPlannedDate(skill.plannedDate || "");
+      setShowCustomCalendar(false);
+      setPendingCustomDate(false);
       setEditFeedback(skill.feedback || "");
       setXpValue(FIXED_XP_AMOUNT.toString());
       // First node of level (levelPosition === 1) starts at step 2, skipping title edit
@@ -928,10 +947,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
   const handleEditSave = async () => {
     // Prepare data first
-    const combinedDescription = editWhen.trim() 
-      ? `${editAction}\n\nWhen: ${editWhen}` 
-      : editAction;
-    
+    const combinedDescription = editAction;
+
     const xpNumber = FIXED_XP_AMOUNT;
     
     // Add XP to skill (before mutations)
@@ -960,17 +977,11 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
         const oldLevel = skills[legacySkillName].level;
         skills[legacySkillName].currentXp += xpToAdd;
         skills[legacySkillName].level = Math.floor(skills[legacySkillName].currentXp / xpPerLevel) + 1;
-        
+
         if (skills[legacySkillName].level > oldLevel) {
-          if (levelUpPopupTimer.current) {
-            clearTimeout(levelUpPopupTimer.current);
-          }
-          setLevelUpPopupVisible(true);
-          levelUpPopupTimer.current = setTimeout(() => {
-            setLevelUpPopupVisible(false);
-          }, 1800);
+          showLevelUpCelebration({ name: legacySkillName, level: skills[legacySkillName].level });
         }
-        
+
         localStorage.setItem("skillsProgress", JSON.stringify(skills));
         
         try {
@@ -997,18 +1008,15 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
         
         try {
           const updatedSkill = await addXpToGlobalSkill(experienceSelectedSkill, xpToAdd);
-          
+
           if (updatedSkill && updatedSkill.level > oldLevel) {
-            if (levelUpPopupTimer.current) {
-              clearTimeout(levelUpPopupTimer.current);
-            }
-            setLevelUpPopupVisible(true);
-            levelUpPopupTimer.current = setTimeout(() => {
-              setLevelUpPopupVisible(false);
-            }, 1800);
+            showLevelUpCelebration({
+              name: currentSkill?.name || "Skill",
+              level: updatedSkill.level,
+            });
           }
-          
-          window.dispatchEvent(new CustomEvent('skillXpAdded', { 
+
+          window.dispatchEvent(new CustomEvent('skillXpAdded', {
             detail: { skillId: experienceSelectedSkill, currentXp: updatedSkill?.currentXp, level: updatedSkill?.level }
           }));
         } catch (error) {
@@ -1020,25 +1028,28 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     // Call mutations immediately (autosave without closing dialog)
     if (editTitle.trim() || editAction.trim()) {
       if (isSubSkillView) {
-        updateSubSkill(skill.id, { 
-          title: editTitle, 
+        updateSubSkill(skill.id, {
+          title: editTitle,
           description: combinedDescription,
           feedback: editFeedback,
-          experiencePoints: xpNumber
+          experiencePoints: xpNumber,
+          plannedDate: editPlannedDate || null
         });
       } else if (isProject) {
-        updateProjectSkill(activeId, skill.id, { 
-          title: editTitle, 
+        updateProjectSkill(activeId, skill.id, {
+          title: editTitle,
           description: combinedDescription,
           feedback: editFeedback,
-          experiencePoints: xpNumber
+          experiencePoints: xpNumber,
+          plannedDate: editPlannedDate || null
         });
       } else {
-        updateSkill(activeId, skill.id, { 
-          title: editTitle, 
+        updateSkill(activeId, skill.id, {
+          title: editTitle,
           description: combinedDescription,
           feedback: editFeedback,
-          experiencePoints: xpNumber
+          experiencePoints: xpNumber,
+          plannedDate: editPlannedDate || null
         });
       }
       
@@ -1063,33 +1074,34 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   // Autosave effect with debounce for step 1 and 2 fields
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (isEditDialogOpen && (editTitle !== skill.title || editAction !== skill.description?.split("\n\nWhen: ")[0] || editWhen !== skill.description?.split("\n\nWhen: ")[1])) {
-        const combinedDescription = editWhen.trim() 
-          ? `${editAction}\n\nWhen: ${editWhen}` 
-          : editAction;
-        
+      if (isEditDialogOpen && (editTitle !== skill.title || editAction !== skill.description?.split("\n\nWhen: ")[0] || editPlannedDate !== (skill.plannedDate || ""))) {
+        const combinedDescription = editAction;
+
         // Autosave without closing dialog
         if (isSubSkillView) {
-          updateSubSkill(skill.id, { 
-            title: editTitle, 
-            description: combinedDescription
+          updateSubSkill(skill.id, {
+            title: editTitle,
+            description: combinedDescription,
+            plannedDate: editPlannedDate || null
           });
         } else if (isProject) {
-          updateProjectSkill(activeId, skill.id, { 
-            title: editTitle, 
-            description: combinedDescription
+          updateProjectSkill(activeId, skill.id, {
+            title: editTitle,
+            description: combinedDescription,
+            plannedDate: editPlannedDate || null
           });
         } else {
-          updateSkill(activeId, skill.id, { 
-            title: editTitle, 
-            description: combinedDescription
+          updateSkill(activeId, skill.id, {
+            title: editTitle,
+            description: combinedDescription,
+            plannedDate: editPlannedDate || null
           });
         }
       }
     }, 1500); // Save after user stops typing for 1.5 seconds
-    
+
     return () => clearTimeout(timer);
-  }, [editTitle, editAction, editWhen, isEditDialogOpen, skill.id, skill.title, skill.description, isSubSkillView, isProject, activeId, updateSubSkill, updateProjectSkill, updateSkill]);
+  }, [editTitle, editAction, editPlannedDate, isEditDialogOpen, skill.id, skill.title, skill.description, skill.plannedDate, isSubSkillView, isProject, activeId, updateSubSkill, updateProjectSkill, updateSkill]);
 
   const handleTouchStart = () => {
     if (isInicioNode) return; // "inicio" nodes are not interactive
@@ -1894,20 +1906,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 </div>
               </TabsContent>
 
-              <AnimatePresence>
-                {levelUpPopupVisible && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 32, scale: 0.98 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -36, scale: 1.02 }}
-                    transition={{ duration: 0.35 }}
-                    className="fixed top-24 left-1/2 -translate-x-1/2 z-[250] px-4 py-2 text-2xl font-extrabold text-green-400"
-                  >
-                    Level Up
-                  </motion.div>
-                )}
-              </AnimatePresence>
-              
               <TabsContent value="tools" className="mt-4 space-y-3 flex flex-col flex-1">
                 <div className="flex-1">
                   <Input
@@ -1961,27 +1959,28 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       if (!open) {
         // Autosave when closing modal
         if (editTitle.trim() || editAction.trim()) {
-          const combinedDescription = editWhen.trim() 
-            ? `${editAction}\n\nWhen: ${editWhen}` 
-            : editAction;
-          
+          const combinedDescription = editAction;
+
           if (isSubSkillView) {
-            updateSubSkill(skill.id, { 
-              title: editTitle, 
+            updateSubSkill(skill.id, {
+              title: editTitle,
               description: combinedDescription,
-              feedback: editFeedback
+              feedback: editFeedback,
+              plannedDate: editPlannedDate || null
             });
           } else if (isProject) {
-            updateProjectSkill(activeId, skill.id, { 
-              title: editTitle, 
+            updateProjectSkill(activeId, skill.id, {
+              title: editTitle,
               description: combinedDescription,
-              feedback: editFeedback
+              feedback: editFeedback,
+              plannedDate: editPlannedDate || null
             });
           } else {
-            updateSkill(activeId, skill.id, { 
-              title: editTitle, 
+            updateSkill(activeId, skill.id, {
+              title: editTitle,
               description: combinedDescription,
-              feedback: editFeedback
+              feedback: editFeedback,
+              plannedDate: editPlannedDate || null
             });
           }
         }
@@ -1989,7 +1988,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       }
       setIsEditDialogOpen(open);
     }}>
-      <DialogContent className="sm:max-w-[400px] border-0 shadow-2xl">
+      <DialogContent className="sm:max-w-[400px] border-0 shadow-2xl max-h-[90vh] overflow-y-auto minimal-scrollbar">
         <DialogTitle className="sr-only">{skill.title}</DialogTitle>
         <DialogDescription className="sr-only">Edit skill details</DialogDescription>
         <div className="min-h-[180px] flex flex-col">
@@ -2018,14 +2017,96 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 </div>
                 <div>
                   <Label htmlFor="edit-when" className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block">When exactly?</Label>
-                  <Input
-                    id="edit-when"
-                    value={editWhen}
-                    onChange={(e) => setEditWhen(e.target.value)}
-                    placeholder="Specify when..."
-                    className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
-                    data-testid="input-edit-when"
-                  />
+                  {(() => {
+                    const quickOptions = getQuickDateOptions();
+                    // Find which quick option (if any) matches the currently saved date, so
+                    // the Select can show it as selected.
+                    const matchedOption = editPlannedDate
+                      ? quickOptions.find((opt) => opt.value === editPlannedDate)
+                      : undefined;
+                    // While pendingCustomDate is true, force the Select to show "Elegir fecha"
+                    // as selected immediately (instead of waiting for editPlannedDate to
+                    // change), so its controlled value never mismatches what was just clicked.
+                    const selectValue = pendingCustomDate
+                      ? CUSTOM_DATE_VALUE
+                      : editPlannedDate
+                        ? (matchedOption ? matchedOption.id : CUSTOM_DATE_VALUE)
+                        : "";
+                    // Rendered fully by hand instead of via <SelectValue> children, which only
+                    // shows the *matched item's own* label — it can't display an arbitrary date
+                    // that doesn't correspond to any SelectItem.
+                    const triggerLabel = pendingCustomDate
+                      ? "Elegir fecha"
+                      : matchedOption
+                        ? matchedOption.label
+                        : editPlannedDate
+                          ? new Date(editPlannedDate + "T00:00:00").toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" })
+                          : null;
+
+                    return (
+                      <Popover open={showCustomCalendar} onOpenChange={setShowCustomCalendar}>
+                        <PopoverAnchor asChild>
+                          <div>
+                            <Select
+                              value={selectValue}
+                              onValueChange={(value) => {
+                                if (value === CUSTOM_DATE_VALUE) {
+                                  setPendingCustomDate(true);
+                                  setShowCustomCalendar(true);
+                                } else {
+                                  const chosen = quickOptions.find((opt) => opt.id === value);
+                                  if (chosen) setEditPlannedDate(chosen.value);
+                                  setPendingCustomDate(false);
+                                  setShowCustomCalendar(false);
+                                }
+                              }}
+                            >
+                              <SelectTrigger id="edit-when" className="border-0 bg-muted/50 focus:ring-0" data-testid="input-edit-when">
+                                <span className={triggerLabel ? "" : "text-muted-foreground"}>
+                                  {triggerLabel || "Elegir..."}
+                                </span>
+                              </SelectTrigger>
+                              <SelectContent className="border-0 minimal-scrollbar">
+                                {quickOptions.map((opt) => (
+                                  <SelectItem key={opt.id} value={opt.id}>{opt.label}</SelectItem>
+                                ))}
+                                <SelectItem value={CUSTOM_DATE_VALUE}>Elegir fecha</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </PopoverAnchor>
+                        <PopoverContent
+                          className="w-auto max-h-[70vh] overflow-y-auto minimal-scrollbar p-0"
+                          align="start"
+                          onOpenAutoFocus={(e) => e.preventDefault()}
+                          onFocusOutside={(e) => e.preventDefault()}
+                          onPointerDownOutside={(e) => {
+                            // The Select's own trigger/content live inside the anchor, not inside
+                            // this popover's content — closing the Select routes focus back to
+                            // the trigger right as this popover mounts, and without this guard
+                            // Radix reads that as an "outside" interaction and dismisses the
+                            // calendar before it's ever visible.
+                            const target = e.target as HTMLElement;
+                            if (target.closest('[id="edit-when"]')) {
+                              e.preventDefault();
+                            }
+                          }}
+                        >
+                          <Calendar
+                            mode="single"
+                            selected={editPlannedDate ? new Date(editPlannedDate + "T00:00:00") : undefined}
+                            onSelect={(date) => {
+                              if (date) {
+                                setEditPlannedDate(formatLocalDate(date));
+                                setPendingCustomDate(false);
+                                setShowCustomCalendar(false);
+                              }
+                            }}
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    );
+                  })()}
                 </div>
                 <div className="flex justify-end mt-auto pt-4">
                   <Button 

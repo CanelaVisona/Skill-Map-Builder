@@ -754,6 +754,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
           xpAfter: createdRecord.xpAward.xpAfter,
           xpMax: createdRecord.xpAward.xpMax ?? null,
           level: createdRecord.xpAward.level ?? Math.floor(createdRecord.xpAward.xpBefore / 100) + 1,
+          celebrateLevelUp: true,
         });
       }
 
@@ -807,6 +808,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
           xpAfter: updatedRecord.xpAward.xpAfter,
           xpMax: updatedRecord.xpAward.xpMax ?? null,
           level: updatedRecord.xpAward.level ?? Math.floor(updatedRecord.xpAward.xpBefore / 100) + 1,
+          celebrateLevelUp: true,
         });
       }
 

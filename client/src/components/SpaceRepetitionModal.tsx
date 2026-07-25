@@ -1,17 +1,20 @@
 import { useState, useEffect, useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
-import { ArrowLeft, Plus, Trash2, Archive } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Archive, Pencil } from "lucide-react";
 import { useTheme } from "next-themes";
 import { motion, AnimatePresence } from "framer-motion";
+import type { Area } from "@shared/schema";
 import { useBodyProgress } from "@/lib/body-progress-context";
 import { useBodyGainPopup } from "@/lib/body-gain-popup-context";
 import { BodyLinkPicker, type BodyLink } from "@/components/BodyLinkPicker";
+import { SkillLinkPicker } from "@/components/SkillLinkPicker";
 import { useXpPopup } from "@/lib/xp-popup-context";
 
-interface SpaceRepetitionPractice {
+export interface SpaceRepetitionPractice {
   id: string;
   name: string;
   emoji: string;
@@ -21,6 +24,8 @@ interface SpaceRepetitionPractice {
   level1CompletedDate?: string | null;
   completedIntervalsL2?: number[];
   lostIntervals?: number[];
+  areaId?: string | null;
+  skillIds?: string[];
   bodyLinks?: BodyLink[];
 }
 
@@ -116,7 +121,7 @@ function formatTimeRemaining(daysRemaining: number): string {
 
 type PracticeStatus = "waiting" | "expires_soon" | "loss" | "frozen" | "complete" | "level2_waiting";
 
-function calculateStatus(practice: SpaceRepetitionPractice): PracticeStatus {
+export function calculateStatus(practice: SpaceRepetitionPractice): PracticeStatus {
   const level = practice.level || 1;
   
   // Handle L2 special case
@@ -140,11 +145,16 @@ function calculateStatus(practice: SpaceRepetitionPractice): PracticeStatus {
       const daysUntilDue = targetDay - daysSince;
       const daysAfterDue = daysSince - targetDay;
 
-      // More than 2 days before due
-      if (daysUntilDue > 2) {
+      // La ventana de registro anticipado (hasta 2 días antes) no aplica para D1: el hueco
+      // entre D0 y D1 es de apenas 1 día, así que sin este freno D1 quedaba disponible el
+      // mismo día en que se confirmaba D0. Debe pasar al menos un día real para activarse.
+      const graceWindow = i === 1 ? 0 : 2;
+
+      // More than `graceWindow` days before due
+      if (daysUntilDue > graceWindow) {
         return "waiting";
       }
-      // 0-2 days before due or on due day
+      // Within the grace window or on due day
       else if (daysUntilDue >= 0) {
         return "expires_soon";
       }
@@ -162,7 +172,7 @@ function calculateStatus(practice: SpaceRepetitionPractice): PracticeStatus {
   return "complete";
 }
 
-function calculateStatusL2(practice: SpaceRepetitionPractice): PracticeStatus {
+export function calculateStatusL2(practice: SpaceRepetitionPractice): PracticeStatus {
   // If L1 not complete, shouldn't reach here
   if (practice.level !== 2 || !practice.level1CompletedDate) {
     return calculateStatus({ ...practice, level: 1 });
@@ -297,6 +307,34 @@ interface StorageData {
   archived: ArchivedPractice[];
 }
 
+// Skills disponibles para linkear en un área (legacy de localStorage + global skills),
+// compartido entre el form de alta y el de edición.
+async function fetchSkillsForArea(areaId: string): Promise<any[]> {
+  const legacySkillsData: Record<string, { name: string; currentXp: number; level: number }> = {};
+  const stored = localStorage.getItem("skillsProgress");
+  if (stored) {
+    try {
+      Object.assign(legacySkillsData, JSON.parse(stored));
+    } catch (e) {
+      console.error("Error parsing legacy skills:", e);
+    }
+  }
+
+  const res = await fetch(`/api/global-skills/area/${areaId}`);
+  const globalSkillsData = res.ok ? await res.json() : [];
+
+  return [
+    ...Object.entries(legacySkillsData).map(([name, skill]) => ({
+      id: `legacy-${name}`,
+      name,
+      currentXp: skill.currentXp,
+      level: skill.level,
+      isLegacy: true,
+    })),
+    ...globalSkillsData,
+  ];
+}
+
 // Hook para detectar long press
 function useLongPress(callback: () => void, duration = 500) {
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -379,33 +417,147 @@ export function SpaceRepetitionModal({
   open,
   onOpenChange,
 }: SpaceRepetitionModalProps) {
-  const [currentPanel, setCurrentPanel] = useState<"main" | "add" | "detail" | "archived">("main");
+  const [currentPanel, setCurrentPanel] = useState<"main" | "add" | "detail" | "archived" | "edit">("main");
   const [practices, setPractices] = useState<SpaceRepetitionPractice[]>([]);
   const [archived, setArchived] = useState<ArchivedPractice[]>([]);
   const [selectedPracticeId, setSelectedPracticeId] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const [newEmoji, setNewEmoji] = useState("💪");
+  const [newAreaId, setNewAreaId] = useState<string | null>(null);
+  const [newSkillIds, setNewSkillIds] = useState<string[]>([]);
   const [newBodyLinks, setNewBodyLinks] = useState<BodyLink[]>([]);
   const [notification, setNotification] = useState<string | null>(null);
   const { theme } = useTheme();
   const { addBodyBlock } = useBodyProgress();
   const { showBodyGainPopup } = useBodyGainPopup();
-  const { hideXpPopup } = useXpPopup();
+  const { showXpPopup, hideXpPopup } = useXpPopup();
 
-  // Muestra el/los pop-up(s) de crecimiento corporal para los componentes linkeados a la práctica.
-  const growLinkedBody = (links: BodyLink[]) => {
+  // Fetch areas (used by the area select + to color the XP popup for linked skills)
+  const { data: areas = [] } = useQuery<Area[]>({
+    queryKey: ["areas"],
+    queryFn: async () => {
+      const res = await fetch("/api/areas");
+      if (!res.ok) throw new Error("Failed to fetch areas");
+      return res.json();
+    },
+    enabled: open,
+  });
+
+  // Skills disponibles para linkear, filtrados por el área elegida en el form de alta
+  // (incluye legacy de localStorage + global skills, igual que en HabitStreakModal).
+  const [newPanelSkills, setNewPanelSkills] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!newAreaId) {
+      setNewPanelSkills([]);
+      return;
+    }
+    fetchSkillsForArea(newAreaId)
+      .then(setNewPanelSkills)
+      .catch((error) => {
+        console.error("Error loading skills:", error);
+        setNewPanelSkills([]);
+      });
+  }, [newAreaId]);
+
+  // Estado del form de edición (Editar Práctica)
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editEmoji, setEditEmoji] = useState("");
+  const [editName, setEditName] = useState("");
+  const [editAreaId, setEditAreaId] = useState<string | null>(null);
+  const [editSkillIds, setEditSkillIds] = useState<string[]>([]);
+  const [editBodyLinks, setEditBodyLinks] = useState<BodyLink[]>([]);
+  const [editPanelSkills, setEditPanelSkills] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!editAreaId) {
+      setEditPanelSkills([]);
+      return;
+    }
+    fetchSkillsForArea(editAreaId)
+      .then(setEditPanelSkills)
+      .catch((error) => {
+        console.error("Error loading skills:", error);
+        setEditPanelSkills([]);
+      });
+  }, [editAreaId]);
+
+  // Muestra el/los pop-up(s) de crecimiento corporal para los componentes linkeados a la
+  // práctica. xpPopupsShown offsetea el inicio para no superponerse con popups de XP ya
+  // mostrados en la misma confirmación (mismo criterio que HabitStreakModal).
+  const growLinkedBody = (links: BodyLink[], xpPopupsShown = 0) => {
     links.forEach((link, index) => {
       const run = () => {
         const { before, after } = addBodyBlock(link.zone, link.dimension);
         hideXpPopup();
         showBodyGainPopup({ zone: link.zone, dimension: link.dimension, before, after });
       };
-      if (index === 0) {
+      const delay = xpPopupsShown * 1800 + index * 1800;
+      if (delay === 0) {
         run();
       } else {
-        setTimeout(run, index * 1800);
+        setTimeout(run, delay);
       }
     });
+  };
+
+  // Otorga XP a un skill linkeado y devuelve el snapshot para el popup (no lo muestra,
+  // así el caller puede escalonar varios skills sin que se superpongan).
+  const awardSkillXP = async (skillId: string): Promise<{ skillName: string; areaColor: string; xpBefore: number; xpAfter: number; xpMax: number | null; level: number; celebrateLevelUp: true } | null> => {
+    const xpAmount = 5;
+    try {
+      const skillRes = await fetch(`/api/global-skills/${skillId}`);
+      const linkedSkill = skillRes.ok ? await skillRes.json() : null;
+      const area = areas.find((a) => a.id === linkedSkill?.areaId);
+
+      const xpBefore = linkedSkill?.currentXp || 0;
+
+      const res = await fetch(`/api/global-skills/${skillId}/add-xp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ xpAmount }),
+      });
+      if (!res.ok) return null;
+      const updatedSkill = await res.json();
+
+      return {
+        skillName: linkedSkill?.name || "Skill",
+        areaColor: area?.color || "#c85a2a",
+        xpBefore,
+        xpAfter: updatedSkill.currentXp,
+        xpMax: updatedSkill.goalXp || null,
+        level: updatedSkill.level,
+        celebrateLevelUp: true,
+      };
+    } catch (error) {
+      console.error("Error awarding skill XP:", error);
+      return null;
+    }
+  };
+
+  // Otorga XP a todos los skills linkeados a la práctica, mostrando un popup por skill en
+  // secuencia (1800ms entre cada uno, mismo ritmo que growLinkedBody) para que no se
+  // superpongan. Devuelve cuántos popups se mostraron para que growLinkedBody pueda offsetear.
+  const awardLinkedSkillsXP = async (skillIds: string[]): Promise<number> => {
+    if (skillIds.length === 0) return 0;
+    const snapshots = (await Promise.all(skillIds.map((id) => awardSkillXP(id)))).filter(
+      (snapshot): snapshot is NonNullable<typeof snapshot> => !!snapshot
+    );
+
+    snapshots.forEach((snapshot, index) => {
+      const run = () => {
+        hideXpPopup();
+        showXpPopup(snapshot);
+      };
+      const delay = index * 1800;
+      if (delay === 0) {
+        run();
+      } else {
+        setTimeout(run, delay);
+      }
+    });
+
+    return snapshots.length;
   };
 
   // Función para migrar datos de localStorage a la API
@@ -490,6 +642,8 @@ export function SpaceRepetitionModal({
           emoji: newEmoji || "💪",
           startDate: getLocalDateString(),
           completedIntervals: [],
+          areaId: newAreaId,
+          skillIds: newSkillIds,
           bodyLinks: newBodyLinks,
         })
       });
@@ -498,10 +652,49 @@ export function SpaceRepetitionModal({
       setPractices([...practices, newPractice]);
       setNewName("");
       setNewEmoji("💪");
+      setNewAreaId(null);
+      setNewSkillIds([]);
       setNewBodyLinks([]);
       setCurrentPanel("main");
     } catch (error) {
       console.error("Error adding practice:", error);
+    }
+  };
+
+  const showEdit = (id: string) => {
+    const practice = practices.find((p) => p.id === id);
+    if (!practice) return;
+    setEditingId(id);
+    setEditEmoji(practice.emoji);
+    setEditName(practice.name);
+    setEditAreaId(practice.areaId ?? null);
+    setEditSkillIds(practice.skillIds ?? []);
+    setEditBodyLinks(practice.bodyLinks ?? []);
+    setCurrentPanel("edit");
+  };
+
+  const updatePractice = async () => {
+    if (!editName.trim() || !editingId) return;
+    try {
+      const res = await fetch(`/api/space-repetition/${editingId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editName.trim(),
+          emoji: editEmoji || "💪",
+          areaId: editAreaId,
+          skillIds: editSkillIds,
+          bodyLinks: editBodyLinks,
+        }),
+      });
+      if (!res.ok) throw new Error("Error updating practice");
+      const updated = await res.json();
+      setPractices(practices.map((p) => (p.id === editingId ? updated : p)));
+      setSelectedPracticeId(editingId);
+      setEditingId(null);
+      setCurrentPanel("detail");
+    } catch (error) {
+      console.error("Error updating practice:", error);
     }
   };
 
@@ -568,7 +761,10 @@ export function SpaceRepetitionModal({
             totalDays: calculateDaysSince(practice.startDate),
           }]);
           setNotification("🏆 ¡Nivel 2 completado y archivado!");
-          growLinkedBody(Array.isArray(practice.bodyLinks) ? practice.bodyLinks : []);
+          {
+            const xpPopupsShown = await awardLinkedSkillsXP(practice.skillIds || []);
+            growLinkedBody(Array.isArray(practice.bodyLinks) ? practice.bodyLinks : [], xpPopupsShown);
+          }
           return;
         }
 
@@ -585,7 +781,10 @@ export function SpaceRepetitionModal({
         const updated = await res.json();
 
         setPractices(practices.map((p) => p.id === practiceId ? updated : p));
-        growLinkedBody(Array.isArray(practice.bodyLinks) ? practice.bodyLinks : []);
+        {
+          const xpPopupsShown = await awardLinkedSkillsXP(practice.skillIds || []);
+          growLinkedBody(Array.isArray(practice.bodyLinks) ? practice.bodyLinks : [], xpPopupsShown);
+        }
         return;
       }
 
@@ -613,7 +812,10 @@ export function SpaceRepetitionModal({
         
         setPractices(practices.map((p) => p.id === practiceId ? updated : p));
         setNotification("🎉 ¡Nivel 1 completado! Iniciando Nivel 2");
-        growLinkedBody(Array.isArray(practice.bodyLinks) ? practice.bodyLinks : []);
+        {
+          const xpPopupsShown = await awardLinkedSkillsXP(practice.skillIds || []);
+          growLinkedBody(Array.isArray(practice.bodyLinks) ? practice.bodyLinks : [], xpPopupsShown);
+        }
         return;
       }
 
@@ -630,7 +832,10 @@ export function SpaceRepetitionModal({
       const updated = await res.json();
 
       setPractices(practices.map((p) => p.id === practiceId ? updated : p));
-      growLinkedBody(Array.isArray(practice.bodyLinks) ? practice.bodyLinks : []);
+      {
+        const xpPopupsShown = await awardLinkedSkillsXP(practice.skillIds || []);
+        growLinkedBody(Array.isArray(practice.bodyLinks) ? practice.bodyLinks : [], xpPopupsShown);
+      }
     } catch (error) {
       console.error("Error toggling interval:", error);
     }
@@ -738,13 +943,21 @@ export function SpaceRepetitionModal({
             <AddPanel
               emoji={newEmoji}
               name={newName}
+              areaId={newAreaId}
+              skillIds={newSkillIds}
               bodyLinks={newBodyLinks}
+              areas={areas}
+              skills={newPanelSkills}
               onEmojiChange={setNewEmoji}
               onNameChange={setNewName}
+              onAreaIdChange={setNewAreaId}
+              onSkillIdsChange={setNewSkillIds}
               onBodyLinksChange={setNewBodyLinks}
               onBack={() => {
                 setNewName("");
                 setNewEmoji("💪");
+                setNewAreaId(null);
+                setNewSkillIds([]);
                 setNewBodyLinks([]);
                 setCurrentPanel("main");
               }}
@@ -759,9 +972,40 @@ export function SpaceRepetitionModal({
                 setSelectedPracticeId(null);
                 setCurrentPanel("main");
               }}
+              onEdit={() => showEdit(selectedPractice.id)}
               onToggleInterval={(idx) => toggleInterval(selectedPractice.id, idx)}
               onReset={() => handleExpiredReset(selectedPractice.id)}
               onRecover={() => handleRecover(selectedPractice.id)}
+            />
+          )}
+
+          {currentPanel === "edit" && editingId && (
+            <EditPanel
+              emoji={editEmoji}
+              name={editName}
+              areaId={editAreaId}
+              skillIds={editSkillIds}
+              bodyLinks={editBodyLinks}
+              areas={areas}
+              skills={editPanelSkills}
+              onEmojiChange={setEditEmoji}
+              onNameChange={setEditName}
+              onAreaIdChange={setEditAreaId}
+              onSkillIdsChange={setEditSkillIds}
+              onBodyLinksChange={setEditBodyLinks}
+              onBack={() => {
+                setEditingId(null);
+                setCurrentPanel("detail");
+              }}
+              onSubmit={updatePractice}
+              onDelete={async () => {
+                if (confirm("¿Estás seguro de que quieres eliminar esta práctica?")) {
+                  await deletePractice(editingId);
+                  setSelectedPracticeId(null);
+                  setEditingId(null);
+                  setCurrentPanel("main");
+                }
+              }}
             />
           )}
 
@@ -1416,18 +1660,30 @@ function PracticeWaitingCardWithLongPress({
 function AddPanel({
   emoji,
   name,
+  areaId,
+  skillIds,
   bodyLinks,
+  areas,
+  skills,
   onEmojiChange,
   onNameChange,
+  onAreaIdChange,
+  onSkillIdsChange,
   onBodyLinksChange,
   onBack,
   onSubmit,
 }: {
   emoji: string;
   name: string;
+  areaId: string | null;
+  skillIds: string[];
   bodyLinks: BodyLink[];
+  areas: Area[];
+  skills: any[];
   onEmojiChange: (emoji: string) => void;
   onNameChange: (name: string) => void;
+  onAreaIdChange: (id: string | null) => void;
+  onSkillIdsChange: (ids: string[]) => void;
   onBodyLinksChange: (links: BodyLink[]) => void;
   onBack: () => void;
   onSubmit: () => void;
@@ -1480,6 +1736,39 @@ function AddPanel({
           />
         </div>
 
+        {/* Area Select */}
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-2">
+            Área
+          </label>
+          <select
+            value={areaId || ""}
+            onChange={(e) => onAreaIdChange(e.target.value || null)}
+            className="w-full px-3 py-2.5 border border-border/50 rounded-xl bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 transition-all text-sm appearance-none cursor-pointer"
+          >
+            <option value="">Sin área asignada</option>
+            {areas.map((area) => (
+              <option key={area.id} value={area.id}>
+                {area.name}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Opcional: vincular la práctica a un área
+          </p>
+        </div>
+
+        {/* Skill Select */}
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-2">
+            Skills a linkear
+          </label>
+          <SkillLinkPicker skills={skills} value={skillIds} onChange={onSkillIdsChange} emptyLabel="Elegí un área para ver sus skills" />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Opcional: linkear a uno o más skills para sumar XP al registrar un intervalo
+          </p>
+        </div>
+
         {/* Body Component Select */}
         <div>
           <label className="block text-sm font-medium text-foreground mb-2">
@@ -1513,15 +1802,172 @@ function AddPanel({
   );
 }
 
+function EditPanel({
+  emoji,
+  name,
+  areaId,
+  skillIds,
+  bodyLinks,
+  areas,
+  skills,
+  onEmojiChange,
+  onNameChange,
+  onAreaIdChange,
+  onSkillIdsChange,
+  onBodyLinksChange,
+  onBack,
+  onSubmit,
+  onDelete,
+}: {
+  emoji: string;
+  name: string;
+  areaId: string | null;
+  skillIds: string[];
+  bodyLinks: BodyLink[];
+  areas: Area[];
+  skills: any[];
+  onEmojiChange: (emoji: string) => void;
+  onNameChange: (name: string) => void;
+  onAreaIdChange: (id: string | null) => void;
+  onSkillIdsChange: (ids: string[]) => void;
+  onBodyLinksChange: (links: BodyLink[]) => void;
+  onBack: () => void;
+  onSubmit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="w-full">
+      {/* Header */}
+      <div className="border-b border-border/30 px-6 py-5 flex items-center gap-3">
+        <button
+          onClick={onBack}
+          className="text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="h-5 w-5" />
+        </button>
+        <h2 className="font-black text-xl text-foreground">Editar Práctica</h2>
+      </div>
+
+      {/* Content */}
+      <div className="px-6 py-5 flex flex-col gap-4">
+        {/* Emoji Input */}
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-2">
+            Emoji
+          </label>
+          <div className="flex gap-2">
+            <Input
+              value={emoji}
+              onChange={(e) => onEmojiChange(e.target.value.slice(0, 2))}
+              className="text-xl font-black w-16 text-center h-10"
+              maxLength={2}
+            />
+            <Input
+              value={emoji}
+              readOnly
+              className="text-4xl font-black text-center h-10 flex-1 bg-muted"
+            />
+          </div>
+        </div>
+
+        {/* Name Input */}
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-2">
+            Nombre
+          </label>
+          <Input
+            value={name}
+            onChange={(e) => onNameChange(e.target.value)}
+            placeholder="Por ej: Vocabulario, Guitarra..."
+            className="rounded-xl"
+          />
+        </div>
+
+        {/* Area Select */}
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-2">
+            Área
+          </label>
+          <select
+            value={areaId || ""}
+            onChange={(e) => onAreaIdChange(e.target.value || null)}
+            className="w-full px-3 py-2.5 border border-border/50 rounded-xl bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 transition-all text-sm appearance-none cursor-pointer"
+          >
+            <option value="">Sin área asignada</option>
+            {areas.map((area) => (
+              <option key={area.id} value={area.id}>
+                {area.name}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Opcional: vincular la práctica a un área
+          </p>
+        </div>
+
+        {/* Skill Select */}
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-2">
+            Skills a linkear
+          </label>
+          <SkillLinkPicker skills={skills} value={skillIds} onChange={onSkillIdsChange} emptyLabel="Elegí un área para ver sus skills" />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Opcional: linkear a uno o más skills para sumar XP al registrar un intervalo
+          </p>
+        </div>
+
+        {/* Body Component Select */}
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-2">
+            Componente corporal a linkear
+          </label>
+          <BodyLinkPicker value={bodyLinks} onChange={onBodyLinksChange} />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Opcional: linkear a uno o más componentes de fuerza/flexibilidad para hacerlos crecer al registrar un intervalo
+          </p>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex gap-2 mt-4">
+          <Button
+            onClick={onBack}
+            variant="outline"
+            className="flex-1 rounded-xl"
+          >
+            Cancelar
+          </Button>
+          <Button
+            onClick={onSubmit}
+            disabled={!name.trim()}
+            className="flex-1 rounded-xl bg-purple-500 hover:bg-purple-600 text-white"
+          >
+            Guardar
+          </Button>
+        </div>
+        <Button
+          onClick={onDelete}
+          variant="outline"
+          className="rounded-xl border-red-500/50 text-red-700 dark:text-red-400 hover:bg-red-500/10"
+        >
+          <Trash2 className="h-4 w-4 mr-2" />
+          Eliminar práctica
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function DetailPanel({
   practice,
   onBack,
+  onEdit,
   onToggleInterval,
   onReset,
   onRecover,
 }: {
   practice: SpaceRepetitionPractice;
   onBack: () => void;
+  onEdit: () => void;
   onToggleInterval: (index: number) => void;
   onReset: () => void;
   onRecover?: () => void;
@@ -1562,6 +2008,13 @@ function DetailPanel({
             {practice.level === 2 ? "L2 iniciado" : "Iniciado"} {refDate} ({daysSince} días)
           </p>
         </div>
+        <button
+          onClick={onEdit}
+          className="flex-shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+          title="Editar"
+        >
+          <Pencil className="h-4 w-4" />
+        </button>
       </div>
 
       {/* Content */}

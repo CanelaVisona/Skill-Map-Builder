@@ -230,6 +230,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
             xpAfter: award.newXp,
             xpMax: linkedSkill?.goalXp || null,
             level: award.newLevel,
+            celebrateLevelUp: true,
           });
         };
         const delay = index * 1800;
@@ -693,7 +694,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md p-0 border-0 bg-background touch-manipulation">
+      <DialogContent className="max-w-md p-0 border-0 bg-background touch-manipulation" showCloseButton={false}>
         <VisuallyHidden>
           <DialogTitle>Hábitos</DialogTitle>
           <DialogDescription>Gestiona tus hábitos diarios</DialogDescription>

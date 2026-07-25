@@ -566,6 +566,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
       xpAfter: popupXpAfter,
       xpMax: popupXpMax,
       level: popupLevel,
+      celebrateLevelUp: true,
     };
   };
 

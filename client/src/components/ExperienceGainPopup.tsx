@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { usePopupPalette } from "@/lib/popup-theme";
+import { useLevelUpCelebration } from "@/lib/level-up-celebration-context";
 
 export interface ExperienceGainSnapshot {
   skillName: string;
@@ -30,6 +31,11 @@ export interface ExperienceGainSnapshot {
   xpAfter: number;
   xpMax: number | null;
   level: number;
+  // When true, a level-up moment shows the full-screen "poder confirmado"-style
+  // celebration instead of the small inline chip below. Used by skills linked
+  // through hábitos, repetición espaciada y bugs, so leveling those up reads with
+  // the same weight as mastering a poder.
+  celebrateLevelUp?: boolean;
 }
 
 interface ExperienceGainPopupProps {
@@ -79,6 +85,7 @@ export function ExperienceGainPopup({ snapshot, onClose }: ExperienceGainPopupPr
   const [displayBlocks, setDisplayBlocks] = useState(0);
   const [animationStage, setAnimationStage] = useState<"initial" | "fill" | "afterReset">("initial");
   const palette = usePopupPalette();
+  const { showLevelUpCelebration } = useLevelUpCelebration();
 
   useEffect(() => {
     if (!snapshot) {
@@ -93,6 +100,8 @@ export function ExperienceGainPopup({ snapshot, onClose }: ExperienceGainPopupPr
     const levelBefore = Math.floor(xpBefore / XP_PER_LEVEL);
     const levelAfter = Math.floor(xpAfter / XP_PER_LEVEL);
     const leveledUp = levelAfter > levelBefore;
+    const skillName = snapshot.skillName;
+    const celebrateLevelUp = snapshot.celebrateLevelUp;
     const xpInCurrentLevel = xpAfter % XP_PER_LEVEL;
     const progressPct = (xpInCurrentLevel / XP_PER_LEVEL) * 100;
     const progressPctBefore = ((xpBefore % XP_PER_LEVEL) / XP_PER_LEVEL) * 100;
@@ -123,7 +132,11 @@ export function ExperienceGainPopup({ snapshot, onClose }: ExperienceGainPopupPr
         setAnimationStage("afterReset");
 
         const secondTimer = window.setTimeout(() => {
-          setShowLevelUp(true);
+          if (celebrateLevelUp) {
+            showLevelUpCelebration({ name: skillName, level: levelAfter });
+          } else {
+            setShowLevelUp(true);
+          }
         }, 0);
 
         const thirdTimer = window.setTimeout(() => {

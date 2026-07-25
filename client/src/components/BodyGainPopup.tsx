@@ -11,6 +11,7 @@ import {
   type ZoneProgress,
 } from "@/lib/body-progress-context";
 import { usePopupPalette } from "@/lib/popup-theme";
+import { useLevelUpCelebration } from "@/lib/level-up-celebration-context";
 
 export interface BodyGainSnapshot {
   zone: BodyZone;
@@ -39,24 +40,22 @@ function blockGradient(dimension: BodyDimension, index: number, total: number) {
 
 export function BodyGainPopup({ snapshot, onClose }: BodyGainPopupProps) {
   const [displayBlocks, setDisplayBlocks] = useState(0);
-  const [showLevelUp, setShowLevelUp] = useState(false);
   const [barTransitionMs, setBarTransitionMs] = useState(1000);
   const [animationStage, setAnimationStage] = useState<"initial" | "fill" | "afterReset">("initial");
   const palette = usePopupPalette();
+  const { showLevelUpCelebration } = useLevelUpCelebration();
 
   useEffect(() => {
     if (!snapshot) {
       setDisplayBlocks(0);
-      setShowLevelUp(false);
       setBarTransitionMs(1000);
       return;
     }
 
-    const { before, after } = snapshot;
+    const { zone, dimension, before, after } = snapshot;
     const leveledUp = after.lvl > before.lvl;
     const cleanupTimers: number[] = [];
 
-    setShowLevelUp(false);
     setBarTransitionMs(1000);
     setDisplayBlocks(before.val);
     setAnimationStage("initial");
@@ -77,7 +76,10 @@ export function BodyGainPopup({ snapshot, onClose }: BodyGainPopupProps) {
         setAnimationStage("afterReset");
 
         const secondTimer = window.setTimeout(() => {
-          setShowLevelUp(true);
+          showLevelUpCelebration({
+            name: `${BODY_ZONE_LABELS[zone]} · ${BODY_DIMENSION_LABELS[dimension]}`,
+            level: after.lvl,
+          });
         }, 0);
 
         const thirdTimer = window.setTimeout(() => {
@@ -108,7 +110,6 @@ export function BodyGainPopup({ snapshot, onClose }: BodyGainPopupProps) {
   }
 
   const { zone, dimension, before, after } = snapshot;
-  const leveledUp = after.lvl > before.lvl;
   const useResetAnimation = animationStage === "afterReset";
   const [, accentColor] = PALETTES[dimension];
 
@@ -215,26 +216,6 @@ export function BodyGainPopup({ snapshot, onClose }: BodyGainPopupProps) {
                 </span>
                 <span>{`Lv${after.lvl + 1}`}</span>
               </div>
-
-              <AnimatePresence>
-                {showLevelUp && leveledUp && (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.3 }}
-                    className="mt-2 inline-flex rounded-[3px] border px-[10px] py-[4px] text-[11px] font-medium"
-                    style={{
-                      backgroundColor: palette.levelUpBg,
-                      borderColor: palette.text,
-                      color: palette.text,
-                      borderWidth: "0.5px",
-                    }}
-                  >
-                    ¡Nivel {after.lvl} alcanzado!
-                  </motion.div>
-                )}
-              </AnimatePresence>
             </div>
           </motion.div>
         </div>

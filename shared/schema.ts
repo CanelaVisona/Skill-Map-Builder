@@ -63,6 +63,7 @@ export const skills = pgTable("skills", {
   level: integer("level").notNull().default(1),
   levelPosition: integer("level_position").notNull().default(1),
   experiencePoints: integer("experience_points").default(0),
+  plannedDate: text("planned_date"),
 });
 
 export const projects = pgTable("projects", {
@@ -307,6 +308,8 @@ export const spaceRepetitionPractices = pgTable("space_repetition_practices", {
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   emoji: text("emoji").notNull(),
+  areaId: varchar("area_id").references(() => areas.id, { onDelete: "set null" }),
+  skillIds: jsonb("skill_ids").notNull().$type<string[]>().default([]), // Skills linked for XP rewards on interval registration
   bodyLinks: jsonb("body_links").notNull().$type<BodyLink[]>().default([]), // Link a componentes corporales para crecimiento de fuerza/flex
   startDate: varchar("start_date").notNull(), // YYYY-MM-DD format
   completedIntervals: jsonb("completed_intervals").notNull().$type<number[]>().default([]),
@@ -507,6 +510,7 @@ export const insertSpaceRepetitionPracticeSchema = createInsertSchema(spaceRepet
   level: z.enum(["1", "2"]).optional().default("1").transform(v => parseInt(v) as 1 | 2),
   level1CompletedDate: z.string().optional().nullable(),
   completedIntervalsL2: z.array(z.number()).optional().default([]),
+  skillIds: z.array(z.string()).optional().default([]),
 });
 export const insertBooksLibrarySchema = createInsertSchema(booksLibrary).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertBookReadingSessionSchema = createInsertSchema(bookReadingSessions).omit({ id: true, createdAt: true });

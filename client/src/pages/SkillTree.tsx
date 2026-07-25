@@ -8,14 +8,15 @@ import { SkillDesigner } from "@/components/SkillDesigner";
 import { QuestCompletedCelebration } from "@/components/QuestCompletedCelebration";
 import { HabitStreakModal } from "@/components/HabitStreakModal";
 import { useHabits } from "@/lib/useHabits";
-import { SpaceRepetitionModal } from "@/components/SpaceRepetitionModal";
+import { SpaceRepetitionModal, calculateStatus, calculateStatusL2, type SpaceRepetitionPractice } from "@/components/SpaceRepetitionModal";
 import { ProgressModal } from "@/components/ProgressModal";
+import { TodayProgressModal } from "@/components/TodayProgressModal";
 import { ProgressBar } from "@/components/ProgressBar";
 import { BookTracker } from "@/components/BookTracker";
 import RewiringTracker from "@/components/RewiringTracker";
 import NecesidadesCasa from "../components/NecesidadesCasa";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed } from "lucide-react";
+import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -23,6 +24,7 @@ import { XpPopupProvider, useXpPopup } from "@/lib/xp-popup-context";
 import { AreaXpPopupProvider } from "@/lib/area-xp-popup-context";
 import { BodyProgressProvider, useBodyProgress } from "@/lib/body-progress-context";
 import { BodyGainPopupProvider, useBodyGainPopup } from "@/lib/body-gain-popup-context";
+import { LevelUpCelebrationProvider } from "@/lib/level-up-celebration-context";
 import { BodyLinkPicker, type BodyLink } from "@/components/BodyLinkPicker";
 import { SkillLinkPicker } from "@/components/SkillLinkPicker";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -103,7 +105,7 @@ function calculateVisibleLevels(skills: Skill[], endOfAreaLevel?: number): Set<n
   return visibleLevels;
 }
 
-function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpenBookTracker, onOpenRewiringTracker, onOpenAllAreaBugs, onOpenHomeNeeds }: { onOpenDesigner: () => void; onOpenHabits: () => void; onOpenStrength: () => void; onOpenBookTracker: () => void; onOpenRewiringTracker: () => void; onOpenAllAreaBugs: () => void; onOpenHomeNeeds: () => void }) {
+function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpenBookTracker, onOpenRewiringTracker, onOpenAllAreaBugs, onOpenHomeNeeds, onOpenTodayProgress }: { onOpenDesigner: () => void; onOpenHabits: () => void; onOpenStrength: () => void; onOpenBookTracker: () => void; onOpenRewiringTracker: () => void; onOpenAllAreaBugs: () => void; onOpenHomeNeeds: () => void; onOpenTodayProgress: () => void }) {
   const { theme, setTheme, resolvedTheme } = useTheme();
   const currentTheme = resolvedTheme || theme;
   const { openDiary } = useDiary();
@@ -141,7 +143,34 @@ function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpen
   ).length;
 
   const pendingHabitsCount = Math.max(habitsScheduledToday.length - completedTodayCount, 0);
-  
+
+  const { data: spaceRepPractices = [] } = useQuery({
+    queryKey: ["space-repetition"],
+    queryFn: async () => {
+      const res = await fetch("/api/space-repetition");
+      if (!res.ok) throw new Error("Failed to fetch space repetition practices");
+      return res.json() as Promise<SpaceRepetitionPractice[]>;
+    },
+  });
+
+  const pendingSpaceRepCount = spaceRepPractices.filter((p) => {
+    const status = p.level === 2 ? calculateStatusL2(p) : calculateStatus(p);
+    return status === "expires_soon" || status === "loss" || status === "frozen";
+  }).length;
+
+  // El badge de "Progreso de hoy" solo cuenta nodos con plannedDate = hoy sin dominar todavía
+  // (no hábitos ni space repetition, aunque esos sí suman al progreso combinado del modal).
+  const { areas: todayAreas, projects: todayProjects } = useSkillTree();
+  const countPendingNodes = (list: (Area | Project)[]) =>
+    list.reduce(
+      (sum, parent) =>
+        sum + (parent.skills || []).filter((s) => s.plannedDate === todayStr && s.status !== "mastered").length,
+      0
+    );
+  const pendingNodesTodayCount =
+    countPendingNodes(Array.isArray(todayAreas) ? todayAreas : []) +
+    countPendingNodes(Array.isArray(todayProjects) ? todayProjects : []);
+
   return (
     <div className="fixed top-4 right-4 z-50 flex flex-col items-end gap-2">
       <button
@@ -203,11 +232,28 @@ function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpen
               )}
             </button>
             <button
-              className="h-8 w-8 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
+              className="relative h-8 w-8 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
+              onClick={() => handleAction(onOpenTodayProgress)}
+              title="Progreso de hoy"
+            >
+              <CalendarCheck className="h-4 w-4 mx-auto" />
+              {pendingNodesTodayCount > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full border border-background bg-black px-1 text-[10px] font-bold leading-none text-white dark:bg-white dark:text-black">
+                  {pendingNodesTodayCount > 99 ? "99+" : pendingNodesTodayCount}
+                </span>
+              )}
+            </button>
+            <button
+              className="relative h-8 w-8 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
               onClick={() => handleAction(onOpenStrength)}
               title="Space Repetition"
             >
               <Dumbbell className="h-4 w-4 mx-auto" />
+              {pendingSpaceRepCount > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full border border-background bg-black px-1 text-[10px] font-bold leading-none text-white dark:bg-white dark:text-black">
+                  {pendingSpaceRepCount > 99 ? "99+" : pendingSpaceRepCount}
+                </span>
+              )}
             </button>
             <button
               className="h-8 w-8 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
@@ -6544,6 +6590,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
           xpAfter: award.xpAfter,
           xpMax: award.xpMax ?? null,
           level: award.level ?? Math.floor(award.xpBefore / 100) + 1,
+          celebrateLevelUp: true,
         });
       };
       const delay = index * 1800;
@@ -8512,6 +8559,7 @@ export default function SkillTreePage() {
   const [isRewiringTrackerOpen, setIsRewiringTrackerOpen] = useState(false);
   const [isAllAreaBugsOpen, setIsAllAreaBugsOpen] = useState(false);
   const [isHomeNeedsOpen, setIsHomeNeedsOpen] = useState(false);
+  const [isTodayProgressOpen, setIsTodayProgressOpen] = useState(false);
   
   const handleCompleteOnboarding = () => {
     if (user?.id) {
@@ -8524,13 +8572,15 @@ export default function SkillTreePage() {
     <DiaryProvider>
       <AreaXpPopupProvider>
         <SkillTreeProvider>
+          <LevelUpCelebrationProvider>
           <XpPopupProvider>
           <BodyProgressProvider>
           <BodyGainPopupProvider>
             <MenuProvider>
               <div className="flex h-screen w-full bg-background text-foreground overflow-hidden font-body selection:bg-primary/30">
-                <TopRightControls onOpenDesigner={() => setIsDesignerOpen(true)} onOpenHabits={() => setIsHabitsOpen(true)} onOpenStrength={() => setIsStrengthOpen(true)} onOpenBookTracker={() => setIsBookTrackerOpen(true)} onOpenRewiringTracker={() => setIsRewiringTrackerOpen(true)} onOpenAllAreaBugs={() => setIsAllAreaBugsOpen(true)} onOpenHomeNeeds={() => setIsHomeNeedsOpen(true)} />
+                <TopRightControls onOpenDesigner={() => setIsDesignerOpen(true)} onOpenHabits={() => setIsHabitsOpen(true)} onOpenStrength={() => setIsStrengthOpen(true)} onOpenBookTracker={() => setIsBookTrackerOpen(true)} onOpenRewiringTracker={() => setIsRewiringTrackerOpen(true)} onOpenAllAreaBugs={() => setIsAllAreaBugsOpen(true)} onOpenHomeNeeds={() => setIsHomeNeedsOpen(true)} onOpenTodayProgress={() => setIsTodayProgressOpen(true)} />
                 <ProgressModal open={isProgressOpen} onOpenChange={setIsProgressOpen} />
+                <TodayProgressModal open={isTodayProgressOpen} onOpenChange={setIsTodayProgressOpen} />
                 <SkillDesigner open={isDesignerOpen} onOpenChange={setIsDesignerOpen} />
                 <HabitStreakModal open={isHabitsOpen} onOpenChange={setIsHabitsOpen} />
                 <SpaceRepetitionModal open={isStrengthOpen} onOpenChange={setIsStrengthOpen} />
@@ -8547,6 +8597,7 @@ export default function SkillTreePage() {
           </BodyGainPopupProvider>
           </BodyProgressProvider>
           </XpPopupProvider>
+          </LevelUpCelebrationProvider>
         </SkillTreeProvider>
       </AreaXpPopupProvider>
     </DiaryProvider>
