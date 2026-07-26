@@ -190,7 +190,7 @@ function LinkPickerDropdown({ label, options, selectedIds, setSelectedIds }: Lin
                 ? "No hay opciones disponibles todavía"
                 : selectedNames.length === 0
                   ? "Ninguno seleccionado"
-                  : selectedNames.join(", ")}
+                  : `${selectedNames.length} seleccionado${selectedNames.length === 1 ? "" : "s"}`}
             </span>
             <ChevronDown className="h-4 w-4 opacity-50 shrink-0 ml-2" />
           </Button>

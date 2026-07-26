@@ -13,7 +13,7 @@ import { calculateStatus, calculateStatusL2, type SpaceRepetitionPractice } from
 import type { Habit, HabitRecord } from "@shared/schema";
 
 const TIME_SLOTS: { key: TaskSlotKey; label: string }[] = [
-  { key: "morning", label: "Mañana" },
+  { key: "morning", label: "La mañana" },
   { key: "midday", label: "Mediodía" },
   { key: "afternoon", label: "Tarde" },
   { key: "night", label: "Noche" },
@@ -445,7 +445,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                     {extraItems.length > 0 && (
                       <div className="space-y-1.5">
                         <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                          Hecho hoy sin estar programado ({extraItems.length})
+                          Más ({extraItems.length})
                         </h3>
                         <div className="space-y-1.5">
                           {extraItems.map((item) => (
