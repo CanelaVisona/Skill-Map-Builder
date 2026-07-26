@@ -957,8 +957,17 @@ export async function registerRoutes(
         }
       }
 
-      const skill = await storage.updateSkill(req.params.id, req.body);
-      
+      // Stamp completedAt when a node transitions into "mastered" (so it can be reported as
+      // "done today" even when it wasn't planned for today); clear it when un-mastered.
+      const skillUpdate = { ...req.body };
+      if (req.body.status === "mastered" && existingSkill.status !== "mastered") {
+        skillUpdate.completedAt = new Date();
+      } else if (req.body.status === "available" && existingSkill.status === "mastered") {
+        skillUpdate.completedAt = null;
+      }
+
+      const skill = await storage.updateSkill(req.params.id, skillUpdate);
+
       // Auto-unlock logic: when a node is mastered, unlock the next node in the same level
       if (req.body.status === "mastered" && existingSkill.level && existingSkill.levelPosition) {
         let allSkills: typeof existingSkill[] = [];
@@ -4226,6 +4235,59 @@ export async function registerRoutes(
         completed as 0 | 1
       );
       res.status(201).json(record);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Today Task Slots (franja horaria de tareas de "Hoy": mañana/mediodía/tarde/noche)
+  app.get("/api/today-task-slots", requireAuth, async (req, res) => {
+    try {
+      const { date } = req.query;
+      if (!date) {
+        return res.status(400).json({ message: "date es requerido (formato YYYY-MM-DD)" });
+      }
+      const slots = await storage.getTodayTaskSlots(req.userId!, date as string);
+      res.json(slots);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/today-task-slots", requireAuth, async (req, res) => {
+    try {
+      const { date, taskType, taskId, slot } = req.body;
+      if (!date || !taskType || !taskId || !slot) {
+        return res.status(400).json({ message: "date, taskType, taskId y slot son requeridos" });
+      }
+      if (!["habit", "node", "practice"].includes(taskType)) {
+        return res.status(400).json({ message: "taskType debe ser habit, node o practice" });
+      }
+      if (!["morning", "midday", "afternoon", "night"].includes(slot)) {
+        return res.status(400).json({ message: "slot debe ser morning, midday, afternoon o night" });
+      }
+
+      const result = await storage.upsertTodayTaskSlot({
+        userId: req.userId!,
+        date,
+        taskType,
+        taskId,
+        slot,
+      });
+      res.status(201).json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/today-task-slots", requireAuth, async (req, res) => {
+    try {
+      const { date, taskType, taskId } = req.query;
+      if (!date || !taskType || !taskId) {
+        return res.status(400).json({ message: "date, taskType y taskId son requeridos" });
+      }
+      await storage.deleteTodayTaskSlot(req.userId!, date as string, taskType as string, taskId as string);
+      res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

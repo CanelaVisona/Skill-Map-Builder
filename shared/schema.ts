@@ -64,6 +64,7 @@ export const skills = pgTable("skills", {
   levelPosition: integer("level_position").notNull().default(1),
   experiencePoints: integer("experience_points").default(0),
   plannedDate: text("planned_date"),
+  completedAt: timestamp("completed_at"),
 });
 
 export const projects = pgTable("projects", {
@@ -170,6 +171,8 @@ export const sourceGrowth = pgTable("source_growth", {
   projectId: varchar("project_id"),
   name: text("name").notNull(),
   description: text("description").notNull().default(""),
+  experienceIds: jsonb("experience_ids").notNull().$type<string[]>().default([]), // Experiencias vinculadas a este crecimiento
+  contributionIds: jsonb("contribution_ids").notNull().$type<string[]>().default([]), // Contribuciones vinculadas a este crecimiento
 });
 
 export const sourceObjectives = pgTable("source_objectives", {
@@ -319,6 +322,7 @@ export const spaceRepetitionPractices = pgTable("space_repetition_practices", {
   level1CompletedDate: varchar("level1_completed_date"), // YYYY-MM-DD format, null until L1 complete
   completedIntervalsL2: jsonb("completed_intervals_l2").notNull().$type<number[]>().default([]),
   lostIntervals: text("lost_intervals").notNull().default("[]"),
+  lastConfirmedAt: timestamp("last_confirmed_at"), // exact instant of the last confirmed interval; each next interval is due 24h * gap after this, not at the next calendar day
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -391,6 +395,25 @@ export const bodyProgress = pgTable("body_progress", {
 export const insertBodyProgressSchema = createInsertSchema(bodyProgress).omit({ updatedAt: true });
 export type InsertBodyProgress = z.infer<typeof insertBodyProgressSchema>;
 export type BodyProgressRow = typeof bodyProgress.$inferSelect;
+
+// Asigna una tarea de "Hoy" (hábito, nodo planeado o práctica de repetición espaciada) a una
+// franja horaria del día. id determinístico `${userId}:${date}:${taskType}:${taskId}` para
+// permitir upsert directo (una fila por tarea por día), igual que body_progress.
+export const todayTaskSlots = pgTable("today_task_slots", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  date: varchar("date").notNull(), // YYYY-MM-DD format
+  taskType: text("task_type").$type<"habit" | "node" | "practice">().notNull(),
+  taskId: varchar("task_id").notNull(),
+  slot: text("slot").$type<"morning" | "midday" | "afternoon" | "night">().notNull(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertTodayTaskSlotSchema = createInsertSchema(todayTaskSlots).omit({ id: true, updatedAt: true }).extend({
+  taskType: z.enum(["habit", "node", "practice"]),
+  slot: z.enum(["morning", "midday", "afternoon", "night"]),
+});
+export type InsertTodayTaskSlot = z.infer<typeof insertTodayTaskSlotSchema>;
+export type TodayTaskSlot = typeof todayTaskSlots.$inferSelect;
 
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertSessionSchema = createInsertSchema(sessions).omit({ id: true });

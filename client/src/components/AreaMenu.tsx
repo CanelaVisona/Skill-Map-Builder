@@ -19,6 +19,7 @@ import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
 import { ScrollArea } from "./ui/scroll-area";
+import { Checkbox } from "./ui/checkbox";
 import { useState, useEffect, useRef, type TouchEvent, type PointerEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -98,6 +99,11 @@ interface SourceEntry {
   description: string;
 }
 
+interface SourceGrowthEntry extends SourceEntry {
+  experienceIds: string[];
+  contributionIds: string[];
+}
+
 interface SourcePower extends SourceEntry {
   isUnlocked: 0 | 1 | 2;
 }
@@ -157,6 +163,66 @@ type PowerRenderState = {
   showGlow: boolean;
 };
 
+interface LinkPickerDropdownProps {
+  label: string;
+  options: SourceEntry[];
+  selectedIds: string[];
+  setSelectedIds: (ids: string[]) => void;
+}
+
+function LinkPickerDropdown({ label, options, selectedIds, setSelectedIds }: LinkPickerDropdownProps) {
+  const [open, setOpen] = useState(false);
+  const selectedNames = options.filter((o) => selectedIds.includes(o.id)).map((o) => o.name);
+
+  return (
+    <div>
+      <Label className="text-sm font-medium mb-2 block">{label}</Label>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={options.length === 0}
+            className="w-full justify-between font-normal"
+          >
+            <span className="truncate text-left text-muted-foreground data-[has-selection=true]:text-foreground" data-has-selection={selectedNames.length > 0}>
+              {options.length === 0
+                ? "No hay opciones disponibles todavía"
+                : selectedNames.length === 0
+                  ? "Ninguno seleccionado"
+                  : selectedNames.join(", ")}
+            </span>
+            <ChevronDown className="h-4 w-4 opacity-50 shrink-0 ml-2" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="p-2" align="start" onOpenAutoFocus={(e) => e.preventDefault()}>
+          <div className="space-y-2 max-h-48 overflow-y-auto">
+            {options.map((option) => {
+              const checked = selectedIds.includes(option.id);
+              return (
+                <div key={option.id} className="flex items-center gap-2">
+                  <Checkbox
+                    id={`link-${option.id}`}
+                    checked={checked}
+                    onCheckedChange={(value) => {
+                      setSelectedIds(
+                        value ? [...selectedIds, option.id] : selectedIds.filter((id) => id !== option.id)
+                      );
+                    }}
+                  />
+                  <label htmlFor={`link-${option.id}`} className="text-sm cursor-pointer flex-1">
+                    {option.name}
+                  </label>
+                </div>
+              );
+            })}
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
+
 interface ViewSourceDialogProps {
   isOpen: boolean;
   onClose: () => void;
@@ -176,6 +242,12 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
   const [editingEntry, setEditingEntry] = useState<SourceEntry | null>(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [selectedGrowthIds, setSelectedGrowthIds] = useState<string[]>([]);
+  const [selectedExperienceIds, setSelectedExperienceIds] = useState<string[]>([]);
+  const [selectedContributionIds, setSelectedContributionIds] = useState<string[]>([]);
+  const [viewingExperienceId, setViewingExperienceId] = useState<string | null>(null);
+  const [viewingGrowthId, setViewingGrowthId] = useState<string | null>(null);
+  const [viewingGrowthTabId, setViewingGrowthTabId] = useState<string | null>(null);
   const [powerContextMenuId, setPowerContextMenuId] = useState<string | null>(null);
   const powerLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const powerLongPressCompleted = useRef(false);
@@ -275,7 +347,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
   });
 
   // Fetch source growth
-  const { data: growth = [] } = useQuery<SourceEntry[]>({
+  const { data: growth = [] } = useQuery<SourceGrowthEntry[]>({
     queryKey: [`/api/source-growth/${sourceType}/${sourceId}`],
     queryFn: async () => {
       const res = await fetch(`/api/source-growth/${sourceType}/${sourceId}`);
@@ -367,7 +439,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
   });
 
   const createGrowth = useMutation({
-    mutationFn: async (data: { name: string; description: string }) => {
+    mutationFn: async (data: { name: string; description: string; experienceIds?: string[]; contributionIds?: string[] }) => {
       const body = sourceType === "area" 
         ? { ...data, areaId: sourceId } 
         : { ...data, projectId: sourceId };
@@ -451,7 +523,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
   });
 
   const updateGrowth = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: { name: string; description: string } }) => {
+    mutationFn: async ({ id, data }: { id: string; data: { name: string; description: string; experienceIds?: string[]; contributionIds?: string[] } }) => {
       const res = await fetch(`/api/source-growth/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -844,7 +916,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     },
   });
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!name.trim()) return;
     const finalName = name.trim();
     if (activeTab === "powers" && finalName.split(/\s+/).filter(Boolean).length > 3) {
@@ -856,27 +928,34 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     } else if (activeTab === "objectives") {
       createObjective.mutate({ name: finalName, description: description.trim() });
     } else if (activeTab === "growth") {
-      createGrowth.mutate({ name: finalName, description: description.trim() });
+      createGrowth.mutate({
+        name: finalName,
+        description: description.trim(),
+        experienceIds: selectedExperienceIds,
+        contributionIds: selectedContributionIds,
+      });
     } else if (activeTab === "experiences") {
-      createExperience.mutate({
+      const created = await createExperience.mutateAsync({
         name: finalName,
         description: description.trim(),
         areaId: sourceType === "area" ? sourceId : null,
         projectId: sourceType === "project" ? sourceId : null,
       });
+      await syncGrowthLinks(created.id, "experienceIds", selectedGrowthIds);
     } else if (activeTab === "contributions") {
-      createContribution.mutate({
+      const created = await createContribution.mutateAsync({
         name: finalName,
         description: description.trim(),
         areaId: sourceType === "area" ? sourceId : null,
         projectId: sourceType === "project" ? sourceId : null,
       });
+      await syncGrowthLinks(created.id, "contributionIds", selectedGrowthIds);
     } else if (activeTab === "powers") {
       createPower.mutate({ name: finalName, description: description.trim() });
     }
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!editingEntry || !name.trim()) return;
     const finalName = name.trim();
     if (activeTab === "powers" && finalName.split(/\s+/).filter(Boolean).length > 3) {
@@ -888,14 +967,49 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     } else if (activeTab === "objectives") {
       updateObjective.mutate({ id: editingEntry.id, data: { name: finalName, description: description.trim() } });
     } else if (activeTab === "growth") {
-      updateGrowth.mutate({ id: editingEntry.id, data: { name: finalName, description: description.trim() } });
+      updateGrowth.mutate({
+        id: editingEntry.id,
+        data: {
+          name: finalName,
+          description: description.trim(),
+          experienceIds: selectedExperienceIds,
+          contributionIds: selectedContributionIds,
+        },
+      });
     } else if (activeTab === "experiences") {
       updateExperience.mutate({ id: editingEntry.id, data: { name: finalName, description: description.trim(), areaId: sourceType === "area" ? sourceId : null, projectId: sourceType === "project" ? sourceId : null } });
+      await syncGrowthLinks(editingEntry.id, "experienceIds", selectedGrowthIds);
     } else if (activeTab === "contributions") {
       updateContribution.mutate({ id: editingEntry.id, data: { name: finalName, description: description.trim(), areaId: sourceType === "area" ? sourceId : null, projectId: sourceType === "project" ? sourceId : null } });
+      await syncGrowthLinks(editingEntry.id, "contributionIds", selectedGrowthIds);
     } else if (activeTab === "powers") {
       updatePower.mutate({ id: editingEntry.id, data: { name: finalName, description: description.trim() } });
     }
+  };
+
+  const handleDeleteEntry = () => {
+    if (!editingEntry) return;
+    if (activeTab === "description") {
+      deleteDescription.mutate(editingEntry.id);
+    } else if (activeTab === "objectives") {
+      deleteObjective.mutate(editingEntry.id);
+    } else if (activeTab === "growth") {
+      deleteGrowth.mutate(editingEntry.id);
+      if (viewingGrowthTabId === editingEntry.id) {
+        setViewingGrowthTabId(null);
+      }
+    } else if (activeTab === "experiences") {
+      deleteExperience.mutate(editingEntry.id);
+      if (viewingExperienceId === editingEntry.id) {
+        setViewingExperienceId(null);
+        setViewingGrowthId(null);
+      }
+    } else if (activeTab === "contributions") {
+      deleteContribution.mutate(editingEntry.id);
+    } else if (activeTab === "powers") {
+      deletePower.mutate(editingEntry.id);
+    }
+    handleCancelEdit();
   };
 
   const handleStartEdit = (entry: SourceEntry) => {
@@ -909,6 +1023,65 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     setEditingEntry(null);
     setName("");
     setDescription("");
+  };
+
+  // Inicializa las selecciones de vínculos (crecimiento/experiencia/contribución)
+  // cada vez que se abre el diálogo de agregar/editar entrada.
+  useEffect(() => {
+    if (!isAdding && !editingEntry) return;
+    if (editingEntry) {
+      if (activeTab === "growth") {
+        const linkedGrowth = growth.find((g) => g.id === editingEntry.id);
+        setSelectedExperienceIds(linkedGrowth?.experienceIds || []);
+        setSelectedContributionIds(linkedGrowth?.contributionIds || []);
+      } else if (activeTab === "experiences") {
+        setSelectedGrowthIds(growth.filter((g) => (g.experienceIds || []).includes(editingEntry.id)).map((g) => g.id));
+      } else if (activeTab === "contributions") {
+        setSelectedGrowthIds(growth.filter((g) => (g.contributionIds || []).includes(editingEntry.id)).map((g) => g.id));
+      }
+    } else {
+      setSelectedGrowthIds([]);
+      setSelectedExperienceIds([]);
+      setSelectedContributionIds([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdding, editingEntry, activeTab]);
+
+  // Resetea la navegación en columnas de los tabs de experiencias/crecimiento al cambiar de tab o cerrar el diálogo.
+  useEffect(() => {
+    if (!isOpen || activeTab !== "experiences") {
+      setViewingExperienceId(null);
+      setViewingGrowthId(null);
+    }
+    if (!isOpen || activeTab !== "growth") {
+      setViewingGrowthTabId(null);
+    }
+  }, [isOpen, activeTab]);
+
+  // Sincroniza la relación crecimiento<->entidad (experiencia o contribución) cuando
+  // se guarda desde el formulario de experiencia/contribución, ya que el crecimiento
+  // es quien almacena ambos arrays de vínculos.
+  const syncGrowthLinks = async (entityId: string, field: "experienceIds" | "contributionIds", nextGrowthIds: string[]) => {
+    const changed = growth.filter((g) => {
+      const linked = (g[field] || []).includes(entityId);
+      const shouldBeLinked = nextGrowthIds.includes(g.id);
+      return linked !== shouldBeLinked;
+    });
+    if (changed.length === 0) return;
+    await Promise.all(
+      changed.map((g) => {
+        const current = g[field] || [];
+        const next = nextGrowthIds.includes(g.id)
+          ? [...current, entityId]
+          : current.filter((id) => id !== entityId);
+        return fetch(`/api/source-growth/${g.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ [field]: next }),
+        });
+      })
+    );
+    queryClient.invalidateQueries({ queryKey: [`/api/source-growth/${sourceType}/${sourceId}`] });
   };
 
   const parseBugList = (value: string) =>
@@ -1187,44 +1360,104 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     };
   };
 
-  const renderEntryList = (entries: SourceEntry[], canEdit: boolean, onDelete?: (id: string) => void, onEdit?: (entry: SourceEntry) => void) => (
+  const renderEntryList = (
+    entries: SourceEntry[],
+    canEdit: boolean,
+    onDelete?: (id: string) => void,
+    onEdit?: (entry: SourceEntry) => void,
+    onSelect?: (id: string) => void,
+    selectedId?: string | null
+  ) => (
     <div className="space-y-2">
       {entries.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No hay items aún</p>
+        <p className="text-sm text-muted-foreground">No hay items aún (mantener presionado para agregar)</p>
       ) : (
-        entries.map((entry) => (
-          <div key={entry.id} className="p-3 bg-muted/30 rounded-lg group" data-entry-card>
-            <div className="flex items-start justify-between">
-              <div className="flex-1 cursor-pointer" onClick={() => canEdit && onEdit && onEdit(entry)}>
+        entries.map((entry) => {
+          let pressTimer: ReturnType<typeof setTimeout> | null = null;
+          let longPressTriggered = false;
+
+          const startLongPress = () => {
+            longPressTriggered = false;
+            if (!canEdit || !onEdit) return;
+            pressTimer = setTimeout(() => {
+              longPressTriggered = true;
+              onEdit(entry);
+            }, 600);
+          };
+
+          const cancelLongPress = () => {
+            if (pressTimer) {
+              clearTimeout(pressTimer);
+              pressTimer = null;
+            }
+          };
+
+          const handleClick = () => {
+            if (longPressTriggered) {
+              longPressTriggered = false;
+              return;
+            }
+            onSelect && onSelect(entry.id);
+          };
+
+          return (
+            <div
+              key={entry.id}
+              className={cn(
+                "p-3 rounded-lg select-none",
+                onSelect
+                  ? selectedId === entry.id
+                    ? "bg-primary/10 border border-primary/40"
+                    : "bg-muted/30 hover:bg-muted/50"
+                  : "bg-muted/30"
+              )}
+              data-entry-card
+              onPointerDown={startLongPress}
+              onPointerUp={cancelLongPress}
+              onPointerCancel={cancelLongPress}
+              onPointerLeave={cancelLongPress}
+            >
+              <div
+                className={cn(onSelect || (canEdit && onEdit) ? "cursor-pointer" : undefined)}
+                onClick={handleClick}
+              >
                 <h4 className="font-medium text-sm">{entry.name}</h4>
                 {entry.description && (
                   <p className="text-xs text-muted-foreground mt-1">{entry.description}</p>
                 )}
               </div>
-              <div className="flex gap-1">
-                {canEdit && onEdit && (
-                  <button
-                    onClick={() => onEdit(entry)}
-                    className="opacity-0 group-hover:opacity-100 p-1 hover:bg-muted rounded transition-all"
-                  >
-                    <Pencil className="h-3 w-3 text-muted-foreground" />
-                  </button>
-                )}
-                {canEdit && onDelete && (
-                  <button
-                    onClick={() => onDelete(entry.id)}
-                    className="opacity-0 group-hover:opacity-100 p-1 hover:bg-destructive/20 rounded transition-all"
-                  >
-                    <Trash2 className="h-3 w-3 text-destructive" />
-                  </button>
-                )}
-              </div>
             </div>
-          </div>
-        ))
+          );
+        })
       )}
     </div>
   );
+
+  const linkedGrowthsForExperience = viewingExperienceId
+    ? growth.filter((g) => (g.experienceIds || []).includes(viewingExperienceId))
+    : [];
+  const viewingGrowthEntry = viewingGrowthId ? growth.find((g) => g.id === viewingGrowthId) || null : null;
+  const linkedContributionsForGrowth = viewingGrowthEntry
+    ? contributions.filter((c) => (viewingGrowthEntry.contributionIds || []).includes(c.id))
+    : [];
+
+  const handleSelectExperienceForView = (id: string) => {
+    setViewingExperienceId((prev) => (prev === id ? null : id));
+    setViewingGrowthId(null);
+  };
+
+  const handleSelectGrowthForView = (id: string) => {
+    setViewingGrowthId((prev) => (prev === id ? null : id));
+  };
+
+  const viewingGrowthTabEntry = viewingGrowthTabId ? growth.find((g) => g.id === viewingGrowthTabId) || null : null;
+  const linkedContributionsForGrowthTab = viewingGrowthTabEntry
+    ? contributions.filter((c) => (viewingGrowthTabEntry.contributionIds || []).includes(c.id))
+    : [];
+
+  const handleSelectGrowthTabForView = (id: string) => {
+    setViewingGrowthTabId((prev) => (prev === id ? null : id));
+  };
 
   const selectedBug = bugs.find((bug) => bug.id === selectedBugId) || null;
   const bugProgressCount = selectedBug?.status === "debugueado"
@@ -1262,14 +1495,6 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
             >
               {renderEntryList(descriptions, true, (id) => deleteDescription.mutate(id), handleStartEdit)}
             </ScrollArea>
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-3 w-full"
-              onClick={() => setIsAdding(true)}
-            >
-              <Plus className="h-4 w-4 mr-1" /> Agregar
-            </Button>
           </TabsContent>
 
           <TabsContent value="objectives" className="mt-4 min-h-0">
@@ -1281,52 +1506,86 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
             >
               {renderEntryList(objectives, true, (id) => deleteObjective.mutate(id), handleStartEdit)}
             </ScrollArea>
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-3 w-full"
-              onClick={() => setIsAdding(true)}
-            >
-              <Plus className="h-4 w-4 mr-1" /> Agregar
-            </Button>
           </TabsContent>
 
           <TabsContent value="experiences" className="mt-4 min-h-0">
-            <ScrollArea
-              className="h-[min(52dvh,320px)] pr-4"
-              onPointerDown={handleBackgroundPointerDown}
-              onPointerUp={handleBackgroundPointerUp}
-              onPointerCancel={handleBackgroundPointerUp}
-            >
-              {renderEntryList(experiences, true, (id) => deleteExperience.mutate(id), handleStartEdit)}
-            </ScrollArea>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="mt-3 w-full" 
-              onClick={() => setIsAdding(true)}
-            >
-              <Plus className="h-4 w-4 mr-1" /> Agregar
-            </Button>
+            <div className="flex gap-2 h-[min(52dvh,320px)]">
+              <ScrollArea
+                className={cn(viewingExperienceId ? "w-1/2 sm:w-2/5 shrink-0 border-r pr-3" : "flex-1 pr-4")}
+                onPointerDown={handleBackgroundPointerDown}
+                onPointerUp={handleBackgroundPointerUp}
+                onPointerCancel={handleBackgroundPointerUp}
+              >
+                {renderEntryList(
+                  experiences,
+                  true,
+                  (id) => deleteExperience.mutate(id),
+                  handleStartEdit,
+                  handleSelectExperienceForView,
+                  viewingExperienceId
+                )}
+              </ScrollArea>
+
+              {viewingExperienceId && (
+                <ScrollArea className={cn(viewingGrowthId ? "w-1/2 sm:w-2/5 shrink-0 border-r pr-3" : "flex-1 pr-4")}>
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Crecimientos vinculados</p>
+                  {linkedGrowthsForExperience.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No hay crecimientos vinculados</p>
+                  ) : (
+                    renderEntryList(
+                      linkedGrowthsForExperience,
+                      false,
+                      undefined,
+                      undefined,
+                      handleSelectGrowthForView,
+                      viewingGrowthId
+                    )
+                  )}
+                </ScrollArea>
+              )}
+
+              {viewingGrowthId && (
+                <ScrollArea className="flex-1 pr-4">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Contribuciones vinculadas</p>
+                  {linkedContributionsForGrowth.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No hay contribuciones vinculadas</p>
+                  ) : (
+                    renderEntryList(linkedContributionsForGrowth, false)
+                  )}
+                </ScrollArea>
+              )}
+            </div>
           </TabsContent>
 
           <TabsContent value="growth" className="mt-4 min-h-0">
-            <ScrollArea
-              className="h-[min(52dvh,320px)] pr-4"
-              onPointerDown={handleBackgroundPointerDown}
-              onPointerUp={handleBackgroundPointerUp}
-              onPointerCancel={handleBackgroundPointerUp}
-            >
-              {renderEntryList(growth, true, (id) => deleteGrowth.mutate(id), handleStartEdit)}
-            </ScrollArea>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="mt-3 w-full" 
-              onClick={() => setIsAdding(true)}
-            >
-              <Plus className="h-4 w-4 mr-1" /> Agregar
-            </Button>
+            <div className="flex gap-2 h-[min(52dvh,320px)]">
+              <ScrollArea
+                className={cn(viewingGrowthTabId ? "w-1/2 sm:w-2/5 shrink-0 border-r pr-3" : "flex-1 pr-4")}
+                onPointerDown={handleBackgroundPointerDown}
+                onPointerUp={handleBackgroundPointerUp}
+                onPointerCancel={handleBackgroundPointerUp}
+              >
+                {renderEntryList(
+                  growth,
+                  true,
+                  (id) => deleteGrowth.mutate(id),
+                  handleStartEdit,
+                  handleSelectGrowthTabForView,
+                  viewingGrowthTabId
+                )}
+              </ScrollArea>
+
+              {viewingGrowthTabId && (
+                <ScrollArea className="flex-1 pr-4">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Contribuciones vinculadas</p>
+                  {linkedContributionsForGrowthTab.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No hay contribuciones vinculadas</p>
+                  ) : (
+                    renderEntryList(linkedContributionsForGrowthTab, false)
+                  )}
+                </ScrollArea>
+              )}
+            </div>
           </TabsContent>
 
           <TabsContent value="contributions" className="mt-4 min-h-0">
@@ -1338,14 +1597,6 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
             >
               {renderEntryList(contributions, true, (id) => deleteContribution.mutate(id), handleStartEdit)}
             </ScrollArea>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="mt-3 w-full" 
-              onClick={() => setIsAdding(true)}
-            >
-              <Plus className="h-4 w-4 mr-1" /> Agregar
-            </Button>
           </TabsContent>
 
           <TabsContent value="powers" className="mt-4 min-h-0">
@@ -1772,7 +2023,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
           handleCancelEdit();
         }
       }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingEntry ? "Editar entrada" : "Agregar nueva entrada"}
@@ -1805,9 +2056,30 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                 rows={3}
               />
             </div>
+            {activeTab === "growth" && (
+              <>
+                <LinkPickerDropdown label="Experiencias vinculadas" options={experiences} selectedIds={selectedExperienceIds} setSelectedIds={setSelectedExperienceIds} />
+                <LinkPickerDropdown label="Contribuciones vinculadas" options={contributions} selectedIds={selectedContributionIds} setSelectedIds={setSelectedContributionIds} />
+              </>
+            )}
+            {activeTab === "experiences" && (
+              <LinkPickerDropdown label="Crecimientos vinculados" options={growth} selectedIds={selectedGrowthIds} setSelectedIds={setSelectedGrowthIds} />
+            )}
+            {activeTab === "contributions" && (
+              <LinkPickerDropdown label="Crecimientos vinculados" options={growth} selectedIds={selectedGrowthIds} setSelectedIds={setSelectedGrowthIds} />
+            )}
             <div className="flex gap-2 justify-end pt-2">
-              <Button 
-                variant="outline" 
+              {editingEntry && (
+                <Button
+                  variant="ghost"
+                  className="mr-auto text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  onClick={handleDeleteEntry}
+                >
+                  <Trash2 className="h-4 w-4 mr-1" /> Eliminar
+                </Button>
+              )}
+              <Button
+                variant="outline"
                 onClick={() => {
                   setIsAdding(false);
                   handleCancelEdit();
@@ -1815,7 +2087,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
               >
                 Cancelar
               </Button>
-              <Button 
+              <Button
                 onClick={editingEntry ? handleSaveEdit : handleAdd}
                 disabled={!name.trim()}
               >

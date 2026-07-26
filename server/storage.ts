@@ -1,7 +1,7 @@
 import { eq, and, asc, sql, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db, pool } from "./db";
-import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type JournalShadowPage, type InsertJournalShadowPage, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourceObjective, type InsertSourceObjective, type SourcePowers, type InsertSourcePowers, type SourceBug, type InsertSourceBug, type SourceBugRecord, type InsertSourceBugRecord, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, type BodyProgressRow, type InsertBodyProgress, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, journalShadowPages, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourceObjectives, sourcePowers, sourceBugs, sourceBugRecords, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, rewiringTrackers, rewiringTrackerRecords, bodyProgress } from "@shared/schema";
+import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type JournalShadowPage, type InsertJournalShadowPage, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourceObjective, type InsertSourceObjective, type SourcePowers, type InsertSourcePowers, type SourceBug, type InsertSourceBug, type SourceBugRecord, type InsertSourceBugRecord, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, type BodyProgressRow, type InsertBodyProgress, type TodayTaskSlot, type InsertTodayTaskSlot, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, journalShadowPages, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourceObjectives, sourcePowers, sourceBugs, sourceBugRecords, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, rewiringTrackers, rewiringTrackerRecords, bodyProgress, todayTaskSlots } from "@shared/schema";
 
 const normalizeSourceBugStatus = (status: string): "identificado" | "debugueando" | "debugueado" => {
   if (status === "activo") return "identificado";
@@ -484,6 +484,7 @@ export class DbStorage implements IStorage {
     if (skill.level !== undefined) updateData.level = skill.level;
     if (skill.levelPosition !== undefined) updateData.levelPosition = skill.levelPosition;
     if (skill.plannedDate !== undefined) updateData.plannedDate = skill.plannedDate;
+    if (skill.completedAt !== undefined) updateData.completedAt = skill.completedAt;
 
     const result = await db.update(skills).set(updateData).where(eq(skills.id, id)).returning();
     return result[0];
@@ -1449,12 +1450,25 @@ export class DbStorage implements IStorage {
 
   async createSourceGrowth(entry: InsertSourceGrowth): Promise<SourceGrowth> {
     const id = randomUUID();
-    const result = await db.insert(sourceGrowth).values({ id, ...entry }).returning();
+    const insertData: typeof sourceGrowth.$inferInsert = {
+      ...entry,
+      id,
+      experienceIds: Array.isArray(entry.experienceIds) ? (entry.experienceIds as string[]) : [],
+      contributionIds: Array.isArray(entry.contributionIds) ? (entry.contributionIds as string[]) : [],
+    };
+    const result = await db.insert(sourceGrowth).values(insertData).returning();
     return result[0];
   }
 
   async updateSourceGrowth(id: string, entry: Partial<InsertSourceGrowth>): Promise<SourceGrowth | undefined> {
-    const result = await db.update(sourceGrowth).set(entry).where(eq(sourceGrowth.id, id)).returning();
+    const updateData: Record<string, any> = { ...entry };
+    if (entry.experienceIds !== undefined) {
+      updateData.experienceIds = Array.isArray(entry.experienceIds) ? (entry.experienceIds as string[]) : [];
+    }
+    if (entry.contributionIds !== undefined) {
+      updateData.contributionIds = Array.isArray(entry.contributionIds) ? (entry.contributionIds as string[]) : [];
+    }
+    const result = await db.update(sourceGrowth).set(updateData).where(eq(sourceGrowth.id, id)).returning();
     return result[0];
   }
 
@@ -2235,6 +2249,9 @@ export class DbStorage implements IStorage {
       completedIntervals: practice.completedIntervals ? JSON.stringify(Array.isArray(practice.completedIntervals) ? practice.completedIntervals : []) : undefined,
       completedIntervalsL2: practice.completedIntervalsL2 ? JSON.stringify(Array.isArray(practice.completedIntervalsL2) ? practice.completedIntervalsL2 : []) : undefined,
       lostIntervals: practice.lostIntervals ? JSON.stringify(Array.isArray(practice.lostIntervals) ? practice.lostIntervals : []) : undefined,
+      lastConfirmedAt: practice.lastConfirmedAt !== undefined
+        ? (practice.lastConfirmedAt ? new Date(practice.lastConfirmedAt as unknown as string) : null)
+        : undefined,
       updatedAt: new Date()
     };
     const result = await db.update(spaceRepetitionPractices)
@@ -2422,6 +2439,34 @@ export class DbStorage implements IStorage {
 
     const result = await db.insert(bodyProgress).values(row as any).returning();
     return result[0];
+  }
+
+  // Today Task Slots (franja horaria de tareas de "Hoy": mañana/mediodía/tarde/noche)
+  async getTodayTaskSlots(userId: string, date: string): Promise<TodayTaskSlot[]> {
+    return await db.select().from(todayTaskSlots).where(
+      and(eq(todayTaskSlots.userId, userId), eq(todayTaskSlots.date, date))
+    );
+  }
+
+  async upsertTodayTaskSlot(row: InsertTodayTaskSlot): Promise<TodayTaskSlot> {
+    const id = `${row.userId}:${row.date}:${row.taskType}:${row.taskId}`;
+    const existing = await db.select().from(todayTaskSlots).where(eq(todayTaskSlots.id, id)).limit(1);
+
+    if (existing[0]) {
+      const result = await db.update(todayTaskSlots)
+        .set({ slot: row.slot, updatedAt: new Date() })
+        .where(eq(todayTaskSlots.id, id))
+        .returning();
+      return result[0];
+    }
+
+    const result = await db.insert(todayTaskSlots).values({ id, ...row }).returning();
+    return result[0];
+  }
+
+  async deleteTodayTaskSlot(userId: string, date: string, taskType: string, taskId: string): Promise<void> {
+    const id = `${userId}:${date}:${taskType}:${taskId}`;
+    await db.delete(todayTaskSlots).where(eq(todayTaskSlots.id, id));
   }
 }
 

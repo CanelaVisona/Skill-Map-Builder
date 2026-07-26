@@ -27,6 +27,8 @@ export interface SpaceRepetitionPractice {
   areaId?: string | null;
   skillIds?: string[];
   bodyLinks?: BodyLink[];
+  lastConfirmedAt?: string | null;
+  createdAt?: string;
   updatedAt?: string;
 }
 
@@ -87,14 +89,33 @@ function calculateDaysSince(startDateStr: string): number {
   const [year, month, day] = startDateStr.split('-').map(Number);
   // Crear fecha a medianoche en zona horaria local del usuario
   const start = new Date(year, month - 1, day, 0, 0, 0, 0);
-  
+
   // Obtener hoy a medianoche en zona horaria local
   const today = new Date();
   const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0);
-  
+
   // Calcular diferencia de días desde medianoche local
   const diff = todayMidnight.getTime() - start.getTime();
   return Math.floor(diff / (1000 * 60 * 60 * 24));
+}
+
+// gaps[i] = días que deben pasar desde que se confirmó el intervalo i-1 hasta que el i queda
+// disponible (gaps[0] = intervals[0], el intervalo inicial cuenta desde el arranque de la
+// práctica/nivel, no desde una confirmación previa).
+function getGapsForIntervals(intervals: number[]): number[] {
+  return intervals.map((value, i) => (i === 0 ? value : value - intervals[i - 1]));
+}
+
+// Instante exacto desde el que se cuentan las 24hs por gap: la última confirmación real si
+// existe, si no el momento en que se creó/tocó la práctica por última vez. Se usa tanto para
+// el primer intervalo (nada confirmado todavía) como para los siguientes — apenas se confirma
+// algo, lastConfirmedAt pasa a ser el ancla de la cuenta regresiva del próximo.
+function getAnchorTimestamp(practice: SpaceRepetitionPractice): string {
+  return practice.lastConfirmedAt || practice.updatedAt || practice.createdAt || `${getReferenceDate(practice)}T00:00:00`;
+}
+
+function hoursSince(isoTimestamp: string): number {
+  return (Date.now() - new Date(isoTimestamp).getTime()) / (1000 * 60 * 60);
 }
 
 function formatDate(dateStr: string): string {
@@ -102,71 +123,68 @@ function formatDate(dateStr: string): string {
   return date.toLocaleDateString("es-AR", { day: "2-digit", month: "short", year: "numeric" });
 }
 
-function formatTimeRemaining(daysRemaining: number): string {
-  if (daysRemaining > 2) {
-    return `${daysRemaining} días`;
+// hoursRemaining puede ser negativo (ya venció) — en ese caso se muestra el contador en 00:00:00.
+function formatTimeRemaining(hoursRemaining: number): string {
+  if (hoursRemaining > 48) {
+    return `${Math.ceil(hoursRemaining / 24)} días`;
   }
-  if (daysRemaining === 1) {
+  if (hoursRemaining > 24) {
     return "tomorrow";
   }
-  // If 0 or negative, calculate hours, minutes and seconds until midnight
-  const now = new Date();
-  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
-  const msUntilMidnight = midnight.getTime() - now.getTime();
-  const diff = Math.floor(msUntilMidnight / 1000);
-  const hours = String(Math.floor(diff / 3600)).padStart(2, '0');
-  const minutes = String(Math.floor((diff % 3600) / 60)).padStart(2, '0');
-  const seconds = String(diff % 60).padStart(2, '0');
+  const totalSeconds = Math.max(0, Math.floor(hoursRemaining * 3600));
+  const hours = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
+  const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
+  const seconds = String(totalSeconds % 60).padStart(2, '0');
   return `${hours}:${minutes}:${seconds}`;
 }
 
 type PracticeStatus = "waiting" | "expires_soon" | "loss" | "frozen" | "complete" | "level2_waiting";
 
+// Núcleo compartido por L1 y L2: recorre los intervalos y compara horas reales transcurridas
+// desde `anchor` (la última confirmación, no una fecha de calendario) contra el gap (en horas)
+// que corresponde a cada uno.
+function calculateStatusFromAnchor(intervals: number[], completedIndices: Set<number>, anchor: string): PracticeStatus {
+  const gaps = getGapsForIntervals(intervals);
+  const hSince = hoursSince(anchor);
+
+  // Nada confirmado todavía: no puede haber pérdida ni congelamiento. Queda "por vencer" las
+  // primeras 48hs después de que el primer intervalo queda disponible, y en espera indefinida
+  // (sin penalidad) después.
+  if (completedIndices.size === 0) {
+    const gapHours = gaps[0] * 24;
+    if (hSince < gapHours) return "waiting";
+    return (hSince - gapHours) <= 48 ? "expires_soon" : "waiting";
+  }
+
+  for (let i = 0; i < intervals.length; i++) {
+    if (!completedIndices.has(i)) {
+      const gapHours = gaps[i] * 24;
+      const hoursUntilDue = gapHours - hSince;
+
+      // Sin ventana de anticipación: el intervalo solo se habilita cuando pasaron
+      // efectivamente las 24hs * gap correspondientes desde la última confirmación real.
+      if (hoursUntilDue > 0) return "waiting";
+
+      const hoursAfterDue = -hoursUntilDue;
+      if (hoursAfterDue <= 48) return "loss"; // hasta 2 días reales de gracia
+      return "frozen"; // más de 2 días reales de atraso
+    }
+  }
+
+  return "complete";
+}
+
 export function calculateStatus(practice: SpaceRepetitionPractice): PracticeStatus {
   const level = practice.level || 1;
-  
+
   // Handle L2 special case
   if (level === 2 && practice.level1CompletedDate) {
     return calculateStatusL2(practice);
   }
 
-  const daysSince = calculateDaysSince(practice.startDate);
   const completedIndices = new Set(practice.completedIntervals);
-
-  // If never registered anything, cannot be in loss or frozen
-  if (practice.completedIntervals.length === 0) {
-    if (daysSince === 0) return "expires_soon"; // D0 due today
-    if (daysSince <= 2) return "expires_soon";  // still in window
-    return "waiting"; // waiting for first registration, no penalty
-  }
-
-  for (let i = 0; i < INTERVALS_L1.length; i++) {
-    if (!completedIndices.has(i)) {
-      const targetDay = INTERVALS_L1[i];
-      const daysUntilDue = targetDay - daysSince;
-      const daysAfterDue = daysSince - targetDay;
-
-      // Sin ventana de anticipación: el nodo solo se habilita cuando transcurrieron
-      // efectivamente los días correspondientes, nunca antes.
-      if (daysUntilDue > 0) {
-        return "waiting";
-      }
-      // Exactamente en el día de vencimiento
-      else if (daysUntilDue >= 0) {
-        return "expires_soon";
-      }
-      // 1-2 days after due
-      else if (daysAfterDue <= 2) {
-        return "loss";
-      }
-      // 3+ days after due
-      else if (daysAfterDue > 2) {
-        return "frozen";
-      }
-    }
-  }
-
-  return "complete";
+  const anchor = getAnchorTimestamp(practice);
+  return calculateStatusFromAnchor(INTERVALS_L1, completedIndices, anchor);
 }
 
 export function calculateStatusL2(practice: SpaceRepetitionPractice): PracticeStatus {
@@ -175,37 +193,17 @@ export function calculateStatusL2(practice: SpaceRepetitionPractice): PracticeSt
     return calculateStatus({ ...practice, level: 1 });
   }
 
+  // Esta espera mínima de 15 días es un portón único de entrada a L2, fijo desde el momento
+  // en que se completó L1 — a propósito NO se recalcula contra la última confirmación de L2
+  // (si no, cada intervalo de L2 confirmado volvería a mostrar "level2_waiting" por 15 días).
   const daysSinceL1Complete = calculateDaysSince(practice.level1CompletedDate);
-  
-  // If <15 days since L1 completion
   if (daysSinceL1Complete < 15) {
     return "level2_waiting";
   }
 
-  // L2 has started, apply same logic as L1
   const completedIndicesL2 = new Set((practice.completedIntervalsL2 || []).map(Number));
-
-  for (let i = 0; i < INTERVALS_L2.length; i++) {
-    if (!completedIndicesL2.has(i)) {
-      const targetDay = INTERVALS_L2[i];
-      const daysUntilDue = targetDay - daysSinceL1Complete;
-      const daysAfterDue = daysSinceL1Complete - targetDay;
-
-      // Sin ventana de anticipación: mismo criterio que L1, el nodo se habilita
-      // solo cuando transcurrieron los días correspondientes.
-      if (daysUntilDue > 0) {
-        return "waiting";
-      } else if (daysUntilDue >= 0) {
-        return "expires_soon";
-      } else if (daysAfterDue <= 2) {
-        return "loss";
-      } else if (daysAfterDue > 2) {
-        return "frozen";
-      }
-    }
-  }
-
-  return "complete";
+  const anchor = getAnchorTimestamp(practice);
+  return calculateStatusFromAnchor(INTERVALS_L2, completedIndicesL2, anchor);
 }
 
 
@@ -221,16 +219,21 @@ function getNextIntervalIndex(practice: SpaceRepetitionPractice): number {
   return -1;
 }
 
-function daysUntilNextInterval(practice: SpaceRepetitionPractice): number {
+// Horas reales restantes hasta que el próximo intervalo quede disponible (puede ser negativo
+// si ya está vencido).
+function hoursUntilNextInterval(practice: SpaceRepetitionPractice): number {
   const nextIdx = getNextIntervalIndex(practice);
   if (nextIdx === -1) return 0;
-  
+
   const level = practice.level || 1;
   const intervals = (level === 2) ? INTERVALS_L2 : INTERVALS_L1;
-  const referenceDate = getReferenceDate(practice);
-  const daysSince = calculateDaysSince(referenceDate);
-  const targetDay = intervals[nextIdx];
-  return Math.max(0, targetDay - daysSince);
+  const gaps = getGapsForIntervals(intervals);
+  const anchor = getAnchorTimestamp(practice);
+  return gaps[nextIdx] * 24 - hoursSince(anchor);
+}
+
+function daysUntilNextInterval(practice: SpaceRepetitionPractice): number {
+  return Math.max(0, Math.ceil(hoursUntilNextInterval(practice) / 24));
 }
 
 function getStateColor(status: PracticeStatus): string {
@@ -273,13 +276,7 @@ function formatTimeMessage(status: PracticeStatus, practice: SpaceRepetitionPrac
   const nextIdx = getNextIntervalIndex(practice);
   if (nextIdx === -1) return "";
 
-  const level = practice.level || 1;
-  const intervals = (level === 2) ? INTERVALS_L2 : INTERVALS_L1;
-  const referenceDate = getReferenceDate(practice);
-  const daysSince = calculateDaysSince(referenceDate);
-  const targetDay = intervals[nextIdx];
-  const daysUntilDue = targetDay - daysSince;
-  const timeRemaining = formatTimeRemaining(daysUntilDue);
+  const timeRemaining = formatTimeRemaining(hoursUntilNextInterval(practice));
 
   switch (status) {
     case "waiting":
@@ -752,6 +749,7 @@ export function SpaceRepetitionModal({
               archived: 1,
               endDate: getLocalDateString(),
               lostIntervals: [],
+              lastConfirmedAt: new Date().toISOString(),
             })
           });
           if (!res.ok) throw new Error("Error updating practice");
@@ -781,6 +779,7 @@ export function SpaceRepetitionModal({
           body: JSON.stringify({
             completedIntervalsL2: newCompletedL2,
             lostIntervals: [],
+            lastConfirmedAt: new Date().toISOString(),
           })
         });
         if (!res.ok) throw new Error("Error updating practice");
@@ -811,6 +810,7 @@ export function SpaceRepetitionModal({
             level1CompletedDate: getLocalDateString(),
             completedIntervalsL2: [],
             lostIntervals: [],
+            lastConfirmedAt: new Date().toISOString(),
           })
         });
         if (!res.ok) throw new Error("Error updating practice");
@@ -832,6 +832,7 @@ export function SpaceRepetitionModal({
         body: JSON.stringify({
           completedIntervals: newCompleted,
           lostIntervals: [],
+          lastConfirmedAt: new Date().toISOString(),
         })
       });
       if (!res.ok) throw new Error("Error updating practice");
@@ -860,6 +861,7 @@ export function SpaceRepetitionModal({
         body: JSON.stringify({
           startDate: getLocalDateString(),
           completedIntervals: [],
+          lastConfirmedAt: null,
         })
       });
       if (!res.ok) throw new Error("Error resetting practice");
@@ -884,21 +886,17 @@ export function SpaceRepetitionModal({
 
       const level = practice.level || 1;
       const intervals = (level === 2) ? INTERVALS_L2 : INTERVALS_L1;
-      const targetIntervalDays = intervals[nextIdx];
+      const gaps = getGapsForIntervals(intervals);
+      const gapHours = gaps[nextIdx] * 24;
 
-      // Calculate new start date: today - interval days
-      const today = new Date();
-      const newDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() - targetIntervalDays, 0, 0, 0, 0);
-      const newDateStr = getLocalDateString(newDate);
-
-      const updateData = level === 2 && practice.level1CompletedDate
-        ? { level1CompletedDate: newDateStr }
-        : { startDate: newDateStr };
+      // Recover it by back-dating the last-confirmed instant to exactly `gapHours` ago, so
+      // the next interval reads as due right now instead of overdue.
+      const newLastConfirmedAt = new Date(Date.now() - gapHours * 60 * 60 * 1000);
 
       const res = await fetch(`/api/space-repetition/${practiceId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updateData),
+        body: JSON.stringify({ lastConfirmedAt: newLastConfirmedAt.toISOString() }),
       });
       if (!res.ok) throw new Error("Error recovering practice");
       const updated = await res.json();
@@ -1271,9 +1269,7 @@ function PracticeCardWithLongPress({
 
   // Calculate days until next interval and show Well done message
   const nextIdx = getNextIntervalIndex(practice);
-  const daysSince = calculateDaysSince(practice.startDate);
-  const intervals = practice.level === 2 ? INTERVALS_L2 : INTERVALS_L1;
-  const daysUntilDue = nextIdx >= 0 ? Math.max(0, intervals[nextIdx] - daysSince) : 0;
+  const daysUntilDue = daysUntilNextInterval(practice);
   const lastCompletedLabel = completedSet.size > 0
     ? LABELS_L1[[...completedSet].sort((a: number, b: number) => b - a)[0]]
     : null;
@@ -2104,8 +2100,8 @@ function TimelineVisual({
               // Calculate days frozen for progressive opacity
               let daysFrozen = 0;
               if (isFrozen) {
-                const refDate = practice.level === 2 && practice.level1CompletedDate ? practice.level1CompletedDate : practice.startDate;
-                daysFrozen = calculateDaysSince(refDate) - intervals[idx];
+                const gaps = getGapsForIntervals(intervals);
+                daysFrozen = Math.floor(hoursSince(getAnchorTimestamp(practice)) / 24) - gaps[nextIdx];
               }
               
               // Opacity: 50% if 1-2 days frozen, 100% if 3+ days

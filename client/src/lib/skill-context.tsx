@@ -25,6 +25,7 @@ export interface Skill {
   levelPosition?: number;
   experiencePoints?: number;
   plannedDate?: string | null;
+  completedAt?: string | null;
 }
 
 export interface Area {

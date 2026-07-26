@@ -53,6 +53,17 @@ function formatLocalDate(date: Date): string {
 // weekday). The day that falls on "Mañana" is skipped since it would just repeat that
 // shortcut. E.g. if today is Tuesday: Hoy, Mañana, Jueves, Viernes, Sábado, Domingo, Lunes,
 // Martes (next week's Tuesday) — Miércoles (tomorrow) is left out.
+// Renders a saved plannedDate the same way the "When exactly?" selector does: as one of
+// the quick-option labels (e.g. "Mañana") when it matches, otherwise as a plain date.
+function getPlannedDateLabel(plannedDate: string | null | undefined): string | null {
+  if (!plannedDate) return null;
+  // A date that has already gone by is no longer useful info to surface on the node.
+  if (plannedDate < formatLocalDate(new Date())) return null;
+  const matched = getQuickDateOptions().find((opt) => opt.value === plannedDate);
+  if (matched) return matched.label;
+  return new Date(plannedDate + "T00:00:00").toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
 function getQuickDateOptions(): QuickDateOption[] {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -192,6 +203,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   // Detect if node has default name (generated Nodo X format)
   const hasDefaultName = skill.title.startsWith("Nodo ") || skill.title === "Next challenge" || skill.title === "Next objetive quest" || skill.title === "Objective quest";
 
+  const plannedDateLabel = getPlannedDateLabel(skill.plannedDate);
+
   // Default-named nodes get a mild extra fade, but distance to the active node stays
   // the dominant signal: a freshly-added node (necessarily still default-named) must
   // never look fainter than an already-named node sitting further away.
@@ -259,6 +272,17 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   // which hasn't changed yet) would snap back to the previous option on the very next render,
   // fighting with what the user just clicked and causing the popover to flash open/closed.
   const [pendingCustomDate, setPendingCustomDate] = useState(false);
+  // Controlled open state for the "When exactly?" Select. Needed so re-clicking the
+  // already-selected option (see suppressWhenOptionClickRef below) can close the dropdown
+  // itself, since in that case Radix's own close-on-select logic is deliberately skipped.
+  const [isWhenSelectOpen, setIsWhenSelectOpen] = useState(false);
+  // Radix Select never calls onValueChange when the clicked item is already the selected
+  // value (its controlled value wouldn't change), so re-clicking the active option to
+  // deselect it has to be intercepted at the pointer level instead. Mouse selection
+  // resolves on pointerup while touch resolves on the click that follows, so this ref
+  // records which option id we've just deselected on pointerup, letting the subsequent
+  // click on that same item be swallowed before it can re-select it out from under us.
+  const suppressWhenOptionClickRef = useRef<string | null>(null);
   const [editDescription, setEditDescription] = useState(skill.description || "");
   const [editFeedback, setEditFeedback] = useState(skill.feedback || "");
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1325,28 +1349,36 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
           {/* Label */}
           <div className={cn(
-            "absolute left-14 top-1/2 -translate-y-1/2 font-medium transition-colors text-sm flex items-center gap-2",
+            "absolute left-14 top-1/2 -translate-y-1/2 font-medium transition-colors text-sm flex items-start gap-2",
             isLocked ? "text-muted-foreground" : "text-foreground",
             isMastered && "text-foreground",
             (skill.title.startsWith("Nodo ") || skill.title === "Next challenge" || skill.title === "Next objetive quest" || skill.title === "Objective quest") && "text-muted-foreground/60"
           )}>
-            <span
-              onClick={handleTitleClick}
-              onTouchStart={handleTitleLongPressStart}
-              onTouchEnd={handleTitleLongPressEnd}
-              onTouchCancel={handleTitleLongPressEnd}
-              onMouseDown={handleTitleLongPressStart}
-              onMouseUp={handleTitleLongPressEnd}
-              onMouseLeave={handleTitleLongPressEnd}
-              className={cn(
-                "whitespace-nowrap block transition-transform duration-150",
-                !isSubSkillView && !isLocked && !isInicioNode && "cursor-pointer hover:translate-y-0.5 active:translate-y-1",
-                !isInicioNode && "cursor-pointer"
+            <div className="flex flex-col">
+              <span
+                onClick={handleTitleClick}
+                onTouchStart={handleTitleLongPressStart}
+                onTouchEnd={handleTitleLongPressEnd}
+                onTouchCancel={handleTitleLongPressEnd}
+                onMouseDown={handleTitleLongPressStart}
+                onMouseUp={handleTitleLongPressEnd}
+                onMouseLeave={handleTitleLongPressEnd}
+                className={cn(
+                  "whitespace-nowrap block transition-transform duration-150",
+                  !isSubSkillView && !isLocked && !isInicioNode && "cursor-pointer hover:translate-y-0.5 active:translate-y-1",
+                  !isInicioNode && "cursor-pointer"
+                )}
+                data-testid={`link-skill-title-${skill.id}`}
+              >
+                {skill.isAutoComplete === 1 || skill.levelPosition === 1 ? "" : skill.title}
+              </span>
+              {/* Small date tag under the title when this node has a plannedDate assigned */}
+              {skill.isAutoComplete !== 1 && skill.levelPosition !== 1 && !isInicioNode && plannedDateLabel && (
+                <span className="whitespace-nowrap font-normal italic tracking-wide text-muted-foreground/70 text-[10px] leading-tight">
+                  {plannedDateLabel}
+                </span>
               )}
-              data-testid={`link-skill-title-${skill.id}`}
-            >
-              {skill.isAutoComplete === 1 || skill.levelPosition === 1 ? "" : skill.title}
-            </span>
+            </div>
             {/* Don't show the "ready to confirm" mark alongside the incomplete-subtasks
                 lock icon (hasUnlockedWithIncompleteSubtasks above) — the two signals
                 contradict each other visually. */}
@@ -2043,11 +2075,24 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                           ? new Date(editPlannedDate + "T00:00:00").toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" })
                           : null;
 
+                    // Deselects the given quick option (or the custom date), clearing the
+                    // planned date entirely. Also closes the dropdown ourselves, since we
+                    // preempt Radix's own select-and-close handling for this case below.
+                    const deselectWhenOption = (id: string) => {
+                      suppressWhenOptionClickRef.current = id;
+                      setEditPlannedDate("");
+                      setPendingCustomDate(false);
+                      setShowCustomCalendar(false);
+                      setIsWhenSelectOpen(false);
+                    };
+
                     return (
                       <Popover open={showCustomCalendar} onOpenChange={setShowCustomCalendar}>
                         <PopoverAnchor asChild>
                           <div>
                             <Select
+                              open={isWhenSelectOpen}
+                              onOpenChange={setIsWhenSelectOpen}
                               value={selectValue}
                               onValueChange={(value) => {
                                 if (value === CUSTOM_DATE_VALUE) {
@@ -2068,9 +2113,47 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                               </SelectTrigger>
                               <SelectContent className="border-0 minimal-scrollbar">
                                 {quickOptions.map((opt) => (
-                                  <SelectItem key={opt.id} value={opt.id}>{opt.label}</SelectItem>
+                                  <SelectItem
+                                    key={opt.id}
+                                    value={opt.id}
+                                    // Mouse selection resolves on pointerup; intercept it there
+                                    // (before Radix's own handleSelect runs in the same event)
+                                    // so we can block it and deselect instead.
+                                    onPointerUp={(e) => {
+                                      if (selectValue === opt.id) {
+                                        e.preventDefault();
+                                        deselectWhenOption(opt.id);
+                                      }
+                                    }}
+                                    // Touch selection resolves on the click that follows pointerup;
+                                    // swallow it if this item is the one we just deselected above.
+                                    onClick={(e) => {
+                                      if (suppressWhenOptionClickRef.current === opt.id) {
+                                        e.preventDefault();
+                                        suppressWhenOptionClickRef.current = null;
+                                      }
+                                    }}
+                                  >
+                                    {opt.label}
+                                  </SelectItem>
                                 ))}
-                                <SelectItem value={CUSTOM_DATE_VALUE}>Elegir fecha</SelectItem>
+                                <SelectItem
+                                  value={CUSTOM_DATE_VALUE}
+                                  onPointerUp={(e) => {
+                                    if (selectValue === CUSTOM_DATE_VALUE) {
+                                      e.preventDefault();
+                                      deselectWhenOption(CUSTOM_DATE_VALUE);
+                                    }
+                                  }}
+                                  onClick={(e) => {
+                                    if (suppressWhenOptionClickRef.current === CUSTOM_DATE_VALUE) {
+                                      e.preventDefault();
+                                      suppressWhenOptionClickRef.current = null;
+                                    }
+                                  }}
+                                >
+                                  Elegir fecha
+                                </SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
