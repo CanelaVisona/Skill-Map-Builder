@@ -168,11 +168,13 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     const result: PlannedNode[] = [];
     list.forEach((parent) => {
       (parent.skills || []).forEach((skill: Skill) => {
+        // Si el nodo tiene una fecha planeada (sea hoy u otro día), pertenece a ese día
+        // (columna "When exactly?") y no debe aparecer acá aunque se haya confirmado hoy.
         if (
           skill.status === "mastered" &&
           skill.completedAt &&
           getDateStr(new Date(skill.completedAt)) === todayStr &&
-          skill.plannedDate !== todayStr
+          !skill.plannedDate
         ) {
           result.push({
             id: skill.id,
