@@ -2,6 +2,12 @@ import { createContext, useContext, useState, useEffect, useRef } from "react";
 import { Music, Trophy, BookOpen, Home } from "lucide-react";
 import { useAreaXpPopup } from "@/lib/area-xp-popup-context";
 import { calculateAreaProgressPercentage } from "@/lib/area-progress";
+import { getPopupBusyDelay } from "@/lib/popup-coordinator";
+
+function getTodayStr(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
 
 export type SkillStatus = "locked" | "available" | "mastered";
 
@@ -314,6 +320,23 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
   const triggerQuestUpdated = () => {
     setShowQuestUpdated(true);
     setTimeout(() => setShowQuestUpdated(false), 2000);
+  };
+
+  // Para nodos registrados como tarea de hoy (plannedDate === hoy), el pop-up de progreso de
+  // hoy (client/src/lib/today-progress-popup-context.tsx) también va a dispararse al dominar
+  // este nodo. Ese pop-up reacciona de forma asíncrona (observa areas/projects en segundo
+  // plano), así que primero le damos un margen para que reaccione y se marque "ocupado" en el
+  // coordinador compartido, y recién ahí esperamos a que termine antes de mostrar "Quest
+  // updated!" — si no, ambos pop-ups se solapan en pantalla.
+  const triggerQuestUpdatedAfterToday = (isPlannedForToday: boolean) => {
+    if (!isPlannedForToday) {
+      triggerQuestUpdated();
+      return;
+    }
+    setTimeout(() => {
+      const delay = getPopupBusyDelay() + 250;
+      setTimeout(() => triggerQuestUpdated(), delay);
+    }, 150);
   };
 
   const activeArea = Array.isArray(areas) ? areas.find(a => a.id === activeAreaId) : undefined;
@@ -959,8 +982,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           // ignore
         }
 
+        const isPlannedForToday = skill.plannedDate === getTodayStr();
         setTimeout(() => {
-          triggerQuestUpdated();
+          triggerQuestUpdatedAfterToday(isPlannedForToday);
         }, areaQuestUpdatedDelayMs);
       }
 
@@ -1320,8 +1344,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           // ignore
         }
 
+        const isPlannedForToday = skill.plannedDate === getTodayStr();
         setTimeout(() => {
-          triggerQuestUpdated();
+          triggerQuestUpdatedAfterToday(isPlannedForToday);
         }, areaQuestUpdatedDelayMs);
       }
 
