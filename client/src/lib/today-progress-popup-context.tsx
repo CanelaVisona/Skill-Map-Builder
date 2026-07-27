@@ -36,13 +36,17 @@ export function TodayProgressPopupProvider({ children }: { children: ReactNode }
   // Observa el total/completado de "hoy" en segundo plano (sin depender de que el modal de
   // Tareas de Hoy esté abierto) y dispara el pop-up apenas el completado sube — venga de un
   // hábito, un nodo dominado, una repetición espaciada confirmada, o una tarea manual tildada.
-  const { completed, total } = useTodayProgressSummary();
+  const { completed, total, isReady } = useTodayProgressSummary();
 
   useEffect(() => {
-    if (total === 0) return;
+    // Mientras algo siga cargando, total/completed van subiendo de a poco con cada consulta
+    // que resuelve (no son tareas confirmadas ahora) — hay que esperar a que todo esté listo
+    // antes de fijar la base o comparar, si no el pop-up dispara solo con entrar a la página.
+    if (!isReady || total === 0) return;
 
     if (prevCompletedRef.current === null) {
-      // Primera carga: solo establece la base, no dispara el pop-up con datos ya existentes.
+      // Primera vez con todo cargado: solo establece la base, no dispara el pop-up con datos
+      // que ya existían antes de entrar.
       prevCompletedRef.current = completed;
       return;
     }
@@ -53,7 +57,7 @@ export function TodayProgressPopupProvider({ children }: { children: ReactNode }
 
     prevCompletedRef.current = completed;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [completed, total]);
+  }, [completed, total, isReady]);
 
   useEffect(() => {
     return () => {

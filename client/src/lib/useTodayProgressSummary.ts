@@ -20,8 +20,9 @@ function dateStrToDayOfWeek(dateStr: string): number {
 // para poder observarse en segundo plano y detectar cuándo sube el completado, sin depender
 // de que el modal esté abierto.
 export function useTodayProgressSummary() {
-  const { areas, projects } = useSkillTree();
-  const { data: habitsData } = useHabits();
+  const { areas, projects, isLoading: isSkillTreeLoading } = useSkillTree();
+  const habitsQuery = useHabits();
+  const { data: habitsData } = habitsQuery;
   const todayStr = getDateStr(new Date());
   const todayDayOfWeek = dateStrToDayOfWeek(todayStr);
 
@@ -72,7 +73,7 @@ export function useTodayProgressSummary() {
     }))
     .filter((h) => h.done);
 
-  const { data: practicesData } = useQuery({
+  const practicesQuery = useQuery({
     queryKey: ["space-repetition"],
     queryFn: async () => {
       const res = await fetch("/api/space-repetition");
@@ -80,6 +81,7 @@ export function useTodayProgressSummary() {
       return res.json() as Promise<SpaceRepetitionPractice[]>;
     },
   });
+  const { data: practicesData } = practicesQuery;
 
   const practicesToday = (practicesData || [])
     .map((p) => {
@@ -129,10 +131,11 @@ export function useTodayProgressSummary() {
     ...collectExtraCompletedNodes(Array.isArray(projects) ? projects : []),
   ];
 
-  const { data: manualTasksData } = useManualTasks(todayStr, true);
-  const manualTasks = manualTasksData || [];
+  const manualTasksQuery = useManualTasks(todayStr, true);
+  const manualTasks = manualTasksQuery.data || [];
 
-  const { data: slotsData } = useTodayTaskSlots(todayStr, true);
+  const slotsQuery = useTodayTaskSlots(todayStr, true);
+  const { data: slotsData } = slotsQuery;
   const isHidden = (key: string) => (slotsData || []).some((s) => `${s.taskType}:${s.taskId}` === key && s.slot === "hidden");
 
   const visibleHabits = habitItems.filter((h) => h.done || !isHidden(`habit:${h.id}`));
@@ -155,5 +158,19 @@ export function useTodayProgressSummary() {
     extraHabitsDoneToday.length +
     extraNodesToday.length;
 
-  return { total, completed };
+  // Solo se puede confiar en total/completed una vez que TODAS las consultas involucradas
+  // resolvieron al menos una vez (incluidas las de registros por hábito, que se crean recién
+  // cuando se conoce la lista de hábitos). Mientras algo siga cargando, total/completed pueden
+  // ir subiendo de a poco a medida que llegan los datos, sin que eso sea una tarea confirmada
+  // en esta sesión.
+  const isReady =
+    !isSkillTreeLoading &&
+    !habitsQuery.isPending &&
+    !practicesQuery.isPending &&
+    !manualTasksQuery.isPending &&
+    !slotsQuery.isPending &&
+    scheduledRecordQueries.every((q) => !q.isPending) &&
+    otherRecordQueries.every((q) => !q.isPending);
+
+  return { total, completed, isReady };
 }
