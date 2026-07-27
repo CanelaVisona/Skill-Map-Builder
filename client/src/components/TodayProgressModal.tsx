@@ -233,8 +233,14 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const totalPractices = practicesToday.length;
   const completedPractices = practicesToday.filter((p) => p.done).length;
 
-  const total = totalHabits + totalNodes + totalPractices;
-  const completed = completedHabits + completedNodes + completedPractices;
+  // Tareas configuradas para hoy (usado para decidir si se muestra el acordeón de franjas
+  // horarias, que no debe aparecer si lo único que hay es actividad extra en "Más").
+  const totalConfigured = totalHabits + totalNodes + totalPractices;
+
+  // Los ítems de "Más" ya están todos hechos (son actividad extra detectada como completada
+  // hoy), así que suman por igual a total y a completed.
+  const total = totalConfigured + extraItems.length;
+  const completed = completedHabits + completedNodes + completedPractices + extraItems.length;
   const progressPct = total > 0 ? (completed / total) * 100 : 0;
 
   // Franjas horarias: cada tarea de hoy (hábito/nodo/práctica) puede asignarse a
@@ -387,13 +393,13 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
 
             <ScrollArea className="h-[40vh] pr-4">
               <div className="space-y-4">
-                {total === 0 && extraItems.length === 0 ? (
+                {total === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     No tenés tareas para hoy. Marcá una fecha en un nodo (mantené presionado su título) para que aparezca acá.
                   </div>
                 ) : (
                   <>
-                    {total > 0 && (
+                    {totalConfigured > 0 && (
                       <Accordion
                         type="multiple"
                         defaultValue={["unassigned", ...TIME_SLOTS.map((s) => s.key)]}
@@ -445,19 +451,25 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                     )}
 
                     {extraItems.length > 0 && (
-                      <div className="space-y-1.5">
-                        <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                          Más ({extraItems.length})
-                        </h3>
-                        <div className="space-y-1.5">
-                          {extraItems.map((item) => (
-                            <div key={item.key} className="flex items-center gap-2 text-sm">
-                              <span className="h-4 w-4 flex-shrink-0 rounded-full border-2 bg-emerald-500 border-emerald-500" />
-                              <span>{item.label}</span>
+                      <Accordion type="multiple" defaultValue={["more"]} className="space-y-1">
+                        <AccordionItem value="more" className="border-0">
+                          <AccordionTrigger className="py-1.5 hover:no-underline">
+                            <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                              Más ({extraItems.length})
+                            </h3>
+                          </AccordionTrigger>
+                          <AccordionContent className="pt-0 pb-1">
+                            <div className="space-y-1.5">
+                              {extraItems.map((item) => (
+                                <div key={item.key} className="flex items-center gap-2 text-sm">
+                                  <span className="h-4 w-4 flex-shrink-0 rounded-full border-2 bg-emerald-500 border-emerald-500" />
+                                  <span>{item.label}</span>
+                                </div>
+                              ))}
                             </div>
-                          ))}
-                        </div>
-                      </div>
+                          </AccordionContent>
+                        </AccordionItem>
+                      </Accordion>
                     )}
                   </>
                 )}
