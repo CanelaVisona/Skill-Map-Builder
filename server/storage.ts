@@ -463,6 +463,8 @@ export class DbStorage implements IStorage {
       isFinalNode: (skill.isFinalNode ?? 0) as 0 | 1,
       level: skill.level,
       levelPosition: skill.levelPosition,
+      plannedDate: skill.plannedDate,
+      plannedDuration: skill.plannedDuration,
     };
     const result = await db.insert(skills).values(insertData).returning();
     return result[0];

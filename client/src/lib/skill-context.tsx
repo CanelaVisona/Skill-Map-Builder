@@ -130,9 +130,9 @@ interface SkillTreeContextType {
   toggleSubSkillLock: (skillId: string) => void;
   moveSubSkill: (skillId: string, direction: "up" | "down") => void;
   deleteSubSkillTree: () => Promise<void>;
-  addSkillBelow: (areaId: string, skillId: string, title?: string) => Promise<void>;
-  addProjectSkillBelow: (projectId: string, skillId: string, title?: string) => Promise<void>;
-  addSubSkillBelow: (skillId: string, title?: string) => Promise<void>;
+  addSkillBelow: (areaId: string, skillId: string, title?: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null }) => Promise<void>;
+  addProjectSkillBelow: (projectId: string, skillId: string, title?: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null }) => Promise<void>;
+  addSubSkillBelow: (skillId: string, title?: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null }) => Promise<void>;
   duplicateSkill: (areaId: string, skill: Skill) => Promise<void>;
   duplicateProjectSkill: (projectId: string, skill: Skill) => Promise<void>;
   duplicateSubSkill: (skill: Skill) => Promise<void>;
@@ -3113,7 +3113,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
-  const addSkillBelow = async (areaId: string, skillId: string, title: string = "") => {
+  const addSkillBelow = async (areaId: string, skillId: string, title: string = "", copyFields?: { plannedDate?: string | null; plannedDuration?: number | null }) => {
     const area = areas.find(a => a.id === areaId);
     if (!area) return;
 
@@ -3162,6 +3162,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         levelPosition: newLevelPosition,
         isFinalNode: 0,
         manualLock: 0,
+        ...(copyFields?.plannedDate !== undefined ? { plannedDate: copyFields.plannedDate } : {}),
+        ...(copyFields?.plannedDuration !== undefined ? { plannedDuration: copyFields.plannedDuration } : {}),
       };
 
       const response = await fetch("/api/skills", {
@@ -3226,7 +3228,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
-  const addProjectSkillBelow = async (projectId: string, skillId: string, title: string = "?") => {
+  const addProjectSkillBelow = async (projectId: string, skillId: string, title: string = "?", copyFields?: { plannedDate?: string | null; plannedDuration?: number | null }) => {
     const project = projects.find(p => p.id === projectId);
     if (!project) return;
 
@@ -3275,6 +3277,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         levelPosition: newLevelPosition,
         isFinalNode: 0,
         manualLock: 0,
+        ...(copyFields?.plannedDate !== undefined ? { plannedDate: copyFields.plannedDate } : {}),
+        ...(copyFields?.plannedDuration !== undefined ? { plannedDuration: copyFields.plannedDuration } : {}),
       };
 
       const response = await fetch("/api/skills", {
@@ -3339,7 +3343,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
-  const addSubSkillBelow = async (skillId: string, title: string = "?") => {
+  const addSubSkillBelow = async (skillId: string, title: string = "?", copyFields?: { plannedDate?: string | null; plannedDuration?: number | null }) => {
     const clickedSkill = subSkills.find(s => s.id === skillId);
     if (!clickedSkill || !activeParentSkillId) return;
 
@@ -3374,6 +3378,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         levelPosition: (clickedSkill.levelPosition || 0) + 1,
         isFinalNode: 0,
         manualLock: 0,
+        ...(copyFields?.plannedDate !== undefined ? { plannedDate: copyFields.plannedDate } : {}),
+        ...(copyFields?.plannedDuration !== undefined ? { plannedDuration: copyFields.plannedDuration } : {}),
       };
 
       const response = await fetch("/api/skills", {
@@ -3413,18 +3419,28 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
   // Duplicating a node behaves exactly like adding a new node below it (same
   // eligibility rules, same insertion/status logic) - the only difference is that
-  // the new node is pre-titled after the source node's name plus the next roman numeral.
+  // the new node is pre-titled after the source node's name plus the next roman numeral,
+  // and it carries over the source node's planned date/duration ("When exactly?"/"Time").
   const duplicateSkill = async (areaId: string, skill: Skill) => {
-    await addSkillBelow(areaId, skill.id, getNextDuplicateTitle(skill.title));
+    await addSkillBelow(areaId, skill.id, getNextDuplicateTitle(skill.title), {
+      plannedDate: skill.plannedDate,
+      plannedDuration: skill.plannedDuration,
+    });
   };
 
   const duplicateProjectSkill = async (projectId: string, skill: Skill) => {
-    await addProjectSkillBelow(projectId, skill.id, getNextDuplicateTitle(skill.title));
+    await addProjectSkillBelow(projectId, skill.id, getNextDuplicateTitle(skill.title), {
+      plannedDate: skill.plannedDate,
+      plannedDuration: skill.plannedDuration,
+    });
   };
 
   const duplicateSubSkill = async (skill: Skill) => {
     if (!activeParentSkillId) return;
-    await addSubSkillBelow(skill.id, getNextDuplicateTitle(skill.title));
+    await addSubSkillBelow(skill.id, getNextDuplicateTitle(skill.title), {
+      plannedDate: skill.plannedDate,
+      plannedDuration: skill.plannedDuration,
+    });
   };
 
   // Auto-unlock logic for areas (also re-locks final nodes that shouldn't be available)
