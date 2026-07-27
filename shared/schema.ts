@@ -64,6 +64,7 @@ export const skills = pgTable("skills", {
   levelPosition: integer("level_position").notNull().default(1),
   experiencePoints: integer("experience_points").default(0),
   plannedDate: text("planned_date"),
+  plannedDuration: integer("planned_duration"),
   completedAt: timestamp("completed_at"),
 });
 
@@ -405,17 +406,39 @@ export const todayTaskSlots = pgTable("today_task_slots", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   date: varchar("date").notNull(), // YYYY-MM-DD format
-  taskType: text("task_type").$type<"habit" | "node" | "practice">().notNull(),
+  taskType: text("task_type").$type<"habit" | "node" | "practice" | "manual">().notNull(),
   taskId: varchar("task_id").notNull(),
   slot: text("slot").$type<"morning" | "midday" | "afternoon" | "night" | "hidden">().notNull(),
+  // Orden dentro de su (date, slot): más chico va primero. Se asigna automáticamente al
+  // final de la franja al asignar/mover una tarea, y se puede reordenar de a pares
+  // (intercambia con el vecino) sin agregar ningún elemento visual nuevo.
+  sortOrder: integer("sort_order").notNull().default(0),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 export const insertTodayTaskSlotSchema = createInsertSchema(todayTaskSlots).omit({ id: true, updatedAt: true }).extend({
-  taskType: z.enum(["habit", "node", "practice"]),
+  taskType: z.enum(["habit", "node", "practice", "manual"]),
   slot: z.enum(["morning", "midday", "afternoon", "night", "hidden"]),
+  sortOrder: z.number().optional().default(0),
 });
 export type InsertTodayTaskSlot = z.infer<typeof insertTodayTaskSlotSchema>;
 export type TodayTaskSlot = typeof todayTaskSlots.$inferSelect;
+
+// Tarea manual agregada a mano en "Tareas de hoy" (mantener presionado el fondo). Vive fuera
+// del árbol de habilidades/hábitos/repetición espaciada — por eso no aparece en el calendario
+// de actividades, que solo refleja esas 3 fuentes. Se puede tildar directamente acá.
+export const manualTodayTasks = pgTable("manual_today_tasks", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  date: varchar("date").notNull(), // YYYY-MM-DD format
+  title: text("title").notNull(),
+  done: integer("done").$type<0 | 1>().notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const insertManualTodayTaskSchema = createInsertSchema(manualTodayTasks).omit({ id: true, createdAt: true }).extend({
+  done: z.union([z.literal(0), z.literal(1)]).optional().default(0),
+});
+export type InsertManualTodayTask = z.infer<typeof insertManualTodayTaskSchema>;
+export type ManualTodayTask = typeof manualTodayTasks.$inferSelect;
 
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertSessionSchema = createInsertSchema(sessions).omit({ id: true });

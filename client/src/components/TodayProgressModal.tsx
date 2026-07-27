@@ -4,14 +4,18 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Eye, ArrowLeft, ChevronLeft, ChevronRight, Clock } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Eye, ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import { useSkillTree, type Area, type Project, type Skill } from "@/lib/skill-context";
 import { useHabits } from "@/lib/useHabits";
-import { useTodayTaskSlots, useSetTodayTaskSlot, useClearTodayTaskSlot, type TaskSlotKey, type TaskType } from "@/lib/useTodayTaskSlots";
+import { useTodayTaskSlots, useSetTodayTaskSlot, useClearTodayTaskSlot, useReorderTodayTaskSlot, type TaskSlotKey, type TaskType } from "@/lib/useTodayTaskSlots";
+import { useManualTasks, useCreateManualTask, useUpdateManualTask, useDeleteManualTask } from "@/lib/useManualTasks";
 import { calculateStatus, calculateStatusL2, type SpaceRepetitionPractice } from "@/components/SpaceRepetitionModal";
 import type { Habit, HabitRecord } from "@shared/schema";
+
+const LONG_PRESS_MS = 1500;
 
 const TIME_SLOTS: { key: TaskSlotKey; label: string }[] = [
   { key: "morning", label: "La mañana" },
@@ -41,6 +45,12 @@ function getDateStr(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
+// Día de la semana (0=Lunes..6=Domingo) de una fecha YYYY-MM-DD, sin depender de "hoy".
+function dateStrToDayOfWeek(dateStr: string): number {
+  const dow = new Date(dateStr + "T12:00:00").getDay();
+  return dow === 0 ? 6 : dow - 1;
+}
+
 interface PlannedNode {
   id: string;
   title: string;
@@ -60,21 +70,39 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const [viewMode, setViewMode] = useState<"progress" | "calendar">("progress");
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  // Previsualización de un día futuro (se entra tocando ese día en el calendario). null = se
+  // está viendo el día real de hoy.
+  const [previewDate, setPreviewDate] = useState<string | null>(null);
+  const [addTaskDialogOpen, setAddTaskDialogOpen] = useState(false);
+  const [newTaskTitle, setNewTaskTitle] = useState("");
+  const backgroundLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const todayStr = getDateStr(new Date());
-  const todayDayOfWeek = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
+  const effectiveDate = previewDate ?? todayStr;
+  const isPreview = previewDate !== null;
+  const effectiveDayOfWeek = dateStrToDayOfWeek(effectiveDate);
 
-  const habitsScheduledToday = (habitsData || []).filter((h) => {
-    if (h.endDate && h.endDate < todayStr) return false;
+  // Al cerrar el modal, se vuelve siempre a "hoy" en la vista de progreso — no se queda
+  // trabada en la previsualización de un día futuro de la sesión anterior.
+  useEffect(() => {
+    if (!open) {
+      setPreviewDate(null);
+      setViewMode("progress");
+      setSelectedDay(null);
+    }
+  }, [open]);
+
+  const habitsScheduledForView = (habitsData || []).filter((h) => {
+    if (h.endDate && h.endDate < effectiveDate) return false;
     const days = h.scheduledDays?.length ? h.scheduledDays : [0, 1, 2, 3, 4, 5, 6];
-    return days.includes(todayDayOfWeek);
+    return days.includes(effectiveDayOfWeek);
   });
 
-  const todayRecordQueries = useQueries({
-    queries: habitsScheduledToday.map((h) => ({
-      queryKey: ["habit-records", h.id, todayStr, todayStr],
+  const viewRecordQueries = useQueries({
+    queries: habitsScheduledForView.map((h) => ({
+      queryKey: ["habit-records", h.id, effectiveDate, effectiveDate],
       queryFn: async () => {
-        const res = await fetch(`/api/habit-records/${h.id}?startDate=${todayStr}&endDate=${todayStr}`);
+        const res = await fetch(`/api/habit-records/${h.id}?startDate=${effectiveDate}&endDate=${effectiveDate}`);
         if (!res.ok) throw new Error("Failed to fetch habit records");
         return res.json() as Promise<HabitRecord[]>;
       },
@@ -82,11 +110,11 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     })),
   });
 
-  const habitItems = habitsScheduledToday.map((h, i) => ({
+  const habitItems = habitsScheduledForView.map((h, i) => ({
     id: h.id,
     label: `${h.emoji} ${h.name}`,
-    done: !!(todayRecordQueries[i]?.data as HabitRecord[] | undefined)?.some(
-      (r) => r.date === todayStr && r.completed === 1
+    done: !!(viewRecordQueries[i]?.data as HabitRecord[] | undefined)?.some(
+      (r) => r.date === effectiveDate && r.completed === 1
     ),
   }));
 
@@ -113,10 +141,11 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     ...collectPlannedNodes(Array.isArray(projects) ? projects : []),
   ];
 
-  const plannedNodesToday = allPlannedNodes.filter((n) => n.plannedDate === todayStr);
+  const plannedNodesForView = allPlannedNodes.filter((n) => n.plannedDate === effectiveDate);
 
   // Prácticas de repetición espaciada que vencían hoy ("expires_soon") o que se confirmaron
-  // hoy (lastConfirmedAt cae en la fecha de hoy y ya avanzaron a otro estado).
+  // hoy (lastConfirmedAt cae en la fecha de hoy y ya avanzaron a otro estado). No aplica al
+  // previsualizar un día futuro: el "vencimiento" es relativo a ahora, no a un día futuro.
   const { data: practicesData } = useQuery({
     queryKey: ["space-repetition"],
     queryFn: async () => {
@@ -127,7 +156,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     enabled: open,
   });
 
-  const practicesToday = (practicesData || [])
+  const practicesToday = isPreview ? [] : (practicesData || [])
     .map((p) => {
       const status = p.level === 2 ? calculateStatusL2(p) : calculateStatus(p);
       const pending = status === "expires_soon";
@@ -138,13 +167,14 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     .filter((entry) => entry.include);
 
   // Actividad extra: hábitos y nodos hechos hoy que no estaban configurados para hoy
-  // (hábito no programado ese día, o nodo sin fecha planeada para hoy).
-  const habitsNotScheduledToday = (habitsData || []).filter(
-    (h) => !habitsScheduledToday.some((s) => s.id === h.id)
+  // (hábito no programado ese día, o nodo sin fecha planeada para hoy). Tampoco aplica a la
+  // previsualización: es actividad ya ocurrida, y un día futuro todavía no tiene nada hecho.
+  const habitsNotScheduledForView = isPreview ? [] : (habitsData || []).filter(
+    (h) => !habitsScheduledForView.some((s) => s.id === h.id)
   );
 
   const otherHabitRecordQueries = useQueries({
-    queries: habitsNotScheduledToday.map((h) => ({
+    queries: habitsNotScheduledForView.map((h) => ({
       queryKey: ["habit-records", h.id, todayStr, todayStr],
       queryFn: async () => {
         const res = await fetch(`/api/habit-records/${h.id}?startDate=${todayStr}&endDate=${todayStr}`);
@@ -155,7 +185,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     })),
   });
 
-  const extraHabits = habitsNotScheduledToday
+  const extraHabits = habitsNotScheduledForView
     .map((h, i) => ({
       id: h.id,
       label: `${h.emoji} ${h.name}`,
@@ -190,7 +220,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     return result;
   };
 
-  const extraNodes = [
+  const extraNodes = isPreview ? [] : [
     ...collectExtraCompletedNodes(Array.isArray(areas) ? areas : [], todayStr, todayStr),
     ...collectExtraCompletedNodes(Array.isArray(projects) ? projects : [], todayStr, todayStr),
   ];
@@ -210,16 +240,32 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     })),
   ];
 
-  // Franjas horarias: cada tarea de hoy (hábito/nodo/práctica) puede asignarse a
+  // Tareas manuales agregadas a mano (mantener presionado el fondo). Existen para cualquier
+  // día (hoy o un día futuro previsualizado) y no aparecen en el calendario de actividades.
+  const { data: manualTasksData } = useManualTasks(effectiveDate, open);
+  const manualTasks = manualTasksData || [];
+  const createManualTask = useCreateManualTask();
+  const updateManualTask = useUpdateManualTask();
+  const deleteManualTask = useDeleteManualTask();
+
+  // Franjas horarias: cada tarea (hábito/nodo/práctica/manual) puede asignarse a
   // mañana/mediodía/tarde/noche, o marcarse "hidden" (mantener presionada una tarea no hecha)
-  // para que deje de contar como tarea de hoy. La asignación es por día (queryKey incluye
-  // todayStr).
-  const { data: slotsData } = useTodayTaskSlots(todayStr, open);
+  // para que deje de contar como tarea de ese día. La asignación es por día (queryKey incluye
+  // effectiveDate), lo que también permite ordenar tareas de días futuros previsualizados.
+  const { data: slotsData } = useTodayTaskSlots(effectiveDate, open);
   const setTaskSlot = useSetTodayTaskSlot();
   const clearTaskSlot = useClearTodayTaskSlot();
+  const reorderTaskSlot = useReorderTodayTaskSlot();
 
   const slotByKey = new Map<string, TaskSlotKey>();
-  (slotsData || []).forEach((s) => slotByKey.set(`${s.taskType}:${s.taskId}`, s.slot as TaskSlotKey));
+  const sortOrderByKey = new Map<string, number>();
+  const slotUpdatedAtByKey = new Map<string, number>();
+  (slotsData || []).forEach((s) => {
+    const key = `${s.taskType}:${s.taskId}`;
+    slotByKey.set(key, s.slot as TaskSlotKey);
+    sortOrderByKey.set(key, s.sortOrder);
+    slotUpdatedAtByKey.set(key, new Date(s.updatedAt).getTime());
+  });
   // "hidden" solo oculta mientras la tarea sigue sin hacer: si después se confirma, tiene
   // que volver a aparecer en tareas de hoy (ya como hecha), no quedar oculta para siempre.
   const isHidden = (key: string) => slotByKey.get(key) === "hidden";
@@ -241,29 +287,31 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const wasHiddenAtOpen = (key: string) => hiddenKeysAtOpenRef.current?.has(key) ?? false;
 
   const visibleHabitItems = habitItems.filter((h) => h.done || !isHidden(`habit:${h.id}`));
-  const visiblePlannedNodesToday = plannedNodesToday.filter((n) => n.done || !isHidden(`node:${n.id}`));
+  const visiblePlannedNodesForView = plannedNodesForView.filter((n) => n.done || !isHidden(`node:${n.id}`));
   const visiblePracticesToday = practicesToday.filter(({ practice: p, done }) => done || !isHidden(`practice:${p.id}`));
 
   const totalHabits = habitItems.filter((h) => h.done || !wasHiddenAtOpen(`habit:${h.id}`)).length;
   const completedHabits = habitItems.filter((h) => h.done).length;
-  const totalNodes = plannedNodesToday.filter((n) => n.done || !wasHiddenAtOpen(`node:${n.id}`)).length;
-  const completedNodes = plannedNodesToday.filter((n) => n.done).length;
+  const totalNodes = plannedNodesForView.filter((n) => n.done || !wasHiddenAtOpen(`node:${n.id}`)).length;
+  const completedNodes = plannedNodesForView.filter((n) => n.done).length;
   const totalPractices = practicesToday.filter(({ practice: p, done }) => done || !wasHiddenAtOpen(`practice:${p.id}`)).length;
   const completedPractices = practicesToday.filter((p) => p.done).length;
+  const totalManual = manualTasks.length;
+  const completedManual = manualTasks.filter((t) => t.done === 1).length;
 
   // Tareas configuradas para hoy (usado para decidir si se muestra el acordeón de franjas
   // horarias, que no debe aparecer si lo único que hay es actividad extra en "Más").
-  const totalConfigured = totalHabits + totalNodes + totalPractices;
+  const totalConfigured = totalHabits + totalNodes + totalPractices + totalManual;
 
   // Los ítems de "Más" ya están todos hechos (son actividad extra detectada como completada
   // hoy), así que suman por igual a total y a completed.
   const total = totalConfigured + extraItems.length;
-  const completed = completedHabits + completedNodes + completedPractices + extraItems.length;
+  const completed = completedHabits + completedNodes + completedPractices + completedManual + extraItems.length;
   const progressPct = total > 0 ? (completed / total) * 100 : 0;
 
   const todayItems: TodayItem[] = [
     ...visibleHabitItems.map((h) => ({ key: `habit:${h.id}`, type: "habit" as const, id: h.id, label: h.label, done: h.done })),
-    ...visiblePlannedNodesToday.map((n) => ({
+    ...visiblePlannedNodesForView.map((n) => ({
       key: `node:${n.id}`,
       type: "node" as const,
       id: n.id,
@@ -280,6 +328,13 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       id: p.id,
       label: `${p.emoji} ${p.name}`,
       done,
+    })),
+    ...manualTasks.map((t) => ({
+      key: `manual:${t.id}`,
+      type: "manual" as const,
+      id: t.id,
+      label: t.title,
+      done: t.done === 1,
     })),
   ];
 
@@ -302,23 +357,72 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     itemBuckets[isTimeSlot ? (slot as TaskSlotKey) : "more"].push(item);
   });
 
+  // Dentro de cada franja horaria, respeta el orden guardado (sortOrder) — el que se puede
+  // cambiar de a pares con "Mover arriba"/"Mover abajo", sin agregar ningún elemento visual.
+  // Desempata por updatedAt para que las franjas asignadas antes de tener esta columna (todas
+  // con sortOrder 0) tengan igual un orden estable en vez de depender del orden de la consulta.
+  TIME_SLOTS.forEach((s) => {
+    itemBuckets[s.key].sort((a, b) => {
+      const diff = (sortOrderByKey.get(a.key) ?? 0) - (sortOrderByKey.get(b.key) ?? 0);
+      if (diff !== 0) return diff;
+      return (slotUpdatedAtByKey.get(a.key) ?? 0) - (slotUpdatedAtByKey.get(b.key) ?? 0);
+    });
+  });
+
   // El acordeón de franjas horarias solo se muestra si hay algo para agrupar ahí: tareas
   // configuradas para hoy, o actividad extra que ya se movió a una franja específica.
   const hasSlotSection = itemBuckets.unassigned.length > 0 || TIME_SLOTS.some((s) => itemBuckets[s.key].length > 0);
 
   const moveItemToSlot = (item: TodayItem, slot: TaskSlotKey) => {
-    setTaskSlot.mutate({ date: todayStr, taskType: item.type, taskId: item.id, slot });
+    setTaskSlot.mutate({ date: effectiveDate, taskType: item.type, taskId: item.id, slot });
+  };
+
+  const moveItemOrder = (item: TodayItem, direction: "up" | "down") => {
+    reorderTaskSlot.mutate({ date: effectiveDate, taskType: item.type, taskId: item.id, direction });
   };
 
   const unassignItem = (item: TodayItem) => {
-    clearTaskSlot.mutate({ date: todayStr, taskType: item.type, taskId: item.id });
+    clearTaskSlot.mutate({ date: effectiveDate, taskType: item.type, taskId: item.id });
   };
 
   const hideItemFromToday = (item: TodayItem) => {
-    setTaskSlot.mutate({ date: todayStr, taskType: item.type, taskId: item.id, slot: "hidden" });
+    setTaskSlot.mutate({ date: effectiveDate, taskType: item.type, taskId: item.id, slot: "hidden" });
   };
 
-  const todayLabel = new Date().toLocaleDateString("es-AR", {
+  const toggleManualDone = (item: TodayItem) => {
+    const task = manualTasks.find((t) => t.id === item.id);
+    if (!task) return;
+    updateManualTask.mutate({ id: item.id, date: effectiveDate, updates: { done: task.done === 1 ? 0 : 1 } });
+  };
+
+  const deleteManualItem = (item: TodayItem) => {
+    deleteManualTask.mutate({ id: item.id, date: effectiveDate });
+  };
+
+  // Mantener presionado el fondo (fuera de una tarea puntual) abre el diálogo para agregar
+  // una tarea manual al día que se está viendo (hoy, o el día previsualizado).
+  const startBackgroundLongPress = () => {
+    backgroundLongPressTimer.current = setTimeout(() => {
+      setNewTaskTitle("");
+      setAddTaskDialogOpen(true);
+    }, LONG_PRESS_MS);
+  };
+
+  const cancelBackgroundLongPress = () => {
+    if (backgroundLongPressTimer.current) {
+      clearTimeout(backgroundLongPressTimer.current);
+      backgroundLongPressTimer.current = null;
+    }
+  };
+
+  const submitNewTask = () => {
+    const title = newTaskTitle.trim();
+    if (!title) return;
+    createManualTask.mutate({ date: effectiveDate, title });
+    setAddTaskDialogOpen(false);
+  };
+
+  const viewLabel = new Date(effectiveDate + "T12:00:00").toLocaleDateString("es-AR", {
     weekday: "long",
     day: "numeric",
     month: "long",
@@ -399,14 +503,17 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // mismos totales que la pestaña "Progreso" (incluye lo oculto/extra), para que ambas vistas
   // coincidan; para otros días del mes reconstruye lo mismo a partir del historial disponible.
   const getDayStats = (dateStr: string, dObj: Date) => {
-    if (dateStr === todayStr) {
+    // El "fast path" reusa las variables en vivo de la pestaña Progreso, que están calculadas
+    // para effectiveDate — solo son válidas para la celda de hoy cuando NO se está
+    // previsualizando otro día (si no, hoy también tiene que reconstruirse abajo).
+    if (dateStr === todayStr && !isPreview) {
       const todayHabitsDoneIds = new Set([
         ...visibleHabitItems.filter((h) => h.done).map((h) => h.id),
         ...extraHabits.map((h) => h.id),
       ]);
       return {
         habitsDone: activeHabitsThisMonth.filter((h) => todayHabitsDoneIds.has(h.id)),
-        nodesDone: [...visiblePlannedNodesToday.filter((n) => n.done), ...extraNodes],
+        nodesDone: [...visiblePlannedNodesForView.filter((n) => n.done), ...extraNodes],
         practicesDone: visiblePracticesToday.filter(({ done }) => done).map(({ practice }) => practice),
         totalForDay: total,
         doneForDay: completed,
@@ -441,6 +548,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const selectedDayDetails = selectedDay ? getDayStats(selectedDay, new Date(selectedDay + "T12:00:00")) : null;
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md rounded-2xl border-none max-h-[85vh] overflow-y-auto minimal-scrollbar" showCloseButton={false}>
         <VisuallyHidden>
@@ -450,11 +558,22 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         {viewMode === "progress" ? (
           <div className="flex flex-col gap-4">
             <div className="flex items-start justify-between gap-2">
-              <div>
-                <h2 className="text-2xl font-bold">Hoy</h2>
-                <p className="text-sm text-muted-foreground capitalize">
-                  {todayLabel.charAt(0).toUpperCase() + todayLabel.slice(1)}
-                </p>
+              <div className="flex items-start gap-2">
+                {isPreview && (
+                  <button
+                    onClick={() => setPreviewDate(null)}
+                    className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-border/30 bg-muted hover:bg-muted/80 active:bg-muted/60 transition-colors"
+                    title="Volver a hoy"
+                  >
+                    <ArrowLeft className="h-4 w-4 text-muted-foreground" />
+                  </button>
+                )}
+                <div>
+                  <h2 className="text-2xl font-bold">{isPreview ? "Vista previa" : "Hoy"}</h2>
+                  <p className="text-sm text-muted-foreground capitalize">
+                    {viewLabel.charAt(0).toUpperCase() + viewLabel.slice(1)}
+                  </p>
+                </div>
               </div>
               <button
                 onClick={openCalendar}
@@ -480,11 +599,22 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
               </div>
             </div>
 
-            <ScrollArea className="h-[40vh] pr-4">
+            <ScrollArea
+              className="h-[40vh] pr-4"
+              onMouseDown={startBackgroundLongPress}
+              onMouseUp={cancelBackgroundLongPress}
+              onMouseLeave={cancelBackgroundLongPress}
+              onTouchStart={startBackgroundLongPress}
+              onTouchEnd={cancelBackgroundLongPress}
+              onTouchCancel={cancelBackgroundLongPress}
+              onTouchMove={cancelBackgroundLongPress}
+            >
               <div className="space-y-4">
                 {total === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
-                    No tenés tareas para hoy. Marcá una fecha en un nodo (mantené presionado su título) para que aparezca acá.
+                    {isPreview
+                      ? "No hay tareas configuradas para este día. Mantené presionado el fondo para agregar una."
+                      : "No tenés tareas para hoy. Marcá una fecha en un nodo (mantené presionado su título) para que aparezca acá."}
                   </div>
                 ) : (
                   <>
@@ -508,7 +638,9 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                     key={item.key}
                                     item={item}
                                     onMove={(slot) => moveItemToSlot(item, slot)}
-                                    onHide={() => hideItemFromToday(item)}
+                                    onHide={item.type !== "manual" ? () => hideItemFromToday(item) : undefined}
+                                    onDelete={item.type === "manual" ? () => deleteManualItem(item) : undefined}
+                                    onToggleDone={item.type === "manual" ? () => toggleManualDone(item) : undefined}
                                   />
                                 ))}
                               </div>
@@ -528,13 +660,17 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                 <p className="text-xs text-muted-foreground py-1">Nada asignado a esta franja.</p>
                               ) : (
                                 <div className="space-y-1.5">
-                                  {itemBuckets[s.key].map((item) => (
+                                  {itemBuckets[s.key].map((item, idx) => (
                                     <TodayTaskRow
                                       key={item.key}
                                       item={item}
                                       onMove={(slot) => moveItemToSlot(item, slot)}
                                       onClear={() => unassignItem(item)}
-                                      onHide={() => hideItemFromToday(item)}
+                                      onHide={item.type !== "manual" ? () => hideItemFromToday(item) : undefined}
+                                      onDelete={item.type === "manual" ? () => deleteManualItem(item) : undefined}
+                                      onToggleDone={item.type === "manual" ? () => toggleManualDone(item) : undefined}
+                                      onMoveUp={idx > 0 ? () => moveItemOrder(item, "up") : undefined}
+                                      onMoveDown={idx < itemBuckets[s.key].length - 1 ? () => moveItemOrder(item, "down") : undefined}
                                     />
                                   ))}
                                 </div>
@@ -623,7 +759,18 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                 return (
                   <button
                     key={day}
-                    onClick={() => setSelectedDay((prev) => (prev === dateStr ? null : dateStr))}
+                    onClick={() => {
+                      // Un día futuro abre la previsualización de "Tareas de hoy" para ese día
+                      // (con las 4 franjas horarias); hoy y días pasados siguen mostrando el
+                      // panelcito de detalle de abajo.
+                      if (isFuture) {
+                        setPreviewDate(dateStr);
+                        setViewMode("progress");
+                        setSelectedDay(null);
+                      } else {
+                        setSelectedDay((prev) => (prev === dateStr ? null : dateStr));
+                      }
+                    }}
                     className={`relative aspect-square rounded-lg flex flex-col items-center justify-center text-xs font-medium transition-all cursor-pointer active:scale-95 ${
                       allDone ? "bg-emerald-500/20" : isFuture ? "opacity-20" : "bg-muted/30"
                     } ${isToday ? "ring-2 ring-emerald-500" : ""} ${
@@ -697,40 +844,84 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         )}
       </DialogContent>
     </Dialog>
+
+    <Dialog open={addTaskDialogOpen} onOpenChange={setAddTaskDialogOpen}>
+      <DialogContent className="max-w-sm rounded-2xl">
+        <DialogTitle>Nueva tarea para {isPreview ? "este día" : "hoy"}</DialogTitle>
+        <Input
+          autoFocus
+          value={newTaskTitle}
+          onChange={(e) => setNewTaskTitle(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") submitNewTask();
+          }}
+          placeholder="¿Qué tarea querés agregar?"
+        />
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            onClick={() => setAddTaskDialogOpen(false)}
+            className="px-3 py-1.5 text-sm rounded-md hover:bg-muted transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={submitNewTask}
+            disabled={!newTaskTitle.trim()}
+            className="px-3 py-1.5 text-sm rounded-md bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            Agregar
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
-
-const HIDE_LONG_PRESS_MS = 1500;
 
 function TodayTaskRow({
   item,
   onMove,
   onClear,
   onHide,
+  onDelete,
+  onToggleDone,
+  onMoveUp,
+  onMoveDown,
 }: {
   item: TodayItem;
   onMove: (slot: TaskSlotKey) => void;
   onClear?: () => void;
   onHide?: () => void;
+  onDelete?: () => void;
+  onToggleDone?: () => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
 }) {
-  const [confirmHideOpen, setConfirmHideOpen] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const longPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPress = React.useRef(false);
 
   // Mantener presionada una tarea no hecha ofrece sacarla de tareas de hoy (item.done ya
   // completado no necesita esto). Mismo timing (1500ms) que el long-press de SkillNode.
-  const canHide = !item.done && !!onHide;
+  // Las tareas manuales usan onDelete (se borran, no existen en otro lado del sistema);
+  // el resto usa onHide (se ocultan, pueden volver a aparecer si se confirman después).
+  const confirmHandler = onDelete ?? onHide;
+  const canLongPress = !item.done && !!confirmHandler;
 
-  const startLongPress = () => {
-    if (!canHide) return;
+  const startLongPress = (e: React.MouseEvent | React.TouchEvent) => {
+    // No debe burbujear al fondo (que tiene su propio long-press para agregar una tarea).
+    e.stopPropagation();
+    if (!canLongPress) return;
     isLongPress.current = false;
     longPressTimer.current = setTimeout(() => {
       isLongPress.current = true;
-      setConfirmHideOpen(true);
-    }, HIDE_LONG_PRESS_MS);
+      setConfirmOpen(true);
+    }, LONG_PRESS_MS);
   };
 
-  const cancelLongPress = () => {
+  const cancelLongPress = (e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation();
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current);
       longPressTimer.current = null;
@@ -749,19 +940,26 @@ function TodayTaskRow({
         onTouchCancel={cancelLongPress}
       >
         <span
+          onClick={onToggleDone}
           className={`h-4 w-4 flex-shrink-0 rounded-full border-2 ${
             item.done ? "bg-emerald-500 border-emerald-500" : "border-border/50"
-          }`}
+          } ${onToggleDone ? "cursor-pointer" : ""}`}
         />
-        <span className={`flex-1 ${item.done ? "line-through text-muted-foreground" : ""}`}>{item.label}</span>
-        <DropdownMenu>
+        {/* Apretar una vez sobre la tarea abre el menú (franja / mover / quitar), en vez de
+            un botón de reloj aparte — menos elementos visuales en la fila. */}
+        <DropdownMenu
+          open={menuOpen}
+          onOpenChange={(next) => {
+            if (next && isLongPress.current) return;
+            setMenuOpen(next);
+          }}
+        >
           <DropdownMenuTrigger asChild>
-            <button
-              className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full hover:bg-muted transition-colors"
-              title="Asignar franja horaria"
+            <span
+              className={`flex-1 cursor-pointer ${item.done ? "line-through text-muted-foreground" : ""}`}
             >
-              <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-            </button>
+              {item.label}
+            </span>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             {TIME_SLOTS.map((s) => (
@@ -772,22 +970,27 @@ function TodayTaskRow({
             {onClear && (
               <DropdownMenuItem onClick={onClear}>Sin asignar</DropdownMenuItem>
             )}
+            {(onMoveUp || onMoveDown) && <DropdownMenuSeparator />}
+            {onMoveUp && <DropdownMenuItem onClick={onMoveUp}>Mover arriba</DropdownMenuItem>}
+            {onMoveDown && <DropdownMenuItem onClick={onMoveDown}>Mover abajo</DropdownMenuItem>}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
 
-      {canHide && (
-        <AlertDialog open={confirmHideOpen} onOpenChange={setConfirmHideOpen}>
+      {canLongPress && (
+        <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>¿Sacar esta tarea de hoy?</AlertDialogTitle>
+              <AlertDialogTitle>{onDelete ? "¿Eliminar esta tarea?" : "¿Sacar esta tarea de hoy?"}</AlertDialogTitle>
               <AlertDialogDescription>
-                Dejará de aparecer en tareas de hoy.
+                {onDelete
+                  ? "Se va a borrar. No se puede deshacer."
+                  : "Dejará de aparecer en tareas de hoy."}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancelar</AlertDialogCancel>
-              <AlertDialogAction onClick={onHide}>Sacar</AlertDialogAction>
+              <AlertDialogAction onClick={confirmHandler}>{onDelete ? "Eliminar" : "Sacar"}</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>

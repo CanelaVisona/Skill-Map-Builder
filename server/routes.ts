@@ -1526,11 +1526,25 @@ export async function registerRoutes(
       }
       
       // Check if level already has nodes - if so, just update area and return existing nodes
-      const allSkills = await storage.getSkills(areaId);
+      let allSkills = await storage.getSkills(areaId);
       console.log(`[generate-level] All skills for area:`, allSkills.length);
+
+      // Backfill any missing intermediate levels so level numbers stay contiguous.
+      // Callers sometimes pre-stage a level several numbers ahead of the current max
+      // (e.g. "3 locked levels ahead" logic); without this, the levels in between
+      // never get created, leaving a permanent gap where nodes can't be edited.
+      const maxExistingLevel = allSkills.length > 0 ? Math.max(...allSkills.map(s => s.level)) : 0;
+      for (let missingLevel = maxExistingLevel + 1; missingLevel < level; missingLevel++) {
+        console.warn(`[generate-level] Backfilling missing level ${missingLevel} before creating level ${level}`);
+        await storage.generateLevelWithSkills(areaId, missingLevel, 0);
+      }
+      if (level > maxExistingLevel + 1) {
+        allSkills = await storage.getSkills(areaId);
+      }
+
       const existingLevelSkills = allSkills.filter(s => s.level === level);
       console.log(`[generate-level] Existing skills for level ${level}:`, existingLevelSkills.length);
-      
+
       if (existingLevelSkills.length > 0) {
         console.log(`[generate-level] Level already has nodes, returning existing`);
         // Level already has nodes - update area's unlockedLevel, but only if this is
@@ -1855,11 +1869,23 @@ export async function registerRoutes(
         return;
       }
       
-      const allSkills = await storage.getProjectSkills(projectId);
+      let allSkills = await storage.getProjectSkills(projectId);
       console.log(`[generate-level-project] All skills for project:`, allSkills.length);
+
+      // Backfill any missing intermediate levels so level numbers stay contiguous.
+      // See the equivalent comment in the area generate-level handler above.
+      const maxExistingLevel = allSkills.length > 0 ? Math.max(...allSkills.map(s => s.level)) : 0;
+      for (let missingLevel = maxExistingLevel + 1; missingLevel < level; missingLevel++) {
+        console.warn(`[generate-level-project] Backfilling missing level ${missingLevel} before creating level ${level}`);
+        await storage.generateProjectLevelWithSkills(projectId, missingLevel, 0);
+      }
+      if (level > maxExistingLevel + 1) {
+        allSkills = await storage.getProjectSkills(projectId);
+      }
+
       const existingLevelSkills = allSkills.filter(s => s.level === level);
       console.log(`[generate-level-project] Existing skills for level ${level}:`, existingLevelSkills.length);
-      
+
       if (existingLevelSkills.length > 0) {
         console.log(`[generate-level-project] Level already has nodes, returning existing`);
         // Only unlock if this is actually the next level; pre-staging a future locked
@@ -4260,8 +4286,8 @@ export async function registerRoutes(
       if (!date || !taskType || !taskId || !slot) {
         return res.status(400).json({ message: "date, taskType, taskId y slot son requeridos" });
       }
-      if (!["habit", "node", "practice"].includes(taskType)) {
-        return res.status(400).json({ message: "taskType debe ser habit, node o practice" });
+      if (!["habit", "node", "practice", "manual"].includes(taskType)) {
+        return res.status(400).json({ message: "taskType debe ser habit, node, practice o manual" });
       }
       if (!["morning", "midday", "afternoon", "night", "hidden"].includes(slot)) {
         return res.status(400).json({ message: "slot debe ser morning, midday, afternoon, night o hidden" });
@@ -4287,6 +4313,89 @@ export async function registerRoutes(
         return res.status(400).json({ message: "date, taskType y taskId son requeridos" });
       }
       await storage.deleteTodayTaskSlot(req.userId!, date as string, taskType as string, taskId as string);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/today-task-slots/reorder", requireAuth, async (req, res) => {
+    try {
+      const { date, taskType, taskId, direction } = req.body;
+      if (!date || !taskType || !taskId || !direction) {
+        return res.status(400).json({ message: "date, taskType, taskId y direction son requeridos" });
+      }
+      if (direction !== "up" && direction !== "down") {
+        return res.status(400).json({ message: "direction debe ser up o down" });
+      }
+      await storage.reorderTodayTaskSlot(req.userId!, date, taskType, taskId, direction);
+      const slots = await storage.getTodayTaskSlots(req.userId!, date);
+      res.json(slots);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Manual Today Tasks (tareas agregadas a mano en "Tareas de hoy", con mantener presionado el fondo)
+  app.get("/api/manual-today-tasks", requireAuth, async (req, res) => {
+    try {
+      const { date } = req.query;
+      if (!date) {
+        return res.status(400).json({ message: "date es requerido (formato YYYY-MM-DD)" });
+      }
+      const tasks = await storage.getManualTodayTasks(req.userId!, date as string);
+      res.json(tasks);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/manual-today-tasks", requireAuth, async (req, res) => {
+    try {
+      const { date, title } = req.body;
+      if (!date || !title || typeof title !== "string" || !title.trim()) {
+        return res.status(400).json({ message: "date y title son requeridos" });
+      }
+      const task = await storage.createManualTodayTask({
+        userId: req.userId!,
+        date,
+        title: title.trim(),
+        done: 0,
+      });
+      res.status(201).json(task);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/manual-today-tasks/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getManualTodayTask(req.params.id);
+      if (!existing || existing.userId !== req.userId) {
+        return res.status(404).json({ message: "Tarea no encontrada" });
+      }
+      const { title, done } = req.body;
+      if (done !== undefined && done !== 0 && done !== 1) {
+        return res.status(400).json({ message: "done debe ser 0 o 1" });
+      }
+      const updated = await storage.updateManualTodayTask(req.params.id, {
+        ...(title !== undefined ? { title: String(title).trim() } : {}),
+        ...(done !== undefined ? { done } : {}),
+      });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/manual-today-tasks/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getManualTodayTask(req.params.id);
+      if (!existing || existing.userId !== req.userId) {
+        return res.status(404).json({ message: "Tarea no encontrada" });
+      }
+      await storage.deleteManualTodayTask(req.params.id);
+      await storage.deleteTodayTaskSlot(req.userId!, existing.date, "manual", existing.id);
       res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ message: error.message });

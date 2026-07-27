@@ -1,7 +1,7 @@
 import { eq, and, asc, sql, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db, pool } from "./db";
-import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type JournalShadowPage, type InsertJournalShadowPage, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourceObjective, type InsertSourceObjective, type SourcePowers, type InsertSourcePowers, type SourceBug, type InsertSourceBug, type SourceBugRecord, type InsertSourceBugRecord, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, type BodyProgressRow, type InsertBodyProgress, type TodayTaskSlot, type InsertTodayTaskSlot, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, journalShadowPages, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourceObjectives, sourcePowers, sourceBugs, sourceBugRecords, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, rewiringTrackers, rewiringTrackerRecords, bodyProgress, todayTaskSlots } from "@shared/schema";
+import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type JournalShadowPage, type InsertJournalShadowPage, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourceObjective, type InsertSourceObjective, type SourcePowers, type InsertSourcePowers, type SourceBug, type InsertSourceBug, type SourceBugRecord, type InsertSourceBugRecord, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, type BodyProgressRow, type InsertBodyProgress, type TodayTaskSlot, type InsertTodayTaskSlot, type ManualTodayTask, type InsertManualTodayTask, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, journalShadowPages, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourceObjectives, sourcePowers, sourceBugs, sourceBugRecords, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, rewiringTrackers, rewiringTrackerRecords, bodyProgress, todayTaskSlots, manualTodayTasks } from "@shared/schema";
 
 const normalizeSourceBugStatus = (status: string): "identificado" | "debugueando" | "debugueado" => {
   if (status === "activo") return "identificado";
@@ -484,6 +484,7 @@ export class DbStorage implements IStorage {
     if (skill.level !== undefined) updateData.level = skill.level;
     if (skill.levelPosition !== undefined) updateData.levelPosition = skill.levelPosition;
     if (skill.plannedDate !== undefined) updateData.plannedDate = skill.plannedDate;
+    if (skill.plannedDuration !== undefined) updateData.plannedDuration = skill.plannedDuration;
     if (skill.completedAt !== undefined) updateData.completedAt = skill.completedAt;
 
     const result = await db.update(skills).set(updateData).where(eq(skills.id, id)).returning();
@@ -2448,25 +2449,100 @@ export class DbStorage implements IStorage {
     );
   }
 
-  async upsertTodayTaskSlot(row: InsertTodayTaskSlot): Promise<TodayTaskSlot> {
+  // Próximo sortOrder disponible al final de una franja (date, slot): así una tarea recién
+  // asignada/movida siempre aparece al final, en vez de desordenar lo que ya había.
+  async getNextTodayTaskSlotOrder(userId: string, date: string, slot: TodayTaskSlot["slot"]): Promise<number> {
+    const siblings = await db.select().from(todayTaskSlots).where(
+      and(eq(todayTaskSlots.userId, userId), eq(todayTaskSlots.date, date), eq(todayTaskSlots.slot, slot))
+    );
+    return siblings.reduce((max, s) => Math.max(max, s.sortOrder ?? -1), -1) + 1;
+  }
+
+  // sortOrder no lo pasa el caller: siempre lo calcula esta función (al final de la franja
+  // destino), así que no forma parte de lo que se le exige a quien llama.
+  async upsertTodayTaskSlot(row: Omit<InsertTodayTaskSlot, "sortOrder">): Promise<TodayTaskSlot> {
     const id = `${row.userId}:${row.date}:${row.taskType}:${row.taskId}`;
     const existing = await db.select().from(todayTaskSlots).where(eq(todayTaskSlots.id, id)).limit(1);
 
     if (existing[0]) {
+      // Solo se reasigna el sortOrder (al final) cuando la franja realmente cambia; si se
+      // vuelve a guardar la misma franja, conserva su posición actual.
+      const sortOrder = existing[0].slot === row.slot
+        ? existing[0].sortOrder
+        : await this.getNextTodayTaskSlotOrder(row.userId, row.date, row.slot);
       const result = await db.update(todayTaskSlots)
-        .set({ slot: row.slot, updatedAt: new Date() })
+        .set({ slot: row.slot, sortOrder, updatedAt: new Date() })
         .where(eq(todayTaskSlots.id, id))
         .returning();
       return result[0];
     }
 
-    const result = await db.insert(todayTaskSlots).values({ id, ...row }).returning();
+    const sortOrder = await this.getNextTodayTaskSlotOrder(row.userId, row.date, row.slot);
+    const result = await db.insert(todayTaskSlots).values({ id, ...row, sortOrder }).returning();
     return result[0];
   }
 
   async deleteTodayTaskSlot(userId: string, date: string, taskType: string, taskId: string): Promise<void> {
     const id = `${userId}:${date}:${taskType}:${taskId}`;
     await db.delete(todayTaskSlots).where(eq(todayTaskSlots.id, id));
+  }
+
+  // Reordena una tarea dentro de su franja intercambiando su sortOrder con el vecino
+  // inmediato (arriba o abajo). No hace nada si ya está en el extremo.
+  async reorderTodayTaskSlot(userId: string, date: string, taskType: string, taskId: string, direction: "up" | "down"): Promise<void> {
+    const id = `${userId}:${date}:${taskType}:${taskId}`;
+    const current = await db.select().from(todayTaskSlots).where(eq(todayTaskSlots.id, id)).limit(1);
+    const row = current[0];
+    if (!row) return;
+
+    const siblings = await db.select().from(todayTaskSlots).where(
+      and(eq(todayTaskSlots.userId, userId), eq(todayTaskSlots.date, date), eq(todayTaskSlots.slot, row.slot))
+    );
+    // Desempata por updatedAt: filas de franjas asignadas antes de que existiera esta
+    // columna comparten sortOrder 0, así que ordenar solo por sortOrder las deja "empatadas"
+    // y swapear sus valores (0 con 0) no cambiaría nada.
+    const sorted = siblings.slice().sort((a, b) => a.sortOrder - b.sortOrder || a.updatedAt.getTime() - b.updatedAt.getTime());
+    const idx = sorted.findIndex((s) => s.id === row.id);
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (idx === -1 || swapIdx < 0 || swapIdx >= sorted.length) return;
+
+    // En vez de swapear los valores guardados (que pueden estar empatados), se intercambian
+    // posiciones en la lista ordenada y se renumera todo secuencialmente (0..n-1). Esto
+    // también autocura de una vez cualquier empate viejo dentro de esta franja.
+    [sorted[idx], sorted[swapIdx]] = [sorted[swapIdx], sorted[idx]];
+    await Promise.all(
+      sorted.map((s, i) => (s.sortOrder === i ? null : db.update(todayTaskSlots).set({ sortOrder: i }).where(eq(todayTaskSlots.id, s.id))))
+    );
+  }
+
+  // Manual Today Tasks (tareas agregadas a mano en "Tareas de hoy")
+  async getManualTodayTasks(userId: string, date: string): Promise<ManualTodayTask[]> {
+    return await db.select().from(manualTodayTasks).where(
+      and(eq(manualTodayTasks.userId, userId), eq(manualTodayTasks.date, date))
+    );
+  }
+
+  async getManualTodayTask(id: string): Promise<ManualTodayTask | undefined> {
+    const result = await db.select().from(manualTodayTasks).where(eq(manualTodayTasks.id, id));
+    return result[0];
+  }
+
+  async createManualTodayTask(task: InsertManualTodayTask): Promise<ManualTodayTask> {
+    const id = randomUUID();
+    const result = await db.insert(manualTodayTasks).values({ id, ...task }).returning();
+    return result[0];
+  }
+
+  async updateManualTodayTask(id: string, updates: Partial<Pick<InsertManualTodayTask, "title" | "done">>): Promise<ManualTodayTask | undefined> {
+    const updateData: Record<string, unknown> = {};
+    if (updates.title !== undefined) updateData.title = updates.title;
+    if (updates.done !== undefined) updateData.done = updates.done;
+    const result = await db.update(manualTodayTasks).set(updateData).where(eq(manualTodayTasks.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteManualTodayTask(id: string): Promise<void> {
+    await db.delete(manualTodayTasks).where(eq(manualTodayTasks.id, id));
   }
 }
 

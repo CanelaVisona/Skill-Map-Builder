@@ -25,6 +25,7 @@ export interface Skill {
   levelPosition?: number;
   experiencePoints?: number;
   plannedDate?: string | null;
+  plannedDuration?: number | null;
   completedAt?: string | null;
 }
 
@@ -86,13 +87,13 @@ interface SkillTreeContextType {
   toggleSkillStatus: (areaId: string, skillId: string) => void;
   toggleProjectSkillStatus: (projectId: string, skillId: string) => void;
   addSkill: (areaId: string, skill: Omit<Skill, "id">) => void;
-  updateSkill: (areaId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null }) => void;
+  updateSkill: (areaId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null }) => void;
   deleteSkill: (areaId: string, skillId: string) => void;
   toggleLock: (areaId: string, skillId: string) => void;
   moveSkill: (areaId: string, skillId: string, direction: "up" | "down") => void;
   moveSkillToLevel: (areaId: string, skillId: string, targetLevel: number) => Promise<void>;
   reorderSkillWithinLevel: (areaId: string, skillId: string, direction: "up" | "down") => Promise<void>;
-  updateProjectSkill: (projectId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null }) => void;
+  updateProjectSkill: (projectId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null }) => void;
   deleteProjectSkill: (projectId: string, skillId: string) => void;
   toggleProjectLock: (projectId: string, skillId: string) => void;
   moveProjectSkill: (projectId: string, skillId: string, direction: "up" | "down") => void;
@@ -124,7 +125,7 @@ interface SkillTreeContextType {
   enterSubSkillTree: (skillId: string, skillTitle: string) => Promise<void>;
   exitSubSkillTree: () => void;
   toggleSubSkillStatus: (skillId: string) => void;
-  updateSubSkill: (skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null }) => void;
+  updateSubSkill: (skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null }) => void;
   deleteSubSkill: (skillId: string) => void;
   toggleSubSkillLock: (skillId: string) => void;
   moveSubSkill: (skillId: string, direction: "up" | "down") => void;
@@ -1677,7 +1678,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
-  const updateSkill = async (areaId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null }) => {
+  const updateSkill = async (areaId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null }) => {
     console.log('[updateSkill] Called with skillId:', skillId, 'areaId:', areaId, 'updates:', updates);
     try {
       const response = await fetch(`/api/skills/${skillId}`, {
@@ -2022,7 +2023,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
-  const updateProjectSkill = async (projectId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null }) => {
+  const updateProjectSkill = async (projectId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null }) => {
     try {
       await fetch(`/api/skills/${skillId}`, {
         method: "PATCH",
@@ -2788,7 +2789,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
-  const updateSubSkill = async (skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null }) => {
+  const updateSubSkill = async (skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null }) => {
     try {
       await fetch(`/api/skills/${skillId}`, {
         method: "PATCH",

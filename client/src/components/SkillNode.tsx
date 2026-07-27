@@ -44,6 +44,30 @@ interface QuickDateOption {
   value: string;
 }
 
+const CUSTOM_DURATION_VALUE = "__custom_duration__";
+
+interface QuickDurationOption {
+  id: string;
+  label: string;
+  value: number;
+}
+
+const QUICK_DURATION_OPTIONS: QuickDurationOption[] = [
+  { id: "5min", label: "5 min", value: 5 },
+  { id: "10min", label: "10 min", value: 10 },
+  { id: "15min", label: "15 min", value: 15 },
+  { id: "30min", label: "30 min", value: 30 },
+];
+
+// Renders a saved plannedDuration the same way the "Time" selector does: as one of the
+// quick-option labels (e.g. "15 min") when it matches, otherwise as a plain "X min".
+function getPlannedDurationLabel(plannedDuration: number | null | undefined): string | null {
+  if (!plannedDuration) return null;
+  const matched = QUICK_DURATION_OPTIONS.find((opt) => opt.value === plannedDuration);
+  if (matched) return matched.label;
+  return `${plannedDuration} min`;
+}
+
 function formatLocalDate(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
@@ -204,6 +228,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const hasDefaultName = skill.title.startsWith("Nodo ") || skill.title === "Next challenge" || skill.title === "Next objetive quest" || skill.title === "Objective quest";
 
   const plannedDateLabel = getPlannedDateLabel(skill.plannedDate);
+  const plannedDurationLabel = getPlannedDurationLabel(skill.plannedDuration);
 
   // Default-named nodes get a mild extra fade, but distance to the active node stays
   // the dominant signal: a freshly-added node (necessarily still default-named) must
@@ -283,6 +308,14 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   // records which option id we've just deselected on pointerup, letting the subsequent
   // click on that same item be swallowed before it can re-select it out from under us.
   const suppressWhenOptionClickRef = useRef<string | null>(null);
+  const [editPlannedDuration, setEditPlannedDuration] = useState<number | null>(skill.plannedDuration ?? null);
+  const [showCustomDurationInput, setShowCustomDurationInput] = useState(false);
+  // Mirrors pendingCustomDate above, but for the custom duration input.
+  const [pendingCustomDuration, setPendingCustomDuration] = useState(false);
+  const [customDurationInputValue, setCustomDurationInputValue] = useState("");
+  // Mirrors isWhenSelectOpen/suppressWhenOptionClickRef above, for the "Time" Select.
+  const [isDurationSelectOpen, setIsDurationSelectOpen] = useState(false);
+  const suppressDurationOptionClickRef = useRef<string | null>(null);
   const [editDescription, setEditDescription] = useState(skill.description || "");
   const [editFeedback, setEditFeedback] = useState(skill.feedback || "");
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -864,6 +897,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       setEditPlannedDate(skill.plannedDate || "");
       setShowCustomCalendar(false);
       setPendingCustomDate(false);
+      setEditPlannedDuration(skill.plannedDuration ?? null);
+      setShowCustomDurationInput(false);
+      setPendingCustomDuration(false);
+      setCustomDurationInputValue("");
       setEditFeedback(skill.feedback || "");
       setXpValue(FIXED_XP_AMOUNT.toString());
       // First node of level (levelPosition === 1) starts at step 2, skipping title edit
@@ -1057,7 +1094,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
           description: combinedDescription,
           feedback: editFeedback,
           experiencePoints: xpNumber,
-          plannedDate: editPlannedDate || null
+          plannedDate: editPlannedDate || null,
+          plannedDuration: editPlannedDuration
         });
       } else if (isProject) {
         updateProjectSkill(activeId, skill.id, {
@@ -1065,7 +1103,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
           description: combinedDescription,
           feedback: editFeedback,
           experiencePoints: xpNumber,
-          plannedDate: editPlannedDate || null
+          plannedDate: editPlannedDate || null,
+          plannedDuration: editPlannedDuration
         });
       } else {
         updateSkill(activeId, skill.id, {
@@ -1073,7 +1112,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
           description: combinedDescription,
           feedback: editFeedback,
           experiencePoints: xpNumber,
-          plannedDate: editPlannedDate || null
+          plannedDate: editPlannedDate || null,
+          plannedDuration: editPlannedDuration
         });
       }
       
@@ -1098,7 +1138,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   // Autosave effect with debounce for step 1 and 2 fields
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (isEditDialogOpen && (editTitle !== skill.title || editAction !== skill.description?.split("\n\nWhen: ")[0] || editPlannedDate !== (skill.plannedDate || ""))) {
+      if (isEditDialogOpen && (editTitle !== skill.title || editAction !== skill.description?.split("\n\nWhen: ")[0] || editPlannedDate !== (skill.plannedDate || "") || editPlannedDuration !== (skill.plannedDuration ?? null))) {
         const combinedDescription = editAction;
 
         // Autosave without closing dialog
@@ -1106,26 +1146,29 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
           updateSubSkill(skill.id, {
             title: editTitle,
             description: combinedDescription,
-            plannedDate: editPlannedDate || null
+            plannedDate: editPlannedDate || null,
+            plannedDuration: editPlannedDuration
           });
         } else if (isProject) {
           updateProjectSkill(activeId, skill.id, {
             title: editTitle,
             description: combinedDescription,
-            plannedDate: editPlannedDate || null
+            plannedDate: editPlannedDate || null,
+            plannedDuration: editPlannedDuration
           });
         } else {
           updateSkill(activeId, skill.id, {
             title: editTitle,
             description: combinedDescription,
-            plannedDate: editPlannedDate || null
+            plannedDate: editPlannedDate || null,
+            plannedDuration: editPlannedDuration
           });
         }
       }
     }, 1500); // Save after user stops typing for 1.5 seconds
 
     return () => clearTimeout(timer);
-  }, [editTitle, editAction, editPlannedDate, isEditDialogOpen, skill.id, skill.title, skill.description, skill.plannedDate, isSubSkillView, isProject, activeId, updateSubSkill, updateProjectSkill, updateSkill]);
+  }, [editTitle, editAction, editPlannedDate, editPlannedDuration, isEditDialogOpen, skill.id, skill.title, skill.description, skill.plannedDate, skill.plannedDuration, isSubSkillView, isProject, activeId, updateSubSkill, updateProjectSkill, updateSkill]);
 
   const handleTouchStart = () => {
     if (isInicioNode) return; // "inicio" nodes are not interactive
@@ -1372,13 +1415,16 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               >
                 {skill.isAutoComplete === 1 || skill.levelPosition === 1 ? "" : skill.title}
               </span>
-              {/* Small date tag under the title when this node has a plannedDate assigned.
-                  Hidden once the node is confirmed/mastered — the date was only relevant
-                  as a reminder while the node was still pending. */}
-              {skill.isAutoComplete !== 1 && skill.levelPosition !== 1 && !isInicioNode && !isMastered && plannedDateLabel && (
-                <span className="whitespace-nowrap font-normal italic tracking-wide text-muted-foreground/70 text-[10px] leading-tight">
-                  {plannedDateLabel}
-                </span>
+              {/* Small day/time tags under the title when this node has a plannedDate and/or
+                  plannedDuration assigned, shown side by side when both are set. Hidden once
+                  the node is confirmed/mastered — they were only relevant as a reminder while
+                  the node was still pending. */}
+              {skill.isAutoComplete !== 1 && skill.levelPosition !== 1 && !isInicioNode && !isMastered && (plannedDateLabel || plannedDurationLabel) && (
+                <div className="flex items-center gap-1 font-normal italic tracking-wide text-muted-foreground/70 text-[10px] leading-tight">
+                  {plannedDateLabel && <span className="whitespace-nowrap">{plannedDateLabel}</span>}
+                  {plannedDateLabel && plannedDurationLabel && <span>·</span>}
+                  {plannedDurationLabel && <span className="whitespace-nowrap">{plannedDurationLabel}</span>}
+                </div>
               )}
             </div>
             {/* Don't show the "ready to confirm" mark alongside the incomplete-subtasks
@@ -2000,21 +2046,24 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               title: editTitle,
               description: combinedDescription,
               feedback: editFeedback,
-              plannedDate: editPlannedDate || null
+              plannedDate: editPlannedDate || null,
+              plannedDuration: editPlannedDuration
             });
           } else if (isProject) {
             updateProjectSkill(activeId, skill.id, {
               title: editTitle,
               description: combinedDescription,
               feedback: editFeedback,
-              plannedDate: editPlannedDate || null
+              plannedDate: editPlannedDate || null,
+              plannedDuration: editPlannedDuration
             });
           } else {
             updateSkill(activeId, skill.id, {
               title: editTitle,
               description: combinedDescription,
               feedback: editFeedback,
-              plannedDate: editPlannedDate || null
+              plannedDate: editPlannedDate || null,
+              plannedDuration: editPlannedDuration
             });
           }
         }
@@ -2193,9 +2242,169 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                     );
                   })()}
                 </div>
+                <div>
+                  <Label htmlFor="edit-duration" className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block">Time</Label>
+                  {(() => {
+                    const matchedDurationOption = editPlannedDuration != null
+                      ? QUICK_DURATION_OPTIONS.find((opt) => opt.value === editPlannedDuration)
+                      : undefined;
+                    // Mirrors pendingCustomDate's role in the date Select above.
+                    const durationSelectValue = pendingCustomDuration
+                      ? CUSTOM_DURATION_VALUE
+                      : editPlannedDuration != null
+                        ? (matchedDurationOption ? matchedDurationOption.id : CUSTOM_DURATION_VALUE)
+                        : "";
+                    const durationTriggerLabel = pendingCustomDuration
+                      ? "Seleccionar"
+                      : matchedDurationOption
+                        ? matchedDurationOption.label
+                        : editPlannedDuration != null
+                          ? `${editPlannedDuration} min`
+                          : null;
+
+                    // Deselects the given quick option (or the custom duration), clearing the
+                    // planned duration entirely. Also closes the dropdown ourselves, since we
+                    // preempt Radix's own select-and-close handling for this case below.
+                    const deselectDurationOption = (id: string) => {
+                      suppressDurationOptionClickRef.current = id;
+                      setEditPlannedDuration(null);
+                      setPendingCustomDuration(false);
+                      setShowCustomDurationInput(false);
+                      setIsDurationSelectOpen(false);
+                    };
+
+                    return (
+                      <Popover open={showCustomDurationInput} onOpenChange={setShowCustomDurationInput}>
+                        <PopoverAnchor asChild>
+                          <div>
+                            <Select
+                              open={isDurationSelectOpen}
+                              onOpenChange={setIsDurationSelectOpen}
+                              value={durationSelectValue}
+                              onValueChange={(value) => {
+                                if (value === CUSTOM_DURATION_VALUE) {
+                                  setPendingCustomDuration(true);
+                                  setCustomDurationInputValue(editPlannedDuration != null ? String(editPlannedDuration) : "");
+                                  setShowCustomDurationInput(true);
+                                } else {
+                                  const chosen = QUICK_DURATION_OPTIONS.find((opt) => opt.id === value);
+                                  if (chosen) setEditPlannedDuration(chosen.value);
+                                  setPendingCustomDuration(false);
+                                  setShowCustomDurationInput(false);
+                                }
+                              }}
+                            >
+                              <SelectTrigger id="edit-duration" className="border-0 bg-muted/50 focus:ring-0" data-testid="input-edit-duration">
+                                <span className={durationTriggerLabel ? "" : "text-muted-foreground"}>
+                                  {durationTriggerLabel || "Elegir..."}
+                                </span>
+                              </SelectTrigger>
+                              <SelectContent className="border-0 minimal-scrollbar">
+                                {QUICK_DURATION_OPTIONS.map((opt) => (
+                                  <SelectItem
+                                    key={opt.id}
+                                    value={opt.id}
+                                    // Mouse selection resolves on pointerup; intercept it there
+                                    // (before Radix's own handleSelect runs in the same event)
+                                    // so we can block it and deselect instead.
+                                    onPointerUp={(e) => {
+                                      if (durationSelectValue === opt.id) {
+                                        e.preventDefault();
+                                        deselectDurationOption(opt.id);
+                                      }
+                                    }}
+                                    // Touch selection resolves on the click that follows pointerup;
+                                    // swallow it if this item is the one we just deselected above.
+                                    onClick={(e) => {
+                                      if (suppressDurationOptionClickRef.current === opt.id) {
+                                        e.preventDefault();
+                                        suppressDurationOptionClickRef.current = null;
+                                      }
+                                    }}
+                                  >
+                                    {opt.label}
+                                  </SelectItem>
+                                ))}
+                                <SelectItem
+                                  value={CUSTOM_DURATION_VALUE}
+                                  onPointerUp={(e) => {
+                                    if (durationSelectValue === CUSTOM_DURATION_VALUE) {
+                                      e.preventDefault();
+                                      deselectDurationOption(CUSTOM_DURATION_VALUE);
+                                    }
+                                  }}
+                                  onClick={(e) => {
+                                    if (suppressDurationOptionClickRef.current === CUSTOM_DURATION_VALUE) {
+                                      e.preventDefault();
+                                      suppressDurationOptionClickRef.current = null;
+                                    }
+                                  }}
+                                >
+                                  Seleccionar
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </PopoverAnchor>
+                        <PopoverContent
+                          className="w-56 p-3"
+                          align="start"
+                          onOpenAutoFocus={(e) => e.preventDefault()}
+                          onFocusOutside={(e) => e.preventDefault()}
+                          onPointerDownOutside={(e) => {
+                            // Same reasoning as the date calendar's guard above: the Select's
+                            // trigger lives outside this popover's own content, so closing it
+                            // must not be misread as an "outside" click that dismisses us first.
+                            const target = e.target as HTMLElement;
+                            if (target.closest('[id="edit-duration"]')) {
+                              e.preventDefault();
+                            }
+                          }}
+                        >
+                          <div className="flex flex-col gap-2">
+                            <Label htmlFor="custom-duration-input" className="text-xs text-muted-foreground">Minutos</Label>
+                            <Input
+                              id="custom-duration-input"
+                              type="number"
+                              min={1}
+                              value={customDurationInputValue}
+                              onChange={(e) => setCustomDurationInputValue(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  const parsed = parseInt(customDurationInputValue, 10);
+                                  if (!Number.isNaN(parsed) && parsed > 0) {
+                                    setEditPlannedDuration(parsed);
+                                    setPendingCustomDuration(false);
+                                    setShowCustomDurationInput(false);
+                                  }
+                                }
+                              }}
+                              placeholder="Minutos"
+                              className="border-0 bg-muted/50 focus-visible:ring-0"
+                              autoFocus
+                            />
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                const parsed = parseInt(customDurationInputValue, 10);
+                                if (!Number.isNaN(parsed) && parsed > 0) {
+                                  setEditPlannedDuration(parsed);
+                                  setPendingCustomDuration(false);
+                                  setShowCustomDurationInput(false);
+                                }
+                              }}
+                            >
+                              Confirmar
+                            </Button>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                    );
+                  })()}
+                </div>
                 <div className="flex justify-end mt-auto pt-4">
-                  <Button 
-                    variant="ghost" 
+                  <Button
+                    variant="ghost"
                     size="icon"
                     onClick={() => setEditStep(1)}
                     className="h-10 w-10 bg-muted/50 hover:bg-muted"

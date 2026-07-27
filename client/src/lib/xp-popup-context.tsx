@@ -1,5 +1,9 @@
 import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
 import { ExperienceGainPopup, type ExperienceGainSnapshot } from "@/components/ExperienceGainPopup";
+import { markPopupActive } from "@/lib/popup-coordinator";
+
+// Debe coincidir con el setTimeout(onClose, 7500) de ExperienceGainPopup.
+const POPUP_DURATION_MS = 7500;
 
 interface XpPopupContextValue {
   showXpPopup: (snapshot: ExperienceGainSnapshot) => void;
@@ -12,6 +16,7 @@ export function XpPopupProvider({ children }: { children: ReactNode }) {
   const [snapshot, setSnapshot] = useState<ExperienceGainSnapshot | null>(null);
 
   const showXpPopup = useCallback((nextSnapshot: ExperienceGainSnapshot) => {
+    markPopupActive(POPUP_DURATION_MS);
     setSnapshot(nextSnapshot);
   }, []);
 
