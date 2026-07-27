@@ -111,26 +111,6 @@ export function useTodayProgressSummary() {
     ...collectPlannedNodes(Array.isArray(projects) ? projects : []),
   ];
 
-  const collectExtraCompletedNodes = (list: (Area | Project)[]) => {
-    const result: { id: string }[] = [];
-    list.forEach((parent) => {
-      (parent.skills || []).forEach((skill: Skill) => {
-        if (skill.status === "mastered" && skill.completedAt && !skill.plannedDate) {
-          const completedDateStr = getDateStr(new Date(skill.completedAt));
-          if (completedDateStr === todayStr) {
-            result.push({ id: skill.id });
-          }
-        }
-      });
-    });
-    return result;
-  };
-
-  const extraNodesToday = [
-    ...collectExtraCompletedNodes(Array.isArray(areas) ? areas : []),
-    ...collectExtraCompletedNodes(Array.isArray(projects) ? projects : []),
-  ];
-
   const manualTasksQuery = useManualTasks(todayStr, true);
   const manualTasks = manualTasksQuery.data || [];
 
@@ -142,21 +122,23 @@ export function useTodayProgressSummary() {
   const visibleNodes = plannedNodesToday.filter((n) => n.done || !isHidden(`node:${n.id}`));
   const visiblePractices = practicesToday.filter((p) => p.done || !isHidden(`practice:${p.id}`));
 
+  // Los nodos dominados sin fecha planeada para hoy (no estaban "registrados para hoy") no
+  // suman al total/completado que dispara el pop-up, a diferencia del modal de Tareas de Hoy
+  // (que sí los muestra en "Más"): confirmar un nodo cualquiera no debería festejarse como
+  // progreso del día si no estaba planificado para hoy.
   const total =
     visibleHabits.length +
     visibleNodes.length +
     visiblePractices.length +
     manualTasks.length +
-    extraHabitsDoneToday.length +
-    extraNodesToday.length;
+    extraHabitsDoneToday.length;
 
   const completed =
     visibleHabits.filter((h) => h.done).length +
     visibleNodes.filter((n) => n.done).length +
     visiblePractices.filter((p) => p.done).length +
     manualTasks.filter((t) => t.done === 1).length +
-    extraHabitsDoneToday.length +
-    extraNodesToday.length;
+    extraHabitsDoneToday.length;
 
   // Solo se puede confiar en total/completed una vez que TODAS las consultas involucradas
   // resolvieron al menos una vez (incluidas las de registros por hábito, que se crean recién
