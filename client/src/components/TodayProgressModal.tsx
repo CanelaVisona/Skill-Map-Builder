@@ -35,6 +35,7 @@ const MONTHS = [
 const DAY_LBLS = ["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"];
 const HABIT_COLORS = ["#534AB7", "#1D9E75", "#D85A30", "#185FA5"];
 const NODE_COLOR = "#f59e0b";
+const PRACTICE_COLOR = "#e11d48";
 
 function getDateStr(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -164,25 +165,25 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     }))
     .filter((h) => h.done);
 
-  const collectExtraCompletedNodes = (list: (Area | Project)[]): PlannedNode[] => {
+  // Nodos sin fecha planeada (columna "When exactly?" vacía) que se confirmaron dentro del
+  // rango [startDate, endDate]. Se usa tanto para "Más" (rango = solo hoy) como para el
+  // calendario (rango = mes mostrado), reusando plannedDate para cargar la fecha en la que
+  // el nodo cuenta, aunque el nodo en sí nunca tuvo una fecha planeada.
+  const collectExtraCompletedNodes = (list: (Area | Project)[], startDate: string, endDate: string): PlannedNode[] => {
     const result: PlannedNode[] = [];
     list.forEach((parent) => {
       (parent.skills || []).forEach((skill: Skill) => {
-        // Si el nodo tiene una fecha planeada (sea hoy u otro día), pertenece a ese día
-        // (columna "When exactly?") y no debe aparecer acá aunque se haya confirmado hoy.
-        if (
-          skill.status === "mastered" &&
-          skill.completedAt &&
-          getDateStr(new Date(skill.completedAt)) === todayStr &&
-          !skill.plannedDate
-        ) {
-          result.push({
-            id: skill.id,
-            title: skill.title || "Sin nombre",
-            parentName: parent.name,
-            plannedDate: skill.plannedDate || "",
-            done: true,
-          });
+        if (skill.status === "mastered" && skill.completedAt && !skill.plannedDate) {
+          const completedDateStr = getDateStr(new Date(skill.completedAt));
+          if (completedDateStr >= startDate && completedDateStr <= endDate) {
+            result.push({
+              id: skill.id,
+              title: skill.title || "Sin nombre",
+              parentName: parent.name,
+              plannedDate: completedDateStr,
+              done: true,
+            });
+          }
         }
       });
     });
@@ -190,8 +191,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   };
 
   const extraNodes = [
-    ...collectExtraCompletedNodes(Array.isArray(areas) ? areas : []),
-    ...collectExtraCompletedNodes(Array.isArray(projects) ? projects : []),
+    ...collectExtraCompletedNodes(Array.isArray(areas) ? areas : [], todayStr, todayStr),
+    ...collectExtraCompletedNodes(Array.isArray(projects) ? projects : [], todayStr, todayStr),
   ];
 
   const extraItems: TodayItem[] = [
@@ -341,6 +342,28 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     (n) => n.plannedDate >= calMonthStart && n.plannedDate <= calMonthEnd
   );
 
+  // Nodos sin fecha planeada que se confirmaron dentro del mes mostrado (el equivalente de
+  // "Más" pero para cualquier día del calendario, no solo hoy).
+  const extraNodesThisMonth = [
+    ...collectExtraCompletedNodes(Array.isArray(areas) ? areas : [], calMonthStart, calMonthEnd),
+    ...collectExtraCompletedNodes(Array.isArray(projects) ? projects : [], calMonthStart, calMonthEnd),
+  ];
+
+  // Prácticas de repetición espaciada confirmadas dentro del mes mostrado. Solo se puede
+  // saber la última confirmación de cada práctica (no hay historial completo), así que un
+  // día pasado solo puede mostrar esa última confirmación si cae en ese día.
+  const confirmedPracticesThisMonth = (practicesData || [])
+    .map((p) => {
+      const status = p.level === 2 ? calculateStatusL2(p) : calculateStatus(p);
+      const pending = status === "expires_soon";
+      const confirmedAt = p.lastConfirmedAt || p.updatedAt;
+      if (pending || status === "loss" || status === "frozen" || !confirmedAt) return null;
+      const dateStr = getDateStr(new Date(confirmedAt));
+      if (dateStr < calMonthStart || dateStr > calMonthEnd) return null;
+      return { practice: p, dateStr };
+    })
+    .filter((entry): entry is { practice: SpaceRepetitionPractice; dateStr: string } => entry !== null);
+
   const offset = getFirstDayOfMonth(calendarDate);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -356,12 +379,50 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     setSelectedDay(null);
   };
 
-  const selectedDayDetails = (() => {
-    if (!selectedDay) return null;
-    const habitsDone = activeHabitsThisMonth.filter((h) => habitDoneDatesByHabit.get(h.id)?.has(selectedDay));
-    const nodesDone = nodesThisMonth.filter((n) => n.plannedDate === selectedDay && n.done);
-    return { habitsDone, nodesDone };
-  })();
+  // Junta habitos/nodos/practicas de un día del calendario. Para hoy reusa exactamente los
+  // mismos totales que la pestaña "Progreso" (incluye lo oculto/extra), para que ambas vistas
+  // coincidan; para otros días del mes reconstruye lo mismo a partir del historial disponible.
+  const getDayStats = (dateStr: string, dObj: Date) => {
+    if (dateStr === todayStr) {
+      const todayHabitsDoneIds = new Set([
+        ...visibleHabitItems.filter((h) => h.done).map((h) => h.id),
+        ...extraHabits.map((h) => h.id),
+      ]);
+      return {
+        habitsDone: activeHabitsThisMonth.filter((h) => todayHabitsDoneIds.has(h.id)),
+        nodesDone: [...visiblePlannedNodesToday.filter((n) => n.done), ...extraNodes],
+        practicesDone: visiblePracticesToday.filter(({ done }) => done).map(({ practice }) => practice),
+        totalForDay: total,
+        doneForDay: completed,
+      };
+    }
+
+    const habitsScheduledThatDay = activeHabitsThisMonth.filter((h) => {
+      const days = h.scheduledDays?.length ? h.scheduledDays : [0, 1, 2, 3, 4, 5, 6];
+      const dow = dObj.getDay() === 0 ? 6 : dObj.getDay() - 1;
+      return days.includes(dow);
+    });
+    const habitsDoneThatDay = activeHabitsThisMonth.filter((h) => habitDoneDatesByHabit.get(h.id)?.has(dateStr));
+    const extraHabitsDoneThatDay = habitsDoneThatDay.filter((h) => !habitsScheduledThatDay.includes(h));
+
+    const nodesPlannedThatDay = nodesThisMonth.filter((n) => n.plannedDate === dateStr);
+    const nodesPlannedDoneThatDay = nodesPlannedThatDay.filter((n) => n.done);
+    const extraNodesThatDay = extraNodesThisMonth.filter((n) => n.plannedDate === dateStr);
+
+    const practicesThatDay = confirmedPracticesThisMonth
+      .filter((entry) => entry.dateStr === dateStr)
+      .map((entry) => entry.practice);
+
+    return {
+      habitsDone: habitsDoneThatDay,
+      nodesDone: [...nodesPlannedDoneThatDay, ...extraNodesThatDay],
+      practicesDone: practicesThatDay,
+      totalForDay: habitsScheduledThatDay.length + extraHabitsDoneThatDay.length + nodesPlannedThatDay.length + extraNodesThatDay.length + practicesThatDay.length,
+      doneForDay: habitsDoneThatDay.length + nodesPlannedDoneThatDay.length + extraNodesThatDay.length + practicesThatDay.length,
+    };
+  };
+
+  const selectedDayDetails = selectedDay ? getDayStats(selectedDay, new Date(selectedDay + "T12:00:00")) : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -540,20 +601,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                 const isFuture = dObj > today;
                 const isToday = dateStr === todayStr;
 
-                const habitsDoneThatDay = activeHabitsThisMonth.filter((h) =>
-                  habitDoneDatesByHabit.get(h.id)?.has(dateStr)
-                );
-                const nodesThatDay = nodesThisMonth.filter((n) => n.plannedDate === dateStr);
-                const nodesDoneThatDay = nodesThatDay.filter((n) => n.done);
-
-                const habitsScheduledThatDay = activeHabitsThisMonth.filter((h) => {
-                  const days = h.scheduledDays?.length ? h.scheduledDays : [0, 1, 2, 3, 4, 5, 6];
-                  const dow = dObj.getDay() === 0 ? 6 : dObj.getDay() - 1;
-                  return days.includes(dow);
-                });
-
-                const totalForDay = habitsScheduledThatDay.length + nodesThatDay.length;
-                const doneForDay = habitsDoneThatDay.length + nodesDoneThatDay.length;
+                const { habitsDone: habitsDoneThatDay, nodesDone: nodesDoneThatDay, practicesDone: practicesDoneThatDay, totalForDay, doneForDay } = getDayStats(dateStr, dObj);
                 const allDone = totalForDay > 0 && doneForDay === totalForDay;
 
                 return (
@@ -584,6 +632,9 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                         {nodesDoneThatDay.map((n) => (
                           <div key={n.id} className="h-1.5 w-1.5 rounded-full" style={{ background: NODE_COLOR }} />
                         ))}
+                        {practicesDoneThatDay.map((p) => (
+                          <div key={p.id} className="h-1.5 w-1.5 rounded-full" style={{ background: PRACTICE_COLOR }} />
+                        ))}
                       </div>
                     )}
                   </button>
@@ -599,7 +650,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                   <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
                     {new Date(selectedDay + "T12:00:00").toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" })}
                   </p>
-                  {selectedDayDetails && (selectedDayDetails.habitsDone.length > 0 || selectedDayDetails.nodesDone.length > 0) ? (
+                  {selectedDayDetails && (selectedDayDetails.habitsDone.length > 0 || selectedDayDetails.nodesDone.length > 0 || selectedDayDetails.practicesDone.length > 0) ? (
                     <div className="space-y-1">
                       {selectedDayDetails.habitsDone.map((h) => (
                         <div key={h.id} className="flex items-center gap-2 text-sm">
@@ -611,6 +662,12 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                         <div key={n.id} className="flex items-center gap-2 text-sm">
                           <div className="h-2 w-2 rounded-full flex-shrink-0" style={{ background: NODE_COLOR }} />
                           <span>{n.title} <span className="text-muted-foreground">· {n.parentName}</span></span>
+                        </div>
+                      ))}
+                      {selectedDayDetails.practicesDone.map((p) => (
+                        <div key={p.id} className="flex items-center gap-2 text-sm">
+                          <div className="h-2 w-2 rounded-full flex-shrink-0" style={{ background: PRACTICE_COLOR }} />
+                          <span>{p.emoji} {p.name}</span>
                         </div>
                       ))}
                     </div>

@@ -1372,8 +1372,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               >
                 {skill.isAutoComplete === 1 || skill.levelPosition === 1 ? "" : skill.title}
               </span>
-              {/* Small date tag under the title when this node has a plannedDate assigned */}
-              {skill.isAutoComplete !== 1 && skill.levelPosition !== 1 && !isInicioNode && plannedDateLabel && (
+              {/* Small date tag under the title when this node has a plannedDate assigned.
+                  Hidden once the node is confirmed/mastered — the date was only relevant
+                  as a reminder while the node was still pending. */}
+              {skill.isAutoComplete !== 1 && skill.levelPosition !== 1 && !isInicioNode && !isMastered && plannedDateLabel && (
                 <span className="whitespace-nowrap font-normal italic tracking-wide text-muted-foreground/70 text-[10px] leading-tight">
                   {plannedDateLabel}
                 </span>
