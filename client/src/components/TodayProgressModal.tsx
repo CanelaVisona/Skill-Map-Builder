@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useQuery, useQueries } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
@@ -224,16 +224,32 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // que volver a aparecer en tareas de hoy (ya como hecha), no quedar oculta para siempre.
   const isHidden = (key: string) => slotByKey.get(key) === "hidden";
 
+  // La barra de progreso no debe subir en el momento en que ocultás una tarea (se sentiría
+  // como una recompensa por ocultar). Por eso el total/completado usa una "foto" de qué
+  // estaba oculto al abrir el modal, no el estado en vivo: lo que ocultás en esta sesión
+  // desaparece de la lista al instante, pero no cambia la barra hasta la próxima vez que
+  // abras "Hoy" (ahí sí deja de contar en el denominador).
+  const hiddenKeysAtOpenRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (!open) hiddenKeysAtOpenRef.current = null;
+  }, [open]);
+  if (open && !hiddenKeysAtOpenRef.current && slotsData) {
+    hiddenKeysAtOpenRef.current = new Set(
+      slotsData.filter((s) => s.slot === "hidden").map((s) => `${s.taskType}:${s.taskId}`)
+    );
+  }
+  const wasHiddenAtOpen = (key: string) => hiddenKeysAtOpenRef.current?.has(key) ?? false;
+
   const visibleHabitItems = habitItems.filter((h) => h.done || !isHidden(`habit:${h.id}`));
   const visiblePlannedNodesToday = plannedNodesToday.filter((n) => n.done || !isHidden(`node:${n.id}`));
   const visiblePracticesToday = practicesToday.filter(({ practice: p, done }) => done || !isHidden(`practice:${p.id}`));
 
-  const totalHabits = visibleHabitItems.length;
-  const completedHabits = visibleHabitItems.filter((h) => h.done).length;
-  const totalNodes = visiblePlannedNodesToday.length;
-  const completedNodes = visiblePlannedNodesToday.filter((n) => n.done).length;
-  const totalPractices = visiblePracticesToday.length;
-  const completedPractices = visiblePracticesToday.filter((p) => p.done).length;
+  const totalHabits = habitItems.filter((h) => h.done || !wasHiddenAtOpen(`habit:${h.id}`)).length;
+  const completedHabits = habitItems.filter((h) => h.done).length;
+  const totalNodes = plannedNodesToday.filter((n) => n.done || !wasHiddenAtOpen(`node:${n.id}`)).length;
+  const completedNodes = plannedNodesToday.filter((n) => n.done).length;
+  const totalPractices = practicesToday.filter(({ practice: p, done }) => done || !wasHiddenAtOpen(`practice:${p.id}`)).length;
+  const completedPractices = practicesToday.filter((p) => p.done).length;
 
   // Tareas configuradas para hoy (usado para decidir si se muestra el acordeón de franjas
   // horarias, que no debe aparecer si lo único que hay es actividad extra en "Más").
