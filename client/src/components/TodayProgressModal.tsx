@@ -5,6 +5,7 @@ import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Eye, ArrowLeft, ChevronLeft, ChevronRight, Clock } from "lucide-react";
 import { useSkillTree, type Area, type Project, type Skill } from "@/lib/skill-context";
 import { useHabits } from "@/lib/useHabits";
@@ -135,9 +136,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     })
     .filter((entry) => entry.include);
 
-  // Actividad extra: hábitos, nodos y rewirings hechos hoy que no estaban configurados
-  // para hoy (hábito no programado ese día, nodo sin fecha planeada para hoy, o
-  // cualquier rewiring, que no tiene concepto de "programado").
+  // Actividad extra: hábitos y nodos hechos hoy que no estaban configurados para hoy
+  // (hábito no programado ese día, o nodo sin fecha planeada para hoy).
   const habitsNotScheduledToday = (habitsData || []).filter(
     (h) => !habitsScheduledToday.some((s) => s.id === h.id)
   );
@@ -194,44 +194,45 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     ...collectExtraCompletedNodes(Array.isArray(projects) ? projects : []),
   ];
 
-  const { data: rewiringTrackersData } = useQuery({
-    queryKey: ["rewiring-trackers"],
-    queryFn: async () => {
-      const res = await fetch("/api/rewiring-trackers");
-      if (!res.ok) throw new Error("Failed to fetch rewiring trackers");
-      return res.json() as Promise<Array<{ id: string; name: string; archivedAt?: string | null; history: { timestamp: string }[] }>>;
-    },
-    enabled: open,
-  });
-
-  const extraRewirings = (rewiringTrackersData || []).filter(
-    (t) => !t.archivedAt && (t.history || []).some((h) => getDateStr(new Date(h.timestamp)) === todayStr)
-  );
-
-  interface ExtraItem {
-    key: string;
-    label: React.ReactNode;
-  }
-
-  const extraItems: ExtraItem[] = [
-    ...extraHabits.map((h) => ({ key: `xhabit:${h.id}`, label: h.label })),
+  const extraItems: TodayItem[] = [
+    ...extraHabits.map((h) => ({ key: `habit:${h.id}`, type: "habit" as const, id: h.id, label: h.label, done: true })),
     ...extraNodes.map((n) => ({
-      key: `xnode:${n.id}`,
+      key: `node:${n.id}`,
+      type: "node" as const,
+      id: n.id,
       label: (
         <>
           {n.title} <span className="text-muted-foreground">· {n.parentName}</span>
         </>
       ),
+      done: true,
     })),
-    ...extraRewirings.map((t) => ({ key: `xrewiring:${t.id}`, label: `🔄 ${t.name}` })),
   ];
 
-  const totalHabits = habitItems.length;
-  const completedHabits = habitItems.filter((h) => h.done).length;
-  const totalNodes = plannedNodesToday.length;
-  const completedNodes = plannedNodesToday.filter((n) => n.done).length;
-  const totalPractices = practicesToday.length;
-  const completedPractices = practicesToday.filter((p) => p.done).length;
+  // Franjas horarias: cada tarea de hoy (hábito/nodo/práctica) puede asignarse a
+  // mañana/mediodía/tarde/noche, o marcarse "hidden" (mantener presionada una tarea no hecha)
+  // para que deje de contar como tarea de hoy. La asignación es por día (queryKey incluye
+  // todayStr).
+  const { data: slotsData } = useTodayTaskSlots(todayStr, open);
+  const setTaskSlot = useSetTodayTaskSlot();
+  const clearTaskSlot = useClearTodayTaskSlot();
+
+  const slotByKey = new Map<string, TaskSlotKey>();
+  (slotsData || []).forEach((s) => slotByKey.set(`${s.taskType}:${s.taskId}`, s.slot as TaskSlotKey));
+  // "hidden" solo oculta mientras la tarea sigue sin hacer: si después se confirma, tiene
+  // que volver a aparecer en tareas de hoy (ya como hecha), no quedar oculta para siempre.
+  const isHidden = (key: string) => slotByKey.get(key) === "hidden";
+
+  const visibleHabitItems = habitItems.filter((h) => h.done || !isHidden(`habit:${h.id}`));
+  const visiblePlannedNodesToday = plannedNodesToday.filter((n) => n.done || !isHidden(`node:${n.id}`));
+  const visiblePracticesToday = practicesToday.filter(({ practice: p, done }) => done || !isHidden(`practice:${p.id}`));
+
+  const totalHabits = visibleHabitItems.length;
+  const completedHabits = visibleHabitItems.filter((h) => h.done).length;
+  const totalNodes = visiblePlannedNodesToday.length;
+  const completedNodes = visiblePlannedNodesToday.filter((n) => n.done).length;
+  const totalPractices = visiblePracticesToday.length;
+  const completedPractices = visiblePracticesToday.filter((p) => p.done).length;
 
   // Tareas configuradas para hoy (usado para decidir si se muestra el acordeón de franjas
   // horarias, que no debe aparecer si lo único que hay es actividad extra en "Más").
@@ -243,18 +244,9 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const completed = completedHabits + completedNodes + completedPractices + extraItems.length;
   const progressPct = total > 0 ? (completed / total) * 100 : 0;
 
-  // Franjas horarias: cada tarea de hoy (hábito/nodo/práctica) puede asignarse a
-  // mañana/mediodía/tarde/noche; la asignación es por día (queryKey incluye todayStr).
-  const { data: slotsData } = useTodayTaskSlots(todayStr, open);
-  const setTaskSlot = useSetTodayTaskSlot();
-  const clearTaskSlot = useClearTodayTaskSlot();
-
-  const slotByKey = new Map<string, TaskSlotKey>();
-  (slotsData || []).forEach((s) => slotByKey.set(`${s.taskType}:${s.taskId}`, s.slot as TaskSlotKey));
-
   const todayItems: TodayItem[] = [
-    ...habitItems.map((h) => ({ key: `habit:${h.id}`, type: "habit" as const, id: h.id, label: h.label, done: h.done })),
-    ...plannedNodesToday.map((n) => ({
+    ...visibleHabitItems.map((h) => ({ key: `habit:${h.id}`, type: "habit" as const, id: h.id, label: h.label, done: h.done })),
+    ...visiblePlannedNodesToday.map((n) => ({
       key: `node:${n.id}`,
       type: "node" as const,
       id: n.id,
@@ -265,7 +257,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       ),
       done: n.done,
     })),
-    ...practicesToday.map(({ practice: p, done }) => ({
+    ...visiblePracticesToday.map(({ practice: p, done }) => ({
       key: `practice:${p.id}`,
       type: "practice" as const,
       id: p.id,
@@ -274,12 +266,28 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     })),
   ];
 
-  const itemBuckets: Record<string, TodayItem[]> = { unassigned: [] };
+  // "more" agrupa la actividad extra (sección "Más") que todavía no tiene franja horaria
+  // asignada. En cuanto se le asigna una (con el reloj), pasa a vivir en el bucket de esa
+  // franja junto con las tareas configuradas, igual que cualquier otra tarea de hoy.
+  const itemBuckets: Record<string, TodayItem[]> = { unassigned: [], more: [] };
   TIME_SLOTS.forEach((s) => (itemBuckets[s.key] = []));
   todayItems.forEach((item) => {
     const slot = slotByKey.get(item.key);
-    itemBuckets[slot ?? "unassigned"].push(item);
+    // "hidden" no es una franja real: puede llegar acá si la tarea se ocultó y después se
+    // confirmó (vuelve a aparecer, ya hecha), así que cae a "Sin asignar" igual que si nunca
+    // hubiera tenido franja.
+    const isTimeSlot = !!slot && TIME_SLOTS.some((s) => s.key === slot);
+    itemBuckets[isTimeSlot ? (slot as TaskSlotKey) : "unassigned"].push(item);
   });
+  extraItems.forEach((item) => {
+    const slot = slotByKey.get(item.key);
+    const isTimeSlot = !!slot && TIME_SLOTS.some((s) => s.key === slot);
+    itemBuckets[isTimeSlot ? (slot as TaskSlotKey) : "more"].push(item);
+  });
+
+  // El acordeón de franjas horarias solo se muestra si hay algo para agrupar ahí: tareas
+  // configuradas para hoy, o actividad extra que ya se movió a una franja específica.
+  const hasSlotSection = itemBuckets.unassigned.length > 0 || TIME_SLOTS.some((s) => itemBuckets[s.key].length > 0);
 
   const moveItemToSlot = (item: TodayItem, slot: TaskSlotKey) => {
     setTaskSlot.mutate({ date: todayStr, taskType: item.type, taskId: item.id, slot });
@@ -287,6 +295,10 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
 
   const unassignItem = (item: TodayItem) => {
     clearTaskSlot.mutate({ date: todayStr, taskType: item.type, taskId: item.id });
+  };
+
+  const hideItemFromToday = (item: TodayItem) => {
+    setTaskSlot.mutate({ date: todayStr, taskType: item.type, taskId: item.id, slot: "hidden" });
   };
 
   const todayLabel = new Date().toLocaleDateString("es-AR", {
@@ -399,7 +411,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                   </div>
                 ) : (
                   <>
-                    {totalConfigured > 0 && (
+                    {hasSlotSection && (
                       <Accordion
                         type="multiple"
                         defaultValue={["unassigned", ...TIME_SLOTS.map((s) => s.key)]}
@@ -415,7 +427,12 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                             <AccordionContent className="pt-0 pb-1">
                               <div className="space-y-1.5">
                                 {itemBuckets.unassigned.map((item) => (
-                                  <TodayTaskRow key={item.key} item={item} onMove={(slot) => moveItemToSlot(item, slot)} />
+                                  <TodayTaskRow
+                                    key={item.key}
+                                    item={item}
+                                    onMove={(slot) => moveItemToSlot(item, slot)}
+                                    onHide={() => hideItemFromToday(item)}
+                                  />
                                 ))}
                               </div>
                             </AccordionContent>
@@ -440,6 +457,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                       item={item}
                                       onMove={(slot) => moveItemToSlot(item, slot)}
                                       onClear={() => unassignItem(item)}
+                                      onHide={() => hideItemFromToday(item)}
                                     />
                                   ))}
                                 </div>
@@ -450,21 +468,18 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                       </Accordion>
                     )}
 
-                    {extraItems.length > 0 && (
+                    {itemBuckets.more.length > 0 && (
                       <Accordion type="multiple" defaultValue={["more"]} className="space-y-1">
                         <AccordionItem value="more" className="border-0">
                           <AccordionTrigger className="py-1.5 hover:no-underline">
                             <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                              Más ({extraItems.length})
+                              Más ({itemBuckets.more.length})
                             </h3>
                           </AccordionTrigger>
                           <AccordionContent className="pt-0 pb-1">
                             <div className="space-y-1.5">
-                              {extraItems.map((item) => (
-                                <div key={item.key} className="flex items-center gap-2 text-sm">
-                                  <span className="h-4 w-4 flex-shrink-0 rounded-full border-2 bg-emerald-500 border-emerald-500" />
-                                  <span>{item.label}</span>
-                                </div>
+                              {itemBuckets.more.map((item) => (
+                                <TodayTaskRow key={item.key} item={item} onMove={(slot) => moveItemToSlot(item, slot)} />
                               ))}
                             </div>
                           </AccordionContent>
@@ -612,43 +627,98 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   );
 }
 
+const HIDE_LONG_PRESS_MS = 1500;
+
 function TodayTaskRow({
   item,
   onMove,
   onClear,
+  onHide,
 }: {
   item: TodayItem;
   onMove: (slot: TaskSlotKey) => void;
   onClear?: () => void;
+  onHide?: () => void;
 }) {
+  const [confirmHideOpen, setConfirmHideOpen] = useState(false);
+  const longPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isLongPress = React.useRef(false);
+
+  // Mantener presionada una tarea no hecha ofrece sacarla de tareas de hoy (item.done ya
+  // completado no necesita esto). Mismo timing (1500ms) que el long-press de SkillNode.
+  const canHide = !item.done && !!onHide;
+
+  const startLongPress = () => {
+    if (!canHide) return;
+    isLongPress.current = false;
+    longPressTimer.current = setTimeout(() => {
+      isLongPress.current = true;
+      setConfirmHideOpen(true);
+    }, HIDE_LONG_PRESS_MS);
+  };
+
+  const cancelLongPress = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
   return (
-    <div className="flex items-center gap-2 text-sm">
-      <span
-        className={`h-4 w-4 flex-shrink-0 rounded-full border-2 ${
-          item.done ? "bg-emerald-500 border-emerald-500" : "border-border/50"
-        }`}
-      />
-      <span className={`flex-1 ${item.done ? "line-through text-muted-foreground" : ""}`}>{item.label}</span>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full hover:bg-muted transition-colors"
-            title="Asignar franja horaria"
-          >
-            <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {TIME_SLOTS.map((s) => (
-            <DropdownMenuItem key={s.key} onClick={() => onMove(s.key)}>
-              {s.label}
-            </DropdownMenuItem>
-          ))}
-          {onClear && (
-            <DropdownMenuItem onClick={onClear}>Sin asignar</DropdownMenuItem>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
+    <>
+      <div
+        className="flex items-center gap-2 text-sm touch-none select-none"
+        onMouseDown={startLongPress}
+        onMouseUp={cancelLongPress}
+        onMouseLeave={cancelLongPress}
+        onTouchStart={startLongPress}
+        onTouchEnd={cancelLongPress}
+        onTouchCancel={cancelLongPress}
+      >
+        <span
+          className={`h-4 w-4 flex-shrink-0 rounded-full border-2 ${
+            item.done ? "bg-emerald-500 border-emerald-500" : "border-border/50"
+          }`}
+        />
+        <span className={`flex-1 ${item.done ? "line-through text-muted-foreground" : ""}`}>{item.label}</span>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full hover:bg-muted transition-colors"
+              title="Asignar franja horaria"
+            >
+              <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {TIME_SLOTS.map((s) => (
+              <DropdownMenuItem key={s.key} onClick={() => onMove(s.key)}>
+                {s.label}
+              </DropdownMenuItem>
+            ))}
+            {onClear && (
+              <DropdownMenuItem onClick={onClear}>Sin asignar</DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      {canHide && (
+        <AlertDialog open={confirmHideOpen} onOpenChange={setConfirmHideOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>¿Sacar esta tarea de hoy?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Dejará de aparecer en tareas de hoy.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={onHide}>Sacar</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+    </>
   );
 }

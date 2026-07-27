@@ -397,20 +397,22 @@ export type InsertBodyProgress = z.infer<typeof insertBodyProgressSchema>;
 export type BodyProgressRow = typeof bodyProgress.$inferSelect;
 
 // Asigna una tarea de "Hoy" (hábito, nodo planeado o práctica de repetición espaciada) a una
-// franja horaria del día. id determinístico `${userId}:${date}:${taskType}:${taskId}` para
-// permitir upsert directo (una fila por tarea por día), igual que body_progress.
+// franja horaria del día, o la marca "hidden" para que deje de aparecer en tareas de hoy
+// (mantener presionada una tarea no hecha). id determinístico
+// `${userId}:${date}:${taskType}:${taskId}` para permitir upsert directo (una fila por tarea
+// por día), igual que body_progress.
 export const todayTaskSlots = pgTable("today_task_slots", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   date: varchar("date").notNull(), // YYYY-MM-DD format
   taskType: text("task_type").$type<"habit" | "node" | "practice">().notNull(),
   taskId: varchar("task_id").notNull(),
-  slot: text("slot").$type<"morning" | "midday" | "afternoon" | "night">().notNull(),
+  slot: text("slot").$type<"morning" | "midday" | "afternoon" | "night" | "hidden">().notNull(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 export const insertTodayTaskSlotSchema = createInsertSchema(todayTaskSlots).omit({ id: true, updatedAt: true }).extend({
   taskType: z.enum(["habit", "node", "practice"]),
-  slot: z.enum(["morning", "midday", "afternoon", "night"]),
+  slot: z.enum(["morning", "midday", "afternoon", "night", "hidden"]),
 });
 export type InsertTodayTaskSlot = z.infer<typeof insertTodayTaskSlotSchema>;
 export type TodayTaskSlot = typeof todayTaskSlots.$inferSelect;

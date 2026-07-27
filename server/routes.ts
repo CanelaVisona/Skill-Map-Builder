@@ -4263,8 +4263,8 @@ export async function registerRoutes(
       if (!["habit", "node", "practice"].includes(taskType)) {
         return res.status(400).json({ message: "taskType debe ser habit, node o practice" });
       }
-      if (!["morning", "midday", "afternoon", "night"].includes(slot)) {
-        return res.status(400).json({ message: "slot debe ser morning, midday, afternoon o night" });
+      if (!["morning", "midday", "afternoon", "night", "hidden"].includes(slot)) {
+        return res.status(400).json({ message: "slot debe ser morning, midday, afternoon, night o hidden" });
       }
 
       const result = await storage.upsertTodayTaskSlot({

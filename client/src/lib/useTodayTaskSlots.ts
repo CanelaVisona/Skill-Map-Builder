@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { TodayTaskSlot } from "@shared/schema";
 
-export type TaskSlotKey = "morning" | "midday" | "afternoon" | "night";
+export type TaskSlotKey = "morning" | "midday" | "afternoon" | "night" | "hidden";
 export type TaskType = "habit" | "node" | "practice";
 
 export function useTodayTaskSlots(date: string, enabled = true) {
