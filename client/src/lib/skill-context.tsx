@@ -333,10 +333,18 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       triggerQuestUpdated();
       return;
     }
-    setTimeout(() => {
-      const delay = getPopupBusyDelay() + 250;
-      setTimeout(() => triggerQuestUpdated(), delay);
-    }, 150);
+    // Re-chequea en vez de calcular la espera una sola vez: si mientras tanto se encadenan
+    // más pop-ups (por ej. varios componentes de cuerpo linkeados), cada uno extiende la
+    // ventana de "ocupado", y una única espera calculada de entrada quedaría corta.
+    const attempt = () => {
+      const delay = getPopupBusyDelay();
+      if (delay > 0) {
+        setTimeout(attempt, delay + 150);
+        return;
+      }
+      triggerQuestUpdated();
+    };
+    setTimeout(attempt, 150);
   };
 
   const activeArea = Array.isArray(areas) ? areas.find(a => a.id === activeAreaId) : undefined;

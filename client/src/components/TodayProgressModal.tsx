@@ -24,6 +24,16 @@ const TIME_SLOTS: { key: TaskSlotKey; label: string }[] = [
   { key: "night", label: "Noche" },
 ];
 
+// Mañana 6-11, mediodía 12-16, tarde 17-20, noche 21-23 y también las horas de
+// madrugada (0-5), que caen dentro del tramo nocturno del día anterior.
+function getCurrentTimeSlotKey(): TaskSlotKey {
+  const hour = new Date().getHours();
+  if (hour >= 6 && hour <= 11) return "morning";
+  if (hour >= 12 && hour <= 16) return "midday";
+  if (hour >= 17 && hour <= 20) return "afternoon";
+  return "night";
+}
+
 interface TodayItem {
   key: string;
   type: TaskType;
@@ -621,7 +631,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                     {hasSlotSection && (
                       <Accordion
                         type="multiple"
-                        defaultValue={["unassigned", ...TIME_SLOTS.map((s) => s.key)]}
+                        defaultValue={["unassigned", getCurrentTimeSlotKey()]}
                         className="space-y-1"
                       >
                         {itemBuckets.unassigned.length > 0 && (
@@ -897,17 +907,16 @@ function TodayTaskRow({
   onMoveUp?: () => void;
   onMoveDown?: () => void;
 }) {
-  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [hideConfirmOpen, setHideConfirmOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const longPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPress = React.useRef(false);
 
   // Mantener presionada una tarea no hecha ofrece sacarla de tareas de hoy (item.done ya
   // completado no necesita esto). Mismo timing (1500ms) que el long-press de SkillNode.
-  // Las tareas manuales usan onDelete (se borran, no existen en otro lado del sistema);
-  // el resto usa onHide (se ocultan, pueden volver a aparecer si se confirman después).
-  const confirmHandler = onDelete ?? onHide;
-  const canLongPress = !item.done && !!confirmHandler;
+  // Eliminar (tareas manuales) vive en el menú, no en el long-press.
+  const canLongPress = !item.done && !!onHide;
 
   const startLongPress = (e: React.MouseEvent | React.TouchEvent) => {
     // No debe burbujear al fondo (que tiene su propio long-press para agregar una tarea).
@@ -916,7 +925,7 @@ function TodayTaskRow({
     isLongPress.current = false;
     longPressTimer.current = setTimeout(() => {
       isLongPress.current = true;
-      setConfirmOpen(true);
+      setHideConfirmOpen(true);
     }, LONG_PRESS_MS);
   };
 
@@ -973,24 +982,47 @@ function TodayTaskRow({
             {(onMoveUp || onMoveDown) && <DropdownMenuSeparator />}
             {onMoveUp && <DropdownMenuItem onClick={onMoveUp}>Mover arriba</DropdownMenuItem>}
             {onMoveDown && <DropdownMenuItem onClick={onMoveDown}>Mover abajo</DropdownMenuItem>}
+            {onDelete && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setDeleteConfirmOpen(true)} className="text-destructive focus:text-destructive">
+                  Eliminar
+                </DropdownMenuItem>
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
 
       {canLongPress && (
-        <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialog open={hideConfirmOpen} onOpenChange={setHideConfirmOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>{onDelete ? "¿Eliminar esta tarea?" : "¿Sacar esta tarea de hoy?"}</AlertDialogTitle>
+              <AlertDialogTitle>¿Sacar esta tarea de hoy?</AlertDialogTitle>
               <AlertDialogDescription>
-                {onDelete
-                  ? "Se va a borrar. No se puede deshacer."
-                  : "Dejará de aparecer en tareas de hoy."}
+                Dejará de aparecer en tareas de hoy.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancelar</AlertDialogCancel>
-              <AlertDialogAction onClick={confirmHandler}>{onDelete ? "Eliminar" : "Sacar"}</AlertDialogAction>
+              <AlertDialogAction onClick={onHide}>Sacar</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+
+      {onDelete && (
+        <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>¿Eliminar esta tarea?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Se va a borrar. No se puede deshacer.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={onDelete}>Eliminar</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>

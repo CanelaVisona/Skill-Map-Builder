@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { createPortal } from "react-dom";
+import { usePopupPalette } from "@/lib/popup-theme";
 
 export interface TodayProgressGainSnapshot {
   completedBefore: number;
@@ -11,6 +12,8 @@ interface TodayProgressGainPopupProps {
   snapshot: TodayProgressGainSnapshot | null;
   onClose: () => void;
 }
+
+const PROGRESS_COLOR = "#10b981";
 
 function clampPercent(value: number) {
   return Math.max(0, Math.min(100, value));
@@ -26,7 +29,12 @@ function getTodayLabel(): string {
   });
 }
 
+// Misma "carcasa" (tamaño, forma, color) que los demás pop-ups de progreso (XP y cuerpo del
+// habit tracker: ExperienceGainPopup / BodyGainPopup) — sin ícono, y con la barra de progreso
+// continua del modal de Tareas de Hoy en vez de los bloques segmentados de esos otros pop-ups.
 export function TodayProgressGainPopup({ snapshot, onClose }: TodayProgressGainPopupProps) {
+  const palette = usePopupPalette();
+
   if (!snapshot || typeof document === "undefined") {
     return null;
   }
@@ -62,29 +70,47 @@ export function TodayProgressGainPopup({ snapshot, onClose }: TodayProgressGainP
           onClick={(event) => event.stopPropagation()}
         >
           <motion.div
-            initial={{ opacity: 0, y: 8, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -8, scale: 0.98 }}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
             transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-            className="w-[min(92vw,356px)] rounded-2xl border bg-background px-5 py-4 shadow-[0_18px_40px_rgba(0,0,0,0.45)]"
+            className="w-[min(92vw,356px)] rounded-[4px] border px-[16px] py-[14px] shadow-[0_18px_40px_rgba(0,0,0,0.45)]"
+            style={{
+              backgroundColor: palette.bg,
+              borderColor: palette.border,
+            }}
           >
-            <h2 className="text-2xl font-bold text-foreground">Hoy</h2>
-            <p className="text-sm text-muted-foreground capitalize">{getTodayLabel()}</p>
-
-            <div className="mt-4 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-muted-foreground">Completado</span>
-                <span className="text-sm font-semibold text-muted-foreground">
-                  {completedAfter}/{total}
-                </span>
+            <div className="flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[13px] font-medium" style={{ color: palette.text }}>Hoy</div>
               </div>
-              <div className="w-full bg-muted rounded-full h-3 overflow-hidden">
+
+              <div
+                className="shrink-0 rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em]"
+                style={{ borderColor: palette.border, backgroundColor: palette.surfaceInset, color: palette.text }}
+              >
+                {completedAfter}/{total}
+              </div>
+            </div>
+
+            <div className="mt-3 text-center text-[13px] font-medium capitalize" style={{ color: palette.text }}>
+              {getTodayLabel()}
+            </div>
+
+            <div className="mt-3">
+              <div className="w-full h-3 rounded-full overflow-hidden" style={{ backgroundColor: palette.blockEmpty }}>
                 <motion.div
-                  className="h-full rounded-full bg-emerald-500"
+                  className="h-full rounded-full"
+                  style={{ backgroundColor: PROGRESS_COLOR }}
                   initial={{ width: `${pctBefore}%` }}
                   animate={{ width: `${pctAfter}%` }}
                   transition={{ duration: 0.7, ease: [0.4, 0, 0.2, 1] }}
                 />
+              </div>
+
+              <div className="mt-2 flex items-center justify-between text-[9px]" style={{ color: palette.textDim }}>
+                <span>{pctBefore.toFixed(0)}%</span>
+                <span>{pctAfter.toFixed(0)}%</span>
               </div>
             </div>
           </motion.div>

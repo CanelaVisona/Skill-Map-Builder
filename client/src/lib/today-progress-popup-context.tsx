@@ -24,13 +24,25 @@ export function TodayProgressPopupProvider({ children }: { children: ReactNode }
     if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
 
     // Espera a que terminen los demás pop-ups de progreso (XP, área, cuerpo, nivel) antes de
-    // aparecer, para no solaparse con ellos en pantalla.
-    const delay = getPopupBusyDelay() + 250;
-    showTimerRef.current = setTimeout(() => {
+    // aparecer. No alcanza con calcular la espera una sola vez: confirmar un hábito con varios
+    // skills/componentes de cuerpo linkeados dispara una CADENA de pop-ups (uno cada 1800ms),
+    // y cada uno extiende la ventana de "ocupado" al mostrarse. Por eso se vuelve a chequear
+    // hasta que de verdad no haya nada activo, en vez de confiar en una única espera calculada
+    // de entrada (que quedaría corta si aparece un pop-up nuevo mientras tanto).
+    const attemptShow = () => {
+      const delay = getPopupBusyDelay();
+      if (delay > 0) {
+        showTimerRef.current = setTimeout(attemptShow, delay + 150);
+        return;
+      }
       markPopupActive(POPUP_DURATION_MS);
       setSnapshot(nextSnapshot);
       closeTimerRef.current = setTimeout(() => setSnapshot(null), POPUP_DURATION_MS);
-    }, delay);
+    };
+
+    // Margen inicial para darle tiempo a la cadena de pop-ups recién disparada (por ej. al
+    // confirmar el hábito) a marcarse ocupada antes del primer chequeo.
+    showTimerRef.current = setTimeout(attemptShow, 250);
   };
 
   // Observa el total/completado de "hoy" en segundo plano (sin depender de que el modal de
