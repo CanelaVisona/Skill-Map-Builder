@@ -13,6 +13,7 @@ import { useBodyGainPopup } from "@/lib/body-gain-popup-context";
 import { BodyLinkPicker, type BodyLink } from "@/components/BodyLinkPicker";
 import { SkillLinkPicker } from "@/components/SkillLinkPicker";
 import { useXpPopup } from "@/lib/xp-popup-context";
+import { beginPopupChain, endPopupChain, runPopupQueue } from "@/lib/popup-coordinator";
 
 export interface SpaceRepetitionPractice {
   id: string;
@@ -479,24 +480,14 @@ export function SpaceRepetitionModal({
       });
   }, [editAreaId]);
 
-  // Muestra el/los pop-up(s) de crecimiento corporal para los componentes linkeados a la
-  // práctica. xpPopupsShown offsetea el inicio para no superponerse con popups de XP ya
-  // mostrados en la misma confirmación (mismo criterio que HabitStreakModal).
-  const growLinkedBody = (links: BodyLink[], xpPopupsShown = 0) => {
-    links.forEach((link, index) => {
-      const run = () => {
-        const { before, after } = addBodyBlock(link.zone, link.dimension);
-        hideXpPopup();
-        showBodyGainPopup({ zone: link.zone, dimension: link.dimension, before, after });
-      };
-      const delay = xpPopupsShown * 1800 + index * 1800;
-      if (delay === 0) {
-        run();
-      } else {
-        setTimeout(run, delay);
-      }
+  // Arma un pop-up de crecimiento corporal por cada componente linkeado a la práctica, para
+  // encolar junto con los de XP via runPopupQueue (mismo criterio que HabitStreakModal).
+  const buildBodyGrowthTasks = (links: BodyLink[]): Array<() => void> =>
+    links.map((link) => () => {
+      const { before, after } = addBodyBlock(link.zone, link.dimension);
+      hideXpPopup();
+      showBodyGainPopup({ zone: link.zone, dimension: link.dimension, before, after });
     });
-  };
 
   // Otorga XP a un skill linkeado y devuelve el snapshot para el popup (no lo muestra,
   // así el caller puede escalonar varios skills sin que se superpongan).
@@ -532,29 +523,28 @@ export function SpaceRepetitionModal({
     }
   };
 
-  // Otorga XP a todos los skills linkeados a la práctica, mostrando un popup por skill en
-  // secuencia (1800ms entre cada uno, mismo ritmo que growLinkedBody) para que no se
-  // superpongan. Devuelve cuántos popups se mostraron para que growLinkedBody pueda offsetear.
-  const awardLinkedSkillsXP = async (skillIds: string[]): Promise<number> => {
-    if (skillIds.length === 0) return 0;
+  // Otorga XP a todos los skills linkeados a la práctica, devolviendo un task de popup por
+  // skill (mismo formato que buildBodyGrowthTasks) para encolar junto vía runPopupQueue.
+  const awardLinkedSkillsXP = async (skillIds: string[]): Promise<Array<() => void>> => {
+    if (skillIds.length === 0) return [];
     const snapshots = (await Promise.all(skillIds.map((id) => awardSkillXP(id)))).filter(
       (snapshot): snapshot is NonNullable<typeof snapshot> => !!snapshot
     );
 
-    snapshots.forEach((snapshot, index) => {
-      const run = () => {
-        hideXpPopup();
-        showXpPopup(snapshot);
-      };
-      const delay = index * 1800;
-      if (delay === 0) {
-        run();
-      } else {
-        setTimeout(run, delay);
-      }
+    return snapshots.map((snapshot) => () => {
+      hideXpPopup();
+      showXpPopup(snapshot);
     });
+  };
 
-    return snapshots.length;
+  // Encola los pop-ups de XP (skills linkeados) y crecimiento corporal (componentes linkeados)
+  // de una práctica recién confirmada, en orden, respetando el coordinador compartido para que
+  // no se solapen entre sí ni con el pop-up de progreso de hoy (que siempre queda último).
+  const awardXpAndGrowBody = async (practice: SpaceRepetitionPractice) => {
+    beginPopupChain();
+    const xpTasks = await awardLinkedSkillsXP(practice.skillIds || []);
+    const bodyTasks = buildBodyGrowthTasks(Array.isArray(practice.bodyLinks) ? practice.bodyLinks : []);
+    runPopupQueue([...xpTasks, ...bodyTasks], endPopupChain);
   };
 
   // Función para migrar datos de localStorage a la API
@@ -765,10 +755,7 @@ export function SpaceRepetitionModal({
             totalDays: calculateDaysSince(practice.startDate),
           }]);
           setNotification("🏆 ¡Nivel 2 completado y archivado!");
-          {
-            const xpPopupsShown = await awardLinkedSkillsXP(practice.skillIds || []);
-            growLinkedBody(Array.isArray(practice.bodyLinks) ? practice.bodyLinks : [], xpPopupsShown);
-          }
+          await awardXpAndGrowBody(practice);
           return;
         }
 
@@ -786,10 +773,7 @@ export function SpaceRepetitionModal({
         const updated = await res.json();
 
         setPractices(practices.map((p) => p.id === practiceId ? updated : p));
-        {
-          const xpPopupsShown = await awardLinkedSkillsXP(practice.skillIds || []);
-          growLinkedBody(Array.isArray(practice.bodyLinks) ? practice.bodyLinks : [], xpPopupsShown);
-        }
+        await awardXpAndGrowBody(practice);
         return;
       }
 
@@ -818,10 +802,7 @@ export function SpaceRepetitionModal({
         
         setPractices(practices.map((p) => p.id === practiceId ? updated : p));
         setNotification("🎉 ¡Nivel 1 completado! Iniciando Nivel 2");
-        {
-          const xpPopupsShown = await awardLinkedSkillsXP(practice.skillIds || []);
-          growLinkedBody(Array.isArray(practice.bodyLinks) ? practice.bodyLinks : [], xpPopupsShown);
-        }
+        await awardXpAndGrowBody(practice);
         return;
       }
 
@@ -839,10 +820,7 @@ export function SpaceRepetitionModal({
       const updated = await res.json();
 
       setPractices(practices.map((p) => p.id === practiceId ? updated : p));
-      {
-        const xpPopupsShown = await awardLinkedSkillsXP(practice.skillIds || []);
-        growLinkedBody(Array.isArray(practice.bodyLinks) ? practice.bodyLinks : [], xpPopupsShown);
-      }
+      await awardXpAndGrowBody(practice);
     } catch (error) {
       console.error("Error toggling interval:", error);
     } finally {

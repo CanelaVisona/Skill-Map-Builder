@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { TodayProgressGainPopup, type TodayProgressGainSnapshot } from "@/components/TodayProgressGainPopup";
 import { useTodayProgressSummary } from "@/lib/useTodayProgressSummary";
-import { getPopupBusyDelay, markPopupActive, POPUP_VISIBLE_MS } from "@/lib/popup-coordinator";
+import { getPopupBusyDelay, hasPendingPopupChain, markPopupActive, POPUP_VISIBLE_MS } from "@/lib/popup-coordinator";
 
 interface TodayProgressPopupContextValue {
   showTodayProgressPopup: (snapshot: TodayProgressGainSnapshot) => void;
@@ -23,14 +23,18 @@ export function TodayProgressPopupProvider({ children }: { children: ReactNode }
 
     // Espera a que terminen los demás pop-ups de progreso (XP, área, cuerpo, nivel) antes de
     // aparecer. No alcanza con calcular la espera una sola vez: confirmar un hábito con varios
-    // skills/componentes de cuerpo linkeados dispara una CADENA de pop-ups (uno cada 1800ms),
-    // y cada uno extiende la ventana de "ocupado" al mostrarse. Por eso se vuelve a chequear
-    // hasta que de verdad no haya nada activo, en vez de confiar en una única espera calculada
-    // de entrada (que quedaría corta si aparece un pop-up nuevo mientras tanto).
+    // skills/componentes de cuerpo linkeados dispara una CADENA de pop-ups (uno cada vez que el
+    // anterior termina), y cada uno extiende la ventana de "ocupado" al mostrarse. Por eso se
+    // vuelve a chequear hasta que de verdad no haya nada activo, en vez de confiar en una única
+    // espera calculada de entrada (que quedaría corta si aparece un pop-up nuevo mientras
+    // tanto). También chequea hasPendingPopupChain(): esa cadena se abre de forma síncrona apenas
+    // arranca la acción (antes del fetch que otorga el XP), así que este pop-up de "hoy" —que
+    // reacciona a cambios de estado de forma asíncrona y podría ganar la carrera si solo mirara
+    // busyUntil— siempre queda último, nunca en el medio de la cadena.
     const attemptShow = () => {
       const delay = getPopupBusyDelay();
-      if (delay > 0) {
-        showTimerRef.current = setTimeout(attemptShow, delay + 150);
+      if (delay > 0 || hasPendingPopupChain()) {
+        showTimerRef.current = setTimeout(attemptShow, delay > 0 ? delay + 150 : 150);
         return;
       }
       markPopupActive(POPUP_VISIBLE_MS);

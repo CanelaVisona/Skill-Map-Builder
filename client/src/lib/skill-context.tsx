@@ -167,11 +167,11 @@ interface SkillTreeContextType {
   toggleFinalNode: (areaId: string, skillId: string) => Promise<void>;
   toggleProjectFinalNode: (projectId: string, skillId: string) => Promise<void>;
   toggleSubSkillFinalNode: (skillId: string) => Promise<void>;
-  showLevelUp: boolean;
-  levelUpNumber: number;
   showCompleted: boolean;
   questCompletedCelebration: { name: string; type: "area" | "project" } | null;
-  showQuestUpdated: boolean;
+  questCelebrationText: string | null;
+  showQuestUpdatedPopup: boolean;
+  hideQuestUpdatedPopup: () => void;
   renameArea: (areaId: string, newName: string) => Promise<void>;
   renameProject: (projectId: string, newName: string) => Promise<void>;
   sideQuests: Project[];
@@ -280,11 +280,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
   const [activeParentSkillId, setActiveParentSkillId] = useState<string | null>(null);
   const [parentSkillStack, setParentSkillStack] = useState<ParentSkillInfo[]>([]);
   const [subSkills, setSubSkills] = useState<Skill[]>([]);
-  const [showLevelUp, setShowLevelUp] = useState(false);
-  const [levelUpNumber, setLevelUpNumber] = useState(0);
   const [showCompleted, setShowCompleted] = useState(false);
   const [questCompletedCelebration, setQuestCompletedCelebration] = useState<{ name: string; type: "area" | "project" } | null>(null);
-  const [showQuestUpdated, setShowQuestUpdated] = useState(false);
+  const [questCelebrationText, setQuestCelebrationText] = useState<string | null>(null);
+  const [showQuestUpdatedPopup, setShowQuestUpdatedPopup] = useState(false);
   const [globalSkills, setGlobalSkills] = useState<GlobalSkill[]>([]);
   const [globalSkillsLoading, setGlobalSkillsLoading] = useState(true);
   const isReordering = useRef(false);
@@ -293,12 +292,6 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
   const areaQuestUpdatedDelayMs = 3300;
   const areaLevelUpDelayMs = 4300;
   const questCompletionArchiveDelayMs = 3000;
-
-  const triggerLevelUp = (level: number) => {
-    setLevelUpNumber(level);
-    setShowLevelUp(true);
-    setTimeout(() => setShowLevelUp(false), 2000);
-  };
 
   const triggerCompleted = () => {
     setShowCompleted(true);
@@ -337,26 +330,58 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
-  const triggerQuestUpdated = () => {
+  // "¡Subiste de nivel!" al confirmar el nodo final que abre el siguiente nivel — mismo
+  // tratamiento visual (QuestUpdatedCelebration) que la celebración de subida de nivel de
+  // skills.
+  const triggerQuestCelebration = (text: string) => {
     markPopupActive(POPUP_VISIBLE_MS);
-    setShowQuestUpdated(true);
-    setTimeout(() => setShowQuestUpdated(false), POPUP_VISIBLE_MS);
+    setQuestCelebrationText(text);
+    setTimeout(() => setQuestCelebrationText(null), POPUP_VISIBLE_MS);
   };
+
+  const triggerLevelUpBanner = () => triggerQuestCelebration("¡Subiste de nivel!");
 
   // Para nodos registrados como tarea de hoy (plannedDate === hoy), el pop-up de progreso de
   // hoy (client/src/lib/today-progress-popup-context.tsx) también va a dispararse al dominar
   // este nodo. Ese pop-up reacciona de forma asíncrona (observa areas/projects en segundo
   // plano), así que primero le damos un margen para que reaccione y se marque "ocupado" en el
-  // coordinador compartido, y recién ahí esperamos a que termine antes de mostrar "Quest
-  // updated!" — si no, ambos pop-ups se solapan en pantalla.
-  const triggerQuestUpdatedAfterToday = (isPlannedForToday: boolean) => {
+  // coordinador compartido, y recién ahí esperamos a que termine antes de mostrar la
+  // celebración de progreso — si no, ambos pop-ups se solapan en pantalla.
+  const triggerQuestCelebrationAfterToday = (text: string, isPlannedForToday: boolean) => {
     if (!isPlannedForToday) {
-      triggerQuestUpdated();
+      triggerQuestCelebration(text);
       return;
     }
     // Re-chequea en vez de calcular la espera una sola vez: si mientras tanto se encadenan
     // más pop-ups (por ej. varios componentes de cuerpo linkeados), cada uno extiende la
     // ventana de "ocupado", y una única espera calculada de entrada quedaría corta.
+    const attempt = () => {
+      const delay = getPopupBusyDelay();
+      if (delay > 0) {
+        setTimeout(attempt, delay + 150);
+        return;
+      }
+      triggerQuestCelebration(text);
+    };
+    setTimeout(attempt, 150);
+  };
+
+  // "Quest updated!" al confirmar un nodo regular — de vuelta como pop-up (se había quitado),
+  // ahora con la misma tarjeta/tamaño que ExperienceGainPopup y TodayProgressGainPopup en vez
+  // del texto grande suelto que tenía originalmente.
+  const triggerQuestUpdated = () => {
+    markPopupActive(POPUP_VISIBLE_MS);
+    setShowQuestUpdatedPopup(true);
+    setTimeout(() => setShowQuestUpdatedPopup(false), POPUP_VISIBLE_MS);
+  };
+
+  const hideQuestUpdatedPopup = () => setShowQuestUpdatedPopup(false);
+
+  const triggerQuestUpdatedAfterToday = (isPlannedForToday: boolean) => {
+    if (!isPlannedForToday) {
+      triggerQuestUpdated();
+      return;
+    }
     const attempt = () => {
       const delay = getPopupBusyDelay();
       if (delay > 0) {
@@ -1042,10 +1067,11 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       // Handle level unlocking with atomic state update
       if (isOpeningNewLevel) {
         const newUnlockedLevel = skill.level + 1;
-        
+
         // Trigger level up after the area popup has had time to animate
-        setTimeout(() => triggerLevelUp(newUnlockedLevel), areaLevelUpDelayMs);
-        
+        const isPlannedForTodayLevelUp = skill.plannedDate === getTodayStr();
+        setTimeout(() => triggerQuestCelebrationAfterToday("¡Subiste de nivel!", isPlannedForTodayLevelUp), areaLevelUpDelayMs);
+
         // Generate new level in the background - atomically update state once on completion
         // This endpoint is idempotent, so it's safe to call even if nodes exist
         fetch(`/api/areas/${areaId}/generate-level`, {
@@ -1404,8 +1430,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         }));
         
         // Trigger level up after the area popup has had time to animate
-        setTimeout(() => triggerLevelUp(newUnlockedLevel), areaLevelUpDelayMs);
-        
+        const isPlannedForTodayLevelUp = skill.plannedDate === getTodayStr();
+        setTimeout(() => triggerQuestCelebrationAfterToday("¡Subiste de nivel!", isPlannedForTodayLevelUp), areaLevelUpDelayMs);
+
         // Generate new level in the background without blocking
         fetch(`/api/projects/${projectId}/generate-level`, {
           method: "POST",
@@ -1674,7 +1701,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           } else {
             const newUnlockedLevel = completedLevel + 1;
 
-            setTimeout(() => triggerLevelUp(newUnlockedLevel), areaLevelUpDelayMs);
+            setTimeout(() => triggerLevelUpBanner(), areaLevelUpDelayMs);
 
             fetch(`/api/areas/${areaId}/generate-level`, {
               method: "POST",
@@ -2045,7 +2072,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
               return { ...p, unlockedLevel: newUnlockedLevel, nextLevelToAssign: newUnlockedLevel };
             }));
 
-            setTimeout(() => triggerLevelUp(newUnlockedLevel), areaLevelUpDelayMs);
+            setTimeout(() => triggerLevelUpBanner(), areaLevelUpDelayMs);
 
             fetch(`/api/projects/${projectId}/generate-level`, {
               method: "POST",
@@ -2780,7 +2807,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           // Update local state for projects
           setProjects(prev => prev.map(project => ({
             ...project,
-            skills: project.skills.map(s => 
+            skills: project.skills.map(s =>
               s.id === activeParentSkillId ? { ...s, status: "available" as SkillStatus } : s
             )
           })));
@@ -2791,17 +2818,17 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
       if (isOpeningNewLevel && activeParentSkillId) {
         const newLevel = skill.level + 1;
-        
+
         // Update state immediately without waiting
-        setSubSkills(prev => prev.map(s => 
+        setSubSkills(prev => prev.map(s =>
           s.id === skillId ? { ...s, status: newStatus } : s
         ));
-        
+
         // Trigger UI feedback after the area popup has had time to animate
         setTimeout(() => {
           triggerQuestUpdated();
         }, 1800);
-        
+
         // Generate new level in the background without blocking
         fetch(`/api/skills/${activeParentSkillId}/subskills/generate-level`, {
           method: "POST",
@@ -2987,10 +3014,6 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
             ...project,
             skills: project.skills.map(s => s.id === activeParentSkillId ? { ...s, status: "available" as SkillStatus } : s)
           })));
-
-          setTimeout(() => {
-            triggerQuestUpdated();
-          }, 1800);
 
           const newLevel = completedLevel + 1;
           fetch(`/api/skills/${activeParentSkillId}/subskills/generate-level`, {
@@ -4462,11 +4485,11 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       toggleFinalNode,
       toggleProjectFinalNode,
       toggleSubSkillFinalNode,
-      showLevelUp,
-      levelUpNumber,
       showCompleted,
       questCompletedCelebration,
-      showQuestUpdated,
+      questCelebrationText,
+      showQuestUpdatedPopup,
+      hideQuestUpdatedPopup,
       sideQuests,
       archivedSideQuests,
       createSideQuest,

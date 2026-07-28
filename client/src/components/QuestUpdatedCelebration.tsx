@@ -4,12 +4,12 @@ import { Sparkles } from "lucide-react";
 import { usePopupPalette } from "@/lib/popup-theme";
 
 interface QuestUpdatedCelebrationProps {
-  show: boolean;
+  text: string | null;
 }
 
 // Mismo tratamiento visual que LevelUpCelebration (backdrop, ráfaga de partículas, tarjeta con
-// ícono pulsante), para que "Quest updated!" se sienta con el mismo peso que subir de nivel un
-// skill en vez del texto grande suelto que tenía antes.
+// ícono pulsante), reusado acá para "¡Subiste de nivel!" al confirmar el nodo final que abre
+// el siguiente nivel — en vez del texto grande suelto que tenía antes ("Level N").
 const PARTICLE_COUNT = 14;
 const particles = Array.from({ length: PARTICLE_COUNT }).map((_, i) => {
   const angle = (i / PARTICLE_COUNT) * Math.PI * 2;
@@ -24,7 +24,7 @@ const particles = Array.from({ length: PARTICLE_COUNT }).map((_, i) => {
   };
 });
 
-export function QuestUpdatedCelebration({ show }: QuestUpdatedCelebrationProps) {
+export function QuestUpdatedCelebration({ text }: QuestUpdatedCelebrationProps) {
   const palette = usePopupPalette();
 
   if (typeof document === "undefined") {
@@ -33,7 +33,7 @@ export function QuestUpdatedCelebration({ show }: QuestUpdatedCelebrationProps) 
 
   return createPortal(
     <AnimatePresence>
-      {show && (
+      {text && (
         <motion.div
           key="quest-updated-celebration"
           className="fixed inset-0 z-[300] flex items-center justify-center pointer-events-none"
@@ -90,11 +90,8 @@ export function QuestUpdatedCelebration({ show }: QuestUpdatedCelebrationProps) 
                 <Sparkles className="h-6 w-6 text-amber-400" strokeWidth={2.4} />
               </motion.div>
 
-              <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: palette.textMuted }}>
-                ¡Progreso!
-              </div>
-              <div className="mt-1 text-xl font-bold" style={{ color: palette.text }}>
-                Quest updated!
+              <div className="text-xl font-bold" style={{ color: palette.text }}>
+                {text}
               </div>
             </motion.div>
           </div>

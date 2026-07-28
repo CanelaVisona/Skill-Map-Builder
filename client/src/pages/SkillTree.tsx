@@ -7,6 +7,7 @@ import { SkillConnection } from "@/components/SkillConnection";
 import { SkillDesigner } from "@/components/SkillDesigner";
 import { QuestCompletedCelebration } from "@/components/QuestCompletedCelebration";
 import { QuestUpdatedCelebration } from "@/components/QuestUpdatedCelebration";
+import { QuestUpdatedPopup } from "@/components/QuestUpdatedPopup";
 import { HabitStreakModal } from "@/components/HabitStreakModal";
 import { useHabits } from "@/lib/useHabits";
 import { SpaceRepetitionModal, calculateStatus, calculateStatusL2, type SpaceRepetitionPractice } from "@/components/SpaceRepetitionModal";
@@ -7607,11 +7608,11 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
     exitSubSkillTree,
     toggleSubSkillStatus,
     deleteSubSkillTree,
-    showLevelUp,
-    levelUpNumber,
     showCompleted,
     questCompletedCelebration,
-    showQuestUpdated,
+    questCelebrationText,
+    showQuestUpdatedPopup,
+    hideQuestUpdatedPopup,
     addSkill,
     updateSkill,
     updateProjectSkill
@@ -7777,26 +7778,6 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
     return (
       <div className="flex-1 relative overflow-hidden bg-background flex flex-col">
         <AnimatePresence>
-          {showLevelUp && (
-            <motion.div
-              className="absolute inset-0 flex items-center justify-center pointer-events-none z-50"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-            >
-              <motion.span
-                className="text-4xl font-bold tracking-widest uppercase text-foreground shadow-lg"
-                initial={{ y: 100, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                exit={{ y: -100, opacity: 0 }}
-                transition={{ duration: 0.5, ease: "easeOut" }}
-              >
-                Level {levelUpNumber}
-              </motion.span>
-            </motion.div>
-          )}
-        </AnimatePresence>
-        <AnimatePresence>
           {showCompleted && (
             <motion.div
               className="absolute inset-0 flex items-center justify-center pointer-events-none z-50"
@@ -7817,7 +7798,8 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
           )}
         </AnimatePresence>
         <QuestCompletedCelebration celebration={questCompletedCelebration} />
-        <QuestUpdatedCelebration show={showQuestUpdated} />
+        <QuestUpdatedCelebration text={questCelebrationText} />
+        <QuestUpdatedPopup show={showQuestUpdatedPopup} onClose={hideQuestUpdatedPopup} />
         <div className="flex-1 overflow-y-auto p-8 scroll-smooth scrollbar-thin-on-scroll">
           <div className="w-full relative max-w-4xl mx-auto mt-2 min-h-full">
             
@@ -8068,26 +8050,6 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
         />
       )}
       <AnimatePresence>
-        {showLevelUp && (
-          <motion.div
-            className="absolute inset-0 flex items-center justify-center pointer-events-none z-50"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
-            <motion.span
-              className="text-4xl font-bold tracking-widest uppercase text-foreground shadow-lg"
-              initial={{ y: 100, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: -100, opacity: 0 }}
-              transition={{ duration: 0.5, ease: "easeOut" }}
-            >
-              Level {levelUpNumber}
-            </motion.span>
-          </motion.div>
-        )}
-      </AnimatePresence>
-      <AnimatePresence>
         {showCompleted && (
           <motion.div
             className="absolute inset-0 flex items-center justify-center pointer-events-none z-50"
@@ -8108,7 +8070,8 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
         )}
       </AnimatePresence>
       <QuestCompletedCelebration celebration={questCompletedCelebration} />
-      <QuestUpdatedCelebration show={showQuestUpdated} />
+      <QuestUpdatedCelebration text={questCelebrationText} />
+      <QuestUpdatedPopup show={showQuestUpdatedPopup} onClose={hideQuestUpdatedPopup} />
       <div className="flex-1 overflow-y-auto p-8 scroll-smooth scrollbar-thin-on-scroll">
         <div className="w-full relative max-w-4xl mx-auto min-h-full">
           

@@ -12,6 +12,7 @@ import { useSkillTree } from "@/lib/skill-context";
 import { useXpPopup } from "@/lib/xp-popup-context";
 import { useBodyProgress } from "@/lib/body-progress-context";
 import { useBodyGainPopup } from "@/lib/body-gain-popup-context";
+import { beginPopupChain, endPopupChain, runPopupQueue } from "@/lib/popup-coordinator";
 import { BodyLinkPicker, type BodyLink } from "@/components/BodyLinkPicker";
 import { SkillLinkPicker } from "@/components/SkillLinkPicker";
 
@@ -183,70 +184,51 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
   const { addBodyBlock } = useBodyProgress();
   const { showBodyGainPopup, hideBodyGainPopup } = useBodyGainPopup();
 
-  // Muestra un pop-up de crecimiento corporal por cada componente linkeado, en secuencia (1800ms
-  // entre cada uno, y esperando ese mismo tiempo si en la misma confirmación ya se mostró el de
-  // XP) para que no se solapen entre sí ni con el de XP (mismo criterio que SkillNode.tsx).
-  const growLinkedBody = (links: BodyLink[], xpPopupsShown: number) => {
-    links.forEach((link, index) => {
-      const run = () => {
-        const { before, after } = addBodyBlock(link.zone, link.dimension);
-        hideXpPopup();
-        showBodyGainPopup({ zone: link.zone, dimension: link.dimension, before, after });
-      };
-      const delay = xpPopupsShown * 1800 + index * 1800;
-      if (delay === 0) {
-        run();
-      } else {
-        setTimeout(run, delay);
-      }
+  // Arma un pop-up de crecimiento corporal por cada componente linkeado a un hábito, para
+  // encolar junto con los de XP via runPopupQueue.
+  const buildBodyGrowthTasks = (links: BodyLink[]): Array<() => void> =>
+    links.map((link) => () => {
+      const { before, after } = addBodyBlock(link.zone, link.dimension);
+      hideXpPopup();
+      showBodyGainPopup({ zone: link.zone, dimension: link.dimension, before, after });
     });
-  };
 
-  // Awards XP to every skill linked to a habit, showing one popup per skill in sequence
-  // (1800ms apart, same cadence as growLinkedBody) so they don't overlap. Returns how many
-  // popups were shown, so callers can offset a following growLinkedBody call.
-  const awardHabitXp = async (habitId: string, skillIds: string[]): Promise<number> => {
-    if (skillIds.length === 0) return 0;
+  // Awards XP to every skill linked to a habit, returning one popup-show task per skill (same
+  // shape as buildBodyGrowthTasks) so callers can queue both together with runPopupQueue.
+  const awardHabitXp = async (habitId: string, skillIds: string[]): Promise<Array<() => void>> => {
+    if (skillIds.length === 0) return [];
     try {
       const res = await fetch(`/api/habits/${habitId}/award-xp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
-      if (!res.ok) return 0;
+      if (!res.ok) return [];
       const xpData = await res.json();
       const awards: Array<{ skillId: string; skillName: string; newXp: number; newLevel: number; xpAwarded: number }> =
         Array.isArray(xpData?.xpAwards) ? xpData.xpAwards : [];
-      if (awards.length === 0) return 0;
+      if (awards.length === 0) return [];
 
-      awards.forEach((award, index) => {
+      const tasks = awards.map((award) => () => {
         const linkedSkill = globalSkills.find((skillEntry) => skillEntry.id === award.skillId);
         const area = areas.find((areaEntry: Area) => areaEntry.id === linkedSkill?.areaId);
-        const run = () => {
-          hideBodyGainPopup();
-          showXpPopup({
-            skillName: award.skillName,
-            areaColor: area?.color || "#c85a2a",
-            xpBefore: linkedSkill ? linkedSkill.currentXp : Math.max(0, award.newXp - award.xpAwarded),
-            xpAfter: award.newXp,
-            xpMax: linkedSkill?.goalXp || null,
-            level: award.newLevel,
-            celebrateLevelUp: true,
-          });
-        };
-        const delay = index * 1800;
-        if (delay === 0) {
-          run();
-        } else {
-          setTimeout(run, delay);
-        }
+        hideBodyGainPopup();
+        showXpPopup({
+          skillName: award.skillName,
+          areaColor: area?.color || "#c85a2a",
+          xpBefore: linkedSkill ? linkedSkill.currentXp : Math.max(0, award.newXp - award.xpAwarded),
+          xpAfter: award.newXp,
+          xpMax: linkedSkill?.goalXp || null,
+          level: award.newLevel,
+          celebrateLevelUp: true,
+        });
       });
 
       await refetchGlobalSkills();
       await queryClient.refetchQueries({ queryKey: ["skills"] });
-      return awards.length;
+      return tasks;
     } catch (error) {
       console.error("Error awarding XP:", error);
-      return 0;
+      return [];
     }
   };
 
@@ -723,9 +705,12 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                       onSuccess: async () => {
                         // Award XP if habit has linked skills and is being marked complete
                         const habitSkillIds = habit.skillIds?.length ? habit.skillIds : habit.skillId ? [habit.skillId] : [];
-                        const xpPopupsShown = !isCompleted ? await awardHabitXp(habitId, habitSkillIds) : 0;
                         if (!isCompleted) {
-                          growLinkedBody(habit.bodyLinks ?? [], xpPopupsShown);
+                          // Abre la cadena YA, antes del fetch de awardHabitXp, para que el
+                          // pop-up de progreso de hoy sepa de entrada que tiene que esperar.
+                          beginPopupChain();
+                          const xpTasks = await awardHabitXp(habitId, habitSkillIds);
+                          runPopupQueue([...xpTasks, ...buildBodyGrowthTasks(habit.bodyLinks ?? [])], endPopupChain);
                         } else {
                           shrinkLinkedBody(habit.bodyLinks ?? []);
                         }
@@ -775,9 +760,10 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                     onSuccess: async () => {
                       // Award XP and show popup when completing from calendar too
                       const habitSkillIds = habit.skillIds?.length ? habit.skillIds : habit.skillId ? [habit.skillId] : [];
-                      const xpPopupsShown = !isCompleted ? await awardHabitXp(selectedHabitId, habitSkillIds) : 0;
                       if (!isCompleted) {
-                        growLinkedBody(habit.bodyLinks ?? [], xpPopupsShown);
+                        beginPopupChain();
+                        const xpTasks = await awardHabitXp(selectedHabitId, habitSkillIds);
+                        runPopupQueue([...xpTasks, ...buildBodyGrowthTasks(habit.bodyLinks ?? [])], endPopupChain);
                       } else {
                         shrinkLinkedBody(habit.bodyLinks ?? []);
                       }
