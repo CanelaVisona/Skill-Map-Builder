@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Eye, ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import { useSkillTree, type Area, type Project, type Skill } from "@/lib/skill-context";
 import { useHabits } from "@/lib/useHabits";
-import { useTodayTaskSlots, useSetTodayTaskSlot, useClearTodayTaskSlot, useReorderTodayTaskSlot, type TaskSlotKey, type TaskType } from "@/lib/useTodayTaskSlots";
+import { useTodayTaskSlots, useSetTodayTaskSlot, useClearTodayTaskSlot, useReorderTodayTaskSlot, getCurrentTimeSlotKey, type TaskSlotKey, type TaskType } from "@/lib/useTodayTaskSlots";
 import { useManualTasks, useCreateManualTask, useUpdateManualTask, useDeleteManualTask } from "@/lib/useManualTasks";
 import { calculateStatus, calculateStatusL2, type SpaceRepetitionPractice } from "@/components/SpaceRepetitionModal";
 import type { Habit, HabitRecord } from "@shared/schema";
@@ -23,16 +23,6 @@ const TIME_SLOTS: { key: TaskSlotKey; label: string }[] = [
   { key: "afternoon", label: "Tarde" },
   { key: "night", label: "Noche" },
 ];
-
-// Mañana 6-11, mediodía 12-16, tarde 17-20, noche 21-23 y también las horas de
-// madrugada (0-5), que caen dentro del tramo nocturno del día anterior.
-function getCurrentTimeSlotKey(): TaskSlotKey {
-  const hour = new Date().getHours();
-  if (hour >= 6 && hour <= 11) return "morning";
-  if (hour >= 12 && hour <= 16) return "midday";
-  if (hour >= 17 && hour <= 20) return "afternoon";
-  return "night";
-}
 
 interface TodayItem {
   key: string;

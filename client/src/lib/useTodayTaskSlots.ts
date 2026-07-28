@@ -4,6 +4,16 @@ import type { TodayTaskSlot } from "@shared/schema";
 export type TaskSlotKey = "morning" | "midday" | "afternoon" | "night" | "hidden";
 export type TaskType = "habit" | "node" | "practice" | "manual";
 
+// Mañana 6-11, mediodía 12-16, tarde 17-20, noche 21-23 y también las horas de
+// madrugada (0-5), que caen dentro del tramo nocturno del día anterior.
+export function getCurrentTimeSlotKey(): "morning" | "midday" | "afternoon" | "night" {
+  const hour = new Date().getHours();
+  if (hour >= 6 && hour <= 11) return "morning";
+  if (hour >= 12 && hour <= 16) return "midday";
+  if (hour >= 17 && hour <= 20) return "afternoon";
+  return "night";
+}
+
 export function useTodayTaskSlots(date: string, enabled = true) {
   return useQuery({
     queryKey: ["today-task-slots", date],

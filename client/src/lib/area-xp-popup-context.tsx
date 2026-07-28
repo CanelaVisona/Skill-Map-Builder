@@ -1,10 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import { AreaLevelGainPopup } from "@/components/AreaLevelGainPopup";
-import { markPopupActive } from "@/lib/popup-coordinator";
-
-// Debe coincidir con el setTimeout de 3200ms de abajo.
-const POPUP_DURATION_MS = 3200;
+import { markPopupActive, POPUP_VISIBLE_MS } from "@/lib/popup-coordinator";
 
 export interface AreaXpPopupSnapshot {
   areaOrProjectId: string;
@@ -37,11 +34,11 @@ export function AreaXpPopupProvider({ children }: { children: React.ReactNode })
       clearTimeout(closeTimerRef.current);
     }
 
-    markPopupActive(POPUP_DURATION_MS);
+    markPopupActive(POPUP_VISIBLE_MS);
     setSnapshot(nextSnapshot);
     closeTimerRef.current = setTimeout(() => {
       setSnapshot(null);
-    }, POPUP_DURATION_MS);
+    }, POPUP_VISIBLE_MS);
   }, []);
 
   useEffect(() => {

@@ -2,7 +2,27 @@ import { createContext, useContext, useState, useEffect, useRef } from "react";
 import { Music, Trophy, BookOpen, Home } from "lucide-react";
 import { useAreaXpPopup } from "@/lib/area-xp-popup-context";
 import { calculateAreaProgressPercentage } from "@/lib/area-progress";
-import { getPopupBusyDelay } from "@/lib/popup-coordinator";
+import { getPopupBusyDelay, markPopupActive, POPUP_VISIBLE_MS } from "@/lib/popup-coordinator";
+import { getCurrentTimeSlotKey } from "@/lib/useTodayTaskSlots";
+
+// Best-effort: places a just-confirmed node into today's matching "Tareas de hoy" time
+// slot (mañana/mediodía/tarde/noche) based on the hour it was confirmed at. Fire-and-forget,
+// since a failure here shouldn't block the confirmation itself — the node just falls back
+// to "Sin asignar" and can still be moved manually.
+function assignTodayTaskSlotForConfirmedNode(skillId: string) {
+  fetch("/api/today-task-slots", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      date: getTodayStr(),
+      taskType: "node",
+      taskId: skillId,
+      slot: getCurrentTimeSlotKey(),
+    }),
+  }).catch(error => {
+    console.error("Error assigning today task slot for confirmed node:", error);
+  });
+}
 
 function getTodayStr(): string {
   const now = new Date();
@@ -318,8 +338,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
   };
 
   const triggerQuestUpdated = () => {
+    markPopupActive(POPUP_VISIBLE_MS);
     setShowQuestUpdated(true);
-    setTimeout(() => setShowQuestUpdated(false), 2000);
+    setTimeout(() => setShowQuestUpdated(false), POPUP_VISIBLE_MS);
   };
 
   // Para nodos registrados como tarea de hoy (plannedDate === hoy), el pop-up de progreso de
@@ -998,6 +1019,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
       if (newStatus === "mastered") {
         void addAreaXp(areaId, false, 1);
+        assignTodayTaskSlotForConfirmedNode(skillId);
       } else if (skill.status === "mastered" && newStatus === "available") {
         void addAreaXp(areaId, false, -1);
       }
@@ -1360,6 +1382,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
       if (newStatus === "mastered") {
         void addAreaXp(projectId, true, 1);
+        assignTodayTaskSlotForConfirmedNode(skillId);
       } else if (skill.status === "mastered" && newStatus === "available") {
         void addAreaXp(projectId, true, -1);
       }

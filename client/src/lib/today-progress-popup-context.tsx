@@ -1,15 +1,13 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { TodayProgressGainPopup, type TodayProgressGainSnapshot } from "@/components/TodayProgressGainPopup";
 import { useTodayProgressSummary } from "@/lib/useTodayProgressSummary";
-import { getPopupBusyDelay, markPopupActive } from "@/lib/popup-coordinator";
+import { getPopupBusyDelay, markPopupActive, POPUP_VISIBLE_MS } from "@/lib/popup-coordinator";
 
 interface TodayProgressPopupContextValue {
   showTodayProgressPopup: (snapshot: TodayProgressGainSnapshot) => void;
 }
 
 const TodayProgressPopupContext = createContext<TodayProgressPopupContextValue | undefined>(undefined);
-
-const POPUP_DURATION_MS = 3200;
 
 export function TodayProgressPopupProvider({ children }: { children: ReactNode }) {
   const [snapshot, setSnapshot] = useState<TodayProgressGainSnapshot | null>(null);
@@ -35,9 +33,9 @@ export function TodayProgressPopupProvider({ children }: { children: ReactNode }
         showTimerRef.current = setTimeout(attemptShow, delay + 150);
         return;
       }
-      markPopupActive(POPUP_DURATION_MS);
+      markPopupActive(POPUP_VISIBLE_MS);
       setSnapshot(nextSnapshot);
-      closeTimerRef.current = setTimeout(() => setSnapshot(null), POPUP_DURATION_MS);
+      closeTimerRef.current = setTimeout(() => setSnapshot(null), POPUP_VISIBLE_MS);
     };
 
     // Margen inicial para darle tiempo a la cadena de pop-ups recién disparada (por ej. al

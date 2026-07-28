@@ -12,6 +12,7 @@ import {
 } from "@/lib/body-progress-context";
 import { usePopupPalette } from "@/lib/popup-theme";
 import { useLevelUpCelebration } from "@/lib/level-up-celebration-context";
+import { POPUP_VISIBLE_MS } from "@/lib/popup-coordinator";
 
 export interface BodyGainSnapshot {
   zone: BodyZone;
@@ -101,7 +102,7 @@ export function BodyGainPopup({ snapshot, onClose }: BodyGainPopupProps) {
 
   useEffect(() => {
     if (!snapshot) return;
-    const closeTimer = window.setTimeout(onClose, 7500);
+    const closeTimer = window.setTimeout(onClose, POPUP_VISIBLE_MS);
     return () => window.clearTimeout(closeTimer);
   }, [snapshot, onClose]);
 

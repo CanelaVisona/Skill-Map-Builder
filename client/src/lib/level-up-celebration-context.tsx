@@ -1,9 +1,6 @@
 import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from "react";
 import { LevelUpCelebration, type LevelUpCelebrationState } from "@/components/LevelUpCelebration";
-import { markPopupActive } from "@/lib/popup-coordinator";
-
-// Debe coincidir con el setTimeout de 1800ms de abajo.
-const POPUP_DURATION_MS = 1800;
+import { markPopupActive, POPUP_VISIBLE_MS } from "@/lib/popup-coordinator";
 
 interface LevelUpCelebrationContextValue {
   showLevelUpCelebration: (state: LevelUpCelebrationState) => void;
@@ -19,9 +16,9 @@ export function LevelUpCelebrationProvider({ children }: { children: ReactNode }
     if (hideTimer.current) {
       window.clearTimeout(hideTimer.current);
     }
-    markPopupActive(POPUP_DURATION_MS);
+    markPopupActive(POPUP_VISIBLE_MS);
     setCelebration(state);
-    hideTimer.current = window.setTimeout(() => setCelebration(null), POPUP_DURATION_MS);
+    hideTimer.current = window.setTimeout(() => setCelebration(null), POPUP_VISIBLE_MS);
   }, []);
 
   return (
