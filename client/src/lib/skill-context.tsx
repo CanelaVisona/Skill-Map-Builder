@@ -289,7 +289,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
   const isReordering = useRef(false);
 
   const { showAreaXpPopup } = useAreaXpPopup();
-  const areaQuestUpdatedDelayMs = 3300;
+  const areaQuestUpdatedDelayMs = 1600;
   const areaLevelUpDelayMs = 4300;
   const questCompletionArchiveDelayMs = 3000;
 
