@@ -905,7 +905,7 @@ function TodayTaskRow({
 
   // Mantener presionada una tarea no hecha ofrece sacarla de tareas de hoy (item.done ya
   // completado no necesita esto). Mismo timing (1500ms) que el long-press de SkillNode.
-  // Eliminar (tareas manuales) vive en el menú, no en el long-press.
+  // "Sacar de hoy" también está disponible en el menú (mismo diálogo de confirmación).
   const canLongPress = !item.done && !!onHide;
 
   const startLongPress = (e: React.MouseEvent | React.TouchEvent) => {
@@ -972,13 +972,16 @@ function TodayTaskRow({
             {(onMoveUp || onMoveDown) && <DropdownMenuSeparator />}
             {onMoveUp && <DropdownMenuItem onClick={onMoveUp}>Mover arriba</DropdownMenuItem>}
             {onMoveDown && <DropdownMenuItem onClick={onMoveDown}>Mover abajo</DropdownMenuItem>}
+            {(onHide || onDelete) && <DropdownMenuSeparator />}
+            {onHide && (
+              <DropdownMenuItem onClick={() => setHideConfirmOpen(true)} className="text-destructive focus:text-destructive">
+                Sacar de hoy
+              </DropdownMenuItem>
+            )}
             {onDelete && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => setDeleteConfirmOpen(true)} className="text-destructive focus:text-destructive">
-                  Eliminar
-                </DropdownMenuItem>
-              </>
+              <DropdownMenuItem onClick={() => setDeleteConfirmOpen(true)} className="text-destructive focus:text-destructive">
+                Eliminar
+              </DropdownMenuItem>
             )}
           </DropdownMenuContent>
         </DropdownMenu>
