@@ -10,6 +10,8 @@ import { QuestUpdatedCelebration } from "@/components/QuestUpdatedCelebration";
 import { QuestUpdatedPopup } from "@/components/QuestUpdatedPopup";
 import { HabitStreakModal } from "@/components/HabitStreakModal";
 import { useHabits } from "@/lib/useHabits";
+import { useManualTasks } from "@/lib/useManualTasks";
+import { useTodayTaskSlots, getCurrentTimeSlotKey } from "@/lib/useTodayTaskSlots";
 import { SpaceRepetitionModal, calculateStatus, calculateStatusL2, type SpaceRepetitionPractice } from "@/components/SpaceRepetitionModal";
 import { ProgressModal } from "@/components/ProgressModal";
 import { TodayProgressModal } from "@/components/TodayProgressModal";
@@ -161,18 +163,53 @@ function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpen
     return status === "expires_soon" || status === "loss" || status === "frozen";
   }).length;
 
-  // El badge de "Progreso de hoy" solo cuenta nodos con plannedDate = hoy sin dominar todavía
-  // (no hábitos ni space repetition, aunque esos sí suman al progreso combinado del modal).
+  // El badge de "Progreso de hoy" cuenta las tareas pendientes (hábito, nodo, práctica o
+  // manual) de la franja horaria actual (mañana/mediodía/tarde/noche) — igual criterio que
+  // usa el acordeón del modal para agrupar. Una tarea sin franja asignada todavía ("Sin
+  // asignar") cuenta como si fuera de la franja actual, ya que es donde el modal la muestra
+  // por defecto junto a la franja en curso.
   const { areas: todayAreas, projects: todayProjects } = useSkillTree();
-  const countPendingNodes = (list: (Area | Project)[]) =>
+  const currentSlotKey = getCurrentTimeSlotKey();
+  const { data: todaySlotsData } = useTodayTaskSlots(todayStr, true);
+  const slotByTaskKey = new Map<string, string>();
+  (todaySlotsData || []).forEach((s) => slotByTaskKey.set(`${s.taskType}:${s.taskId}`, s.slot));
+  const isInCurrentSegment = (key: string) => {
+    const slot = slotByTaskKey.get(key);
+    return slot === undefined || slot === currentSlotKey;
+  };
+
+  const pendingHabitsInSegment = habitsScheduledToday.filter((h, i) => {
+    const done = (todayRecordQueries[i]?.data as HabitRecord[] | undefined)?.some(
+      (r) => r.date === todayStr && r.completed === 1
+    );
+    return !done && isInCurrentSegment(`habit:${h.id}`);
+  }).length;
+
+  const countPendingNodesInSegment = (list: (Area | Project)[]) =>
     list.reduce(
       (sum, parent) =>
-        sum + (parent.skills || []).filter((s) => s.plannedDate === todayStr && s.status !== "mastered").length,
+        sum +
+        (parent.skills || []).filter(
+          (s) => s.plannedDate === todayStr && s.status !== "mastered" && isInCurrentSegment(`node:${s.id}`)
+        ).length,
       0
     );
+  const pendingNodesInSegment =
+    countPendingNodesInSegment(Array.isArray(todayAreas) ? todayAreas : []) +
+    countPendingNodesInSegment(Array.isArray(todayProjects) ? todayProjects : []);
+
+  const pendingPracticesInSegment = spaceRepPractices.filter((p) => {
+    const status = p.level === 2 ? calculateStatusL2(p) : calculateStatus(p);
+    return status === "expires_soon" && isInCurrentSegment(`practice:${p.id}`);
+  }).length;
+
+  const { data: todayManualTasks } = useManualTasks(todayStr, true);
+  const pendingManualInSegment = (todayManualTasks || []).filter(
+    (t) => t.done !== 1 && isInCurrentSegment(`manual:${t.id}`)
+  ).length;
+
   const pendingNodesTodayCount =
-    countPendingNodes(Array.isArray(todayAreas) ? todayAreas : []) +
-    countPendingNodes(Array.isArray(todayProjects) ? todayProjects : []);
+    pendingHabitsInSegment + pendingNodesInSegment + pendingPracticesInSegment + pendingManualInSegment;
 
   return (
     <div className="fixed top-4 right-4 z-50 flex flex-col items-end gap-2">
