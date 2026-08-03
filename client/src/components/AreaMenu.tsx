@@ -1298,14 +1298,16 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
   const handlePowerPointerDown = (e: PointerEvent, powerId: string) => {
     e.stopPropagation();
     powerLongPressCompleted.current = false;
-    if (powerContextMenuId === powerId) {
-      setPowerContextMenuId(null);
-      return;
-    }
     setPowerContextMenuId(null);
     powerLongPressTimer.current = setTimeout(() => {
-      setPowerContextMenuId(powerId);
+      const power = powers.find((item) => item.id === powerId);
+      if (power) {
+        handleStartEdit({ id: power.id, name: power.name, description: power.description });
+      }
       powerLongPressCompleted.current = true;
+      setTimeout(() => {
+        powerLongPressCompleted.current = false;
+      }, 50);
     }, 1000);
   };
 
@@ -1320,14 +1322,16 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
   const handlePowerTouchStart = (e: TouchEvent, powerId: string) => {
     e.stopPropagation();
     powerLongPressCompleted.current = false;
-    if (powerContextMenuId === powerId) {
-      setPowerContextMenuId(null);
-      return;
-    }
     setPowerContextMenuId(null);
     powerLongPressTimer.current = setTimeout(() => {
-      setPowerContextMenuId(powerId);
+      const power = powers.find((item) => item.id === powerId);
+      if (power) {
+        handleStartEdit({ id: power.id, name: power.name, description: power.description });
+      }
       powerLongPressCompleted.current = true;
+      setTimeout(() => {
+        powerLongPressCompleted.current = false;
+      }, 50);
     }, 1000);
   };
 
@@ -1619,7 +1623,6 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                     <p className="text-sm text-muted-foreground col-span-2">No hay poderes aún (mantener presionado para agregar)</p>
                   ) : (
                     powers.map((power) => {
-                      const showContextMenu = powerContextMenuId === power.id;
                       const state = renderPowerState(power);
                       const PowerIcon = getPowerIcon(power.id);
                       return (
@@ -1674,36 +1677,6 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                             )}
                           </button>
 
-                          {/* Context Menu on Long Press */}
-                          {showContextMenu && (
-                            <div
-                              className="absolute right-1 top-1 z-50 flex gap-1 bg-background border rounded-lg p-1 shadow-lg"
-                              onPointerDown={(e) => e.stopPropagation()}
-                            >
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleStartEdit({ id: power.id, name: power.name, description: power.description });
-                                  setPowerContextMenuId(null);
-                                }}
-                                className="p-1 hover:bg-muted rounded"
-                                title="Editar"
-                              >
-                                <Pencil className="h-4 w-4 text-muted-foreground" />
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  deletePower.mutate(power.id);
-                                  setPowerContextMenuId(null);
-                                }}
-                                className="p-1 hover:bg-destructive/20 rounded"
-                                title="Eliminar"
-                              >
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                              </button>
-                            </div>
-                          )}
                         </div>
                       );
                     })
