@@ -98,6 +98,11 @@ interface SourceEntry {
   description: string;
 }
 
+interface SourceExperienceEntry extends SourceEntry {
+  hasHighFailureRisk?: boolean | null;
+  isPriority?: boolean | null;
+}
+
 interface SourceGrowthEntry extends SourceEntry {
   experienceIds: string[];
   contributionIds: string[];
@@ -247,6 +252,8 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
   const [editingEntry, setEditingEntry] = useState<SourceEntry | null>(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [hasHighFailureRisk, setHasHighFailureRisk] = useState(false);
+  const [isPriority, setIsPriority] = useState(false);
   const [selectedGrowthIds, setSelectedGrowthIds] = useState<string[]>([]);
   const [selectedExperienceIds, setSelectedExperienceIds] = useState<string[]>([]);
   const [selectedContributionIds, setSelectedContributionIds] = useState<string[]>([]);
@@ -343,7 +350,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
   });
 
   // Fetch experiences for this source
-  const { data: experiences = [] } = useQuery<SourceEntry[]>({
+  const { data: experiences = [] } = useQuery<SourceExperienceEntry[]>({
     queryKey: [`/api/profile/experiences/by-source/${sourceType}/${sourceId}`],
     queryFn: async () => {
       const res = await fetch(`/api/profile/experiences/by-source/${sourceType}/${sourceId}`);
@@ -564,7 +571,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
 
   // Experiences mutations (for entries tied to this source)
   const createExperience = useMutation({
-    mutationFn: async (data: { name: string; description: string; areaId?: string | null; projectId?: string | null }) => {
+    mutationFn: async (data: { name: string; description: string; areaId?: string | null; projectId?: string | null; hasHighFailureRisk?: boolean; isPriority?: boolean }) => {
       const res = await fetch("/api/profile/experiences", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -582,11 +589,13 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       setIsAdding(false);
       setName("");
       setDescription("");
+      setHasHighFailureRisk(false);
+      setIsPriority(false);
     },
   });
 
   const updateExperience = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: { name?: string; description?: string; areaId?: string | null; projectId?: string | null } }) => {
+    mutationFn: async ({ id, data }: { id: string; data: { name?: string; description?: string; areaId?: string | null; projectId?: string | null; hasHighFailureRisk?: boolean; isPriority?: boolean } }) => {
       const res = await fetch(`/api/profile/experiences/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -600,6 +609,8 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       setEditingEntry(null);
       setName("");
       setDescription("");
+      setHasHighFailureRisk(false);
+      setIsPriority(false);
     },
   });
 
@@ -946,6 +957,8 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
         description: description.trim(),
         areaId: sourceType === "area" ? sourceId : null,
         projectId: sourceType === "project" ? sourceId : null,
+        hasHighFailureRisk,
+        isPriority,
       });
       await syncGrowthLinks(created.id, "experienceIds", selectedGrowthIds);
     } else if (activeTab === "contributions") {
@@ -983,7 +996,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
         },
       });
     } else if (activeTab === "experiences") {
-      updateExperience.mutate({ id: editingEntry.id, data: { name: finalName, description: description.trim(), areaId: sourceType === "area" ? sourceId : null, projectId: sourceType === "project" ? sourceId : null } });
+      updateExperience.mutate({ id: editingEntry.id, data: { name: finalName, description: description.trim(), areaId: sourceType === "area" ? sourceId : null, projectId: sourceType === "project" ? sourceId : null, hasHighFailureRisk, isPriority } });
       await syncGrowthLinks(editingEntry.id, "experienceIds", selectedGrowthIds);
     } else if (activeTab === "contributions") {
       updateContribution.mutate({ id: editingEntry.id, data: { name: finalName, description: description.trim(), areaId: sourceType === "area" ? sourceId : null, projectId: sourceType === "project" ? sourceId : null } });
@@ -1028,12 +1041,22 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     } else {
       setPowerStatus(0);
     }
+    if (activeTab === "experiences") {
+      const experienceEntry = entry as SourceExperienceEntry;
+      setHasHighFailureRisk(Boolean(experienceEntry.hasHighFailureRisk));
+      setIsPriority(Boolean(experienceEntry.isPriority));
+    } else {
+      setHasHighFailureRisk(false);
+      setIsPriority(false);
+    }
   };
 
   const handleCancelEdit = () => {
     setEditingEntry(null);
     setName("");
     setDescription("");
+    setHasHighFailureRisk(false);
+    setIsPriority(false);
     setPowerStatus(0);
   };
 
@@ -1047,7 +1070,10 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
         setSelectedExperienceIds(linkedGrowth?.experienceIds || []);
         setSelectedContributionIds(linkedGrowth?.contributionIds || []);
       } else if (activeTab === "experiences") {
+        const experienceEntry = editingEntry as SourceExperienceEntry;
         setSelectedGrowthIds(growth.filter((g) => (g.experienceIds || []).includes(editingEntry.id)).map((g) => g.id));
+        setHasHighFailureRisk(Boolean(experienceEntry?.hasHighFailureRisk));
+        setIsPriority(Boolean(experienceEntry?.isPriority));
       } else if (activeTab === "contributions") {
         setSelectedGrowthIds(growth.filter((g) => (g.contributionIds || []).includes(editingEntry.id)).map((g) => g.id));
       } else if (activeTab === "powers") {
@@ -1057,6 +1083,8 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       setSelectedGrowthIds([]);
       setSelectedExperienceIds([]);
       setSelectedContributionIds([]);
+      setHasHighFailureRisk(false);
+      setIsPriority(false);
       if (activeTab === "powers") {
         setPowerStatus(0);
       }
@@ -1397,7 +1425,8 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     onDelete?: (id: string) => void,
     onEdit?: (entry: SourceEntry) => void,
     onSelect?: (id: string) => void,
-    selectedId?: string | null
+    selectedId?: string | null,
+    getEntryClassName?: (entry: SourceEntry) => string | undefined
   ) => (
     <div className="space-y-2">
       {entries.length === 0 ? (
@@ -1435,12 +1464,13 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
             <div
               key={entry.id}
               className={cn(
-                "p-3 rounded-lg select-none",
+                "p-3 rounded-lg select-none border",
                 onSelect
                   ? selectedId === entry.id
-                    ? "bg-primary/10 border border-primary/40"
-                    : "bg-muted/30 hover:bg-muted/50"
-                  : "bg-muted/30"
+                    ? "bg-primary/10 border-primary/40"
+                    : "bg-muted/30 hover:bg-muted/50 border-transparent"
+                  : "bg-muted/30 border-transparent",
+                getEntryClassName?.(entry)
               )}
               data-entry-card
               onPointerDown={startLongPress}
@@ -1463,6 +1493,25 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       )}
     </div>
   );
+
+  const isExperienceFlagged = (entry: SourceEntry) => {
+    const experienceEntry = entry as SourceExperienceEntry;
+    return Boolean(experienceEntry.hasHighFailureRisk || experienceEntry.isPriority);
+  };
+
+  const getExperienceCardClassName = (entry: SourceEntry) => {
+    const experienceEntry = entry as SourceExperienceEntry;
+    if (experienceEntry.isPriority) {
+      return "border-orange-400/90 bg-orange-500/10 shadow-[0_0_0_1px_rgba(249,115,22,0.4),0_0_18px_rgba(249,115,22,0.18)]";
+    }
+    if (experienceEntry.hasHighFailureRisk) {
+      return "border-amber-400/70 bg-amber-500/10";
+    }
+    return undefined;
+  };
+
+  const flaggedExperiences = experiences.filter(isExperienceFlagged);
+  const regularExperiences = experiences.filter((entry) => !isExperienceFlagged(entry));
 
   const linkedGrowthsForExperience = viewingExperienceId
     ? growth.filter((g) => (g.experienceIds || []).includes(viewingExperienceId))
@@ -1547,14 +1596,41 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                 onPointerUp={handleBackgroundPointerUp}
                 onPointerCancel={handleBackgroundPointerUp}
               >
-                {renderEntryList(
-                  experiences,
-                  true,
-                  (id) => deleteExperience.mutate(id),
-                  handleStartEdit,
-                  handleSelectExperienceForView,
-                  viewingExperienceId
-                )}
+                <div className="space-y-4">
+                  {flaggedExperiences.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-[11px] uppercase tracking-wide text-orange-400">Destacadas</p>
+                      {renderEntryList(
+                        flaggedExperiences,
+                        true,
+                        (id) => deleteExperience.mutate(id),
+                        handleStartEdit,
+                        handleSelectExperienceForView,
+                        viewingExperienceId,
+                        getExperienceCardClassName
+                      )}
+                    </div>
+                  )}
+
+                  {regularExperiences.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Otras experiencias</p>
+                      {renderEntryList(
+                        regularExperiences,
+                        true,
+                        (id) => deleteExperience.mutate(id),
+                        handleStartEdit,
+                        handleSelectExperienceForView,
+                        viewingExperienceId,
+                        getExperienceCardClassName
+                      )}
+                    </div>
+                  )}
+
+                  {experiences.length === 0 && (
+                    <p className="text-sm text-muted-foreground">No hay items aún (mantener presionado para agregar)</p>
+                  )}
+                </div>
               </ScrollArea>
 
               {viewingExperienceId && (
@@ -2054,6 +2130,36 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                 rows={3}
               />
             </div>
+            {activeTab === "experiences" && (
+              <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
+                <div className="flex items-start space-x-2">
+                  <Checkbox
+                    id="experience-high-failure-risk"
+                    checked={hasHighFailureRisk}
+                    onCheckedChange={(value) => setHasHighFailureRisk(value === true)}
+                  />
+                  <div className="grid gap-1">
+                    <Label htmlFor="experience-high-failure-risk" className="text-sm font-medium leading-none">
+                      50% probabilidad de fracaso
+                    </Label>
+                    <p className="text-xs text-muted-foreground">Se agrupará aparte en la lista.</p>
+                  </div>
+                </div>
+                <div className="flex items-start space-x-2">
+                  <Checkbox
+                    id="experience-priority"
+                    checked={isPriority}
+                    onCheckedChange={(value) => setIsPriority(value === true)}
+                  />
+                  <div className="grid gap-1">
+                    <Label htmlFor="experience-priority" className="text-sm font-medium leading-none">
+                      Prioridad
+                    </Label>
+                    <p className="text-xs text-muted-foreground">Se resalta con borde naranja brillante.</p>
+                  </div>
+                </div>
+              </div>
+            )}
             {activeTab === "growth" && (
               <>
                 <LinkPickerDropdown label="Experiencias vinculadas" options={experiences} selectedIds={selectedExperienceIds} setSelectedIds={setSelectedExperienceIds} />

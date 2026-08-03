@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, jsonb, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, boolean, jsonb, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -145,6 +145,8 @@ export const profileExperiences = pgTable("profile_experiences", {
   description: text("description").notNull().default(""),
   areaId: varchar("area_id"),
   projectId: varchar("project_id"),
+  hasHighFailureRisk: boolean("has_high_failure_risk").notNull().default(false),
+  isPriority: boolean("is_priority").notNull().default(false),
 });
 
 export const profileContributions = pgTable("profile_contributions", {

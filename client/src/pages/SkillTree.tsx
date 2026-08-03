@@ -20,7 +20,7 @@ import { BookTracker } from "@/components/BookTracker";
 import RewiringTracker from "@/components/RewiringTracker";
 import NecesidadesCasa from "../components/NecesidadesCasa";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck } from "lucide-react";
+import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Swords, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -7327,6 +7327,8 @@ function QuestDiary() {
   const { isDiaryOpen, closeDiary } = useDiary();
   const queryClient = useQueryClient();
   const isMobile = useIsMobile();
+  const { areas, projects } = useSkillTree();
+  const [selectedPowerId, setSelectedPowerId] = useState<string | null>(null);
 
   // Listen for XP updates and refresh skills section via localStorage event
   useEffect(() => {
@@ -7382,6 +7384,79 @@ function QuestDiary() {
     queryKey: ["/api/journal/thoughts"],
     enabled: isDiaryOpen,
   });
+
+  const areaPowerQueries = useQueries({
+    queries: areas.map((area) => ({
+      queryKey: [`/api/source-powers/area/${area.id}`],
+      queryFn: async () => {
+        const res = await fetch(`/api/source-powers/area/${area.id}`);
+        if (!res.ok) throw new Error("Failed to fetch powers");
+        return res.json() as Promise<Array<{ id: string; name: string; description: string; isUnlocked: 0 | 1 | 2 }>>;
+      },
+      enabled: isDiaryOpen,
+    })),
+  });
+
+  const projectPowerQueries = useQueries({
+    queries: projects.map((project) => ({
+      queryKey: [`/api/source-powers/project/${project.id}`],
+      queryFn: async () => {
+        const res = await fetch(`/api/source-powers/project/${project.id}`);
+        if (!res.ok) throw new Error("Failed to fetch powers");
+        return res.json() as Promise<Array<{ id: string; name: string; description: string; isUnlocked: 0 | 1 | 2 }>>;
+      },
+      enabled: isDiaryOpen,
+    })),
+  });
+
+  const areaPowerGroups = areas
+    .map((area, index) => ({
+      id: area.id,
+      name: area.name,
+      color: area.color,
+      powers: (areaPowerQueries[index]?.data ?? []).filter((power) => power.isUnlocked === 2),
+    }))
+    .filter((group) => group.powers.length > 0);
+
+  const projectPowerGroups = projects
+    .map((project, index) => ({
+      id: project.id,
+      name: project.name,
+      color: project.icon,
+      powers: (projectPowerQueries[index]?.data ?? []).filter((power) => power.isUnlocked === 2),
+    }))
+    .filter((group) => group.powers.length > 0);
+
+  const POWER_ICON_PALETTE = [Target, Shield, Star, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor] as const;
+
+  const getPowerIcon = (id: string) => {
+    const hash = Array.from(id).reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    return POWER_ICON_PALETTE[hash % POWER_ICON_PALETTE.length];
+  };
+
+  const renderPowerState = (power: { isUnlocked: 0 | 1 | 2 }) => {
+    if (power.isUnlocked === 0) {
+      return {
+        cardClass: "border-white/7 text-[#5a5648]",
+        chipClass: "bg-white/[0.03] border-white/10",
+        iconColorClass: "text-[#5a5648]",
+        showLock: true,
+        showGlow: false,
+        backgroundClass: "bg-[#0f0b07]",
+      };
+    }
+
+    const active = power.isUnlocked === 2;
+
+    return {
+      cardClass: active ? "border-[#EF9F27] text-[#FAC775]" : "border-white/13 text-[#b0997a]",
+      chipClass: active ? "bg-gradient-to-b from-[#FAC775] to-[#EF9F27] border-transparent" : "bg-white/[0.05] border-white/15",
+      iconColorClass: active ? "text-[#1A1206]" : "text-[#c9a876]",
+      showLock: false,
+      showGlow: active,
+      backgroundClass: active ? "bg-[#2a1a00]" : "bg-[#221a10]",
+    };
+  };
 
   const createCharacter = useMutation({
     mutationFn: async (data: { name: string; action: string; description: string }) => {
@@ -7549,6 +7624,9 @@ function QuestDiary() {
               <TabsTrigger value="tools" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-tools" title="Tools">
                 <Wrench className="h-5 w-5" />
               </TabsTrigger>
+              <TabsTrigger value="powers" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-powers" title="Poderes">
+                <Swords className="h-5 w-5" />
+              </TabsTrigger>
               <TabsTrigger value="body" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-body" title="Fuerza">
                 <BicepsFlexed className="h-5 w-5" />
               </TabsTrigger>
@@ -7615,6 +7693,133 @@ function QuestDiary() {
                     queryClient.invalidateQueries({ queryKey: ["/api/journal/tools"] });
                   }}
                 />
+              </TabsContent>
+
+              <TabsContent value="powers" className="flex-1 min-h-0 min-w-0 mt-0">
+                <div className="flex h-full flex-col gap-4">
+                  <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
+                    <p className="text-sm text-muted-foreground">
+                      Aquí aparecen los poderes ya dominados en tus áreas y proyectos.
+                    </p>
+                  </div>
+
+                  {areaPowerGroups.length === 0 && projectPowerGroups.length === 0 ? (
+                    <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-border/70 bg-muted/10 p-6 text-center text-sm text-muted-foreground">
+                      Aún no tienes poderes dominados en áreas o proyectos.
+                    </div>
+                  ) : (
+                    <div className="flex-1 space-y-4 overflow-y-auto pr-1">
+                      {areaPowerGroups.length > 0 && (
+                        <section>
+                          <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Áreas</h3>
+                          <Accordion type="multiple" className="space-y-2">
+                            {areaPowerGroups.map((group) => (
+                              <AccordionItem key={group.id} value={`area-${group.id}`} className="rounded-lg border border-border/50 bg-background/70">
+                                <AccordionTrigger className="px-3 py-2 text-left hover:no-underline">
+                                  <div className="flex items-center gap-2">
+                                    <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: group.color }} />
+                                    <span className="font-medium">{group.name}</span>
+                                    <span className="text-xs text-muted-foreground">({group.powers.length})</span>
+                                  </div>
+                                </AccordionTrigger>
+                                <AccordionContent className="px-3 pb-3">
+                                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                    {group.powers.map((power) => {
+                                      const state = renderPowerState(power);
+                                      const PowerIcon = getPowerIcon(power.id);
+                                      const isSelected = selectedPowerId === power.id;
+
+                                      return (
+                                        <button
+                                          key={power.id}
+                                          type="button"
+                                          onClick={() => setSelectedPowerId((current) => current === power.id ? null : power.id)}
+                                          className={`relative flex min-h-[60px] w-full items-start gap-2 overflow-hidden rounded-lg border p-2 text-left text-xs font-medium transition-all ${state.cardClass} ${state.backgroundClass}`}
+                                        >
+                                          <span className={`relative flex h-8 w-8 flex-none items-center justify-center rounded-md border ${state.chipClass}`}>
+                                            <PowerIcon className={`h-4 w-4 ${state.iconColorClass}`} />
+                                            {state.showLock && (
+                                              <span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full border border-white/15 bg-[#1D1911]">
+                                                <Lock className="h-2 w-2 text-[#7A7161]" />
+                                              </span>
+                                            )}
+                                          </span>
+                                          <div className="min-w-0 flex-1">
+                                            <p className="truncate">{power.name}</p>
+                                            {isSelected && power.description ? (
+                                              <p className="mt-1 text-[11px] leading-snug text-muted-foreground break-words">{power.description}</p>
+                                            ) : null}
+                                          </div>
+                                          {state.showGlow && (
+                                            <div className="pointer-events-none absolute inset-0 rounded-lg bg-[linear-gradient(135deg,rgba(239,159,39,0.2)_0%,rgba(186,117,23,0.06)_100%)]" />
+                                          )}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </AccordionContent>
+                              </AccordionItem>
+                            ))}
+                          </Accordion>
+                        </section>
+                      )}
+
+                      {projectPowerGroups.length > 0 && (
+                        <section>
+                          <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Proyectos</h3>
+                          <Accordion type="multiple" className="space-y-2">
+                            {projectPowerGroups.map((group) => (
+                              <AccordionItem key={group.id} value={`project-${group.id}`} className="rounded-lg border border-border/50 bg-background/70">
+                                <AccordionTrigger className="px-3 py-2 text-left hover:no-underline">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm font-medium">{group.name}</span>
+                                    <span className="text-xs text-muted-foreground">({group.powers.length})</span>
+                                  </div>
+                                </AccordionTrigger>
+                                <AccordionContent className="px-3 pb-3">
+                                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                    {group.powers.map((power) => {
+                                      const state = renderPowerState(power);
+                                      const PowerIcon = getPowerIcon(power.id);
+                                      const isSelected = selectedPowerId === power.id;
+
+                                      return (
+                                        <button
+                                          key={power.id}
+                                          type="button"
+                                          onClick={() => setSelectedPowerId((current) => current === power.id ? null : power.id)}
+                                          className={`relative flex min-h-[60px] w-full items-start gap-2 overflow-hidden rounded-lg border p-2 text-left text-xs font-medium transition-all ${state.cardClass} ${state.backgroundClass}`}
+                                        >
+                                          <span className={`relative flex h-8 w-8 flex-none items-center justify-center rounded-md border ${state.chipClass}`}>
+                                            <PowerIcon className={`h-4 w-4 ${state.iconColorClass}`} />
+                                            {state.showLock && (
+                                              <span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full border border-white/15 bg-[#1D1911]">
+                                                <Lock className="h-2 w-2 text-[#7A7161]" />
+                                              </span>
+                                            )}
+                                          </span>
+                                          <div className="min-w-0 flex-1">
+                                            <p className="truncate">{power.name}</p>
+                                            {isSelected && power.description ? (
+                                              <p className="mt-1 text-[11px] leading-snug text-muted-foreground break-words">{power.description}</p>
+                                            ) : null}
+                                          </div>
+                                          {state.showGlow && (
+                                            <div className="pointer-events-none absolute inset-0 rounded-lg bg-[linear-gradient(135deg,rgba(239,159,39,0.2)_0%,rgba(186,117,23,0.06)_100%)]" />
+                                          )}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </AccordionContent>
+                              </AccordionItem>
+                            ))}
+                          </Accordion>
+                        </section>
+                      )}
+                    </div>
+                  )}
+                </div>
               </TabsContent>
               
               <TabsContent value="profile" className="flex-1 min-h-0 min-w-0 mt-0">
