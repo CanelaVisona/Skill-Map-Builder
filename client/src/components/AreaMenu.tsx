@@ -1510,8 +1510,16 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     return undefined;
   };
 
-  const flaggedExperiences = experiences.filter(isExperienceFlagged);
-  const regularExperiences = experiences.filter((entry) => !isExperienceFlagged(entry));
+  const sortedExperiences = [...experiences].sort((a, b) => {
+    const aPriority = Boolean((a as SourceExperienceEntry).isPriority);
+    const bPriority = Boolean((b as SourceExperienceEntry).isPriority);
+    if (aPriority !== bPriority) {
+      return aPriority ? -1 : 1;
+    }
+    return 0;
+  });
+  const flaggedExperiences = sortedExperiences.filter(isExperienceFlagged);
+  const regularExperiences = sortedExperiences.filter((entry) => !isExperienceFlagged(entry));
 
   const linkedGrowthsForExperience = viewingExperienceId
     ? growth.filter((g) => (g.experienceIds || []).includes(viewingExperienceId))
