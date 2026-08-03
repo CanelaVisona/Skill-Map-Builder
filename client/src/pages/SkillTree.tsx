@@ -29,6 +29,7 @@ import { AreaXpPopupProvider } from "@/lib/area-xp-popup-context";
 import { BodyProgressProvider, useBodyProgress } from "@/lib/body-progress-context";
 import { BodyGainPopupProvider, useBodyGainPopup } from "@/lib/body-gain-popup-context";
 import { LevelUpCelebrationProvider } from "@/lib/level-up-celebration-context";
+import { PowerCelebrationProvider } from "@/lib/power-celebration-context";
 import { TodayProgressPopupProvider } from "@/lib/today-progress-popup-context";
 import { BodyLinkPicker, type BodyLink } from "@/components/BodyLinkPicker";
 import { SkillLinkPicker } from "@/components/SkillLinkPicker";
@@ -8743,6 +8744,7 @@ export default function SkillTreePage() {
         <SkillTreeProvider>
           <TodayProgressPopupProvider>
           <LevelUpCelebrationProvider>
+          <PowerCelebrationProvider>
           <XpPopupProvider>
           <BodyProgressProvider>
           <BodyGainPopupProvider>
@@ -8767,6 +8769,7 @@ export default function SkillTreePage() {
           </BodyGainPopupProvider>
           </BodyProgressProvider>
           </XpPopupProvider>
+          </PowerCelebrationProvider>
           </LevelUpCelebrationProvider>
           </TodayProgressPopupProvider>
         </SkillTreeProvider>

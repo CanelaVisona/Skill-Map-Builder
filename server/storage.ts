@@ -1,7 +1,7 @@
 import { eq, and, asc, sql, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db, pool } from "./db";
-import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type JournalShadowPage, type InsertJournalShadowPage, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourceObjective, type InsertSourceObjective, type SourcePowers, type InsertSourcePowers, type SourceBug, type InsertSourceBug, type SourceBugRecord, type InsertSourceBugRecord, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, type BodyProgressRow, type InsertBodyProgress, type TodayTaskSlot, type InsertTodayTaskSlot, type ManualTodayTask, type InsertManualTodayTask, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, journalShadowPages, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourceObjectives, sourcePowers, sourceBugs, sourceBugRecords, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, rewiringTrackers, rewiringTrackerRecords, bodyProgress, todayTaskSlots, manualTodayTasks } from "@shared/schema";
+import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type JournalShadowPage, type InsertJournalShadowPage, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourceObjective, type InsertSourceObjective, type SourceBelief, type InsertSourceBelief, type SourceVision, type InsertSourceVision, type SourcePowers, type InsertSourcePowers, type SourceBug, type InsertSourceBug, type SourceBugRecord, type InsertSourceBugRecord, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, type BodyProgressRow, type InsertBodyProgress, type TodayTaskSlot, type InsertTodayTaskSlot, type ManualTodayTask, type InsertManualTodayTask, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, journalShadowPages, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourceObjectives, sourceBeliefs, sourceVision, sourcePowers, sourceBugs, sourceBugRecords, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, rewiringTrackers, rewiringTrackerRecords, bodyProgress, todayTaskSlots, manualTodayTasks } from "@shared/schema";
 
 const normalizeSourceBugStatus = (status: string): "identificado" | "debugueando" | "debugueado" => {
   if (status === "activo") return "identificado";
@@ -154,6 +154,14 @@ export interface IStorage {
   createSourceObjective(entry: InsertSourceObjective): Promise<SourceObjective>;
   updateSourceObjective(id: string, entry: Partial<InsertSourceObjective>): Promise<SourceObjective | undefined>;
   deleteSourceObjective(id: string): Promise<void>;
+  getSourceBeliefs(userId: string, type: "area" | "project", sourceId: string): Promise<SourceBelief[]>;
+  createSourceBelief(entry: InsertSourceBelief): Promise<SourceBelief>;
+  updateSourceBelief(id: string, entry: Partial<InsertSourceBelief>): Promise<SourceBelief | undefined>;
+  deleteSourceBelief(id: string): Promise<void>;
+  getSourceVision(userId: string, type: "area" | "project", sourceId: string): Promise<SourceVision[]>;
+  createSourceVision(entry: InsertSourceVision): Promise<SourceVision>;
+  updateSourceVision(id: string, entry: Partial<InsertSourceVision>): Promise<SourceVision | undefined>;
+  deleteSourceVision(id: string): Promise<void>;
 
   getSourcePowers(userId: string, type: "area" | "project", sourceId: string): Promise<SourcePowers[]>;
   createSourcePower(entry: InsertSourcePowers): Promise<SourcePowers>;
@@ -1505,6 +1513,62 @@ export class DbStorage implements IStorage {
 
   async deleteSourceObjective(id: string): Promise<void> {
     await db.delete(sourceObjectives).where(eq(sourceObjectives.id, id));
+  }
+
+  // Source Beliefs
+  async getSourceBeliefs(userId: string, type: "area" | "project", sourceId: string): Promise<SourceBelief[]> {
+    if (type === "area") {
+      return await db.select().from(sourceBeliefs).where(
+        and(eq(sourceBeliefs.userId, userId), eq(sourceBeliefs.areaId, sourceId))
+      );
+    } else {
+      return await db.select().from(sourceBeliefs).where(
+        and(eq(sourceBeliefs.userId, userId), eq(sourceBeliefs.projectId, sourceId))
+      );
+    }
+  }
+
+  async createSourceBelief(entry: InsertSourceBelief): Promise<SourceBelief> {
+    const id = randomUUID();
+    const result = await db.insert(sourceBeliefs).values({ id, ...entry }).returning();
+    return result[0];
+  }
+
+  async updateSourceBelief(id: string, entry: Partial<InsertSourceBelief>): Promise<SourceBelief | undefined> {
+    const result = await db.update(sourceBeliefs).set(entry).where(eq(sourceBeliefs.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteSourceBelief(id: string): Promise<void> {
+    await db.delete(sourceBeliefs).where(eq(sourceBeliefs.id, id));
+  }
+
+  // Source Vision
+  async getSourceVision(userId: string, type: "area" | "project", sourceId: string): Promise<SourceVision[]> {
+    if (type === "area") {
+      return await db.select().from(sourceVision).where(
+        and(eq(sourceVision.userId, userId), eq(sourceVision.areaId, sourceId))
+      );
+    } else {
+      return await db.select().from(sourceVision).where(
+        and(eq(sourceVision.userId, userId), eq(sourceVision.projectId, sourceId))
+      );
+    }
+  }
+
+  async createSourceVision(entry: InsertSourceVision): Promise<SourceVision> {
+    const id = randomUUID();
+    const result = await db.insert(sourceVision).values({ id, ...entry }).returning();
+    return result[0];
+  }
+
+  async updateSourceVision(id: string, entry: Partial<InsertSourceVision>): Promise<SourceVision | undefined> {
+    const result = await db.update(sourceVision).set(entry).where(eq(sourceVision.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteSourceVision(id: string): Promise<void> {
+    await db.delete(sourceVision).where(eq(sourceVision.id, id));
   }
 
   async getSourcePowers(userId: string, type: "area" | "project", sourceId: string): Promise<SourcePowers[]> {

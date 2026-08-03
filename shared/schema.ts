@@ -187,6 +187,24 @@ export const sourceObjectives = pgTable("source_objectives", {
   description: text("description").notNull().default(""),
 });
 
+export const sourceBeliefs = pgTable("source_beliefs", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  areaId: varchar("area_id"),
+  projectId: varchar("project_id"),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+});
+
+export const sourceVision = pgTable("source_vision", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  areaId: varchar("area_id"),
+  projectId: varchar("project_id"),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+});
+
 export const sourcePowers = pgTable("source_powers", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
@@ -497,6 +515,8 @@ export type ProfileContribution = typeof profileContributions.$inferSelect;
 export const insertSourceDescriptionSchema = createInsertSchema(sourceDescriptions).omit({ id: true });
 export const insertSourceGrowthSchema = createInsertSchema(sourceGrowth).omit({ id: true });
 export const insertSourceObjectiveSchema = createInsertSchema(sourceObjectives).omit({ id: true });
+export const insertSourceBeliefSchema = createInsertSchema(sourceBeliefs).omit({ id: true });
+export const insertSourceVisionSchema = createInsertSchema(sourceVision).omit({ id: true });
 export const insertSourcePowersSchema = createInsertSchema(sourcePowers).omit({ id: true });
 export const insertSourceBugSchema = createInsertSchema(sourceBugs)
   .omit({ id: true, createdAt: true, updatedAt: true })
@@ -515,6 +535,10 @@ export type InsertSourceGrowth = z.infer<typeof insertSourceGrowthSchema>;
 export type SourceGrowth = typeof sourceGrowth.$inferSelect;
 export type InsertSourceObjective = z.infer<typeof insertSourceObjectiveSchema>;
 export type SourceObjective = typeof sourceObjectives.$inferSelect;
+export type InsertSourceBelief = z.infer<typeof insertSourceBeliefSchema>;
+export type SourceBelief = typeof sourceBeliefs.$inferSelect;
+export type InsertSourceVision = z.infer<typeof insertSourceVisionSchema>;
+export type SourceVision = typeof sourceVision.$inferSelect;
 export type InsertSourcePowers = z.infer<typeof insertSourcePowersSchema>;
 export type SourcePowers = typeof sourcePowers.$inferSelect;
 export type InsertSourceBug = z.infer<typeof insertSourceBugSchema>;

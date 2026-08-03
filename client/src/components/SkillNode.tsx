@@ -11,6 +11,7 @@ import { useAreaXpPopup } from "@/lib/area-xp-popup-context";
 import { useBodyProgress, BODY_ZONES, BODY_ZONE_LABELS, type BodyZone, type BodyDimension } from "@/lib/body-progress-context";
 import { useBodyGainPopup } from "@/lib/body-gain-popup-context";
 import { useLevelUpCelebration } from "@/lib/level-up-celebration-context";
+import { usePowerCelebration } from "@/lib/power-celebration-context";
 import { AREA_PROGRESS_XP_INCREMENT, calculateAreaProgressPercentage, countMasteredSkills } from "@/lib/area-progress";
 import {
   Popover,
@@ -353,6 +354,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const { showXpPopup, hideXpPopup } = useXpPopup();
   const { showAreaXpPopup } = useAreaXpPopup();
   const { showLevelUpCelebration } = useLevelUpCelebration();
+  const { showPowerCelebration } = usePowerCelebration();
   const { addBodyBlock } = useBodyProgress();
   const { showBodyGainPopup, hideBodyGainPopup } = useBodyGainPopup();
   const [selectedBodyDimension, setSelectedBodyDimension] = useState<BodyDimension>("fuerza");
@@ -423,7 +425,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const sourceId = activeAreaId || activeProjectId;
 
   const { data: sourcePowers = [] } = useQuery<SkillNodeSourcePower[]>({
-    queryKey: ["/api/source-powers", sourceType, sourceId],
+    queryKey: [`/api/source-powers/${sourceType}/${sourceId}`],
     queryFn: async () => {
       if (!sourceType || !sourceId) return [];
       const res = await fetch(`/api/source-powers/${sourceType}/${sourceId}`);
@@ -462,7 +464,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       return res.json() as Promise<SkillNodeSourcePower>;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/source-powers", sourceType, sourceId] });
+      queryClient.invalidateQueries({ queryKey: [`/api/source-powers/${sourceType}/${sourceId}`] });
     },
     onError: (error) => {
       console.error("updateSourcePower error:", error);
@@ -476,6 +478,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
     try {
       await updateSourcePower.mutateAsync({ id: selectedPower.id, data: { isUnlocked: nextState } });
+      showPowerCelebration({ name: selectedPower.name, kind: nextState === 1 ? "unlocked" : "confirmed" });
     } catch {
       // Mutation error is already handled by the mutation's onError callback.
     }

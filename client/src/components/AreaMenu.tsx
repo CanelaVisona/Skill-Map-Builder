@@ -258,6 +258,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
   const [selectedExperienceIds, setSelectedExperienceIds] = useState<string[]>([]);
   const [selectedContributionIds, setSelectedContributionIds] = useState<string[]>([]);
   const [viewingExperienceId, setViewingExperienceId] = useState<string | null>(null);
+  const [failureRiskExperiencesExpanded, setFailureRiskExperiencesExpanded] = useState(false);
   const [viewingGrowthId, setViewingGrowthId] = useState<string | null>(null);
   const [viewingGrowthTabId, setViewingGrowthTabId] = useState<string | null>(null);
   const [powerContextMenuId, setPowerContextMenuId] = useState<string | null>(null);
@@ -389,6 +390,26 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     enabled: isOpen,
   });
 
+  // Fetch source beliefs
+  const { data: beliefs = [] } = useQuery<SourceEntry[]>({
+    queryKey: [`/api/source-beliefs/${sourceType}/${sourceId}`],
+    queryFn: async () => {
+      const res = await fetch(`/api/source-beliefs/${sourceType}/${sourceId}`);
+      return res.json();
+    },
+    enabled: isOpen,
+  });
+
+  // Fetch source vision
+  const { data: vision = [] } = useQuery<SourceEntry[]>({
+    queryKey: [`/api/source-vision/${sourceType}/${sourceId}`],
+    queryFn: async () => {
+      const res = await fetch(`/api/source-vision/${sourceType}/${sourceId}`);
+      return res.json();
+    },
+    enabled: isOpen,
+  });
+
   // Fetch source powers
   const { data: powers = [], isError: powersError } = useQuery<SourcePower[]>({
     queryKey: [`/api/source-powers/${sourceType}/${sourceId}`],
@@ -515,6 +536,98 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/source-objectives/${sourceType}/${sourceId}`] });
+    },
+  });
+
+  const createBelief = useMutation({
+    mutationFn: async (data: { name: string; description: string }) => {
+      const body = sourceType === "area"
+        ? { ...data, areaId: sourceId }
+        : { ...data, projectId: sourceId };
+      const res = await fetch("/api/source-beliefs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/source-beliefs/${sourceType}/${sourceId}`] });
+      setIsAdding(false);
+      setName("");
+      setDescription("");
+    },
+  });
+
+  const updateBelief = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { name: string; description: string } }) => {
+      const res = await fetch(`/api/source-beliefs/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/source-beliefs/${sourceType}/${sourceId}`] });
+      setEditingEntry(null);
+      setName("");
+      setDescription("");
+    },
+  });
+
+  const deleteBelief = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/source-beliefs/${id}`, { method: "DELETE" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/source-beliefs/${sourceType}/${sourceId}`] });
+    },
+  });
+
+  const createVision = useMutation({
+    mutationFn: async (data: { name: string; description: string }) => {
+      const body = sourceType === "area"
+        ? { ...data, areaId: sourceId }
+        : { ...data, projectId: sourceId };
+      const res = await fetch("/api/source-vision", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/source-vision/${sourceType}/${sourceId}`] });
+      setIsAdding(false);
+      setName("");
+      setDescription("");
+    },
+  });
+
+  const updateVision = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { name: string; description: string } }) => {
+      const res = await fetch(`/api/source-vision/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/source-vision/${sourceType}/${sourceId}`] });
+      setEditingEntry(null);
+      setName("");
+      setDescription("");
+    },
+  });
+
+  const deleteVision = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/source-vision/${id}`, { method: "DELETE" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/source-vision/${sourceType}/${sourceId}`] });
     },
   });
 
@@ -944,6 +1057,10 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       createDescription.mutate({ name: finalName, description: description.trim() });
     } else if (activeTab === "objectives") {
       createObjective.mutate({ name: finalName, description: description.trim() });
+    } else if (activeTab === "beliefs") {
+      createBelief.mutate({ name: finalName, description: description.trim() });
+    } else if (activeTab === "vision") {
+      createVision.mutate({ name: finalName, description: description.trim() });
     } else if (activeTab === "growth") {
       createGrowth.mutate({
         name: finalName,
@@ -985,6 +1102,10 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       updateDescription.mutate({ id: editingEntry.id, data: { name: finalName, description: description.trim() } });
     } else if (activeTab === "objectives") {
       updateObjective.mutate({ id: editingEntry.id, data: { name: finalName, description: description.trim() } });
+    } else if (activeTab === "beliefs") {
+      updateBelief.mutate({ id: editingEntry.id, data: { name: finalName, description: description.trim() } });
+    } else if (activeTab === "vision") {
+      updateVision.mutate({ id: editingEntry.id, data: { name: finalName, description: description.trim() } });
     } else if (activeTab === "growth") {
       updateGrowth.mutate({
         id: editingEntry.id,
@@ -1012,6 +1133,10 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       deleteDescription.mutate(editingEntry.id);
     } else if (activeTab === "objectives") {
       deleteObjective.mutate(editingEntry.id);
+    } else if (activeTab === "beliefs") {
+      deleteBelief.mutate(editingEntry.id);
+    } else if (activeTab === "vision") {
+      deleteVision.mutate(editingEntry.id);
     } else if (activeTab === "growth") {
       deleteGrowth.mutate(editingEntry.id);
       if (viewingGrowthTabId === editingEntry.id) {
@@ -1494,10 +1619,9 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     </div>
   );
 
-  const isExperienceFlagged = (entry: SourceEntry) => {
-    const experienceEntry = entry as SourceExperienceEntry;
-    return Boolean(experienceEntry.hasHighFailureRisk || experienceEntry.isPriority);
-  };
+  const isExperiencePriority = (entry: SourceEntry) => Boolean((entry as SourceExperienceEntry).isPriority);
+  const isExperienceHighFailureRisk = (entry: SourceEntry) =>
+    Boolean((entry as SourceExperienceEntry).hasHighFailureRisk) && !isExperiencePriority(entry);
 
   const getExperienceCardClassName = (entry: SourceEntry) => {
     const experienceEntry = entry as SourceExperienceEntry;
@@ -1518,8 +1642,11 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     }
     return 0;
   });
-  const flaggedExperiences = sortedExperiences.filter(isExperienceFlagged);
-  const regularExperiences = sortedExperiences.filter((entry) => !isExperienceFlagged(entry));
+  const flaggedExperiences = sortedExperiences.filter(isExperiencePriority);
+  const highFailureRiskExperiences = sortedExperiences.filter(isExperienceHighFailureRisk);
+  const regularExperiences = sortedExperiences.filter(
+    (entry) => !isExperiencePriority(entry) && !isExperienceHighFailureRisk(entry)
+  );
 
   const linkedGrowthsForExperience = viewingExperienceId
     ? growth.filter((g) => (g.experienceIds || []).includes(viewingExperienceId))
@@ -1566,7 +1693,9 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
         <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-2 flex min-h-0 flex-1 flex-col">
           <TabsList className="flex w-full flex-nowrap justify-start gap-1 overflow-x-auto overflow-y-hidden">
             <TabsTrigger value="description" className="shrink-0 text-xs">Background</TabsTrigger>
-            <TabsTrigger value="objectives" className="shrink-0 text-xs">Objetivos</TabsTrigger>
+            <TabsTrigger value="beliefs" className="shrink-0 text-xs">Creencias</TabsTrigger>
+            <TabsTrigger value="vision" className="shrink-0 text-xs">Visión</TabsTrigger>
+            <TabsTrigger value="objectives" className="shrink-0 text-xs">Propósitos</TabsTrigger>
             <TabsTrigger value="bugs" className="shrink-0 text-xs">Bugs</TabsTrigger>
             <TabsTrigger value="powers" className="shrink-0 text-xs">Poderes</TabsTrigger>
             <TabsTrigger value="experiences" className="shrink-0 text-xs">Experiencias</TabsTrigger>
@@ -1585,7 +1714,32 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
             </ScrollArea>
           </TabsContent>
 
+          <TabsContent value="beliefs" className="mt-4 min-h-0">
+            <p className="text-xs text-muted-foreground italic mb-2">¿Qué creo de esta área?</p>
+            <ScrollArea
+              className="h-[min(52dvh,320px)] pr-4"
+              onPointerDown={handleBackgroundPointerDown}
+              onPointerUp={handleBackgroundPointerUp}
+              onPointerCancel={handleBackgroundPointerUp}
+            >
+              {renderEntryList(beliefs, true, (id) => deleteBelief.mutate(id), handleStartEdit)}
+            </ScrollArea>
+          </TabsContent>
+
+          <TabsContent value="vision" className="mt-4 min-h-0">
+            <p className="text-xs text-muted-foreground italic mb-2">¿Cómo es mi situación ideal en esta área específica?</p>
+            <ScrollArea
+              className="h-[min(52dvh,320px)] pr-4"
+              onPointerDown={handleBackgroundPointerDown}
+              onPointerUp={handleBackgroundPointerUp}
+              onPointerCancel={handleBackgroundPointerUp}
+            >
+              {renderEntryList(vision, true, (id) => deleteVision.mutate(id), handleStartEdit)}
+            </ScrollArea>
+          </TabsContent>
+
           <TabsContent value="objectives" className="mt-4 min-h-0">
+            <p className="text-xs text-muted-foreground italic mb-2">¿Por qué es importante para mí esto?</p>
             <ScrollArea
               className="h-[min(52dvh,320px)] pr-4"
               onPointerDown={handleBackgroundPointerDown}
@@ -1610,6 +1764,29 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                       <p className="text-[11px] uppercase tracking-wide text-orange-400">Destacadas</p>
                       {renderEntryList(
                         flaggedExperiences,
+                        true,
+                        (id) => deleteExperience.mutate(id),
+                        handleStartEdit,
+                        handleSelectExperienceForView,
+                        viewingExperienceId,
+                        getExperienceCardClassName
+                      )}
+                    </div>
+                  )}
+
+                  {highFailureRiskExperiences.length > 0 && (
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => setFailureRiskExperiencesExpanded((prev) => !prev)}
+                        className="flex items-center gap-1 text-[11px] uppercase tracking-wide text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        {failureRiskExperiencesExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                        <span>50% probabilidad de fracaso</span>
+                        <span>({highFailureRiskExperiences.length})</span>
+                      </button>
+                      {failureRiskExperiencesExpanded && renderEntryList(
+                        highFailureRiskExperiences,
                         true,
                         (id) => deleteExperience.mutate(id),
                         handleStartEdit,

@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
-import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertJournalShadowPageSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertSourceObjectiveSchema, insertSourcePowersSchema, insertSourceBugSchema, insertSourceBugRecordSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema, insertSpaceRepetitionPracticeSchema, insertRewiringTrackerSchema, type InsertSpaceRepetitionPractice, type SpaceRepetitionPractice, type RewiringTracker, skills, areas, projects, spaceRepetitionPractices } from "@shared/schema";
+import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertJournalShadowPageSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertSourceObjectiveSchema, insertSourceBeliefSchema, insertSourceVisionSchema, insertSourcePowersSchema, insertSourceBugSchema, insertSourceBugRecordSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema, insertSpaceRepetitionPracticeSchema, insertRewiringTrackerSchema, type InsertSpaceRepetitionPractice, type SpaceRepetitionPractice, type RewiringTracker, skills, areas, projects, spaceRepetitionPractices } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import cookieParser from "cookie-parser";
 import crypto from "crypto";
@@ -3327,6 +3327,104 @@ export async function registerRoutes(
   app.delete("/api/source-objectives/:id", requireAuth, async (req, res) => {
     try {
       await storage.deleteSourceObjective(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Source Beliefs CRUD
+  app.get("/api/source-beliefs/:type/:sourceId", requireAuth, async (req, res) => {
+    try {
+      const { type, sourceId } = req.params;
+      if (type !== "area" && type !== "project") {
+        res.status(400).json({ message: "Invalid type. Must be 'area' or 'project'" });
+        return;
+      }
+      const beliefs = await storage.getSourceBeliefs(req.userId!, type, sourceId);
+      res.json(beliefs);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/source-beliefs", requireAuth, async (req, res) => {
+    try {
+      const data = { ...req.body, userId: req.userId };
+      const validated = insertSourceBeliefSchema.parse(data);
+      const belief = await storage.createSourceBelief(validated);
+      res.status(201).json(belief);
+    } catch (error: any) {
+      const validationError = fromError(error);
+      res.status(400).json({ message: validationError.toString() });
+    }
+  });
+
+  app.patch("/api/source-beliefs/:id", requireAuth, async (req, res) => {
+    try {
+      const updated = await storage.updateSourceBelief(req.params.id, req.body);
+      if (!updated) {
+        res.status(404).json({ message: "Source belief not found" });
+        return;
+      }
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/source-beliefs/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteSourceBelief(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Source Vision CRUD
+  app.get("/api/source-vision/:type/:sourceId", requireAuth, async (req, res) => {
+    try {
+      const { type, sourceId } = req.params;
+      if (type !== "area" && type !== "project") {
+        res.status(400).json({ message: "Invalid type. Must be 'area' or 'project'" });
+        return;
+      }
+      const vision = await storage.getSourceVision(req.userId!, type, sourceId);
+      res.json(vision);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/source-vision", requireAuth, async (req, res) => {
+    try {
+      const data = { ...req.body, userId: req.userId };
+      const validated = insertSourceVisionSchema.parse(data);
+      const vision = await storage.createSourceVision(validated);
+      res.status(201).json(vision);
+    } catch (error: any) {
+      const validationError = fromError(error);
+      res.status(400).json({ message: validationError.toString() });
+    }
+  });
+
+  app.patch("/api/source-vision/:id", requireAuth, async (req, res) => {
+    try {
+      const updated = await storage.updateSourceVision(req.params.id, req.body);
+      if (!updated) {
+        res.status(404).json({ message: "Source vision not found" });
+        return;
+      }
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/source-vision/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteSourceVision(req.params.id);
       res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ message: error.message });
