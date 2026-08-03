@@ -11,7 +11,6 @@ import { useAreaXpPopup } from "@/lib/area-xp-popup-context";
 import { useBodyProgress, BODY_ZONES, BODY_ZONE_LABELS, type BodyZone, type BodyDimension } from "@/lib/body-progress-context";
 import { useBodyGainPopup } from "@/lib/body-gain-popup-context";
 import { useLevelUpCelebration } from "@/lib/level-up-celebration-context";
-import { PowerCelebration, type PowerCelebrationState } from "@/components/PowerCelebration";
 import { AREA_PROGRESS_XP_INCREMENT, calculateAreaProgressPercentage, countMasteredSkills } from "@/lib/area-progress";
 import {
   Popover,
@@ -348,7 +347,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [learningTitle, setLearningTitle] = useState("");
   const [learningSentence, setLearningSentence] = useState("");
   const [selectedPowerId, setSelectedPowerId] = useState<string | null>(null);
-  const [powerCelebration, setPowerCelebration] = useState<PowerCelebrationState | null>(null);
   
   const [hasIncompleteSubtasks, setHasIncompleteSubtasks] = useState(false);
 
@@ -470,6 +468,18 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       console.error("updateSourcePower error:", error);
     },
   });
+
+  const handlePowerAction = async () => {
+    if (!selectedPower) return;
+
+    const nextState = selectedPower.isUnlocked === 0 ? 1 : 2;
+
+    try {
+      await updateSourcePower.mutateAsync({ id: selectedPower.id, data: { isUnlocked: nextState } });
+    } catch {
+      // Mutation error is already handled by the mutation's onError callback.
+    }
+  };
 
   // Experience tab state for editStep 2
   const [experienceSelectedSkill, setExperienceSelectedSkill] = useState<string | null>(null);
@@ -693,26 +703,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       queryClient.invalidateQueries({ queryKey: ["/api/journal/tools", skill.id] });
     },
   });
-
-  const handlePowerAction = async () => {
-    if (!selectedPower) return;
-
-    const nextState = selectedPower.isUnlocked === 0 ? 1 : 2;
-
-    try {
-      await updateSourcePower.mutateAsync({ id: selectedPower.id, data: { isUnlocked: nextState } });
-
-      if (nextState === 1) {
-        setPowerCelebration({ name: selectedPower.name, kind: "unlocked" });
-      } else {
-        setPowerCelebration({ name: selectedPower.name, kind: "confirmed" });
-      }
-
-      setTimeout(() => setPowerCelebration(null), 1800);
-    } catch {
-      // Mutation error is already handled by the mutation's onError callback.
-    }
-  };
 
   const handleAddThought = async () => {
     console.log("[handleAddThought] Called", {
@@ -2079,8 +2069,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                       <div className="space-y-2">
                         {sourcePowers.map((power) => {
                           const isSelected = selectedPowerId === power.id;
-                          const isUnlocked = power.isUnlocked >= 1;
-                          const isMastered = power.isUnlocked === 2;
                           return (
                             <button
                               key={power.id}
@@ -2098,12 +2086,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                                     <p className="mt-1 text-xs text-muted-foreground break-words">{power.description}</p>
                                   )}
                                 </div>
-                                <span className={cn(
-                                  "rounded-full px-2 py-1 text-[10px] font-medium uppercase tracking-wide",
-                                  isMastered ? "bg-amber-500/15 text-amber-600" : isUnlocked ? "bg-amber-500/15 text-amber-600" : "bg-muted text-muted-foreground"
-                                )}>
-                                  {isMastered ? "Dominado" : isUnlocked ? "Desbloqueado" : "Bloqueado"}
-                                </span>
                               </div>
                             </button>
                           );
@@ -2127,11 +2109,11 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                     variant="ghost"
                     size="sm"
                     onClick={handlePowerAction}
-                    disabled={!selectedPower}
+                    disabled={!selectedPower || selectedPower.isUnlocked === 2}
                     className="bg-muted/50 hover:bg-muted"
                     data-testid="button-power-action"
                   >
-                    {selectedPower?.isUnlocked === 0 ? "Desbloquear" : "Dominar"}
+                    {selectedPower?.isUnlocked === 0 ? "Desbloquear" : selectedPower?.isUnlocked === 1 ? "Dominar" : "Dominado"}
                   </Button>
                 </div>
               </TabsContent>
@@ -2795,7 +2777,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       </DialogContent>
     </Dialog>
 
-    <PowerCelebration celebration={powerCelebration} />
 
     {/* Floating XP Animation */}
     <AnimatePresence>

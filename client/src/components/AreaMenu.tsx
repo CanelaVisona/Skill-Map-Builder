@@ -6,7 +6,6 @@ import { useBodyProgress } from "@/lib/body-progress-context";
 import type { BodyLink } from "@/components/BodyLinkPicker";
 import { useToast } from "@/hooks/use-toast";
 import { ProgressBar } from "@/components/ProgressBar";
-import { PowerCelebration, type PowerCelebrationState } from "@/components/PowerCelebration";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut, Archive, ArchiveRestore, Pencil, Zap, ChevronDown, ChevronRight, Mountain, Compass, Scroll, Eye, Swords, Lock, Target, Shield, Star, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor } from "lucide-react";
@@ -107,6 +106,12 @@ interface SourceGrowthEntry extends SourceEntry {
 interface SourcePower extends SourceEntry {
   isUnlocked: 0 | 1 | 2;
 }
+
+type PowerMutationData = {
+  name: string;
+  description: string;
+  isUnlocked?: 0 | 1 | 2;
+};
 
 interface SourceBugRecord {
   id: string;
@@ -252,7 +257,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
   const powerLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const powerLongPressCompleted = useRef(false);
   const [activePowerId, setActivePowerId] = useState<string | null>(null);
-  const [powerCelebration, setPowerCelebration] = useState<PowerCelebrationState | null>(null);
+  const [powerStatus, setPowerStatus] = useState<0 | 1 | 2>(0);
   const backgroundLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [selectedBugId, setSelectedBugId] = useState<string | null>(null);
   const [bugMoreOpen, setBugMoreOpen] = useState(false);
@@ -657,7 +662,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
 
   // Source Powers mutations
   const createPower = useMutation({
-    mutationFn: async (data: { name: string; description: string }) => {
+    mutationFn: async (data: PowerMutationData) => {
       const body = sourceType === "area" 
         ? { ...data, areaId: sourceId } 
         : { ...data, projectId: sourceId };
@@ -952,7 +957,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       });
       await syncGrowthLinks(created.id, "contributionIds", selectedGrowthIds);
     } else if (activeTab === "powers") {
-      createPower.mutate({ name: finalName, description: description.trim() });
+      createPower.mutate({ name: finalName, description: description.trim(), isUnlocked: powerStatus });
     }
   };
 
@@ -984,7 +989,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       updateContribution.mutate({ id: editingEntry.id, data: { name: finalName, description: description.trim(), areaId: sourceType === "area" ? sourceId : null, projectId: sourceType === "project" ? sourceId : null } });
       await syncGrowthLinks(editingEntry.id, "contributionIds", selectedGrowthIds);
     } else if (activeTab === "powers") {
-      updatePower.mutate({ id: editingEntry.id, data: { name: finalName, description: description.trim() } });
+      updatePower.mutate({ id: editingEntry.id, data: { name: finalName, description: description.trim(), isUnlocked: powerStatus } });
     }
   };
 
@@ -1018,12 +1023,18 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     setName(entry.name);
     setDescription(entry.description);
     setIsAdding(false);
+    if (activeTab === "powers") {
+      setPowerStatus((entry as SourcePower).isUnlocked ?? 0);
+    } else {
+      setPowerStatus(0);
+    }
   };
 
   const handleCancelEdit = () => {
     setEditingEntry(null);
     setName("");
     setDescription("");
+    setPowerStatus(0);
   };
 
   // Inicializa las selecciones de vínculos (crecimiento/experiencia/contribución)
@@ -1039,11 +1050,16 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
         setSelectedGrowthIds(growth.filter((g) => (g.experienceIds || []).includes(editingEntry.id)).map((g) => g.id));
       } else if (activeTab === "contributions") {
         setSelectedGrowthIds(growth.filter((g) => (g.contributionIds || []).includes(editingEntry.id)).map((g) => g.id));
+      } else if (activeTab === "powers") {
+        setPowerStatus((editingEntry as SourcePower).isUnlocked ?? 0);
       }
     } else {
       setSelectedGrowthIds([]);
       setSelectedExperienceIds([]);
       setSelectedContributionIds([]);
+      if (activeTab === "powers") {
+        setPowerStatus(0);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdding, editingEntry, activeTab]);
@@ -1325,7 +1341,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       powerLongPressCompleted.current = false;
       return;
     }
-    setActivePowerId((current) => (current === power.id ? null : power.id));
+    setActivePowerId(power.id);
   };
 
   // keep touch handler as fallback but delegate to pointer
@@ -1654,15 +1670,6 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                                 return;
                               }
                               handlePowerClick(power);
-                              const next = ((power.isUnlocked + 1) % 3) as 0 | 1 | 2;
-                              updatePower.mutate({ id: power.id, data: { isUnlocked: next } });
-                              if (next === 1) {
-                                setPowerCelebration({ name: power.name, kind: "unlocked" });
-                                setTimeout(() => setPowerCelebration(null), 1800);
-                              } else if (next === 2) {
-                                setPowerCelebration({ name: power.name, kind: "confirmed" });
-                                setTimeout(() => setPowerCelebration(null), 1800);
-                              }
                               setTimeout(() => {
                                 powerLongPressCompleted.current = false;
                               }, 50);
@@ -2059,6 +2066,23 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
             {activeTab === "contributions" && (
               <LinkPickerDropdown label="Crecimientos vinculados" options={growth} selectedIds={selectedGrowthIds} setSelectedIds={setSelectedGrowthIds} />
             )}
+            {activeTab === "powers" && (
+              <div>
+                <Label htmlFor="power-status" className="text-sm font-medium mb-2 block">
+                  Estado
+                </Label>
+                <select
+                  id="power-status"
+                  value={powerStatus}
+                  onChange={(e) => setPowerStatus(Number(e.target.value) as 0 | 1 | 2)}
+                  className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value={0}>Bloqueado</option>
+                  <option value={1}>Desbloqueado</option>
+                  <option value={2}>Dominado</option>
+                </select>
+              </div>
+            )}
             <div className="flex gap-2 justify-end pt-2">
               {editingEntry && (
                 <Button
@@ -2264,7 +2288,6 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
         </DialogContent>
       </Dialog>
 
-      <PowerCelebration celebration={powerCelebration} />
     </Dialog>
   );
 }
