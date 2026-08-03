@@ -1691,7 +1691,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
           <DialogTitle>{sourceName}</DialogTitle>
         </DialogHeader>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-2 flex min-h-0 flex-1 flex-col">
-          <TabsList className="flex w-full flex-nowrap justify-start gap-1 overflow-x-auto overflow-y-hidden">
+          <TabsList className="flex w-full flex-nowrap justify-start gap-1 overflow-x-auto overflow-y-hidden scrollbar-hide">
             <TabsTrigger value="description" className="shrink-0 text-xs">Background</TabsTrigger>
             <TabsTrigger value="beliefs" className="shrink-0 text-xs">Creencias</TabsTrigger>
             <TabsTrigger value="vision" className="shrink-0 text-xs">Visión</TabsTrigger>
