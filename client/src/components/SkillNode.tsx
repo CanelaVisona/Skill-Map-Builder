@@ -2,7 +2,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { type Skill, type GlobalSkill, useSkillTree } from "@/lib/skill-context";
 import { type JournalThought, type JournalLearning, type JournalTool } from "@shared/schema";
 import { cn } from "@/lib/utils";
-import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus, Star, ChevronRight, ChevronLeft, Wrench, Lightbulb, BicepsFlexed } from "lucide-react";
+import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus, Star, ChevronRight, ChevronLeft, Wrench, Lightbulb, BicepsFlexed, Zap } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { type ExperienceGainSnapshot } from "./ExperienceGainPopup";
@@ -11,6 +11,7 @@ import { useAreaXpPopup } from "@/lib/area-xp-popup-context";
 import { useBodyProgress, BODY_ZONES, BODY_ZONE_LABELS, type BodyZone, type BodyDimension } from "@/lib/body-progress-context";
 import { useBodyGainPopup } from "@/lib/body-gain-popup-context";
 import { useLevelUpCelebration } from "@/lib/level-up-celebration-context";
+import { PowerCelebration, type PowerCelebrationState } from "@/components/PowerCelebration";
 import { AREA_PROGRESS_XP_INCREMENT, calculateAreaProgressPercentage, countMasteredSkills } from "@/lib/area-progress";
 import {
   Popover,
@@ -339,13 +340,15 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
   // Tools & Learnings form state
   const queryClient = useQueryClient();
-  const [feedbackActiveTab, setFeedbackActiveTab] = useState<"thoughts" | "tools" | "learnings" | "experience" | "body">("thoughts");
+  const [feedbackActiveTab, setFeedbackActiveTab] = useState<"thoughts" | "tools" | "learnings" | "experience" | "body" | "powers">("thoughts");
   const [thoughtTitle, setThoughtTitle] = useState("");
   const [thoughtSentence, setThoughtSentence] = useState("");
   const [toolTitle, setToolTitle] = useState("");
   const [toolSentence, setToolSentence] = useState("");
   const [learningTitle, setLearningTitle] = useState("");
   const [learningSentence, setLearningSentence] = useState("");
+  const [selectedPowerId, setSelectedPowerId] = useState<string | null>(null);
+  const [powerCelebration, setPowerCelebration] = useState<PowerCelebrationState | null>(null);
   
   const [hasIncompleteSubtasks, setHasIncompleteSubtasks] = useState(false);
 
@@ -408,6 +411,63 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     queryFn: async () => {
       const res = await fetch(`/api/journal/thoughts?skillId=${skill.id}`);
       return res.json();
+    },
+  });
+
+  interface SkillNodeSourcePower {
+    id: string;
+    name: string;
+    description: string;
+    isUnlocked: 0 | 1 | 2;
+  }
+
+  const sourceType = activeAreaId ? "area" : activeProjectId ? "project" : null;
+  const sourceId = activeAreaId || activeProjectId;
+
+  const { data: sourcePowers = [] } = useQuery<SkillNodeSourcePower[]>({
+    queryKey: ["/api/source-powers", sourceType, sourceId],
+    queryFn: async () => {
+      if (!sourceType || !sourceId) return [];
+      const res = await fetch(`/api/source-powers/${sourceType}/${sourceId}`);
+      if (!res.ok) {
+        throw new Error("Failed to fetch powers");
+      }
+      return res.json();
+    },
+    enabled: !!sourceType && !!sourceId,
+  });
+
+  useEffect(() => {
+    if (sourcePowers.length === 0) {
+      setSelectedPowerId(null);
+      return;
+    }
+
+    if (!selectedPowerId || !sourcePowers.some((power) => power.id === selectedPowerId)) {
+      setSelectedPowerId(sourcePowers[0].id);
+    }
+  }, [sourcePowers, selectedPowerId]);
+
+  const selectedPower = sourcePowers.find((power) => power.id === selectedPowerId) || null;
+
+  const updateSourcePower = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<SkillNodeSourcePower> }) => {
+      const res = await fetch(`/api/source-powers/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || "Failed to update power");
+      }
+      return res.json() as Promise<SkillNodeSourcePower>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/source-powers", sourceType, sourceId] });
+    },
+    onError: (error) => {
+      console.error("updateSourcePower error:", error);
     },
   });
 
@@ -633,6 +693,26 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       queryClient.invalidateQueries({ queryKey: ["/api/journal/tools", skill.id] });
     },
   });
+
+  const handlePowerAction = async () => {
+    if (!selectedPower) return;
+
+    const nextState = selectedPower.isUnlocked === 0 ? 1 : 2;
+
+    try {
+      await updateSourcePower.mutateAsync({ id: selectedPower.id, data: { isUnlocked: nextState } });
+
+      if (nextState === 1) {
+        setPowerCelebration({ name: selectedPower.name, kind: "unlocked" });
+      } else {
+        setPowerCelebration({ name: selectedPower.name, kind: "confirmed" });
+      }
+
+      setTimeout(() => setPowerCelebration(null), 1800);
+    } catch {
+      // Mutation error is already handled by the mutation's onError callback.
+    }
+  };
 
   const handleAddThought = async () => {
     console.log("[handleAddThought] Called", {
@@ -1700,8 +1780,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               <span className="text-xs font-medium text-muted-foreground">Journal</span>
             </div>
 
-            <Tabs value={feedbackActiveTab} onValueChange={(v) => setFeedbackActiveTab(v as "thoughts" | "tools" | "learnings" | "experience" | "body")} className="w-full flex flex-col flex-1">
-              <TabsList className="w-full grid grid-cols-5 bg-muted/50">
+            <Tabs value={feedbackActiveTab} onValueChange={(v) => setFeedbackActiveTab(v as "thoughts" | "tools" | "learnings" | "experience" | "body" | "powers")} className="w-full flex flex-col flex-1">
+              <TabsList className="w-full grid grid-cols-6 bg-muted/50">
                 <TabsTrigger value="thoughts" className="text-xs" data-testid="feedback-tab-thoughts">
                   <Pencil className="h-3 w-3 mr-1" />
                   Thoughts
@@ -1715,6 +1795,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 </TabsTrigger>
                 <TabsTrigger value="body" className="text-xs" data-testid="feedback-tab-body" title="Fuerza / Flexibilidad">
                   <BicepsFlexed className="h-3 w-3" />
+                </TabsTrigger>
+                <TabsTrigger value="powers" className="text-xs" data-testid="feedback-tab-powers">
+                  <Zap className="h-3 w-3 mr-1" />
+                  Poderes
                 </TabsTrigger>
                 <TabsTrigger value="tools" className="text-xs" data-testid="feedback-tab-tools">
                   <Wrench className="h-3 w-3 mr-1" />
@@ -1982,6 +2066,72 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                   >
                     <Plus className="h-3 w-3 mr-1" />
                     Agregar {selectedBodyDimension === "fuerza" ? "fuerza" : "flexibilidad"}
+                  </Button>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="powers" className="mt-4 space-y-3 flex flex-col flex-1">
+                <div className="flex-1 space-y-3">
+                  {sourcePowers.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No hay poderes disponibles para este contexto todavía.</p>
+                  ) : (
+                    <>
+                      <div className="space-y-2">
+                        {sourcePowers.map((power) => {
+                          const isSelected = selectedPowerId === power.id;
+                          const isUnlocked = power.isUnlocked >= 1;
+                          const isMastered = power.isUnlocked === 2;
+                          return (
+                            <button
+                              key={power.id}
+                              type="button"
+                              onClick={() => setSelectedPowerId(power.id)}
+                              className={cn(
+                                "w-full rounded-lg border p-3 text-left transition-colors",
+                                isSelected ? "border-primary/50 bg-primary/10" : "border-border/60 bg-muted/40 hover:bg-muted/60"
+                              )}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium">{power.name}</p>
+                                  {power.description && (
+                                    <p className="mt-1 text-xs text-muted-foreground break-words">{power.description}</p>
+                                  )}
+                                </div>
+                                <span className={cn(
+                                  "rounded-full px-2 py-1 text-[10px] font-medium uppercase tracking-wide",
+                                  isMastered ? "bg-amber-500/15 text-amber-600" : isUnlocked ? "bg-amber-500/15 text-amber-600" : "bg-muted text-muted-foreground"
+                                )}>
+                                  {isMastered ? "Dominado" : isUnlocked ? "Desbloqueado" : "Bloqueado"}
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {selectedPower && (
+                        <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Poder seleccionado</p>
+                          <p className="mt-1 text-sm font-medium">{selectedPower.name}</p>
+                          {selectedPower.description && (
+                            <p className="mt-1 text-sm text-muted-foreground">{selectedPower.description}</p>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+                <div className="flex justify-end items-center gap-2 pt-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handlePowerAction}
+                    disabled={!selectedPower}
+                    className="bg-muted/50 hover:bg-muted"
+                    data-testid="button-power-action"
+                  >
+                    {selectedPower?.isUnlocked === 0 ? "Desbloquear" : "Dominar"}
                   </Button>
                 </div>
               </TabsContent>
@@ -2644,6 +2794,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
         </Tabs>
       </DialogContent>
     </Dialog>
+
+    <PowerCelebration celebration={powerCelebration} />
 
     {/* Floating XP Animation */}
     <AnimatePresence>

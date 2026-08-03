@@ -251,6 +251,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
   const [powerContextMenuId, setPowerContextMenuId] = useState<string | null>(null);
   const powerLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const powerLongPressCompleted = useRef(false);
+  const [activePowerId, setActivePowerId] = useState<string | null>(null);
   const [powerCelebration, setPowerCelebration] = useState<PowerCelebrationState | null>(null);
   const backgroundLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [selectedBugId, setSelectedBugId] = useState<string | null>(null);
@@ -1299,6 +1300,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     e.stopPropagation();
     powerLongPressCompleted.current = false;
     setPowerContextMenuId(null);
+    setActivePowerId(powerId);
     powerLongPressTimer.current = setTimeout(() => {
       const power = powers.find((item) => item.id === powerId);
       if (power) {
@@ -1318,11 +1320,20 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     }
   };
 
+  const handlePowerClick = (power: SourcePower) => {
+    if (powerLongPressCompleted.current) {
+      powerLongPressCompleted.current = false;
+      return;
+    }
+    setActivePowerId((current) => (current === power.id ? null : power.id));
+  };
+
   // keep touch handler as fallback but delegate to pointer
   const handlePowerTouchStart = (e: TouchEvent, powerId: string) => {
     e.stopPropagation();
     powerLongPressCompleted.current = false;
     setPowerContextMenuId(null);
+    setActivePowerId(powerId);
     powerLongPressTimer.current = setTimeout(() => {
       const power = powers.find((item) => item.id === powerId);
       if (power) {
@@ -1638,22 +1649,24 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                         >
                           <button
                             onClick={() => {
-                              if (!powerLongPressCompleted.current) {
-                                const next = ((power.isUnlocked + 1) % 3) as 0 | 1 | 2;
-                                updatePower.mutate({ id: power.id, data: { isUnlocked: next } });
-                                if (next === 1) {
-                                  setPowerCelebration({ name: power.name, kind: "unlocked" });
-                                  setTimeout(() => setPowerCelebration(null), 1800);
-                                } else if (next === 2) {
-                                  setPowerCelebration({ name: power.name, kind: "confirmed" });
-                                  setTimeout(() => setPowerCelebration(null), 1800);
-                                }
+                              if (powerLongPressCompleted.current) {
+                                powerLongPressCompleted.current = false;
+                                return;
+                              }
+                              handlePowerClick(power);
+                              const next = ((power.isUnlocked + 1) % 3) as 0 | 1 | 2;
+                              updatePower.mutate({ id: power.id, data: { isUnlocked: next } });
+                              if (next === 1) {
+                                setPowerCelebration({ name: power.name, kind: "unlocked" });
+                                setTimeout(() => setPowerCelebration(null), 1800);
+                              } else if (next === 2) {
+                                setPowerCelebration({ name: power.name, kind: "confirmed" });
+                                setTimeout(() => setPowerCelebration(null), 1800);
                               }
                               setTimeout(() => {
                                 powerLongPressCompleted.current = false;
                               }, 50);
                             }}
-                            title={power.description || undefined}
                             className={`w-full min-h-[52px] p-2 rounded-lg text-xs font-medium transition-all text-left flex items-center gap-2 border relative overflow-hidden ${state.cardClass}`}
                             style={{
                               background: power.isUnlocked === 0 ? "#0f0b07" : power.isUnlocked === 1 ? "#221a10" : "#2a1a00",
@@ -1669,6 +1682,11 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                             </span>
                             <div className="flex-1 min-w-0">
                               <p className="truncate">{power.name}</p>
+                              {activePowerId === power.id && power.description && (
+                                <p className="mt-1 text-[11px] leading-snug text-muted-foreground break-words">
+                                  {power.description}
+                                </p>
+                              )}
                             </div>
                             {state.showGlow && (
                               <div
