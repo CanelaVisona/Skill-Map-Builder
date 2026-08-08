@@ -296,7 +296,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
             {/* Areas */}
             {areas.map((area) => {
               const maxLevel = Math.max(...area.skills.map((s) => s.level));
-              const levelsToShow = calculateDesignerLevelWindow(area.unlockedLevel, area.nextLevelToAssign, area.endOfAreaLevel);
+              const levelsToShow = calculateDesignerLevelWindow(area.unlockedLevel, area.nextLevelToAssign, area.endOfAreaLevel, maxLevel);
               const visibleInSkillTree = area.endOfAreaLevel ?? (area.nextLevelToAssign + 2);
               const nodesInLastLevel = 4; // Show only 4 editable nodes (positions 2-5, hiding visual node)
               
@@ -485,7 +485,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
               .filter((p) => !p.questType || p.questType === "main")
               .map((project) => {
                 const maxLevel = Math.max(...project.skills.map((s) => s.level));
-                const levelsToShow = calculateDesignerLevelWindow(project.unlockedLevel, project.nextLevelToAssign, project.endOfAreaLevel);
+                const levelsToShow = calculateDesignerLevelWindow(project.unlockedLevel, project.nextLevelToAssign, project.endOfAreaLevel, maxLevel);
                 const visibleInSkillTree = project.endOfAreaLevel ?? (project.nextLevelToAssign + 2);
                 const nodesInLastLevel = 4; // Show only 4 editable nodes (positions 2-5, hiding visual node)
                 
@@ -670,7 +670,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
               .filter((p) => p.questType === "side")
               .map((project) => {
                 const maxLevel = Math.max(...project.skills.map((s) => s.level));
-                const levelsToShow = calculateDesignerLevelWindow(project.unlockedLevel, project.nextLevelToAssign, project.endOfAreaLevel);
+                const levelsToShow = calculateDesignerLevelWindow(project.unlockedLevel, project.nextLevelToAssign, project.endOfAreaLevel, maxLevel);
                 const visibleInSkillTree = project.endOfAreaLevel ?? (project.nextLevelToAssign + 2);
                 const nodesInLastLevel = 4; // Show only 4 editable nodes (positions 2-5, hiding visual node)
                 
@@ -852,7 +852,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
               .filter((p) => p.questType === "emergent")
               .map((project) => {
                 const maxLevel = Math.max(...project.skills.map((s) => s.level));
-                const levelsToShow = calculateDesignerLevelWindow(project.unlockedLevel, project.nextLevelToAssign, project.endOfAreaLevel);
+                const levelsToShow = calculateDesignerLevelWindow(project.unlockedLevel, project.nextLevelToAssign, project.endOfAreaLevel, maxLevel);
                 const visibleInSkillTree = project.endOfAreaLevel ?? (project.nextLevelToAssign + 2);
                 const nodesInLastLevel = 4; // Show only 4 editable nodes (positions 2-5, hiding visual node)
                 

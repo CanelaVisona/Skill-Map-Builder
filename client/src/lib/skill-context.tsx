@@ -4834,16 +4834,22 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 export function calculateDesignerLevelWindow(
   unlockedLevel: number,
   nextLevelToAssign: number,
-  endOfAreaLevel?: number
+  endOfAreaLevel?: number,
+  maxLevel?: number
 ): number[] {
   // Determine the maximum level visible in Designer
   // Consistent with SkillDesigner visibility: endOfAreaLevel ?? (nextLevelToAssign + 2)
-  const maxLevelInDesigner = endOfAreaLevel ?? (nextLevelToAssign + 2);
-  
+  // maxLevel (the highest level that actually has generated skill data, e.g. after manually
+  // staging extra levels ahead via the Designer's "+" button) must never be hidden by a
+  // nextLevelToAssign value that undershoots it - otherwise that level's row (and its action
+  // icons, like the "add next level" button that only lives on the last generated level)
+  // silently stops rendering.
+  const maxLevelInDesigner = endOfAreaLevel ?? Math.max(nextLevelToAssign + 2, maxLevel ?? 0);
+
   // Calculate the ideal window: [unlockedLevel-1, unlockedLevel, unlockedLevel+1, unlockedLevel+2, unlockedLevel+3]
   let windowStart = Math.max(1, unlockedLevel - 1);
-  let windowEnd = unlockedLevel + 3;
-  
+  let windowEnd = Math.max(unlockedLevel + 3, maxLevel ?? 0);
+
   // If total available levels < 5, adjust to show last 5 or all available
   const totalAvailable = maxLevelInDesigner;
   if (totalAvailable < 5) {
@@ -4858,9 +4864,9 @@ export function calculateDesignerLevelWindow(
       windowStart = Math.max(1, windowEnd - 4);
     }
   }
-  
+
   console.log('[window] unlockedLevel:', unlockedLevel, 'nextLevelToAssign:', nextLevelToAssign, 'maxLevelInDesigner:', maxLevelInDesigner, 'windowStart:', windowStart, 'windowEnd:', windowEnd);
-  
+
   const levels: number[] = [];
   for (let i = windowStart; i <= windowEnd; i++) {
     levels.push(i);
