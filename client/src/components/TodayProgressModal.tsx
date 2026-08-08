@@ -382,12 +382,17 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     itemBuckets[isTimeSlot ? (slot as TaskSlotKey) : "more"].push(item);
   });
 
-  // Dentro de cada franja horaria, respeta el orden guardado (sortOrder) — el que se puede
-  // cambiar de a pares con "Mover arriba"/"Mover abajo", sin agregar ningún elemento visual.
+  // Las tareas ya hechas siempre van antes que las que faltan, en cualquier bucket. Dentro de
+  // cada franja horaria, entre tareas con el mismo estado de "hecha" se respeta el orden
+  // guardado (sortOrder) — el que se puede cambiar de a pares con "Mover arriba"/"Mover abajo".
   // Desempata por updatedAt para que las franjas asignadas antes de tener esta columna (todas
   // con sortOrder 0) tengan igual un orden estable en vez de depender del orden de la consulta.
+  const byDoneFirst = (a: TodayItem, b: TodayItem) => Number(b.done) - Number(a.done);
+  itemBuckets.unassigned.sort(byDoneFirst);
   TIME_SLOTS.forEach((s) => {
     itemBuckets[s.key].sort((a, b) => {
+      const doneDiff = byDoneFirst(a, b);
+      if (doneDiff !== 0) return doneDiff;
       const diff = (sortOrderByKey.get(a.key) ?? 0) - (sortOrderByKey.get(b.key) ?? 0);
       if (diff !== 0) return diff;
       return (slotUpdatedAtByKey.get(a.key) ?? 0) - (slotUpdatedAtByKey.get(b.key) ?? 0);
