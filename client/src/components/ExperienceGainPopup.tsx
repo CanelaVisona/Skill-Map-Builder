@@ -147,7 +147,7 @@ export function ExperienceGainPopup({ snapshot, onClose }: ExperienceGainPopupPr
         }, 30);
 
         cleanupTimers.push(secondTimer, thirdTimer);
-      }, 1200);
+      }, 600);
 
       cleanupTimers.push(firstTimer);
     });

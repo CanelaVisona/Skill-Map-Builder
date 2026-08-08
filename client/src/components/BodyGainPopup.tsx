@@ -89,7 +89,7 @@ export function BodyGainPopup({ snapshot, onClose }: BodyGainPopupProps) {
         }, 30);
 
         cleanupTimers.push(secondTimer, thirdTimer);
-      }, 1200);
+      }, 600);
 
       cleanupTimers.push(firstTimer);
     });

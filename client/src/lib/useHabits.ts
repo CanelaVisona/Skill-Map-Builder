@@ -32,6 +32,7 @@ export function useCreateHabit() {
       emoji: string;
       name: string;
       description: string;
+      defaultTimeSlot?: "morning" | "midday" | "afternoon" | "night" | null;
     }) => {
       const res = await fetch("/api/habits", {
         method: "POST",

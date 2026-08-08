@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Eye, ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import { useSkillTree, type Area, type Project, type Skill } from "@/lib/skill-context";
 import { useHabits } from "@/lib/useHabits";
-import { useTodayTaskSlots, useSetTodayTaskSlot, useClearTodayTaskSlot, useReorderTodayTaskSlot, getCurrentTimeSlotKey, type TaskSlotKey, type TaskType } from "@/lib/useTodayTaskSlots";
+import { useTodayTaskSlots, useSetTodayTaskSlot, useClearTodayTaskSlot, useReorderTodayTaskSlot, getCurrentTimeSlotKey, getTimeSlotKeyForDate, type TaskSlotKey, type TaskType } from "@/lib/useTodayTaskSlots";
 import { useManualTasks, useCreateManualTask, useUpdateManualTask, useDeleteManualTask } from "@/lib/useManualTasks";
 import { calculateStatus, calculateStatusL2, type SpaceRepetitionPractice } from "@/components/SpaceRepetitionModal";
 import type { Habit, HabitRecord } from "@shared/schema";
@@ -30,6 +30,9 @@ interface TodayItem {
   id: string;
   label: React.ReactNode;
   done: boolean;
+  // Franja horaria "de fábrica" para actividad extra sin franja asignada a mano: la
+  // correspondiente al momento en el que se confirmó (en vez de caer en "Más").
+  defaultSlot?: TaskSlotKey;
 }
 
 const MONTHS = [
@@ -57,6 +60,9 @@ interface PlannedNode {
   parentName: string;
   plannedDate: string;
   done: boolean;
+  // Solo presente en nodos "extra" (sin fecha planeada, detectados por su confirmación): el
+  // momento exacto de confirmación, para poder derivar su franja horaria por defecto.
+  completedAt?: string;
 }
 
 function getFirstDayOfMonth(date: Date) {
@@ -212,6 +218,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
               parentName: parent.name,
               plannedDate: completedDateStr,
               done: true,
+              completedAt: skill.completedAt,
             });
           }
         }
@@ -237,6 +244,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         </>
       ),
       done: true,
+      defaultSlot: n.completedAt ? getTimeSlotKeyForDate(new Date(n.completedAt)) : undefined,
     })),
   ];
 
@@ -338,13 +346,30 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     })),
   ];
 
-  // "more" agrupa la actividad extra (sección "Más") que todavía no tiene franja horaria
-  // asignada. En cuanto se le asigna una (con el reloj), pasa a vivir en el bucket de esa
-  // franja junto con las tareas configuradas, igual que cualquier otra tarea de hoy.
+  // Hábitos que tienen una franja del día linkeada de fábrica (configurada en el hábito, no
+  // día a día): caen ahí automáticamente si ese día no tienen una franja asignada a mano.
+  const habitDefaultSlotById = new Map<string, TaskSlotKey>();
+  (habitsData || []).forEach((h) => {
+    if (h.defaultTimeSlot && TIME_SLOTS.some((s) => s.key === h.defaultTimeSlot)) {
+      habitDefaultSlotById.set(h.id, h.defaultTimeSlot as TaskSlotKey);
+    }
+  });
+
+  // Franja efectiva de una tarea: la asignada a mano para este día tiene prioridad; si no hay
+  // ninguna, se usa la franja por defecto del ítem (p.ej. actividad extra confirmada en cierto
+  // momento) o, si es un hábito con franja por defecto, esa.
+  const resolveSlot = (item: TodayItem): TaskSlotKey | undefined =>
+    slotByKey.get(item.key) ?? item.defaultSlot ?? (item.type === "habit" ? habitDefaultSlotById.get(item.id) : undefined);
+
+  // "more" agrupa la actividad extra (sección "Más") que no tiene ninguna franja, ni manual
+  // ni por defecto — hoy en día eso es solo hábitos extra (no hay forma de saber a qué hora se
+  // confirmaron). Los nodos extra sí tienen franja por defecto (la hora en la que se
+  // confirmaron) y por eso caen directo en la franja del día que corresponda, no acá; desde
+  // ahí se pueden mover a otra franja igual que cualquier tarea de hoy.
   const itemBuckets: Record<string, TodayItem[]> = { unassigned: [], more: [] };
   TIME_SLOTS.forEach((s) => (itemBuckets[s.key] = []));
   todayItems.forEach((item) => {
-    const slot = slotByKey.get(item.key);
+    const slot = resolveSlot(item);
     // "hidden" no es una franja real: puede llegar acá si la tarea se ocultó y después se
     // confirmó (vuelve a aparecer, ya hecha), así que cae a "Sin asignar" igual que si nunca
     // hubiera tenido franja.
@@ -352,7 +377,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     itemBuckets[isTimeSlot ? (slot as TaskSlotKey) : "unassigned"].push(item);
   });
   extraItems.forEach((item) => {
-    const slot = slotByKey.get(item.key);
+    const slot = resolveSlot(item);
     const isTimeSlot = !!slot && TIME_SLOTS.some((s) => s.key === slot);
     itemBuckets[isTimeSlot ? (slot as TaskSlotKey) : "more"].push(item);
   });

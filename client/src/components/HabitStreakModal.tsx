@@ -35,6 +35,16 @@ const MONTHS = [
 const DAY_LBLS = ["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"];
 const COLORS = ["#534AB7", "#1D9E75", "#D85A30", "#185FA5"];
 
+type TimeSlot = "morning" | "midday" | "afternoon" | "night";
+// Mismas franjas que el modal de "Tareas de hoy" (TodayProgressModal), para que un hábito
+// linkeado a una franja aparezca agrupado ahí sin tener que asignarlo día a día.
+const TIME_SLOT_OPTIONS: { key: TimeSlot; label: string }[] = [
+  { key: "morning", label: "Mañana" },
+  { key: "midday", label: "Mediodía" },
+  { key: "afternoon", label: "Tarde" },
+  { key: "night", label: "Noche" },
+];
+
 type PanelType = "main" | "history" | "detail" | "add" | "edit" | "archived" | "archived-detail";
 
 // Helper function to get local date string in YYYY-MM-DD format (not UTC)
@@ -166,6 +176,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
   const [newHabitProjectId, setNewHabitProjectId] = useState<string | null>(null);
   const [newHabitScheduledDays, setNewHabitScheduledDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
   const [newHabitType, setNewHabitType] = useState<"mini" | "deep">("mini");
+  const [newHabitDefaultTimeSlot, setNewHabitDefaultTimeSlot] = useState<TimeSlot | null>(null);
   const [editHabitEmoji, setEditHabitEmoji] = useState("");
   const [editHabitName, setEditHabitName] = useState("");
   const [editHabitEndDate, setEditHabitEndDate] = useState("");
@@ -173,6 +184,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
   const [editHabitProjectId, setEditHabitProjectId] = useState<string | null>(null);
   const [editHabitScheduledDays, setEditHabitScheduledDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
   const [editHabitType, setEditHabitType] = useState<"mini" | "deep">("mini");
+  const [editHabitDefaultTimeSlot, setEditHabitDefaultTimeSlot] = useState<TimeSlot | null>(null);
   const [newHabitSkillIds, setNewHabitSkillIds] = useState<string[]>([]);
   const [editHabitSkillIds, setEditHabitSkillIds] = useState<string[]>([]);
   const [newHabitBodyLinks, setNewHabitBodyLinks] = useState<BodyLink[]>([]);
@@ -468,6 +480,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       bodyLinks?: BodyLink[];
       scheduledDays: number[];
       habitType: "mini" | "deep";
+      defaultTimeSlot?: TimeSlot | null;
     }) => {
       const res = await fetch("/api/habits", {
         method: "POST",
@@ -495,6 +508,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       bodyLinks?: BodyLink[];
       scheduledDays?: number[];
       habitType?: "mini" | "deep";
+      defaultTimeSlot?: TimeSlot | null;
     }) => {
       const res = await fetch(`/api/habits/${data.id}`, {
         method: "PATCH",
@@ -510,6 +524,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
           bodyLinks: data.bodyLinks,
           scheduledDays: data.scheduledDays,
           habitType: data.habitType,
+          defaultTimeSlot: data.defaultTimeSlot,
         }),
       });
       if (!res.ok) throw new Error("Failed to update habit");
@@ -647,6 +662,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       setEditHabitBodyLinks(habit.bodyLinks ?? []);
       setEditHabitScheduledDays(habit.scheduledDays || [0, 1, 2, 3, 4, 5, 6]);
       setEditHabitType(habit.habitType || "mini");
+      setEditHabitDefaultTimeSlot((habit.defaultTimeSlot as TimeSlot | null) ?? null);
       showPanel("edit");
     }
   };
@@ -660,6 +676,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
     setNewHabitBodyLinks([]);
     setNewHabitScheduledDays([0, 1, 2, 3, 4, 5, 6]);
     setNewHabitType("mini");
+    setNewHabitDefaultTimeSlot(null);
   };
   const resetEditForm = () => {
     setEditHabitEmoji("");
@@ -671,6 +688,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
     setEditHabitBodyLinks([]);
     setEditHabitScheduledDays([0, 1, 2, 3, 4, 5, 6]);
     setEditHabitType("mini");
+    setEditHabitDefaultTimeSlot(null);
     setSelectedHabitId(null);
   };
 
@@ -790,6 +808,8 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
               onScheduledDaysChange={setNewHabitScheduledDays}
               habitType={newHabitType}
               onHabitTypeChange={setNewHabitType}
+              defaultTimeSlot={newHabitDefaultTimeSlot}
+              onDefaultTimeSlotChange={setNewHabitDefaultTimeSlot}
               onEmojiChange={setNewHabitEmoji}
               onNameChange={setNewHabitName}
               onEndDateChange={setNewHabitEndDate}
@@ -815,6 +835,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                       bodyLinks: newHabitBodyLinks,
                       scheduledDays: newHabitScheduledDays,
                       habitType: newHabitType,
+                      defaultTimeSlot: newHabitDefaultTimeSlot,
                     });
                     resetForm();
                     showMain();
@@ -846,6 +867,8 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
               onScheduledDaysChange={setEditHabitScheduledDays}
               habitType={editHabitType}
               onHabitTypeChange={setEditHabitType}
+              defaultTimeSlot={editHabitDefaultTimeSlot}
+              onDefaultTimeSlotChange={setEditHabitDefaultTimeSlot}
               onEmojiChange={setEditHabitEmoji}
               onNameChange={setEditHabitName}
               onEndDateChange={setEditHabitEndDate}
@@ -872,6 +895,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                       bodyLinks: editHabitBodyLinks,
                       scheduledDays: editHabitScheduledDays,
                       habitType: editHabitType,
+                      defaultTimeSlot: editHabitDefaultTimeSlot,
                     });
                     resetEditForm();
                     showMain();
@@ -1808,6 +1832,8 @@ function AddPanel({
   onScheduledDaysChange,
   habitType,
   onHabitTypeChange,
+  defaultTimeSlot,
+  onDefaultTimeSlotChange,
   onBack,
   onSubmit,
   isLoading,
@@ -1833,6 +1859,8 @@ function AddPanel({
   onScheduledDaysChange: (days: number[]) => void;
   habitType: "mini" | "deep";
   onHabitTypeChange: (type: "mini" | "deep") => void;
+  defaultTimeSlot: TimeSlot | null;
+  onDefaultTimeSlotChange: (slot: TimeSlot | null) => void;
   onBack: () => void;
   onSubmit: () => void;
   isLoading: boolean;
@@ -1984,6 +2012,32 @@ function AddPanel({
           </p>
         </div>
 
+        {/* Default Time Slot Selector */}
+        <div>
+          <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
+            Franja del día
+          </label>
+          <div className="mt-2 grid grid-cols-4 gap-1.5">
+            {TIME_SLOT_OPTIONS.map((slot) => (
+              <button
+                key={slot.key}
+                onClick={() => onDefaultTimeSlotChange(defaultTimeSlot === slot.key ? null : slot.key)}
+                disabled={isLoading}
+                className={`py-2.5 sm:py-2 px-1 rounded-lg font-semibold text-xs transition-all active:scale-95 touch-manipulation ${
+                  defaultTimeSlot === slot.key
+                    ? "bg-purple-600 text-white border-2 border-purple-600"
+                    : "border-2 border-border/30 bg-background text-foreground hover:border-purple-400"
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                {slot.label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Opcional: si elegís una, el hábito va a aparecer agrupado ahí en "Tareas de hoy" sin tener que asignarlo cada día
+          </p>
+        </div>
+
         {/* Area Select */}
         <div>
           <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
@@ -2100,6 +2154,8 @@ function EditPanel({
   onScheduledDaysChange,
   habitType,
   onHabitTypeChange,
+  defaultTimeSlot,
+  onDefaultTimeSlotChange,
   onBack,
   onSubmit,
   onDelete,
@@ -2127,6 +2183,8 @@ function EditPanel({
   onScheduledDaysChange: (days: number[]) => void;
   habitType: "mini" | "deep";
   onHabitTypeChange: (type: "mini" | "deep") => void;
+  defaultTimeSlot: TimeSlot | null;
+  onDefaultTimeSlotChange: (slot: TimeSlot | null) => void;
   onBack: () => void;
   onSubmit: () => void;
   onDelete: () => void;
@@ -2273,6 +2331,32 @@ function EditPanel({
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
             Selecciona al menos un día para rastrear el hábito
+          </p>
+        </div>
+
+        {/* Default Time Slot Selector */}
+        <div>
+          <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
+            Franja del día
+          </label>
+          <div className="mt-2 grid grid-cols-4 gap-1.5">
+            {TIME_SLOT_OPTIONS.map((slot) => (
+              <button
+                key={slot.key}
+                onClick={() => onDefaultTimeSlotChange(defaultTimeSlot === slot.key ? null : slot.key)}
+                disabled={isLoading}
+                className={`py-2.5 sm:py-2 px-1 rounded-lg font-semibold text-xs transition-all active:scale-95 touch-manipulation ${
+                  defaultTimeSlot === slot.key
+                    ? "bg-purple-600 text-white border-2 border-purple-600"
+                    : "border-2 border-border/30 bg-background text-foreground hover:border-purple-400"
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                {slot.label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Opcional: si elegís una, el hábito va a aparecer agrupado ahí en "Tareas de hoy" sin tener que asignarlo cada día
           </p>
         </div>
 

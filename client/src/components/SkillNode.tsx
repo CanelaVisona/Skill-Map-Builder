@@ -2,7 +2,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { type Skill, type GlobalSkill, useSkillTree } from "@/lib/skill-context";
 import { type JournalThought, type JournalLearning, type JournalTool } from "@shared/schema";
 import { cn } from "@/lib/utils";
-import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus, Star, ChevronRight, ChevronLeft, Wrench, Lightbulb, BicepsFlexed, Zap } from "lucide-react";
+import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus, Star, ChevronRight, ChevronLeft, Wrench, Lightbulb, BicepsFlexed, Zap, Bug } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { type ExperienceGainSnapshot } from "./ExperienceGainPopup";
@@ -13,6 +13,7 @@ import { useBodyGainPopup } from "@/lib/body-gain-popup-context";
 import { useLevelUpCelebration } from "@/lib/level-up-celebration-context";
 import { usePowerCelebration } from "@/lib/power-celebration-context";
 import { AREA_PROGRESS_XP_INCREMENT, calculateAreaProgressPercentage, countMasteredSkills } from "@/lib/area-progress";
+import { getNodeTitleWordLimit, clampToWordLimit } from "@/lib/node-title-settings";
 import {
   Popover,
   PopoverContent,
@@ -185,12 +186,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   
   // Star is active only when endOfAreaLevel is set to this level
   // isFinalNode: 1 is just an identifier (always on Node 5), not the control
-  const isStarActive = isProject 
+  const isStarActive = isProject
     ? (activeProject?.endOfAreaLevel === skill.level)
     : (activeArea?.endOfAreaLevel === skill.level);
-  
-  console.log('[isStarActive] skill.level:', skill.level, 'activeArea?.endOfAreaLevel:', activeArea?.endOfAreaLevel, 'activeProject?.endOfAreaLevel:', activeProject?.endOfAreaLevel, 'isStarActive:', isStarActive);
-  
+
   // Calculate effective locked state: final nodes (by position) should appear locked
   // if not all other nodes in level are mastered (UNLESS star is active, then node itself blocks)
   const isFinalNodeByPosition = isLastNodeOfLevel;
@@ -340,7 +339,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
   // Tools & Learnings form state
   const queryClient = useQueryClient();
-  const [feedbackActiveTab, setFeedbackActiveTab] = useState<"thoughts" | "tools" | "learnings" | "experience" | "body" | "powers">("thoughts");
+  const [feedbackActiveTab, setFeedbackActiveTab] = useState<"thoughts" | "tools" | "learnings" | "experience" | "body" | "powers" | "bugs">("thoughts");
   const [thoughtTitle, setThoughtTitle] = useState("");
   const [thoughtSentence, setThoughtSentence] = useState("");
   const [toolTitle, setToolTitle] = useState("");
@@ -348,6 +347,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [learningTitle, setLearningTitle] = useState("");
   const [learningSentence, setLearningSentence] = useState("");
   const [selectedPowerId, setSelectedPowerId] = useState<string | null>(null);
+  const [selectedBugId, setSelectedBugId] = useState<string | null>(null);
   
   const [hasIncompleteSubtasks, setHasIncompleteSubtasks] = useState(false);
 
@@ -482,6 +482,54 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     } catch {
       // Mutation error is already handled by the mutation's onError callback.
     }
+  };
+
+  interface SkillNodeSourceBug {
+    id: string;
+    nombre: string;
+    status: "identificado" | "debugueando" | "debugueado";
+    victoryCount: number;
+    desc: string;
+  }
+
+  const { data: sourceBugs = [] } = useQuery<SkillNodeSourceBug[]>({
+    queryKey: [`/api/source-bugs/${sourceType}/${sourceId}`],
+    queryFn: async () => {
+      if (!sourceType || !sourceId) return [];
+      const res = await fetch(`/api/source-bugs/${sourceType}/${sourceId}`);
+      if (!res.ok) {
+        throw new Error("Failed to fetch bugs");
+      }
+      return res.json();
+    },
+    enabled: !!sourceType && !!sourceId,
+  });
+
+  useEffect(() => {
+    if (sourceBugs.length === 0) {
+      setSelectedBugId(null);
+      return;
+    }
+
+    if (!selectedBugId || !sourceBugs.some((bug) => bug.id === selectedBugId)) {
+      setSelectedBugId(sourceBugs[0].id);
+    }
+  }, [sourceBugs, selectedBugId]);
+
+  const selectedBug = sourceBugs.find((bug) => bug.id === selectedBugId) || null;
+  const bugProgressCount = selectedBug?.status === "debugueado" ? 5 : Math.min(selectedBug?.victoryCount || 0, 5);
+  const bugProgressPercent = (bugProgressCount / 5) * 100;
+
+  const bugStatusLabel: Record<SkillNodeSourceBug["status"], string> = {
+    identificado: "Identificado",
+    debugueando: "Debugueando",
+    debugueado: "Debugueado",
+  };
+
+  const bugStatusColor: Record<SkillNodeSourceBug["status"], string> = {
+    identificado: "bg-red-400",
+    debugueando: "bg-amber-400",
+    debugueado: "bg-emerald-400",
   };
 
   // Experience tab state for editStep 2
@@ -1442,9 +1490,13 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             )}
           </motion.div>
 
-          {/* Final Node Star Icon - only show when star is active AND final node is mastered */}
-          {isStarActive && skillsInLevel.find(s => s.levelPosition === Math.max(...skillsInLevel.map(s => s.levelPosition || 0)))?.status === "mastered" && (
-            <div className="absolute -top-1 -right-1 z-30" title="Nodo final del área">
+          {/* Final Node Star Icon - shows on the actual final-final node as soon as it's
+              marked active (isStarActive), so toggling it gives immediate visible feedback
+              instead of waiting for it to be mastered. Hidden once the area/project is
+              fully conquered (hasCompletionStar), since the permanent completion star below
+              takes over then -- otherwise both would show at once. */}
+          {isStarActive && isLastNodeOfLevel && skill.hasCompletionStar !== 1 && (
+            <div className="absolute -top-1 -right-1 z-30" title="Nodo final del área (activo)">
               <Star
                 size={14}
                 className="fill-amber-400 text-amber-400 drop-shadow-lg"
@@ -1773,8 +1825,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               <span className="text-xs font-medium text-muted-foreground">Journal</span>
             </div>
 
-            <Tabs value={feedbackActiveTab} onValueChange={(v) => setFeedbackActiveTab(v as "thoughts" | "tools" | "learnings" | "experience" | "body" | "powers")} className="w-full flex flex-col flex-1">
-              <TabsList className="w-full grid grid-cols-6 bg-muted/50">
+            <Tabs value={feedbackActiveTab} onValueChange={(v) => setFeedbackActiveTab(v as "thoughts" | "tools" | "learnings" | "experience" | "body" | "powers" | "bugs")} className="w-full flex flex-col flex-1">
+              <TabsList className="w-full grid grid-cols-7 bg-muted/50">
                 <TabsTrigger value="thoughts" className="text-xs" data-testid="feedback-tab-thoughts">
                   <Pencil className="h-3 w-3 mr-1" />
                   Thoughts
@@ -1792,6 +1844,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 <TabsTrigger value="powers" className="text-xs" data-testid="feedback-tab-powers">
                   <Zap className="h-3 w-3 mr-1" />
                   Poderes
+                </TabsTrigger>
+                <TabsTrigger value="bugs" className="text-xs" data-testid="feedback-tab-bugs">
+                  <Bug className="h-3 w-3 mr-1" />
+                  Bugs
                 </TabsTrigger>
                 <TabsTrigger value="tools" className="text-xs" data-testid="feedback-tab-tools">
                   <Wrench className="h-3 w-3 mr-1" />
@@ -2118,6 +2174,63 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                   >
                     {selectedPower?.isUnlocked === 0 ? "Desbloquear" : selectedPower?.isUnlocked === 1 ? "Dominar" : "Dominado"}
                   </Button>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="bugs" className="mt-4 space-y-3 flex flex-col flex-1">
+                <div className="flex-1 space-y-3">
+                  {sourceBugs.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No hay bugs registrados para este contexto todavía.</p>
+                  ) : (
+                    <>
+                      <div className="space-y-2">
+                        {sourceBugs.map((bug) => {
+                          const isSelected = selectedBugId === bug.id;
+                          return (
+                            <button
+                              key={bug.id}
+                              type="button"
+                              onClick={() => setSelectedBugId(bug.id)}
+                              className={cn(
+                                "w-full rounded-lg border p-3 text-left transition-colors",
+                                isSelected ? "border-primary/50 bg-primary/10" : "border-border/60 bg-muted/40 hover:bg-muted/60"
+                              )}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-sm font-medium truncate">{bug.nombre}</p>
+                                <span className={`h-2 w-2 shrink-0 rounded-full ${bugStatusColor[bug.status]}`} />
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {selectedBug && (
+                        <div className="rounded-lg border border-border/60 bg-muted/30 p-3 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-sm font-medium">{selectedBug.nombre}</p>
+                            <span className="text-[11px] px-2 py-0.5 rounded border uppercase tracking-wide text-muted-foreground">
+                              {bugStatusLabel[selectedBug.status]}
+                            </span>
+                          </div>
+                          {selectedBug.desc && (
+                            <p className="text-sm text-muted-foreground">{selectedBug.desc}</p>
+                          )}
+                          <div>
+                            <div className="flex items-center justify-end mb-1">
+                              <p className="text-[11px] text-muted-foreground">{bugProgressCount} / 5</p>
+                            </div>
+                            <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-blue-500 rounded-full transition-all duration-300"
+                                style={{ width: `${bugProgressPercent}%` }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               </TabsContent>
 
@@ -2565,13 +2678,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                   id="edit-title"
                   value={editTitle}
                   onChange={(e) => {
-                    const val = e.target.value;
-                    const words = val.split(/\s+/).filter(w => w.length > 0);
-                    if (words.length <= 8) {
-                      setEditTitle(val);
-                    } else {
-                      setEditTitle(words.slice(0, 8).join(" "));
-                    }
+                    setEditTitle(clampToWordLimit(e.target.value, getNodeTitleWordLimit()));
                   }}
                   placeholder="Name your move..."
                   className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted text-lg"

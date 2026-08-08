@@ -884,11 +884,15 @@ export class DbStorage implements IStorage {
     // Use a transaction to ensure atomicity
     await db.transaction(async (tx) => {
       // Update area's unlocked level first
+      // NOTE: currentXp is NOT incremented here. Node 1 of every level is an
+      // auto-mastered, non-clickable decoration node (see isFirstNode below) -
+      // it isn't something the user actually confirmed, so it must not count
+      // toward the progress bar. Only real confirmations (toggleSkillStatus)
+      // grant XP, so the first node the user confirms is the first bar tick.
       await tx.update(areas)
         .set({
           ...(shouldUnlock ? { unlockedLevel: level } : {}),
           nextLevelToAssign: level + 3,
-          currentXp: sql`${areas.currentXp} + 1`,
         })
         .where(eq(areas.id, areaId));
 
@@ -963,12 +967,16 @@ export class DbStorage implements IStorage {
     const [currentProject] = await db.select().from(projects).where(eq(projects.id, projectId));
     const shouldUnlock = currentProject != null && level <= currentProject.unlockedLevel + 1;
 
+    // NOTE: currentXp is NOT incremented here. Node 1 of every level is an
+    // auto-mastered, non-clickable decoration node (see isFirstNode below) -
+    // it isn't something the user actually confirmed, so it must not count
+    // toward the progress bar. Only real confirmations grant XP, so the
+    // first node the user confirms is the first bar tick.
     await db.transaction(async (tx) => {
       await tx.update(projects)
         .set({
           ...(shouldUnlock ? { unlockedLevel: level } : {}),
           nextLevelToAssign: level + 3,
-          currentXp: sql`${projects.currentXp} + 1`,
         })
         .where(eq(projects.id, projectId));
 

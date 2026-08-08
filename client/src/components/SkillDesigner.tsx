@@ -7,8 +7,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { ChevronUp, ChevronDown, Lock, Plus, Trash2, Star } from "lucide-react";
+import { ChevronUp, ChevronDown, ChevronsUp, ChevronsDown, Lock, Plus, Trash2, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getNodeTitleWordLimit, clampToWordLimit } from "@/lib/node-title-settings";
 
 interface SkillDesignerProps {
   open: boolean;
@@ -16,14 +17,35 @@ interface SkillDesignerProps {
 }
 
 export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
-  const { areas, projects, activeAreaId, activeProjectId, updateSkill, updateProjectSkill, updateLevelSubtitle, updateProjectLevelSubtitle, moveSkillToLevel, moveProjectSkillToLevel, reorderSkillWithinLevel, reorderProjectSkillWithinLevel, addSkillBelow, addProjectSkillBelow, deleteSkill, deleteProjectSkill, toggleFinalNode, toggleProjectFinalNode } = useSkillTree();
+  const { areas, projects, activeAreaId, activeProjectId, updateSkill, updateProjectSkill, updateLevelSubtitle, updateProjectLevelSubtitle, moveSkillToLevel, moveProjectSkillToLevel, reorderSkillWithinLevel, reorderProjectSkillWithinLevel, swapAreaLevels, swapProjectLevels, addExtraAreaLevel, addExtraProjectLevel, deleteAreaLevel, deleteProjectLevel, addSkillBelow, addProjectSkillBelow, deleteSkill, deleteProjectSkill, toggleFinalNode, toggleProjectFinalNode } = useSkillTree();
+  const [addingLevelId, setAddingLevelId] = useState<string | null>(null);
+
+  const handleAddExtraLevel = async (areaId: string | null, projectId: string | null) => {
+    const key = areaId ?? projectId;
+    if (!key || addingLevelId) return;
+    setAddingLevelId(key);
+    try {
+      if (areaId) {
+        await addExtraAreaLevel(areaId);
+      } else if (projectId) {
+        await addExtraProjectLevel(projectId);
+      }
+    } finally {
+      setAddingLevelId(null);
+    }
+  };
   const [editingSkillId, setEditingSkillId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
   const [editingAreaId, setEditingAreaId] = useState<string | null>(null);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [editingLevel, setEditingLevel] = useState<number | null>(null);
   const [isLockedNode, setIsLockedNode] = useState(false);
-  
+  const [editingDescription, setEditingDescription] = useState("");
+  const [editingPlannedDuration, setEditingPlannedDuration] = useState<number | null>(null);
+
+  // Global word limit applied to node titles (here and in the node's own edit dialog)
+  const wordLimit = getNodeTitleWordLimit();
+
   // Subtitle editing state
   const [editingLevelSubtitle, setEditingLevelSubtitle] = useState<string>("");
   const [editingLevelSubtitleDescription, setEditingLevelSubtitleDescription] = useState<string>("");
@@ -35,13 +57,17 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
 
   // Delete confirmation state
   const [skillPendingDelete, setSkillPendingDelete] = useState<{ skillId: string; areaId: string | null; projectId: string | null; title: string } | null>(null);
-  
+  const [levelPendingDelete, setLevelPendingDelete] = useState<{ areaId: string | null; projectId: string | null; level: number } | null>(null);
+  const [isDeletingLevel, setIsDeletingLevel] = useState(false);
+
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleNodeLongPressStart = (skillId: string, currentName: string, areaId: string | null, projectId: string | null, level?: number, isLocked: boolean = false) => {
     longPressTimer.current = setTimeout(() => {
       setEditingSkillId(skillId);
       setEditingName(currentName);
+      setEditingDescription("");
+      setEditingPlannedDuration(null);
       setEditingAreaId(areaId);
       setEditingProjectId(projectId);
       if (level) setEditingLevel(level);
@@ -58,14 +84,21 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
   const handleSaveName = async () => {
     if (editingSkillId && editingName.trim()) {
       // Update existing skill
+      const updates = {
+        title: editingName,
+        description: editingDescription,
+        plannedDuration: editingPlannedDuration,
+      };
       if (editingAreaId) {
-        updateSkill(editingAreaId, editingSkillId, { title: editingName });
+        updateSkill(editingAreaId, editingSkillId, updates);
       } else if (editingProjectId) {
-        updateProjectSkill(editingProjectId, editingSkillId, { title: editingName });
+        updateProjectSkill(editingProjectId, editingSkillId, updates);
       }
     }
     setEditingSkillId(null);
     setEditingName("");
+    setEditingDescription("");
+    setEditingPlannedDuration(null);
     setEditingLevel(null);
     setIsLockedNode(false);
   };
@@ -125,6 +158,21 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
       await deleteProjectSkill(skillPendingDelete.projectId, skillPendingDelete.skillId);
     }
     setSkillPendingDelete(null);
+  };
+
+  const handleConfirmDeleteLevel = async () => {
+    if (!levelPendingDelete || isDeletingLevel) return;
+    setIsDeletingLevel(true);
+    try {
+      if (levelPendingDelete.areaId) {
+        await deleteAreaLevel(levelPendingDelete.areaId, levelPendingDelete.level);
+      } else if (levelPendingDelete.projectId) {
+        await deleteProjectLevel(levelPendingDelete.projectId, levelPendingDelete.level);
+      }
+    } finally {
+      setIsDeletingLevel(false);
+      setLevelPendingDelete(null);
+    }
   };
 
   const getAvailableLevelsForMove = (currentLevel: number, maxLevel: number): number[] => {
@@ -207,10 +255,36 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
     return skill.levelPosition === maxLevelPosition;
   };
 
+  // Levels can be reordered (their whole contents swapped with the adjacent level) only
+  // when both sides are still ahead of the currently unlocked level - swapping never
+  // touches live progression - and the adjacent level already has real skill data to
+  // swap with (not just an empty "locked" placeholder in the Designer's look-ahead window).
+  const canSwapLevel = (level: number, direction: "up" | "down", unlockedLevel: number, maxLevel: number): boolean => {
+    const otherLevel = direction === "up" ? level - 1 : level + 1;
+    if (level <= unlockedLevel || otherLevel <= unlockedLevel) return false;
+    if (otherLevel > maxLevel) return false;
+    return true;
+  };
+
+  const handleSwapLevel = async (direction: "up" | "down", level: number, areaId: string | null, projectId: string | null) => {
+    const otherLevel = direction === "up" ? level - 1 : level + 1;
+    if (areaId) {
+      await swapAreaLevels(areaId, level, otherLevel);
+    } else if (projectId) {
+      await swapProjectLevels(projectId, level, otherLevel);
+    }
+  };
+
+  // A level can only be deleted whole when it's still ahead of the currently unlocked
+  // level (never touches live progression) and it actually has generated skill data.
+  const canDeleteLevel = (level: number, unlockedLevel: number, maxLevel: number): boolean => {
+    return level > unlockedLevel && level <= maxLevel;
+  };
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>Skill Designer</DialogTitle>
             <DialogDescription className="sr-only">
@@ -240,23 +314,47 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                         const isBlocked = level > area.unlockedLevel;
                         const isNotYetVisibleInSkillTree = level > visibleInSkillTree;
                         
+                        const canSwapUp = canSwapLevel(level, "up", area.unlockedLevel, maxLevel);
+                        const canSwapDown = canSwapLevel(level, "down", area.unlockedLevel, maxLevel);
+                        const canDelete = canDeleteLevel(level, area.unlockedLevel, maxLevel);
+                        const isLastGeneratedLevel = level === maxLevel;
                         return (
                         <AccordionItem key={`${area.id}-level-${level}`} value={`${area.id}-level-${level}`} className={cn(isBlocked && "grayscale")}>
-                          <AccordionTrigger className="hover:no-underline">
-                            <span 
-                              className={cn(isBlocked && "text-muted-foreground/50 cursor-pointer hover:text-foreground", isNotYetVisibleInSkillTree && "text-amber-600 dark:text-amber-500")}
-                              onClick={(e) => {
-                                if (isBlocked) {
-                                  e.stopPropagation();
-                                  handleEditLevelSubtitle(level, subtitle, subtitleDescription, area.id, null);
-                                }
-                              }}
-                            >
-                              Nivel {level}{subtitle && `: ${subtitle}`}
-                              {isBlocked && " (Bloqueado)"}
-                              {isNotYetVisibleInSkillTree && !isBlocked && <Lock className="inline-block ml-1.5 w-3.5 h-3.5" />}
-                            </span>
-                          </AccordionTrigger>
+                          <div className="group flex items-center gap-3">
+                            <div className="flex-1 min-w-0">
+                              <AccordionTrigger className="hover:no-underline justify-start gap-2">
+                                <span
+                                  className={cn(isBlocked && "text-muted-foreground/50 cursor-pointer hover:text-foreground", isNotYetVisibleInSkillTree && "text-amber-600 dark:text-amber-500")}
+                                  onClick={(e) => {
+                                    if (isBlocked) {
+                                      e.stopPropagation();
+                                      handleEditLevelSubtitle(level, subtitle, subtitleDescription, area.id, null);
+                                    }
+                                  }}
+                                >
+                                  Nivel {level}{subtitle && `: ${subtitle}`}
+                                  {isBlocked && " (Bloqueado)"}
+                                  {isNotYetVisibleInSkillTree && !isBlocked && <Lock className="inline-block ml-1.5 w-3.5 h-3.5" />}
+                                </span>
+                              </AccordionTrigger>
+                            </div>
+                            <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Button size="sm" variant="ghost" className="h-7 w-7" disabled={!canSwapUp} onClick={() => handleSwapLevel("up", level, area.id, null)} title="Subir nivel">
+                                <ChevronsUp className="w-4 h-4 text-muted-foreground" />
+                              </Button>
+                              <Button size="sm" variant="ghost" className="h-7 w-7" disabled={!canSwapDown} onClick={() => handleSwapLevel("down", level, area.id, null)} title="Bajar nivel">
+                                <ChevronsDown className="w-4 h-4 text-muted-foreground" />
+                              </Button>
+                              <Button size="sm" variant="ghost" className="h-7 w-7" disabled={!canDelete} onClick={() => setLevelPendingDelete({ areaId: area.id, projectId: null, level })} title="Eliminar nivel completo">
+                                <Trash2 className="w-4 h-4 text-destructive" />
+                              </Button>
+                              {isLastGeneratedLevel && (
+                                <Button size="sm" variant="ghost" className="h-7 w-7" disabled={addingLevelId === area.id} onClick={() => handleAddExtraLevel(area.id, null)} title="Agregar un nivel bloqueado nuevo">
+                                  <Plus className="w-4 h-4 text-muted-foreground" />
+                                </Button>
+                              )}
+                            </div>
+                          </div>
                           <AccordionContent>
                             <div className="space-y-2 pl-4">
                               {level <= maxLevel ? (
@@ -281,11 +379,13 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                         onContextMenu={(e) => handleContextMenu(e, skill.id, area.id, null, level)}
                                       >
                                         <div className="flex items-center gap-2 justify-between">
-                                          <div 
+                                          <div
                                             className="flex items-center gap-2 flex-1 cursor-pointer"
                                             onClick={() => {
                                               setEditingSkillId(skill.id);
                                               setEditingName(skill.title || "");
+                                              setEditingDescription(skill.description || "");
+                                              setEditingPlannedDuration(skill.plannedDuration ?? null);
                                               setEditingAreaId(area.id);
                                               setEditingProjectId(null);
                                               setEditingLevel(level);
@@ -401,23 +501,47 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                           const subtitleDescription = project.levelSubtitleDescriptions?.[level] || "";
                           const isBlocked = level > project.unlockedLevel;
                           const isNotYetVisibleInSkillTree = level > visibleInSkillTree;
+                          const canSwapUp = canSwapLevel(level, "up", project.unlockedLevel, maxLevel);
+                          const canSwapDown = canSwapLevel(level, "down", project.unlockedLevel, maxLevel);
+                          const canDelete = canDeleteLevel(level, project.unlockedLevel, maxLevel);
+                          const isLastGeneratedLevel = level === maxLevel;
                           return (
                           <AccordionItem key={`${project.id}-level-${level}`} value={`${project.id}-level-${level}`} className={cn(isBlocked && "grayscale")}>
-                            <AccordionTrigger className="hover:no-underline">
-                              <span 
-                                  className={cn(isBlocked && "text-muted-foreground/50 cursor-pointer hover:text-foreground", isNotYetVisibleInSkillTree && "text-amber-600 dark:text-amber-500")}
-                                  onClick={(e) => {
-                                    if (isBlocked) {
-                                      e.stopPropagation();
-                                      handleEditLevelSubtitle(level, subtitle, subtitleDescription, null, project.id);
-                                    }
-                                  }}
-                                >
-                                  Nivel {level}{subtitle && `: ${subtitle}`}
-                                  {isBlocked && " (Bloqueado)"}
-                                  {isNotYetVisibleInSkillTree && !isBlocked && <Lock className="inline-block ml-1.5 w-3.5 h-3.5" />}
-                              </span>
-                            </AccordionTrigger>
+                            <div className="group flex items-center gap-3">
+                              <div className="flex-1 min-w-0">
+                                <AccordionTrigger className="hover:no-underline justify-start gap-2">
+                                  <span
+                                      className={cn(isBlocked && "text-muted-foreground/50 cursor-pointer hover:text-foreground", isNotYetVisibleInSkillTree && "text-amber-600 dark:text-amber-500")}
+                                      onClick={(e) => {
+                                        if (isBlocked) {
+                                          e.stopPropagation();
+                                          handleEditLevelSubtitle(level, subtitle, subtitleDescription, null, project.id);
+                                        }
+                                      }}
+                                    >
+                                      Nivel {level}{subtitle && `: ${subtitle}`}
+                                      {isBlocked && " (Bloqueado)"}
+                                      {isNotYetVisibleInSkillTree && !isBlocked && <Lock className="inline-block ml-1.5 w-3.5 h-3.5" />}
+                                  </span>
+                                </AccordionTrigger>
+                              </div>
+                              <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <Button size="sm" variant="ghost" className="h-7 w-7" disabled={!canSwapUp} onClick={() => handleSwapLevel("up", level, null, project.id)} title="Subir nivel">
+                                  <ChevronsUp className="w-4 h-4 text-muted-foreground" />
+                                </Button>
+                                <Button size="sm" variant="ghost" className="h-7 w-7" disabled={!canSwapDown} onClick={() => handleSwapLevel("down", level, null, project.id)} title="Bajar nivel">
+                                  <ChevronsDown className="w-4 h-4 text-muted-foreground" />
+                                </Button>
+                                <Button size="sm" variant="ghost" className="h-7 w-7" disabled={!canDelete} onClick={() => setLevelPendingDelete({ areaId: null, projectId: project.id, level })} title="Eliminar nivel completo">
+                                  <Trash2 className="w-4 h-4 text-destructive" />
+                                </Button>
+                                {isLastGeneratedLevel && (
+                                  <Button size="sm" variant="ghost" className="h-7 w-7" disabled={addingLevelId === project.id} onClick={() => handleAddExtraLevel(null, project.id)} title="Agregar un nivel bloqueado nuevo">
+                                    <Plus className="w-4 h-4 text-muted-foreground" />
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
                             <AccordionContent>
                               <div className="space-y-2 pl-4">
                                 {level <= maxLevel ? (
@@ -442,11 +566,13 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                           onContextMenu={(e) => handleContextMenu(e, skill.id, null, project.id, level)}
                                         >
                                           <div className="flex items-center gap-2 justify-between">
-                                            <div 
+                                            <div
                                               className="flex items-center gap-2 flex-1 cursor-pointer"
                                               onClick={() => {
                                                 setEditingSkillId(skill.id);
                                                 setEditingName(skill.title || "");
+                                                setEditingDescription(skill.description || "");
+                                                setEditingPlannedDuration(skill.plannedDuration ?? null);
                                                 setEditingAreaId(null);
                                                 setEditingProjectId(project.id);
                                                 setEditingLevel(level);
@@ -560,23 +686,47 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                           const subtitleDescription = project.levelSubtitleDescriptions?.[level] || "";
                           const isBlocked = level > project.unlockedLevel;
                           const isNotYetVisibleInSkillTree = level > visibleInSkillTree;
+                          const canSwapUp = canSwapLevel(level, "up", project.unlockedLevel, maxLevel);
+                          const canSwapDown = canSwapLevel(level, "down", project.unlockedLevel, maxLevel);
+                          const canDelete = canDeleteLevel(level, project.unlockedLevel, maxLevel);
+                          const isLastGeneratedLevel = level === maxLevel;
                           return (
                           <AccordionItem key={`${project.id}-level-${level}`} value={`${project.id}-level-${level}`} className={cn(isBlocked && "grayscale")}>
-                            <AccordionTrigger className="hover:no-underline">
-                              <span 
-                                className={cn(isBlocked && "text-muted-foreground/50 cursor-pointer hover:text-foreground", isNotYetVisibleInSkillTree && "text-amber-600 dark:text-amber-500")}
-                                onClick={(e) => {
-                                  if (isBlocked) {
-                                    e.stopPropagation();
-                                    handleEditLevelSubtitle(level, subtitle, subtitleDescription, null, project.id);
-                                  }
-                                }}
-                              >
-                                Nivel {level}{subtitle && `: ${subtitle}`}
-                                {isBlocked && " (Bloqueado)"}
-                                {isNotYetVisibleInSkillTree && !isBlocked && <Lock className="inline-block ml-1.5 w-3.5 h-3.5" />}
-                              </span>
-                            </AccordionTrigger>
+                            <div className="group flex items-center gap-3">
+                              <div className="flex-1 min-w-0">
+                                <AccordionTrigger className="hover:no-underline justify-start gap-2">
+                                  <span
+                                    className={cn(isBlocked && "text-muted-foreground/50 cursor-pointer hover:text-foreground", isNotYetVisibleInSkillTree && "text-amber-600 dark:text-amber-500")}
+                                    onClick={(e) => {
+                                      if (isBlocked) {
+                                        e.stopPropagation();
+                                        handleEditLevelSubtitle(level, subtitle, subtitleDescription, null, project.id);
+                                      }
+                                    }}
+                                  >
+                                    Nivel {level}{subtitle && `: ${subtitle}`}
+                                    {isBlocked && " (Bloqueado)"}
+                                    {isNotYetVisibleInSkillTree && !isBlocked && <Lock className="inline-block ml-1.5 w-3.5 h-3.5" />}
+                                  </span>
+                                </AccordionTrigger>
+                              </div>
+                              <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <Button size="sm" variant="ghost" className="h-7 w-7" disabled={!canSwapUp} onClick={() => handleSwapLevel("up", level, null, project.id)} title="Subir nivel">
+                                  <ChevronsUp className="w-4 h-4 text-muted-foreground" />
+                                </Button>
+                                <Button size="sm" variant="ghost" className="h-7 w-7" disabled={!canSwapDown} onClick={() => handleSwapLevel("down", level, null, project.id)} title="Bajar nivel">
+                                  <ChevronsDown className="w-4 h-4 text-muted-foreground" />
+                                </Button>
+                                <Button size="sm" variant="ghost" className="h-7 w-7" disabled={!canDelete} onClick={() => setLevelPendingDelete({ areaId: null, projectId: project.id, level })} title="Eliminar nivel completo">
+                                  <Trash2 className="w-4 h-4 text-destructive" />
+                                </Button>
+                                {isLastGeneratedLevel && (
+                                  <Button size="sm" variant="ghost" className="h-7 w-7" disabled={addingLevelId === project.id} onClick={() => handleAddExtraLevel(null, project.id)} title="Agregar un nivel bloqueado nuevo">
+                                    <Plus className="w-4 h-4 text-muted-foreground" />
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
                             <AccordionContent>
                               <div className="space-y-2 pl-4">
                                 {level <= maxLevel ? (
@@ -598,11 +748,13 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                           onContextMenu={(e) => handleContextMenu(e, skill.id, null, project.id, level)}
                                         >
                                           <div className="flex items-center gap-2 justify-between">
-                                            <div 
+                                            <div
                                               className="flex items-center gap-2 flex-1 cursor-pointer"
                                               onClick={() => {
                                                 setEditingSkillId(skill.id);
                                                 setEditingName(skill.title || "");
+                                                setEditingDescription(skill.description || "");
+                                                setEditingPlannedDuration(skill.plannedDuration ?? null);
                                                 setEditingAreaId(null);
                                                 setEditingProjectId(project.id);
                                                 setEditingLevel(level);
@@ -716,23 +868,47 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                           const subtitleDescription = project.levelSubtitleDescriptions?.[level] || "";
                           const isBlocked = level > project.unlockedLevel;
                           const isNotYetVisibleInSkillTree = level > visibleInSkillTree;
+                          const canSwapUp = canSwapLevel(level, "up", project.unlockedLevel, maxLevel);
+                          const canSwapDown = canSwapLevel(level, "down", project.unlockedLevel, maxLevel);
+                          const canDelete = canDeleteLevel(level, project.unlockedLevel, maxLevel);
+                          const isLastGeneratedLevel = level === maxLevel;
                           return (
                           <AccordionItem key={`${project.id}-level-${level}`} value={`${project.id}-level-${level}`} className={cn(isBlocked && "grayscale")}>
-                            <AccordionTrigger className="hover:no-underline">
-                              <span 
-                                className={cn(isBlocked && "text-muted-foreground/50 cursor-pointer hover:text-foreground", isNotYetVisibleInSkillTree && "text-amber-600 dark:text-amber-500")}
-                                onClick={(e) => {
-                                  if (isBlocked) {
-                                    e.stopPropagation();
-                                    handleEditLevelSubtitle(level, subtitle, subtitleDescription, null, project.id);
-                                  }
-                                }}
-                              >
-                                Nivel {level}{subtitle && `: ${subtitle}`}
-                                {isBlocked && " (Bloqueado)"}
-                                {isNotYetVisibleInSkillTree && !isBlocked && <Lock className="inline-block ml-1.5 w-3.5 h-3.5" />}
-                              </span>
-                            </AccordionTrigger>
+                            <div className="group flex items-center gap-3">
+                              <div className="flex-1 min-w-0">
+                                <AccordionTrigger className="hover:no-underline justify-start gap-2">
+                                  <span
+                                    className={cn(isBlocked && "text-muted-foreground/50 cursor-pointer hover:text-foreground", isNotYetVisibleInSkillTree && "text-amber-600 dark:text-amber-500")}
+                                    onClick={(e) => {
+                                      if (isBlocked) {
+                                        e.stopPropagation();
+                                        handleEditLevelSubtitle(level, subtitle, subtitleDescription, null, project.id);
+                                      }
+                                    }}
+                                  >
+                                    Nivel {level}{subtitle && `: ${subtitle}`}
+                                    {isBlocked && " (Bloqueado)"}
+                                    {isNotYetVisibleInSkillTree && !isBlocked && <Lock className="inline-block ml-1.5 w-3.5 h-3.5" />}
+                                  </span>
+                                </AccordionTrigger>
+                              </div>
+                              <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <Button size="sm" variant="ghost" className="h-7 w-7" disabled={!canSwapUp} onClick={() => handleSwapLevel("up", level, null, project.id)} title="Subir nivel">
+                                  <ChevronsUp className="w-4 h-4 text-muted-foreground" />
+                                </Button>
+                                <Button size="sm" variant="ghost" className="h-7 w-7" disabled={!canSwapDown} onClick={() => handleSwapLevel("down", level, null, project.id)} title="Bajar nivel">
+                                  <ChevronsDown className="w-4 h-4 text-muted-foreground" />
+                                </Button>
+                                <Button size="sm" variant="ghost" className="h-7 w-7" disabled={!canDelete} onClick={() => setLevelPendingDelete({ areaId: null, projectId: project.id, level })} title="Eliminar nivel completo">
+                                  <Trash2 className="w-4 h-4 text-destructive" />
+                                </Button>
+                                {isLastGeneratedLevel && (
+                                  <Button size="sm" variant="ghost" className="h-7 w-7" disabled={addingLevelId === project.id} onClick={() => handleAddExtraLevel(null, project.id)} title="Agregar un nivel bloqueado nuevo">
+                                    <Plus className="w-4 h-4 text-muted-foreground" />
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
                             <AccordionContent>
                               <div className="space-y-2 pl-4">
                                 {level <= maxLevel ? (
@@ -749,11 +925,13 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                         onContextMenu={(e) => handleContextMenu(e, skill.id, null, project.id, level)}
                                       >
                                         <div className="flex items-center gap-2 justify-between">
-                                          <div 
+                                          <div
                                             className="flex items-center gap-2 flex-1 cursor-pointer"
                                             onClick={() => {
                                               setEditingSkillId(skill.id);
                                               setEditingName(skill.title || "");
+                                              setEditingDescription(skill.description || "");
+                                              setEditingPlannedDuration(skill.plannedDuration ?? null);
                                               setEditingAreaId(null);
                                               setEditingProjectId(project.id);
                                               setEditingLevel(level);
@@ -856,20 +1034,51 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
       <Dialog open={editingSkillId !== null} onOpenChange={(isOpen) => !isOpen && setEditingSkillId(null)}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>Editar nombre del nodo</DialogTitle>
+            <DialogTitle>Editar nodo</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            <Input
-              placeholder="Nombre del nodo"
-              value={editingName}
-              onChange={(e) => setEditingName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  handleSaveName();
-                }
-              }}
-              autoFocus
-            />
+            <div className="grid gap-2">
+              <label className="text-xs text-muted-foreground uppercase tracking-wide">Nombre (máx. {wordLimit} palabras)</label>
+              <Input
+                placeholder="Nombre del nodo"
+                value={editingName}
+                onChange={(e) => setEditingName(clampToWordLimit(e.target.value, wordLimit))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handleSaveName();
+                  }
+                }}
+                autoFocus
+              />
+            </div>
+            {!isLockedNode && (
+              <>
+                <div className="grid gap-2">
+                  <label className="text-xs text-muted-foreground uppercase tracking-wide">Background</label>
+                  <Textarea
+                    placeholder="Describe la acción del nodo..."
+                    value={editingDescription}
+                    onChange={(e) => setEditingDescription(e.target.value)}
+                    rows={3}
+                    className="resize-none"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <label className="text-xs text-muted-foreground uppercase tracking-wide">Tiempo (minutos)</label>
+                  <Input
+                    type="number"
+                    min={0}
+                    placeholder="Sin definir"
+                    value={editingPlannedDuration ?? ""}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setEditingPlannedDuration(val === "" ? null : parseInt(val, 10));
+                    }}
+                    className="w-32"
+                  />
+                </div>
+              </>
+            )}
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setEditingSkillId(null)}>
@@ -926,6 +1135,28 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleConfirmDeleteSkill}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Level Confirmation */}
+      <AlertDialog open={levelPendingDelete !== null} onOpenChange={(isOpen) => !isOpen && !isDeletingLevel && setLevelPendingDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar el Nivel {levelPendingDelete?.level} completo?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción no se puede deshacer. Se eliminarán todos los nodos de ese nivel y los niveles siguientes se correrán un lugar para no dejar un hueco en la numeración.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingLevel}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDeleteLevel}
+              disabled={isDeletingLevel}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Eliminar

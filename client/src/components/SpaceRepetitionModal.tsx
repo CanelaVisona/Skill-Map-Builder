@@ -894,7 +894,7 @@ export function SpaceRepetitionModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md p-0 border-0 bg-background">
+      <DialogContent className="max-w-md p-0 border-0 bg-background max-h-[85vh] overflow-y-auto minimal-scrollbar">
         <VisuallyHidden>
           <DialogTitle>Repetición Espaciada</DialogTitle>
           <DialogDescription>Gestiona tus prácticas con repetición espaciada</DialogDescription>

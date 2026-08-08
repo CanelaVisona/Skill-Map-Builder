@@ -119,12 +119,18 @@ interface SkillTreeContextType {
   moveSkill: (areaId: string, skillId: string, direction: "up" | "down") => void;
   moveSkillToLevel: (areaId: string, skillId: string, targetLevel: number) => Promise<void>;
   reorderSkillWithinLevel: (areaId: string, skillId: string, direction: "up" | "down") => Promise<void>;
+  swapAreaLevels: (areaId: string, levelA: number, levelB: number) => Promise<void>;
+  addExtraAreaLevel: (areaId: string) => Promise<void>;
+  deleteAreaLevel: (areaId: string, level: number) => Promise<void>;
   updateProjectSkill: (projectId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null }) => void;
   deleteProjectSkill: (projectId: string, skillId: string) => void;
   toggleProjectLock: (projectId: string, skillId: string) => void;
   moveProjectSkill: (projectId: string, skillId: string, direction: "up" | "down") => void;
   moveProjectSkillToLevel: (projectId: string, skillId: string, targetLevel: number) => Promise<void>;
   reorderProjectSkillWithinLevel: (projectId: string, skillId: string, direction: "up" | "down") => Promise<void>;
+  swapProjectLevels: (projectId: string, levelA: number, levelB: number) => Promise<void>;
+  addExtraProjectLevel: (projectId: string) => Promise<void>;
+  deleteProjectLevel: (projectId: string, level: number) => Promise<void>;
   createArea: (name: string, description: string, icon: string) => Promise<void>;
   deleteArea: (areaId: string) => Promise<void>;
   archiveArea: (areaId: string) => Promise<void>;
@@ -4020,6 +4026,148 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
+  // Swap the entire contents (all nodes + subtitle/description) of two levels in an area.
+  // Used by the Skill Designer to reorder future/blocked levels — both levels must already
+  // be unlocked-adjacent look-ahead levels with real skill data (never the currently
+  // unlocked level itself, to avoid disturbing live progression).
+  const swapAreaLevels = async (areaId: string, levelA: number, levelB: number) => {
+    if (levelA === levelB) return;
+    const area = areas.find(a => a.id === areaId);
+    if (!area) return;
+
+    const skillsA = area.skills.filter(s => s.level === levelA);
+    const skillsB = area.skills.filter(s => s.level === levelB);
+    if (skillsA.length === 0 || skillsB.length === 0) return;
+
+    try {
+      await Promise.all([
+        ...skillsA.map(s => fetch(`/api/skills/${s.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ level: levelB }),
+          credentials: "include",
+        })),
+        ...skillsB.map(s => fetch(`/api/skills/${s.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ level: levelA }),
+          credentials: "include",
+        })),
+      ]);
+
+      const updatedSubtitles = { ...area.levelSubtitles };
+      const updatedDescriptions = { ...area.levelSubtitleDescriptions };
+      const [subA, subB] = [updatedSubtitles[levelA] ?? "", updatedSubtitles[levelB] ?? ""];
+      const [descA, descB] = [updatedDescriptions[levelA] ?? "", updatedDescriptions[levelB] ?? ""];
+      updatedSubtitles[levelA] = subB;
+      updatedSubtitles[levelB] = subA;
+      updatedDescriptions[levelA] = descB;
+      updatedDescriptions[levelB] = descA;
+
+      await fetch(`/api/areas/${areaId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ levelSubtitles: updatedSubtitles, levelSubtitleDescriptions: updatedDescriptions }),
+        credentials: "include",
+      });
+
+      await refreshAllAreas();
+    } catch (error) {
+      console.error("Error swapping area levels:", error);
+    }
+  };
+
+  // Manually stage one more blocked level ahead of whatever is already generated, for when
+  // the Skill Designer needs more than the usual 3-levels-ahead look-ahead window. Reuses
+  // the same /generate-level endpoint the normal level-up flow uses, so nextLevelToAssign
+  // stays consistent and the level-up auto-generation later correctly skips levels that
+  // already exist (see isOpeningNewLevel handling in toggleSkillStatus).
+  const addExtraAreaLevel = async (areaId: string) => {
+    const area = areas.find(a => a.id === areaId);
+    if (!area) return;
+
+    const maxLevel = area.skills.length > 0 ? Math.max(...area.skills.map(s => s.level)) : area.unlockedLevel;
+    const newLevel = maxLevel + 1;
+
+    try {
+      const response = await fetch(`/api/areas/${areaId}/generate-level`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ level: newLevel }),
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        console.error("Error adding extra area level:", error);
+        return;
+      }
+
+      await refreshAllAreas();
+    } catch (error) {
+      console.error("Error adding extra area level:", error);
+    }
+  };
+
+  // Delete an entire blocked/future level (all its nodes) from the Skill Designer, closing
+  // the numbering gap by shifting every later level down by one - same "reajustar los
+  // siguientes" convention used when a single node is deleted. Restricted to levels still
+  // ahead of the currently unlocked level, so live progression is never touched.
+  const deleteAreaLevel = async (areaId: string, level: number) => {
+    const area = areas.find(a => a.id === areaId);
+    if (!area) return;
+    if (level <= area.unlockedLevel) return;
+
+    const skillsToDelete = area.skills.filter(s => s.level === level);
+    if (skillsToDelete.length === 0) return;
+    const skillsToShift = area.skills.filter(s => s.level > level);
+
+    try {
+      await Promise.all([
+        ...skillsToDelete.map(s => fetch(`/api/skills/${s.id}`, { method: "DELETE", credentials: "include" })),
+        ...skillsToShift.map(s => fetch(`/api/skills/${s.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ level: s.level - 1 }),
+          credentials: "include",
+        })),
+      ]);
+
+      // Rebuild subtitles/descriptions, dropping the deleted level and shifting later ones down
+      const maxLevelBefore = Math.max(...area.skills.map(s => s.level));
+      const newSubtitles: Record<string, string> = {};
+      const newDescriptions: Record<string, string> = {};
+      for (let l = 1; l <= maxLevelBefore; l++) {
+        if (l === level) continue;
+        const newKey = l > level ? l - 1 : l;
+        const oldSub = area.levelSubtitles?.[l];
+        const oldDesc = area.levelSubtitleDescriptions?.[l];
+        if (oldSub) newSubtitles[newKey] = oldSub;
+        if (oldDesc) newDescriptions[newKey] = oldDesc;
+      }
+
+      const patchBody: Record<string, unknown> = {
+        levelSubtitles: newSubtitles,
+        levelSubtitleDescriptions: newDescriptions,
+        nextLevelToAssign: Math.max(area.unlockedLevel + 1, area.nextLevelToAssign - 1),
+      };
+      if (area.endOfAreaLevel && area.endOfAreaLevel > level) {
+        patchBody.endOfAreaLevel = area.endOfAreaLevel - 1;
+      }
+
+      await fetch(`/api/areas/${areaId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patchBody),
+        credentials: "include",
+      });
+
+      await refreshAllAreas();
+    } catch (error) {
+      console.error("Error deleting area level:", error);
+    }
+  };
+
   // Reorder skill within the same level (swap with adjacent)
   const reorderSkillWithinLevel = async (areaId: string, skillId: string, direction: "up" | "down") => {
     try {
@@ -4153,6 +4301,139 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       await refreshAllProjects();
     } catch (error) {
       console.error("Error moving project skill to level:", error);
+    }
+  };
+
+  // Swap the entire contents (all nodes + subtitle/description) of two levels in a project.
+  // Same rules as swapAreaLevels: both levels must already have real skill data and must
+  // never include the currently unlocked level itself.
+  const swapProjectLevels = async (projectId: string, levelA: number, levelB: number) => {
+    if (levelA === levelB) return;
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const skillsA = project.skills.filter(s => s.level === levelA);
+    const skillsB = project.skills.filter(s => s.level === levelB);
+    if (skillsA.length === 0 || skillsB.length === 0) return;
+
+    try {
+      await Promise.all([
+        ...skillsA.map(s => fetch(`/api/skills/${s.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ level: levelB }),
+          credentials: "include",
+        })),
+        ...skillsB.map(s => fetch(`/api/skills/${s.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ level: levelA }),
+          credentials: "include",
+        })),
+      ]);
+
+      const updatedSubtitles = { ...project.levelSubtitles };
+      const updatedDescriptions = { ...project.levelSubtitleDescriptions };
+      const [subA, subB] = [updatedSubtitles[levelA] ?? "", updatedSubtitles[levelB] ?? ""];
+      const [descA, descB] = [updatedDescriptions[levelA] ?? "", updatedDescriptions[levelB] ?? ""];
+      updatedSubtitles[levelA] = subB;
+      updatedSubtitles[levelB] = subA;
+      updatedDescriptions[levelA] = descB;
+      updatedDescriptions[levelB] = descA;
+
+      await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ levelSubtitles: updatedSubtitles, levelSubtitleDescriptions: updatedDescriptions }),
+        credentials: "include",
+      });
+
+      await refreshAllProjects();
+    } catch (error) {
+      console.error("Error swapping project levels:", error);
+    }
+  };
+
+  // Same as addExtraAreaLevel but for projects.
+  const addExtraProjectLevel = async (projectId: string) => {
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const maxLevel = project.skills.length > 0 ? Math.max(...project.skills.map(s => s.level)) : project.unlockedLevel;
+    const newLevel = maxLevel + 1;
+
+    try {
+      const response = await fetch(`/api/projects/${projectId}/generate-level`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ level: newLevel }),
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        console.error("Error adding extra project level:", error);
+        return;
+      }
+
+      await refreshAllProjects();
+    } catch (error) {
+      console.error("Error adding extra project level:", error);
+    }
+  };
+
+  // Same as deleteAreaLevel but for projects.
+  const deleteProjectLevel = async (projectId: string, level: number) => {
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+    if (level <= project.unlockedLevel) return;
+
+    const skillsToDelete = project.skills.filter(s => s.level === level);
+    if (skillsToDelete.length === 0) return;
+    const skillsToShift = project.skills.filter(s => s.level > level);
+
+    try {
+      await Promise.all([
+        ...skillsToDelete.map(s => fetch(`/api/skills/${s.id}`, { method: "DELETE", credentials: "include" })),
+        ...skillsToShift.map(s => fetch(`/api/skills/${s.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ level: s.level - 1 }),
+          credentials: "include",
+        })),
+      ]);
+
+      const maxLevelBefore = Math.max(...project.skills.map(s => s.level));
+      const newSubtitles: Record<string, string> = {};
+      const newDescriptions: Record<string, string> = {};
+      for (let l = 1; l <= maxLevelBefore; l++) {
+        if (l === level) continue;
+        const newKey = l > level ? l - 1 : l;
+        const oldSub = project.levelSubtitles?.[l];
+        const oldDesc = project.levelSubtitleDescriptions?.[l];
+        if (oldSub) newSubtitles[newKey] = oldSub;
+        if (oldDesc) newDescriptions[newKey] = oldDesc;
+      }
+
+      const patchBody: Record<string, unknown> = {
+        levelSubtitles: newSubtitles,
+        levelSubtitleDescriptions: newDescriptions,
+        nextLevelToAssign: Math.max(project.unlockedLevel + 1, project.nextLevelToAssign - 1),
+      };
+      if (project.endOfAreaLevel && project.endOfAreaLevel > level) {
+        patchBody.endOfAreaLevel = project.endOfAreaLevel - 1;
+      }
+
+      await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patchBody),
+        credentials: "include",
+      });
+
+      await refreshAllProjects();
+    } catch (error) {
+      console.error("Error deleting project level:", error);
     }
   };
 
@@ -4475,8 +4756,14 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       addSubSkillBelow,
       moveSkillToLevel,
       reorderSkillWithinLevel,
+      swapAreaLevels,
+      addExtraAreaLevel,
+      deleteAreaLevel,
       moveProjectSkillToLevel,
       reorderProjectSkillWithinLevel,
+      swapProjectLevels,
+      addExtraProjectLevel,
+      deleteProjectLevel,
       duplicateSkill,
       duplicateProjectSkill,
       duplicateSubSkill,

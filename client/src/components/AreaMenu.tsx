@@ -1751,9 +1751,9 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
           </TabsContent>
 
           <TabsContent value="experiences" className="mt-4 min-h-0">
-            <div className="flex gap-2 h-[min(52dvh,320px)]">
+            <div className="flex gap-2 h-[min(52dvh,320px)] overflow-x-auto">
               <ScrollArea
-                className={cn(viewingExperienceId ? "w-1/2 sm:w-2/5 shrink-0 border-r pr-3" : "flex-1 pr-4")}
+                className={cn(viewingExperienceId ? "w-[78%] sm:w-2/5 shrink-0 border-r pr-3" : "flex-1 pr-4")}
                 onPointerDown={handleBackgroundPointerDown}
                 onPointerUp={handleBackgroundPointerUp}
                 onPointerCancel={handleBackgroundPointerUp}
@@ -1819,7 +1819,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
               </ScrollArea>
 
               {viewingExperienceId && (
-                <ScrollArea className={cn(viewingGrowthId ? "w-1/2 sm:w-2/5 shrink-0 border-r pr-3" : "flex-1 pr-4")}>
+                <ScrollArea className={cn(viewingGrowthId ? "w-[78%] sm:w-2/5 shrink-0 border-r pr-3" : "flex-1 pr-4")}>
                   <p className="text-xs font-medium text-muted-foreground mb-2">Crecimientos vinculados</p>
                   {linkedGrowthsForExperience.length === 0 ? (
                     <p className="text-sm text-muted-foreground">No hay crecimientos vinculados</p>
@@ -1837,7 +1837,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
               )}
 
               {viewingGrowthId && (
-                <ScrollArea className="flex-1 pr-4">
+                <ScrollArea className="w-[78%] sm:w-auto sm:flex-1 shrink-0 sm:shrink pr-4">
                   <p className="text-xs font-medium text-muted-foreground mb-2">Contribuciones vinculadas</p>
                   {linkedContributionsForGrowth.length === 0 ? (
                     <p className="text-sm text-muted-foreground">No hay contribuciones vinculadas</p>
