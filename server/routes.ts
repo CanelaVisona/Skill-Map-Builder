@@ -1492,20 +1492,20 @@ export async function registerRoutes(
   // Generate 5 placeholder nodes for a new level (transactional, idempotent)
   app.post("/api/areas/:id/generate-level", requireAuth, async (req, res) => {
     try {
-      const { level } = req.body;
+      const { level, force } = req.body;
       const areaId = req.params.id;
-      
+
       console.log(`[generate-level] Starting for areaId="${areaId}", level=${level}, userId="${req.userId}"`);
-      
+
       if (!level || typeof level !== "number") {
         console.error(`[generate-level] Invalid level: ${level}`);
         res.status(400).json({ message: "Level is required and must be a number" });
         return;
       }
-      
+
       const existingArea = await storage.getArea(areaId);
       console.log(`[generate-level] Existing area:`, existingArea);
-      
+
       if (!existingArea) {
         console.error(`[generate-level] Area not found: ${areaId}`);
         res.status(404).json({ message: "Area not found" });
@@ -1516,10 +1516,12 @@ export async function registerRoutes(
         res.status(403).json({ message: "No tienes permiso para modificar esta área" });
         return;
       }
-      
-      // Validate: level must not exceed nextLevelToAssign + 2 (only +3 levels ahead)
+
+      // Validate: level must not exceed nextLevelToAssign + 2 (only +3 levels ahead).
+      // `force` bypasses this - used by the Skill Designer's manual "add level" button,
+      // whose entire purpose is to deliberately stage more than the usual 3 levels ahead.
       const maxAllowedLevel = existingArea.nextLevelToAssign + 2;
-      if (level > maxAllowedLevel) {
+      if (!force && level > maxAllowedLevel) {
         console.error(`[generate-level] Level exceeds max allowed: ${level} > ${maxAllowedLevel}`);
         res.status(400).json({ message: `No puedes crear un nivel más allá de ${maxAllowedLevel}. Máximo +3 niveles adelante del completado.` });
         return;
@@ -1836,20 +1838,20 @@ export async function registerRoutes(
 
   app.post("/api/projects/:id/generate-level", requireAuth, async (req, res) => {
     try {
-      const { level } = req.body;
+      const { level, force } = req.body;
       const projectId = req.params.id;
-      
+
       console.log(`[generate-level-project] Starting for projectId="${projectId}", level=${level}, userId="${req.userId}"`);
-      
+
       if (!level || typeof level !== "number") {
         console.error(`[generate-level-project] Invalid level: ${level}`);
         res.status(400).json({ message: "Level is required and must be a number" });
         return;
       }
-      
+
       const existingProject = await storage.getProject(projectId);
       console.log(`[generate-level-project] Existing project:`, existingProject ? { id: existingProject.id, name: existingProject.name } : "NOT FOUND");
-      
+
       if (!existingProject) {
         console.error(`[generate-level-project] Project not found: ${projectId}`);
         res.status(404).json({ message: "Project not found" });
@@ -1860,10 +1862,12 @@ export async function registerRoutes(
         res.status(403).json({ message: "No tienes permiso para modificar este proyecto" });
         return;
       }
-      
-      // Validate: level must not exceed nextLevelToAssign + 2 (only +3 levels ahead)
+
+      // Validate: level must not exceed nextLevelToAssign + 2 (only +3 levels ahead).
+      // `force` bypasses this - used by the Skill Designer's manual "add level" button,
+      // whose entire purpose is to deliberately stage more than the usual 3 levels ahead.
       const maxAllowedLevel = existingProject.nextLevelToAssign + 2;
-      if (level > maxAllowedLevel) {
+      if (!force && level > maxAllowedLevel) {
         console.error(`[generate-level-project] Level exceeds max allowed: ${level} > ${maxAllowedLevel}`);
         res.status(400).json({ message: `No puedes crear un nivel más allá de ${maxAllowedLevel}. Máximo +3 niveles adelante del completado.` });
         return;
@@ -1893,7 +1897,12 @@ export async function registerRoutes(
         const shouldUnlock = level <= existingProject.unlockedLevel + 1;
         const updatedProject = await storage.updateProject(projectId, {
           ...(shouldUnlock ? { unlockedLevel: level } : {}),
-          nextLevelToAssign: level
+          // Keep nextLevelToAssign at least 3 levels ahead (matches the area version of this
+          // endpoint) - setting it to just `level` made it drift low every time an
+          // already-generated level was reopened, which then made the "+3 ahead" cap below
+          // wrongly reject legitimate future generate-level calls (e.g. the Designer's
+          // manual "add level" button).
+          nextLevelToAssign: level + 3
         });
         
         // Ensure proper node states when opening an existing level

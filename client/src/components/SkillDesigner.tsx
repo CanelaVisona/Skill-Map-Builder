@@ -10,6 +10,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { ChevronUp, ChevronDown, ChevronsUp, ChevronsDown, Lock, Plus, Trash2, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getNodeTitleWordLimit, clampToWordLimit } from "@/lib/node-title-settings";
+import { useToast } from "@/hooks/use-toast";
 
 interface SkillDesignerProps {
   open: boolean;
@@ -18,6 +19,7 @@ interface SkillDesignerProps {
 
 export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
   const { areas, projects, activeAreaId, activeProjectId, updateSkill, updateProjectSkill, updateLevelSubtitle, updateProjectLevelSubtitle, moveSkillToLevel, moveProjectSkillToLevel, reorderSkillWithinLevel, reorderProjectSkillWithinLevel, swapAreaLevels, swapProjectLevels, addExtraAreaLevel, addExtraProjectLevel, deleteAreaLevel, deleteProjectLevel, addSkillBelow, addProjectSkillBelow, deleteSkill, deleteProjectSkill, toggleFinalNode, toggleProjectFinalNode } = useSkillTree();
+  const { toast } = useToast();
   const [addingLevelId, setAddingLevelId] = useState<string | null>(null);
 
   const handleAddExtraLevel = async (areaId: string | null, projectId: string | null) => {
@@ -25,10 +27,13 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
     if (!key || addingLevelId) return;
     setAddingLevelId(key);
     try {
-      if (areaId) {
-        await addExtraAreaLevel(areaId);
-      } else if (projectId) {
-        await addExtraProjectLevel(projectId);
+      const success = areaId
+        ? await addExtraAreaLevel(areaId)
+        : projectId
+          ? await addExtraProjectLevel(projectId)
+          : false;
+      if (!success) {
+        toast({ title: "No se pudo agregar el nivel", description: "Intentá de nuevo en unos segundos.", variant: "destructive" });
       }
     } finally {
       setAddingLevelId(null);

@@ -120,7 +120,7 @@ interface SkillTreeContextType {
   moveSkillToLevel: (areaId: string, skillId: string, targetLevel: number) => Promise<void>;
   reorderSkillWithinLevel: (areaId: string, skillId: string, direction: "up" | "down") => Promise<void>;
   swapAreaLevels: (areaId: string, levelA: number, levelB: number) => Promise<void>;
-  addExtraAreaLevel: (areaId: string) => Promise<void>;
+  addExtraAreaLevel: (areaId: string) => Promise<boolean>;
   deleteAreaLevel: (areaId: string, level: number) => Promise<void>;
   updateProjectSkill: (projectId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null }) => void;
   deleteProjectSkill: (projectId: string, skillId: string) => void;
@@ -129,7 +129,7 @@ interface SkillTreeContextType {
   moveProjectSkillToLevel: (projectId: string, skillId: string, targetLevel: number) => Promise<void>;
   reorderProjectSkillWithinLevel: (projectId: string, skillId: string, direction: "up" | "down") => Promise<void>;
   swapProjectLevels: (projectId: string, levelA: number, levelB: number) => Promise<void>;
-  addExtraProjectLevel: (projectId: string) => Promise<void>;
+  addExtraProjectLevel: (projectId: string) => Promise<boolean>;
   deleteProjectLevel: (projectId: string, level: number) => Promise<void>;
   createArea: (name: string, description: string, icon: string) => Promise<void>;
   deleteArea: (areaId: string) => Promise<void>;
@@ -4082,9 +4082,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
   // the same /generate-level endpoint the normal level-up flow uses, so nextLevelToAssign
   // stays consistent and the level-up auto-generation later correctly skips levels that
   // already exist (see isOpeningNewLevel handling in toggleSkillStatus).
-  const addExtraAreaLevel = async (areaId: string) => {
+  const addExtraAreaLevel = async (areaId: string): Promise<boolean> => {
     const area = areas.find(a => a.id === areaId);
-    if (!area) return;
+    if (!area) return false;
 
     const maxLevel = area.skills.length > 0 ? Math.max(...area.skills.map(s => s.level)) : area.unlockedLevel;
     const newLevel = maxLevel + 1;
@@ -4093,19 +4093,23 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       const response = await fetch(`/api/areas/${areaId}/generate-level`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ level: newLevel }),
+        // force: true bypasses the "max 3 levels ahead" cap - this button exists
+        // specifically to let the user deliberately stage more than that.
+        body: JSON.stringify({ level: newLevel, force: true }),
         credentials: "include",
       });
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
         console.error("Error adding extra area level:", error);
-        return;
+        return false;
       }
 
       await refreshAllAreas();
+      return true;
     } catch (error) {
       console.error("Error adding extra area level:", error);
+      return false;
     }
   };
 
@@ -4355,9 +4359,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
   };
 
   // Same as addExtraAreaLevel but for projects.
-  const addExtraProjectLevel = async (projectId: string) => {
+  const addExtraProjectLevel = async (projectId: string): Promise<boolean> => {
     const project = projects.find(p => p.id === projectId);
-    if (!project) return;
+    if (!project) return false;
 
     const maxLevel = project.skills.length > 0 ? Math.max(...project.skills.map(s => s.level)) : project.unlockedLevel;
     const newLevel = maxLevel + 1;
@@ -4366,19 +4370,23 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       const response = await fetch(`/api/projects/${projectId}/generate-level`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ level: newLevel }),
+        // force: true bypasses the "max 3 levels ahead" cap - this button exists
+        // specifically to let the user deliberately stage more than that.
+        body: JSON.stringify({ level: newLevel, force: true }),
         credentials: "include",
       });
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
         console.error("Error adding extra project level:", error);
-        return;
+        return false;
       }
 
       await refreshAllProjects();
+      return true;
     } catch (error) {
       console.error("Error adding extra project level:", error);
+      return false;
     }
   };
 
