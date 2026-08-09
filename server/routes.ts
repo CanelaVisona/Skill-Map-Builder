@@ -3049,6 +3049,96 @@ export async function registerRoutes(
     }
   });
 
+  // Clothing Inventory - cross-device sync
+  const CLOTHING_INVENTORY_STORAGE_NAME = "__clothing_inventory_items__";
+
+  function sanitizeClothingItems(input: unknown): Array<{
+    id: number;
+    name: string;
+    type: string;
+    color: string;
+    status: "have" | "missing";
+  }> {
+    if (!Array.isArray(input)) return [];
+
+    return input
+      .map((item) => {
+        const clothing = item as Record<string, unknown>;
+        if (
+          typeof clothing.id !== "number" ||
+          typeof clothing.name !== "string" ||
+          typeof clothing.type !== "string" ||
+          typeof clothing.color !== "string" ||
+          (clothing.status !== "have" && clothing.status !== "missing")
+        ) {
+          return null;
+        }
+
+        return {
+          id: clothing.id,
+          name: clothing.name,
+          type: clothing.type,
+          color: clothing.color,
+          status: clothing.status,
+        };
+      })
+      .filter((item): item is {
+        id: number;
+        name: string;
+        type: string;
+        color: string;
+        status: "have" | "missing";
+      } => item !== null);
+  }
+
+  app.get("/api/clothing-inventory/items", requireAuth, async (req, res) => {
+    try {
+      const entries = await storage.getProfileAboutEntries(req.userId!);
+      const storageEntry = entries.find((entry) => entry.name === CLOTHING_INVENTORY_STORAGE_NAME);
+
+      if (!storageEntry) {
+        res.json([]);
+        return;
+      }
+
+      let parsed: unknown = [];
+      try {
+        parsed = JSON.parse(storageEntry.description || "[]");
+      } catch {
+        parsed = [];
+      }
+
+      res.json(sanitizeClothingItems(parsed));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/clothing-inventory/items", requireAuth, async (req, res) => {
+    try {
+      const items = sanitizeClothingItems(req.body?.items);
+      const entries = await storage.getProfileAboutEntries(req.userId!);
+      const storageEntry = entries.find((entry) => entry.name === CLOTHING_INVENTORY_STORAGE_NAME);
+
+      if (storageEntry) {
+        const updated = await storage.updateProfileAboutEntry(storageEntry.id, {
+          description: JSON.stringify(items),
+        });
+        res.json({ ok: true, id: updated?.id ?? storageEntry.id });
+        return;
+      }
+
+      const created = await storage.createProfileAboutEntry({
+        userId: req.userId!,
+        name: CLOTHING_INVENTORY_STORAGE_NAME,
+        description: JSON.stringify(items),
+      });
+      res.json({ ok: true, id: created.id });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Profile - Experiences
   app.get("/api/profile/experiences", requireAuth, async (req, res) => {
     try {

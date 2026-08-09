@@ -433,10 +433,10 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                   size="sm"
                                                   variant="ghost"
                                                   onClick={() => toggleFinalNode(area.id, skill.id)}
-                                                  className="h-8 w-8"
+                                                  className={cn("h-8 w-8", area.endOfAreaLevel === level && "bg-amber-500 hover:bg-amber-600")}
                                                   title={area.endOfAreaLevel === level ? "Quitar nodo final final" : "Marcar como nodo final final"}
                                                 >
-                                                  <Star className={cn("w-4 h-4", area.endOfAreaLevel === level ? "fill-amber-400 text-amber-400" : "text-muted-foreground")} />
+                                                  <Star className={cn("w-4 h-4", area.endOfAreaLevel === level ? "fill-white text-white" : "text-muted-foreground")} />
                                                 </Button>
                                               )}
                                               <Button
@@ -620,10 +620,10 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                     size="sm"
                                                     variant="ghost"
                                                     onClick={() => toggleProjectFinalNode(project.id, skill.id)}
-                                                    className="h-8 w-8"
+                                                    className={cn("h-8 w-8", project.endOfAreaLevel === level && "bg-amber-500 hover:bg-amber-600")}
                                                     title={project.endOfAreaLevel === level ? "Quitar nodo final final" : "Marcar como nodo final final"}
                                                   >
-                                                    <Star className={cn("w-4 h-4", project.endOfAreaLevel === level ? "fill-amber-400 text-amber-400" : "text-muted-foreground")} />
+                                                    <Star className={cn("w-4 h-4", project.endOfAreaLevel === level ? "fill-white text-white" : "text-muted-foreground")} />
                                                   </Button>
                                                 )}
                                                 <Button
@@ -801,10 +801,10 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                   size="sm"
                                                   variant="ghost"
                                                   onClick={() => toggleProjectFinalNode(project.id, skill.id)}
-                                                  className="h-8 w-8"
+                                                  className={cn("h-8 w-8", project.endOfAreaLevel === level && "bg-amber-500 hover:bg-amber-600")}
                                                   title={project.endOfAreaLevel === level ? "Quitar nodo final final" : "Marcar como nodo final final"}
                                                 >
-                                                  <Star className={cn("w-4 h-4", project.endOfAreaLevel === level ? "fill-amber-400 text-amber-400" : "text-muted-foreground")} />
+                                                  <Star className={cn("w-4 h-4", project.endOfAreaLevel === level ? "fill-white text-white" : "text-muted-foreground")} />
                                                 </Button>
                                               )}
                                               <Button
@@ -979,10 +979,10 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                 size="sm"
                                                 variant="ghost"
                                                 onClick={() => toggleProjectFinalNode(project.id, skill.id)}
-                                                className="h-8 w-8"
+                                                className={cn("h-8 w-8", project.endOfAreaLevel === level && "bg-amber-500 hover:bg-amber-600")}
                                                 title={project.endOfAreaLevel === level ? "Quitar nodo final final" : "Marcar como nodo final final"}
                                               >
-                                                <Star className={cn("w-4 h-4", project.endOfAreaLevel === level ? "fill-amber-400 text-amber-400" : "text-muted-foreground")} />
+                                                <Star className={cn("w-4 h-4", project.endOfAreaLevel === level ? "fill-white text-white" : "text-muted-foreground")} />
                                               </Button>
                                             )}
                                             <Button

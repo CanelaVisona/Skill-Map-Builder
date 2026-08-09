@@ -19,8 +19,9 @@ import { ProgressBar } from "@/components/ProgressBar";
 import { BookTracker } from "@/components/BookTracker";
 import RewiringTracker from "@/components/RewiringTracker";
 import NecesidadesCasa from "../components/NecesidadesCasa";
+import ClothingInventory from "../components/ClothingInventory";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Swords, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock } from "lucide-react";
+import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Swords, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -111,7 +112,7 @@ function calculateVisibleLevels(skills: Skill[], endOfAreaLevel?: number): Set<n
   return visibleLevels;
 }
 
-function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpenBookTracker, onOpenRewiringTracker, onOpenAllAreaBugs, onOpenHomeNeeds, onOpenTodayProgress }: { onOpenDesigner: () => void; onOpenHabits: () => void; onOpenStrength: () => void; onOpenBookTracker: () => void; onOpenRewiringTracker: () => void; onOpenAllAreaBugs: () => void; onOpenHomeNeeds: () => void; onOpenTodayProgress: () => void }) {
+function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpenBookTracker, onOpenRewiringTracker, onOpenAllAreaBugs, onOpenHomeNeeds, onOpenClothingInventory, onOpenTodayProgress }: { onOpenDesigner: () => void; onOpenHabits: () => void; onOpenStrength: () => void; onOpenBookTracker: () => void; onOpenRewiringTracker: () => void; onOpenAllAreaBugs: () => void; onOpenHomeNeeds: () => void; onOpenClothingInventory: () => void; onOpenTodayProgress: () => void }) {
   const { theme, setTheme, resolvedTheme } = useTheme();
   const currentTheme = resolvedTheme || theme;
   const { openDiary } = useDiary();
@@ -329,6 +330,13 @@ function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpen
               title="Necesidades de tu casa"
             >
               <House className="h-4 w-4 mx-auto" />
+            </button>
+            <button
+              className="h-8 w-8 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
+              onClick={() => handleAction(onOpenClothingInventory)}
+              title="Inventario de Ropa"
+            >
+              <Shirt className="h-4 w-4 mx-auto" />
             </button>
           </motion.div>
         )}
@@ -6578,6 +6586,46 @@ function HomeNeedsModalWrapper({ open, onOpenChange }: { open: boolean; onOpenCh
   );
 }
 
+function ClothingInventoryModalWrapper({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          key="clothing-inventory-modal"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+          onClick={() => onOpenChange(false)}
+        >
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.95, opacity: 0 }}
+            className="overflow-hidden rounded-3xl border border-border/50 bg-background max-w-5xl w-full max-h-[90dvh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 border-b border-border/50 flex items-center justify-between">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-foreground">Inventario de Ropa</h3>
+              <button
+                type="button"
+                onClick={() => onOpenChange(false)}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                aria-label="Cerrar modal de inventario de ropa"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="max-h-[calc(90dvh-70px)] overflow-y-auto overflow-x-hidden p-3 sm:p-4">
+              <ClothingInventory />
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
 function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { areas } = useSkillTree();
   const { showXpPopup, hideXpPopup } = useXpPopup();
@@ -8729,6 +8777,7 @@ export default function SkillTreePage() {
   const [isRewiringTrackerOpen, setIsRewiringTrackerOpen] = useState(false);
   const [isAllAreaBugsOpen, setIsAllAreaBugsOpen] = useState(false);
   const [isHomeNeedsOpen, setIsHomeNeedsOpen] = useState(false);
+  const [isClothingInventoryOpen, setIsClothingInventoryOpen] = useState(false);
   const [isTodayProgressOpen, setIsTodayProgressOpen] = useState(false);
   
   const handleCompleteOnboarding = () => {
@@ -8750,7 +8799,7 @@ export default function SkillTreePage() {
           <BodyGainPopupProvider>
             <MenuProvider>
               <div className="flex h-screen w-full bg-background text-foreground overflow-hidden font-body selection:bg-primary/30">
-                <TopRightControls onOpenDesigner={() => setIsDesignerOpen(true)} onOpenHabits={() => setIsHabitsOpen(true)} onOpenStrength={() => setIsStrengthOpen(true)} onOpenBookTracker={() => setIsBookTrackerOpen(true)} onOpenRewiringTracker={() => setIsRewiringTrackerOpen(true)} onOpenAllAreaBugs={() => setIsAllAreaBugsOpen(true)} onOpenHomeNeeds={() => setIsHomeNeedsOpen(true)} onOpenTodayProgress={() => setIsTodayProgressOpen(true)} />
+                <TopRightControls onOpenDesigner={() => setIsDesignerOpen(true)} onOpenHabits={() => setIsHabitsOpen(true)} onOpenStrength={() => setIsStrengthOpen(true)} onOpenBookTracker={() => setIsBookTrackerOpen(true)} onOpenRewiringTracker={() => setIsRewiringTrackerOpen(true)} onOpenAllAreaBugs={() => setIsAllAreaBugsOpen(true)} onOpenHomeNeeds={() => setIsHomeNeedsOpen(true)} onOpenClothingInventory={() => setIsClothingInventoryOpen(true)} onOpenTodayProgress={() => setIsTodayProgressOpen(true)} />
                 <ProgressModal open={isProgressOpen} onOpenChange={setIsProgressOpen} />
                 <TodayProgressModal open={isTodayProgressOpen} onOpenChange={setIsTodayProgressOpen} />
                 <SkillDesigner open={isDesignerOpen} onOpenChange={setIsDesignerOpen} />
@@ -8760,6 +8809,7 @@ export default function SkillTreePage() {
                 <RewiringTrackerModalWrapper open={isRewiringTrackerOpen} onOpenChange={setIsRewiringTrackerOpen} />
                 <AllAreaBugsModalWrapper open={isAllAreaBugsOpen} onOpenChange={setIsAllAreaBugsOpen} />
                 <HomeNeedsModalWrapper open={isHomeNeedsOpen} onOpenChange={setIsHomeNeedsOpen} />
+                <ClothingInventoryModalWrapper open={isClothingInventoryOpen} onOpenChange={setIsClothingInventoryOpen} />
                 <AreaMenu />
                 <SkillCanvas onOpenProgress={() => setIsProgressOpen(true)} />
                 <QuestDiary />
