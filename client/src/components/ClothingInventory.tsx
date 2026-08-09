@@ -1065,8 +1065,10 @@ function ClothingCard({
       style={{
         position: "relative",
         borderRadius: "10px",
-        border: isHave ? `1px solid ${hexToRgba(item.color, 0.55)}` : isDark ? "1px solid #23291f" : "1px solid #dde1e8",
-        background: isHave ? hexToRgba(item.color, isDark ? 0.14 : 0.1) : isDark ? "#12140f" : "#eef0f3",
+        // Ownership state drives the card chrome now — gold for anything you have,
+        // neutral gray for locked/missing items — instead of the garment's own color.
+        border: isHave ? "1px solid rgba(212,175,55,0.6)" : isDark ? "1px solid #23291f" : "1px solid #dde1e8",
+        background: isHave ? (isDark ? "rgba(212,175,55,0.13)" : "rgba(212,175,55,0.1)") : isDark ? "#12140f" : "#eef0f3",
         padding: "10px 6px 8px",
         display: "flex",
         flexDirection: "column",
