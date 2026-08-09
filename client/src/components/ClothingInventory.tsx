@@ -1137,6 +1137,52 @@ function ClothingCard({
   );
 }
 
+// Compradas primero, pendientes de compra despues — nunca intercaladas.
+function sortHaveFirst(items: ClothingItem[]) {
+  return [...items].sort((a, b) => {
+    if (a.status === b.status) return 0;
+    return a.status === "have" ? -1 : 1;
+  });
+}
+
+function TypeSection({
+  type,
+  items,
+  colors,
+  isDark,
+  onConfirmPurchase,
+  onStartEdit,
+}: {
+  type: GarmentType;
+  items: ClothingItem[];
+  colors: Record<string, string>;
+  isDark: boolean;
+  onConfirmPurchase: (id: number) => void;
+  onStartEdit: (item: ClothingItem) => void;
+}) {
+  const haveCount = items.filter((i) => i.status === "have").length;
+  const orderedItems = sortHaveFirst(items);
+
+  return (
+    <div style={{ marginBottom: "10px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
+        <GarmentGlyph type={type} color={colors.subtitle} size={13} />
+        <span style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "0.03em", textTransform: "uppercase", color: colors.subtitle }}>
+          {GARMENT_META[type].label}
+        </span>
+        <span style={{ fontSize: "9.5px", color: colors.subtitle, opacity: 0.8 }}>
+          ({haveCount}/{items.length})
+        </span>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(78px, 1fr))", gap: "8px" }}>
+        {orderedItems.map((item) => (
+          <ClothingCard key={item.id} item={item} colors={colors} isDark={isDark} onConfirmPurchase={onConfirmPurchase} onStartEdit={onStartEdit} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function GroupSection({
   group,
   items,
@@ -1153,15 +1199,22 @@ function GroupSection({
   onStartEdit: (item: ClothingItem) => void;
 }) {
   const haveCount = items.filter((i) => i.status === "have").length;
-  // Compradas primero, pendientes de compra despues — nunca intercaladas.
-  const orderedItems = [...items].sort((a, b) => {
-    if (a.status === b.status) return 0;
-    return a.status === "have" ? -1 : 1;
-  });
+  // Subdivide tambien por tipo de prenda dentro de la categoria, en el orden fijo
+  // del catalogo de tipos — no solo agrupado por categoria general.
+  const typesPresent = GARMENT_TYPE_ORDER.filter((t) => items.some((i) => i.type === t));
 
   return (
     <div style={{ marginBottom: "16px" }} onPointerDown={(e) => e.stopPropagation()}>
-      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          paddingBottom: "8px",
+          marginBottom: "14px",
+          borderBottom: isDark ? "1px solid #1e2d1e" : "1px solid #e2e8f0",
+        }}
+      >
         <GarmentGlyph type={GROUP_ICON_TYPE[group]} color={colors.subtitle} size={16} />
         <span
           style={{
@@ -1179,11 +1232,17 @@ function GroupSection({
           ({haveCount}/{items.length})
         </span>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(78px, 1fr))", gap: "8px" }}>
-        {orderedItems.map((item) => (
-          <ClothingCard key={item.id} item={item} colors={colors} isDark={isDark} onConfirmPurchase={onConfirmPurchase} onStartEdit={onStartEdit} />
-        ))}
-      </div>
+      {typesPresent.map((type) => (
+        <TypeSection
+          key={type}
+          type={type}
+          items={items.filter((i) => i.type === type)}
+          colors={colors}
+          isDark={isDark}
+          onConfirmPurchase={onConfirmPurchase}
+          onStartEdit={onStartEdit}
+        />
+      ))}
     </div>
   );
 }
