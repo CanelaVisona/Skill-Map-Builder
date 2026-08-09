@@ -11,6 +11,8 @@ type GarmentGroup = "Superior" | "Inferior" | "Calzado" | "Accesorios" | "Otros"
 
 type GarmentType =
   | "remera"
+  | "mangalarga"
+  | "polera"
   | "musculosa"
   | "camisa"
   | "buzo"
@@ -38,6 +40,8 @@ type GarmentType =
 
 const GARMENT_META: Record<GarmentType, { label: string; group: GarmentGroup }> = {
   remera: { label: "Remera", group: "Superior" },
+  mangalarga: { label: "Remera manga larga", group: "Superior" },
+  polera: { label: "Polera", group: "Superior" },
   musculosa: { label: "Musculosa", group: "Superior" },
   camisa: { label: "Camisa", group: "Superior" },
   buzo: { label: "Buzo", group: "Superior" },
@@ -197,6 +201,10 @@ function GarmentGlyph({ type, color, size = 32 }: { type: GarmentType; color: st
   const clipProps = { fill: "#000" };
 
   const shirtBody = "M16 6 L9 10 L6 16 L11 19 L14 16 V41 H34 V16 L37 19 L42 16 L39 10 L32 6 C32 6 30 11 24 11 C18 11 16 6 16 6 Z";
+  // Same set-in shoulder as shirtBody, but the sleeve runs all the way down to a
+  // wrist cuff instead of stopping short — shared by "mangalarga" and "polera".
+  const longSleeveBody =
+    "M16 6 L8 9 L4 14 L4 32 L10 34 L13 20 V41 H35 V20 L38 34 L44 32 L44 14 L40 9 L32 6 C32 6 30 11 24 11 C18 11 16 6 16 6 Z";
   const coatBody =
     "M14 5 L7 10 L4 17 L9 20 L12 17 V43 H36 V17 L39 20 L44 17 L41 10 L34 5 C34 5 31 10 24 10 C17 10 14 5 14 5 Z";
   const tapadoBody =
@@ -223,6 +231,41 @@ function GarmentGlyph({ type, color, size = 32 }: { type: GarmentType; color: st
       fillNodes = <path d={shirtBody} {...fillProps} />;
       clipNodes = <path d={shirtBody} {...clipProps} />;
       details = <path d="M18 8 C19 11.5 21 13 24 13 C27 13 29 11.5 30 8" fill="none" stroke={detail} strokeWidth="1.3" />;
+      break;
+    case "mangalarga":
+      // Long-sleeve tee: same crew neckline as "remera", sleeves reach the wrist.
+      fillNodes = <path d={longSleeveBody} {...fillProps} />;
+      clipNodes = <path d={longSleeveBody} {...clipProps} />;
+      details = (
+        <>
+          <path d="M18 8 C19 11.5 21 13 24 13 C27 13 29 11.5 30 8" fill="none" stroke={detail} strokeWidth="1.3" />
+          <line x1="5" y1="32.5" x2="9.5" y2="34.5" stroke={outline} strokeWidth="1.8" opacity="0.5" />
+          <line x1="43" y1="32.5" x2="38.5" y2="34.5" stroke={outline} strokeWidth="1.8" opacity="0.5" />
+        </>
+      );
+      break;
+    case "polera":
+      // "Cuellito": same long-sleeve body, but a small stand/mock collar instead
+      // of the open crew neckline — the little upright collar the user described.
+      fillNodes = (
+        <>
+          <path d={longSleeveBody} {...fillProps} />
+          <path d="M18 7 Q24 3 30 7 L29 10.5 Q24 7.5 19 10.5 Z" {...fillProps} />
+        </>
+      );
+      clipNodes = (
+        <>
+          <path d={longSleeveBody} {...clipProps} />
+          <path d="M18 7 Q24 3 30 7 L29 10.5 Q24 7.5 19 10.5 Z" {...clipProps} />
+        </>
+      );
+      details = (
+        <>
+          <path d="M19.5 8.3 Q24 6 28.5 8.3" fill="none" stroke={detail} strokeWidth="0.8" opacity="0.6" />
+          <line x1="5" y1="32.5" x2="9.5" y2="34.5" stroke={outline} strokeWidth="1.8" opacity="0.5" />
+          <line x1="43" y1="32.5" x2="38.5" y2="34.5" stroke={outline} strokeWidth="1.8" opacity="0.5" />
+        </>
+      );
       break;
     case "musculosa":
       fillNodes = (
