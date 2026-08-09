@@ -16,6 +16,7 @@ type GarmentType =
   | "musculosa"
   | "camisa"
   | "buzo"
+  | "buzosincapucha"
   | "sweter"
   | "campera"
   | "abrigo"
@@ -45,6 +46,7 @@ const GARMENT_META: Record<GarmentType, { label: string; group: GarmentGroup }> 
   musculosa: { label: "Musculosa", group: "Superior" },
   camisa: { label: "Camisa", group: "Superior" },
   buzo: { label: "Buzo", group: "Superior" },
+  buzosincapucha: { label: "Bucito", group: "Superior" },
   sweter: { label: "Suéter", group: "Superior" },
   campera: { label: "Campera", group: "Superior" },
   abrigo: { label: "Abrigo", group: "Superior" },
@@ -321,6 +323,21 @@ function GarmentGlyph({ type, color, size = 32 }: { type: GarmentType; color: st
           <ellipse cx="18.5" cy="29" rx="1.2" ry="1.8" fill={detail} />
           <ellipse cx="29.5" cy="29" rx="1.2" ry="1.8" fill={detail} />
           <path d="M18 30 L30 30 L32.5 40 L15.5 40 Z" fill="none" stroke={detail} strokeWidth="1.1" />
+          <line x1="4" y1="31" x2="9" y2="32.5" stroke={outline} strokeWidth="2" opacity="0.5" />
+          <line x1="44" y1="31" x2="39" y2="32.5" stroke={outline} strokeWidth="2" opacity="0.5" />
+          <line x1="14" y1="40" x2="34" y2="40" stroke={outline} strokeWidth="1.6" opacity="0.4" />
+        </>
+      );
+      break;
+    case "buzosincapucha":
+      // Crewneck sweatshirt: same raglan/dropped-shoulder body as "buzo", but no
+      // hood, drawstrings or pocket — just a ribbed crew neck, cuffs and hem.
+      fillNodes = <path d={hoodieBody} {...fillProps} />;
+      clipNodes = <path d={hoodieBody} {...clipProps} />;
+      details = (
+        <>
+          <path d="M17 9 Q24 15.5 31 9" fill="none" stroke={detail} strokeWidth="1.7" />
+          <path d="M18.3 10.4 Q24 16 29.7 10.4" fill="none" stroke={detail} strokeWidth="0.9" opacity="0.55" />
           <line x1="4" y1="31" x2="9" y2="32.5" stroke={outline} strokeWidth="2" opacity="0.5" />
           <line x1="44" y1="31" x2="39" y2="32.5" stroke={outline} strokeWidth="2" opacity="0.5" />
           <line x1="14" y1="40" x2="34" y2="40" stroke={outline} strokeWidth="1.6" opacity="0.4" />
