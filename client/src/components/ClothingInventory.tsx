@@ -7,6 +7,19 @@ const CLOTHING_STORAGE_KEY = "skill-map-clothing-inventory-v2";
 
 type ClothingStatus = "have" | "missing";
 
+type ClothingStyle = "deporte" | "casual" | "salida";
+
+const STYLE_META: Record<ClothingStyle, { label: string; emoji: string; color: string }> = {
+  deporte: { label: "Deporte", emoji: "🏃", color: "#2563eb" },
+  casual: { label: "Casual", emoji: "😎", color: "#d97706" },
+  salida: { label: "Salida", emoji: "✨", color: "#7c3aed" },
+};
+const STYLE_ORDER: ClothingStyle[] = ["deporte", "casual", "salida"];
+
+function isValidStyle(value: unknown): value is ClothingStyle {
+  return value === "deporte" || value === "casual" || value === "salida";
+}
+
 type GarmentGroup = "Superior" | "Inferior" | "Calzado" | "Accesorios" | "Otros";
 
 type GarmentType =
@@ -98,20 +111,21 @@ type ClothingItem = {
   type: GarmentType;
   color: string;
   status: ClothingStatus;
+  style: ClothingStyle;
 };
 
 const now = Date.now();
 
 const INITIAL_ITEMS: ClothingItem[] = [
-  { id: now - 9, name: "Remera blanca", type: "remera", color: "#f3f4f6", status: "have" },
-  { id: now - 8, name: "Remera negra", type: "remera", color: "#1f2937", status: "missing" },
-  { id: now - 7, name: "Campera de jean", type: "campera", color: "#3b5b8c", status: "have" },
-  { id: now - 6, name: "Jean azul", type: "jean", color: "#3b5b8c", status: "have" },
-  { id: now - 5, name: "Cargo verde", type: "pantalon", color: "#4d7c0f", status: "missing" },
-  { id: now - 4, name: "Campera de abrigo", type: "abrigo", color: "#4b5563", status: "missing" },
-  { id: now - 3, name: "Zapatillas", type: "zapatilla", color: "#1f2937", status: "have" },
-  { id: now - 2, name: "Botas de cuero", type: "bota", color: "#78350f", status: "missing" },
-  { id: now - 1, name: "Cadena plateada", type: "collar", color: "#9ca3af", status: "have" },
+  { id: now - 9, name: "Remera blanca", type: "remera", color: "#f3f4f6", status: "have", style: "casual" },
+  { id: now - 8, name: "Remera negra", type: "remera", color: "#1f2937", status: "missing", style: "salida" },
+  { id: now - 7, name: "Campera de jean", type: "campera", color: "#3b5b8c", status: "have", style: "casual" },
+  { id: now - 6, name: "Jean azul", type: "jean", color: "#3b5b8c", status: "have", style: "casual" },
+  { id: now - 5, name: "Cargo verde", type: "pantalon", color: "#4d7c0f", status: "missing", style: "deporte" },
+  { id: now - 4, name: "Campera de abrigo", type: "abrigo", color: "#4b5563", status: "missing", style: "salida" },
+  { id: now - 3, name: "Zapatillas", type: "zapatilla", color: "#1f2937", status: "have", style: "deporte" },
+  { id: now - 2, name: "Botas de cuero", type: "bota", color: "#78350f", status: "missing", style: "salida" },
+  { id: now - 1, name: "Cadena plateada", type: "collar", color: "#9ca3af", status: "have", style: "salida" },
 ];
 
 function isValidStatus(value: unknown): value is ClothingStatus {
@@ -133,7 +147,16 @@ function sanitizeItems(input: unknown): ClothingItem[] | null {
       ) {
         return null;
       }
-      return { id: raw.id, name: raw.name, type: raw.type, color: raw.color, status: raw.status } satisfies ClothingItem;
+      // "style" is additive on top of the original schema — default it instead of
+      // dropping the item, so prendas saved before this field existed still load.
+      return {
+        id: raw.id,
+        name: raw.name,
+        type: raw.type,
+        color: raw.color,
+        status: raw.status,
+        style: isValidStyle(raw.style) ? raw.style : "casual",
+      } satisfies ClothingItem;
     })
     .filter((item): item is ClothingItem => item !== null);
 
@@ -709,9 +732,9 @@ function useLongPress<T extends HTMLElement>(onLongPress: () => void, { delay = 
   return { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onPointerUp, onPointerLeave: onPointerUp, consumeClick };
 }
 
-type ItemFormState = { name: string; type: GarmentType; color: string; status: ClothingStatus };
+type ItemFormState = { name: string; type: GarmentType; color: string; status: ClothingStatus; style: ClothingStyle };
 
-const EMPTY_FORM: ItemFormState = { name: "", type: "remera", color: "#4ade80", status: "have" };
+const EMPTY_FORM: ItemFormState = { name: "", type: "remera", color: "#4ade80", status: "have", style: "casual" };
 
 const COLOR_SWATCHES = [
   "#111827", "#4b5563", "#9ca3af", "#f3f4f6",
@@ -906,6 +929,41 @@ function ItemForm({
       <div>
         <div style={labelStyle}>Color</div>
         <ColorPalette value={form.color} onChange={(color) => onChange({ ...form, color })} colors={colors} isDark={isDark} />
+      </div>
+
+      <div>
+        <div style={labelStyle}>Categoría</div>
+        <div style={{ display: "flex", gap: "6px" }}>
+          {STYLE_ORDER.map((style) => {
+            const active = form.style === style;
+            const meta = STYLE_META[style];
+            return (
+              <button
+                key={style}
+                type="button"
+                onClick={() => onChange({ ...form, style })}
+                style={{
+                  flex: 1,
+                  height: "30px",
+                  borderRadius: "8px",
+                  border: active ? "1px solid transparent" : isDark ? "1px solid #325a32" : "1px solid #86efac",
+                  background: active ? meta.color : "transparent",
+                  color: active ? "#ffffff" : colors.subtitle,
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "4px",
+                }}
+              >
+                <span>{meta.emoji}</span>
+                {meta.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <div>
@@ -1135,7 +1193,7 @@ function ClothingCard({
       onPointerCancel={longPress.onPointerCancel}
       onPointerLeave={longPress.onPointerLeave}
       onContextMenu={(e) => e.preventDefault()}
-      title={isHave ? `${item.name} · long press para editar` : `${item.name} · long press para editar`}
+      title={`${item.name} · ${STYLE_META[item.style].label} · long press para editar`}
       style={{
         position: "relative",
         borderRadius: "10px",
@@ -1150,6 +1208,19 @@ function ClothingCard({
         gap: "6px",
       }}
     >
+      <span
+        style={{
+          position: "absolute",
+          top: "4px",
+          left: "4px",
+          width: "8px",
+          height: "8px",
+          borderRadius: "50%",
+          background: STYLE_META[item.style].color,
+          boxShadow: "0 0 0 2px " + colors.cardBg,
+        }}
+      />
+
       {isHave ? (
         <span
           style={{
@@ -1384,6 +1455,7 @@ export default function ClothingInventory() {
 
   const [items, setItems] = useState<ClothingItem[]>(() => loadStoredItems());
   const [groupFilter, setGroupFilter] = useState<"Todas" | GarmentGroup>("Todas");
+  const [styleFilter, setStyleFilter] = useState<"Todas" | ClothingStyle>("Todas");
   const [remoteLoaded, setRemoteLoaded] = useState(false);
   const [remoteSyncEnabled, setRemoteSyncEnabled] = useState(true);
   const [isAddFormOpen, setIsAddFormOpen] = useState(false);
@@ -1454,7 +1526,10 @@ export default function ClothingInventory() {
     };
   }, [remoteLoaded, remoteSyncEnabled, items]);
 
-  const groupsPresent = GROUP_ORDER.filter((g) => items.some((i) => GARMENT_META[i.type].group === g));
+  // "Categoría" (deporte/casual/salida) filters the visible set on top of the
+  // group filter — it's a separate axis, not a replacement for Superior/Inferior/etc.
+  const styleFilteredItems = styleFilter === "Todas" ? items : items.filter((i) => i.style === styleFilter);
+  const groupsPresent = GROUP_ORDER.filter((g) => styleFilteredItems.some((i) => GARMENT_META[i.type].group === g));
 
   const openAddForm = () => {
     setEditingId(null);
@@ -1477,6 +1552,7 @@ export default function ClothingInventory() {
       type: addForm.type,
       color: addForm.color,
       status: addForm.status,
+      style: addForm.style,
     };
 
     setItems((prev) => [nextItem, ...prev]);
@@ -1487,7 +1563,7 @@ export default function ClothingInventory() {
   const startEdit = useCallback((item: ClothingItem) => {
     setIsAddFormOpen(false);
     setEditingId(item.id);
-    setEditForm({ name: item.name, type: item.type, color: item.color, status: item.status });
+    setEditForm({ name: item.name, type: item.type, color: item.color, status: item.status, style: item.style });
   }, []);
 
   const saveEdit = useCallback(() => {
@@ -1500,7 +1576,9 @@ export default function ClothingInventory() {
 
     setItems((prev) =>
       prev.map((item) =>
-        item.id === editingId ? { ...item, name: cleanName, type: editForm.type, color: editForm.color, status: editForm.status } : item,
+        item.id === editingId
+          ? { ...item, name: cleanName, type: editForm.type, color: editForm.color, status: editForm.status, style: editForm.style }
+          : item,
       ),
     );
     setEditingId(null);
@@ -1600,6 +1678,32 @@ export default function ClothingInventory() {
           })}
         </div>
 
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "14px" }} onPointerDown={(e) => e.stopPropagation()}>
+          {(["Todas", ...STYLE_ORDER] as ("Todas" | ClothingStyle)[]).map((s) => {
+            const active = styleFilter === s;
+            const meta = s !== "Todas" ? STYLE_META[s] : null;
+            return (
+              <span
+                key={s}
+                className="cloth-chip"
+                onClick={() => setStyleFilter(s)}
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: "20px",
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  border: active ? "1px solid transparent" : colors.chipBorder,
+                  background: active ? meta?.color ?? "linear-gradient(135deg, #16a34a, #22c55e)" : colors.chipBg,
+                  color: active ? "#ffffff" : colors.subtitle,
+                }}
+              >
+                {meta && <span>{meta.emoji}</span>}
+                {meta ? meta.label : "Todas"}
+              </span>
+            );
+          })}
+        </div>
+
         {isAddFormOpen && (
           <ItemPopup
             heading="Nueva prenda"
@@ -1635,7 +1739,7 @@ export default function ClothingInventory() {
           <GroupSection
             key={group}
             group={group}
-            items={items.filter((i) => GARMENT_META[i.type].group === group)}
+            items={styleFilteredItems.filter((i) => GARMENT_META[i.type].group === group)}
             colors={colors}
             isDark={isDark}
             onConfirmPurchase={confirmPurchase}

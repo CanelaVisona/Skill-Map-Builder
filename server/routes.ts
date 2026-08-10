@@ -3058,6 +3058,7 @@ export async function registerRoutes(
     type: string;
     color: string;
     status: "have" | "missing";
+    style: "deporte" | "casual" | "salida";
   }> {
     if (!Array.isArray(input)) return [];
 
@@ -3074,12 +3075,17 @@ export async function registerRoutes(
           return null;
         }
 
+        // "style" is additive on top of the original schema — default it instead of
+        // dropping the item, so prendas saved before this field existed still load.
+        const style = clothing.style === "deporte" || clothing.style === "casual" || clothing.style === "salida" ? clothing.style : "casual";
+
         return {
           id: clothing.id,
           name: clothing.name,
           type: clothing.type,
           color: clothing.color,
           status: clothing.status,
+          style,
         };
       })
       .filter((item): item is {
@@ -3088,6 +3094,7 @@ export async function registerRoutes(
         type: string;
         color: string;
         status: "have" | "missing";
+        style: "deporte" | "casual" | "salida";
       } => item !== null);
   }
 
