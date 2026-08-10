@@ -25,16 +25,20 @@ type GarmentType =
   | "pantalon"
   | "short"
   | "jogger"
+  | "bombacha"
   | "zapatilla"
   | "bota"
   | "botin"
   | "sandalia"
+  | "media"
   | "collar"
   | "reloj"
   | "lentes"
   | "gorra"
   | "bufanda"
   | "mochila"
+  | "tote"
+  | "rinonera"
   | "cinturon"
   | "anillo"
   | "otro";
@@ -55,16 +59,20 @@ const GARMENT_META: Record<GarmentType, { label: string; group: GarmentGroup }> 
   pantalon: { label: "Pantalón", group: "Inferior" },
   short: { label: "Short", group: "Inferior" },
   jogger: { label: "Jogger", group: "Inferior" },
+  bombacha: { label: "Bombacha", group: "Inferior" },
   zapatilla: { label: "Zapatilla", group: "Calzado" },
   bota: { label: "Bota", group: "Calzado" },
   botin: { label: "Botín", group: "Calzado" },
   sandalia: { label: "Sandalia", group: "Calzado" },
+  media: { label: "Medias", group: "Calzado" },
   collar: { label: "Collar", group: "Accesorios" },
   reloj: { label: "Reloj", group: "Accesorios" },
   lentes: { label: "Lentes", group: "Accesorios" },
   gorra: { label: "Gorra", group: "Accesorios" },
   bufanda: { label: "Bufanda", group: "Accesorios" },
   mochila: { label: "Mochila", group: "Accesorios" },
+  tote: { label: "Tote bag", group: "Accesorios" },
+  rinonera: { label: "Riñonera", group: "Accesorios" },
   cinturon: { label: "Cinturón", group: "Accesorios" },
   anillo: { label: "Anillo", group: "Accesorios" },
   otro: { label: "Otro", group: "Otros" },
@@ -218,11 +226,17 @@ function GarmentGlyph({ type, color, size = 32 }: { type: GarmentType; color: st
   const pantsBody = "M15 6 H33 L34 14 L32 16 L30 42 H25.2 L24 24 L22.8 42 H18 L16 16 L14 14 Z";
   const shortBody = "M15 6 H33 L34 14 L32 16 L31 27 H25.4 L24 20 L22.6 27 H17 L16 16 L14 14 Z";
   const joggerBody = "M15 6 H33 L34 14 L32 16 L30.5 40 H25.2 L24 24 L22.8 40 H17.5 L16 16 L14 14 Z";
+  // Waistband with a raised center gusset between the two leg openings.
+  const bombachaBody = "M9 8 H39 L36 19 Q24 15 12 19 Z";
   const sneakerBody = "M6 33 H13 L18 27 L30 25 L38 29 L42 33 V38 H6 Z";
   const bootBody = "M14 7 H27 V25 L35 29 L41 34 V38 H14 Z";
   const botinBody = "M14 16 H26 V30 L34 33 L40 36 V40 H14 Z";
   const sandalBody = "M6 33 Q24 28 42 33 V38 H6 Z";
+  // Sock: a soft tube with a heel bend, shorter and simpler than a boot.
+  const mediaBody = "M17 6 H27 V24 L34 27 L40 32 V36 H17 Z";
   const scarfBody = "M5 13 Q15 6 24 13 T43 13 L41 20 Q31 15 24 20 T7 20 Z";
+  const toteBody = "M9 15 H39 L41 42 H7 Z";
+  const rinoneraBody = "M10 20 Q10 14 16 14 H32 Q38 14 38 20 V28 Q38 34 32 34 H16 Q10 34 10 28 Z";
 
   let fillNodes: ReactNode = null;
   let clipNodes: ReactNode = null;
@@ -436,6 +450,16 @@ function GarmentGlyph({ type, color, size = 32 }: { type: GarmentType; color: st
         </>
       );
       break;
+    case "bombacha":
+      fillNodes = <path d={bombachaBody} {...fillProps} />;
+      clipNodes = <path d={bombachaBody} {...clipProps} />;
+      details = (
+        <>
+          <line x1="9.5" y1="9" x2="38.5" y2="9" stroke={detail} strokeWidth="1.2" opacity="0.6" />
+          <path d="M14 19.5 Q24 17 34 19.5" fill="none" stroke={detail} strokeWidth="0.8" opacity="0.45" />
+        </>
+      );
+      break;
     case "zapatilla":
       fillNodes = <path d={sneakerBody} {...fillProps} />;
       clipNodes = <path d={sneakerBody} {...clipProps} />;
@@ -474,6 +498,17 @@ function GarmentGlyph({ type, color, size = 32 }: { type: GarmentType; color: st
       fillNodes = <path d={sandalBody} {...fillProps} />;
       clipNodes = <path d={sandalBody} {...clipProps} />;
       details = <path d="M14 33 V22 M24 33 V20 M32 33 V23" stroke={color} strokeWidth="1.6" fill="none" />;
+      break;
+    case "media":
+      fillNodes = <path d={mediaBody} {...fillProps} />;
+      clipNodes = <path d={mediaBody} {...clipProps} />;
+      details = (
+        <>
+          <line x1="17" y1="10" x2="27" y2="10" stroke={outline} strokeWidth="2" opacity="0.5" />
+          <line x1="17" y1="13.5" x2="27" y2="13.5" stroke={outline} strokeWidth="1.4" opacity="0.4" />
+          <path d="M27 24 L34 27" fill="none" stroke={detail} strokeWidth="0.9" opacity="0.5" />
+        </>
+      );
       break;
     case "collar":
       fillNodes = <path d="M21 25 L24 32 L27 25 Z" {...fillProps} />;
@@ -551,6 +586,28 @@ function GarmentGlyph({ type, color, size = 32 }: { type: GarmentType; color: st
         <>
           <path d="M15 15 V10 Q24 3 33 10 V15" fill="none" stroke={color} strokeWidth="2.4" strokeLinecap="round" />
           <rect x="16" y="23" width="16" height="10" rx="2.5" fill="none" stroke={detail} strokeWidth="1.2" />
+        </>
+      );
+      break;
+    case "tote":
+      fillNodes = <path d={toteBody} {...fillProps} />;
+      clipNodes = <path d={toteBody} {...clipProps} />;
+      details = (
+        <>
+          <path d="M15 15 Q15 5 22 5" fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round" />
+          <path d="M26 5 Q33 5 33 15" fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round" />
+        </>
+      );
+      break;
+    case "rinonera":
+      fillNodes = <path d={rinoneraBody} {...fillProps} />;
+      clipNodes = <path d={rinoneraBody} {...clipProps} />;
+      details = (
+        <>
+          <line x1="4" y1="24" x2="10" y2="24" stroke={color} strokeWidth="2.4" strokeLinecap="round" />
+          <line x1="38" y1="24" x2="44" y2="24" stroke={color} strokeWidth="2.4" strokeLinecap="round" />
+          <line x1="15" y1="24" x2="33" y2="24" stroke={detail} strokeWidth="1" opacity="0.5" />
+          <rect x="22" y="22" width="4" height="4" rx="1" fill="none" stroke={detail} strokeWidth="0.9" opacity="0.6" />
         </>
       );
       break;
