@@ -1,8 +1,8 @@
 import { createContext, useContext, useState, useEffect, useRef } from "react";
 import { Music, Trophy, BookOpen, Home } from "lucide-react";
 import { useAreaXpPopup } from "@/lib/area-xp-popup-context";
-import { calculateAreaProgressPercentage } from "@/lib/area-progress";
-import { getPopupBusyDelay, markPopupActive, POPUP_VISIBLE_MS } from "@/lib/popup-coordinator";
+import { calculateLevelProgressPercentage, countMasteredSkillsInLevel, countSkillsInLevel } from "@/lib/area-progress";
+import { getPopupBusyDelay, hasPendingPopupChain, markPopupActive, POPUP_VISIBLE_MS } from "@/lib/popup-coordinator";
 import { getCurrentTimeSlotKey } from "@/lib/useTodayTaskSlots";
 
 // Best-effort: places a just-confirmed node into today's matching "Tareas de hoy" time
@@ -89,6 +89,7 @@ export interface GlobalSkill {
   id: string;
   userId: string;
   name: string;
+  description?: string;
   areaId?: string | null;
   projectId?: string | null;
   parentSkillId?: string | null;
@@ -97,6 +98,14 @@ export interface GlobalSkill {
   goalXp: number;
   completed: boolean | number;
   completedAt?: string | null;
+  // Medallion visual customization (Journal → Skills grid) — all optional.
+  icon?: string | null;
+  shape?: "diamond_classic" | "diamond_ornate" | "medallion" | "insignia";
+  material?: "iron" | "steel" | "silver" | "aged_gold" | "stone" | "leather" | "custom";
+  rarity?: "common" | "uncommon" | "rare" | "epic" | "legendary";
+  accentColor?: string | null;
+  glow?: 0 | 1 | null;
+  nodeSize?: "small" | "normal" | "large";
   createdAt: string;
   updatedAt: string;
 }
@@ -379,29 +388,27 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
   const triggerLevelUpBanner = () => triggerQuestCelebration("¡Subiste de nivel!");
 
-  // Para nodos registrados como tarea de hoy (plannedDate === hoy), el pop-up de progreso de
-  // hoy (client/src/lib/today-progress-popup-context.tsx) también va a dispararse al dominar
-  // este nodo. Ese pop-up reacciona de forma asíncrona (observa areas/projects en segundo
-  // plano), así que primero le damos un margen para que reaccione y se marque "ocupado" en el
-  // coordinador compartido, y recién ahí esperamos a que termine antes de mostrar la
-  // celebración de progreso — si no, ambos pop-ups se solapan en pantalla.
-  const triggerQuestCelebrationAfterToday = (text: string, isPlannedForToday: boolean) => {
-    if (!isPlannedForToday) {
-      triggerQuestCelebration(text);
-      return;
-    }
-    // Re-chequea en vez de calcular la espera una sola vez: si mientras tanto se encadenan
-    // más pop-ups (por ej. varios componentes de cuerpo linkeados), cada uno extiende la
-    // ventana de "ocupado", y una única espera calculada de entrada quedaría corta.
+  // Various things can still be "in flight" when a node gets confirmed: the today-progress
+  // pop-up reacts asynchronously (isPlannedForToday), and a chain of reward pop-ups (habit
+  // XP/body, or the node's own staged xp/fuerza/poder from Step 3) may already be queued via
+  // beginPopupChain/runPopupQueue. This is always the LAST thing shown for a confirm, so it
+  // always waits its turn instead of only doing so when isPlannedForToday is set -- otherwise
+  // it could win the race and show before pop-ups that were triggered moments earlier.
+  // Re-checks on every attempt (rather than computing the wait once) since more pop-ups can
+  // keep extending the "busy" window while this is polling.
+  const runAfterPopupsClear = (fn: () => void) => {
     const attempt = () => {
-      const delay = getPopupBusyDelay();
-      if (delay > 0) {
-        setTimeout(attempt, delay + 150);
+      if (getPopupBusyDelay() > 0 || hasPendingPopupChain()) {
+        setTimeout(attempt, getPopupBusyDelay() + 150);
         return;
       }
-      triggerQuestCelebration(text);
+      fn();
     };
     setTimeout(attempt, 150);
+  };
+
+  const triggerQuestCelebrationAfterToday = (text: string, _isPlannedForToday: boolean) => {
+    runAfterPopupsClear(() => triggerQuestCelebration(text));
   };
 
   // "Quest updated!" al confirmar un nodo regular — de vuelta como pop-up (se había quitado),
@@ -415,20 +422,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
   const hideQuestUpdatedPopup = () => setShowQuestUpdatedPopup(false);
 
-  const triggerQuestUpdatedAfterToday = (isPlannedForToday: boolean) => {
-    if (!isPlannedForToday) {
-      triggerQuestUpdated();
-      return;
-    }
-    const attempt = () => {
-      const delay = getPopupBusyDelay();
-      if (delay > 0) {
-        setTimeout(attempt, delay + 150);
-        return;
-      }
-      triggerQuestUpdated();
-    };
-    setTimeout(attempt, 150);
+  const triggerQuestUpdatedAfterToday = (_isPlannedForToday: boolean) => {
+    runAfterPopupsClear(triggerQuestUpdated);
   };
 
   const activeArea = Array.isArray(areas) ? areas.find(a => a.id === activeAreaId) : undefined;
@@ -1057,22 +1052,29 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           await refreshAllAreas();
         }, questCompletionArchiveDelayMs);
       } else if (newStatus === "mastered" && !isFinalNodeByPosition && !isOpeningNewLevel) {
-        // Trigger area XP popup before quest popup
-        try {
-          const progressBeforePct = calculateAreaProgressPercentage(area.currentXp ?? 0);
-          const progressAfterPct = calculateAreaProgressPercentage((area.currentXp ?? 0) + 1);
-          showAreaXpPopup?.({
-            areaOrProjectId: areaId,
-            scopeName: area.name,
-            areaColor: area.color,
-            progressBeforePct,
-            progressAfterPct,
-            bonusXp: 1,
-            currentXp: area.currentXp ?? 0,
-          });
-        } catch (e) {
-          // ignore
-        }
+        // Trigger area XP popup before quest popup -- but only once nothing else is currently
+        // showing/queued (e.g. a chain of xp/fuerza/poder pop-ups staged in Step 3 of the edit
+        // dialog), so it never lands on top of those instead of after them.
+        runAfterPopupsClear(() => {
+          try {
+            const totalInLevel = countSkillsInLevel(area.skills, area.unlockedLevel);
+            const masteredBeforeInLevel = countMasteredSkillsInLevel(area.skills, area.unlockedLevel);
+            const progressBeforePct = calculateLevelProgressPercentage(masteredBeforeInLevel, totalInLevel);
+            const progressAfterPct = calculateLevelProgressPercentage(masteredBeforeInLevel + 1, totalInLevel);
+            showAreaXpPopup?.({
+              areaOrProjectId: areaId,
+              scopeName: area.name,
+              areaColor: area.color,
+              progressBeforePct,
+              progressAfterPct,
+              bonusXp: 1,
+              level: area.unlockedLevel,
+              totalInLevel,
+            });
+          } catch (e) {
+            // ignore
+          }
+        });
 
         const isPlannedForToday = skill.plannedDate === getTodayStr();
         setTimeout(() => {
@@ -1421,22 +1423,28 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           await refreshAllAreas();
         }, questCompletionArchiveDelayMs);
       } else if (newStatus === "mastered" && !isFinalNodeByPosition && !isOpeningNewLevel) {
-        // Trigger quest XP popup before quest updated banner
-        try {
-          const progressBeforePct = calculateAreaProgressPercentage(project.currentXp ?? 0);
-          const progressAfterPct = calculateAreaProgressPercentage((project.currentXp ?? 0) + 1);
-          showAreaXpPopup?.({
-            areaOrProjectId: projectId,
-            scopeName: project.name,
-            areaColor: (project as any).color || "#fbbf24",
-            progressBeforePct,
-            progressAfterPct,
-            bonusXp: 1,
-            currentXp: project.currentXp ?? 0,
-          });
-        } catch (e) {
-          // ignore
-        }
+        // Trigger quest XP popup before quest updated banner -- only once nothing else is
+        // currently showing/queued (see the matching comment in toggleSkillStatus above).
+        runAfterPopupsClear(() => {
+          try {
+            const totalInLevel = countSkillsInLevel(project.skills, project.unlockedLevel);
+            const masteredBeforeInLevel = countMasteredSkillsInLevel(project.skills, project.unlockedLevel);
+            const progressBeforePct = calculateLevelProgressPercentage(masteredBeforeInLevel, totalInLevel);
+            const progressAfterPct = calculateLevelProgressPercentage(masteredBeforeInLevel + 1, totalInLevel);
+            showAreaXpPopup?.({
+              areaOrProjectId: projectId,
+              scopeName: project.name,
+              areaColor: (project as any).color || "#fbbf24",
+              progressBeforePct,
+              progressAfterPct,
+              bonusXp: 1,
+              level: project.unlockedLevel,
+              totalInLevel,
+            });
+          } catch (e) {
+            // ignore
+          }
+        });
 
         const isPlannedForToday = skill.plannedDate === getTodayStr();
         setTimeout(() => {
@@ -2810,11 +2818,12 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     };
 
     const newStatus = nextStatus[skill.status];
-    
-    // Only the true final node (by current position) may open the next level.
+
+    // The final node of a sub-skill tree (the last position of its level) completes the
+    // whole tree once mastered. Unlike areas/projects, sub-skill trees never grow further
+    // levels -- there is nothing left to unlock inside them, so this is the true end.
     const hasStar = isFinalNodeByPosition;
-    const canOpenNewLevels = hasStar;
-    const isOpeningNewLevel = canOpenNewLevels && newStatus === "mastered";
+    const isCompletingTree = hasStar && newStatus === "mastered";
 
     try {
       await fetch(`/api/skills/${skillId}`, {
@@ -2823,9 +2832,13 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         body: JSON.stringify({ status: newStatus }),
       });
 
-      if (hasStar && newStatus === "mastered") {
+      setSubSkills(prev => prev.map(s =>
+        s.id === skillId ? { ...s, status: newStatus } : s
+      ));
+
+      if (isCompletingTree) {
         triggerCompleted();
-        
+
         // Unlock the parent skill when final node is mastered
         if (activeParentSkillId) {
           await fetch(`/api/skills/${activeParentSkillId}`, {
@@ -2833,15 +2846,15 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ status: "available", fromSubtaskCompletion: true }),
           });
-          
+
           // Update local state for areas
           setAreas(prev => prev.map(area => ({
             ...area,
-            skills: area.skills.map(s => 
+            skills: area.skills.map(s =>
               s.id === activeParentSkillId ? { ...s, status: "available" as SkillStatus } : s
             )
           })));
-          
+
           // Update local state for projects
           setProjects(prev => prev.map(project => ({
             ...project,
@@ -2850,60 +2863,19 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
             )
           })));
         }
-      } else if (newStatus === "mastered") {
-        triggerQuestUpdated();
-      }
 
-      if (isOpeningNewLevel && activeParentSkillId) {
-        const newLevel = skill.level + 1;
-
-        // Update state immediately without waiting
-        setSubSkills(prev => prev.map(s =>
-          s.id === skillId ? { ...s, status: newStatus } : s
-        ));
-
-        // Trigger UI feedback after the area popup has had time to animate
+        // Let the "completed" banner play out (triggerCompleted clears it after 2s, plus its
+        // own fade-out), then leave the sub-skill view entirely and land back on the area's/
+        // project's own skill tree page instead of lingering on the now-finished mini-tree.
         setTimeout(() => {
-          triggerQuestUpdated();
-        }, 1800);
-
-        // Generate new level in the background without blocking
-        fetch(`/api/skills/${activeParentSkillId}/subskills/generate-level`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ level: newLevel }),
-        }).then(response => {
-          if (!response.ok) {
-            console.error("Failed to generate new subskill level");
-            return;
-          }
-          return response.json().then(({ createdSkills }) => {
-            // IMMEDIATE normalization right after receiving from server
-            // Ensure first node NEVER shows as locked
-            const normalizedCreatedSkills = ensureFirstNodeRules(createdSkills);
-            
-            setSubSkills(prev => {
-              const existingIds = new Set(prev.map((s: Skill) => s.id));
-              const newSkills = normalizedCreatedSkills.filter((s: Skill) => !existingIds.has(s.id));
-              
-              // Double-check: ensure new first nodes are mastered
-              const guardedNewSkills = newSkills.map(s => {
-                if (s.levelPosition === 1) {
-                  return { ...s, status: "mastered" as SkillStatus, title: "" };
-                }
-                return s;
-              });
-              
-              return [...prev, ...guardedNewSkills];
-            });
-          });
-        }).catch(error => {
-          console.error("Error generating new subskill level:", error);
-        });
-      } else {
-        setSubSkills(prev => prev.map(s => 
-          s.id === skillId ? { ...s, status: newStatus } : s
-        ));
+          setActiveParentSkillId(null);
+          setParentSkillStack([]);
+          setSubSkills([]);
+        }, 2500);
+      } else if (newStatus === "mastered") {
+        // Waits for anything already showing/queued (e.g. the node's own staged xp/fuerza/poder
+        // from Step 3) to clear first, so quest updated always lands last.
+        runAfterPopupsClear(triggerQuestUpdated);
       }
     } catch (error) {
       console.error("Error toggling sub-skill status:", error);
@@ -3026,16 +2998,15 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           });
       });
 
-      // If the node that just inherited final-node status was already mastered, the level
+      // If the node that just inherited final-node status was already mastered, the tree
       // was effectively already completed - see matching comment in deleteSkill. Sub-skill
-      // levels have no unlockedLevel field, so use "next level not generated yet" as the
-      // stand-in guard against re-firing completion on an already-progressed level.
+      // trees never grow further levels (see toggleSubSkillStatus), so this promoted node
+      // being mastered means the whole tree is done: complete it and leave the view, same
+      // as mastering the final node directly would.
       if (newFinalNodeId) {
         const newFinalNode = subSkills.find(s => s.id === newFinalNodeId);
-        const completedLevel = skillToDelete.level;
-        const nextLevelAlreadyExists = subSkills.some(s => s.level === completedLevel + 1);
 
-        if (newFinalNode && newFinalNode.status === "mastered" && !nextLevelAlreadyExists && activeParentSkillId) {
+        if (newFinalNode && newFinalNode.status === "mastered" && activeParentSkillId) {
           triggerCompleted();
 
           await fetch(`/api/skills/${activeParentSkillId}`, {
@@ -3053,30 +3024,12 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
             skills: project.skills.map(s => s.id === activeParentSkillId ? { ...s, status: "available" as SkillStatus } : s)
           })));
 
-          const newLevel = completedLevel + 1;
-          fetch(`/api/skills/${activeParentSkillId}/subskills/generate-level`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ level: newLevel }),
-          }).then(response => {
-            if (!response.ok) {
-              console.error("Failed to generate new subskill level");
-              return;
-            }
-            return response.json().then(({ createdSkills }) => {
-              const normalizedCreatedSkills = ensureFirstNodeRules(createdSkills);
-              setSubSkills(prev => {
-                const existingIds = new Set(prev.map((s: Skill) => s.id));
-                const newSkills = normalizedCreatedSkills.filter((s: Skill) => !existingIds.has(s.id));
-                const guardedNewSkills = newSkills.map(s =>
-                  s.levelPosition === 1 ? { ...s, status: "mastered" as SkillStatus, title: "" } : s
-                );
-                return [...prev, ...guardedNewSkills];
-              });
-            });
-          }).catch(error => {
-            console.error("Error generating new subskill level after deletion:", error);
-          });
+          // Let the "completed" banner play out, then leave the sub-skill view entirely.
+          setTimeout(() => {
+            setActiveParentSkillId(null);
+            setParentSkillStack([]);
+            setSubSkills([]);
+          }, 2500);
         }
       }
     } catch (error) {

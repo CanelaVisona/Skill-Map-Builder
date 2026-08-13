@@ -10,7 +10,10 @@
       "Bash(node script/apply-habit-slots-migration.mjs migrations/0039_habit_default_time_slots_array.sql)",
       "Bash(curl -sS -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3001/api/habits --max-time 5)",
       "Bash(curl -sS -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3001/ --max-time 5)",
-      "Bash(npx tsx *)"
+      "Bash(npx tsx *)",
+      "Bash(node -e ' *)",
+      "Bash(env)",
+      "Bash(timeout 100 npx vite build --mode development)"
     ]
   }
 }

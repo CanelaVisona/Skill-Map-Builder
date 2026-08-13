@@ -2,24 +2,24 @@ import React, { useState, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Skill } from "@/lib/skill-context";
 import { useAreaXpPopup } from "@/lib/area-xp-popup-context";
-import { calculateAreaLevel, calculateAreaProgressPercentage, countMasteredSkills } from "@/lib/area-progress";
+import { calculateLevelProgressPercentage, countMasteredSkillsInLevel, countSkillsInLevel } from "@/lib/area-progress";
 
 interface ProgressBarProps {
   skills: Skill[];
   size?: "lg" | "sm";
   areaOrProjectId?: string;
-  currentXp?: number;
+  unlockedLevel: number;
 }
 
-export function ProgressBar({ skills, size = "lg", areaOrProjectId, currentXp }: ProgressBarProps) {
+export function ProgressBar({ skills, size = "lg", areaOrProjectId, unlockedLevel }: ProgressBarProps) {
   const [isAnimating, setIsAnimating] = useState(false);
   const [showLevelUp, setShowLevelUp] = useState(false);
   const [showLevelComplete, setShowLevelComplete] = useState(false);
   const { snapshot: areaXpSnapshot } = useAreaXpPopup();
   const isFirstRenderRef = useRef(true);
   const prevAreaIdRef = useRef<string | undefined>(areaOrProjectId);
-  const prevXpRef = useRef(0);
-  const prevLevelRef = useRef(1);
+  const prevMasteredRef = useRef(0);
+  const prevLevelRef = useRef(unlockedLevel);
 
   const getLevelColor = (level: number): string => {
     const colors: { [key: number]: string } = {
@@ -35,10 +35,10 @@ export function ProgressBar({ skills, size = "lg", areaOrProjectId, currentXp }:
     return colors[level] || "bg-green-500 dark:bg-green-500";
   };
 
-  const completed = countMasteredSkills(skills);
-  const xpValue = currentXp ?? completed;
-  const level = calculateAreaLevel(xpValue);
-  const progressPercentage = calculateAreaProgressPercentage(xpValue);
+  const level = unlockedLevel;
+  const totalInLevel = countSkillsInLevel(skills, level);
+  const masteredInLevel = countMasteredSkillsInLevel(skills, level);
+  const progressPercentage = calculateLevelProgressPercentage(masteredInLevel, totalInLevel);
   const activeAreaXpSnapshot = areaXpSnapshot?.areaOrProjectId === areaOrProjectId ? areaXpSnapshot : null;
   const bonusWidth = activeAreaXpSnapshot ? Math.max(0, activeAreaXpSnapshot.progressAfterPct - activeAreaXpSnapshot.progressBeforePct) : 0;
 
@@ -47,7 +47,7 @@ export function ProgressBar({ skills, size = "lg", areaOrProjectId, currentXp }:
     if (isFirstRenderRef.current) {
       isFirstRenderRef.current = false;
       prevAreaIdRef.current = areaOrProjectId;
-      prevXpRef.current = xpValue;
+      prevMasteredRef.current = masteredInLevel;
       prevLevelRef.current = level;
       setIsAnimating(false);
       return;
@@ -56,23 +56,25 @@ export function ProgressBar({ skills, size = "lg", areaOrProjectId, currentXp }:
     // Si el área cambió, resetear sin animar
     if (areaOrProjectId !== prevAreaIdRef.current) {
       prevAreaIdRef.current = areaOrProjectId;
-      prevXpRef.current = xpValue;
+      prevMasteredRef.current = masteredInLevel;
       prevLevelRef.current = level;
       setIsAnimating(false);
       setShowLevelComplete(false);
       return;
     }
 
-    // Si el progreso aumentó en la misma área, animar
-    if (xpValue > prevXpRef.current) {
+    const levelIncreased = level > prevLevelRef.current;
+    const masteredIncreased = masteredInLevel > prevMasteredRef.current;
+
+    // Si se completó un nodo del nivel actual, o se desbloqueó un nivel nuevo, animar
+    if (levelIncreased || masteredIncreased) {
       setIsAnimating(true);
-      prevXpRef.current = xpValue;
-      
-      // Detectar cambio de nivel
-      if (level > prevLevelRef.current) {
+      prevMasteredRef.current = masteredInLevel;
+
+      if (levelIncreased) {
         // Mostrar barra completa en amarillo inmediatamente
         setShowLevelComplete(true);
-        
+
         // Mostrar "level up!" con delay para que aparezca después de "quest updated!" y "LEVEL"
         setTimeout(() => {
           setShowLevelUp(true);
@@ -84,11 +86,11 @@ export function ProgressBar({ skills, size = "lg", areaOrProjectId, currentXp }:
         }, 2500);
         prevLevelRef.current = level;
       }
-      
+
       const timer = setTimeout(() => setIsAnimating(false), 1500);
       return () => clearTimeout(timer);
     }
-  }, [xpValue, areaOrProjectId, level]);
+  }, [masteredInLevel, level, areaOrProjectId]);
 
   const containerClass = size === "lg" 
     ? "w-full" 

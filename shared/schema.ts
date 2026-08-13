@@ -294,6 +294,19 @@ export const globalSkills = pgTable("global_skills", {
   goalXp: integer("goal_xp").notNull().default(0),
   completed: integer("completed").$type<0 | 1>().default(0),
   completedAt: timestamp("completed_at"),
+  // Visual customization for the skill's medallion (Journal → Skills grid). All optional/defaulted
+  // so pre-existing rows keep rendering a good-looking default ("iron diamond") with no data migration.
+  icon: text("icon"), // nullable; key into client/src/lib/skill-icons.ts registry, null = auto-match by name
+  shape: text("shape").notNull().default("diamond_classic")
+    .$type<"diamond_classic" | "diamond_ornate" | "medallion" | "insignia">(),
+  material: text("material").notNull().default("iron")
+    .$type<"iron" | "steel" | "silver" | "aged_gold" | "stone" | "leather" | "custom">(),
+  rarity: text("rarity").notNull().default("common")
+    .$type<"common" | "uncommon" | "rare" | "epic" | "legendary">(),
+  accentColor: text("accent_color"), // nullable hex, used when material = 'custom'
+  glow: integer("glow").$type<0 | 1>(), // nullable; null = auto-derive from rarity
+  nodeSize: text("node_size").notNull().default("normal")
+    .$type<"small" | "normal" | "large">(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -485,7 +498,15 @@ export const insertJournalThoughtSchema = createInsertSchema(journalThoughts).om
 });
 
 export const insertUserSkillsProgressSchema = createInsertSchema(userSkillsProgress).omit({ id: true, createdAt: true, updatedAt: true, userId: true });
-export const insertGlobalSkillSchema = createInsertSchema(globalSkills).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertGlobalSkillSchema = createInsertSchema(globalSkills)
+  .omit({ id: true, createdAt: true, updatedAt: true })
+  .extend({
+    shape: z.enum(["diamond_classic", "diamond_ornate", "medallion", "insignia"]).optional(),
+    material: z.enum(["iron", "steel", "silver", "aged_gold", "stone", "leather", "custom"]).optional(),
+    rarity: z.enum(["common", "uncommon", "rare", "epic", "legendary"]).optional(),
+    glow: z.union([z.literal(0), z.literal(1)]).nullable().optional(),
+    nodeSize: z.enum(["small", "normal", "large"]).optional(),
+  });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;

@@ -10,7 +10,11 @@ export interface AreaXpPopupSnapshot {
   progressBeforePct: number;
   progressAfterPct: number;
   bonusXp: number;
-  currentXp?: number;
+  // Nivel desbloqueado del área/quest y cantidad de nodos que tiene ese nivel -- reemplazan la
+  // vieja división fija por 15: la barra ahora se divide en tantos bloques como nodos tenga el
+  // nivel actual, y "level" se usa solo para el color del bloque.
+  level: number;
+  totalInLevel: number;
 }
 
 interface AreaXpPopupContextValue {

@@ -1,7 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { createPortal } from "react-dom";
 import { Sparkles } from "lucide-react";
-import { calculateAreaLevel, calculateAreaProgressPercentage } from "@/lib/area-progress";
 import { usePopupPalette } from "@/lib/popup-theme";
 
 import type { AreaXpPopupSnapshot } from "@/lib/area-xp-popup-context";
@@ -35,7 +34,9 @@ export function AreaLevelGainPopup({ snapshot, onClose }: AreaLevelGainPopupProp
     return colors[level] || "#22c55e";
   };
 
-  const level = calculateAreaLevel(snapshot.currentXp ?? 0);
+  const level = snapshot.level;
+  // Un bloque por nodo del nivel actual (antes eran siempre 15 bloques fijos).
+  const totalBlocks = Math.max(1, snapshot.totalInLevel);
 
   return createPortal(
     <AnimatePresence>
@@ -107,10 +108,9 @@ export function AreaLevelGainPopup({ snapshot, onClose }: AreaLevelGainPopupProp
             </div>
 
             <div className="mt-3">
-              {/* Barra dividida en 15 bloques */}
+              {/* Barra dividida en un bloque por cada nodo del nivel actual */}
               <div className="w-full h-4 flex gap-0.5 rounded-sm">
-                {Array.from({ length: 15 }).map((_, i) => {
-                  const totalBlocks = 15;
+                {Array.from({ length: totalBlocks }).map((_, i) => {
                   const filledBlocks = Math.round((progressAfter / 100) * totalBlocks);
                   const prevFilledBlocks = Math.round((progressBefore / 100) * totalBlocks);
                   const isAlreadyFilled = i < prevFilledBlocks;

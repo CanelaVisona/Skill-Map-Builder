@@ -3,26 +3,12 @@ import ReactDOM from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { SkillDiamond } from "./SkillDiamond";
 import { SkillGridDetail } from "./SkillGridDetail";
+import { SkillCustomizeForm, DEFAULT_SKILL_CUSTOMIZATION, type SkillCustomizationValue } from "./SkillCustomizeForm";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useSkillTree } from "@/lib/skill-context";
-
-// Icon map for skills - maps skill title keywords to icon paths
-const SKILL_ICONS: Record<string, string> = {
-  musica: `<path d="M14,4 L14,24 M10,8 L18,8 M8,18 C8,14 20,14 20,18" stroke-width="1.5" fill="none"/><path d="M8,18 L8,20 L20,20 L20,18" stroke-width="1" fill="none"/>`,
-  guitarra: `<path d="M14,4 L14,24 M10,8 L18,8 M8,18 C8,14 20,14 20,18" stroke-width="1.5" fill="none"/>`,
-  piano: `<path d="M8,14 L8,24 M10,14 L10,24 M12,14 L12,24 M14,14 L14,24 M16,14 L16,24 M18,14 L18,24 M20,14 L20,24" stroke-width="1" fill="none"/>`,
-  flame: `<path d="M14,22 C14,22 8,18 8,13 C8,10 10,8 12,9 C12,6 14,4 14,4 C14,4 16,7 18,9 C20,11 20,16 20,18 C20,20 17,22 14,22Z" stroke-width="1.2" fill="none"/><path d="M14,18 C14,18 11,16 11,14 C11,13 12,12 13,13" stroke-width="1" fill="none"/>`,
-  meditacion: `<path d="M6,14 C6,14 9,8 14,8 C19,8 22,14 22,14 C22,14 19,20 14,20 C9,20 6,14 6,14Z" stroke-width="1.3" fill="none"/><circle cx="14" cy="14" r="3" stroke-width="1.3" fill="none"/><circle cx="14" cy="14" r="1" fill="currentColor"/>`,
-  respiracion: `<path d="M6,14 C8,10 10,8 14,8 C18,8 20,10 22,14" stroke-width="1.5" fill="none"/><path d="M6,14 C8,18 10,20 14,20 C18,20 20,18 22,14" stroke-width="1" fill="none"/><path d="M10,14 C10,12 12,11 14,11 C16,11 18,12 18,14 C18,16 16,17 14,17 C12,17 10,16 10,14" stroke-width="1" fill="none"/>`,
-  olas: `<path d="M5,14 C7,10 9,10 11,14 C13,18 15,18 17,14 C19,10 21,10 23,14" stroke-width="1.5" fill="none"/><path d="M5,18 C7,14 9,14 11,18 C13,22 15,22 17,18 C19,14 21,14 23,18" stroke-width="1" fill="none" opacity=".5"/>`,
-  surf: `<path d="M5,14 C7,10 9,10 11,14 C13,18 15,18 17,14 C19,10 21,10 23,14" stroke-width="1.5" fill="none"/>`,
-  lectura: `<path d="M9,6 C9,6 8,6 8,8 L8,20 C8,20 8,22 10,22 L20,22 L20,8 C20,8 20,6 18,6 Z" stroke-width="1.3" fill="none"/><path d="M8,8 C8,8 8,6 10,6" stroke-width="1.3" fill="none"/><line x1="11" y1="10" x2="17" y2="10" stroke-width="1"/><line x1="11" y1="13" x2="17" y2="13" stroke-width="1"/><line x1="11" y1="16" x2="14" y2="16" stroke-width="1"/>`,
-  intelecto: `<path d="M14,5 L14,23 M9,8 L19,8 M9,14 L19,14 M9,20 L14,20" stroke-width="1.5" fill="none"/><path d="M14,14 L19,20" stroke-width="1.5" fill="none"/>`,
-  escritura: `<path d="M20,5 C20,5 16,8 13,14 L11,21 L14,18 C18,14 22,10 20,5Z" stroke-width="1.2" fill="none"/><line x1="11" y1="21" x2="8" y2="23" stroke-width="1"/><path d="M13,14 C12,16 11,18 11,21" stroke-width="1" fill="none"/>`,
-  casa: `<path d="M14,22 C14,22 7,15 7,10 C7,7 9,5 11,5 C12.5,5 13.5,6 14,7 C14.5,6 15.5,5 17,5 C19,5 21,7 21,10 C21,15 14,22 14,22Z" stroke-width="1.3" fill="none"/>`,
-  limpieza: `<path d="M14,22 C14,22 7,15 7,10 C7,7 9,5 11,5 C12.5,5 13.5,6 14,7 C14.5,6 15.5,5 17,5 C19,5 21,7 21,10 C21,15 14,22 14,22Z" stroke-width="1.3" fill="none"/>`,
-  organizacion: `<rect x="8" y="11" width="12" height="10" rx="1" stroke-width="1.3" fill="none"/><path d="M8,8 L20,8 L20,11 L8,11 Z" stroke-width="1.3" fill="none"/><circle cx="14" cy="16" r="1.5" stroke-width="1" fill="none"/><line x1="14" y1="17.5" x2="14" y2="19" stroke-width="1"/>`,
-};
+import type { ShapeKey } from "@/lib/skill-shapes";
+import type { MaterialKey } from "@/lib/skill-materials";
+import type { RarityKey } from "@/lib/skill-rarity";
 
 // Area colors (from HTML design)
 const AREA_COLORS: Record<string, string> = {
@@ -58,6 +44,13 @@ interface GlobalSkillData {
   projectId?: string | null;
   status: "locked" | "available" | "mastered";
   createdAt?: string;
+  icon?: string | null;
+  shape?: ShapeKey;
+  material?: MaterialKey;
+  rarity?: RarityKey;
+  accentColor?: string | null;
+  glow?: 0 | 1 | null;
+  nodeSize?: "small" | "normal" | "large";
 }
 
 interface AreaData {
@@ -89,6 +82,7 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
   const [editGoalUnlimited, setEditGoalUnlimited] = useState(false);
   const [editGoalValue, setEditGoalValue] = useState<string>("");
   const [editError, setEditError] = useState<string>("");
+  const [editCustomization, setEditCustomization] = useState<SkillCustomizationValue>(DEFAULT_SKILL_CUSTOMIZATION);
   const skillRefs = React.useRef<Record<string, HTMLDivElement | null>>({});
 
   const [showNewSkillForm, setShowNewSkillForm] = useState(false);
@@ -98,6 +92,7 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
   const [newSkillLinkType, setNewSkillLinkType] = useState<"area" | "project">("area");
   const [newSkillLinkId, setNewSkillLinkId] = useState<string>("");
   const [newSkillError, setNewSkillError] = useState<string>("");
+  const [newSkillCustomization, setNewSkillCustomization] = useState<SkillCustomizationValue>(DEFAULT_SKILL_CUSTOMIZATION);
   const gridContainerRef = React.useRef<HTMLDivElement | null>(null);
   const longPressTimerRef = React.useRef<NodeJS.Timeout | null>(null);
   const [longPressStart, setLongPressStart] = useState<{ x: number; y: number } | null>(null);
@@ -283,17 +278,6 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
     }
   };
 
-  const getIconForSkill = (title: string): string => {
-    const lowerTitle = title.toLowerCase();
-    for (const [key, icon] of Object.entries(SKILL_ICONS)) {
-      if (lowerTitle.includes(key)) {
-        return icon;
-      }
-    }
-    // Default icon if no match
-    return `<circle cx="14" cy="14" r="5" fill="none"/>`;
-  };
-
   const handleLongPress = (skillId: string, e: React.MouseEvent | React.TouchEvent) => {
     e.preventDefault();
 
@@ -349,6 +333,15 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
     setEditGoalUnlimited(!skill.goalXp || skill.goalXp === 0);
     setEditGoalValue(String(skill.goalXp || ""));
     setEditError("");
+    setEditCustomization({
+      icon: skill.icon ?? null,
+      shape: skill.shape ?? "diamond_classic",
+      material: skill.material ?? "iron",
+      rarity: skill.rarity ?? "common",
+      accentColor: skill.accentColor ?? null,
+      glowMode: skill.glow === 1 ? "on" : skill.glow === 0 ? "off" : "auto",
+      nodeSize: skill.nodeSize ?? "normal",
+    });
     setContextMenu(null);
   };
 
@@ -361,6 +354,7 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
     setEditGoalUnlimited(false);
     setEditGoalValue("");
     setEditError("");
+    setEditCustomization(DEFAULT_SKILL_CUSTOMIZATION);
   };
 
   const handleSaveEdit = async () => {
@@ -401,6 +395,13 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
           areaId: editLinkType === "area" ? editLinkId : null,
           projectId: editLinkType === "project" ? editLinkId : null,
           goalXp: newGoalLevel,
+          icon: editCustomization.icon,
+          shape: editCustomization.shape,
+          material: editCustomization.material,
+          rarity: editCustomization.rarity,
+          accentColor: editCustomization.material === "custom" ? (editCustomization.accentColor ?? areaColor) : null,
+          glow: editCustomization.glowMode === "auto" ? null : editCustomization.glowMode === "on" ? 1 : 0,
+          nodeSize: editCustomization.nodeSize,
         }),
       });
       if (response.ok) {
@@ -498,12 +499,24 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
         return;
       }
 
-      if (levelGoal > 0) {
+      // Only PATCH customization fields that differ from their defaults, so a skill
+      // created without touching the customize form stays identical to today's default.
+      const customizationPatch: Record<string, any> = {};
+      if (levelGoal > 0) customizationPatch.goalXp = levelGoal;
+      if (newSkillCustomization.icon !== null) customizationPatch.icon = newSkillCustomization.icon;
+      if (newSkillCustomization.shape !== "diamond_classic") customizationPatch.shape = newSkillCustomization.shape;
+      if (newSkillCustomization.material !== "iron") customizationPatch.material = newSkillCustomization.material;
+      if (newSkillCustomization.material === "custom") customizationPatch.accentColor = newSkillCustomization.accentColor ?? areaColor;
+      if (newSkillCustomization.rarity !== "common") customizationPatch.rarity = newSkillCustomization.rarity;
+      if (newSkillCustomization.glowMode !== "auto") customizationPatch.glow = newSkillCustomization.glowMode === "on" ? 1 : 0;
+      if (newSkillCustomization.nodeSize !== "normal") customizationPatch.nodeSize = newSkillCustomization.nodeSize;
+
+      if (Object.keys(customizationPatch).length > 0) {
         await fetch(`/api/global-skills/${newSkill.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ goalXp: levelGoal }),
+          body: JSON.stringify(customizationPatch),
         });
       }
 
@@ -514,6 +527,7 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
       setNewSkillLinkType("area");
       setNewSkillLinkId("");
       setNewSkillError("");
+      setNewSkillCustomization(DEFAULT_SKILL_CUSTOMIZATION);
       setShowNewSkillForm(false);
       refetch();
     } catch (error) {
@@ -667,6 +681,13 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
         goalXp: globalSelectedSkill.goalXp,
         areaName: currentArea?.name || "",
         description: globalSelectedSkill.description || "",
+        icon: globalSelectedSkill.icon ?? null,
+        shape: globalSelectedSkill.shape ?? "diamond_classic",
+        material: globalSelectedSkill.material ?? "iron",
+        rarity: globalSelectedSkill.rarity ?? "common",
+        accentColor: globalSelectedSkill.accentColor ?? null,
+        glow: globalSelectedSkill.glow ?? null,
+        nodeSize: globalSelectedSkill.nodeSize ?? "normal",
       }
     : null;
 
@@ -825,7 +846,13 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
                         status: skill.status,
                         currentXp: skill.currentXp,
                         goalXp: skill.goalXp,
-                        icon: getIconForSkill(skill.name),
+                        icon: skill.icon ?? null,
+                        shape: skill.shape ?? "diamond_classic",
+                        material: skill.material ?? "iron",
+                        rarity: skill.rarity ?? "common",
+                        accentColor: skill.accentColor ?? null,
+                        glow: skill.glow ?? null,
+                        nodeSize: skill.nodeSize ?? "normal",
                       }}
                       areaColor={areaColor}
                       selected={selectedSkillId === skill.id}
@@ -1180,10 +1207,26 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
                 </select>
               </div>
 
+              {/* Personalización visual del rombo */}
+              <div className="mb-4">
+                <label className="text-xs block mb-2" style={{ color: "#c8a96e" }}>
+                  Apariencia del skill
+                </label>
+                <SkillCustomizeForm
+                  name={newSkillName}
+                  value={newSkillCustomization}
+                  onChange={(patch) => setNewSkillCustomization((prev) => ({ ...prev, ...patch }))}
+                  areaColor={areaColor}
+                />
+              </div>
+
               {/* Buttons */}
               <div className="flex gap-2 justify-end">
                 <button
-                  onClick={() => setShowNewSkillForm(false)}
+                  onClick={() => {
+                    setShowNewSkillForm(false);
+                    setNewSkillCustomization(DEFAULT_SKILL_CUSTOMIZATION);
+                  }}
                   className="px-3 py-2 rounded text-xs transition-colors"
                   style={{
                     backgroundColor: "transparent",
@@ -1405,6 +1448,19 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
                     onBlur={(e) => (e.currentTarget.style.borderColor = "#3a2a14")}
                   />
                 )}
+              </div>
+
+              {/* Personalización visual del rombo */}
+              <div className="mb-4">
+                <label className="text-xs block mb-2" style={{ color: "#c8a96e" }}>
+                  Apariencia del skill
+                </label>
+                <SkillCustomizeForm
+                  name={editName}
+                  value={editCustomization}
+                  onChange={(patch) => setEditCustomization((prev) => ({ ...prev, ...patch }))}
+                  areaColor={areaColor}
+                />
               </div>
 
               {/* Delete button */}

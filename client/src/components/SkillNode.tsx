@@ -7,13 +7,12 @@ import { useState, useRef, useEffect } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { type ExperienceGainSnapshot } from "./ExperienceGainPopup";
 import { useXpPopup } from "@/lib/xp-popup-context";
-import { useAreaXpPopup } from "@/lib/area-xp-popup-context";
 import { useInsightsCounterPopup } from "@/lib/insights-counter-popup-context";
 import { useBodyProgress, BODY_ZONES, BODY_ZONE_LABELS, type BodyZone, type BodyDimension } from "@/lib/body-progress-context";
 import { useBodyGainPopup } from "@/lib/body-gain-popup-context";
 import { useLevelUpCelebration } from "@/lib/level-up-celebration-context";
 import { usePowerCelebration } from "@/lib/power-celebration-context";
-import { AREA_PROGRESS_XP_INCREMENT, calculateAreaProgressPercentage, countMasteredSkills } from "@/lib/area-progress";
+import { beginPopupChain, endPopupChain, runPopupQueue } from "@/lib/popup-coordinator";
 import { getNodeTitleWordLimit, clampToWordLimit } from "@/lib/node-title-settings";
 import {
   Popover,
@@ -161,15 +160,13 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     globalSkills,
     getGlobalSkillsForArea,
     getGlobalSkillsForProject,
-    addXpToGlobalSkill,
-    addAreaXp
+    addXpToGlobalSkill
   } = useSkillTree();
-  
+
   const isProject = !activeAreaId && !!activeProjectId;
   const activeId = activeAreaId || activeProjectId;
   const isSubSkillView = !!activeParentSkillId;
-  const activeScope = isProject ? activeProject : activeArea;
-  
+
   // Calculate if all nodes in this level are mastered
   const currentSkills = isSubSkillView 
     ? subSkills 
@@ -385,7 +382,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [hasIncompleteSubtasks, setHasIncompleteSubtasks] = useState(false);
 
   const { showXpPopup, hideXpPopup } = useXpPopup();
-  const { showAreaXpPopup } = useAreaXpPopup();
   const { showInsightsCounterPopup } = useInsightsCounterPopup();
   const { showLevelUpCelebration } = useLevelUpCelebration();
   const { showPowerCelebration } = usePowerCelebration();
@@ -419,36 +415,23 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       prev.includes(zone) ? prev.filter((z) => z !== zone) : [...prev, zone]
     );
   };
-  const activeScopeSkills = isProject ? (activeProject?.skills || []) : (activeArea?.skills || []);
-  const activeScopeName = isProject ? (activeProject?.name || "Project") : (activeArea?.name || "Area");
-  const activeScopeXp = activeScope?.currentXp ?? countMasteredSkills(activeScopeSkills);
-
-  const triggerAreaProgressPopup = (xpBefore: number = activeScopeXp) => {
-    if (!activeId) {
-      return;
-    }
-
-    const progressBeforePct = calculateAreaProgressPercentage(xpBefore);
-    const progressAfterPct = calculateAreaProgressPercentage(xpBefore + AREA_PROGRESS_XP_INCREMENT);
-
-    showAreaXpPopup({
-      areaOrProjectId: activeId,
-      scopeName: activeScopeName,
-      areaColor,
-      progressBeforePct,
-      progressAfterPct,
-      bonusXp: AREA_PROGRESS_XP_INCREMENT,
-      currentXp: xpBefore,
-    });
-  };
+  // Nota: la barra de nivel del área/quest (ProgressBar / AreaLevelGainPopup) ya no se toca
+  // desde acá -- sube únicamente al completar nodos del skill tree de ese nivel (ver
+  // toggleSkillStatus en skill-context.tsx). Agregar experiencia a un skill (este archivo)
+  // sólo afecta el XP propio del skill, mostrado con showXpPopup más abajo.
 
   // Cuántos pensamientos/aprendizajes/herramientas hay ya registrados (de todos los skills, no
   // solo el actual) -- cada tipo lleva su propio conteo, para el pop-up que dispara
-  // handleAddThought/Learning/Tool. fetchQuery reusa el cache (staleTime: Infinity) de la misma
-  // query key que usa SkillTree.tsx para su listado global, así que no dispara un fetch de red
-  // salvo que todavía no exista.
+  // handleAddThought/Learning/Tool. staleTime: 0 fuerza un fetch de red siempre (en vez de
+  // confiar en el cache de staleTime: Infinity que usa SkillTree.tsx para su listado global):
+  // ese cache solo se refresca cuando hay una vista con esa query key montada y activa, así que
+  // si el usuario nunca abrió esa vista, el conteo podía quedar desactualizado tras un alta
+  // anterior. Pedirlo siempre fresco es la única forma de garantizar que countBefore sea exacto.
   const getJournalEntryCount = async (kind: "learnings" | "tools" | "thoughts"): Promise<number> => {
-    const entries = await queryClient.fetchQuery<Array<unknown>>({ queryKey: [`/api/journal/${kind}`] });
+    const entries = await queryClient.fetchQuery<Array<unknown>>({
+      queryKey: [`/api/journal/${kind}`],
+      staleTime: 0,
+    });
     return entries?.length ?? 0;
   };
 
@@ -843,14 +826,20 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       console.log("[handleAddThought] Title is empty, returning");
       return;
     }
-    
-    const payload = { 
-      title: thoughtTitle.trim(), 
-      sentence: thoughtSentence.trim(), 
-      skillId: skill.id 
+
+    // Evita que un doble click (o un submit repetido antes de que resuelva el anterior) lea el
+    // mismo countBefore dos veces -- el segundo pop-up mostraría "de más" en vez de encadenar.
+    if (createThought.isPending) {
+      return;
+    }
+
+    const payload = {
+      title: thoughtTitle.trim(),
+      sentence: thoughtSentence.trim(),
+      skillId: skill.id
     };
     console.log("[handleAddThought] Calling mutation with:", payload);
-    
+
     try {
       const countBefore = await getJournalEntryCount("thoughts");
       await createThought.mutateAsync(payload);
@@ -873,14 +862,18 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       console.log("[handleAddLearning] Title is empty, returning");
       return;
     }
-    
-    const payload = { 
-      title: learningTitle.trim(), 
-      sentence: learningSentence.trim(), 
-      skillId: skill.id 
+
+    if (createLearning.isPending) {
+      return;
+    }
+
+    const payload = {
+      title: learningTitle.trim(),
+      sentence: learningSentence.trim(),
+      skillId: skill.id
     };
     console.log("[handleAddLearning] Calling mutation with:", payload);
-    
+
     try {
       const countBefore = await getJournalEntryCount("learnings");
       await createLearning.mutateAsync(payload);
@@ -903,14 +896,18 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       console.log("[handleAddTool] Title is empty, returning");
       return;
     }
-    
-    const payload = { 
-      title: toolTitle.trim(), 
-      sentence: toolSentence.trim(), 
-      skillId: skill.id 
+
+    if (createTool.isPending) {
+      return;
+    }
+
+    const payload = {
+      title: toolTitle.trim(),
+      sentence: toolSentence.trim(),
+      skillId: skill.id
     };
     console.log("[handleAddTool] Calling mutation with:", payload);
-    
+
     try {
       const countBefore = await getJournalEntryCount("tools");
       await createTool.mutateAsync(payload);
@@ -1028,21 +1025,15 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
           detail: { skillId: skillId, currentXp: updatedSkill.currentXp, level: updatedSkill.level }
         }));
 
-        // Clear inputs and show feedback
+        // Clear inputs and show feedback -- solo el pop-up del XP propio del skill (la barra que
+        // llega a 100% en el tab de skills del diary/quest). Agregar experiencia a un skill ya
+        // no toca la barra de nivel del área/quest: esa sube únicamente al completar nodos del
+        // skill tree de ese nivel.
         setXpValue(FIXED_XP_AMOUNT.toString());
         showPopup(() => {
           hideBodyGainPopup(); // evita solaparse con el pop-up de fuerza/flexibilidad
           showXpPopup(globalSnapshot);
         });
-
-        const targetId = currentSkill?.areaId || currentSkill?.projectId;
-        const isTargetProject = !currentSkill?.areaId && !!currentSkill?.projectId;
-        if (targetId) {
-          const areaXpUpdated = await addAreaXp(targetId, isTargetProject, AREA_PROGRESS_XP_INCREMENT);
-          if (areaXpUpdated) {
-            triggerAreaProgressPopup(currentSkill?.currentXp ?? 0);
-          }
-        }
       }
     } catch (error) {
       console.error("[applyExperienceGain] Error adding XP:", error);
@@ -1089,8 +1080,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   // Whatever was picked in Step 3 (xp/fuerza/poderes) of the title-long-press edit dialog is
   // only a preview until this runs -- it fires once, right when the node itself gets confirmed
   // (available -> mastered), and is what actually grants the XP/body progress/power and shows
-  // their celebration pop-ups. Pop-ups across the three categories are staggered 1800ms apart
-  // (matching the existing convention for multiple body zones) so they don't overlap.
+  // their celebration pop-ups.
   const hasPendingRewards = !!pendingXpSkillId || pendingBodyZones.length > 0 || !!pendingPowerId;
   // Human-readable labels for the pending-rewards subtitle shown under the node title.
   const pendingXpSkillName = pendingXpSkillId
@@ -1101,33 +1091,40 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const pendingPowerName = pendingSelectedPower?.name ?? null;
 
   const applyPendingRewards = async () => {
-    let slot = 0;
-    const schedulePopup = (fn: () => void) => {
-      if (slot === 0) fn();
-      else setTimeout(fn, slot * 1800);
-      slot += 1;
-    };
+    // Opens the popup chain synchronously, before any of the awaits below, so anything that
+    // reacts to node-confirmation asynchronously elsewhere (the today-progress pop-up, the
+    // node's own "quest updated" pop-up in skill-context.tsx) knows right away that it has to
+    // wait its turn instead of racing ahead of these.
+    beginPopupChain();
+
+    // Each mutation below resolves at its own pace; collect one synchronous "show this pop-up"
+    // task per reward as they finish, then hand the whole batch to runPopupQueue so it can play
+    // them back one at a time (never overlapped), respecting whatever else may already be busy.
+    const tasks: Array<() => void> = [];
+    const enqueue = (fn: () => void) => tasks.push(fn);
 
     if (pendingXpSkillId) {
       const skillId = pendingXpSkillId;
       setPendingXpSkillId(null);
-      await applyExperienceGain(skillId, schedulePopup);
+      await applyExperienceGain(skillId, enqueue);
     }
 
     if (pendingBodyZones.length > 0) {
       const dimension = pendingBodyDimension;
       const zones = pendingBodyZones;
       setPendingBodyZones([]);
-      applyBodyGain(dimension, zones, schedulePopup);
+      applyBodyGain(dimension, zones, enqueue);
     }
 
     if (pendingPowerId) {
       const power = sourcePowers.find((p) => p.id === pendingPowerId) || null;
       setPendingPowerId(null);
       if (power) {
-        await applyPowerAction(power, schedulePopup);
+        await applyPowerAction(power, enqueue);
       }
     }
+
+    runPopupQueue(tasks, endPopupChain);
   };
 
   const handleTitleLongPressStart = (e: React.TouchEvent | React.MouseEvent) => {
@@ -2062,7 +2059,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                     variant="ghost" 
                     size="sm"
                     onClick={handleAddThought}
-                    disabled={!thoughtTitle.trim()}
+                    disabled={!thoughtTitle.trim() || createThought.isPending}
                     className="bg-muted/50 hover:bg-muted"
                     data-testid="button-new-thought"
                   >
@@ -2095,7 +2092,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                     variant="ghost" 
                     size="sm"
                     onClick={handleAddLearning}
-                    disabled={!learningTitle.trim()}
+                    disabled={!learningTitle.trim() || createLearning.isPending}
                     className="bg-muted/50 hover:bg-muted"
                     data-testid="button-new-learning"
                   >
@@ -2440,7 +2437,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                     variant="ghost" 
                     size="sm"
                     onClick={handleAddTool}
-                    disabled={!toolTitle.trim()}
+                    disabled={!toolTitle.trim() || createTool.isPending}
                     className="bg-muted/50 hover:bg-muted"
                     data-testid="button-new-tool"
                   >
@@ -3303,7 +3300,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 variant="ghost" 
                 size="sm"
                 onClick={handleAddTool}
-                disabled={!toolTitle.trim()}
+                disabled={!toolTitle.trim() || createTool.isPending}
                 className="bg-muted/50 hover:bg-muted"
                 data-testid="button-new-tool"
               >
@@ -3336,7 +3333,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 variant="ghost" 
                 size="sm"
                 onClick={handleAddLearning}
-                disabled={!learningTitle.trim()}
+                disabled={!learningTitle.trim() || createLearning.isPending}
                 className="bg-muted/50 hover:bg-muted"
                 data-testid="button-new-learning"
               >

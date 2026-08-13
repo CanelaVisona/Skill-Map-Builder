@@ -8052,20 +8052,42 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
 
     if (!targetSkill) return;
 
-    const timer = window.setTimeout(() => {
+    // The node list is swapped inside an AnimatePresence with mode="wait" (keyed by
+    // area/quest/sub-tree id), so the previous content exits (~0.4s) before the new
+    // nodes mount. Poll for the target node instead of guessing a fixed delay.
+    let cancelled = false;
+    let attempts = 0;
+    const maxAttempts = 40; // ~2s at 50ms, comfortably covers the exit+enter transition
+
+    const tryScroll = () => {
+      if (cancelled) return;
+
       const container = document.querySelector('[data-skill-canvas-scroll="true"]');
       const targetElement = document.querySelector(`[data-skill-id="${targetSkill.id}"]`);
-      if (!container || !targetElement) return;
 
-      // Start at the very top (first level) so the scroll visibly travels down to the unlocked node.
-      container.scrollTop = 0;
+      if (container && targetElement) {
+        // Start at the very top (first level) so the scroll visibly travels down to the unlocked node.
+        container.scrollTop = 0;
+        window.setTimeout(() => {
+          if (!cancelled) {
+            targetElement.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+          }
+        }, 60);
+        return;
+      }
 
-      window.setTimeout(() => {
-        targetElement.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
-      }, 250);
-    }, 150);
+      attempts += 1;
+      if (attempts < maxAttempts) {
+        window.setTimeout(tryScroll, 50);
+      }
+    };
 
-    return () => window.clearTimeout(timer);
+    const initialTimer = window.setTimeout(tryScroll, 50);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(initialTimer);
+    };
   }, [scrollContextKey, isSubSkillView, subSkills, activeItem]);
 
   if (isSubSkillView) {
@@ -8421,7 +8443,7 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
                   title="Abrir Progress Tracker"
                   data-testid="button-open-progress-from-bar"
                 >
-                  <ProgressBar skills={activeItem.skills} size="sm" areaOrProjectId={activeItem.id} currentXp={activeItem.currentXp} />
+                  <ProgressBar skills={activeItem.skills} size="sm" areaOrProjectId={activeItem.id} unlockedLevel={activeItem.unlockedLevel} />
                 </button>
               </div>
             </div>

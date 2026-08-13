@@ -2690,7 +2690,7 @@ function AreaItem({ area, isActive, isMenuOpen, onSelect, onDelete, onArchive, o
               animate={{ opacity: 1, height: "auto" }}
               className="pl-7"
             >
-              <ProgressBar skills={area.skills || []} size="sm" areaOrProjectId={area.id} currentXp={area.currentXp} />
+              <ProgressBar skills={area.skills || []} size="sm" areaOrProjectId={area.id} unlockedLevel={area.unlockedLevel} />
             </motion.div>
           )}
         </button>
@@ -2915,7 +2915,7 @@ function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete, onArch
               animate={{ opacity: 1, height: "auto" }}
               className="pl-7"
             >
-              <ProgressBar skills={project.skills || []} size="sm" areaOrProjectId={project.id} currentXp={project.currentXp} />
+              <ProgressBar skills={project.skills || []} size="sm" areaOrProjectId={project.id} unlockedLevel={project.unlockedLevel} />
             </motion.div>
           )}
         </button>

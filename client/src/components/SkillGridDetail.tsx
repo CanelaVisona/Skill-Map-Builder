@@ -1,6 +1,14 @@
 import React, { useEffect, useState } from "react";
-import { getContrastColor } from "@/lib/utils";
 import { X } from "lucide-react";
+import { SkillDiamond } from "./SkillDiamond";
+import { usePopupPalette } from "@/lib/popup-theme";
+import type { ShapeKey } from "@/lib/skill-shapes";
+import type { MaterialKey } from "@/lib/skill-materials";
+import type { RarityKey } from "@/lib/skill-rarity";
+
+// Same block count as the "+XP" gain popup (ExperienceGainPopup.tsx), so the two bars read
+// as the same visual language.
+const XP_BAR_BLOCKS = 15;
 
 interface SkillData {
   id: string;
@@ -11,6 +19,13 @@ interface SkillData {
   goalXp: number;
   areaName: string;
   description?: string;
+  icon?: string | null;
+  shape?: ShapeKey;
+  material?: MaterialKey;
+  rarity?: RarityKey;
+  accentColor?: string | null;
+  glow?: 0 | 1 | null;
+  nodeSize?: "small" | "normal" | "large";
 }
 
 interface SkillGridDetailProps {
@@ -21,7 +36,8 @@ interface SkillGridDetailProps {
 
 export function SkillGridDetail({ skill, areaColor, onClose }: SkillGridDetailProps) {
   const [progressPercent, setProgressPercent] = useState(0);
-  
+  const palette = usePopupPalette();
+
   // Helper: cumulative XP required to reach the start of `level`
   const cumulativeXpToLevelStart = (level: number) => {
     // sum_{i=1}^{level-1} i*100 = 100 * (level-1)*level/2
@@ -53,17 +69,6 @@ export function SkillGridDetail({ skill, areaColor, onClose }: SkillGridDetailPr
     );
   }
 
-  const isLocked = skill.status === "locked";
-  const isUnlocked = skill.status === "available" || skill.status === "mastered";
-
-  const getStrokeForLevel = (currentLevel: number) => {
-    if (currentLevel >= 5) return { stroke: "#ffe8a0", strokeWidth: 3.5 };
-    if (currentLevel === 4) return { stroke: "#e8c97e", strokeWidth: 2.8 };
-    if (currentLevel === 3) return { stroke: "#c8a96e", strokeWidth: 2 };
-    if (currentLevel === 2) return { stroke: "#8a6a2a", strokeWidth: 1.4 };
-    return { stroke: "#5a4a2a", strokeWidth: 0.8 };
-  };
-
   const getProgressColorForLevel = (currentLevel: number) => {
     if (currentLevel >= 5) return "#39ff39";
     if (currentLevel === 4) return "#2ecc2e";
@@ -71,8 +76,6 @@ export function SkillGridDetail({ skill, areaColor, onClose }: SkillGridDetailPr
     if (currentLevel === 2) return "#1f7a1f";
     return "#1a5c1a";
   };
-
-  const getFillOpacityForLevel = (currentLevel: number) => Math.min(0.3 + (currentLevel * 0.15), 1.0);
 
   // goalXp now represents LEVEL objective (not XP)
   // 0 = unlimited (no level cap)
@@ -83,20 +86,8 @@ export function SkillGridDetail({ skill, areaColor, onClose }: SkillGridDetailPr
   const levelStart = cumulativeXpToLevelStart(currentLevel);
   const xpIntoCurrentLevel = Math.max(0, skill.currentXp - levelStart);
   const xpForThisLevel = Math.max(1, currentLevel * 100);
-  const strokeStyle = getStrokeForLevel(currentLevel);
-  const fillOpacity = getFillOpacityForLevel(currentLevel);
   const progressColor = getProgressColorForLevel(currentLevel);
   const nextLevelLabel = `Lv${currentLevel + 1}`;
-
-  const diamondSize = 56;
-  const half = diamondSize / 2;
-  const points = `${half},2 ${diamondSize - 2},${half} ${half},${diamondSize - 2} 2,${half}`;
-  // Use areaColor for both unlocked and locked diamonds (same as preview)
-  const diamondFill = areaColor;
-  const diamondStroke = strokeStyle.stroke;
-  const iconColor = isUnlocked ? "#fff" : "#2e2414";
-  const xpPercent = xpIntoCurrentLevel / xpForThisLevel; // progress within current level
-  const opacity = 1;
 
   return (
     <div className="flex flex-col h-full gap-3 overflow-y-auto">
@@ -113,40 +104,27 @@ export function SkillGridDetail({ skill, areaColor, onClose }: SkillGridDetailPr
       </div>
 
       {/* Diamond */}
-      <div className="flex justify-center" style={{ opacity }}>
-        <svg
-          viewBox={`0 0 ${diamondSize} ${diamondSize}`}
-          width={diamondSize + 6}
-          height={diamondSize + 6}
-          overflow="visible"
-        >
-          <polygon
-            points={points}
-            fill={diamondFill}
-            fillOpacity={fillOpacity}
-            stroke={diamondStroke}
-            strokeWidth={strokeStyle.strokeWidth}
-            opacity={0.96}
-          />
-          {isUnlocked ? (
-            <g transform={`translate(${half - 7.5},${half - 7.5})`}>
-              <circle cx="8" cy="8" r="4" stroke={iconColor} fill="none" strokeWidth="1" />
-            </g>
-          ) : (
-            <text
-              x={half}
-              y={half + 4}
-              textAnchor="middle"
-              style={{
-                fontSize: "10px",
-                fill: iconColor,
-                fontWeight: 500,
-              }}
-            >
-              ✦
-            </text>
-          )}
-        </svg>
+      <div className="flex justify-center">
+        <SkillDiamond
+          skill={{
+            id: skill.id,
+            title: skill.title,
+            level: currentLevel,
+            status: skill.status,
+            currentXp: skill.currentXp,
+            goalXp: skill.goalXp,
+            icon: skill.icon ?? null,
+            shape: skill.shape ?? "diamond_classic",
+            material: skill.material ?? "iron",
+            rarity: skill.rarity ?? "common",
+            accentColor: skill.accentColor ?? null,
+            glow: skill.glow ?? null,
+            nodeSize: skill.nodeSize ?? "normal",
+          }}
+          areaColor={areaColor}
+          size={64}
+          hideMeta
+        />
       </div>
 
       {/* Title & Area */}
@@ -198,16 +176,20 @@ export function SkillGridDetail({ skill, areaColor, onClose }: SkillGridDetailPr
             </div>
           </div>
 
-          {/* XP Progress Bar */}
+          {/* XP Progress Bar — blocky segments, matching the "+XP" gain popup's style */}
           <div className="mx-auto w-full max-w-[240px]">
-            <div className="h-2 rounded-full bg-gray-900/90 border border-gray-700 overflow-hidden shadow-inner">
-              <div
-                className="h-full transition-all duration-300 rounded-full"
-                style={{
-                  width: `${progressPercent}%`,
-                  backgroundColor: progressColor,
-                }}
-              />
+            <div className="h-4 w-full flex gap-0.5 rounded-sm">
+              {Array.from({ length: XP_BAR_BLOCKS }).map((_, index) => {
+                const filledBlocks = Math.round((progressPercent / 100) * XP_BAR_BLOCKS);
+                const isFilled = index < filledBlocks;
+                return (
+                  <div
+                    key={index}
+                    className="flex-1 h-full overflow-hidden rounded-sm transition-colors duration-300"
+                    style={{ backgroundColor: isFilled ? progressColor : palette.blockEmpty }}
+                  />
+                );
+              })}
             </div>
             <div className="flex justify-between mt-1 px-1">
               <span className="text-xs text-muted-foreground">

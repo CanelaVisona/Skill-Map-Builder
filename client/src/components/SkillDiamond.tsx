@@ -1,5 +1,17 @@
 import React from "react";
+import { motion } from "framer-motion";
+import { Lock } from "lucide-react";
 import { cn, getContrastColor } from "@/lib/utils";
+import {
+  getShapeGeometry,
+  getShapeGeometryAtScale,
+  getOuterVertices,
+  type ShapeKey,
+  type ShapeGeometry,
+} from "@/lib/skill-shapes";
+import { getMaterialTokens, getRimColorForLevel, tintWithAreaColor, type MaterialKey } from "@/lib/skill-materials";
+import { getRarityTokens, shouldGlow, type RarityKey } from "@/lib/skill-rarity";
+import { resolveSkillIcon } from "@/lib/skill-icons";
 
 interface SkillData {
   id: string;
@@ -8,7 +20,15 @@ interface SkillData {
   status: "locked" | "available" | "mastered";
   currentXp: number;
   goalXp: number;
-  icon?: React.ReactNode;
+  /** Customization added for the dark-fantasy medallion redesign — all optional, all default
+   *  to a sensible "iron diamond" look so pre-existing skills render fine untouched. */
+  icon?: string | null;
+  shape?: ShapeKey;
+  material?: MaterialKey;
+  rarity?: RarityKey;
+  accentColor?: string | null;
+  glow?: 0 | 1 | null;
+  nodeSize?: "small" | "normal" | "large";
 }
 
 interface SkillDiamondProps {
@@ -17,6 +37,18 @@ interface SkillDiamondProps {
   selected?: boolean;
   onClick?: () => void;
   size?: number;
+  /** Renders only the medallion itself, without the name label / mini XP bar below it —
+   *  used by callers (e.g. SkillGridDetail) that already show their own name/progress UI. */
+  hideMeta?: boolean;
+}
+
+const NODE_SIZE_SCALE: Record<string, number> = { small: 0.8, normal: 1.0, large: 1.2 };
+
+function renderShapeEl(geom: ShapeGeometry, props: React.SVGProps<SVGPolygonElement> & React.SVGProps<SVGCircleElement>) {
+  if (geom.kind === "circle") {
+    return <circle cx={geom.cx} cy={geom.cy} r={geom.r} {...(props as React.SVGProps<SVGCircleElement>)} />;
+  }
+  return <polygon points={geom.points} {...(props as React.SVGProps<SVGPolygonElement>)} />;
 }
 
 export function SkillDiamond({
@@ -25,18 +57,23 @@ export function SkillDiamond({
   selected = false,
   onClick,
   size = 56,
+  hideMeta = false,
 }: SkillDiamondProps) {
   const isLocked = skill.status === "locked";
   const isUnlocked = skill.status === "available" || skill.status === "mastered";
+  const isAvailable = skill.status === "available";
+  const isMastered = skill.status === "mastered";
   const level = Math.max(1, skill.level || 1);
 
-  const getStrokeForLevel = (currentLevel: number) => {
-    if (currentLevel >= 5) return { stroke: "#ffe8a0", strokeWidth: 3.5 };
-    if (currentLevel === 4) return { stroke: "#e8c97e", strokeWidth: 2.8 };
-    if (currentLevel === 3) return { stroke: "#c8a96e", strokeWidth: 2 };
-    if (currentLevel === 2) return { stroke: "#8a6a2a", strokeWidth: 1.4 };
-    return { stroke: "#5a4a2a", strokeWidth: 0.8 };
+  const getStrokeWidthForLevel = (currentLevel: number) => {
+    if (currentLevel >= 5) return 3.5;
+    if (currentLevel === 4) return 2.8;
+    if (currentLevel === 3) return 2;
+    if (currentLevel === 2) return 1.4;
+    return 0.8;
   };
+
+  const getFillOpacityForLevel = (currentLevel: number) => Math.min(0.3 + currentLevel * 0.15, 1.0);
 
   const getProgressColorForLevel = (currentLevel: number) => {
     if (currentLevel >= 5) return "#39ff39";
@@ -46,40 +83,54 @@ export function SkillDiamond({
     return "#1a5c1a";
   };
 
-  const getFillOpacityForLevel = (currentLevel: number) => Math.min(0.3 + (currentLevel * 0.15), 1.0);
-  
-  // Calculate opacity based on XP progress
-  // Formula: 0.5 (no progress) + 0.5 * (xp / maxXp) = 1.0 (full progress)
-  // Increased base opacity for better visibility
-  // Level is provided by skill.level; derive other values for progressive XP (level * 100)
   const currentLevel = level || Math.floor(skill.currentXp / 100) + 1;
-
-  const cumulativeXpToLevelStart = (level: number) => 100 * ((level - 1) * level) / 2;
+  const cumulativeXpToLevelStart = (lvl: number) => (100 * ((lvl - 1) * lvl)) / 2;
   const levelStart = cumulativeXpToLevelStart(currentLevel);
   const xpIntoCurrentLevel = Math.max(0, skill.currentXp - levelStart);
   const xpForThisLevel = Math.max(1, currentLevel * 100);
-
-  // For opacity, use progress within current level (0-100%)
-  const xpPercent = xpIntoCurrentLevel / xpForThisLevel;
-  const opacity = 1;
-
-  // Progress bar percent (0-100)
   const progressPercent = Math.round(Math.max(0, Math.min(100, (xpIntoCurrentLevel / xpForThisLevel) * 100)));
-
-  const diamondSize = size;
-  const half = diamondSize / 2;
-
-  // SVG points for diamond shape
-  const points = `${half},2 ${diamondSize - 2},${half} ${half},${diamondSize - 2} 2,${half}`;
-
-  const strokeStyle = getStrokeForLevel(currentLevel);
-  const fillOpacity = getFillOpacityForLevel(currentLevel);
-  const diamondFill = areaColor;
-  const diamondStroke = strokeStyle.stroke;
-  const contrast = getContrastColor(areaColor || "#000");
-  const iconColor = isUnlocked ? contrast : contrast;
   const progressColor = getProgressColorForLevel(currentLevel);
   const nextLevelLabel = `Lv${currentLevel + 1}`;
+
+  // A locked skill never previews its chosen material/rarity — it stays plain dim iron
+  // until it actually unlocks.
+  const effectiveShape: ShapeKey = skill.shape ?? "diamond_classic";
+  const effectiveMaterial: MaterialKey = isLocked ? "iron" : skill.material ?? "iron";
+  const effectiveRarity: RarityKey = isLocked ? "common" : skill.rarity ?? "common";
+
+  const nodeScale = NODE_SIZE_SCALE[skill.nodeSize ?? "normal"] ?? 1;
+  const renderSize = size * nodeScale;
+  const svgBox = renderSize + 10; // matches the +10 padding the diamond always had, for stroke/ring bleed
+
+  const materialTokens = getMaterialTokens(effectiveMaterial, skill.accentColor);
+  const rarityTokens = getRarityTokens(effectiveRarity);
+  const glowOn = !isLocked && shouldGlow(effectiveRarity, skill.glow);
+
+  const strokeWidth = getStrokeWidthForLevel(currentLevel) + (selected ? 0.5 : 0);
+  const fillOpacity = getFillOpacityForLevel(currentLevel);
+  const rimColor = tintWithAreaColor(getRimColorForLevel(materialTokens, currentLevel), areaColor);
+  const contrast = getContrastColor(areaColor || "#000");
+
+  const rawId = React.useId();
+  const gradId = `skillGrad-${rawId.replace(/[^a-zA-Z0-9]/g, "")}`;
+
+  // All geometry is computed relative to the renderSize box, then centered with a 5px margin
+  // inside the svgBox (renderSize + 10) — same total padding the original diamond used.
+  const plateGeom = getShapeGeometry(effectiveShape, renderSize);
+  const shadowGeom = getShapeGeometryAtScale(effectiveShape, renderSize, 1.05);
+  const bevelGeom = getShapeGeometryAtScale(effectiveShape, renderSize, 0.92);
+  const rarityRing1Geom = getShapeGeometryAtScale(effectiveShape, renderSize, 1.12);
+  const rarityRing2Geom = getShapeGeometryAtScale(effectiveShape, renderSize, 1.2);
+  const prestigeRingGeom = getShapeGeometryAtScale(effectiveShape, renderSize, 1.28);
+  // Selection ring is a separate overlay div sized to the *full* svgBox, so its clip-path is
+  // computed directly against that box (scale = renderSize/svgBox) to line up with the plate.
+  const selectionGeom = getShapeGeometryAtScale(effectiveShape, svgBox, renderSize / svgBox);
+  const outerVertices = getOuterVertices(effectiveShape, renderSize);
+
+  const isMaxed = isMastered && skill.goalXp > 0 && currentLevel >= skill.goalXp;
+
+  const IconComponent = isLocked ? Lock : resolveSkillIcon(skill.icon, skill.title);
+  const iconSize = renderSize * 0.34;
 
   return (
     <div
@@ -87,112 +138,111 @@ export function SkillDiamond({
         "flex flex-col items-center gap-1 cursor-pointer transition-opacity duration-200 hover:opacity-100",
         !isLocked && "hover:shadow-lg"
       )}
-      style={{ opacity, minHeight: '96px', minWidth: '96px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+      style={{ minHeight: "96px", minWidth: "96px", display: "flex", alignItems: "center", justifyContent: "center" }}
       onClick={onClick}
     >
-      {/* Diamond SVG */}
+      {/* Medallion */}
       <div className="relative flex items-center justify-center">
-        <svg
-          viewBox={`0 0 ${diamondSize} ${diamondSize}`}
-          width={diamondSize + 10}
-          height={diamondSize + 10}
-          overflow="visible"
-          className="transition-all duration-200"
+        <motion.div
+          animate={isAvailable ? { scale: [1, 1.04, 1] } : { scale: 1 }}
+          transition={isAvailable ? { duration: 2.2, repeat: Infinity, repeatType: "loop" } : { duration: 0.2 }}
+          style={{ opacity: isLocked ? 0.55 : 1 }}
         >
-          {/* Diamond shape */}
-          <polygon
-            points={points}
-            fill={diamondFill}
-            fillOpacity={fillOpacity}
-            stroke={diamondStroke}
-            strokeWidth={strokeStyle.strokeWidth + (selected ? 0.5 : 0)}
-            opacity={0.96}
-          />
-
-          {/* Icon or lock symbol */}
-          {isUnlocked ? (
-            <g transform={`translate(${half - 9},${half - 9})`}>
-              <svg
-                viewBox="4 4 20 20"
-                width="18"
-                height="18"
-                style={{ color: iconColor }}
-              >
-                <g stroke={iconColor} fill="none" strokeWidth="1.2">
-                  {skill.icon}
-                </g>
-              </svg>
+          <svg viewBox={`0 0 ${svgBox} ${svgBox}`} width={svgBox} height={svgBox} overflow="visible" className="transition-all duration-200">
+            <defs>
+              <linearGradient id={gradId} x1="15%" y1="0%" x2="85%" y2="100%">
+                <stop offset="0%" stopColor={materialTokens.plateGradient[0]} />
+                <stop offset="55%" stopColor={materialTokens.plateGradient[1]} />
+                <stop offset="100%" stopColor={materialTokens.plateGradient[2]} />
+              </linearGradient>
+            </defs>
+            <g transform="translate(5,5)">
+              {/* Rarity ring(s) — sit behind the plate, only for unlocked skills */}
+              {!isLocked && rarityTokens.ringCount >= 2 &&
+                renderShapeEl(rarityRing2Geom, { fill: "none", stroke: rarityTokens.ringColor ?? undefined, strokeWidth: 1, opacity: 0.5 })}
+              {!isLocked && rarityTokens.ringCount >= 1 &&
+                renderShapeEl(rarityRing1Geom, { fill: "none", stroke: rarityTokens.ringColor ?? undefined, strokeWidth: 1.3, opacity: 0.8 })}
+              {/* Prestige ring — mastered at (or past) the skill's max level, independent of rarity */}
+              {isMaxed &&
+                renderShapeEl(prestigeRingGeom, { fill: "none", stroke: "#ffe8a0", strokeWidth: 1.4, strokeDasharray: "3 2", opacity: 0.9 })}
+              {/* Fake depth: a slightly larger dark copy behind the plate, no SVG filters */}
+              {renderShapeEl(shadowGeom, { fill: "#000", opacity: 0.35, transform: "translate(0,1.2)" })}
+              {/* Plate */}
+              {renderShapeEl(plateGeom, {
+                fill: `url(#${gradId})`,
+                fillOpacity,
+                stroke: rimColor,
+                strokeWidth,
+                opacity: 0.98,
+              })}
+              {/* Bevel highlight: thin inset lighter stroke, fakes a specular edge */}
+              {renderShapeEl(bevelGeom, { fill: "none", stroke: materialTokens.rimHighlight, strokeWidth: 0.6, opacity: 0.3 })}
+              {/* Corner flourish / rivets — epic & legendary only */}
+              {!isLocked && rarityTokens.cornerFlourish &&
+                outerVertices.map((v, i) => (
+                  <circle key={i} cx={v.x} cy={v.y} r={1.4} fill={rarityTokens.ringColor ?? materialTokens.rimHighlight} opacity={0.85} />
+                ))}
+              {/* Level badge, unlocked only */}
+              {isUnlocked && (
+                <text x={renderSize - 10} y="12" textAnchor="middle" style={{ fontSize: "8px", fill: "#fff", fontWeight: 500 }}>
+                  {skill.level}
+                </text>
+              )}
             </g>
-          ) : (
-            <text
-              x={half}
-              y={half + 5}
-              textAnchor="middle"
-              style={{
-                fontSize: "13px",
-                fill: iconColor,
-                fontWeight: 500,
-              }}
-            >
-              ✦
-            </text>
-          )}
+          </svg>
+        </motion.div>
 
-          {/* Level badge (top right) - only for unlocked */}
-          {isUnlocked && (
-            <text
-              x={diamondSize - 10}
-              y="12"
-              textAnchor="middle"
-              style={{
-                fontSize: "8px",
-                fill: "#fff",
-                fontWeight: 500,
-              }}
-            >
-              {skill.level}
-            </text>
-          )}
-        </svg>
+        {/* Icon, layered on top as a plain themed lucide component instead of raw paths */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ opacity: isLocked ? 0.85 : 1 }}>
+          <IconComponent
+            size={iconSize}
+            color={contrast}
+            strokeWidth={1.6}
+            style={
+              glowOn
+                ? { filter: `drop-shadow(0 0 ${rarityTokens.glowBlur}px ${rarityTokens.glowColor}) drop-shadow(0 1px 0 rgba(0,0,0,0.5))` }
+                : { filter: "drop-shadow(0 1px 0 rgba(0,0,0,0.5))" }
+            }
+          />
+        </div>
 
-        {/* Selection highlight border - overlaid */}
+        {/* Selection highlight, clipped to the actual chosen shape */}
         {selected && (
           <div
             className="absolute inset-0 rounded pointer-events-none"
             style={{
-              border: `2px solid #c8a96e`,
-              mask: `polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)`,
-              WebkitMask: `polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)`,
+              border: "2px solid #c8a96e",
+              clipPath: selectionGeom.clipPath,
+              WebkitClipPath: selectionGeom.clipPath,
             }}
           />
         )}
       </div>
 
-      {/* XP Progress bar - GREEN */}
-      <div className="relative mx-auto" style={{ width: `${diamondSize + 10}px` }}>
-        <div
-          className="h-2 w-full rounded-full bg-gray-900/90 border border-gray-700 overflow-hidden shadow-inner"
-        >
-          <div
-            className="h-full transition-all duration-300 rounded-full"
-            style={{
-              width: `${progressPercent}%`,
-              backgroundColor: progressColor,
-            }}
-          />
-        </div>
-        <span
-          className="absolute left-full ml-1 top-1/2 -translate-y-1/2 shrink-0 text-[9px] leading-none font-semibold whitespace-nowrap"
-          style={{ color: "#c8a96e" }}
-        >
-          {nextLevelLabel}
-        </span>
-      </div>
+      {!hideMeta && (
+        <>
+          {/* XP Progress bar — unchanged */}
+          <div className="relative mx-auto" style={{ width: `${renderSize + 10}px` }}>
+            <div className="h-2 w-full rounded-full bg-gray-900/90 border border-gray-700 overflow-hidden shadow-inner">
+              <div
+                className="h-full transition-all duration-300 rounded-full"
+                style={{ width: `${progressPercent}%`, backgroundColor: progressColor }}
+              />
+            </div>
+            <span
+              className="absolute left-full ml-1 top-1/2 -translate-y-1/2 shrink-0 text-[9px] leading-none font-semibold whitespace-nowrap"
+              style={{ color: "#c8a96e" }}
+            >
+              {nextLevelLabel}
+            </span>
+          </div>
 
-      {/* Skill name */}
-      <span className="text-xs text-center leading-tight max-w-full px-0.5 line-clamp-2 text-black dark:text-white">
-        {skill.title}
-      </span>
+          {/* Skill name */}
+          <span className="text-xs text-center leading-tight max-w-full px-0.5 line-clamp-2 text-black dark:text-white">
+            {skill.title}
+          </span>
+        </>
+      )}
     </div>
   );
 }

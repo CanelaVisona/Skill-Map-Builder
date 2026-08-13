@@ -1050,7 +1050,7 @@ function HabitCard({
 
   // Mismo criterio para los componentes corporales linkeados al hábito.
   const linkedBodyNames = (habit.bodyLinks ?? []).map(
-    (link) => `${BODY_ZONE_LABELS[link.zone]} · ${BODY_DIMENSION_LABELS[link.dimension]}`
+    (link) => `${BODY_DIMENSION_LABELS[link.dimension]} en ${BODY_ZONE_LABELS[link.zone]}`
   );
   const scheduledDays = habit.scheduledDays?.length ? habit.scheduledDays : [0, 1, 2, 3, 4, 5, 6];
   const todayDayOfWeek = today.getDay() === 0 ? 6 : today.getDay() - 1;
@@ -1138,22 +1138,6 @@ function HabitCard({
         </div>
       )}
 
-      {/* Skills y componentes corporales linkeados: cada uno como "+ nombre", sin
-          etiqueta de sección. Desaparecen en cuanto el hábito se confirma hoy. */}
-      {(linkedSkillNames.length > 0 || linkedBodyNames.length > 0) && !isToday && (
-        <div
-          onClick={(e) => {
-            e.stopPropagation();
-            onEditClick(habit.id);
-          }}
-          className="mb-2 flex flex-wrap gap-x-2 gap-y-0.5 text-xs font-medium text-foreground hover:text-primary transition-colors cursor-pointer"
-        >
-          {[...linkedSkillNames, ...linkedBodyNames].map((name) => (
-            <span key={name}>+ {name}</span>
-          ))}
-        </div>
-      )}
-
       {/* Barra de progreso hasta el endDate */}
       {daysRemaining !== null && (
         <div className="mb-6 mt-6">
@@ -1236,6 +1220,25 @@ function HabitCard({
           {weekCompleted}/{weekTotal} esta semana
         </p>
       </div>
+
+      {/* Skills y componentes corporales linkeados: cada uno como "+ nombre", sin
+          etiqueta de sección. Desaparecen en cuanto el hábito se confirma hoy. */}
+      {(linkedSkillNames.length > 0 || linkedBodyNames.length > 0) && !isToday && (
+        <div
+          onClick={(e) => {
+            e.stopPropagation();
+            onEditClick(habit.id);
+          }}
+          className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs font-medium text-foreground hover:text-primary transition-colors cursor-pointer"
+        >
+          {[...linkedSkillNames, ...linkedBodyNames].map((name, i) => (
+            <span key={name} className="flex items-center gap-x-2">
+              {i > 0 && <span className="text-muted-foreground">•</span>}
+              <span>+ {name}</span>
+            </span>
+          ))}
+        </div>
+      )}
 
     </div>
   );
