@@ -3048,28 +3048,28 @@ function ProfileSection() {
   };
 
   if (profileLoading || valuesLoading || likesLoading || missionsLoading || aboutEntriesLoading || experiencesLoading || contributionsLoading) {
-    return <div className="text-zinc-500 text-sm">Cargando...</div>;
+    return <div className="text-muted-foreground text-sm">Cargando...</div>;
   }
 
   return (
     <div className="h-full flex flex-col min-w-0 overflow-hidden">
       {/* Add entry dialog for mission/values/likes/about */}
       <Dialog open={isAdding} onOpenChange={(open) => !open && setIsAdding(false)}>
-        <DialogContent className="sm:max-w-md bg-zinc-900 border border-zinc-700">
+        <DialogContent className="sm:max-w-md bg-popover border border-border">
           <VisuallyHidden>
             <DialogTitle>Agregar {getTabLabel(activeTab)}</DialogTitle>
           </VisuallyHidden>
-          
+
           <div className="space-y-4">
-            <div className="border-b border-zinc-700/50 pb-2">
-              <h3 className="font-medium text-zinc-100">Agregar {getTabLabel(activeTab)}</h3>
-              <div className="h-px w-8 bg-gradient-to-r from-zinc-500 to-transparent mt-1" />
+            <div className="border-b border-border/50 pb-2">
+              <h3 className="font-medium text-foreground">Agregar {getTabLabel(activeTab)}</h3>
+              <div className="h-px w-8 bg-gradient-to-r from-muted-foreground to-transparent mt-1" />
             </div>
             <Input
               placeholder="NOMBRE"
               value={name}
               onChange={(e) => setName(e.target.value.toUpperCase())}
-              className="uppercase bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500"
+              className="uppercase bg-muted border-border text-foreground placeholder:text-muted-foreground"
               data-testid={`input-profile-${activeTab}-name`}
             />
             <Textarea
@@ -3077,12 +3077,12 @@ function ProfileSection() {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
-              className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 resize-none"
+              className="bg-muted border-border text-foreground placeholder:text-muted-foreground resize-none"
               data-testid={`input-profile-${activeTab}-description`}
             />
             {(activeTab === "experiences" || activeTab === "contributions") && (
               <div className="space-y-2">
-                <Label className="text-xs text-zinc-400">Área o Quest (opcional)</Label>
+                <Label className="text-xs text-muted-foreground">Área o Quest (opcional)</Label>
                 <Select
                   value={selectedSourceType && selectedSourceId ? `${selectedSourceType}:${selectedSourceId}` : "none"}
                   onValueChange={(value) => {
@@ -3096,16 +3096,16 @@ function ProfileSection() {
                     }
                   }}
                 >
-                  <SelectTrigger className="bg-zinc-800 border-zinc-700 text-zinc-200">
+                  <SelectTrigger className="bg-muted border-border text-foreground">
                     <SelectValue placeholder="Sin asignar" />
                   </SelectTrigger>
-                  <SelectContent className="bg-zinc-800 border-zinc-700 max-h-60 overflow-y-auto">
-                    <SelectItem value="none" className="text-zinc-400">Sin asignar</SelectItem>
+                  <SelectContent className="bg-popover border-border max-h-60 overflow-y-auto">
+                    <SelectItem value="none" className="text-muted-foreground">Sin asignar</SelectItem>
                     {areas.length > 0 && (
                       <SelectGroup>
-                        <SelectLabel className="text-zinc-500">Áreas</SelectLabel>
+                        <SelectLabel className="text-muted-foreground">Áreas</SelectLabel>
                         {areas.map((area: Area) => (
-                          <SelectItem key={area.id} value={`area:${area.id}`} className="text-zinc-200">
+                          <SelectItem key={area.id} value={`area:${area.id}`} className="text-foreground">
                             {area.name}
                           </SelectItem>
                         ))}
@@ -3113,9 +3113,9 @@ function ProfileSection() {
                     )}
                     {allProjects.length > 0 && (
                       <SelectGroup>
-                        <SelectLabel className="text-zinc-500">Quests</SelectLabel>
+                        <SelectLabel className="text-muted-foreground">Quests</SelectLabel>
                         {allProjects.map((project) => (
-                          <SelectItem key={project.id} value={`project:${project.id}`} className="text-zinc-200">
+                          <SelectItem key={project.id} value={`project:${project.id}`} className="text-foreground">
                             {project.name}
                           </SelectItem>
                         ))}
@@ -3126,10 +3126,10 @@ function ProfileSection() {
               </div>
             )}
             <div className="flex gap-2 pt-2">
-              <Button size="sm" onClick={handleAddNew} className="bg-zinc-700 hover:bg-zinc-600 text-zinc-200">
+              <Button size="sm" onClick={handleAddNew} className="bg-secondary hover:bg-secondary/80 text-foreground">
                 Agregar
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setIsAdding(false)} className="text-zinc-400 hover:text-zinc-300">
+              <Button size="sm" variant="ghost" onClick={() => setIsAdding(false)} className="text-muted-foreground hover:text-foreground">
                 Cancelar
               </Button>
             </div>
@@ -3139,29 +3139,29 @@ function ProfileSection() {
 
       {/* Edit entry dialog for values/likes */}
       <Dialog open={!!selectedEntry} onOpenChange={(open) => !open && handleCloseDialog()}>
-        <DialogContent className="sm:max-w-md bg-zinc-900 border border-zinc-700">
+        <DialogContent className="sm:max-w-md bg-popover border border-border">
           <VisuallyHidden>
             <DialogTitle>{selectedEntry?.name}</DialogTitle>
           </VisuallyHidden>
-          
+
           <div className="space-y-4">
-            <div className="flex items-center justify-between border-b border-zinc-700/50 pb-2">
+            <div className="flex items-center justify-between border-b border-border/50 pb-2">
               <div>
-                <h3 className="font-medium text-zinc-100 uppercase">{selectedEntry?.name}</h3>
-                <div className="h-px w-8 bg-gradient-to-r from-zinc-500 to-transparent mt-1" />
+                <h3 className="font-medium text-foreground uppercase">{selectedEntry?.name}</h3>
+                <div className="h-px w-8 bg-gradient-to-r from-muted-foreground to-transparent mt-1" />
               </div>
               <div className="flex gap-1">
-                <Button size="sm" variant="ghost" onClick={() => setIsEditMode(!isEditMode)} className="h-8 w-8 p-0 text-zinc-400 hover:text-zinc-200">
+                <Button size="sm" variant="ghost" onClick={() => setIsEditMode(!isEditMode)} className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground">
                   <Pencil className="h-4 w-4" />
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => setShowDeleteConfirm(true)} className="h-8 w-8 p-0 text-zinc-400 hover:text-zinc-200">
+                <Button size="sm" variant="ghost" onClick={() => setShowDeleteConfirm(true)} className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground">
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
             </div>
 
             {selectedEntry?.description && !isEditMode && (
-              <p className="text-sm text-zinc-400 whitespace-pre-line leading-relaxed">{selectedEntry.description}</p>
+              <p className="text-sm text-muted-foreground whitespace-pre-line leading-relaxed">{selectedEntry.description}</p>
             )}
 
             {!isEditMode ? (
@@ -3170,9 +3170,9 @@ function ProfileSection() {
                   placeholder="Agregar más info..."
                   value={extraInfo}
                   onChange={(e) => setExtraInfo(e.target.value)}
-                  className="flex-1 bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500"
+                  className="flex-1 bg-muted border-border text-foreground placeholder:text-muted-foreground"
                 />
-                <Button size="sm" variant="ghost" onClick={handleAddExtraInfo} disabled={!extraInfo.trim()} className="text-zinc-400 hover:text-zinc-200">
+                <Button size="sm" variant="ghost" onClick={handleAddExtraInfo} disabled={!extraInfo.trim()} className="text-muted-foreground hover:text-foreground">
                   <Plus className="h-4 w-4" />
                 </Button>
               </div>
@@ -3182,18 +3182,18 @@ function ProfileSection() {
                   placeholder="NOMBRE"
                   value={name}
                   onChange={(e) => setName(e.target.value.toUpperCase())}
-                  className="uppercase bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500"
+                  className="uppercase bg-muted border-border text-foreground placeholder:text-muted-foreground"
                 />
                 <Textarea
                   placeholder="Descripción"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   rows={3}
-                  className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500 resize-none"
+                  className="bg-muted border-border text-foreground placeholder:text-muted-foreground resize-none"
                 />
                 {(activeTab === "experiences" || activeTab === "contributions") && (
                   <div className="space-y-2">
-                    <Label className="text-xs text-zinc-400">Área o Quest (opcional)</Label>
+                    <Label className="text-xs text-muted-foreground">Área o Quest (opcional)</Label>
                     <Select
                       value={selectedSourceType && selectedSourceId ? `${selectedSourceType}:${selectedSourceId}` : "none"}
                       onValueChange={(value) => {
@@ -3207,16 +3207,16 @@ function ProfileSection() {
                         }
                       }}
                     >
-                      <SelectTrigger className="bg-zinc-800 border-zinc-700 text-zinc-200">
+                      <SelectTrigger className="bg-muted border-border text-foreground">
                         <SelectValue placeholder="Sin asignar" />
                       </SelectTrigger>
-                      <SelectContent className="bg-zinc-800 border-zinc-700 max-h-60 overflow-y-auto">
-                        <SelectItem value="none" className="text-zinc-400">Sin asignar</SelectItem>
+                      <SelectContent className="bg-popover border-border max-h-60 overflow-y-auto">
+                        <SelectItem value="none" className="text-muted-foreground">Sin asignar</SelectItem>
                         {areas.length > 0 && (
                           <SelectGroup>
-                            <SelectLabel className="text-zinc-500">Áreas</SelectLabel>
+                            <SelectLabel className="text-muted-foreground">Áreas</SelectLabel>
                             {areas.map((area: Area) => (
-                              <SelectItem key={area.id} value={`area:${area.id}`} className="text-zinc-200">
+                              <SelectItem key={area.id} value={`area:${area.id}`} className="text-foreground">
                                 {area.name}
                               </SelectItem>
                             ))}
@@ -3224,9 +3224,9 @@ function ProfileSection() {
                         )}
                         {allProjects.length > 0 && (
                           <SelectGroup>
-                            <SelectLabel className="text-zinc-500">Quests</SelectLabel>
+                            <SelectLabel className="text-muted-foreground">Quests</SelectLabel>
                             {allProjects.map((project) => (
-                              <SelectItem key={project.id} value={`project:${project.id}`} className="text-zinc-200">
+                              <SelectItem key={project.id} value={`project:${project.id}`} className="text-foreground">
                                 {project.name}
                               </SelectItem>
                             ))}
@@ -3237,10 +3237,10 @@ function ProfileSection() {
                   </div>
                 )}
                 <div className="flex gap-2">
-                  <Button size="sm" onClick={handleSaveEdit} className="bg-zinc-700 hover:bg-zinc-600 text-zinc-200">
+                  <Button size="sm" onClick={handleSaveEdit} className="bg-secondary hover:bg-secondary/80 text-foreground">
                     Guardar
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={() => setIsEditMode(false)} className="text-zinc-400 hover:text-zinc-300">
+                  <Button size="sm" variant="ghost" onClick={() => setIsEditMode(false)} className="text-muted-foreground hover:text-foreground">
                     Cancelar
                   </Button>
                 </div>
@@ -3249,13 +3249,13 @@ function ProfileSection() {
           </div>
 
           {showDeleteConfirm && (
-            <div className="pt-4 border-t border-zinc-700 mt-4">
-              <p className="text-sm text-zinc-400 mb-3">¿Eliminar esta entrada?</p>
+            <div className="pt-4 border-t border-border mt-4">
+              <p className="text-sm text-muted-foreground mb-3">¿Eliminar esta entrada?</p>
               <div className="flex gap-2">
-                <Button size="sm" onClick={handleDelete} className="bg-red-900/50 hover:bg-red-900 text-red-200">
+                <Button size="sm" onClick={handleDelete} className="bg-destructive/20 hover:bg-destructive/30 text-destructive">
                   Eliminar
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => setShowDeleteConfirm(false)} className="text-zinc-400 hover:text-zinc-300">
+                <Button size="sm" variant="ghost" onClick={() => setShowDeleteConfirm(false)} className="text-muted-foreground hover:text-foreground">
                   Cancelar
                 </Button>
               </div>
@@ -3264,15 +3264,15 @@ function ProfileSection() {
         </DialogContent>
       </Dialog>
 
-      <div className="flex w-full border-b border-zinc-700 mb-3 overflow-x-auto scrollbar-hide">
+      <div className="flex w-full border-b border-border mb-3 overflow-x-auto scrollbar-hide">
         {tabs.map(tab => (
           <button
             key={tab.id}
             onClick={() => { setActiveTab(tab.id); setViewingEntry(null); }}
             className={`shrink-0 px-2 py-1.5 text-xs transition-colors border-b-2 -mb-[1px] whitespace-nowrap ${
-              activeTab === tab.id 
-                ? "border-zinc-400 text-zinc-200" 
-                : "border-transparent text-zinc-500 hover:text-zinc-400"
+              activeTab === tab.id
+                ? "border-foreground text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
             {tab.label}
@@ -3280,16 +3280,16 @@ function ProfileSection() {
         ))}
       </div>
 
-      <div className="mb-3 pb-2 border-b border-zinc-700/50">
-        <span className="text-xs text-zinc-500 uppercase tracking-wider">
+      <div className="mb-3 pb-2 border-b border-border/50">
+        <span className="text-xs text-muted-foreground uppercase tracking-wider">
           {currentEntries.length} {getTabPlural(activeTab)}
         </span>
-        <div className="h-px w-8 bg-gradient-to-r from-zinc-600 to-transparent mt-1" />
+        <div className="h-px w-8 bg-gradient-to-r from-muted-foreground to-transparent mt-1" />
       </div>
 
       <div className="flex flex-1 min-h-0 flex-col sm:flex-row gap-5 sm:gap-3">
-        <div 
-          className="w-full sm:w-1/2 h-full bg-zinc-800/30 rounded border border-zinc-700/50 p-3 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]"
+        <div
+          className="w-full sm:w-1/2 h-full bg-muted/30 rounded border border-border/50 p-3 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]"
           onTouchStart={handleLeftLongPressStart}
           onTouchEnd={handleLeftLongPressEnd}
           onTouchCancel={handleLeftLongPressEnd}
@@ -3300,10 +3300,10 @@ function ProfileSection() {
           <ScrollArea className="h-full">
             {currentEntries.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
-                <p className="text-zinc-500 text-sm">
+                <p className="text-muted-foreground text-sm">
                   No hay {getTabPlural(activeTab)} aún
                 </p>
-                <p className="text-zinc-600 text-xs mt-2">Mantené presionado para agregar</p>
+                <p className="text-muted-foreground/70 text-xs mt-2">Mantené presionado para agregar</p>
               </div>
             ) : (
               <div className="space-y-0.5">
@@ -3312,16 +3312,16 @@ function ProfileSection() {
                     <button
                       onClick={(e) => { e.stopPropagation(); setViewingEntry(entry); }}
                       className={`w-full text-left px-3 py-2 rounded text-sm transition-all cursor-pointer select-none ${
-                        viewingEntry?.id === entry.id 
-                          ? "bg-zinc-700 text-zinc-100 shadow-sm" 
-                          : "text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200"
+                        viewingEntry?.id === entry.id
+                          ? "bg-secondary text-foreground shadow-sm"
+                          : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
                       }`}
                       data-testid={`card-profile-${activeTab}-${entry.id}`}
                     >
                       {entry.name}
                     </button>
                     {index < currentEntries.length - 1 && (
-                      <div className="h-px bg-zinc-700/30 mx-2" />
+                      <div className="h-px bg-border/30 mx-2" />
                     )}
                   </div>
                 ))}
@@ -3329,9 +3329,9 @@ function ProfileSection() {
             )}
           </ScrollArea>
         </div>
-        
-        <div 
-          className="w-full sm:w-1/2 h-full bg-zinc-800/20 rounded border border-zinc-700/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
+
+        <div
+          className="w-full sm:w-1/2 h-full bg-muted/20 rounded border border-border/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
           onTouchStart={handleRightLongPressStart}
           onTouchEnd={handleRightLongPressEnd}
           onTouchCancel={handleRightLongPressEnd}
@@ -3342,16 +3342,16 @@ function ProfileSection() {
           <ScrollArea className="h-full">
             {viewingEntry ? (
               <div className="space-y-4">
-                <div className="border-b border-zinc-700/50 pb-2">
-                  <h3 className="font-medium text-zinc-100 uppercase tracking-wide">{viewingEntry.name}</h3>
-                  <div className="h-px w-12 bg-gradient-to-r from-zinc-500 to-transparent mt-2" />
+                <div className="border-b border-border/50 pb-2">
+                  <h3 className="font-medium text-foreground uppercase tracking-wide">{viewingEntry.name}</h3>
+                  <div className="h-px w-12 bg-gradient-to-r from-muted-foreground to-transparent mt-2" />
                 </div>
                 {viewingEntry.description && (
-                  <p className="text-sm text-zinc-400 whitespace-pre-line leading-relaxed">{viewingEntry.description}</p>
+                  <p className="text-sm text-muted-foreground whitespace-pre-line leading-relaxed">{viewingEntry.description}</p>
                 )}
               </div>
             ) : (
-              <div className="h-full flex items-center justify-center text-zinc-600 text-sm">
+              <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
                 Seleccioná una entrada
               </div>
             )}
@@ -7761,13 +7761,11 @@ function QuestDiary() {
                     <div className="flex-1 space-y-4 overflow-y-auto pr-1">
                       {areaPowerGroups.length > 0 && (
                         <section>
-                          <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Áreas</h3>
                           <Accordion type="multiple" className="space-y-2">
                             {areaPowerGroups.map((group) => (
                               <AccordionItem key={group.id} value={`area-${group.id}`} className="rounded-lg border border-border/50 bg-background/70">
                                 <AccordionTrigger className="px-3 py-2 text-left hover:no-underline">
                                   <div className="flex items-center gap-2">
-                                    <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: group.color }} />
                                     <span className="font-medium">{group.name}</span>
                                     <span className="text-xs text-muted-foreground">({group.powers.length})</span>
                                   </div>
@@ -8025,6 +8023,51 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
   const isProject = !activeArea && !!activeProject;
   const isSubSkillView = !!activeParentSkillId;
 
+  // Auto-scroll from the first level down to the newly unlocked node whenever
+  // the active area/quest (or sub-skill tree) changes.
+  const scrollContextKey = isSubSkillView
+    ? `sub:${activeParentSkillId}`
+    : activeItem
+      ? `${isProject ? "project" : "area"}:${activeItem.id}`
+      : null;
+  const previousScrollContextRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!scrollContextKey || previousScrollContextRef.current === scrollContextKey) {
+      return;
+    }
+    previousScrollContextRef.current = scrollContextKey;
+
+    const relevantSkills = isSubSkillView ? subSkills : (activeItem?.skills ?? []);
+    if (relevantSkills.length === 0) return;
+
+    const visibleLevelsForScroll = isSubSkillView
+      ? calculateVisibleLevels(relevantSkills)
+      : calculateVisibleLevels(relevantSkills, (activeItem as any)?.endOfAreaLevel);
+    const visibleForScroll = relevantSkills.filter((s: Skill) => visibleLevelsForScroll.has(s.level));
+    const targetSkill =
+      visibleForScroll.find((s: Skill) => s.status === "available") ||
+      visibleForScroll.find((s: Skill) => s.status !== "mastered") ||
+      null;
+
+    if (!targetSkill) return;
+
+    const timer = window.setTimeout(() => {
+      const container = document.querySelector('[data-skill-canvas-scroll="true"]');
+      const targetElement = document.querySelector(`[data-skill-id="${targetSkill.id}"]`);
+      if (!container || !targetElement) return;
+
+      // Start at the very top (first level) so the scroll visibly travels down to the unlocked node.
+      container.scrollTop = 0;
+
+      window.setTimeout(() => {
+        targetElement.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+      }, 250);
+    }, 150);
+
+    return () => window.clearTimeout(timer);
+  }, [scrollContextKey, isSubSkillView, subSkills, activeItem]);
+
   if (isSubSkillView) {
     const currentParent = parentSkillStack[parentSkillStack.length - 1];
     
@@ -8092,7 +8135,7 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
         <QuestCompletedCelebration celebration={questCompletedCelebration} />
         <QuestUpdatedCelebration text={questCelebrationText} />
         <QuestUpdatedPopup show={showQuestUpdatedPopup} onClose={hideQuestUpdatedPopup} />
-        <div className="flex-1 overflow-y-auto p-8 scroll-smooth scrollbar-thin-on-scroll">
+        <div className="flex-1 overflow-y-auto p-8 scroll-smooth scrollbar-thin-on-scroll" data-skill-canvas-scroll="true">
           <div className="w-full relative max-w-4xl mx-auto mt-2 min-h-full">
             
             <div className="absolute top-0 left-0 z-10">
@@ -8364,7 +8407,7 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
       <QuestCompletedCelebration celebration={questCompletedCelebration} />
       <QuestUpdatedCelebration text={questCelebrationText} />
       <QuestUpdatedPopup show={showQuestUpdatedPopup} onClose={hideQuestUpdatedPopup} />
-      <div className="flex-1 overflow-y-auto p-8 scroll-smooth scrollbar-thin-on-scroll">
+      <div className="flex-1 overflow-y-auto p-8 scroll-smooth scrollbar-thin-on-scroll" data-skill-canvas-scroll="true">
         <div className="w-full relative max-w-4xl mx-auto min-h-full">
           
           {/* Sticky Progress Bar */}

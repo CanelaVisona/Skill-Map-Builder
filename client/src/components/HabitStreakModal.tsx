@@ -10,7 +10,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import type { Habit, HabitRecord, Area, Project } from "@shared/schema";
 import { useSkillTree } from "@/lib/skill-context";
 import { useXpPopup } from "@/lib/xp-popup-context";
-import { useBodyProgress } from "@/lib/body-progress-context";
+import { useBodyProgress, BODY_ZONE_LABELS, BODY_DIMENSION_LABELS } from "@/lib/body-progress-context";
 import { useBodyGainPopup } from "@/lib/body-gain-popup-context";
 import { beginPopupChain, endPopupChain, runPopupQueue } from "@/lib/popup-coordinator";
 import { BodyLinkPicker, type BodyLink } from "@/components/BodyLinkPicker";
@@ -176,7 +176,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
   const [newHabitProjectId, setNewHabitProjectId] = useState<string | null>(null);
   const [newHabitScheduledDays, setNewHabitScheduledDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
   const [newHabitType, setNewHabitType] = useState<"mini" | "deep">("mini");
-  const [newHabitDefaultTimeSlot, setNewHabitDefaultTimeSlot] = useState<TimeSlot | null>(null);
+  const [newHabitDefaultTimeSlots, setNewHabitDefaultTimeSlots] = useState<TimeSlot[]>([]);
   const [editHabitEmoji, setEditHabitEmoji] = useState("");
   const [editHabitName, setEditHabitName] = useState("");
   const [editHabitEndDate, setEditHabitEndDate] = useState("");
@@ -184,7 +184,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
   const [editHabitProjectId, setEditHabitProjectId] = useState<string | null>(null);
   const [editHabitScheduledDays, setEditHabitScheduledDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
   const [editHabitType, setEditHabitType] = useState<"mini" | "deep">("mini");
-  const [editHabitDefaultTimeSlot, setEditHabitDefaultTimeSlot] = useState<TimeSlot | null>(null);
+  const [editHabitDefaultTimeSlots, setEditHabitDefaultTimeSlots] = useState<TimeSlot[]>([]);
   const [newHabitSkillIds, setNewHabitSkillIds] = useState<string[]>([]);
   const [editHabitSkillIds, setEditHabitSkillIds] = useState<string[]>([]);
   const [newHabitBodyLinks, setNewHabitBodyLinks] = useState<BodyLink[]>([]);
@@ -480,7 +480,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       bodyLinks?: BodyLink[];
       scheduledDays: number[];
       habitType: "mini" | "deep";
-      defaultTimeSlot?: TimeSlot | null;
+      defaultTimeSlots?: TimeSlot[];
     }) => {
       const res = await fetch("/api/habits", {
         method: "POST",
@@ -508,7 +508,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       bodyLinks?: BodyLink[];
       scheduledDays?: number[];
       habitType?: "mini" | "deep";
-      defaultTimeSlot?: TimeSlot | null;
+      defaultTimeSlots?: TimeSlot[];
     }) => {
       const res = await fetch(`/api/habits/${data.id}`, {
         method: "PATCH",
@@ -524,7 +524,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
           bodyLinks: data.bodyLinks,
           scheduledDays: data.scheduledDays,
           habitType: data.habitType,
-          defaultTimeSlot: data.defaultTimeSlot,
+          defaultTimeSlots: data.defaultTimeSlots,
         }),
       });
       if (!res.ok) throw new Error("Failed to update habit");
@@ -662,7 +662,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       setEditHabitBodyLinks(habit.bodyLinks ?? []);
       setEditHabitScheduledDays(habit.scheduledDays || [0, 1, 2, 3, 4, 5, 6]);
       setEditHabitType(habit.habitType || "mini");
-      setEditHabitDefaultTimeSlot((habit.defaultTimeSlot as TimeSlot | null) ?? null);
+      setEditHabitDefaultTimeSlots(Array.isArray(habit.defaultTimeSlots) ? (habit.defaultTimeSlots as TimeSlot[]) : []);
       showPanel("edit");
     }
   };
@@ -676,7 +676,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
     setNewHabitBodyLinks([]);
     setNewHabitScheduledDays([0, 1, 2, 3, 4, 5, 6]);
     setNewHabitType("mini");
-    setNewHabitDefaultTimeSlot(null);
+    setNewHabitDefaultTimeSlots([]);
   };
   const resetEditForm = () => {
     setEditHabitEmoji("");
@@ -688,7 +688,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
     setEditHabitBodyLinks([]);
     setEditHabitScheduledDays([0, 1, 2, 3, 4, 5, 6]);
     setEditHabitType("mini");
-    setEditHabitDefaultTimeSlot(null);
+    setEditHabitDefaultTimeSlots([]);
     setSelectedHabitId(null);
   };
 
@@ -703,6 +703,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
           {currentPanel === "main" && (
             <MainPanel
               habits={habitsWithRecords.filter((h) => !h.endDate || h.endDate >= getLocalDateString())}
+              globalSkills={globalSkills}
               onDetailed={showDetail}
               onHistory={showHistory}
               onArchived={showArchived}
@@ -808,8 +809,8 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
               onScheduledDaysChange={setNewHabitScheduledDays}
               habitType={newHabitType}
               onHabitTypeChange={setNewHabitType}
-              defaultTimeSlot={newHabitDefaultTimeSlot}
-              onDefaultTimeSlotChange={setNewHabitDefaultTimeSlot}
+              defaultTimeSlots={newHabitDefaultTimeSlots}
+              onDefaultTimeSlotsChange={setNewHabitDefaultTimeSlots}
               onEmojiChange={setNewHabitEmoji}
               onNameChange={setNewHabitName}
               onEndDateChange={setNewHabitEndDate}
@@ -835,7 +836,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                       bodyLinks: newHabitBodyLinks,
                       scheduledDays: newHabitScheduledDays,
                       habitType: newHabitType,
-                      defaultTimeSlot: newHabitDefaultTimeSlot,
+                      defaultTimeSlots: newHabitDefaultTimeSlots,
                     });
                     resetForm();
                     showMain();
@@ -867,8 +868,8 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
               onScheduledDaysChange={setEditHabitScheduledDays}
               habitType={editHabitType}
               onHabitTypeChange={setEditHabitType}
-              defaultTimeSlot={editHabitDefaultTimeSlot}
-              onDefaultTimeSlotChange={setEditHabitDefaultTimeSlot}
+              defaultTimeSlots={editHabitDefaultTimeSlots}
+              onDefaultTimeSlotsChange={setEditHabitDefaultTimeSlots}
               onEmojiChange={setEditHabitEmoji}
               onNameChange={setEditHabitName}
               onEndDateChange={setEditHabitEndDate}
@@ -895,7 +896,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                       bodyLinks: editHabitBodyLinks,
                       scheduledDays: editHabitScheduledDays,
                       habitType: editHabitType,
-                      defaultTimeSlot: editHabitDefaultTimeSlot,
+                      defaultTimeSlots: editHabitDefaultTimeSlots,
                     });
                     resetEditForm();
                     showMain();
@@ -1015,8 +1016,10 @@ function HabitCard({
   today,
   todayStr,
   weekDays,
+  globalSkills,
   onToggle,
   onDetailed,
+  onEditClick,
   onPressStart,
   onPressEnd,
 }: {
@@ -1024,8 +1027,10 @@ function HabitCard({
   today: Date;
   todayStr: string;
   weekDays: Date[];
+  globalSkills: { id: string; name: string }[];
   onToggle: (habitId: string) => void;
   onDetailed: (id: string) => void;
+  onEditClick: (id: string) => void;
   onPressStart: (habitId: string) => void;
   onPressEnd: (habitId: string) => void;
 }) {
@@ -1033,6 +1038,20 @@ function HabitCard({
   const streak = computeStreakGlobal(habit.done, habit.scheduledDays, today, habit.frozenDates);
   const broken = isStreakBrokenGlobal(habit.done, habit.scheduledDays, today, habit.frozenDates);
   const isToday = habit.done.has(todayStr);
+
+  // Skills linkeados al hábito: se muestran con letra chica mientras el hábito no esté
+  // confirmado hoy, y desaparecen apenas se confirma (isToday). Tocarlos abre la edición
+  // del hábito, donde ya se pueden ver/cambiar los skills linkeados.
+  const linkedSkillIds = habit.skillIds?.length ? habit.skillIds : habit.skillId ? [habit.skillId] : [];
+  const linkedSkillNames = linkedSkillIds.map((id) => {
+    if (id.startsWith("legacy-")) return id.slice("legacy-".length);
+    return globalSkills.find((s) => s.id === id)?.name;
+  }).filter((name): name is string => !!name);
+
+  // Mismo criterio para los componentes corporales linkeados al hábito.
+  const linkedBodyNames = (habit.bodyLinks ?? []).map(
+    (link) => `${BODY_ZONE_LABELS[link.zone]} · ${BODY_DIMENSION_LABELS[link.dimension]}`
+  );
   const scheduledDays = habit.scheduledDays?.length ? habit.scheduledDays : [0, 1, 2, 3, 4, 5, 6];
   const todayDayOfWeek = today.getDay() === 0 ? 6 : today.getDay() - 1;
   const isScheduledToday = scheduledDays.includes(todayDayOfWeek);
@@ -1116,6 +1135,22 @@ function HabitCard({
           Días: <span className="font-medium text-foreground">
             {habit.scheduledDays.map((d) => DAY_LBLS[d]).join(", ")}
           </span>
+        </div>
+      )}
+
+      {/* Skills y componentes corporales linkeados: cada uno como "+ nombre", sin
+          etiqueta de sección. Desaparecen en cuanto el hábito se confirma hoy. */}
+      {(linkedSkillNames.length > 0 || linkedBodyNames.length > 0) && !isToday && (
+        <div
+          onClick={(e) => {
+            e.stopPropagation();
+            onEditClick(habit.id);
+          }}
+          className="mb-2 flex flex-wrap gap-x-2 gap-y-0.5 text-xs font-medium text-foreground hover:text-primary transition-colors cursor-pointer"
+        >
+          {[...linkedSkillNames, ...linkedBodyNames].map((name) => (
+            <span key={name}>+ {name}</span>
+          ))}
         </div>
       )}
 
@@ -1208,6 +1243,7 @@ function HabitCard({
 
 function MainPanel({
   habits,
+  globalSkills,
   onDetailed,
   onHistory,
   onArchived,
@@ -1217,6 +1253,7 @@ function MainPanel({
   isLoading,
 }: {
   habits: HabitData[];
+  globalSkills: { id: string; name: string }[];
   onDetailed: (id: string) => void;
   onHistory: () => void;
   onArchived: () => void;
@@ -1398,8 +1435,10 @@ function MainPanel({
                     today={today}
                     todayStr={todayStr}
                     weekDays={weekDays}
+                    globalSkills={globalSkills}
                     onToggle={onToggle}
                     onDetailed={onDetailed}
+                    onEditClick={onEditClick}
                     onPressStart={handleHabitPressStart}
                     onPressEnd={handleHabitPressEnd}
                   />
@@ -1419,8 +1458,10 @@ function MainPanel({
                     today={today}
                     todayStr={todayStr}
                     weekDays={weekDays}
+                    globalSkills={globalSkills}
                     onToggle={onToggle}
                     onDetailed={onDetailed}
+                    onEditClick={onEditClick}
                     onPressStart={handleHabitPressStart}
                     onPressEnd={handleHabitPressEnd}
                   />
@@ -1440,8 +1481,10 @@ function MainPanel({
                     today={today}
                     todayStr={todayStr}
                     weekDays={weekDays}
+                    globalSkills={globalSkills}
                     onToggle={onToggle}
                     onDetailed={onDetailed}
+                    onEditClick={onEditClick}
                     onPressStart={handleHabitPressStart}
                     onPressEnd={handleHabitPressEnd}
                   />
@@ -1832,8 +1875,8 @@ function AddPanel({
   onScheduledDaysChange,
   habitType,
   onHabitTypeChange,
-  defaultTimeSlot,
-  onDefaultTimeSlotChange,
+  defaultTimeSlots,
+  onDefaultTimeSlotsChange,
   onBack,
   onSubmit,
   isLoading,
@@ -1859,8 +1902,8 @@ function AddPanel({
   onScheduledDaysChange: (days: number[]) => void;
   habitType: "mini" | "deep";
   onHabitTypeChange: (type: "mini" | "deep") => void;
-  defaultTimeSlot: TimeSlot | null;
-  onDefaultTimeSlotChange: (slot: TimeSlot | null) => void;
+  defaultTimeSlots: TimeSlot[];
+  onDefaultTimeSlotsChange: (slots: TimeSlot[]) => void;
   onBack: () => void;
   onSubmit: () => void;
   isLoading: boolean;
@@ -2021,10 +2064,16 @@ function AddPanel({
             {TIME_SLOT_OPTIONS.map((slot) => (
               <button
                 key={slot.key}
-                onClick={() => onDefaultTimeSlotChange(defaultTimeSlot === slot.key ? null : slot.key)}
+                onClick={() =>
+                  onDefaultTimeSlotsChange(
+                    defaultTimeSlots.includes(slot.key)
+                      ? defaultTimeSlots.filter((s) => s !== slot.key)
+                      : [...defaultTimeSlots, slot.key]
+                  )
+                }
                 disabled={isLoading}
                 className={`py-2.5 sm:py-2 px-1 rounded-lg font-semibold text-xs transition-all active:scale-95 touch-manipulation ${
-                  defaultTimeSlot === slot.key
+                  defaultTimeSlots.includes(slot.key)
                     ? "bg-purple-600 text-white border-2 border-purple-600"
                     : "border-2 border-border/30 bg-background text-foreground hover:border-purple-400"
                 } disabled:opacity-50 disabled:cursor-not-allowed`}
@@ -2034,7 +2083,7 @@ function AddPanel({
             ))}
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            Opcional: si elegís una, el hábito va a aparecer agrupado ahí en "Tareas de hoy" sin tener que asignarlo cada día
+            Opcional: podés elegir más de una — el hábito va a aparecer agrupado ahí en "Tareas de hoy" sin tener que asignarlo cada día (si elegís varias, aparece duplicado en cada una)
           </p>
         </div>
 
@@ -2154,8 +2203,8 @@ function EditPanel({
   onScheduledDaysChange,
   habitType,
   onHabitTypeChange,
-  defaultTimeSlot,
-  onDefaultTimeSlotChange,
+  defaultTimeSlots,
+  onDefaultTimeSlotsChange,
   onBack,
   onSubmit,
   onDelete,
@@ -2183,8 +2232,8 @@ function EditPanel({
   onScheduledDaysChange: (days: number[]) => void;
   habitType: "mini" | "deep";
   onHabitTypeChange: (type: "mini" | "deep") => void;
-  defaultTimeSlot: TimeSlot | null;
-  onDefaultTimeSlotChange: (slot: TimeSlot | null) => void;
+  defaultTimeSlots: TimeSlot[];
+  onDefaultTimeSlotsChange: (slots: TimeSlot[]) => void;
   onBack: () => void;
   onSubmit: () => void;
   onDelete: () => void;
@@ -2343,10 +2392,16 @@ function EditPanel({
             {TIME_SLOT_OPTIONS.map((slot) => (
               <button
                 key={slot.key}
-                onClick={() => onDefaultTimeSlotChange(defaultTimeSlot === slot.key ? null : slot.key)}
+                onClick={() =>
+                  onDefaultTimeSlotsChange(
+                    defaultTimeSlots.includes(slot.key)
+                      ? defaultTimeSlots.filter((s) => s !== slot.key)
+                      : [...defaultTimeSlots, slot.key]
+                  )
+                }
                 disabled={isLoading}
                 className={`py-2.5 sm:py-2 px-1 rounded-lg font-semibold text-xs transition-all active:scale-95 touch-manipulation ${
-                  defaultTimeSlot === slot.key
+                  defaultTimeSlots.includes(slot.key)
                     ? "bg-purple-600 text-white border-2 border-purple-600"
                     : "border-2 border-border/30 bg-background text-foreground hover:border-purple-400"
                 } disabled:opacity-50 disabled:cursor-not-allowed`}
@@ -2356,7 +2411,7 @@ function EditPanel({
             ))}
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            Opcional: si elegís una, el hábito va a aparecer agrupado ahí en "Tareas de hoy" sin tener que asignarlo cada día
+            Opcional: podés elegir más de una — el hábito va a aparecer agrupado ahí en "Tareas de hoy" sin tener que asignarlo cada día (si elegís varias, aparece duplicado en cada una)
           </p>
         </div>
 

@@ -314,7 +314,7 @@ export const habits = pgTable("habits", {
   scheduledDays: jsonb("scheduled_days").notNull().$type<number[]>().default([0,1,2,3,4,5,6]), // Days of week (0=Mon, 6=Sun)
   habitType: text("habit_type").notNull().default("mini").$type<"mini" | "deep">(), // "mini" = corta duración/casi diaria, "deep" = actividades más largas y menos frecuentes
   freezeDates: text("freeze_dates").default("[]").notNull(), // Array of frozen dates as JSON string (YYYY-MM-DD format)
-  defaultTimeSlot: text("default_time_slot").$type<"morning" | "midday" | "afternoon" | "night" | null>(), // Franja horaria por defecto: si está seteada, el hábito aparece ahí en el modal de tareas del día sin necesidad de asignarlo día a día
+  defaultTimeSlots: jsonb("default_time_slots").notNull().$type<("morning" | "midday" | "afternoon" | "night")[]>().default([]), // Franjas horarias por defecto: si tiene una o más, el hábito aparece ahí en el modal de tareas del día sin necesidad de asignarlo día a día (más de una franja = aparece duplicado en cada una)
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -579,7 +579,7 @@ export type InsertGlobalSkill = z.infer<typeof insertGlobalSkillSchema>;
 export type GlobalSkill = typeof globalSkills.$inferSelect;
 export const insertHabitSchema = createInsertSchema(habits).omit({ id: true, createdAt: true, updatedAt: true }).extend({
   skillIds: z.array(z.string()).optional().default([]),
-  defaultTimeSlot: z.enum(["morning", "midday", "afternoon", "night"]).nullable().optional(),
+  defaultTimeSlots: z.array(z.enum(["morning", "midday", "afternoon", "night"])).optional().default([]),
 });
 export const insertHabitRecordSchema = createInsertSchema(habitRecords).omit({ id: true, createdAt: true });
 export const insertSpaceRepetitionPracticeSchema = createInsertSchema(spaceRepetitionPractices).omit({ id: true, createdAt: true, updatedAt: true }).extend({

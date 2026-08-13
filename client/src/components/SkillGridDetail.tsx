@@ -88,13 +88,6 @@ export function SkillGridDetail({ skill, areaColor, onClose }: SkillGridDetailPr
   const progressColor = getProgressColorForLevel(currentLevel);
   const nextLevelLabel = `Lv${currentLevel + 1}`;
 
-  // Milestones: solo subidas de nivel reales, desde nivel 1 hasta el nivel actual (o la meta, si es mayor)
-  const maxDisplayLevel = goalLevel ? Math.max(goalLevel, currentLevel) : currentLevel;
-  const milestones = Array.from({ length: maxDisplayLevel }, (_, i) => {
-    const lvl = i + 1;
-    return { label: `Nivel ${lvl}`, done: currentLevel >= lvl };
-  });
-
   const diamondSize = 56;
   const half = diamondSize / 2;
   const points = `${half},2 ${diamondSize - 2},${half} ${half},${diamondSize - 2} 2,${half}`;
@@ -227,31 +220,6 @@ export function SkillGridDetail({ skill, areaColor, onClose }: SkillGridDetailPr
                 </span>
               </span>
             </div>
-          </div>
-
-          {/* Milestones */}
-          <div className="space-y-1">
-            <div className="text-xs font-medium text-amber-700 uppercase tracking-wider" style={{ color: areaColor }}>
-              Hitos
-            </div>
-            {milestones.map((milestone, idx) => (
-              <div key={idx} className="flex items-start gap-2">
-                <div
-                  className="w-1.5 h-1.5 rounded-sm flex-shrink-0 mt-1"
-                  style={{
-                    backgroundColor: milestone.done ? areaColor : "#2a1e0e",
-                  }}
-                />
-                <span
-                  className="text-xs leading-relaxed"
-                  style={{
-                    color: milestone.done ? areaColor : "#2e2414",
-                  }}
-                >
-                  {milestone.label}
-                </span>
-              </div>
-            ))}
           </div>
     </div>
   );

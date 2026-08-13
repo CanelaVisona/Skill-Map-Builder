@@ -158,7 +158,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     updateProjectLevelSubtitle,
     toggleFinalNode,
     toggleProjectFinalNode,
-    toggleSubSkillFinalNode,
     globalSkills,
     getGlobalSkillsForArea,
     getGlobalSkillsForProject,
@@ -187,9 +186,20 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   
   // Star is active only when endOfAreaLevel is set to this level
   // isFinalNode: 1 is just an identifier (always on Node 5), not the control
-  const isStarActive = isProject
-    ? (activeProject?.endOfAreaLevel === skill.level)
-    : (activeArea?.endOfAreaLevel === skill.level);
+  //
+  // Sub-skill trees don't have a user-togglable "end" the way areas/projects do
+  // (endOfAreaLevel isn't a real column on skills, so it never persisted there --
+  // see toggleSubSkillFinalNode). Instead, the true final-final node of a sub-skill
+  // tree -- the last node of its deepest level -- is always considered active and
+  // can't be turned off; it's derived from structure, not a stored flag.
+  const subSkillMaxLevel = isSubSkillView
+    ? Math.max(...currentSkills.map(s => s.level))
+    : null;
+  const isStarActive = isSubSkillView
+    ? (isLastNodeOfLevel && skill.level === subSkillMaxLevel)
+    : isProject
+      ? (activeProject?.endOfAreaLevel === skill.level)
+      : (activeArea?.endOfAreaLevel === skill.level);
 
   // Calculate effective locked state: final nodes (by position) should appear locked
   // if not all other nodes in level are mastered (UNLESS star is active, then node itself blocks)
@@ -322,7 +332,29 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPress = useRef(false);
   const lastClickTime = useRef<number>(0); // Debounce flag to prevent duplicate onClick calls
-  
+
+  // Speech-bubble feedback shown when tapping a node that can't be interacted with yet
+  // (still locked, or available but blocked on its own incomplete subskills). Cleared
+  // automatically after a couple seconds, and reset on every new tap so a rapid re-click
+  // restarts the visible timer instead of the bubble abruptly vanishing mid-message.
+  const [lockedFeedback, setLockedFeedback] = useState<string | null>(null);
+  const lockedFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showLockedFeedback = (message: string) => {
+    if (lockedFeedbackTimer.current) {
+      clearTimeout(lockedFeedbackTimer.current);
+    }
+    setLockedFeedback(message);
+    lockedFeedbackTimer.current = setTimeout(() => {
+      setLockedFeedback(null);
+      lockedFeedbackTimer.current = null;
+    }, 2200);
+  };
+  useEffect(() => {
+    return () => {
+      if (lockedFeedbackTimer.current) clearTimeout(lockedFeedbackTimer.current);
+    };
+  }, []);
+
   const [isSubtitleDialogOpen, setIsSubtitleDialogOpen] = useState(false);
   const [isSubtaskConfirmOpen, setIsSubtaskConfirmOpen] = useState(false);
   const [isFeedbackDialogOpen, setIsFeedbackDialogOpen] = useState(false);
@@ -685,6 +717,12 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   }, [skill.id, skill.status, activeParentSkillId]);
 
   const hasUnlockedWithIncompleteSubtasks = !isLocked && !isMastered && hasIncompleteSubtasks;
+  // While the node's own subskills are still incomplete, the node itself must not pulse
+  // (it can't be confirmed yet) -- instead the title that leads into the subskill tree
+  // pulses, pointing the player there. Once the subskills are all mastered, this flips:
+  // the node pulses like any other available node and the title goes still.
+  const shouldPulseNode = skill.status === "available" && !hasUnlockedWithIncompleteSubtasks;
+  const shouldPulseTitle = hasUnlockedWithIncompleteSubtasks;
 
   const createThought = useMutation({
     mutationFn: async (data: { title: string; sentence: string; skillId: string }) => {
@@ -1144,6 +1182,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     // leaving it permanently flagged as "has incomplete subtasks" even once it becomes
     // genuinely available later.
     if (isLocked) {
+      showLockedFeedback("Completá el nodo desbloqueado primero");
       return;
     }
     if (!isSubSkillView && !isInicioNode) {
@@ -1431,7 +1470,16 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       return;
     }
     if (isLocked) {
-      return; // Locked nodes cannot be clicked - only unlock when previous node is mastered
+      // Locked nodes cannot be clicked - only unlock when the previous node is mastered
+      showLockedFeedback("Completá el nodo desbloqueado primero");
+      return;
+    }
+    if (hasUnlockedWithIncompleteSubtasks) {
+      // This node is available, but it can't be confirmed straight from its circle while
+      // it still has subskills pending -- those have to be resolved from its subskill tree
+      // (via the title) first.
+      showLockedFeedback("Entrá al árbol de subskill primero");
+      return;
     }
 
     console.log(`[SkillNode] onClick triggered for skill "${skill.title}" (id: ${skill.id})`);
@@ -1525,13 +1573,13 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
           {/* Node Circle */}
           <motion.div
             initial={{
-              scale: skill.status === "available" ? 1 : (isMastered ? 1.05 : 1),
-              boxShadow: skill.status === "available" ? "0 0 0px 1px rgba(255, 255, 255, 1)" : "none",
+              scale: shouldPulseNode ? 1 : (isMastered ? 1.05 : 1),
+              boxShadow: shouldPulseNode ? "0 0 0px 1px rgba(255, 255, 255, 1)" : "none",
               opacity: isLocked ? lockedNodeOpacity : 1,
             }}
             animate={{
-              scale: isMastered ? 1.05 : skill.status === "available" ? [1, 1.3, 1] : 1,
-              boxShadow: skill.status === "available" ? [
+              scale: isMastered ? 1.05 : shouldPulseNode ? [1, 1.3, 1] : 1,
+              boxShadow: shouldPulseNode ? [
                 "0 0 0px 1px rgba(255, 255, 255, 1)",
                 "0 0 0px 1.5px rgba(255, 255, 255, 1)",
                 "0 0 0px 1px rgba(255, 255, 255, 1)"
@@ -1539,12 +1587,12 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               opacity: isLocked ? lockedNodeOpacity : 1,
             }}
             transition={{
-              scale: skill.status === "available" ? {
+              scale: shouldPulseNode ? {
                 duration: 2,
                 repeat: Infinity,
                 repeatType: "loop"
               } : { duration: 0.3 },
-              boxShadow: skill.status === "available" ? {
+              boxShadow: shouldPulseNode ? {
                 duration: 2,
                 repeat: Infinity,
                 repeatType: "loop"
@@ -1581,13 +1629,32 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             )}
           </motion.div>
 
+          {/* Locked-tap feedback: an animated speech bubble rising from the node that was
+              just clicked, telling the player why nothing happened. */}
+          <AnimatePresence>
+            {lockedFeedback && (
+              <motion.div
+                className="absolute left-1/2 bottom-full mb-2 -translate-x-1/2 z-40 pointer-events-none"
+                initial={{ opacity: 0, y: 6, scale: 0.5 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 6, scale: 0.6 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
+              >
+                <div className="relative whitespace-nowrap rounded-lg bg-foreground text-background text-xs font-medium px-3 py-1.5 shadow-lg">
+                  {lockedFeedback}
+                  <div className="absolute left-1/2 top-full -translate-x-1/2 w-0 h-0 border-x-[6px] border-x-transparent border-t-[6px] border-t-foreground" />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* Final Node Star Icon - shows on the actual final-final node as soon as it's
               marked active (isStarActive), so toggling it gives immediate visible feedback
               instead of waiting for it to be mastered. Hidden once the area/project is
               fully conquered (hasCompletionStar), since the permanent completion star below
               takes over then -- otherwise both would show at once. */}
           {isStarActive && isLastNodeOfLevel && skill.hasCompletionStar !== 1 && (
-            <div className="absolute -top-1 -right-1 z-30" title="Nodo final del área (activo)">
+            <div className="absolute -top-1 -right-1 z-30" title={isSubSkillView ? "Nodo final del subskill" : "Nodo final del área (activo)"}>
               <Star
                 size={14}
                 className="fill-amber-400 text-amber-400 drop-shadow-lg"
@@ -1614,7 +1681,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             (skill.title.startsWith("Nodo ") || skill.title === "Next challenge" || skill.title === "Next objetive quest" || skill.title === "Objective quest") && "text-muted-foreground/60"
           )}>
             <div className="flex flex-col">
-              <span
+              <motion.span
                 onClick={handleTitleClick}
                 onTouchStart={handleTitleLongPressStart}
                 onTouchEnd={handleTitleLongPressEnd}
@@ -1622,15 +1689,22 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 onMouseDown={handleTitleLongPressStart}
                 onMouseUp={handleTitleLongPressEnd}
                 onMouseLeave={handleTitleLongPressEnd}
+                animate={{ scale: shouldPulseTitle ? [1, 1.15, 1] : 1 }}
+                transition={shouldPulseTitle ? {
+                  duration: 1.2,
+                  repeat: Infinity,
+                  repeatType: "loop"
+                } : { duration: 0.2 }}
+                style={{ transformOrigin: "left center" }}
                 className={cn(
                   "whitespace-nowrap block transition-transform duration-150",
-                  !isSubSkillView && !isLocked && !isInicioNode && "cursor-pointer hover:translate-y-0.5 active:translate-y-1",
+                  !isSubSkillView && !isLocked && !isInicioNode && !shouldPulseTitle && "cursor-pointer hover:translate-y-0.5 active:translate-y-1",
                   !isInicioNode && "cursor-pointer"
                 )}
                 data-testid={`link-skill-title-${skill.id}`}
               >
                 {skill.isAutoComplete === 1 || skill.levelPosition === 1 ? "" : skill.title}
-              </span>
+              </motion.span>
               {/* Small day/time tags under the title when this node has a plannedDate and/or
                   plannedDuration assigned, shown side by side when both are set. Hidden once
                   the node is confirmed/mastered — they were only relevant as a reminder while
@@ -1867,8 +1941,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                  </PopoverContent>
                </Popover>
 
-               {/* Star button - show for last node of level OR if star is currently active (to allow removal) */}
-               {(isLastNodeOfLevel || isStarActive) && (
+               {/* Star button - show for last node of level OR if star is currently active (to allow removal).
+                   Sub-skill trees have no toggle: their final-final node is always active and can't be
+                   deactivated (see isStarActive above), so the button is skipped entirely there. */}
+               {!isSubSkillView && (isLastNodeOfLevel || isStarActive) && (
                  <Button 
                    variant="ghost"
                    size="sm" 
@@ -1877,9 +1953,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                      isStarActive ? "bg-amber-500 hover:bg-amber-600 text-white" : "bg-muted/50 hover:bg-muted"
                    )}
                    onClick={() => {
-                     if (isSubSkillView) {
-                       toggleSubSkillFinalNode(skill.id);
-                     } else if (isProject) {
+                     if (isProject) {
                        toggleProjectFinalNode(activeId, skill.id);
                      } else {
                        toggleFinalNode(activeId, skill.id);

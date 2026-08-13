@@ -3,7 +3,14 @@
     "allow": [
       "Bash(xargs -I{} echo {})",
       "Bash(node -e \"console.log\\(require\\('pg'\\) ? 'pg ok' : 'no'\\)\")",
-      "Bash(node inspect-tmp.mjs)"
+      "Bash(node inspect-tmp.mjs)",
+      "Bash(awk '/^function ProfileSection/{p=1} p{print NR\": \"$0} /^function AchievementsSection/{if\\(p\\){exit}}' client/src/pages/SkillTree.tsx)",
+      "Bash(awk '/^function ProfileSection/{p=1} p{print} /^function AchievementsSection/{if\\(p\\){exit}}' client/src/pages/SkillTree.tsx)",
+      "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(len\\(d['entries']\\)\\); print\\(d['entries'][-3:]\\)\")",
+      "Bash(node script/apply-habit-slots-migration.mjs migrations/0039_habit_default_time_slots_array.sql)",
+      "Bash(curl -sS -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3001/api/habits --max-time 5)",
+      "Bash(curl -sS -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3001/ --max-time 5)",
+      "Bash(npx tsx *)"
     ]
   }
 }

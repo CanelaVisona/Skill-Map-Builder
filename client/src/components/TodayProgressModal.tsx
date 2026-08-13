@@ -346,20 +346,27 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     })),
   ];
 
-  // Hábitos que tienen una franja del día linkeada de fábrica (configurada en el hábito, no
-  // día a día): caen ahí automáticamente si ese día no tienen una franja asignada a mano.
-  const habitDefaultSlotById = new Map<string, TaskSlotKey>();
+  // Hábitos que tienen una o más franjas del día linkeadas de fábrica (configuradas en el
+  // hábito, no día a día): caen ahí automáticamente si ese día no tienen una franja asignada a
+  // mano. Si tiene más de una, el hábito se duplica: aparece en cada una de sus franjas.
+  const habitDefaultSlotsById = new Map<string, TaskSlotKey[]>();
   (habitsData || []).forEach((h) => {
-    if (h.defaultTimeSlot && TIME_SLOTS.some((s) => s.key === h.defaultTimeSlot)) {
-      habitDefaultSlotById.set(h.id, h.defaultTimeSlot as TaskSlotKey);
-    }
+    const raw = Array.isArray(h.defaultTimeSlots) ? h.defaultTimeSlots : [];
+    const valid = raw.filter((s) => TIME_SLOTS.some((t) => t.key === s)) as TaskSlotKey[];
+    if (valid.length > 0) habitDefaultSlotsById.set(h.id, valid);
   });
 
-  // Franja efectiva de una tarea: la asignada a mano para este día tiene prioridad; si no hay
-  // ninguna, se usa la franja por defecto del ítem (p.ej. actividad extra confirmada en cierto
-  // momento) o, si es un hábito con franja por defecto, esa.
-  const resolveSlot = (item: TodayItem): TaskSlotKey | undefined =>
-    slotByKey.get(item.key) ?? item.defaultSlot ?? (item.type === "habit" ? habitDefaultSlotById.get(item.id) : undefined);
+  // Franja(s) efectiva(s) de una tarea: la asignada a mano para este día tiene prioridad (una
+  // sola franja); si no hay ninguna, se usa la franja por defecto del ítem (p.ej. actividad
+  // extra confirmada en cierto momento) o, si es un hábito con franjas por defecto, esas —
+  // puede ser más de una, en cuyo caso la tarea se duplica en cada franja.
+  const resolveSlots = (item: TodayItem): TaskSlotKey[] => {
+    const manual = slotByKey.get(item.key);
+    if (manual) return [manual];
+    if (item.defaultSlot) return [item.defaultSlot];
+    if (item.type === "habit") return habitDefaultSlotsById.get(item.id) ?? [];
+    return [];
+  };
 
   // "more" agrupa la actividad extra (sección "Más") que no tiene ninguna franja, ni manual
   // ni por defecto — hoy en día eso es solo hábitos extra (no hay forma de saber a qué hora se
@@ -368,19 +375,24 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // ahí se pueden mover a otra franja igual que cualquier tarea de hoy.
   const itemBuckets: Record<string, TodayItem[]> = { unassigned: [], more: [] };
   TIME_SLOTS.forEach((s) => (itemBuckets[s.key] = []));
-  todayItems.forEach((item) => {
-    const slot = resolveSlot(item);
+  // Reparte un ítem en los buckets de sus franjas efectivas; si tiene más de una, cada
+  // duplicado extra necesita una "key" propia para React (mismo type/id, así que los clics
+  // sobre cualquiera de las copias siguen afectando la misma tarea/hábito real).
+  const distributeItem = (item: TodayItem, fallbackBucket: "unassigned" | "more") => {
     // "hidden" no es una franja real: puede llegar acá si la tarea se ocultó y después se
-    // confirmó (vuelve a aparecer, ya hecha), así que cae a "Sin asignar" igual que si nunca
-    // hubiera tenido franja.
-    const isTimeSlot = !!slot && TIME_SLOTS.some((s) => s.key === slot);
-    itemBuckets[isTimeSlot ? (slot as TaskSlotKey) : "unassigned"].push(item);
-  });
-  extraItems.forEach((item) => {
-    const slot = resolveSlot(item);
-    const isTimeSlot = !!slot && TIME_SLOTS.some((s) => s.key === slot);
-    itemBuckets[isTimeSlot ? (slot as TaskSlotKey) : "more"].push(item);
-  });
+    // confirmó (vuelve a aparecer, ya hecha), así que cae al bucket por defecto igual que si
+    // nunca hubiera tenido franja.
+    const slots = resolveSlots(item).filter((s) => TIME_SLOTS.some((t) => t.key === s));
+    if (slots.length === 0) {
+      itemBuckets[fallbackBucket].push(item);
+      return;
+    }
+    slots.forEach((slot, i) => {
+      itemBuckets[slot].push(i === 0 ? item : { ...item, key: `${item.key}#${slot}` });
+    });
+  };
+  todayItems.forEach((item) => distributeItem(item, "unassigned"));
+  extraItems.forEach((item) => distributeItem(item, "more"));
 
   // Las tareas ya hechas siempre van antes que las que faltan, en cualquier bucket. Dentro de
   // cada franja horaria, entre tareas con el mismo estado de "hecha" se respeta el orden

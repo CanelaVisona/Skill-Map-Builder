@@ -67,6 +67,14 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
 
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Pre-open the accordion item for the area/project currently being viewed
+  // in the Skill Tree, so the designer doesn't land on a fully collapsed list.
+  const defaultAccordionValue = activeAreaId
+    ? `area-${activeAreaId}`
+    : activeProjectId
+      ? `project-${activeProjectId}`
+      : undefined;
+
   const handleNodeLongPressStart = (skillId: string, currentName: string, areaId: string | null, projectId: string | null, level?: number, isLocked: boolean = false) => {
     longPressTimer.current = setTimeout(() => {
       setEditingSkillId(skillId);
@@ -297,7 +305,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
             </DialogDescription>
           </DialogHeader>
 
-          <Accordion type="single" collapsible className="w-full">
+          <Accordion type="single" collapsible className="w-full" defaultValue={defaultAccordionValue}>
             {/* Areas */}
             {areas.map((area) => {
               const maxLevel = Math.max(...area.skills.map((s) => s.level));

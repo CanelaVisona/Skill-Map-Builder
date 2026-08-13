@@ -23,7 +23,7 @@ const DARK_PALETTE: PopupPalette = {
 };
 
 const LIGHT_PALETTE: PopupPalette = {
-  bg: "#faf3e2",
+  bg: "#ffffff",
   border: "#d9c69c",
   text: "#7a5322",
   textMuted: "#9c7d45",

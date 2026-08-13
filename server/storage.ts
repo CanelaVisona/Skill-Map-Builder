@@ -1774,13 +1774,15 @@ export class DbStorage implements IStorage {
         nextStatus = "debugueando";
       }
 
-      if (nextStatus === "debugueando" && record.resultado === "victoria") {
+      if (record.resultado === "victoria") {
         nextVictoryCount = Math.min(nextVictoryCount + 1, 5);
-
-        if (nextVictoryCount >= 5) {
-          nextStatus = "debugueado";
-        }
+      } else if (record.resultado === "derrota") {
+        nextVictoryCount = Math.max(nextVictoryCount - 1, 0);
       }
+
+      // Status tracks the bar: reaching 5/5 marks it fixed, and a later defeat
+      // that drags the bar back down reopens it for debugging.
+      nextStatus = nextVictoryCount >= 5 ? "debugueado" : "debugueando";
     }
 
     await db
