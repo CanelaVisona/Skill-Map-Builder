@@ -366,6 +366,25 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       prev.includes(zone) ? prev.filter((z) => z !== zone) : [...prev, zone]
     );
   };
+
+  // Step 3 of the title-long-press edit dialog (xp/fuerza/poderes preview). Picking here only
+  // stages a choice -- it must NOT touch the skill's XP, body progress, or power state. Those
+  // mutations (and their celebration pop-ups) only run once the node itself gets confirmed
+  // (see applyPendingRewards), so this state is deliberately kept separate from the Journal
+  // tab's own experienceSelectedSkill/selectedBodyZones/selectedPowerId, which apply immediately.
+  const [pendingRewardsTab, setPendingRewardsTab] = useState<"experience" | "body" | "powers">("experience");
+  const [pendingXpSkillId, setPendingXpSkillId] = useState<string | null>(null);
+  const [showPendingXpSkillSelector, setShowPendingXpSkillSelector] = useState(false);
+  const [pendingBodyDimension, setPendingBodyDimension] = useState<BodyDimension>("fuerza");
+  const [pendingBodyZones, setPendingBodyZones] = useState<BodyZone[]>([]);
+  const [showPendingBodyZoneSelector, setShowPendingBodyZoneSelector] = useState(false);
+  const [pendingPowerId, setPendingPowerId] = useState<string | null>(null);
+
+  const togglePendingBodyZone = (zone: BodyZone) => {
+    setPendingBodyZones((prev) =>
+      prev.includes(zone) ? prev.filter((z) => z !== zone) : [...prev, zone]
+    );
+  };
   const activeScopeSkills = isProject ? (activeProject?.skills || []) : (activeArea?.skills || []);
   const activeScopeName = isProject ? (activeProject?.name || "Project") : (activeArea?.name || "Area");
   const activeScopeXp = activeScope?.currentXp ?? countMasteredSkills(activeScopeSkills);
@@ -449,6 +468,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   }, [sourcePowers, selectedPowerId]);
 
   const selectedPower = sourcePowers.find((power) => power.id === selectedPowerId) || null;
+  const pendingSelectedPower = sourcePowers.find((power) => power.id === pendingPowerId) || null;
 
   const updateSourcePower = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<SkillNodeSourcePower> }) => {
@@ -471,17 +491,24 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     },
   });
 
-  const handlePowerAction = async () => {
-    if (!selectedPower) return;
+  // Core power unlock/master logic, shared by the Journal tab's immediate "Desbloquear"/"Dominar"
+  // button and by applyPendingRewards.
+  const applyPowerAction = async (power: SkillNodeSourcePower, showPopup: (fn: () => void) => void = (fn) => fn()) => {
+    if (power.isUnlocked === 2) return;
 
-    const nextState = selectedPower.isUnlocked === 0 ? 1 : 2;
+    const nextState = power.isUnlocked === 0 ? 1 : 2;
 
     try {
-      await updateSourcePower.mutateAsync({ id: selectedPower.id, data: { isUnlocked: nextState } });
-      showPowerCelebration({ name: selectedPower.name, kind: nextState === 1 ? "unlocked" : "confirmed" });
+      await updateSourcePower.mutateAsync({ id: power.id, data: { isUnlocked: nextState } });
+      showPopup(() => showPowerCelebration({ name: power.name, kind: nextState === 1 ? "unlocked" : "confirmed" }));
     } catch {
       // Mutation error is already handled by the mutation's onError callback.
     }
+  };
+
+  const handlePowerAction = async () => {
+    if (!selectedPower) return;
+    await applyPowerAction(selectedPower);
   };
 
   interface SkillNodeSourceBug {
@@ -857,19 +884,15 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     }
   };
 
-  const handleAddExperience = async () => {
-    console.log("[handleAddExperience] Called", {
-      xpValue,
-      experienceSelectedSkill,
-    });
-    
-    if (!experienceSelectedSkill) {
-      console.log("[handleAddExperience] Invalid inputs, returning");
-      return;
-    }
-    
+  // Core XP-gain logic, shared by the Journal tab's immediate "+ Experience" button and by
+  // applyPendingRewards (which runs it later, once the node is actually confirmed). `showPopup`
+  // lets callers stagger the XP celebration pop-up against other pop-ups firing in the same
+  // batch; when omitted it fires immediately, matching the old inline behavior.
+  const applyExperienceGain = async (skillId: string, showPopup: (fn: () => void) => void = (fn) => fn()) => {
+    console.log("[applyExperienceGain] Called", { skillId });
+
     const xpToAdd = FIXED_XP_AMOUNT;
-    console.log("[handleAddExperience] XP to add:", xpToAdd, "SkillId:", experienceSelectedSkill);
+    console.log("[applyExperienceGain] XP to add:", xpToAdd, "SkillId:", skillId);
 
     const buildSnapshot = (
       skillName: string,
@@ -885,28 +908,28 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       level,
       celebrateLevelUp: true,
     });
-    
+
     // Check if it's a legacy skill
-    if (experienceSelectedSkill.startsWith("legacy:")) {
-      const legacySkillName = experienceSelectedSkill.replace("legacy:", "");
-      console.log("[handleAddExperience] Adding XP to legacy skill:", legacySkillName);
-      
+    if (skillId.startsWith("legacy:")) {
+      const legacySkillName = skillId.replace("legacy:", "");
+      console.log("[applyExperienceGain] Adding XP to legacy skill:", legacySkillName);
+
       const skillsProgress = localStorage.getItem("skillsProgress");
       let skills: Record<string, { name: string; currentXp: number; level: number }> = {};
-      
+
       if (skillsProgress) {
         try {
           skills = JSON.parse(skillsProgress);
         } catch (error) {
-          console.error("[handleAddExperience] Error parsing skillsProgress:", error);
+          console.error("[applyExperienceGain] Error parsing skillsProgress:", error);
         }
       }
-      
+
       // Initialize if skill doesn't exist
       if (!skills[legacySkillName]) {
         skills[legacySkillName] = { name: legacySkillName, currentXp: 0, level: 1 };
       }
-      
+
       const legacySnapshot = buildSnapshot(
         legacySkillName,
         skills[legacySkillName].currentXp,
@@ -918,7 +941,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       skills[legacySkillName].currentXp += xpToAdd;
       skills[legacySkillName].level = Math.floor(skills[legacySkillName].currentXp / xpPerLevel) + 1;
       localStorage.setItem("skillsProgress", JSON.stringify(skills));
-      
+
       // Save to server
       try {
         await fetch("/api/skills-progress", {
@@ -931,46 +954,48 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
           })
         });
       } catch (error) {
-        console.error('[handleAddExperience] Error saving to server:', error);
+        console.error('[applyExperienceGain] Error saving to server:', error);
       }
-      
-      window.dispatchEvent(new CustomEvent('skillXpAdded', { 
+
+      window.dispatchEvent(new CustomEvent('skillXpAdded', {
         detail: { skillName: legacySkillName, currentXp: skills[legacySkillName].currentXp }
       }));
-      
+
       setXpValue(FIXED_XP_AMOUNT.toString());
-      setExperienceSelectedSkill(null);
-      hideBodyGainPopup(); // evita solaparse con el pop-up de fuerza/flexibilidad
-      showXpPopup(legacySnapshot);
+      showPopup(() => {
+        hideBodyGainPopup(); // evita solaparse con el pop-up de fuerza/flexibilidad
+        showXpPopup(legacySnapshot);
+      });
       return;
     }
-    
+
     // GlobalSkill flow
-    const currentSkill = availableGlobalSkills.find(s => s.id === experienceSelectedSkill);
+    const currentSkill = availableGlobalSkills.find(s => s.id === skillId);
     const globalSnapshot = buildSnapshot(
-      currentSkill?.name || experienceSelectedSkill,
+      currentSkill?.name || skillId,
       currentSkill?.currentXp || 0,
       currentSkill?.level || 1,
       currentSkill?.goalXp && currentSkill.goalXp > 0 ? currentSkill.goalXp : null
     );
-    
+
     try {
       // Use the GlobalSkills API to add XP (with cascade to parent)
-      const updatedSkill = await addXpToGlobalSkill(experienceSelectedSkill, xpToAdd);
-      
+      const updatedSkill = await addXpToGlobalSkill(skillId, xpToAdd);
+
       if (updatedSkill) {
-        console.log("[handleAddExperience] Updated skill via API:", updatedSkill);
+        console.log("[applyExperienceGain] Updated skill via API:", updatedSkill);
 
         // Dispatch event to update UI (for compatibility)
-        window.dispatchEvent(new CustomEvent('skillXpAdded', { 
-          detail: { skillId: experienceSelectedSkill, currentXp: updatedSkill.currentXp, level: updatedSkill.level }
+        window.dispatchEvent(new CustomEvent('skillXpAdded', {
+          detail: { skillId: skillId, currentXp: updatedSkill.currentXp, level: updatedSkill.level }
         }));
-        
+
         // Clear inputs and show feedback
         setXpValue(FIXED_XP_AMOUNT.toString());
-        setExperienceSelectedSkill(null);
-        hideBodyGainPopup(); // evita solaparse con el pop-up de fuerza/flexibilidad
-        showXpPopup(globalSnapshot);
+        showPopup(() => {
+          hideBodyGainPopup(); // evita solaparse con el pop-up de fuerza/flexibilidad
+          showXpPopup(globalSnapshot);
+        });
 
         const targetId = currentSkill?.areaId || currentSkill?.projectId;
         const isTargetProject = !currentSkill?.areaId && !!currentSkill?.projectId;
@@ -982,29 +1007,89 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
         }
       }
     } catch (error) {
-      console.error("[handleAddExperience] Error adding XP:", error);
+      console.error("[applyExperienceGain] Error adding XP:", error);
     }
+  };
+
+  const handleAddExperience = async () => {
+    if (!experienceSelectedSkill) return;
+    await applyExperienceGain(experienceSelectedSkill);
+    setExperienceSelectedSkill(null);
+  };
+
+  // Core fuerza/flex-gain logic, shared by the Journal tab's immediate "Agregar fuerza" button
+  // and by applyPendingRewards. One block is added per chosen zone; `showPopup` lets callers
+  // stagger each zone's celebration pop-up (defaults to the original immediate + 1800ms-apart
+  // behavior when omitted).
+  const applyBodyGain = (
+    dimension: BodyDimension,
+    zones: BodyZone[],
+    showPopup: (fn: () => void) => void = (() => {
+      let index = 0;
+      return (fn: () => void) => {
+        if (index === 0) fn();
+        else setTimeout(fn, index * 1800);
+        index += 1;
+      };
+    })()
+  ) => {
+    if (zones.length === 0) return;
+
+    zones.forEach((zone) => {
+      const { before, after } = addBodyBlock(zone, dimension);
+      showPopup(() => showBodyGainPopup({ zone, dimension, before, after }));
+    });
   };
 
   const handleAddBody = () => {
     if (selectedBodyZones.length === 0) return;
-
     hideXpPopup(); // evita solaparse con el pop-up de XP si sigue visible
-
-    // Un bloque por componente elegido. Si son varios, los pop-ups se muestran de a uno
-    // (mismo criterio de 1800ms que ya se usa entre el pop-up de XP y el de cuerpo) para que
-    // no se solapen entre sí.
-    selectedBodyZones.forEach((zone, index) => {
-      const { before, after } = addBodyBlock(zone, selectedBodyDimension);
-      const show = () => showBodyGainPopup({ zone, dimension: selectedBodyDimension, before, after });
-      if (index === 0) {
-        show();
-      } else {
-        setTimeout(show, index * 1800);
-      }
-    });
-
+    applyBodyGain(selectedBodyDimension, selectedBodyZones);
     setSelectedBodyZones([]);
+  };
+
+  // Whatever was picked in Step 3 (xp/fuerza/poderes) of the title-long-press edit dialog is
+  // only a preview until this runs -- it fires once, right when the node itself gets confirmed
+  // (available -> mastered), and is what actually grants the XP/body progress/power and shows
+  // their celebration pop-ups. Pop-ups across the three categories are staggered 1800ms apart
+  // (matching the existing convention for multiple body zones) so they don't overlap.
+  const hasPendingRewards = !!pendingXpSkillId || pendingBodyZones.length > 0 || !!pendingPowerId;
+  // Human-readable labels for the pending-rewards subtitle shown under the node title.
+  const pendingXpSkillName = pendingXpSkillId
+    ? (pendingXpSkillId.startsWith("legacy:")
+        ? pendingXpSkillId.replace("legacy:", "")
+        : (availableGlobalSkills.find(s => s.id === pendingXpSkillId)?.name ?? null))
+    : null;
+  const pendingPowerName = pendingSelectedPower?.name ?? null;
+
+  const applyPendingRewards = async () => {
+    let slot = 0;
+    const schedulePopup = (fn: () => void) => {
+      if (slot === 0) fn();
+      else setTimeout(fn, slot * 1800);
+      slot += 1;
+    };
+
+    if (pendingXpSkillId) {
+      const skillId = pendingXpSkillId;
+      setPendingXpSkillId(null);
+      await applyExperienceGain(skillId, schedulePopup);
+    }
+
+    if (pendingBodyZones.length > 0) {
+      const dimension = pendingBodyDimension;
+      const zones = pendingBodyZones;
+      setPendingBodyZones([]);
+      applyBodyGain(dimension, zones, schedulePopup);
+    }
+
+    if (pendingPowerId) {
+      const power = sourcePowers.find((p) => p.id === pendingPowerId) || null;
+      setPendingPowerId(null);
+      if (power) {
+        await applyPowerAction(power, schedulePopup);
+      }
+    }
   };
 
   const handleTitleLongPressStart = (e: React.TouchEvent | React.MouseEvent) => {
@@ -1024,8 +1109,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       setCustomDurationInputValue("");
       setEditFeedback(skill.feedback || "");
       setXpValue(FIXED_XP_AMOUNT.toString());
-      // First node of level (levelPosition === 1) starts at step 2, skipping title edit
-      const initialStep = skill.levelPosition === 1 ? 2 : 0;
+      // First node of level (levelPosition === 1) starts at step 2 (background/date),
+      // skipping the name+time step -- it's auto-named and can't be renamed.
+      const initialStep = skill.levelPosition === 1 ? 1 : 0;
       setEditStep(initialStep);
       setIsEditDialogOpen(true);
     }, 500);
@@ -1347,8 +1433,13 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     if (isLocked) {
       return; // Locked nodes cannot be clicked - only unlock when previous node is mastered
     }
-    
+
     console.log(`[SkillNode] onClick triggered for skill "${skill.title}" (id: ${skill.id})`);
+    // This click is what confirms the node (available -> mastered): grant any XP/fuerza/power
+    // staged in the edit dialog's Step 3 now, not before.
+    if (skill.status === "available" && hasPendingRewards) {
+      applyPendingRewards();
+    }
     onClick();
   };
 
@@ -1549,6 +1640,24 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                   {plannedDateLabel && <span className="whitespace-nowrap">{plannedDateLabel}</span>}
                   {plannedDateLabel && plannedDurationLabel && <span>·</span>}
                   {plannedDurationLabel && <span className="whitespace-nowrap">{plannedDurationLabel}</span>}
+                </div>
+              )}
+              {/* Preview of whatever was picked in Step 3 of the edit dialog (xp/fuerza/poder).
+                  Shown the same way the planned date/time is, above -- it's only staged here;
+                  it doesn't get granted until this node is actually confirmed. */}
+              {skill.isAutoComplete !== 1 && skill.levelPosition !== 1 && !isInicioNode && !isMastered && hasPendingRewards && (
+                <div className="flex items-center gap-1 flex-wrap font-normal italic tracking-wide text-muted-foreground/70 text-[10px] leading-tight">
+                  {pendingXpSkillId && (
+                    <span className="whitespace-nowrap">+{FIXED_XP_AMOUNT}xp{pendingXpSkillName ? ` ${pendingXpSkillName}` : ""}</span>
+                  )}
+                  {pendingBodyZones.length > 0 && (
+                    <span className="whitespace-nowrap">
+                      +{pendingBodyDimension === "fuerza" ? "Fuerza" : "Flexibilidad"}
+                    </span>
+                  )}
+                  {pendingPowerId && (
+                    <span className="whitespace-nowrap">+{pendingPowerName || "Poder"}</span>
+                  )}
                 </div>
               )}
             </div>
@@ -2324,9 +2433,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
         <DialogDescription className="sr-only">Edit skill details</DialogDescription>
         <div className="min-h-[180px] flex flex-col">
           <AnimatePresence mode="wait">
-            {editStep === 0 && (
+            {editStep === 0 && skill.levelPosition !== 1 && (
               <motion.div
-                key="step-action"
+                key="step-name"
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
@@ -2334,161 +2443,18 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 className="flex-1 flex flex-col gap-4"
               >
                 <div>
-                  <Label htmlFor="edit-action" className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block">PASO 1: Background</Label>
-                  <Textarea
-                    id="edit-action"
-                    value={editAction}
-                    onChange={(e) => setEditAction(e.target.value)}
-                    placeholder="Describe your next action..."
-                    rows={2}
-                    className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
-                    data-testid="input-edit-action"
+                  <Label htmlFor="edit-title" className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block">PASO 1: Nombre y tiempo</Label>
+                  <Input
+                    id="edit-title"
+                    value={editTitle}
+                    onChange={(e) => {
+                      setEditTitle(clampToWordLimit(e.target.value, getNodeTitleWordLimit()));
+                    }}
+                    placeholder="Name your move..."
+                    className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted text-lg"
+                    data-testid="input-edit-title"
                     autoFocus
                   />
-                </div>
-                <div>
-                  <Label htmlFor="edit-when" className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block">When exactly?</Label>
-                  {(() => {
-                    const quickOptions = getQuickDateOptions();
-                    // Find which quick option (if any) matches the currently saved date, so
-                    // the Select can show it as selected.
-                    const matchedOption = editPlannedDate
-                      ? quickOptions.find((opt) => opt.value === editPlannedDate)
-                      : undefined;
-                    // While pendingCustomDate is true, force the Select to show "Elegir fecha"
-                    // as selected immediately (instead of waiting for editPlannedDate to
-                    // change), so its controlled value never mismatches what was just clicked.
-                    const selectValue = pendingCustomDate
-                      ? CUSTOM_DATE_VALUE
-                      : editPlannedDate
-                        ? (matchedOption ? matchedOption.id : CUSTOM_DATE_VALUE)
-                        : "";
-                    // Rendered fully by hand instead of via <SelectValue> children, which only
-                    // shows the *matched item's own* label — it can't display an arbitrary date
-                    // that doesn't correspond to any SelectItem.
-                    const triggerLabel = pendingCustomDate
-                      ? "Elegir fecha"
-                      : matchedOption
-                        ? matchedOption.label
-                        : editPlannedDate
-                          ? new Date(editPlannedDate + "T00:00:00").toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" })
-                          : null;
-
-                    // Deselects the given quick option (or the custom date), clearing the
-                    // planned date entirely. Also closes the dropdown ourselves, since we
-                    // preempt Radix's own select-and-close handling for this case below.
-                    const deselectWhenOption = (id: string) => {
-                      suppressWhenOptionClickRef.current = id;
-                      setEditPlannedDate("");
-                      setPendingCustomDate(false);
-                      setShowCustomCalendar(false);
-                      setIsWhenSelectOpen(false);
-                    };
-
-                    return (
-                      <Popover open={showCustomCalendar} onOpenChange={setShowCustomCalendar}>
-                        <PopoverAnchor asChild>
-                          <div>
-                            <Select
-                              open={isWhenSelectOpen}
-                              onOpenChange={setIsWhenSelectOpen}
-                              value={selectValue}
-                              onValueChange={(value) => {
-                                if (value === CUSTOM_DATE_VALUE) {
-                                  setPendingCustomDate(true);
-                                  setShowCustomCalendar(true);
-                                } else {
-                                  const chosen = quickOptions.find((opt) => opt.id === value);
-                                  if (chosen) setEditPlannedDate(chosen.value);
-                                  setPendingCustomDate(false);
-                                  setShowCustomCalendar(false);
-                                }
-                              }}
-                            >
-                              <SelectTrigger id="edit-when" className="border-0 bg-muted/50 focus:ring-0" data-testid="input-edit-when">
-                                <span className={triggerLabel ? "" : "text-muted-foreground"}>
-                                  {triggerLabel || "Elegir..."}
-                                </span>
-                              </SelectTrigger>
-                              <SelectContent className="border-0 minimal-scrollbar">
-                                {quickOptions.map((opt) => (
-                                  <SelectItem
-                                    key={opt.id}
-                                    value={opt.id}
-                                    // Mouse selection resolves on pointerup; intercept it there
-                                    // (before Radix's own handleSelect runs in the same event)
-                                    // so we can block it and deselect instead.
-                                    onPointerUp={(e) => {
-                                      if (selectValue === opt.id) {
-                                        e.preventDefault();
-                                        deselectWhenOption(opt.id);
-                                      }
-                                    }}
-                                    // Touch selection resolves on the click that follows pointerup;
-                                    // swallow it if this item is the one we just deselected above.
-                                    onClick={(e) => {
-                                      if (suppressWhenOptionClickRef.current === opt.id) {
-                                        e.preventDefault();
-                                        suppressWhenOptionClickRef.current = null;
-                                      }
-                                    }}
-                                  >
-                                    {opt.label}
-                                  </SelectItem>
-                                ))}
-                                <SelectItem
-                                  value={CUSTOM_DATE_VALUE}
-                                  onPointerUp={(e) => {
-                                    if (selectValue === CUSTOM_DATE_VALUE) {
-                                      e.preventDefault();
-                                      deselectWhenOption(CUSTOM_DATE_VALUE);
-                                    }
-                                  }}
-                                  onClick={(e) => {
-                                    if (suppressWhenOptionClickRef.current === CUSTOM_DATE_VALUE) {
-                                      e.preventDefault();
-                                      suppressWhenOptionClickRef.current = null;
-                                    }
-                                  }}
-                                >
-                                  Elegir fecha
-                                </SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </PopoverAnchor>
-                        <PopoverContent
-                          className="w-auto max-h-[70vh] overflow-y-auto minimal-scrollbar p-0"
-                          align="start"
-                          onOpenAutoFocus={(e) => e.preventDefault()}
-                          onFocusOutside={(e) => e.preventDefault()}
-                          onPointerDownOutside={(e) => {
-                            // The Select's own trigger/content live inside the anchor, not inside
-                            // this popover's content — closing the Select routes focus back to
-                            // the trigger right as this popover mounts, and without this guard
-                            // Radix reads that as an "outside" interaction and dismisses the
-                            // calendar before it's ever visible.
-                            const target = e.target as HTMLElement;
-                            if (target.closest('[id="edit-when"]')) {
-                              e.preventDefault();
-                            }
-                          }}
-                        >
-                          <Calendar
-                            mode="single"
-                            selected={editPlannedDate ? new Date(editPlannedDate + "T00:00:00") : undefined}
-                            onSelect={(date) => {
-                              if (date) {
-                                setEditPlannedDate(formatLocalDate(date));
-                                setPendingCustomDate(false);
-                                setShowCustomCalendar(false);
-                              }
-                            }}
-                          />
-                        </PopoverContent>
-                      </Popover>
-                    );
-                  })()}
                 </div>
                 <div>
                   <Label htmlFor="edit-duration" className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block">Time</Label>
@@ -2496,7 +2462,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                     const matchedDurationOption = editPlannedDuration != null
                       ? QUICK_DURATION_OPTIONS.find((opt) => opt.value === editPlannedDuration)
                       : undefined;
-                    // Mirrors pendingCustomDate's role in the date Select above.
+                    // Mirrors pendingCustomDate's role in the date Select below.
                     const durationSelectValue = pendingCustomDuration
                       ? CUSTOM_DURATION_VALUE
                       : editPlannedDuration != null
@@ -2664,38 +2630,460 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               </motion.div>
             )}
 
-            {editStep === 1 && skill.levelPosition !== 1 && (
+            {editStep === 1 && (
               <motion.div
-                key="step-name"
+                key="step-action"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+                className="flex-1 flex flex-col gap-4"
+              >
+                <div>
+                  <Label htmlFor="edit-action" className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block">PASO 2: Background</Label>
+                  <Textarea
+                    id="edit-action"
+                    value={editAction}
+                    onChange={(e) => setEditAction(e.target.value)}
+                    placeholder="Describe your next action..."
+                    rows={2}
+                    className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+                    data-testid="input-edit-action"
+                    autoFocus
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-when" className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block">When exactly?</Label>
+                  {(() => {
+                    const quickOptions = getQuickDateOptions();
+                    // Find which quick option (if any) matches the currently saved date, so
+                    // the Select can show it as selected.
+                    const matchedOption = editPlannedDate
+                      ? quickOptions.find((opt) => opt.value === editPlannedDate)
+                      : undefined;
+                    // While pendingCustomDate is true, force the Select to show "Elegir fecha"
+                    // as selected immediately (instead of waiting for editPlannedDate to
+                    // change), so its controlled value never mismatches what was just clicked.
+                    const selectValue = pendingCustomDate
+                      ? CUSTOM_DATE_VALUE
+                      : editPlannedDate
+                        ? (matchedOption ? matchedOption.id : CUSTOM_DATE_VALUE)
+                        : "";
+                    // Rendered fully by hand instead of via <SelectValue> children, which only
+                    // shows the *matched item's own* label — it can't display an arbitrary date
+                    // that doesn't correspond to any SelectItem.
+                    const triggerLabel = pendingCustomDate
+                      ? "Elegir fecha"
+                      : matchedOption
+                        ? matchedOption.label
+                        : editPlannedDate
+                          ? new Date(editPlannedDate + "T00:00:00").toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" })
+                          : null;
+
+                    // Deselects the given quick option (or the custom date), clearing the
+                    // planned date entirely. Also closes the dropdown ourselves, since we
+                    // preempt Radix's own select-and-close handling for this case below.
+                    const deselectWhenOption = (id: string) => {
+                      suppressWhenOptionClickRef.current = id;
+                      setEditPlannedDate("");
+                      setPendingCustomDate(false);
+                      setShowCustomCalendar(false);
+                      setIsWhenSelectOpen(false);
+                    };
+
+                    return (
+                      <Popover open={showCustomCalendar} onOpenChange={setShowCustomCalendar}>
+                        <PopoverAnchor asChild>
+                          <div>
+                            <Select
+                              open={isWhenSelectOpen}
+                              onOpenChange={setIsWhenSelectOpen}
+                              value={selectValue}
+                              onValueChange={(value) => {
+                                if (value === CUSTOM_DATE_VALUE) {
+                                  setPendingCustomDate(true);
+                                  setShowCustomCalendar(true);
+                                } else {
+                                  const chosen = quickOptions.find((opt) => opt.id === value);
+                                  if (chosen) setEditPlannedDate(chosen.value);
+                                  setPendingCustomDate(false);
+                                  setShowCustomCalendar(false);
+                                }
+                              }}
+                            >
+                              <SelectTrigger id="edit-when" className="border-0 bg-muted/50 focus:ring-0" data-testid="input-edit-when">
+                                <span className={triggerLabel ? "" : "text-muted-foreground"}>
+                                  {triggerLabel || "Elegir..."}
+                                </span>
+                              </SelectTrigger>
+                              <SelectContent className="border-0 minimal-scrollbar">
+                                {quickOptions.map((opt) => (
+                                  <SelectItem
+                                    key={opt.id}
+                                    value={opt.id}
+                                    // Mouse selection resolves on pointerup; intercept it there
+                                    // (before Radix's own handleSelect runs in the same event)
+                                    // so we can block it and deselect instead.
+                                    onPointerUp={(e) => {
+                                      if (selectValue === opt.id) {
+                                        e.preventDefault();
+                                        deselectWhenOption(opt.id);
+                                      }
+                                    }}
+                                    // Touch selection resolves on the click that follows pointerup;
+                                    // swallow it if this item is the one we just deselected above.
+                                    onClick={(e) => {
+                                      if (suppressWhenOptionClickRef.current === opt.id) {
+                                        e.preventDefault();
+                                        suppressWhenOptionClickRef.current = null;
+                                      }
+                                    }}
+                                  >
+                                    {opt.label}
+                                  </SelectItem>
+                                ))}
+                                <SelectItem
+                                  value={CUSTOM_DATE_VALUE}
+                                  onPointerUp={(e) => {
+                                    if (selectValue === CUSTOM_DATE_VALUE) {
+                                      e.preventDefault();
+                                      deselectWhenOption(CUSTOM_DATE_VALUE);
+                                    }
+                                  }}
+                                  onClick={(e) => {
+                                    if (suppressWhenOptionClickRef.current === CUSTOM_DATE_VALUE) {
+                                      e.preventDefault();
+                                      suppressWhenOptionClickRef.current = null;
+                                    }
+                                  }}
+                                >
+                                  Elegir fecha
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </PopoverAnchor>
+                        <PopoverContent
+                          className="w-auto max-h-[70vh] overflow-y-auto minimal-scrollbar p-0"
+                          align="start"
+                          onOpenAutoFocus={(e) => e.preventDefault()}
+                          onFocusOutside={(e) => e.preventDefault()}
+                          onPointerDownOutside={(e) => {
+                            // The Select's own trigger/content live inside the anchor, not inside
+                            // this popover's content — closing the Select routes focus back to
+                            // the trigger right as this popover mounts, and without this guard
+                            // Radix reads that as an "outside" interaction and dismisses the
+                            // calendar before it's ever visible.
+                            const target = e.target as HTMLElement;
+                            if (target.closest('[id="edit-when"]')) {
+                              e.preventDefault();
+                            }
+                          }}
+                        >
+                          <Calendar
+                            mode="single"
+                            selected={editPlannedDate ? new Date(editPlannedDate + "T00:00:00") : undefined}
+                            onSelect={(date) => {
+                              if (date) {
+                                setEditPlannedDate(formatLocalDate(date));
+                                setPendingCustomDate(false);
+                                setShowCustomCalendar(false);
+                              }
+                            }}
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    );
+                  })()}
+                </div>
+                <div className="flex justify-between mt-auto pt-4">
+                  {skill.levelPosition !== 1 ? (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setEditStep(0)}
+                      className="h-10 w-10 bg-muted/50 hover:bg-muted"
+                      data-testid="button-prev-step"
+                    >
+                      <ChevronLeft className="h-5 w-5" />
+                    </Button>
+                  ) : (
+                    <div className="h-10 w-10" />
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setEditStep(2)}
+                    className="h-10 w-10 bg-muted/50 hover:bg-muted"
+                    data-testid="button-next-step-2"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+
+            {editStep === 2 && (
+              <motion.div
+                key="step-rewards"
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
                 transition={{ duration: 0.2 }}
                 className="flex-1 flex flex-col"
               >
-                <Label htmlFor="edit-title" className="text-xs text-muted-foreground uppercase tracking-wide mb-3">STEP 2: Name this move</Label>
-                <Input
-                  id="edit-title"
-                  value={editTitle}
-                  onChange={(e) => {
-                    setEditTitle(clampToWordLimit(e.target.value, getNodeTitleWordLimit()));
-                  }}
-                  placeholder="Name your move..."
-                  className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted text-lg"
-                  data-testid="input-edit-title"
-                  autoFocus
-                />
-                <div className="flex justify-between mt-auto pt-6">
-                  <Button 
-                    variant="ghost" 
+                <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-1 block">PASO 3: XP, Fuerza y Poderes</Label>
+                <p className="text-[11px] text-muted-foreground/70 mb-2">Se sumará recién al confirmar el nodo</p>
+
+                <Tabs value={pendingRewardsTab} onValueChange={(v) => setPendingRewardsTab(v as "experience" | "body" | "powers")} className="w-full flex flex-col flex-1">
+                  <TabsList className="w-full grid grid-cols-3 bg-muted/50">
+                    <TabsTrigger value="experience" className="text-xs" data-testid="step3-tab-experience">
+                      <span className="text-xs font-bold mr-1">XP</span>
+                    </TabsTrigger>
+                    <TabsTrigger value="body" className="text-xs" data-testid="step3-tab-body" title="Fuerza / Flexibilidad">
+                      <BicepsFlexed className="h-3 w-3 mr-1" />
+                      Fuerza
+                    </TabsTrigger>
+                    <TabsTrigger value="powers" className="text-xs" data-testid="step3-tab-powers">
+                      <Zap className="h-3 w-3 mr-1" />
+                      Poderes
+                    </TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="experience" className="mt-4 space-y-3 flex flex-col flex-1">
+                    <div className="flex items-center justify-center gap-2 py-4">
+                      <div className="w-24 rounded-md bg-muted/50 px-3 py-2 text-center text-lg font-bold">
+                        {FIXED_XP_AMOUNT}
+                      </div>
+                      <span className="text-lg font-medium text-muted-foreground">xp</span>
+                    </div>
+                    <Popover open={showPendingXpSkillSelector} onOpenChange={setShowPendingXpSkillSelector}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="bg-muted/50 hover:bg-muted w-full"
+                          data-testid="step3-button-select-skill"
+                        >
+                          {pendingXpSkillId
+                            ? `✓ ${pendingXpSkillId.startsWith("legacy:")
+                                ? pendingXpSkillId.replace("legacy:", "")
+                                : (availableGlobalSkills.find(s => s.id === pendingXpSkillId)?.name || "Skill")}`
+                            : "Seleccionar skill"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent
+                        className="w-56 p-2 border-0 bg-background/95 backdrop-blur-sm z-[9999]"
+                        align="center"
+                        side="top"
+                        sideOffset={8}
+                        collisionPadding={16}
+                      >
+                        <div className="max-h-56 overflow-y-auto">
+                          {/* Legacy skills (only those associated with this area/project) */}
+                          {filteredLegacySkills.length > 0 && (
+                            <div className="space-y-1 mb-2">
+                              {filteredLegacySkills.map((skillName) => {
+                                const optionId = `legacy:${skillName}`;
+                                const isSelected = pendingXpSkillId === optionId;
+                                return (
+                                  <Button
+                                    key={skillName}
+                                    variant="ghost"
+                                    size="sm"
+                                    className={`w-full justify-start h-8 px-3 text-xs font-normal ${
+                                      isSelected ? "bg-muted text-foreground" : "hover:bg-muted/50"
+                                    }`}
+                                    onClick={() => {
+                                      setPendingXpSkillId(isSelected ? null : optionId);
+                                      setShowPendingXpSkillSelector(false);
+                                    }}
+                                    data-testid={`step3-button-select-legacy-${skillName}`}
+                                  >
+                                    {skillName}
+                                  </Button>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {/* GlobalSkills for this area/quest */}
+                          {availableGlobalSkills.length > 0 && (
+                            <>
+                              <div className="border-t border-muted my-2" />
+                              <div className="space-y-1">
+                                {/* Parent skills (not subskills) */}
+                                {availableGlobalSkills.filter(s => !s.parentSkillId).map((gSkill) => (
+                                  <div key={gSkill.id}>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className={`w-full justify-start h-8 px-3 text-xs font-medium ${
+                                        pendingXpSkillId === gSkill.id
+                                          ? "bg-muted text-foreground"
+                                          : "hover:bg-muted/50"
+                                      }`}
+                                      onClick={() => {
+                                        setPendingXpSkillId(pendingXpSkillId === gSkill.id ? null : gSkill.id);
+                                        setShowPendingXpSkillSelector(false);
+                                      }}
+                                      data-testid={`step3-button-select-skill-${gSkill.id}`}
+                                    >
+                                      {gSkill.name}
+                                      <span className="ml-auto text-muted-foreground">Lv.{gSkill.level}</span>
+                                    </Button>
+                                    {/* Subskills of this parent */}
+                                    {availableGlobalSkills
+                                      .filter(s => s.parentSkillId === gSkill.id)
+                                      .map((subSkill) => (
+                                        <Button
+                                          key={subSkill.id}
+                                          variant="ghost"
+                                          size="sm"
+                                          className={`w-full justify-start h-7 px-3 pl-6 text-xs font-normal ${
+                                            pendingXpSkillId === subSkill.id
+                                              ? "bg-muted text-foreground"
+                                              : "hover:bg-muted/50 text-muted-foreground"
+                                          }`}
+                                          onClick={() => {
+                                            setPendingXpSkillId(pendingXpSkillId === subSkill.id ? null : subSkill.id);
+                                            setShowPendingXpSkillSelector(false);
+                                          }}
+                                          data-testid={`step3-button-select-subskill-${subSkill.id}`}
+                                        >
+                                          ↳ {subSkill.name}
+                                          <span className="ml-auto">Lv.{subSkill.level}</span>
+                                        </Button>
+                                      ))
+                                    }
+                                  </div>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  </TabsContent>
+
+                  <TabsContent value="body" className="mt-4 space-y-3 flex flex-col flex-1">
+                    <div className="flex gap-2 justify-center">
+                      {(["fuerza", "flex"] as BodyDimension[]).map((dimension) => (
+                        <Button
+                          key={dimension}
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setPendingBodyDimension(dimension)}
+                          className={pendingBodyDimension === dimension ? "bg-primary/20 text-foreground" : "bg-muted/50 hover:bg-muted text-muted-foreground"}
+                          data-testid={`step3-button-body-dimension-${dimension}`}
+                        >
+                          {dimension === "fuerza" ? "Fuerza" : "Flexibilidad"}
+                        </Button>
+                      ))}
+                    </div>
+                    <Popover open={showPendingBodyZoneSelector} onOpenChange={setShowPendingBodyZoneSelector}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="bg-muted/50 hover:bg-muted w-full"
+                          data-testid="step3-button-select-body-zone"
+                        >
+                          {pendingBodyZones.length > 0
+                            ? `✓ ${pendingBodyZones.map((z) => BODY_ZONE_LABELS[z]).join(", ")}`
+                            : "Seleccionar componente(s)"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent
+                        className="w-56 p-2 border-0 bg-background/95 backdrop-blur-sm z-[9999]"
+                        align="center"
+                        side="top"
+                        sideOffset={8}
+                        collisionPadding={16}
+                      >
+                        <div className="space-y-1">
+                          {BODY_ZONES.map((zone) => (
+                            <Button
+                              key={zone}
+                              variant="ghost"
+                              size="sm"
+                              className={`w-full justify-start h-8 px-3 text-xs font-normal ${
+                                pendingBodyZones.includes(zone) ? "bg-muted text-foreground" : "hover:bg-muted/50"
+                              }`}
+                              onClick={() => togglePendingBodyZone(zone)}
+                              data-testid={`step3-button-select-body-zone-${zone}`}
+                            >
+                              {pendingBodyZones.includes(zone) ? "✓ " : ""}
+                              {BODY_ZONE_LABELS[zone]}
+                            </Button>
+                          ))}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  </TabsContent>
+
+                  <TabsContent value="powers" className="mt-4 space-y-3 flex flex-col flex-1">
+                    <div className="flex-1 space-y-3">
+                      {sourcePowers.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">No hay poderes disponibles para este contexto todavía.</p>
+                      ) : (
+                        <>
+                          <div className="space-y-2">
+                            {sourcePowers.map((power) => {
+                              const isSelected = pendingPowerId === power.id;
+                              return (
+                                <button
+                                  key={power.id}
+                                  type="button"
+                                  onClick={() => setPendingPowerId(isSelected ? null : power.id)}
+                                  className={cn(
+                                    "w-full rounded-lg border p-3 text-left transition-colors",
+                                    isSelected ? "border-primary/50 bg-primary/10" : "border-border/60 bg-muted/40 hover:bg-muted/60"
+                                  )}
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <p className="text-sm font-medium">{power.name}</p>
+                                      {power.description && (
+                                        <p className="mt-1 text-xs text-muted-foreground break-words">{power.description}</p>
+                                      )}
+                                    </div>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          {pendingSelectedPower && (
+                            <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
+                              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Poder seleccionado</p>
+                              <p className="mt-1 text-sm font-medium">{pendingSelectedPower.name}</p>
+                              {pendingSelectedPower.description && (
+                                <p className="mt-1 text-sm text-muted-foreground">{pendingSelectedPower.description}</p>
+                              )}
+                              <p className="mt-2 text-[11px] text-muted-foreground">
+                                Al confirmar el nodo: {pendingSelectedPower.isUnlocked === 0 ? "se desbloqueará" : pendingSelectedPower.isUnlocked === 1 ? "se dominará" : "ya dominado"}
+                              </p>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </TabsContent>
+                </Tabs>
+
+                <div className="flex justify-between mt-auto pt-4">
+                  <Button
+                    variant="ghost"
                     size="icon"
-                    onClick={() => setEditStep(0)}
+                    onClick={() => setEditStep(1)}
                     className="h-10 w-10 bg-muted/50 hover:bg-muted"
-                    data-testid="button-prev-step"
+                    data-testid="button-prev-step-3"
                   >
                     <ChevronLeft className="h-5 w-5" />
                   </Button>
-                  <Button 
+                  <Button
                     onClick={() => setIsEditDialogOpen(false)}
                     disabled={!editTitle.trim()}
                     className="border-0"
