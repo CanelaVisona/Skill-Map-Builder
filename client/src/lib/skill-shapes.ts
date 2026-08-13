@@ -3,11 +3,15 @@
 // at — pixel-space SVG points and percentage-based CSS clip-path strings are both derived
 // from that single normalized vertex list, so they can never drift apart.
 
-export type ShapeKey = "diamond_classic" | "diamond_ornate" | "medallion" | "insignia";
+export type ShapeKey = "triangle" | "diamond_classic" | "diamond_ornate" | "medallion" | "insignia";
 
-export const SHAPE_KEYS: ShapeKey[] = ["diamond_classic", "diamond_ornate", "medallion", "insignia"];
+// Every skill now renders as a triangle by default (see SkillDiamond.tsx) — the other shapes
+// are kept defined here in case a per-skill shape picker comes back later, but are currently
+// unreachable from the UI.
+export const SHAPE_KEYS: ShapeKey[] = ["triangle", "diamond_classic", "diamond_ornate", "medallion", "insignia"];
 
 export const SHAPE_LABELS: Record<ShapeKey, string> = {
+  triangle: "Triángulo",
   diamond_classic: "Rombo clásico",
   diamond_ornate: "Rombo ornamentado",
   medallion: "Medallón",
@@ -47,6 +51,12 @@ function starVertices(cx: number, cy: number, outerR: number, innerR: number, sp
 
 function getNormalizedShape(shape: ShapeKey): NormalizedShape {
   switch (shape) {
+    case "triangle":
+      // Wide-based badge triangle, point up — the new default look for every skill.
+      return {
+        kind: "polygon",
+        vertices: [{ x: 50, y: 4 }, { x: 95, y: 93 }, { x: 5, y: 93 }],
+      };
     case "diamond_ornate":
       // Faceted gem look: 4 primary diamond points + 4 inset notches between them.
       return { kind: "polygon", vertices: starVertices(50, 50, 46, 25, 4) };

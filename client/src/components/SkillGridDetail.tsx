@@ -2,9 +2,6 @@ import React, { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { SkillDiamond } from "./SkillDiamond";
 import { usePopupPalette } from "@/lib/popup-theme";
-import type { ShapeKey } from "@/lib/skill-shapes";
-import type { MaterialKey } from "@/lib/skill-materials";
-import type { RarityKey } from "@/lib/skill-rarity";
 
 // Same block count as the "+XP" gain popup (ExperienceGainPopup.tsx), so the two bars read
 // as the same visual language.
@@ -19,13 +16,6 @@ interface SkillData {
   goalXp: number;
   areaName: string;
   description?: string;
-  icon?: string | null;
-  shape?: ShapeKey;
-  material?: MaterialKey;
-  rarity?: RarityKey;
-  accentColor?: string | null;
-  glow?: 0 | 1 | null;
-  nodeSize?: "small" | "normal" | "large";
 }
 
 interface SkillGridDetailProps {
@@ -113,13 +103,6 @@ export function SkillGridDetail({ skill, areaColor, onClose }: SkillGridDetailPr
             status: skill.status,
             currentXp: skill.currentXp,
             goalXp: skill.goalXp,
-            icon: skill.icon ?? null,
-            shape: skill.shape ?? "diamond_classic",
-            material: skill.material ?? "iron",
-            rarity: skill.rarity ?? "common",
-            accentColor: skill.accentColor ?? null,
-            glow: skill.glow ?? null,
-            nodeSize: skill.nodeSize ?? "normal",
           }}
           areaColor={areaColor}
           size={64}

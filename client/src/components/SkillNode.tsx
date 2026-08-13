@@ -380,6 +380,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [selectedBugId, setSelectedBugId] = useState<string | null>(null);
   
   const [hasIncompleteSubtasks, setHasIncompleteSubtasks] = useState(false);
+  // Whether this node has a sub-skill tree at all (as opposed to hasIncompleteSubtasks being
+  // false simply because there are no subskills yet) -- needed to tell "no subtree" apart from
+  // "subtree exists and is fully mastered" so the completed-tree badge only shows for the latter.
+  const [hasSubskillTree, setHasSubskillTree] = useState(false);
 
   const { showXpPopup, hideXpPopup } = useXpPopup();
   const { showInsightsCounterPopup } = useInsightsCounterPopup();
@@ -688,11 +692,14 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
           if (Array.isArray(subskills) && subskills.length > 0) {
             const hasIncomplete = subskills.some(s => s.status !== "mastered");
             setHasIncompleteSubtasks(hasIncomplete);
+            setHasSubskillTree(true);
           } else {
             setHasIncompleteSubtasks(false);
+            setHasSubskillTree(false);
           }
         } catch {
           setHasIncompleteSubtasks(false);
+          setHasSubskillTree(false);
         }
       }
     };
@@ -700,6 +707,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   }, [skill.id, skill.status, activeParentSkillId]);
 
   const hasUnlockedWithIncompleteSubtasks = !isLocked && !isMastered && hasIncompleteSubtasks;
+  // The node has its own sub-skill tree and every node in it is mastered.
+  const hasCompletedSubskillTree = hasSubskillTree && !hasIncompleteSubtasks;
   // While the node's own subskills are still incomplete, the node itself must not pulse
   // (it can't be confirmed yet) -- instead the title that leads into the subskill tree
   // pulses, pointing the player there. Once the subskills are all mastered, this flips:
@@ -1729,6 +1738,17 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                   {pendingPowerId && (
                     <span className="whitespace-nowrap">+{pendingPowerName || "Poder"}</span>
                   )}
+                </div>
+              )}
+              {/* Sub-skill tree completion badge: this node's own sub-skill tree is fully
+                  mastered. Shown even once this node itself gets confirmed later, since it
+                  stays true -- the small circle mirrors the mastered-node circle above. */}
+              {!isInicioNode && !isLocked && hasCompletedSubskillTree && (
+                <div className="flex items-center gap-1.5 font-normal text-muted-foreground/70 text-[10px] leading-tight">
+                  <span className="w-3.5 h-3.5 rounded-full bg-foreground text-background flex items-center justify-center shrink-0">
+                    <Check size={8} strokeWidth={3} />
+                  </span>
+                  <span>Árbol de subskills completado</span>
                 </div>
               )}
             </div>

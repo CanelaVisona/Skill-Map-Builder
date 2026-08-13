@@ -137,3 +137,13 @@ export function tintWithAreaColor(rimColor: string, areaColor: string | undefine
   if (!areaColor) return rimColor;
   return mixHex(rimColor, areaColor, amount);
 }
+
+// Material is no longer a manual per-skill choice — it automatically upgrades as the skill
+// levels up, so the medallion visibly gets better with progress instead of staying static.
+const MATERIAL_PROGRESSION: MaterialKey[] = ["iron", "steel", "silver", "aged_gold"];
+
+/** Best material for a given level: 1→iron, 2→steel, 3→silver, 4+→aged_gold (the best tier). */
+export function getMaterialForLevel(level: number): MaterialKey {
+  const idx = Math.max(1, Math.min(MATERIAL_PROGRESSION.length, Math.floor(level || 1))) - 1;
+  return MATERIAL_PROGRESSION[idx];
+}

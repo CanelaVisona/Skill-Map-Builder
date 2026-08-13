@@ -331,6 +331,12 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
   const [questCompletedCelebration, setQuestCompletedCelebration] = useState<{ name: string; type: "area" | "project" } | null>(null);
   const [questCelebrationText, setQuestCelebrationText] = useState<string | null>(null);
   const [showQuestUpdatedPopup, setShowQuestUpdatedPopup] = useState(false);
+  // Gates the auto-unlock of the next node so it only happens once the "Quest updated!"
+  // pop-up has finished showing (and disappeared) for the node that was just confirmed --
+  // instead of unlocking instantly, which used to happen well before the pop-up even
+  // appeared. Closed right when a regular (non-final) node is mastered, reopened when
+  // triggerQuestUpdated's own timer hides the pop-up.
+  const [unlockGateOpen, setUnlockGateOpen] = useState(true);
   const [globalSkills, setGlobalSkills] = useState<GlobalSkill[]>([]);
   const [globalSkillsLoading, setGlobalSkillsLoading] = useState(true);
   const isReordering = useRef(false);
@@ -417,10 +423,20 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
   const triggerQuestUpdated = () => {
     markPopupActive(POPUP_VISIBLE_MS);
     setShowQuestUpdatedPopup(true);
-    setTimeout(() => setShowQuestUpdatedPopup(false), POPUP_VISIBLE_MS);
+    setTimeout(() => {
+      setShowQuestUpdatedPopup(false);
+      // Reopen the unlock gate right as the pop-up disappears, so the next node becomes
+      // available at that moment instead of the instant the node was confirmed.
+      setUnlockGateOpen(true);
+    }, POPUP_VISIBLE_MS);
   };
 
-  const hideQuestUpdatedPopup = () => setShowQuestUpdatedPopup(false);
+  const hideQuestUpdatedPopup = () => {
+    setShowQuestUpdatedPopup(false);
+    // Manual dismiss (tap outside) also counts as the pop-up "disappearing" -- reopen the
+    // unlock gate right away instead of leaving it closed until the timer would've fired.
+    setUnlockGateOpen(true);
+  };
 
   const triggerQuestUpdatedAfterToday = (_isPlannedForToday: boolean) => {
     runAfterPopupsClear(triggerQuestUpdated);
@@ -1030,6 +1046,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     const canOpenNewLevels = isFinalNodeByPosition && !isStarActive;
     const isOpeningNewLevel = canOpenNewLevels && newStatus === "mastered";
     const isClosingLevel = canOpenNewLevels && skill.status === "mastered" && newStatus === "available";
+    // This is the regular "confirm a node" path that shows the "Quest updated!" pop-up --
+    // the server auto-unlocks the next node in the same PATCH, but that unlock must stay
+    // hidden client-side until the pop-up disappears (see unlockGateOpen).
+    const deferAutoUnlock = newStatus === "mastered" && !isFinalNodeByPosition && !isOpeningNewLevel;
 
     try {
       const response = await fetch(`/api/skills/${skillId}`, {
@@ -1051,7 +1071,12 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           await archiveArea(areaId);
           await refreshAllAreas();
         }, questCompletionArchiveDelayMs);
-      } else if (newStatus === "mastered" && !isFinalNodeByPosition && !isOpeningNewLevel) {
+      } else if (deferAutoUnlock) {
+        // Close the unlock gate: the next node (already auto-unlocked server-side in
+        // updatedLevelSkills) must not become visible/available until the "Quest updated!"
+        // pop-up has shown and disappeared -- see triggerQuestUpdated.
+        setUnlockGateOpen(false);
+
         // Trigger area XP popup before quest popup -- but only once nothing else is currently
         // showing/queued (e.g. a chain of xp/fuerza/poder pop-ups staged in Step 3 of the edit
         // dialog), so it never lands on top of those instead of after them.
@@ -1090,13 +1115,17 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       }
 
       // Update skills for this level with the server response
-      // This includes the auto-unlocked next node
+      // This includes the auto-unlocked next node -- except when deferAutoUnlock is set,
+      // in which case only the confirmed node itself is applied now; the rest (the
+      // already-unlocked next node) is picked up later by the auto-unlock effect once
+      // unlockGateOpen reopens (see triggerQuestUpdated).
       if (Array.isArray(updatedLevelSkills) && !isOpeningNewLevel) {
         setAreas(prev => prev.map(a => {
           if (a.id !== areaId) return a;
           return {
             ...a,
             skills: a.skills.map(s => {
+              if (deferAutoUnlock && s.id !== skillId) return s;
               const updated = updatedLevelSkills.find(u => u.id === s.id);
               return updated || s;
             })
@@ -1403,6 +1432,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     const canOpenNewLevels = isFinalNodeByPosition && !isStarActive;
     const isOpeningNewLevel = canOpenNewLevels && newStatus === "mastered";
     const isClosingLevel = canOpenNewLevels && skill.status === "mastered" && newStatus === "available";
+    // This is the regular "confirm a node" path that shows the "Quest updated!" pop-up --
+    // the next node's auto-unlock (handled by the generic auto-unlock effect below) must
+    // stay gated until the pop-up disappears (see unlockGateOpen).
+    const deferAutoUnlock = newStatus === "mastered" && !isFinalNodeByPosition && !isOpeningNewLevel;
 
     try {
       await fetch(`/api/skills/${skillId}`, {
@@ -1422,7 +1455,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           await archiveProject(projectId);
           await refreshAllAreas();
         }, questCompletionArchiveDelayMs);
-      } else if (newStatus === "mastered" && !isFinalNodeByPosition && !isOpeningNewLevel) {
+      } else if (deferAutoUnlock) {
+        // Close the unlock gate before the next node is allowed to appear available.
+        setUnlockGateOpen(false);
+
         // Trigger quest XP popup before quest updated banner -- only once nothing else is
         // currently showing/queued (see the matching comment in toggleSkillStatus above).
         runAfterPopupsClear(() => {
@@ -2873,6 +2909,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           setSubSkills([]);
         }, 2500);
       } else if (newStatus === "mastered") {
+        // Close the unlock gate before the next node is allowed to appear available.
+        setUnlockGateOpen(false);
+
         // Waits for anything already showing/queued (e.g. the node's own staged xp/fuerza/poder
         // from Step 3) to clear first, so quest updated always lands last.
         runAfterPopupsClear(triggerQuestUpdated);
@@ -3060,6 +3099,16 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     if (!skill) return;
 
     const isLocked = skill.status === "locked";
+
+    // Once the parent skill (the node whose title leads into this tree) is confirmed, its
+    // sub-skill tree is closed -- block force-unlocking anything still locked inside it.
+    if (isLocked) {
+      const parentSkill = activeParentSkillId
+        ? (activeArea?.skills.find(s => s.id === activeParentSkillId) ?? activeProject?.skills.find(s => s.id === activeParentSkillId))
+        : undefined;
+      if (parentSkill?.status === "mastered") return;
+    }
+
     const newStatus = isLocked ? "available" : "locked";
     const newManualLock = isLocked ? 0 : 1;
 
@@ -3566,13 +3615,15 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         }
 
         if (skill.status !== "locked") return;
-        
+
         // A skill can be unlocked if:
         // - It's the first skill in the level (no previous skill), OR
         // - The previous skill is mastered
-        
-        // Final nodes follow the same predecessor rule: previous node mastered => available
-        if (canUnlock) {
+
+        // Final nodes follow the same predecessor rule: previous node mastered => available.
+        // Gated on unlockGateOpen so a node freshly unlocked by mastering its predecessor
+        // doesn't become available until the "Quest updated!" pop-up has disappeared.
+        if (canUnlock && unlockGateOpen) {
           updatesToMake.push({ skillId: skill.id, newStatus: "available" });
         }
       });
@@ -3602,7 +3653,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         })));
       });
     }
-  }, [areas, isLoading, isReordering]);
+  }, [areas, isLoading, isReordering, unlockGateOpen]);
 
   // Auto-unlock logic for projects (also re-locks nodes that shouldn't be available)
   useEffect(() => {
@@ -3657,13 +3708,15 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         }
 
         if (skill.status !== "locked") return;
-        
+
         // A skill can be unlocked if:
         // - It's the first skill in the level (no previous skill), OR
         // - The previous skill is mastered
-        
-        // Final nodes follow the same predecessor rule: previous node mastered => available
-        if (canUnlock) {
+
+        // Final nodes follow the same predecessor rule: previous node mastered => available.
+        // Gated on unlockGateOpen so a node freshly unlocked by mastering its predecessor
+        // doesn't become available until the "Quest updated!" pop-up has disappeared.
+        if (canUnlock && unlockGateOpen) {
           updatesToMake.push({ skillId: skill.id, newStatus: "available" });
         }
       });
@@ -3693,12 +3746,20 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         })));
       });
     }
-  }, [projects, isLoading]);
+  }, [projects, isLoading, unlockGateOpen]);
 
   // Auto-unlock logic for sub-skills
   useEffect(() => {
     if (subSkills.length === 0) return;
     if (isReordering.current) return; // Skip auto-unlock during reorder
+
+    // If the parent skill (the node whose title leads into this sub-skill tree) is already
+    // confirmed/mastered, its sub-skill tree is closed: nothing inside it should transition
+    // from locked to available anymore, even for nodes added or reverted after the fact.
+    const parentSkill = activeParentSkillId
+      ? (activeArea?.skills.find(s => s.id === activeParentSkillId) ?? activeProject?.skills.find(s => s.id === activeParentSkillId))
+      : undefined;
+    const isParentConfirmed = parentSkill?.status === "mastered";
 
     const updatesToMake: Array<{ skillId: string; newStatus: SkillStatus }> = [];
 
@@ -3746,13 +3807,15 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       }
 
       if (skill.status !== "locked") return;
-      
+
       // A skill can be unlocked if:
       // - It's the first skill in the level (no previous skill), OR
       // - The previous skill is mastered
-      
-      // Final nodes follow the same predecessor rule: previous node mastered => available
-      if (canUnlock) {
+
+      // Final nodes follow the same predecessor rule: previous node mastered => available.
+      // Gated on unlockGateOpen so a node freshly unlocked by mastering its predecessor
+      // doesn't become available until the "Quest updated!" pop-up has disappeared.
+      if (canUnlock && !isParentConfirmed && unlockGateOpen) {
         updatesToMake.push({ skillId: skill.id, newStatus: "available" });
       }
     });
@@ -3778,7 +3841,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         }));
       });
     }
-  }, [subSkills]);
+  }, [subSkills, unlockGateOpen]);
 
   // Auto-unlock parent skill when ALL subtasks are mastered
   useEffect(() => {

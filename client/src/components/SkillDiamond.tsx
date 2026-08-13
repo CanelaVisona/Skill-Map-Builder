@@ -9,9 +9,8 @@ import {
   type ShapeKey,
   type ShapeGeometry,
 } from "@/lib/skill-shapes";
-import { getMaterialTokens, getRimColorForLevel, tintWithAreaColor, type MaterialKey } from "@/lib/skill-materials";
+import { getMaterialTokens, getRimColorForLevel, getMaterialForLevel, tintWithAreaColor, type MaterialKey } from "@/lib/skill-materials";
 import { getRarityTokens, shouldGlow, type RarityKey } from "@/lib/skill-rarity";
-import { resolveSkillIcon } from "@/lib/skill-icons";
 
 interface SkillData {
   id: string;
@@ -20,15 +19,6 @@ interface SkillData {
   status: "locked" | "available" | "mastered";
   currentXp: number;
   goalXp: number;
-  /** Customization added for the dark-fantasy medallion redesign — all optional, all default
-   *  to a sensible "iron diamond" look so pre-existing skills render fine untouched. */
-  icon?: string | null;
-  shape?: ShapeKey;
-  material?: MaterialKey;
-  rarity?: RarityKey;
-  accentColor?: string | null;
-  glow?: 0 | 1 | null;
-  nodeSize?: "small" | "normal" | "large";
 }
 
 interface SkillDiamondProps {
@@ -42,7 +32,8 @@ interface SkillDiamondProps {
   hideMeta?: boolean;
 }
 
-const NODE_SIZE_SCALE: Record<string, number> = { small: 0.8, normal: 1.0, large: 1.2 };
+// Every skill now renders at the "large" size — no longer a per-skill choice.
+const LARGE_NODE_SCALE = 1.2;
 
 function renderShapeEl(geom: ShapeGeometry, props: React.SVGProps<SVGPolygonElement> & React.SVGProps<SVGCircleElement>) {
   if (geom.kind === "circle") {
@@ -92,19 +83,18 @@ export function SkillDiamond({
   const progressColor = getProgressColorForLevel(currentLevel);
   const nextLevelLabel = `Lv${currentLevel + 1}`;
 
-  // A locked skill never previews its chosen material/rarity — it stays plain dim iron
-  // until it actually unlocks.
-  const effectiveShape: ShapeKey = skill.shape ?? "diamond_classic";
-  const effectiveMaterial: MaterialKey = isLocked ? "iron" : skill.material ?? "iron";
-  const effectiveRarity: RarityKey = isLocked ? "common" : skill.rarity ?? "common";
+  // Every skill is a uniform legendary-tier diamond whose material automatically upgrades
+  // with level — a locked skill just stays plain dim iron/common until it actually unlocks.
+  const effectiveShape: ShapeKey = "diamond_classic";
+  const effectiveMaterial: MaterialKey = isLocked ? "iron" : getMaterialForLevel(currentLevel);
+  const effectiveRarity: RarityKey = isLocked ? "common" : "legendary";
 
-  const nodeScale = NODE_SIZE_SCALE[skill.nodeSize ?? "normal"] ?? 1;
-  const renderSize = size * nodeScale;
+  const renderSize = size * LARGE_NODE_SCALE;
   const svgBox = renderSize + 10; // matches the +10 padding the diamond always had, for stroke/ring bleed
 
-  const materialTokens = getMaterialTokens(effectiveMaterial, skill.accentColor);
+  const materialTokens = getMaterialTokens(effectiveMaterial);
   const rarityTokens = getRarityTokens(effectiveRarity);
-  const glowOn = !isLocked && shouldGlow(effectiveRarity, skill.glow);
+  const glowOn = !isLocked && shouldGlow(effectiveRarity, null);
 
   const strokeWidth = getStrokeWidthForLevel(currentLevel) + (selected ? 0.5 : 0);
   const fillOpacity = getFillOpacityForLevel(currentLevel);
@@ -128,9 +118,7 @@ export function SkillDiamond({
   const outerVertices = getOuterVertices(effectiveShape, renderSize);
 
   const isMaxed = isMastered && skill.goalXp > 0 && currentLevel >= skill.goalXp;
-
-  const IconComponent = isLocked ? Lock : resolveSkillIcon(skill.icon, skill.title);
-  const iconSize = renderSize * 0.34;
+  const lockIconSize = renderSize * 0.34;
 
   return (
     <div
@@ -146,7 +134,10 @@ export function SkillDiamond({
         <motion.div
           animate={isAvailable ? { scale: [1, 1.04, 1] } : { scale: 1 }}
           transition={isAvailable ? { duration: 2.2, repeat: Infinity, repeatType: "loop" } : { duration: 0.2 }}
-          style={{ opacity: isLocked ? 0.55 : 1 }}
+          style={{
+            opacity: isLocked ? 0.55 : 1,
+            filter: glowOn ? `drop-shadow(0 0 ${rarityTokens.glowBlur}px ${rarityTokens.glowColor})` : undefined,
+          }}
         >
           <svg viewBox={`0 0 ${svgBox} ${svgBox}`} width={svgBox} height={svgBox} overflow="visible" className="transition-all duration-200">
             <defs>
@@ -192,19 +183,12 @@ export function SkillDiamond({
           </svg>
         </motion.div>
 
-        {/* Icon, layered on top as a plain themed lucide component instead of raw paths */}
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ opacity: isLocked ? 0.85 : 1 }}>
-          <IconComponent
-            size={iconSize}
-            color={contrast}
-            strokeWidth={1.6}
-            style={
-              glowOn
-                ? { filter: `drop-shadow(0 0 ${rarityTokens.glowBlur}px ${rarityTokens.glowColor}) drop-shadow(0 1px 0 rgba(0,0,0,0.5))` }
-                : { filter: "drop-shadow(0 1px 0 rgba(0,0,0,0.5))" }
-            }
-          />
-        </div>
+        {/* Lock glyph — the only overlay glyph left; unlocked/mastered skills show no icon */}
+        {isLocked && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ opacity: 0.85 }}>
+            <Lock size={lockIconSize} color={contrast} strokeWidth={1.6} style={{ filter: "drop-shadow(0 1px 0 rgba(0,0,0,0.5))" }} />
+          </div>
+        )}
 
         {/* Selection highlight, clipped to the actual chosen shape */}
         {selected && (

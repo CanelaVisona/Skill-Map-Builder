@@ -13,7 +13,10 @@
       "Bash(npx tsx *)",
       "Bash(node -e ' *)",
       "Bash(env)",
-      "Bash(timeout 100 npx vite build --mode development)"
+      "Bash(timeout 100 npx vite build --mode development)",
+      "Bash(taskkill //PID 12196 //F)",
+      "Bash(echo \"DONE:$?\")",
+      "Bash(npx tsc *)"
     ]
   }
 }
