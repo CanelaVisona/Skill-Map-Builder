@@ -27,6 +27,7 @@ import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
 import { XpPopupProvider, useXpPopup } from "@/lib/xp-popup-context";
 import { AreaXpPopupProvider } from "@/lib/area-xp-popup-context";
+import { InsightsCounterPopupProvider } from "@/lib/insights-counter-popup-context";
 import { BodyProgressProvider, useBodyProgress } from "@/lib/body-progress-context";
 import { BodyGainPopupProvider, useBodyGainPopup } from "@/lib/body-gain-popup-context";
 import { LevelUpCelebrationProvider } from "@/lib/level-up-celebration-context";
@@ -8797,6 +8798,7 @@ export default function SkillTreePage() {
           <XpPopupProvider>
           <BodyProgressProvider>
           <BodyGainPopupProvider>
+          <InsightsCounterPopupProvider>
             <MenuProvider>
               <div className="flex h-screen w-full bg-background text-foreground overflow-hidden font-body selection:bg-primary/30">
                 <TopRightControls onOpenDesigner={() => setIsDesignerOpen(true)} onOpenHabits={() => setIsHabitsOpen(true)} onOpenStrength={() => setIsStrengthOpen(true)} onOpenBookTracker={() => setIsBookTrackerOpen(true)} onOpenRewiringTracker={() => setIsRewiringTrackerOpen(true)} onOpenAllAreaBugs={() => setIsAllAreaBugsOpen(true)} onOpenHomeNeeds={() => setIsHomeNeedsOpen(true)} onOpenClothingInventory={() => setIsClothingInventoryOpen(true)} onOpenTodayProgress={() => setIsTodayProgressOpen(true)} />
@@ -8816,6 +8818,7 @@ export default function SkillTreePage() {
                 <OnboardingGuide isOpen={showOnboarding} onComplete={handleCompleteOnboarding} />
               </div>
             </MenuProvider>
+          </InsightsCounterPopupProvider>
           </BodyGainPopupProvider>
           </BodyProgressProvider>
           </XpPopupProvider>

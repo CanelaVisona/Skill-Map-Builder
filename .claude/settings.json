@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs -I{} echo {})",
+      "Bash(node -e \"console.log\\(require\\('pg'\\) ? 'pg ok' : 'no'\\)\")",
+      "Bash(node inspect-tmp.mjs)"
+    ]
+  }
+}

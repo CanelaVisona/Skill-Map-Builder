@@ -8,6 +8,7 @@ import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { type ExperienceGainSnapshot } from "./ExperienceGainPopup";
 import { useXpPopup } from "@/lib/xp-popup-context";
 import { useAreaXpPopup } from "@/lib/area-xp-popup-context";
+import { useInsightsCounterPopup } from "@/lib/insights-counter-popup-context";
 import { useBodyProgress, BODY_ZONES, BODY_ZONE_LABELS, type BodyZone, type BodyDimension } from "@/lib/body-progress-context";
 import { useBodyGainPopup } from "@/lib/body-gain-popup-context";
 import { useLevelUpCelebration } from "@/lib/level-up-celebration-context";
@@ -353,6 +354,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
   const { showXpPopup, hideXpPopup } = useXpPopup();
   const { showAreaXpPopup } = useAreaXpPopup();
+  const { showInsightsCounterPopup } = useInsightsCounterPopup();
   const { showLevelUpCelebration } = useLevelUpCelebration();
   const { showPowerCelebration } = usePowerCelebration();
   const { addBodyBlock } = useBodyProgress();
@@ -407,7 +409,17 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       currentXp: xpBefore,
     });
   };
-  
+
+  // Cuántos pensamientos/aprendizajes/herramientas hay ya registrados (de todos los skills, no
+  // solo el actual) -- cada tipo lleva su propio conteo, para el pop-up que dispara
+  // handleAddThought/Learning/Tool. fetchQuery reusa el cache (staleTime: Infinity) de la misma
+  // query key que usa SkillTree.tsx para su listado global, así que no dispara un fetch de red
+  // salvo que todavía no exista.
+  const getJournalEntryCount = async (kind: "learnings" | "tools" | "thoughts"): Promise<number> => {
+    const entries = await queryClient.fetchQuery<Array<unknown>>({ queryKey: [`/api/journal/${kind}`] });
+    return entries?.length ?? 0;
+  };
+
   // Queries for archivements (learnings, tools, thoughts by skillId)
   const { data: skillLearnings = [] } = useQuery({
     queryKey: ["/api/journal/learnings", skill.id],
@@ -802,15 +814,11 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     console.log("[handleAddThought] Calling mutation with:", payload);
     
     try {
+      const countBefore = await getJournalEntryCount("thoughts");
       await createThought.mutateAsync(payload);
       setThoughtTitle("");
       setThoughtSentence("");
-      if (activeId) {
-        const areaXpUpdated = await addAreaXp(activeId, isProject, AREA_PROGRESS_XP_INCREMENT);
-        if (areaXpUpdated) {
-          triggerAreaProgressPopup();
-        }
-      }
+      showInsightsCounterPopup({ type: "thought", countBefore, countAfter: countBefore + 1 });
     } catch {
       // Mutation error is already handled by the mutation's onError callback.
     }
@@ -836,15 +844,11 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     console.log("[handleAddLearning] Calling mutation with:", payload);
     
     try {
+      const countBefore = await getJournalEntryCount("learnings");
       await createLearning.mutateAsync(payload);
       setLearningTitle("");
       setLearningSentence("");
-      if (activeId) {
-        const areaXpUpdated = await addAreaXp(activeId, isProject, AREA_PROGRESS_XP_INCREMENT);
-        if (areaXpUpdated) {
-          triggerAreaProgressPopup();
-        }
-      }
+      showInsightsCounterPopup({ type: "learning", countBefore, countAfter: countBefore + 1 });
     } catch {
       // Mutation error is already handled by the mutation's onError callback.
     }
@@ -870,15 +874,11 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     console.log("[handleAddTool] Calling mutation with:", payload);
     
     try {
+      const countBefore = await getJournalEntryCount("tools");
       await createTool.mutateAsync(payload);
       setToolTitle("");
       setToolSentence("");
-      if (activeId) {
-        const areaXpUpdated = await addAreaXp(activeId, isProject, AREA_PROGRESS_XP_INCREMENT);
-        if (areaXpUpdated) {
-          triggerAreaProgressPopup();
-        }
-      }
+      showInsightsCounterPopup({ type: "tool", countBefore, countAfter: countBefore + 1 });
     } catch {
       // Mutation error is already handled by the mutation's onError callback.
     }

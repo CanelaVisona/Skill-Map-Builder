@@ -212,6 +212,38 @@ const iconMap: Record<string, any> = {
   Home,
 };
 
+// Used by swapAreaLevels/swapProjectLevels: when two levels swap contents, their nodes'
+// `level` field changes but their `y` (vertical position) does not — left alone, the moved
+// content keeps rendering at its old vertical spot instead of the spot that matches its new
+// level number, which can put it far below/above levels that are numerically adjacent to it
+// (e.g. a level moved up several slots keeps the highest y in the area, so it renders below
+// levels that now come after it, or off past the visible window entirely). Reassign y so
+// whichever level number ends up lower gets the smaller y values and vice versa, each group
+// keeping its own internal top-to-bottom order — this keeps y monotonically increasing with
+// level across the whole area/project, matching how the canvas and connections expect it.
+function computeLevelSwapYUpdates(
+  skillsA: { id: string; y: number }[],
+  levelA: number,
+  skillsB: { id: string; y: number }[],
+  levelB: number
+): Map<string, number> {
+  const lowerLevel = Math.min(levelA, levelB);
+  const lowerSkills = levelA === lowerLevel ? skillsA : skillsB;
+  const higherSkills = levelA === lowerLevel ? skillsB : skillsA;
+
+  const allYs = [...lowerSkills, ...higherSkills].map(s => s.y).sort((a, b) => a - b);
+  const lowerYs = allYs.slice(0, lowerSkills.length);
+  const higherYs = allYs.slice(lowerSkills.length);
+
+  const lowerSorted = [...lowerSkills].sort((a, b) => a.y - b.y);
+  const higherSorted = [...higherSkills].sort((a, b) => a.y - b.y);
+
+  const yUpdates = new Map<string, number>();
+  lowerSorted.forEach((s, i) => yUpdates.set(s.id, lowerYs[i]));
+  higherSorted.forEach((s, i) => yUpdates.set(s.id, higherYs[i]));
+  return yUpdates;
+}
+
 // Helper function to safely access dependencies as an array
 function ensureDependenciesArray(deps: any): string[] {
   if (Array.isArray(deps)) return deps;
@@ -4039,18 +4071,20 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     const skillsB = area.skills.filter(s => s.level === levelB);
     if (skillsA.length === 0 || skillsB.length === 0) return;
 
+    const yUpdates = computeLevelSwapYUpdates(skillsA, levelA, skillsB, levelB);
+
     try {
       await Promise.all([
         ...skillsA.map(s => fetch(`/api/skills/${s.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ level: levelB }),
+          body: JSON.stringify({ level: levelB, y: yUpdates.get(s.id) }),
           credentials: "include",
         })),
         ...skillsB.map(s => fetch(`/api/skills/${s.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ level: levelA }),
+          body: JSON.stringify({ level: levelA, y: yUpdates.get(s.id) }),
           credentials: "include",
         })),
       ]);
@@ -4320,18 +4354,20 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     const skillsB = project.skills.filter(s => s.level === levelB);
     if (skillsA.length === 0 || skillsB.length === 0) return;
 
+    const yUpdates = computeLevelSwapYUpdates(skillsA, levelA, skillsB, levelB);
+
     try {
       await Promise.all([
         ...skillsA.map(s => fetch(`/api/skills/${s.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ level: levelB }),
+          body: JSON.stringify({ level: levelB, y: yUpdates.get(s.id) }),
           credentials: "include",
         })),
         ...skillsB.map(s => fetch(`/api/skills/${s.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ level: levelA }),
+          body: JSON.stringify({ level: levelA, y: yUpdates.get(s.id) }),
           credentials: "include",
         })),
       ]);
