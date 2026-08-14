@@ -1752,7 +1752,7 @@ function AddPanel({
           <label className="block text-sm font-medium text-foreground mb-2">
             Skills a linkear
           </label>
-          <SkillLinkPicker skills={skills} value={skillIds} onChange={onSkillIdsChange} emptyLabel="Elegí un área para ver sus skills" />
+          <SkillLinkPicker skills={skills} value={skillIds} onChange={onSkillIdsChange} emptyLabel="Elegí un área para ver sus skills" areas={areas} currentAreaId={areaId} />
           <p className="mt-1 text-xs text-muted-foreground">
             Opcional: linkear a uno o más skills para sumar XP al registrar un intervalo
           </p>
@@ -1899,7 +1899,7 @@ function EditPanel({
           <label className="block text-sm font-medium text-foreground mb-2">
             Skills a linkear
           </label>
-          <SkillLinkPicker skills={skills} value={skillIds} onChange={onSkillIdsChange} emptyLabel="Elegí un área para ver sus skills" />
+          <SkillLinkPicker skills={skills} value={skillIds} onChange={onSkillIdsChange} emptyLabel="Elegí un área para ver sus skills" areas={areas} currentAreaId={areaId} />
           <p className="mt-1 text-xs text-muted-foreground">
             Opcional: linkear a uno o más skills para sumar XP al registrar un intervalo
           </p>

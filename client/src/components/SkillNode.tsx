@@ -12,6 +12,7 @@ import { useBodyProgress, BODY_ZONES, BODY_ZONE_LABELS, type BodyZone, type Body
 import { useBodyGainPopup } from "@/lib/body-gain-popup-context";
 import { useLevelUpCelebration } from "@/lib/level-up-celebration-context";
 import { usePowerCelebration } from "@/lib/power-celebration-context";
+import { usePendingRewards } from "@/lib/pending-rewards-context";
 import { beginPopupChain, endPopupChain, runPopupQueue } from "@/lib/popup-coordinator";
 import { getNodeTitleWordLimit, clampToWordLimit } from "@/lib/node-title-settings";
 import {
@@ -406,13 +407,32 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   // mutations (and their celebration pop-ups) only run once the node itself gets confirmed
   // (see applyPendingRewards), so this state is deliberately kept separate from the Journal
   // tab's own experienceSelectedSkill/selectedBodyZones/selectedPowerId, which apply immediately.
-  const [pendingRewardsTab, setPendingRewardsTab] = useState<"experience" | "body" | "powers">("experience");
-  const [pendingXpSkillId, setPendingXpSkillId] = useState<string | null>(null);
+  // Held in PendingRewardsContext (keyed by skill.id) instead of local useState so the staged
+  // choice survives this component unmounting -- which happens on every "page" change, since
+  // switching area/quest/Journal swaps out which skill nodes are mounted.
+  const {
+    getPendingRewards,
+    setPendingRewardsTab: setPendingRewardsTabFor,
+    setPendingXpSkillId: setPendingXpSkillIdFor,
+    setPendingBodyDimension: setPendingBodyDimensionFor,
+    setPendingBodyZones: setPendingBodyZonesFor,
+    setPendingPowerId: setPendingPowerIdFor,
+  } = usePendingRewards();
+  const {
+    rewardsTab: pendingRewardsTab,
+    xpSkillId: pendingXpSkillId,
+    bodyDimension: pendingBodyDimension,
+    bodyZones: pendingBodyZones,
+    powerId: pendingPowerId,
+  } = getPendingRewards(skill.id);
+  const setPendingRewardsTab = (tab: "experience" | "body" | "powers") => setPendingRewardsTabFor(skill.id, tab);
+  const setPendingXpSkillId = (xpSkillId: string | null) => setPendingXpSkillIdFor(skill.id, xpSkillId);
+  const setPendingBodyDimension = (dimension: BodyDimension) => setPendingBodyDimensionFor(skill.id, dimension);
+  const setPendingBodyZones = (update: BodyZone[] | ((prev: BodyZone[]) => BodyZone[])) =>
+    setPendingBodyZonesFor(skill.id, update);
+  const setPendingPowerId = (powerId: string | null) => setPendingPowerIdFor(skill.id, powerId);
   const [showPendingXpSkillSelector, setShowPendingXpSkillSelector] = useState(false);
-  const [pendingBodyDimension, setPendingBodyDimension] = useState<BodyDimension>("fuerza");
-  const [pendingBodyZones, setPendingBodyZones] = useState<BodyZone[]>([]);
   const [showPendingBodyZoneSelector, setShowPendingBodyZoneSelector] = useState(false);
-  const [pendingPowerId, setPendingPowerId] = useState<string | null>(null);
 
   const togglePendingBodyZone = (zone: BodyZone) => {
     setPendingBodyZones((prev) =>

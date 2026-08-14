@@ -2142,7 +2142,7 @@ function AddPanel({
             Skills a linkear
           </label>
           <div className="mt-2">
-            <SkillLinkPicker skills={skills} value={skillIds} onChange={onSkillIdsChange} disabled={isLoading} emptyLabel="Sin skills disponibles" />
+            <SkillLinkPicker skills={skills} value={skillIds} onChange={onSkillIdsChange} disabled={isLoading} emptyLabel="Sin skills disponibles" areas={areas} currentAreaId={areaId} />
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
             Opcional: linkear a uno o más skills para sumar XP al completar
@@ -2470,7 +2470,7 @@ function EditPanel({
             Skills a linkear
           </label>
           <div className="mt-2">
-            <SkillLinkPicker skills={skills} value={skillIds} onChange={onSkillIdsChange} disabled={isLoading} emptyLabel="Sin skills disponibles" />
+            <SkillLinkPicker skills={skills} value={skillIds} onChange={onSkillIdsChange} disabled={isLoading} emptyLabel="Sin skills disponibles" areas={areas} currentAreaId={areaId} />
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
             Opcional: linkear a uno o más skills para sumar XP al completar

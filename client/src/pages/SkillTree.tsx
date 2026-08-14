@@ -33,6 +33,7 @@ import { BodyGainPopupProvider, useBodyGainPopup } from "@/lib/body-gain-popup-c
 import { LevelUpCelebrationProvider } from "@/lib/level-up-celebration-context";
 import { PowerCelebrationProvider } from "@/lib/power-celebration-context";
 import { TodayProgressPopupProvider } from "@/lib/today-progress-popup-context";
+import { PendingRewardsProvider } from "@/lib/pending-rewards-context";
 import { BodyLinkPicker, type BodyLink } from "@/components/BodyLinkPicker";
 import { SkillLinkPicker } from "@/components/SkillLinkPicker";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -7265,7 +7266,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
                     <div>
                       <Label htmlFor="global-record-skill" className="text-xs text-muted-foreground">Skills linkeados</Label>
                       <div className="mt-1" id="global-record-skill">
-                        <SkillLinkPicker skills={selectedAreaSkills} value={recordSkillIds} onChange={setRecordSkillIds} emptyLabel="Sin skills disponibles" />
+                        <SkillLinkPicker skills={selectedAreaSkills} value={recordSkillIds} onChange={setRecordSkillIds} emptyLabel="Sin skills disponibles" areas={areas} currentAreaId={selectedAreaGroup?.areaId ?? null} />
                       </div>
                     </div>
                     <div>
@@ -8864,6 +8865,7 @@ export default function SkillTreePage() {
           <BodyProgressProvider>
           <BodyGainPopupProvider>
           <InsightsCounterPopupProvider>
+          <PendingRewardsProvider>
             <MenuProvider>
               <div className="flex h-screen w-full bg-background text-foreground overflow-hidden font-body selection:bg-primary/30">
                 <TopRightControls onOpenDesigner={() => setIsDesignerOpen(true)} onOpenHabits={() => setIsHabitsOpen(true)} onOpenStrength={() => setIsStrengthOpen(true)} onOpenBookTracker={() => setIsBookTrackerOpen(true)} onOpenRewiringTracker={() => setIsRewiringTrackerOpen(true)} onOpenAllAreaBugs={() => setIsAllAreaBugsOpen(true)} onOpenHomeNeeds={() => setIsHomeNeedsOpen(true)} onOpenClothingInventory={() => setIsClothingInventoryOpen(true)} onOpenTodayProgress={() => setIsTodayProgressOpen(true)} />
@@ -8883,6 +8885,7 @@ export default function SkillTreePage() {
                 <OnboardingGuide isOpen={showOnboarding} onComplete={handleCompleteOnboarding} />
               </div>
             </MenuProvider>
+          </PendingRewardsProvider>
           </InsightsCounterPopupProvider>
           </BodyGainPopupProvider>
           </BodyProgressProvider>

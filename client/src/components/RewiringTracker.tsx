@@ -1229,8 +1229,9 @@ function TrackerCard({
                 skills={editingSkillsForArea ?? []}
                 value={editingTrackerSkillIds}
                 onChange={onEditingTrackerSkillIds}
-                disabled={!editingTrackerAreaId}
                 emptyLabel="Sin skills disponibles"
+                areas={areas}
+                currentAreaId={editingTrackerAreaId}
               />
             </div>
           </div>
@@ -1698,8 +1699,9 @@ function MainPanel({
                       skills={availableSkills}
                       value={newTrackerSkillIds}
                       onChange={onNewTrackerSkillIds}
-                      disabled={!newTrackerAreaId}
                       emptyLabel="Sin skills disponibles"
+                      areas={areas}
+                      currentAreaId={newTrackerAreaId}
                     />
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">Opcional: linkear a uno o más skills para sumar +5 XP al completar cada uno</p>

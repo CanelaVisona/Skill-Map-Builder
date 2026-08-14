@@ -16,7 +16,8 @@
       "Bash(timeout 100 npx vite build --mode development)",
       "Bash(taskkill //PID 12196 //F)",
       "Bash(echo \"DONE:$?\")",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(npx vite *)"
     ]
   }
 }
