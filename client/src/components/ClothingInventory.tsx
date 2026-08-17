@@ -112,24 +112,35 @@ type ClothingItem = {
   color: string;
   status: ClothingStatus;
   style: ClothingStyle;
+  // 1-5 "bloquecitos" ratings — comfort (how good it feels), condition (how
+  // worn/new the piece is) and styleScore (how "estilosa" it is, aka "Estilo").
+  // Named "styleScore" (not "style") to avoid clashing with the deporte/casual/salida
+  // category above. Additive fields, same backward-compat story as "style".
+  comfort: number;
+  condition: number;
+  styleScore: number;
 };
 
 const now = Date.now();
 
 const INITIAL_ITEMS: ClothingItem[] = [
-  { id: now - 9, name: "Remera blanca", type: "remera", color: "#f3f4f6", status: "have", style: "casual" },
-  { id: now - 8, name: "Remera negra", type: "remera", color: "#1f2937", status: "missing", style: "salida" },
-  { id: now - 7, name: "Campera de jean", type: "campera", color: "#3b5b8c", status: "have", style: "casual" },
-  { id: now - 6, name: "Jean azul", type: "jean", color: "#3b5b8c", status: "have", style: "casual" },
-  { id: now - 5, name: "Cargo verde", type: "pantalon", color: "#4d7c0f", status: "missing", style: "deporte" },
-  { id: now - 4, name: "Campera de abrigo", type: "abrigo", color: "#4b5563", status: "missing", style: "salida" },
-  { id: now - 3, name: "Zapatillas", type: "zapatilla", color: "#1f2937", status: "have", style: "deporte" },
-  { id: now - 2, name: "Botas de cuero", type: "bota", color: "#78350f", status: "missing", style: "salida" },
-  { id: now - 1, name: "Cadena plateada", type: "collar", color: "#9ca3af", status: "have", style: "salida" },
+  { id: now - 9, name: "Remera blanca", type: "remera", color: "#f3f4f6", status: "have", style: "casual", comfort: 4, condition: 4, styleScore: 3 },
+  { id: now - 8, name: "Remera negra", type: "remera", color: "#1f2937", status: "missing", style: "salida", comfort: 3, condition: 3, styleScore: 3 },
+  { id: now - 7, name: "Campera de jean", type: "campera", color: "#3b5b8c", status: "have", style: "casual", comfort: 4, condition: 5, styleScore: 5 },
+  { id: now - 6, name: "Jean azul", type: "jean", color: "#3b5b8c", status: "have", style: "casual", comfort: 5, condition: 4, styleScore: 4 },
+  { id: now - 5, name: "Cargo verde", type: "pantalon", color: "#4d7c0f", status: "missing", style: "deporte", comfort: 3, condition: 3, styleScore: 3 },
+  { id: now - 4, name: "Campera de abrigo", type: "abrigo", color: "#4b5563", status: "missing", style: "salida", comfort: 3, condition: 3, styleScore: 3 },
+  { id: now - 3, name: "Zapatillas", type: "zapatilla", color: "#1f2937", status: "have", style: "deporte", comfort: 5, condition: 3, styleScore: 4 },
+  { id: now - 2, name: "Botas de cuero", type: "bota", color: "#78350f", status: "missing", style: "salida", comfort: 3, condition: 3, styleScore: 3 },
+  { id: now - 1, name: "Cadena plateada", type: "collar", color: "#9ca3af", status: "have", style: "salida", comfort: 5, condition: 5, styleScore: 5 },
 ];
 
 function isValidStatus(value: unknown): value is ClothingStatus {
   return value === "have" || value === "missing";
+}
+
+function isValidRating(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 5;
 }
 
 function sanitizeItems(input: unknown): ClothingItem[] | null {
@@ -147,8 +158,9 @@ function sanitizeItems(input: unknown): ClothingItem[] | null {
       ) {
         return null;
       }
-      // "style" is additive on top of the original schema — default it instead of
-      // dropping the item, so prendas saved before this field existed still load.
+      // "style", "comfort", "condition" and "styleScore" are additive on top of
+      // the original schema — default them instead of dropping the item, so
+      // prendas saved before these fields existed still load.
       return {
         id: raw.id,
         name: raw.name,
@@ -156,6 +168,9 @@ function sanitizeItems(input: unknown): ClothingItem[] | null {
         color: raw.color,
         status: raw.status,
         style: isValidStyle(raw.style) ? raw.style : "casual",
+        comfort: isValidRating(raw.comfort) ? raw.comfort : 3,
+        condition: isValidRating(raw.condition) ? raw.condition : 3,
+        styleScore: isValidRating(raw.styleScore) ? raw.styleScore : 3,
       } satisfies ClothingItem;
     })
     .filter((item): item is ClothingItem => item !== null);
@@ -732,9 +747,91 @@ function useLongPress<T extends HTMLElement>(onLongPress: () => void, { delay = 
   return { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onPointerUp, onPointerLeave: onPointerUp, consumeClick };
 }
 
-type ItemFormState = { name: string; type: GarmentType; color: string; status: ClothingStatus; style: ClothingStyle };
+type ItemFormState = {
+  name: string;
+  type: GarmentType;
+  color: string;
+  status: ClothingStatus;
+  style: ClothingStyle;
+  comfort: number;
+  condition: number;
+  styleScore: number;
+};
 
-const EMPTY_FORM: ItemFormState = { name: "", type: "remera", color: "#4ade80", status: "have", style: "casual" };
+const EMPTY_FORM: ItemFormState = {
+  name: "",
+  type: "remera",
+  color: "#4ade80",
+  status: "have",
+  style: "casual",
+  comfort: 3,
+  condition: 3,
+  styleScore: 3,
+};
+
+// Single shared color for every rating widget — the "bloquecitos" on the card,
+// the ones in the add/edit popup, and the summary bars all use this same green
+// so color never has to carry meaning; text labels do that instead.
+const RATING_COLOR = "#22c55e";
+
+// The "bloquecitos" rating widget: 5 clickable blocks, filled up to the current
+// value — used for both "Comodidad" and "Estado" (condition) per prenda.
+function RatingBlocks({
+  value,
+  onChange,
+  color,
+  isDark,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  color: string;
+  isDark: boolean;
+}) {
+  return (
+    <div style={{ display: "flex", gap: "5px" }}>
+      {[1, 2, 3, 4, 5].map((n) => {
+        const filled = n <= value;
+        return (
+          <button
+            key={n}
+            type="button"
+            onClick={() => onChange(n)}
+            title={`${n}/5`}
+            style={{
+              flex: 1,
+              height: "20px",
+              borderRadius: "4px",
+              border: filled ? "1px solid transparent" : isDark ? "1px solid #325a32" : "1px solid #86efac",
+              background: filled ? color : "transparent",
+              cursor: "pointer",
+              padding: 0,
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+// Compact, read-only version of RatingBlocks for the inventory card — small
+// dots instead of buttons, just enough to read the score at a glance.
+function MiniRatingBlocks({ value, color }: { value: number; color: string }) {
+  return (
+    <div style={{ display: "flex", gap: "2px" }}>
+      {[1, 2, 3, 4, 5].map((n) => (
+        <span
+          key={n}
+          style={{
+            flex: 1,
+            height: "3px",
+            borderRadius: "1px",
+            background: n <= value ? color : "rgba(148,163,184,0.35)",
+          }}
+        />
+      ))}
+    </div>
+  );
+}
 
 const COLOR_SWATCHES = [
   "#111827", "#4b5563", "#9ca3af", "#f3f4f6",
@@ -967,7 +1064,7 @@ function ItemForm({
       </div>
 
       <div>
-        <div style={labelStyle}>Estado</div>
+        <div style={labelStyle}>Disponibilidad</div>
         <div style={{ display: "flex", gap: "6px" }}>
           {(["have", "missing"] as ClothingStatus[]).map((status) => {
             const active = form.status === status;
@@ -997,6 +1094,30 @@ function ItemForm({
             );
           })}
         </div>
+      </div>
+
+      <div>
+        <div style={{ ...labelStyle, display: "flex", justifyContent: "space-between" }}>
+          <span>Comodidad</span>
+          <span style={{ color: RATING_COLOR }}>{form.comfort}/5</span>
+        </div>
+        <RatingBlocks value={form.comfort} onChange={(comfort) => onChange({ ...form, comfort })} color={RATING_COLOR} isDark={isDark} />
+      </div>
+
+      <div>
+        <div style={{ ...labelStyle, display: "flex", justifyContent: "space-between" }}>
+          <span>Estado</span>
+          <span style={{ color: RATING_COLOR }}>{form.condition}/5</span>
+        </div>
+        <RatingBlocks value={form.condition} onChange={(condition) => onChange({ ...form, condition })} color={RATING_COLOR} isDark={isDark} />
+      </div>
+
+      <div>
+        <div style={{ ...labelStyle, display: "flex", justifyContent: "space-between" }}>
+          <span>Estilo</span>
+          <span style={{ color: RATING_COLOR }}>{form.styleScore}/5</span>
+        </div>
+        <RatingBlocks value={form.styleScore} onChange={(styleScore) => onChange({ ...form, styleScore })} color={RATING_COLOR} isDark={isDark} />
       </div>
     </div>
   );
@@ -1193,7 +1314,7 @@ function ClothingCard({
       onPointerCancel={longPress.onPointerCancel}
       onPointerLeave={longPress.onPointerLeave}
       onContextMenu={(e) => e.preventDefault()}
-      title={`${item.name} · ${STYLE_META[item.style].label} · long press para editar`}
+      title={`${item.name} · ${STYLE_META[item.style].label} · Comodidad ${item.comfort}/5 · Estado ${item.condition}/5 · Estilo ${item.styleScore}/5 · long press para editar`}
       style={{
         position: "relative",
         borderRadius: "10px",
@@ -1292,6 +1413,27 @@ function ClothingCard({
         >
           {item.name}
         </span>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "4px", width: "100%", padding: "0 3px" }}>
+          <div>
+            <span style={{ fontSize: "6.5px", fontWeight: 700, letterSpacing: "0.03em", textTransform: "uppercase", color: colors.subtitle, display: "block", marginBottom: "1.5px" }}>
+              Comodidad
+            </span>
+            <MiniRatingBlocks value={item.comfort} color={RATING_COLOR} />
+          </div>
+          <div>
+            <span style={{ fontSize: "6.5px", fontWeight: 700, letterSpacing: "0.03em", textTransform: "uppercase", color: colors.subtitle, display: "block", marginBottom: "1.5px" }}>
+              Estado
+            </span>
+            <MiniRatingBlocks value={item.condition} color={RATING_COLOR} />
+          </div>
+          <div>
+            <span style={{ fontSize: "6.5px", fontWeight: 700, letterSpacing: "0.03em", textTransform: "uppercase", color: colors.subtitle, display: "block", marginBottom: "1.5px" }}>
+              Estilo
+            </span>
+            <MiniRatingBlocks value={item.styleScore} color={RATING_COLOR} />
+          </div>
+        </div>
       </div>
 
       {!isHave && (
@@ -1553,6 +1695,9 @@ export default function ClothingInventory() {
       color: addForm.color,
       status: addForm.status,
       style: addForm.style,
+      comfort: addForm.comfort,
+      condition: addForm.condition,
+      styleScore: addForm.styleScore,
     };
 
     setItems((prev) => [nextItem, ...prev]);
@@ -1563,7 +1708,16 @@ export default function ClothingInventory() {
   const startEdit = useCallback((item: ClothingItem) => {
     setIsAddFormOpen(false);
     setEditingId(item.id);
-    setEditForm({ name: item.name, type: item.type, color: item.color, status: item.status, style: item.style });
+    setEditForm({
+      name: item.name,
+      type: item.type,
+      color: item.color,
+      status: item.status,
+      style: item.style,
+      comfort: item.comfort,
+      condition: item.condition,
+      styleScore: item.styleScore,
+    });
   }, []);
 
   const saveEdit = useCallback(() => {
@@ -1577,7 +1731,17 @@ export default function ClothingInventory() {
     setItems((prev) =>
       prev.map((item) =>
         item.id === editingId
-          ? { ...item, name: cleanName, type: editForm.type, color: editForm.color, status: editForm.status, style: editForm.style }
+          ? {
+              ...item,
+              name: cleanName,
+              type: editForm.type,
+              color: editForm.color,
+              status: editForm.status,
+              style: editForm.style,
+              comfort: editForm.comfort,
+              condition: editForm.condition,
+              styleScore: editForm.styleScore,
+            }
           : item,
       ),
     );
@@ -1603,6 +1767,16 @@ export default function ClothingInventory() {
   const totalHave = items.filter((i) => i.status === "have").length;
   const totalCount = items.length;
   const progressPct = totalCount > 0 ? (totalHave / totalCount) * 100 : 0;
+
+  // "Comodidad", "Estado" y "Estilo" resumen, en promedio, los puntajes en
+  // bloquecitos de las prendas que ya tenés — las que faltan comprar no tienen
+  // un puntaje real todavía.
+  const haveItems = items.filter((i) => i.status === "have");
+  const avgOf = (pick: (i: ClothingItem) => number) =>
+    haveItems.length > 0 ? haveItems.reduce((sum, i) => sum + pick(i), 0) / haveItems.length : 0;
+  const avgComfort = avgOf((i) => i.comfort);
+  const avgCondition = avgOf((i) => i.condition);
+  const avgStyleScore = avgOf((i) => i.styleScore);
 
   return (
     <>
@@ -1782,6 +1956,47 @@ export default function ClothingInventory() {
                 }}
               />
             </div>
+          </div>
+        )}
+
+        {haveItems.length > 0 && (
+          <div style={{ marginTop: "10px", display: "grid", gap: "8px" }} onPointerDown={(e) => e.stopPropagation()}>
+            {(
+              [
+                { label: "Comodidad", value: avgComfort },
+                { label: "Estado", value: avgCondition },
+                { label: "Estilo", value: avgStyleScore },
+              ] as const
+            ).map(({ label, value }) => (
+              <div key={label} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <span style={{ fontSize: "10px", color: colors.subtitle, whiteSpace: "nowrap", width: "62px" }}>
+                  {label}
+                </span>
+                <div
+                  style={{
+                    flex: 1,
+                    height: "6px",
+                    background: isDark ? "#0d1a0d" : "#e5e7eb",
+                    borderRadius: "3px",
+                    overflow: "hidden",
+                    border: isDark ? "1px solid #1a2a1a" : "1px solid #d1d5db",
+                  }}
+                >
+                  <div
+                    style={{
+                      height: "100%",
+                      width: `${(value / 5) * 100}%`,
+                      borderRadius: "3px",
+                      background: "linear-gradient(90deg, #16a34a, #4ade80)",
+                      transition: "width 0.6s ease",
+                    }}
+                  />
+                </div>
+                <span style={{ fontSize: "10px", color: colors.subtitle, whiteSpace: "nowrap" }}>
+                  {value.toFixed(1)}/5
+                </span>
+              </div>
+            ))}
           </div>
         )}
       </div>

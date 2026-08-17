@@ -13,6 +13,7 @@ import {
 import { usePopupPalette } from "@/lib/popup-theme";
 import { useLevelUpCelebration } from "@/lib/level-up-celebration-context";
 import { POPUP_VISIBLE_MS } from "@/lib/popup-coordinator";
+import { playProgressAdvanceSound } from "@/lib/sound";
 
 export interface BodyGainSnapshot {
   zone: BodyZone;
@@ -61,6 +62,10 @@ export function BodyGainPopup({ snapshot, onClose }: BodyGainPopupProps) {
     setDisplayBlocks(before.val);
     setAnimationStage("initial");
 
+    if (after.val > before.val || leveledUp) {
+      playProgressAdvanceSound();
+    }
+
     const rafId = window.requestAnimationFrame(() => {
       if (!leveledUp) {
         setDisplayBlocks(after.val);
@@ -77,10 +82,14 @@ export function BodyGainPopup({ snapshot, onClose }: BodyGainPopupProps) {
         setAnimationStage("afterReset");
 
         const secondTimer = window.setTimeout(() => {
+          // Igual que en ExperienceGainPopup: la celebración es a pantalla completa y
+          // ocupa el mismo centro que esta card, así que hay que cerrarla acá en vez
+          // de esperar su propio timer de POPUP_VISIBLE_MS, o quedan superpuestas.
           showLevelUpCelebration({
             name: `${BODY_ZONE_LABELS[zone]} · ${BODY_DIMENSION_LABELS[dimension]}`,
             level: after.lvl,
           });
+          onClose();
         }, 0);
 
         const thirdTimer = window.setTimeout(() => {

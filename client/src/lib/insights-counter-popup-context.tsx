@@ -12,9 +12,11 @@ export interface InsightsCounterPopupSnapshot {
 }
 
 // Este pop-up se queda visible más tiempo que el resto de la familia (POPUP_VISIBLE_MS,
-// 1500ms) porque el número tarda en "rodar" del valor viejo al nuevo (ver INSIGHTS_FLIP_*
-// en InsightsCounterPopup.tsx) y ese giro tiene que alcanzar a apreciarse antes de cerrarse.
-export const INSIGHTS_POPUP_VISIBLE_MS = 2600;
+// 1500ms): primero hay que darle tiempo al número viejo de leerse como un valor estable, recién
+// después arranca el flip al nuevo valor (ver FLIP_DELAY_MS/FLIP_DURATION_S en
+// InsightsCounterPopup.tsx), y todavía queda que sobre tiempo de sobra para leer el número nuevo
+// ya asentado antes de que se cierre.
+export const INSIGHTS_POPUP_VISIBLE_MS = 2800;
 
 interface InsightsCounterPopupContextValue {
   snapshot: InsightsCounterPopupSnapshot | null;

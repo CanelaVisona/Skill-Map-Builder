@@ -415,6 +415,13 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // configuradas para hoy, o actividad extra que ya se movió a una franja específica.
   const hasSlotSection = itemBuckets.unassigned.length > 0 || TIME_SLOTS.some((s) => itemBuckets[s.key].length > 0);
 
+  // Si "Sin asignar" tiene alguna tarea todavía sin confirmar, tiene prioridad sobre la franja
+  // horaria actual: es la única que arranca abierta (todas las franjas cerradas), sin importar
+  // qué hora sea, porque son tareas que no tienen un momento del día asociado y conviene que se
+  // vean primero. Si no hay pendientes ahí, se vuelve al comportamiento normal (Sin asignar +
+  // franja actual abiertas).
+  const hasPendingUnassigned = itemBuckets.unassigned.some((item) => !item.done);
+
   const moveItemToSlot = (item: TodayItem, slot: TaskSlotKey) => {
     setTaskSlot.mutate({ date: effectiveDate, taskType: item.type, taskId: item.id, slot });
   };
@@ -663,7 +670,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                     {hasSlotSection && (
                       <Accordion
                         type="multiple"
-                        defaultValue={["unassigned", getCurrentTimeSlotKey()]}
+                        defaultValue={hasPendingUnassigned ? ["unassigned"] : ["unassigned", getCurrentTimeSlotKey()]}
                         className="space-y-1"
                       >
                         {itemBuckets.unassigned.length > 0 && (

@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { useEffect, useState } from "react";
 import { Lightbulb, Pencil, Wrench } from "lucide-react";
 import { usePopupPalette, type PopupPalette } from "@/lib/popup-theme";
+import { playProgressAdvanceSound } from "@/lib/sound";
 
 import type { InsightsCounterKind, InsightsCounterPopupSnapshot } from "@/lib/insights-counter-popup-context";
 
@@ -19,13 +20,16 @@ const KIND_META: Record<InsightsCounterKind, { icon: typeof Lightbulb; label: st
   tool: { icon: Wrench, label: "Herramientas" },
 };
 
-// Cuánto se espera, después de aparecer el pop-up, antes de arrancar el "giro" del número, y
-// cuánto dura ese giro. Deliberadamente lento (mucho más que el resto de la familia de
-// pop-ups) para que se alcance a apreciar el paso del número viejo al nuevo -- ver
-// INSIGHTS_POPUP_VISIBLE_MS en insights-counter-popup-context.tsx, que deja tiempo de sobra
-// después de que termine.
-const FLIP_DELAY_MS = 500;
-const FLIP_DURATION_S = 1.1;
+// Cuánto se espera, después de aparecer el pop-up, antes de arrancar el "flip" del número, y
+// cuánto dura ese flip. El delay es largo a propósito: tiene que alcanzar para que el número
+// viejo se lea como un valor estable (no algo que ya está "de paso") antes de que arranque el
+// cambio. El flip en sí es corto y discreto (no un deslizamiento lento) para que se perciba
+// como "cambió de A a B" y no como un número que se mueve en cámara lenta hasta que recién al
+// final se entiende cuál es el nuevo valor -- ver INSIGHTS_POPUP_VISIBLE_MS en
+// insights-counter-popup-context.tsx, que deja tiempo de sobra después de que termine para leer
+// el número nuevo, ya asentado.
+const FLIP_DELAY_MS = 1100;
+const FLIP_DURATION_S = 0.35;
 
 // Un solo dígito "rueda" verticalmente hacia el nuevo valor -- el dígito viejo sale
 // deslizándose hacia arriba mientras el nuevo entra desde abajo, como el rodillo de un
@@ -77,7 +81,12 @@ export function InsightsCounterPopup({ snapshot, onClose }: InsightsCounterPopup
       return;
     }
     setDisplayValue(snapshot.countBefore);
-    const timer = setTimeout(() => setDisplayValue(snapshot.countAfter), FLIP_DELAY_MS);
+    const timer = setTimeout(() => {
+      if (snapshot.countAfter > snapshot.countBefore) {
+        playProgressAdvanceSound();
+      }
+      setDisplayValue(snapshot.countAfter);
+    }, FLIP_DELAY_MS);
     return () => clearTimeout(timer);
   }, [snapshot]);
 

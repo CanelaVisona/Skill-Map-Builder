@@ -67,3 +67,10 @@ export function runPopupQueue(tasks: Array<() => void>, onComplete?: () => void)
   };
   attempt();
 }
+
+// Promise wrapper around runPopupQueue, for callers that need to await a batch of pop-ups
+// having all been triggered before moving on to their next step (e.g. the node-confirm
+// sequence in SkillNode.tsx, which animates one element away per batch of pop-ups shown).
+export function runPopupQueueAsync(tasks: Array<() => void>): Promise<void> {
+  return new Promise((resolve) => runPopupQueue(tasks, resolve));
+}

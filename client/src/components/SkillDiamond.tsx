@@ -81,7 +81,6 @@ export function SkillDiamond({
   const xpForThisLevel = Math.max(1, currentLevel * 100);
   const progressPercent = Math.round(Math.max(0, Math.min(100, (xpIntoCurrentLevel / xpForThisLevel) * 100)));
   const progressColor = getProgressColorForLevel(currentLevel);
-  const nextLevelLabel = `Lv${currentLevel + 1}`;
 
   // Every skill is a uniform legendary-tier diamond whose material automatically upgrades
   // with level — a locked skill just stays plain dim iron/common until it actually unlocks.
@@ -173,9 +172,24 @@ export function SkillDiamond({
                 outerVertices.map((v, i) => (
                   <circle key={i} cx={v.x} cy={v.y} r={1.4} fill={rarityTokens.ringColor ?? materialTokens.rimHighlight} opacity={0.85} />
                 ))}
-              {/* Level badge, unlocked only */}
+              {/* Current level — drawn on the plate itself (not an HTML overlay), a little
+                  in from the top point and off to the right, so it can never get clipped by
+                  an ancestor's overflow like the old absolutely-positioned badge did. The
+                  dark outline (paintOrder "stroke") keeps it legible over any material color. */}
               {isUnlocked && (
-                <text x={renderSize - 10} y="12" textAnchor="middle" style={{ fontSize: "8px", fill: "#fff", fontWeight: 500 }}>
+                <text
+                  x={renderSize * 0.62}
+                  y={renderSize * 0.26}
+                  textAnchor="middle"
+                  style={{
+                    fontSize: Math.max(9, renderSize * 0.18),
+                    fontWeight: 700,
+                    fill: "#fff8e0",
+                    stroke: "#000",
+                    strokeWidth: 2.5,
+                    paintOrder: "stroke",
+                  }}
+                >
                   {skill.level}
                 </text>
               )}
@@ -205,20 +219,21 @@ export function SkillDiamond({
 
       {!hideMeta && (
         <>
-          {/* XP Progress bar — unchanged */}
+          {/* XP Progress bar — lighter neutral track (vs. the old near-black one) so it reads
+              clearly as "empty" even against the darker green fill tiers at low levels, plus a
+              glossy highlight + glow on the fill itself so the filled portion pops. */}
           <div className="relative mx-auto" style={{ width: `${renderSize + 10}px` }}>
-            <div className="h-2 w-full rounded-full bg-gray-900/90 border border-gray-700 overflow-hidden shadow-inner">
+            <div className="h-2.5 w-full rounded-full bg-gray-600/70 border border-gray-400/60 overflow-hidden shadow-inner">
               <div
-                className="h-full transition-all duration-300 rounded-full"
-                style={{ width: `${progressPercent}%`, backgroundColor: progressColor }}
-              />
+                className="h-full relative transition-all duration-300 rounded-full"
+                style={{ width: `${progressPercent}%`, backgroundColor: progressColor, boxShadow: `0 0 5px ${progressColor}` }}
+              >
+                <div
+                  className="absolute inset-0 rounded-full"
+                  style={{ background: "linear-gradient(to bottom, rgba(255,255,255,0.4), rgba(255,255,255,0) 65%)" }}
+                />
+              </div>
             </div>
-            <span
-              className="absolute left-full ml-1 top-1/2 -translate-y-1/2 shrink-0 text-[9px] leading-none font-semibold whitespace-nowrap"
-              style={{ color: "#c8a96e" }}
-            >
-              {nextLevelLabel}
-            </span>
           </div>
 
           {/* Skill name */}

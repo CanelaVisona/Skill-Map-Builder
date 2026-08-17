@@ -41,6 +41,7 @@ export interface IStorage {
   // Skills
   getSkills(areaId: string): Promise<Skill[]>;
   getProjectSkills(projectId: string): Promise<Skill[]>;
+  getAllSkillIdsInScope(scope: { areaId?: string; projectId?: string }): Promise<string[]>;
   getSkill(id: string): Promise<Skill | undefined>;
   createSkill(skill: InsertSkill): Promise<Skill>;
   updateSkill(id: string, skill: Partial<InsertSkill>): Promise<Skill | undefined>;
@@ -447,6 +448,30 @@ export class DbStorage implements IStorage {
 
   async getProjectSkills(projectId: string): Promise<Skill[]> {
     return await db.select().from(skills).where(eq(skills.projectId, projectId)).orderBy(asc(skills.level), asc(skills.y));
+  }
+
+  // Every skill id reachable from an area/quest's top-level skills, including sub-skill trees
+  // at any depth. Sub-skills don't carry their own areaId/projectId (only parentSkillId), so
+  // this walks that chain level by level starting from the top-level skills that DO carry it.
+  // Used to scope journal counts (e.g. learnings) to "this area/quest" so that something
+  // logged against a node inside a sub-skill tree still counts toward its owning area/quest.
+  async getAllSkillIdsInScope(scope: { areaId?: string; projectId?: string }): Promise<string[]> {
+    const topLevel = scope.areaId
+      ? await db.select({ id: skills.id }).from(skills).where(eq(skills.areaId, scope.areaId))
+      : scope.projectId
+        ? await db.select({ id: skills.id }).from(skills).where(eq(skills.projectId, scope.projectId))
+        : [];
+
+    const allIds = topLevel.map(s => s.id);
+    let frontier = allIds;
+    while (frontier.length > 0) {
+      const children = await db.select({ id: skills.id }).from(skills).where(inArray(skills.parentSkillId, frontier));
+      if (children.length === 0) break;
+      const childIds = children.map(c => c.id);
+      allIds.push(...childIds);
+      frontier = childIds;
+    }
+    return allIds;
   }
 
   async getSkill(id: string): Promise<Skill | undefined> {
@@ -896,17 +921,17 @@ export class DbStorage implements IStorage {
         })
         .where(eq(areas.id, areaId));
 
-      // Create 5 skills for the new level with Spanish default names
-      for (let position = 1; position <= 5; position++) {
+      // Create 6 skills for the new level with Spanish default names
+      for (let position = 1; position <= 6; position++) {
         const id = randomUUID();
         const deps: string[] = previousSkillId ? [previousSkillId] : [];
         const isFirstNode = position === 1;
         const isSecondNode = position === 2;
-        const isFinalNode = position === 5; // Last node is always final node
+        const isFinalNode = position === 6; // Last node is always final node
         
         // Node 1: auto-completing, empty title, always mastered
         // Node 2: unlocked/available (next to unlock after Node 1 is mastered)
-        // Nodes 3-5: editable, default Spanish names (Nodo 3, Nodo 4, Nodo 5), locked initially
+        // Nodes 3-6: editable, default Spanish names (Nodo 3, Nodo 4, Nodo 5, Nodo 6), locked initially
         let nodeTitle = "";
         let nodeStatus: "locked" | "available" | "mastered" = "locked";
         
@@ -980,17 +1005,17 @@ export class DbStorage implements IStorage {
         })
         .where(eq(projects.id, projectId));
 
-      // Create 5 skills for the new level with Spanish default names
-      for (let position = 1; position <= 5; position++) {
+      // Create 6 skills for the new level with Spanish default names
+      for (let position = 1; position <= 6; position++) {
         const id = randomUUID();
         const deps: string[] = previousSkillId ? [previousSkillId] : [];
         const isFirstNode = position === 1;
         const isSecondNode = position === 2;
-        const isFinalNode = position === 5; // Last node is always final node
+        const isFinalNode = position === 6; // Last node is always final node
         
         // Node 1: auto-completing, empty title, always mastered
         // Node 2: unlocked/available (next to unlock after Node 1 is mastered)
-        // Nodes 3-5: editable, default Spanish names (Nodo 3, Nodo 4, Nodo 5), locked initially
+        // Nodes 3-6: editable, default Spanish names (Nodo 3, Nodo 4, Nodo 5, Nodo 6), locked initially
         let nodeTitle = "";
         let nodeStatus: "locked" | "available" | "mastered" = "locked";
         
@@ -1143,12 +1168,12 @@ export class DbStorage implements IStorage {
     }
 
     await db.transaction(async (tx) => {
-      for (let position = 1; position <= 5; position++) {
+      for (let position = 1; position <= 6; position++) {
         const id = randomUUID();
         const deps: string[] = previousSkillId ? [previousSkillId] : [];
         const isFirstNode = position === 1;
         const isLevel1FirstNode = level === 1 && position === 1;
-        const isFinalNode = position === 5; // Last node is always final node
+        const isFinalNode = position === 6; // Last node is always final node
         let nodeTitle = "";
         let nodeStatus: "locked" | "available" | "mastered" = "locked";
         
@@ -1159,7 +1184,7 @@ export class DbStorage implements IStorage {
           nodeTitle = "";
           nodeStatus = "mastered";
         } else {
-          // Nodes 2-5: use Spanish default names
+          // Nodes 2-6: use Spanish default names
           nodeTitle = `Nodo ${position}`;
           nodeStatus = "locked";
         }

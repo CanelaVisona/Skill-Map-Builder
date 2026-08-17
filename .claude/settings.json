@@ -17,7 +17,25 @@
       "Bash(taskkill //PID 12196 //F)",
       "Bash(echo \"DONE:$?\")",
       "Bash(npx tsc *)",
-      "Bash(npx vite *)"
+      "Bash(npx vite *)",
+      "Bash(awk 'NR==404{print NR\": [\"$0\"]\"} NR==591{print NR\": [\"$0\"]\"} NR==773{print NR\": [\"$0\"]\"} NR==950{print NR\": [\"$0\"]\"}' client/src/components/SkillDesigner.tsx)",
+      "Bash(git log *)",
+      "Bash(node -e \"require\\('pg'\\); require\\('dotenv'\\); console.log\\('ok'\\)\")",
+      "Bash(npx --version)",
+      "Bash(node \"C:\\\\Users\\\\DANIEL~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Daniel-Visona-Desktop-Skill-Map-Builder\\\\5fb73507-e159-41b3-9715-b35fbedafc24\\\\scratchpad\\\\repair-y-coords.mjs\")",
+      "Bash(node repair-y-coords.mjs)",
+      "Bash(which chromium-cli; find / -maxdepth 6 -iname \"chromium-cli*\" 2>/dev/null | head; echo \"---\"; cat \"C:\\\\Users\\\\DANIEL~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\bundled-skills\\\\2.1.231\\\\42d1b17370d4f1f87b2a4d7db226280d\\\\run\\\\examples\\\\playwright.md\" 2>/dev/null | head -150)",
+      "Read(//c//**)",
+      "Bash(curl -s -o /dev/null -w \"http_status:%{http_code}\\\\n\" http://localhost:3001/ --max-time 5)",
+      "Bash(curl -s -o /tmp_skillnode_check.txt -w \"http_status:%{http_code}\\\\n\" \"http://localhost:3001/src/components/SkillNode.tsx\" --max-time 8)",
+      "Bash(head -c 500 /tmp_skillnode_check.txt)",
+      "Bash(tail -c 800 /tmp_skillnode_check.txt)",
+      "Bash(node \"C:\\\\Users\\\\DANIEL~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-Daniel-Visona-Desktop-Skill-Map-Builder\\\\a928038e-9aa5-446c-9287-11d182e5a66a\\\\scratchpad\\\\build.mjs\")",
+      "Bash(node _scroll_repro_build.mjs)",
+      "Bash(node _repro_scroll_test.spec.mjs)",
+      "Bash(echo \"grep_exit:$?\")",
+      "Bash(curl -s -o /dev/null -w \"status:%{http_code}\\\\n\" http://localhost:3001/ --max-time 5)",
+      "Bash(awk 'NR==1436,NR==1900 && /catch \\\\\\(error\\\\\\)/{print NR\": \"$0}' client/src/lib/skill-context.tsx)"
     ]
   }
 }

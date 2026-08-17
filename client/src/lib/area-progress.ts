@@ -10,12 +10,20 @@ export function countMasteredSkills(skills: Skill[]): number {
 // nivel ya no es un número fijo (antes 15 nodos parejo para todas las áreas/quests) -- ahora
 // depende de cuántos nodos tiene efectivamente el nivel actualmente desbloqueado, así que la
 // barra sube distinto según el tamaño real de cada nivel.
+//
+// El nodo levelPosition === 1 ("skeleton") es siempre mastered de entrada -- no es una skill
+// real, es puramente el punto de partida visual del nivel -- así que se excluye del conteo
+// para no inflar el total ni sumar un mastered gratis a la barra de progreso.
+function isRealLevelSkill(skill: Skill): boolean {
+  return skill.levelPosition !== 1;
+}
+
 export function countSkillsInLevel(skills: Skill[], level: number): number {
-  return skills.filter((skill) => skill.level === level).length;
+  return skills.filter((skill) => skill.level === level && isRealLevelSkill(skill)).length;
 }
 
 export function countMasteredSkillsInLevel(skills: Skill[], level: number): number {
-  return skills.filter((skill) => skill.level === level && skill.status === "mastered").length;
+  return skills.filter((skill) => skill.level === level && isRealLevelSkill(skill) && skill.status === "mastered").length;
 }
 
 export function calculateLevelProgressPercentage(masteredInLevel: number, totalInLevel: number): number {

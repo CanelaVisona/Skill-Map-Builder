@@ -13,8 +13,9 @@ import { useBodyGainPopup } from "@/lib/body-gain-popup-context";
 import { useLevelUpCelebration } from "@/lib/level-up-celebration-context";
 import { usePowerCelebration } from "@/lib/power-celebration-context";
 import { usePendingRewards } from "@/lib/pending-rewards-context";
-import { beginPopupChain, endPopupChain, runPopupQueue } from "@/lib/popup-coordinator";
+import { beginPopupChain, endPopupChain, runPopupQueueAsync, getPopupBusyDelay } from "@/lib/popup-coordinator";
 import { getNodeTitleWordLimit, clampToWordLimit } from "@/lib/node-title-settings";
+import { playNodeConfirmedSound } from "@/lib/sound";
 import {
   Popover,
   PopoverContent,
@@ -113,6 +114,267 @@ function getQuickDateOptions(): QuickDateOption[] {
   return options;
 }
 
+// Shared body of the "select skill" popover used both by the node long-press Journal's
+// Experience tab and by the title long-press edit dialog's Step 3 (Paso 3: XP). Besides the
+// legacy/global skills already scoped to the current area/quest, it offers an "Otra área"
+// escape hatch: pick any other area or quest, then pick one of its skills, for cases where the
+// XP earned here actually belongs to a skill tracked elsewhere.
+interface CrossAreaTarget {
+  type: "area" | "project";
+  id: string;
+  name: string;
+}
+
+interface SkillPickerListProps {
+  selectedSkillId: string | null;
+  onSelect: (id: string | null) => void;
+  onClose: () => void;
+  legacySkills: string[];
+  scopedGlobalSkills: GlobalSkill[];
+  areas: Array<{ id: string; name: string }>;
+  projects: Array<{ id: string; name: string }>;
+  currentAreaId?: string;
+  currentProjectId?: string;
+  getGlobalSkillsForArea: (areaId: string) => GlobalSkill[];
+  getGlobalSkillsForProject: (projectId: string) => GlobalSkill[];
+  testIdPrefix: string;
+}
+
+function SkillPickerList({
+  selectedSkillId,
+  onSelect,
+  onClose,
+  legacySkills,
+  scopedGlobalSkills,
+  areas,
+  projects,
+  currentAreaId,
+  currentProjectId,
+  getGlobalSkillsForArea,
+  getGlobalSkillsForProject,
+  testIdPrefix,
+}: SkillPickerListProps) {
+  const [otherAreaTarget, setOtherAreaTarget] = useState<CrossAreaTarget | null>(null);
+  const [browsingOtherAreas, setBrowsingOtherAreas] = useState(false);
+
+  const pick = (id: string) => {
+    onSelect(selectedSkillId === id ? null : id);
+    onClose();
+    setOtherAreaTarget(null);
+    setBrowsingOtherAreas(false);
+  };
+
+  // Skills of the chosen other area/quest
+  if (otherAreaTarget) {
+    const skillsThere = otherAreaTarget.type === "area"
+      ? getGlobalSkillsForArea(otherAreaTarget.id)
+      : getGlobalSkillsForProject(otherAreaTarget.id);
+
+    return (
+      <div
+        className="max-h-56 overflow-y-auto overscroll-contain touch-pan-y"
+        style={{ WebkitOverflowScrolling: "touch" }}
+        onWheel={(e) => e.stopPropagation()}
+        onTouchMove={(e) => e.stopPropagation()}
+      >
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start h-7 px-2 mb-1 text-xs text-muted-foreground hover:bg-muted/50"
+          onClick={() => setOtherAreaTarget(null)}
+          data-testid={`${testIdPrefix}-button-other-area-skills-back`}
+        >
+          <ChevronLeft className="h-3 w-3 mr-1" /> {otherAreaTarget.name}
+        </Button>
+        {skillsThere.length === 0 ? (
+          <p className="text-xs text-muted-foreground px-2 py-3">No hay skills en {otherAreaTarget.name}</p>
+        ) : (
+          <div className="space-y-1">
+            {skillsThere.filter(s => !s.parentSkillId).map((gSkill) => (
+              <div key={gSkill.id}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={`w-full justify-start h-8 px-3 text-xs font-medium ${
+                    selectedSkillId === gSkill.id ? "bg-muted text-foreground" : "hover:bg-muted/50"
+                  }`}
+                  onClick={() => pick(gSkill.id)}
+                  data-testid={`${testIdPrefix}-button-select-otherarea-skill-${gSkill.id}`}
+                >
+                  {gSkill.name}
+                  <span className="ml-auto text-muted-foreground">Lv.{gSkill.level}</span>
+                </Button>
+                {skillsThere
+                  .filter(s => s.parentSkillId === gSkill.id)
+                  .map((subSkill) => (
+                    <Button
+                      key={subSkill.id}
+                      variant="ghost"
+                      size="sm"
+                      className={`w-full justify-start h-7 px-3 pl-6 text-xs font-normal ${
+                        selectedSkillId === subSkill.id ? "bg-muted text-foreground" : "hover:bg-muted/50 text-muted-foreground"
+                      }`}
+                      onClick={() => pick(subSkill.id)}
+                      data-testid={`${testIdPrefix}-button-select-otherarea-subskill-${subSkill.id}`}
+                    >
+                      ↳ {subSkill.name}
+                      <span className="ml-auto">Lv.{subSkill.level}</span>
+                    </Button>
+                  ))
+                }
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // List of other areas/quests to browse into
+  if (browsingOtherAreas) {
+    const otherAreas = areas.filter(a => a.id !== currentAreaId);
+    const otherProjects = projects.filter(p => p.id !== currentProjectId);
+
+    return (
+      <div
+        className="max-h-56 overflow-y-auto overscroll-contain touch-pan-y"
+        style={{ WebkitOverflowScrolling: "touch" }}
+        onWheel={(e) => e.stopPropagation()}
+        onTouchMove={(e) => e.stopPropagation()}
+      >
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start h-7 px-2 mb-1 text-xs text-muted-foreground hover:bg-muted/50"
+          onClick={() => setBrowsingOtherAreas(false)}
+          data-testid={`${testIdPrefix}-button-other-area-list-back`}
+        >
+          <ChevronLeft className="h-3 w-3 mr-1" /> Volver
+        </Button>
+        {otherAreas.length === 0 && otherProjects.length === 0 ? (
+          <p className="text-xs text-muted-foreground px-2 py-3">No hay otras áreas o quests</p>
+        ) : (
+          <div className="space-y-1">
+            {otherAreas.map((area) => (
+              <Button
+                key={area.id}
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start h-8 px-3 text-xs font-normal hover:bg-muted/50"
+                onClick={() => setOtherAreaTarget({ type: "area", id: area.id, name: area.name })}
+                data-testid={`${testIdPrefix}-button-other-area-${area.id}`}
+              >
+                {area.name}
+              </Button>
+            ))}
+            {otherProjects.map((project) => (
+              <Button
+                key={project.id}
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start h-8 px-3 text-xs font-normal hover:bg-muted/50"
+                onClick={() => setOtherAreaTarget({ type: "project", id: project.id, name: project.name })}
+                data-testid={`${testIdPrefix}-button-other-quest-${project.id}`}
+              >
+                {project.name}
+              </Button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Default view: skills already scoped to the current area/quest, plus the "Otra área" escape hatch
+  return (
+    <div
+      className="max-h-56 overflow-y-auto overscroll-contain touch-pan-y"
+      style={{ WebkitOverflowScrolling: "touch" }}
+      onWheel={(e) => e.stopPropagation()}
+      onTouchMove={(e) => e.stopPropagation()}
+    >
+      {/* Legacy skills (only those associated with this area/project) */}
+      {legacySkills.length > 0 && (
+        <div className="space-y-1 mb-2">
+          {legacySkills.map((skillName) => {
+            const optionId = `legacy:${skillName}`;
+            return (
+              <Button
+                key={skillName}
+                variant="ghost"
+                size="sm"
+                className={`w-full justify-start h-8 px-3 text-xs font-normal ${
+                  selectedSkillId === optionId ? "bg-muted text-foreground" : "hover:bg-muted/50"
+                }`}
+                onClick={() => pick(optionId)}
+                data-testid={`${testIdPrefix}-button-select-legacy-${skillName}`}
+              >
+                {skillName}
+              </Button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* GlobalSkills for this area/quest */}
+      {scopedGlobalSkills.length > 0 && (
+        <>
+          <div className="border-t border-muted my-2" />
+          <div className="space-y-1">
+            {/* Parent skills (not subskills) */}
+            {scopedGlobalSkills.filter(s => !s.parentSkillId).map((gSkill) => (
+              <div key={gSkill.id}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={`w-full justify-start h-8 px-3 text-xs font-medium ${
+                    selectedSkillId === gSkill.id ? "bg-muted text-foreground" : "hover:bg-muted/50"
+                  }`}
+                  onClick={() => pick(gSkill.id)}
+                  data-testid={`${testIdPrefix}-button-select-skill-${gSkill.id}`}
+                >
+                  {gSkill.name}
+                  <span className="ml-auto text-muted-foreground">Lv.{gSkill.level}</span>
+                </Button>
+                {/* Subskills of this parent */}
+                {scopedGlobalSkills
+                  .filter(s => s.parentSkillId === gSkill.id)
+                  .map((subSkill) => (
+                    <Button
+                      key={subSkill.id}
+                      variant="ghost"
+                      size="sm"
+                      className={`w-full justify-start h-7 px-3 pl-6 text-xs font-normal ${
+                        selectedSkillId === subSkill.id ? "bg-muted text-foreground" : "hover:bg-muted/50 text-muted-foreground"
+                      }`}
+                      onClick={() => pick(subSkill.id)}
+                      data-testid={`${testIdPrefix}-button-select-subskill-${subSkill.id}`}
+                    >
+                      ↳ {subSkill.name}
+                      <span className="ml-auto">Lv.{subSkill.level}</span>
+                    </Button>
+                  ))
+                }
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      <div className="border-t border-muted my-2" />
+      <Button
+        variant="ghost"
+        size="sm"
+        className="w-full justify-start h-8 px-3 text-xs font-normal text-muted-foreground hover:bg-muted/50"
+        onClick={() => setBrowsingOtherAreas(true)}
+        data-testid={`${testIdPrefix}-button-other-area`}
+      >
+        Otra área
+      </Button>
+    </div>
+  );
+}
+
 interface SkillNodeProps {
   skill: Skill;
   areaColor: string;
@@ -183,7 +445,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     skill.levelPosition === Math.max(...skillsInLevel.map(s => s.levelPosition || 0));
   
   // Star is active only when endOfAreaLevel is set to this level
-  // isFinalNode: 1 is just an identifier (always on Node 5), not the control
+  // isFinalNode: 1 is just an identifier (always on Node 6), not the control
   //
   // Sub-skill trees don't have a user-togglable "end" the way areas/projects do
   // (endOfAreaLevel isn't a real column on skills, so it never persisted there --
@@ -405,7 +667,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   // Step 3 of the title-long-press edit dialog (xp/fuerza/poderes preview). Picking here only
   // stages a choice -- it must NOT touch the skill's XP, body progress, or power state. Those
   // mutations (and their celebration pop-ups) only run once the node itself gets confirmed
-  // (see applyPendingRewards), so this state is deliberately kept separate from the Journal
+  // (see runConfirmSequence), so this state is deliberately kept separate from the Journal
   // tab's own experienceSelectedSkill/selectedBodyZones/selectedPowerId, which apply immediately.
   // Held in PendingRewardsContext (keyed by skill.id) instead of local useState so the staged
   // choice survives this component unmounting -- which happens on every "page" change, since
@@ -417,6 +679,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     setPendingBodyDimension: setPendingBodyDimensionFor,
     setPendingBodyZones: setPendingBodyZonesFor,
     setPendingPowerId: setPendingPowerIdFor,
+    setPendingLearning: setPendingLearningFor,
+    setPendingTools: setPendingToolsFor,
   } = usePendingRewards();
   const {
     rewardsTab: pendingRewardsTab,
@@ -424,13 +688,19 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     bodyDimension: pendingBodyDimension,
     bodyZones: pendingBodyZones,
     powerId: pendingPowerId,
+    learning: pendingLearning,
+    tools: pendingTools,
   } = getPendingRewards(skill.id);
-  const setPendingRewardsTab = (tab: "experience" | "body" | "powers") => setPendingRewardsTabFor(skill.id, tab);
+  const setPendingRewardsTab = (tab: "experience" | "body" | "powers" | "learning") => setPendingRewardsTabFor(skill.id, tab);
   const setPendingXpSkillId = (xpSkillId: string | null) => setPendingXpSkillIdFor(skill.id, xpSkillId);
   const setPendingBodyDimension = (dimension: BodyDimension) => setPendingBodyDimensionFor(skill.id, dimension);
   const setPendingBodyZones = (update: BodyZone[] | ((prev: BodyZone[]) => BodyZone[])) =>
     setPendingBodyZonesFor(skill.id, update);
   const setPendingPowerId = (powerId: string | null) => setPendingPowerIdFor(skill.id, powerId);
+  const setPendingLearning = (learning: { title: string; sentence: string } | null) => setPendingLearningFor(skill.id, learning);
+  const setPendingTools = (
+    update: Array<{ title: string; sentence: string }> | ((prev: Array<{ title: string; sentence: string }>) => Array<{ title: string; sentence: string }>)
+  ) => setPendingToolsFor(skill.id, update);
   const [showPendingXpSkillSelector, setShowPendingXpSkillSelector] = useState(false);
   const [showPendingBodyZoneSelector, setShowPendingBodyZoneSelector] = useState(false);
 
@@ -444,16 +714,21 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   // toggleSkillStatus en skill-context.tsx). Agregar experiencia a un skill (este archivo)
   // sólo afecta el XP propio del skill, mostrado con showXpPopup más abajo.
 
-  // Cuántos pensamientos/aprendizajes/herramientas hay ya registrados (de todos los skills, no
-  // solo el actual) -- cada tipo lleva su propio conteo, para el pop-up que dispara
-  // handleAddThought/Learning/Tool. staleTime: 0 fuerza un fetch de red siempre (en vez de
-  // confiar en el cache de staleTime: Infinity que usa SkillTree.tsx para su listado global):
-  // ese cache solo se refresca cuando hay una vista con esa query key montada y activa, así que
-  // si el usuario nunca abrió esa vista, el conteo podía quedar desactualizado tras un alta
-  // anterior. Pedirlo siempre fresco es la única forma de garantizar que countBefore sea exacto.
+  // Cuántos pensamientos/aprendizajes/herramientas hay ya registrados para ESTA área/quest
+  // (todos sus nodos, incluidos sub-skill trees -- no mezclado con otras áreas/quests) -- cada
+  // tipo lleva su propio conteo, para el pop-up que dispara
+  // handleAddThought/Learning/LearningNow/Tool. El server resuelve el sub-skill tree vía
+  // getAllSkillIdsInScope. Fuerza su propio fetch de red (staleTime: 0) para garantizar que
+  // countBefore sea exacto incluso si esa query nunca se activó antes.
   const getJournalEntryCount = async (kind: "learnings" | "tools" | "thoughts"): Promise<number> => {
+    const scopeParam = activeAreaId
+      ? `areaId=${activeAreaId}`
+      : activeProjectId
+        ? `projectId=${activeProjectId}`
+        : "";
+    const url = `/api/journal/${kind}${scopeParam ? `?${scopeParam}` : ""}`;
     const entries = await queryClient.fetchQuery<Array<unknown>>({
-      queryKey: [`/api/journal/${kind}`],
+      queryKey: [url],
       staleTime: 0,
     });
     return entries?.length ?? 0;
@@ -543,7 +818,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   });
 
   // Core power unlock/master logic, shared by the Journal tab's immediate "Desbloquear"/"Dominar"
-  // button and by applyPendingRewards.
+  // button and by runConfirmSequence.
   const applyPowerAction = async (power: SkillNodeSourcePower, showPopup: (fn: () => void) => void = (fn) => fn()) => {
     if (power.isUnlocked === 2) return;
 
@@ -671,6 +946,26 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [showXpAnimation, setShowXpAnimation] = useState(false);
   const [animatedXpValue, setAnimatedXpValue] = useState("");
 
+  // "Video game" rise-and-fade flourish played once per staged reward when the node is
+  // confirmed (see runConfirmSequence): each preview line that was staged below the title
+  // flies away, one at a time, immediately followed by its own celebration pop-up. Purely a
+  // cosmetic overlay -- doesn't affect the real title/preview rows, which disappear on their
+  // own the instant their underlying pending state is cleared.
+  const GHOST_FLY_AWAY_MS = 900;
+  const flyingGhostIdRef = useRef(0);
+  const [flyingGhost, setFlyingGhost] = useState<{ id: number; label: string } | null>(null);
+  const playGhostFlyAway = (label: string): Promise<void> => {
+    if (!label) return Promise.resolve();
+    flyingGhostIdRef.current += 1;
+    setFlyingGhost({ id: flyingGhostIdRef.current, label });
+    return new Promise((resolve) => setTimeout(() => { setFlyingGhost(null); resolve(); }, GHOST_FLY_AWAY_MS));
+  };
+  // Learning/tool finalize dialog shown right before a node with a staged learning gets
+  // confirmed -- see runConfirmSequence and the isLearningFinalizeOpen Dialog below.
+  const [isLearningFinalizeOpen, setIsLearningFinalizeOpen] = useState(false);
+  const [finalizeLearningTitle, setFinalizeLearningTitle] = useState("");
+  const [finalizeLearningSentence, setFinalizeLearningSentence] = useState("");
+
   const pendingXpValue = useRef<string>("");
   const prevStatus = useRef<string>(skill.status);
   const wasDialogOpen = useRef(false);
@@ -687,7 +982,15 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
   // Show XP animation when skill becomes mastered
   useEffect(() => {
-    if (prevStatus.current !== "mastered" && skill.status === "mastered" && pendingXpValue.current) {
+    const justConfirmed = prevStatus.current !== "mastered" && skill.status === "mastered";
+    if (justConfirmed) {
+      // Fires off the actual status flip (available -> mastered) landing, not off the click --
+      // toggleSkillStatus/toggleProjectSkillStatus round-trip through a PATCH before the node
+      // re-renders as confirmed, so playing this at click time made the sound land noticeably
+      // before the node visually looked confirmed.
+      playNodeConfirmedSound();
+    }
+    if (justConfirmed && pendingXpValue.current) {
       setAnimatedXpValue(pendingXpValue.current);
       setShowXpAnimation(true);
       setTimeout(() => {
@@ -880,15 +1183,17 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     }
   };
 
-  const handleAddLearning = async () => {
-    console.log("[handleAddLearning] Called", {
+  // Always creates the learning right away -- used by the node long-press Journal's own
+  // "New Learning" button (step 2): that entry point registers immediately, it never stages.
+  const handleAddLearningNow = async () => {
+    console.log("[handleAddLearningNow] Called", {
       learningTitle: learningTitle.trim(),
       learningSentence: learningSentence.trim(),
       skillId: skill.id,
     });
-    
+
     if (!learningTitle.trim()) {
-      console.log("[handleAddLearning] Title is empty, returning");
+      console.log("[handleAddLearningNow] Title is empty, returning");
       return;
     }
 
@@ -901,7 +1206,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       sentence: learningSentence.trim(),
       skillId: skill.id
     };
-    console.log("[handleAddLearning] Calling mutation with:", payload);
+    console.log("[handleAddLearningNow] Calling mutation with:", payload);
 
     try {
       const countBefore = await getJournalEntryCount("learnings");
@@ -914,15 +1219,44 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     }
   };
 
+  // Step 3 (title long-press) only: stages the learning until the node gets confirmed (see
+  // runConfirmSequence), so it's not saved to the server nor counted in the Quest Diary until
+  // then. Replaces any previously staged draft -- only one learning can be in flight per node
+  // at a time. Falls back to registering right away (same as handleAddLearningNow) once the
+  // node is already mastered, since there's no future confirm left to hook into.
+  const handleAddLearning = async () => {
+    if (!learningTitle.trim()) {
+      return;
+    }
+
+    if (skill.status === "available") {
+      setPendingLearning({ title: learningTitle.trim(), sentence: learningSentence.trim() });
+      setLearningTitle("");
+      setLearningSentence("");
+      return;
+    }
+
+    await handleAddLearningNow();
+  };
+
   const handleAddTool = async () => {
     console.log("[handleAddTool] Called", {
       toolTitle: toolTitle.trim(),
       toolSentence: toolSentence.trim(),
       skillId: skill.id,
     });
-    
+
     if (!toolTitle.trim()) {
       console.log("[handleAddTool] Title is empty, returning");
+      return;
+    }
+
+    // Same staging as handleAddLearning above, but tools accumulate as a list instead of
+    // replacing -- a node can reasonably pick up more than one tool before being confirmed.
+    if (skill.status === "available") {
+      setPendingTools((prev) => [...prev, { title: toolTitle.trim(), sentence: toolSentence.trim() }]);
+      setToolTitle("");
+      setToolSentence("");
       return;
     }
 
@@ -949,7 +1283,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   };
 
   // Core XP-gain logic, shared by the Journal tab's immediate "+ Experience" button and by
-  // applyPendingRewards (which runs it later, once the node is actually confirmed). `showPopup`
+  // runConfirmSequence (which runs it later, once the node is actually confirmed). `showPopup`
   // lets callers stagger the XP celebration pop-up against other pop-ups firing in the same
   // batch; when omitted it fires immediately, matching the old inline behavior.
   const applyExperienceGain = async (skillId: string, showPopup: (fn: () => void) => void = (fn) => fn()) => {
@@ -1033,8 +1367,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       return;
     }
 
-    // GlobalSkill flow
-    const currentSkill = availableGlobalSkills.find(s => s.id === skillId);
+    // GlobalSkill flow -- looked up against the full globalSkills list (not just
+    // availableGlobalSkills) since "Otra área" lets skillId belong to a different area/quest
+    // than the one currently active.
+    const currentSkill = globalSkills.find(s => s.id === skillId);
     const globalSnapshot = buildSnapshot(
       currentSkill?.name || skillId,
       currentSkill?.currentXp || 0,
@@ -1076,7 +1412,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   };
 
   // Core fuerza/flex-gain logic, shared by the Journal tab's immediate "Agregar fuerza" button
-  // and by applyPendingRewards. One block is added per chosen zone; `showPopup` lets callers
+  // and by runConfirmSequence. One block is added per chosen zone; `showPopup` lets callers
   // stagger each zone's celebration pop-up (defaults to the original immediate + 1800ms-apart
   // behavior when omitted).
   const applyBodyGain = (
@@ -1106,54 +1442,154 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     setSelectedBodyZones([]);
   };
 
-  // Whatever was picked in Step 3 (xp/fuerza/poderes) of the title-long-press edit dialog is
-  // only a preview until this runs -- it fires once, right when the node itself gets confirmed
-  // (available -> mastered), and is what actually grants the XP/body progress/power and shows
-  // their celebration pop-ups.
-  const hasPendingRewards = !!pendingXpSkillId || pendingBodyZones.length > 0 || !!pendingPowerId;
+  // Whatever was picked in Step 3 (xp/fuerza/poderes/aprendizaje) of the title-long-press edit
+  // dialog, or staged from the node long-press Journal's Learnings/Tools tabs, is only a
+  // preview until this runs -- it fires once, right when the node itself gets confirmed
+  // (available -> mastered), and is what actually creates the learning/tools, grants the
+  // XP/body progress/power, and shows their celebration pop-ups (see runConfirmSequence below).
+  const hasPendingRewards = !!pendingXpSkillId || pendingBodyZones.length > 0 || !!pendingPowerId || !!pendingLearning || pendingTools.length > 0;
   // Human-readable labels for the pending-rewards subtitle shown under the node title.
   const pendingXpSkillName = pendingXpSkillId
     ? (pendingXpSkillId.startsWith("legacy:")
         ? pendingXpSkillId.replace("legacy:", "")
-        : (availableGlobalSkills.find(s => s.id === pendingXpSkillId)?.name ?? null))
+        : (globalSkills.find(s => s.id === pendingXpSkillId)?.name ?? null))
     : null;
   const pendingPowerName = pendingSelectedPower?.name ?? null;
 
-  const applyPendingRewards = async () => {
-    // Opens the popup chain synchronously, before any of the awaits below, so anything that
-    // reacts to node-confirmation asynchronously elsewhere (the today-progress pop-up, the
-    // node's own "quest updated" pop-up in skill-context.tsx) knows right away that it has to
-    // wait its turn instead of racing ahead of these.
+  interface ConfirmRewardBlock {
+    label: string;
+    run: (enqueue: (fn: () => void) => void) => Promise<void> | void;
+  }
+
+  // Runs the full "node confirmed" reward sequence: each staged reward is granted one at a
+  // time -- its own preview line flies away, its celebration pop-up(s) show, then the next.
+  // `learningOverride` carries whatever was just edited in the "Terminar aprendizaje" dialog
+  // (title/description can differ from what was originally staged in the Journal/Step 3), and
+  // is used instead of the raw staged draft when present.
+  const runConfirmSequence = async (learningOverride?: { title: string; sentence: string }) => {
+    // Opens the popup chain FIRST, synchronously, before anything else below (including the
+    // busy-wait right after) -- confirmNode calls onClick() then this in the same tick, so this
+    // runs synchronously right alongside skill-context.tsx's own synchronous busy-gate claim for
+    // the area/quest "progress bar filling up" pop-up. Anything that reacts to node-confirmation
+    // asynchronously elsewhere (the today-progress pop-up, "Quest updated!", the final-node
+    // "¡Subiste de nivel!" banner) checks hasPendingPopupChain() and knows from this very first
+    // instant that it has to wait its turn, instead of only finding out once this function
+    // actually gets around to processing a reward block -- which used to leave a small gap
+    // (between the area pop-up's placeholder busy claim expiring and this chain opening) where
+    // those could race ahead and show before the reward sequence even started.
     beginPopupChain();
 
-    // Each mutation below resolves at its own pace; collect one synchronous "show this pop-up"
-    // task per reward as they finish, then hand the whole batch to runPopupQueue so it can play
-    // them back one at a time (never overlapped), respecting whatever else may already be busy.
-    const tasks: Array<() => void> = [];
-    const enqueue = (fn: () => void) => tasks.push(fn);
-
-    if (pendingXpSkillId) {
-      const skillId = pendingXpSkillId;
-      setPendingXpSkillId(null);
-      await applyExperienceGain(skillId, enqueue);
+    // The node confirm itself (the onClick() call in confirmNode, which runs just before this)
+    // may already be showing the area/quest "progress bar filling up" pop-up -- see the
+    // synchronous markPopupActive + beginPopupChain claim in skill-context.tsx. That one always
+    // has to play first, so if it's busy right now, wait for it to clear before doing anything
+    // else here (its own matching endPopupChain is what lets this busy-wait resolve).
+    if (getPopupBusyDelay() > 0) {
+      await new Promise<void>((resolve) => setTimeout(resolve, getPopupBusyDelay() + 150));
     }
 
-    if (pendingBodyZones.length > 0) {
-      const dimension = pendingBodyDimension;
-      const zones = pendingBodyZones;
-      setPendingBodyZones([]);
-      applyBodyGain(dimension, zones, enqueue);
+    // Snapshot + clear every staged reward up front. The real preview row disappears
+    // immediately (as it always has) the moment its state is cleared; the ghost flourish
+    // below is what gives the player something to actually watch fly away, instead of it
+    // just vanishing.
+    const learning = learningOverride ?? pendingLearning;
+    const tools = pendingTools;
+    const xpSkillId = pendingXpSkillId;
+    const bodyDimension = pendingBodyDimension;
+    const bodyZones = pendingBodyZones;
+    const powerId = pendingPowerId;
+    setPendingLearning(null);
+    setPendingTools([]);
+    setPendingXpSkillId(null);
+    setPendingBodyZones([]);
+    setPendingPowerId(null);
+
+    // Same order the preview lines are rendered below the title (learning, tools, xp, body,
+    // power) -- that's also the order the ghost flourish + celebration pop-ups play in.
+    const blocks: ConfirmRewardBlock[] = [];
+
+    if (learning) {
+      blocks.push({
+        label: `+Aprendizaje: ${learning.title}`,
+        run: async (enqueue) => {
+          const countBefore = await getJournalEntryCount("learnings");
+          await createLearning.mutateAsync({ title: learning.title, sentence: learning.sentence, skillId: skill.id });
+          enqueue(() => showInsightsCounterPopup({ type: "learning", countBefore, countAfter: countBefore + 1 }));
+        },
+      });
     }
 
-    if (pendingPowerId) {
-      const power = sourcePowers.find((p) => p.id === pendingPowerId) || null;
-      setPendingPowerId(null);
+    if (tools.length > 0) {
+      blocks.push({
+        label: `+${tools.length} tool${tools.length > 1 ? "s" : ""}`,
+        run: async (enqueue) => {
+          for (const tool of tools) {
+            const countBefore = await getJournalEntryCount("tools");
+            await createTool.mutateAsync({ title: tool.title, sentence: tool.sentence, skillId: skill.id });
+            enqueue(() => showInsightsCounterPopup({ type: "tool", countBefore, countAfter: countBefore + 1 }));
+          }
+        },
+      });
+    }
+
+    if (xpSkillId) {
+      blocks.push({
+        label: `+${FIXED_XP_AMOUNT}xp${pendingXpSkillName ? ` ${pendingXpSkillName}` : ""}`,
+        run: (enqueue) => applyExperienceGain(xpSkillId, enqueue),
+      });
+    }
+
+    if (bodyZones.length > 0) {
+      blocks.push({
+        label: `+${bodyDimension === "fuerza" ? "Fuerza" : "Flexibilidad"}`,
+        run: (enqueue) => { applyBodyGain(bodyDimension, bodyZones, enqueue); },
+      });
+    }
+
+    if (powerId) {
+      const power = sourcePowers.find((p) => p.id === powerId) || null;
       if (power) {
-        await applyPowerAction(power, enqueue);
+        blocks.push({
+          label: `+${power.name}`,
+          run: (enqueue) => applyPowerAction(power, enqueue),
+        });
       }
     }
 
-    runPopupQueue(tasks, endPopupChain);
+    if (blocks.length === 0) {
+      endPopupChain();
+      return;
+    }
+
+    // Each block's own preview line flies away at the same time its pop-up(s) show and grow
+    // (the "título de xp" rising/fading while the skill's own XP bar fills), instead of the
+    // ghost finishing first and only then handing off to the pop-up -- no leftover artifact
+    // needs cleaning up afterward either way, since nothing is skipped. Wrapped in try/finally
+    // so a failed mutation (e.g. a dropped request while creating the learning) can't leave the
+    // popup chain stuck open forever -- which would otherwise silently block "Quest updated!"
+    // /the area pop-up/the level-up banner for every confirm from then on.
+    try {
+      for (const block of blocks) {
+        try {
+          const tasks: Array<() => void> = [];
+          await Promise.all([
+            playGhostFlyAway(block.label),
+            (async () => {
+              await block.run((fn) => tasks.push(fn));
+              await runPopupQueueAsync(tasks);
+            })(),
+          ]);
+        } catch (error) {
+          console.error("[runConfirmSequence] Reward block failed:", block.label, error);
+        }
+        const delay = getPopupBusyDelay();
+        if (delay > 0) {
+          await new Promise((resolve) => setTimeout(resolve, delay + 150));
+        }
+      }
+    } finally {
+      endPopupChain();
+    }
   };
 
   const handleTitleLongPressStart = (e: React.TouchEvent | React.MouseEvent) => {
@@ -1335,8 +1771,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
           detail: { skillName: legacySkillName, currentXp: skills[legacySkillName].currentXp }
         }));
       } else {
-        // GlobalSkill flow
-        const currentSkill = availableGlobalSkills.find(s => s.id === experienceSelectedSkill);
+        // GlobalSkill flow (looked up against the full globalSkills list -- see applyExperienceGain)
+        const currentSkill = globalSkills.find(s => s.id === experienceSelectedSkill);
         const oldLevel = currentSkill?.level || 1;
         
         try {
@@ -1458,6 +1894,38 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     }
   };
 
+  // Actually confirms the node (calls the parent's onClick, which flips available -> mastered
+  // in skill-context.tsx), running the staged-rewards sequence first if there's anything to
+  // grant. `learningOverride` is threaded straight through to runConfirmSequence -- see there.
+  // The confirmation sound isn't played here -- see the skill.status effect above, which fires
+  // once the status actually lands as "mastered" instead of at click time (toggleSkillStatus
+  // below is an async PATCH round-trip, so playing here made the sound land noticeably before
+  // the node visually looked confirmed).
+  const confirmNode = (learningOverride?: { title: string; sentence: string }) => {
+    // onClick() first: it's what runs skill-context.tsx's toggleSkillStatus, which -- for a
+    // regular confirm -- synchronously claims the busy-gate for the area/quest "progress bar
+    // filling up" pop-up before returning here. runConfirmSequence checks that busy-gate as
+    // its very first step, so calling onClick() before it is what guarantees that pop-up
+    // always gets to play first, ahead of our own staged-reward sequence.
+    onClick();
+    if (hasPendingRewards) {
+      runConfirmSequence(learningOverride);
+    }
+  };
+
+  const handleLearningFinalizeConfirm = () => {
+    const finalTitle = finalizeLearningTitle.trim() || pendingLearning?.title || "";
+    const finalSentence = finalizeLearningSentence.trim();
+    setIsLearningFinalizeOpen(false);
+    confirmNode({ title: finalTitle, sentence: finalSentence });
+  };
+
+  const handleLearningFinalizeCancel = () => {
+    // Just closes the dialog -- the node stays "available" and the staged learning stays
+    // staged, so the player can pick this up again later without losing the draft.
+    setIsLearningFinalizeOpen(false);
+  };
+
   const handleClick = (e: React.MouseEvent) => {
     if (isInicioNode) return; // "inicio" nodes are not interactive
     if (skill.isAutoComplete === 1 || skill.levelPosition === 1) return; // Node 1 is not clickable
@@ -1509,12 +1977,18 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     }
 
     console.log(`[SkillNode] onClick triggered for skill "${skill.title}" (id: ${skill.id})`);
-    // This click is what confirms the node (available -> mastered): grant any XP/fuerza/power
-    // staged in the edit dialog's Step 3 now, not before.
-    if (skill.status === "available" && hasPendingRewards) {
-      applyPendingRewards();
+    // This click is what confirms the node (available -> mastered). If there's a learning
+    // staged for this node, finish writing it (title/description) in the "Terminar
+    // aprendizaje" dialog before actually confirming -- see the Dialog below and
+    // handleLearningFinalizeConfirm. Otherwise confirm right away, granting whatever else
+    // (XP/fuerza/poder/tools) was staged in Step 3 / the Journal.
+    if (skill.status === "available" && pendingLearning) {
+      setFinalizeLearningTitle(pendingLearning.title);
+      setFinalizeLearningSentence(pendingLearning.sentence);
+      setIsLearningFinalizeOpen(true);
+      return;
     }
-    onClick();
+    confirmNode();
   };
 
   const handleMouseDown = () => {
@@ -1706,7 +2180,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             isMastered && "text-foreground",
             (skill.title.startsWith("Nodo ") || skill.title === "Next challenge" || skill.title === "Next objetive quest" || skill.title === "Objective quest") && "text-muted-foreground/60"
           )}>
-            <div className="flex flex-col">
+            <div className="flex flex-col relative">
               <motion.span
                 onClick={handleTitleClick}
                 onTouchStart={handleTitleLongPressStart}
@@ -1742,11 +2216,19 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                   {plannedDurationLabel && <span className="whitespace-nowrap">{plannedDurationLabel}</span>}
                 </div>
               )}
-              {/* Preview of whatever was picked in Step 3 of the edit dialog (xp/fuerza/poder).
-                  Shown the same way the planned date/time is, above -- it's only staged here;
-                  it doesn't get granted until this node is actually confirmed. */}
+              {/* Preview of whatever was staged for this node -- a learning/tools from the
+                  Journal (long-press the node), or xp/fuerza/poder/aprendizaje from Step 3 of
+                  the title-long-press edit dialog. Shown the same way the planned date/time is,
+                  above -- none of it is granted/saved until this node is actually confirmed
+                  (see runConfirmSequence), in the same order as it's listed here. */}
               {skill.isAutoComplete !== 1 && skill.levelPosition !== 1 && !isInicioNode && !isMastered && hasPendingRewards && (
                 <div className="flex items-center gap-1 flex-wrap font-normal italic tracking-wide text-muted-foreground/70 text-[10px] leading-tight">
+                  {pendingLearning && (
+                    <span className="whitespace-nowrap">+Aprendizaje: {pendingLearning.title}</span>
+                  )}
+                  {pendingTools.length > 0 && (
+                    <span className="whitespace-nowrap">+{pendingTools.length} tool{pendingTools.length > 1 ? "s" : ""}</span>
+                  )}
                   {pendingXpSkillId && (
                     <span className="whitespace-nowrap">+{FIXED_XP_AMOUNT}xp{pendingXpSkillName ? ` ${pendingXpSkillName}` : ""}</span>
                   )}
@@ -1760,6 +2242,23 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                   )}
                 </div>
               )}
+              {/* Rise-and-fade "collected" ghost, played one at a time by runConfirmSequence:
+                  each staged-reward line above flies away, immediately followed by its own
+                  celebration pop-up. Purely a cosmetic overlay on top of the preview rows --
+                  those disappear on their own instantly once confirmed, same as always. */}
+              <AnimatePresence>
+                {flyingGhost && (
+                  <motion.div
+                    key={flyingGhost.id}
+                    className="absolute left-0 top-0 whitespace-nowrap pointer-events-none select-none font-medium text-sm text-foreground"
+                    initial={{ opacity: 1, y: 0 }}
+                    animate={{ opacity: 0, y: -30 }}
+                    transition={{ duration: GHOST_FLY_AWAY_MS / 1000, ease: "easeOut" }}
+                  >
+                    {flyingGhost.label}
+                  </motion.div>
+                )}
+              </AnimatePresence>
               {/* Sub-skill tree completion badge: this node's own sub-skill tree is fully
                   mastered. Shown even once this node itself gets confirmed later, since it
                   stays true -- the small circle mirrors the mastered-node circle above. */}
@@ -1956,24 +2455,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                      >
                        Duplicar
                      </Button>
-                     <Button
-                       variant="ghost"
-                       size="sm"
-                       className="h-8 px-2 text-xs bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground"
-                       onClick={() => {
-                         if (isSubSkillView) {
-                           toggleSubSkillLock(skill.id);
-                         } else if (isProject) {
-                           toggleProjectLock(activeId, skill.id);
-                         } else {
-                           toggleLock(activeId, skill.id);
-                         }
-                         setIsOpen(false);
-                       }}
-                       data-testid="button-lock"
-                     >
-                       {skill.manualLock === 1 ? "Desbloquear" : "Bloquear"}
-                     </Button>
                    </div>
                  </PopoverContent>
                </Popover>
@@ -2128,10 +2609,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 </div>
                 <div className="flex justify-end items-center gap-2 pt-2">
                   
-                  <Button 
-                    variant="ghost" 
+                  <Button
+                    variant="ghost"
                     size="sm"
-                    onClick={handleAddLearning}
+                    onClick={handleAddLearningNow}
                     disabled={!learningTitle.trim() || createLearning.isPending}
                     className="bg-muted/50 hover:bg-muted"
                     data-testid="button-new-learning"
@@ -2141,7 +2622,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                   </Button>
                 </div>
               </TabsContent>
-              
+
               <TabsContent value="experience" className="mt-4 space-y-3 flex flex-col flex-1">
                 <div className="flex items-center justify-center gap-2 py-4">
                   <div className="w-24 rounded-md bg-muted/50 px-3 py-2 text-center text-lg font-bold">
@@ -2157,10 +2638,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                       className="bg-muted/50 hover:bg-muted w-full"
                       data-testid="button-select-skill"
                     >
-                      {experienceSelectedSkill 
-                        ? `✓ ${experienceSelectedSkill.startsWith("legacy:") 
-                            ? experienceSelectedSkill.replace("legacy:", "") 
-                            : (availableGlobalSkills.find(s => s.id === experienceSelectedSkill)?.name || "Skill")}` 
+                      {experienceSelectedSkill
+                        ? `✓ ${experienceSelectedSkill.startsWith("legacy:")
+                            ? experienceSelectedSkill.replace("legacy:", "")
+                            : (globalSkills.find(s => s.id === experienceSelectedSkill)?.name || "Skill")}`
                         : "Seleccionar skill"}
                     </Button>
                   </PopoverTrigger>
@@ -2171,92 +2652,25 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                     sideOffset={8}
                     collisionPadding={16}
                   >
-                    <div className="max-h-56 overflow-y-auto">
-                      {/* Legacy skills (only those associated with this area/project) */}
-                      {filteredLegacySkills.length > 0 && (
-                        <div className="space-y-1 mb-2">
-                          {filteredLegacySkills.map((skillName) => (
-                            <Button
-                            key={skillName}
-                            variant="ghost"
-                            size="sm"
-                            className={`w-full justify-start h-8 px-3 text-xs font-normal ${
-                              experienceSelectedSkill === `legacy:${skillName}`
-                                ? "bg-muted text-foreground" 
-                                : "hover:bg-muted/50"
-                            }`}
-                            onClick={() => {
-                              setExperienceSelectedSkill(`legacy:${skillName}`);
-                              setShowExperienceSkillSelector(false);
-                            }}
-                              data-testid={`button-select-legacy-${skillName}`}
-                            >
-                              {skillName}
-                            </Button>
-                          ))}
-                        </div>
-                      )}
-                      
-                      {/* GlobalSkills for this area/quest */}
-                      {availableGlobalSkills.length > 0 && (
-                        <>
-                          <div className="border-t border-muted my-2" />
-                          <div className="space-y-1">
-                            {/* Parent skills (not subskills) */}
-                            {availableGlobalSkills.filter(s => !s.parentSkillId).map((gSkill) => (
-                              <div key={gSkill.id}>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className={`w-full justify-start h-8 px-3 text-xs font-medium ${
-                                    experienceSelectedSkill === gSkill.id 
-                                      ? "bg-muted text-foreground" 
-                                      : "hover:bg-muted/50"
-                                  }`}
-                                  onClick={() => {
-                                    setExperienceSelectedSkill(gSkill.id);
-                                    setShowExperienceSkillSelector(false);
-                                  }}
-                                  data-testid={`button-select-skill-${gSkill.id}`}
-                                >
-                                  {gSkill.name}
-                                  <span className="ml-auto text-muted-foreground">Lv.{gSkill.level}</span>
-                                </Button>
-                                {/* Subskills of this parent */}
-                                {availableGlobalSkills
-                                  .filter(s => s.parentSkillId === gSkill.id)
-                                  .map((subSkill) => (
-                                    <Button
-                                      key={subSkill.id}
-                                    variant="ghost"
-                                    size="sm"
-                                    className={`w-full justify-start h-7 px-3 pl-6 text-xs font-normal ${
-                                      experienceSelectedSkill === subSkill.id 
-                                        ? "bg-muted text-foreground" 
-                                        : "hover:bg-muted/50 text-muted-foreground"
-                                    }`}
-                                    onClick={() => {
-                                      setExperienceSelectedSkill(subSkill.id);
-                                      setShowExperienceSkillSelector(false);
-                                    }}
-                                    data-testid={`button-select-subskill-${subSkill.id}`}
-                                  >
-                                    ↳ {subSkill.name}
-                                    <span className="ml-auto">Lv.{subSkill.level}</span>
-                                  </Button>
-                                ))
-                              }
-                            </div>
-                          ))}
-                        </div>
-                        </>
-                      )}
-                    </div>
+                    <SkillPickerList
+                      selectedSkillId={experienceSelectedSkill}
+                      onSelect={setExperienceSelectedSkill}
+                      onClose={() => setShowExperienceSkillSelector(false)}
+                      legacySkills={filteredLegacySkills}
+                      scopedGlobalSkills={availableGlobalSkills}
+                      areas={areas}
+                      projects={projects}
+                      currentAreaId={activeAreaId}
+                      currentProjectId={activeProjectId}
+                      getGlobalSkillsForArea={getGlobalSkillsForArea}
+                      getGlobalSkillsForProject={getGlobalSkillsForProject}
+                      testIdPrefix="feedback"
+                    />
                   </PopoverContent>
                 </Popover>
                 <div className="flex justify-end items-center gap-2 pt-4">
-                  <Button 
-                    variant="ghost" 
+                  <Button
+                    variant="ghost"
                     size="sm"
                     onClick={handleAddExperience}
                     disabled={!experienceSelectedSkill}
@@ -2943,11 +3357,11 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 transition={{ duration: 0.2 }}
                 className="flex-1 flex flex-col"
               >
-                <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-1 block">PASO 3: XP, Fuerza y Poderes</Label>
+                <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-1 block">PASO 3: XP, Fuerza, Poderes y Aprendizaje</Label>
                 <p className="text-[11px] text-muted-foreground/70 mb-2">Se sumará recién al confirmar el nodo</p>
 
-                <Tabs value={pendingRewardsTab} onValueChange={(v) => setPendingRewardsTab(v as "experience" | "body" | "powers")} className="w-full flex flex-col flex-1">
-                  <TabsList className="w-full grid grid-cols-3 bg-muted/50">
+                <Tabs value={pendingRewardsTab} onValueChange={(v) => setPendingRewardsTab(v as "experience" | "body" | "powers" | "learning")} className="w-full flex flex-col flex-1">
+                  <TabsList className="w-full grid grid-cols-4 bg-muted/50">
                     <TabsTrigger value="experience" className="text-xs" data-testid="step3-tab-experience">
                       <span className="text-xs font-bold mr-1">XP</span>
                     </TabsTrigger>
@@ -2958,6 +3372,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                     <TabsTrigger value="powers" className="text-xs" data-testid="step3-tab-powers">
                       <Zap className="h-3 w-3 mr-1" />
                       Poderes
+                    </TabsTrigger>
+                    <TabsTrigger value="learning" className="text-xs" data-testid="step3-tab-learning">
+                      <Lightbulb className="h-3 w-3 mr-1" />
+                      Aprendizaje
                     </TabsTrigger>
                   </TabsList>
 
@@ -2979,7 +3397,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                           {pendingXpSkillId
                             ? `✓ ${pendingXpSkillId.startsWith("legacy:")
                                 ? pendingXpSkillId.replace("legacy:", "")
-                                : (availableGlobalSkills.find(s => s.id === pendingXpSkillId)?.name || "Skill")}`
+                                : (globalSkills.find(s => s.id === pendingXpSkillId)?.name || "Skill")}`
                             : "Seleccionar skill"}
                         </Button>
                       </PopoverTrigger>
@@ -2990,89 +3408,20 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                         sideOffset={8}
                         collisionPadding={16}
                       >
-                        <div className="max-h-56 overflow-y-auto">
-                          {/* Legacy skills (only those associated with this area/project) */}
-                          {filteredLegacySkills.length > 0 && (
-                            <div className="space-y-1 mb-2">
-                              {filteredLegacySkills.map((skillName) => {
-                                const optionId = `legacy:${skillName}`;
-                                const isSelected = pendingXpSkillId === optionId;
-                                return (
-                                  <Button
-                                    key={skillName}
-                                    variant="ghost"
-                                    size="sm"
-                                    className={`w-full justify-start h-8 px-3 text-xs font-normal ${
-                                      isSelected ? "bg-muted text-foreground" : "hover:bg-muted/50"
-                                    }`}
-                                    onClick={() => {
-                                      setPendingXpSkillId(isSelected ? null : optionId);
-                                      setShowPendingXpSkillSelector(false);
-                                    }}
-                                    data-testid={`step3-button-select-legacy-${skillName}`}
-                                  >
-                                    {skillName}
-                                  </Button>
-                                );
-                              })}
-                            </div>
-                          )}
-
-                          {/* GlobalSkills for this area/quest */}
-                          {availableGlobalSkills.length > 0 && (
-                            <>
-                              <div className="border-t border-muted my-2" />
-                              <div className="space-y-1">
-                                {/* Parent skills (not subskills) */}
-                                {availableGlobalSkills.filter(s => !s.parentSkillId).map((gSkill) => (
-                                  <div key={gSkill.id}>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className={`w-full justify-start h-8 px-3 text-xs font-medium ${
-                                        pendingXpSkillId === gSkill.id
-                                          ? "bg-muted text-foreground"
-                                          : "hover:bg-muted/50"
-                                      }`}
-                                      onClick={() => {
-                                        setPendingXpSkillId(pendingXpSkillId === gSkill.id ? null : gSkill.id);
-                                        setShowPendingXpSkillSelector(false);
-                                      }}
-                                      data-testid={`step3-button-select-skill-${gSkill.id}`}
-                                    >
-                                      {gSkill.name}
-                                      <span className="ml-auto text-muted-foreground">Lv.{gSkill.level}</span>
-                                    </Button>
-                                    {/* Subskills of this parent */}
-                                    {availableGlobalSkills
-                                      .filter(s => s.parentSkillId === gSkill.id)
-                                      .map((subSkill) => (
-                                        <Button
-                                          key={subSkill.id}
-                                          variant="ghost"
-                                          size="sm"
-                                          className={`w-full justify-start h-7 px-3 pl-6 text-xs font-normal ${
-                                            pendingXpSkillId === subSkill.id
-                                              ? "bg-muted text-foreground"
-                                              : "hover:bg-muted/50 text-muted-foreground"
-                                          }`}
-                                          onClick={() => {
-                                            setPendingXpSkillId(pendingXpSkillId === subSkill.id ? null : subSkill.id);
-                                            setShowPendingXpSkillSelector(false);
-                                          }}
-                                          data-testid={`step3-button-select-subskill-${subSkill.id}`}
-                                        >
-                                          ↳ {subSkill.name}
-                                          <span className="ml-auto">Lv.{subSkill.level}</span>
-                                        </Button>
-                                      ))
-                                    }
-                                  </div>
-                                ))}
-                              </div>
-                            </>
-                          )}
-                        </div>
+                        <SkillPickerList
+                          selectedSkillId={pendingXpSkillId}
+                          onSelect={setPendingXpSkillId}
+                          onClose={() => setShowPendingXpSkillSelector(false)}
+                          legacySkills={filteredLegacySkills}
+                          scopedGlobalSkills={availableGlobalSkills}
+                          areas={areas}
+                          projects={projects}
+                          currentAreaId={activeAreaId}
+                          currentProjectId={activeProjectId}
+                          getGlobalSkillsForArea={getGlobalSkillsForArea}
+                          getGlobalSkillsForProject={getGlobalSkillsForProject}
+                          testIdPrefix="step3"
+                        />
                       </PopoverContent>
                     </Popover>
                   </TabsContent>
@@ -3182,6 +3531,33 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                       )}
                     </div>
                   </TabsContent>
+
+                  <TabsContent value="learning" className="mt-4 space-y-3 flex flex-col flex-1">
+                    {pendingLearning && (
+                      <p className="text-[11px] text-muted-foreground">
+                        ✓ Aprendizaje en espera: <span className="font-medium text-foreground">{pendingLearning.title}</span>
+                      </p>
+                    )}
+                    <div className="flex-1">
+                      <Input
+                        placeholder="TITLE"
+                        value={learningTitle}
+                        onChange={(e) => setLearningTitle(e.target.value.toUpperCase())}
+                        className="uppercase border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
+                        data-testid="step3-input-learning-title"
+                      />
+                      <Input
+                        placeholder="Description"
+                        value={learningSentence}
+                        onChange={(e) => setLearningSentence(e.target.value)}
+                        className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted mt-2"
+                        data-testid="step3-input-learning-sentence"
+                      />
+                    </div>
+                    <p className="text-[11px] text-muted-foreground/70">
+                      Queda registrado debajo del título del nodo al presionar Guardar.
+                    </p>
+                  </TabsContent>
                 </Tabs>
 
                 <div className="flex justify-between mt-auto pt-4">
@@ -3195,7 +3571,15 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                     <ChevronLeft className="h-5 w-5" />
                   </Button>
                   <Button
-                    onClick={() => setIsEditDialogOpen(false)}
+                    onClick={async () => {
+                      // The Aprendizaje tab no longer has its own "add" button -- typing a
+                      // title there and pressing this Guardar is what stages it (shown below
+                      // the node title, same as the other Step 3 tabs).
+                      if (learningTitle.trim()) {
+                        await handleAddLearning();
+                      }
+                      setIsEditDialogOpen(false);
+                    }}
                     disabled={!editTitle.trim()}
                     className="border-0"
                     data-testid="button-save-edit"
@@ -3208,6 +3592,52 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
           </AnimatePresence>
         </div>
+      </DialogContent>
+    </Dialog>
+
+    {/* Shown right before a node with a staged learning gets confirmed (see handleClick /
+        confirmNode): lets the player finish writing the learning -- title and description --
+        before it's actually created and shown in the growth/counter pop-up sequence. Only
+        appears when there's something staged; otherwise the node confirms straight away. */}
+    <Dialog open={isLearningFinalizeOpen} onOpenChange={(open) => { if (!open) handleLearningFinalizeCancel(); }}>
+      <DialogContent className="sm:max-w-[400px] border-0 shadow-2xl">
+        <DialogHeader>
+          <DialogTitle className="text-lg font-medium">Terminar aprendizaje</DialogTitle>
+          <DialogDescription className="text-xs text-muted-foreground">
+            Completá la descripción y, si querés, editá el título antes de registrarlo en el Quest Diary.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-1 block">Título</Label>
+            <Input
+              value={finalizeLearningTitle}
+              onChange={(e) => setFinalizeLearningTitle(e.target.value.toUpperCase())}
+              className="uppercase border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
+              data-testid="input-finalize-learning-title"
+              autoFocus
+            />
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-1 block">Descripción</Label>
+            <Textarea
+              value={finalizeLearningSentence}
+              onChange={(e) => setFinalizeLearningSentence(e.target.value)}
+              placeholder="¿Qué aprendiste?"
+              rows={4}
+              className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+              data-testid="input-finalize-learning-sentence"
+            />
+          </div>
+        </div>
+        <DialogFooter className="flex gap-2 pt-2 sm:justify-between">
+          <Button variant="ghost" onClick={handleLearningFinalizeCancel} className="flex-1 bg-muted/50 hover:bg-muted" data-testid="button-cancel-finalize-learning">
+            Cancelar
+          </Button>
+          <Button onClick={handleLearningFinalizeConfirm} className="flex-1 border-0" data-testid="button-confirm-finalize-learning">
+            Confirmar
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
 

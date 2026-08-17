@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { ChevronUp, ChevronDown, ChevronsUp, ChevronsDown, Lock, Plus, Trash2, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -18,9 +19,11 @@ interface SkillDesignerProps {
 }
 
 export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
-  const { areas, projects, activeAreaId, activeProjectId, updateSkill, updateProjectSkill, updateLevelSubtitle, updateProjectLevelSubtitle, moveSkillToLevel, moveProjectSkillToLevel, reorderSkillWithinLevel, reorderProjectSkillWithinLevel, swapAreaLevels, swapProjectLevels, addExtraAreaLevel, addExtraProjectLevel, deleteAreaLevel, deleteProjectLevel, addSkillBelow, addProjectSkillBelow, deleteSkill, deleteProjectSkill, toggleFinalNode, toggleProjectFinalNode } = useSkillTree();
+  const { areas, projects, activeAreaId, activeProjectId, updateSkill, updateProjectSkill, updateLevelSubtitle, updateProjectLevelSubtitle, moveSkillToLevel, moveProjectSkillToLevel, changeSkillLevel, changeProjectSkillLevel, reorderSkillWithinLevel, reorderProjectSkillWithinLevel, swapAreaLevels, swapProjectLevels, addExtraAreaLevel, addExtraProjectLevel, deleteAreaLevel, deleteProjectLevel, addSkillBelow, addProjectSkillBelow, duplicateSkill, duplicateProjectSkill, deleteSkill, deleteProjectSkill, toggleFinalNode, toggleProjectFinalNode } = useSkillTree();
   const { toast } = useToast();
   const [addingLevelId, setAddingLevelId] = useState<string | null>(null);
+  // Tracks which skill's "add node" popover (Agregar / hermano / duplicar) is open
+  const [openAddMenuSkillId, setOpenAddMenuSkillId] = useState<string | null>(null);
 
   const handleAddExtraLevel = async (areaId: string | null, projectId: string | null) => {
     const key = areaId ?? projectId;
@@ -47,6 +50,8 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
   const [isLockedNode, setIsLockedNode] = useState(false);
   const [editingDescription, setEditingDescription] = useState("");
   const [editingPlannedDuration, setEditingPlannedDuration] = useState<number | null>(null);
+  const [editingTargetLevel, setEditingTargetLevel] = useState<number | null>(null);
+  const [isChangingLevel, setIsChangingLevel] = useState(false);
 
   // Global word limit applied to node titles (here and in the node's own edit dialog)
   const wordLimit = getNodeTitleWordLimit();
@@ -113,7 +118,38 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
     setEditingDescription("");
     setEditingPlannedDuration(null);
     setEditingLevel(null);
+    setEditingTargetLevel(null);
     setIsLockedNode(false);
+  };
+
+  // Move the node currently open in the edit dialog to a different level.
+  // The backend carries its confirmation state across the move: mastered nodes
+  // stay mastered and land first in the target level; everything else (including
+  // the currently unlocked/"available" node, which becomes locked) lands at the
+  // end of the target level.
+  const handleChangeSkillLevel = async () => {
+    if (!editingSkillId || editingTargetLevel === null || isLockedNode || isChangingLevel) return;
+    setIsChangingLevel(true);
+    try {
+      let success = false;
+      if (editingAreaId) {
+        success = await changeSkillLevel(editingAreaId, editingSkillId, editingTargetLevel);
+      } else if (editingProjectId) {
+        success = await changeProjectSkillLevel(editingProjectId, editingSkillId, editingTargetLevel);
+      }
+      if (success) {
+        setEditingSkillId(null);
+        setEditingName("");
+        setEditingDescription("");
+        setEditingPlannedDuration(null);
+        setEditingLevel(null);
+        setEditingTargetLevel(null);
+      } else {
+        toast({ title: "No se pudo mover el nodo de nivel", description: "Intentá de nuevo en unos segundos.", variant: "destructive" });
+      }
+    } finally {
+      setIsChangingLevel(false);
+    }
   };
 
   const handleEditLevelSubtitle = (level: number, currentSubtitle: string, currentDescription: string, areaId: string | null, projectId: string | null) => {
@@ -351,7 +387,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                 </span>
                               </AccordionTrigger>
                             </div>
-                            <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="flex items-center gap-0.5 shrink-0">
                               <Button size="sm" variant="ghost" className="h-7 w-7" disabled={!canSwapUp} onClick={() => handleSwapLevel("up", level, area.id, null)} title="Subir nivel">
                                 <ChevronsUp className="w-4 h-4 text-muted-foreground" />
                               </Button>
@@ -402,6 +438,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                               setEditingAreaId(area.id);
                                               setEditingProjectId(null);
                                               setEditingLevel(level);
+                                              setEditingTargetLevel(null);
                                             }}
                                           >
                                             <div className={cn("text-sm font-medium", displayStatus === "available" && "text-amber-400")}>{!skill.title ? `Nodo ${skill.levelPosition}` : skill.title}</div>
@@ -426,16 +463,29 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                               >
                                                 <ChevronDown className="w-4 h-4" />
                                               </Button>
-                                              <Button
-                                                size="sm"
-                                                variant="ghost"
-                                                disabled={!canAddFromNode(skillsInLevel, skill.id)}
-                                                onClick={() => addSkillBelow(area.id, skill.id, '')}
-                                                className="h-8 w-8"
-                                                title="Añadir nodo debajo"
-                                              >
-                                                <Plus className="w-4 h-4" />
-                                              </Button>
+                                              <Popover open={openAddMenuSkillId === skill.id} onOpenChange={(o) => setOpenAddMenuSkillId(o ? skill.id : null)}>
+                                                <PopoverTrigger asChild>
+                                                  <Button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    disabled={!canAddFromNode(skillsInLevel, skill.id)}
+                                                    className="h-8 w-8"
+                                                    title="Añadir nodo debajo"
+                                                  >
+                                                    <Plus className="w-4 h-4" />
+                                                  </Button>
+                                                </PopoverTrigger>
+                                                <PopoverContent className="w-auto p-1" align="center">
+                                                  <div className="flex flex-col gap-0.5">
+                                                    <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" onClick={() => { addSkillBelow(area.id, skill.id, ''); setOpenAddMenuSkillId(null); }}>
+                                                      Nodo vacío
+                                                    </Button>
+                                                    <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" onClick={() => { duplicateSkill(area.id, skill); setOpenAddMenuSkillId(null); }}>
+                                                      Duplicar nodo
+                                                    </Button>
+                                                  </div>
+                                                </PopoverContent>
+                                              </Popover>
                                               {isLastNodeInLevel(skillsInLevel, skill.id) && (
                                                 <Button
                                                   size="sm"
@@ -538,7 +588,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                   </span>
                                 </AccordionTrigger>
                               </div>
-                              <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <div className="flex items-center gap-0.5 shrink-0">
                                 <Button size="sm" variant="ghost" className="h-7 w-7" disabled={!canSwapUp} onClick={() => handleSwapLevel("up", level, null, project.id)} title="Subir nivel">
                                   <ChevronsUp className="w-4 h-4 text-muted-foreground" />
                                 </Button>
@@ -589,6 +639,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                 setEditingAreaId(null);
                                                 setEditingProjectId(project.id);
                                                 setEditingLevel(level);
+                                                setEditingTargetLevel(null);
                                               }}
                                             >
                                               <div className={cn("text-sm font-medium", displayStatus === "available" && "text-amber-400")}>{!skill.title ? `Nodo ${skill.levelPosition}` : skill.title}</div>
@@ -613,16 +664,29 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                 >
                                                   <ChevronDown className="w-4 h-4" />
                                                 </Button>
-                                                <Button
-                                                  size="sm"
-                                                  variant="ghost"
-                                                  disabled={!canAddFromNode(skillsInLevel, skill.id)}
-                                                  onClick={() => addProjectSkillBelow(project.id, skill.id, '')}
-                                                  className="h-8 w-8"
-                                                  title="Añadir nodo debajo"
-                                                >
-                                                  <Plus className="w-4 h-4" />
-                                                </Button>
+                                                <Popover open={openAddMenuSkillId === skill.id} onOpenChange={(o) => setOpenAddMenuSkillId(o ? skill.id : null)}>
+                                                  <PopoverTrigger asChild>
+                                                    <Button
+                                                      size="sm"
+                                                      variant="ghost"
+                                                      disabled={!canAddFromNode(skillsInLevel, skill.id)}
+                                                      className="h-8 w-8"
+                                                      title="Añadir nodo debajo"
+                                                    >
+                                                      <Plus className="w-4 h-4" />
+                                                    </Button>
+                                                  </PopoverTrigger>
+                                                  <PopoverContent className="w-auto p-1" align="center">
+                                                    <div className="flex flex-col gap-0.5">
+                                                      <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" onClick={() => { addProjectSkillBelow(project.id, skill.id, ''); setOpenAddMenuSkillId(null); }}>
+                                                        Nodo vacío
+                                                      </Button>
+                                                      <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" onClick={() => { duplicateProjectSkill(project.id, skill); setOpenAddMenuSkillId(null); }}>
+                                                        Duplicar nodo
+                                                      </Button>
+                                                    </div>
+                                                  </PopoverContent>
+                                                </Popover>
                                                 {isLastNodeInLevel(skillsInLevel, skill.id) && (
                                                   <Button
                                                     size="sm"
@@ -723,7 +787,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                   </span>
                                 </AccordionTrigger>
                               </div>
-                              <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <div className="flex items-center gap-0.5 shrink-0">
                                 <Button size="sm" variant="ghost" className="h-7 w-7" disabled={!canSwapUp} onClick={() => handleSwapLevel("up", level, null, project.id)} title="Subir nivel">
                                   <ChevronsUp className="w-4 h-4 text-muted-foreground" />
                                 </Button>
@@ -771,6 +835,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                 setEditingAreaId(null);
                                                 setEditingProjectId(project.id);
                                                 setEditingLevel(level);
+                                                setEditingTargetLevel(null);
                                               }}
                                             >
                                               <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{skill.isAutoComplete === 1 || skill.levelPosition === 1 ? "" : (!skill.title ? `Nodo ${skill.levelPosition}` : skill.title)}</div>
@@ -794,16 +859,29 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                   <ChevronDown className="w-4 h-4" />
                                                 </Button>
                                               </div>
-                                              <Button
-                                                size="sm"
-                                                variant="ghost"
-                                                disabled={!canAddFromNode(skillsInLevel, skill.id)}
-                                                onClick={() => addProjectSkillBelow(project.id, skill.id, '')}
-                                                className="h-8 w-8"
-                                                title="Añadir nodo debajo"
-                                              >
-                                                <Plus className="w-4 h-4" />
-                                              </Button>
+                                              <Popover open={openAddMenuSkillId === skill.id} onOpenChange={(o) => setOpenAddMenuSkillId(o ? skill.id : null)}>
+                                                <PopoverTrigger asChild>
+                                                  <Button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    disabled={!canAddFromNode(skillsInLevel, skill.id)}
+                                                    className="h-8 w-8"
+                                                    title="Añadir nodo debajo"
+                                                  >
+                                                    <Plus className="w-4 h-4" />
+                                                  </Button>
+                                                </PopoverTrigger>
+                                                <PopoverContent className="w-auto p-1" align="center">
+                                                  <div className="flex flex-col gap-0.5">
+                                                    <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" onClick={() => { addProjectSkillBelow(project.id, skill.id, ''); setOpenAddMenuSkillId(null); }}>
+                                                      Nodo vacío
+                                                    </Button>
+                                                    <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" onClick={() => { duplicateProjectSkill(project.id, skill); setOpenAddMenuSkillId(null); }}>
+                                                      Duplicar nodo
+                                                    </Button>
+                                                  </div>
+                                                </PopoverContent>
+                                              </Popover>
                                               {isLastNodeInLevel(skillsInLevel, skill.id) && (
                                                 <Button
                                                   size="sm"
@@ -905,7 +983,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                   </span>
                                 </AccordionTrigger>
                               </div>
-                              <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <div className="flex items-center gap-0.5 shrink-0">
                                 <Button size="sm" variant="ghost" className="h-7 w-7" disabled={!canSwapUp} onClick={() => handleSwapLevel("up", level, null, project.id)} title="Subir nivel">
                                   <ChevronsUp className="w-4 h-4 text-muted-foreground" />
                                 </Button>
@@ -948,6 +1026,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                               setEditingAreaId(null);
                                               setEditingProjectId(project.id);
                                               setEditingLevel(level);
+                                              setEditingTargetLevel(null);
                                             }}
                                           >
                                             <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{skill.isAutoComplete === 1 || skill.levelPosition === 1 ? "" : (!skill.title ? `Nodo ${skill.levelPosition}` : skill.title)}</div>
@@ -972,16 +1051,29 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                             >
                                               <ChevronDown className="w-4 h-4" />
                                             </Button>
-                                            <Button
-                                              size="sm"
-                                              variant="ghost"
-                                              disabled={!canAddFromNode(skillsInLevel, skill.id)}
-                                              onClick={() => addProjectSkillBelow(project.id, skill.id, '')}
-                                              className="h-8 w-8"
-                                              title="Añadir nodo debajo"
-                                            >
-                                              <Plus className="w-4 h-4" />
-                                            </Button>
+                                            <Popover open={openAddMenuSkillId === skill.id} onOpenChange={(o) => setOpenAddMenuSkillId(o ? skill.id : null)}>
+                                              <PopoverTrigger asChild>
+                                                <Button
+                                                  size="sm"
+                                                  variant="ghost"
+                                                  disabled={!canAddFromNode(skillsInLevel, skill.id)}
+                                                  className="h-8 w-8"
+                                                  title="Añadir nodo debajo"
+                                                >
+                                                  <Plus className="w-4 h-4" />
+                                                </Button>
+                                              </PopoverTrigger>
+                                              <PopoverContent className="w-auto p-1" align="center">
+                                                <div className="flex flex-col gap-0.5">
+                                                  <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" onClick={() => { addProjectSkillBelow(project.id, skill.id, ''); setOpenAddMenuSkillId(null); }}>
+                                                    Nodo vacío
+                                                  </Button>
+                                                  <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" onClick={() => { duplicateProjectSkill(project.id, skill); setOpenAddMenuSkillId(null); }}>
+                                                    Duplicar nodo
+                                                  </Button>
+                                                </div>
+                                              </PopoverContent>
+                                            </Popover>
                                             {isLastNodeInLevel(skillsInLevel, skill.id) && (
                                               <Button
                                                 size="sm"
@@ -1044,7 +1136,14 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
       </Dialog>
 
       {/* Edit Name Dialog */}
-      <Dialog open={editingSkillId !== null} onOpenChange={(isOpen) => !isOpen && setEditingSkillId(null)}>
+      <Dialog
+        open={editingSkillId !== null}
+        onOpenChange={(isOpen) => {
+          if (isOpen) return;
+          setEditingSkillId(null);
+          setEditingTargetLevel(null);
+        }}
+      >
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>Editar nodo</DialogTitle>
@@ -1090,11 +1189,50 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                     className="w-32"
                   />
                 </div>
+                {(() => {
+                  const parentArea = editingAreaId ? areas.find(a => a.id === editingAreaId) : undefined;
+                  const parentProject = editingProjectId ? projects.find(p => p.id === editingProjectId) : undefined;
+                  const parentSkills = parentArea?.skills ?? parentProject?.skills ?? [];
+                  const maxLevel = parentSkills.length > 0 ? Math.max(...parentSkills.map(s => s.level)) : (editingLevel ?? 1);
+                  const levelOptions: number[] = [];
+                  for (let lvl = 1; lvl <= maxLevel + 3; lvl++) {
+                    if (lvl !== editingLevel) levelOptions.push(lvl);
+                  }
+                  return (
+                    <div className="grid gap-2">
+                      <label className="text-xs text-muted-foreground uppercase tracking-wide">Nivel (actualmente {editingLevel})</label>
+                      <div className="flex items-center gap-2">
+                        <Select
+                          value={editingTargetLevel !== null ? String(editingTargetLevel) : undefined}
+                          onValueChange={(v) => setEditingTargetLevel(parseInt(v, 10))}
+                        >
+                          <SelectTrigger className="w-32">
+                            <SelectValue placeholder="Elegir nivel" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {levelOptions.map((lvl) => (
+                              <SelectItem key={lvl} value={String(lvl)}>Nivel {lvl}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={editingTargetLevel === null || isChangingLevel}
+                          onClick={handleChangeSkillLevel}
+                        >
+                          {isChangingLevel ? "Moviendo..." : "Mover de nivel"}
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })()}
               </>
             )}
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setEditingSkillId(null)}>
+            <Button variant="outline" onClick={() => { setEditingSkillId(null); setEditingTargetLevel(null); }}>
               Cancelar
             </Button>
             <Button onClick={handleSaveName}>Guardar</Button>

@@ -30,6 +30,8 @@ import { AreaXpPopupProvider } from "@/lib/area-xp-popup-context";
 import { InsightsCounterPopupProvider } from "@/lib/insights-counter-popup-context";
 import { BodyProgressProvider, useBodyProgress } from "@/lib/body-progress-context";
 import { BodyGainPopupProvider, useBodyGainPopup } from "@/lib/body-gain-popup-context";
+import { BugProgressPopupProvider, useBugProgressPopup } from "@/lib/bug-progress-popup-context";
+import type { BugProgressSnapshot } from "@/components/BugProgressPopup";
 import { LevelUpCelebrationProvider } from "@/lib/level-up-celebration-context";
 import { PowerCelebrationProvider } from "@/lib/power-celebration-context";
 import { TodayProgressPopupProvider } from "@/lib/today-progress-popup-context";
@@ -169,24 +171,31 @@ function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpen
 
   // El badge de "Progreso de hoy" cuenta las tareas pendientes (hábito, nodo, práctica o
   // manual) de la franja horaria actual (mañana/mediodía/tarde/noche) — igual criterio que
-  // usa el acordeón del modal para agrupar. Una tarea sin franja asignada todavía ("Sin
-  // asignar") cuenta como si fuera de la franja actual, ya que es donde el modal la muestra
-  // por defecto junto a la franja en curso.
+  // usa el acordeón del modal para agrupar. Una tarea sin ninguna franja asignada (ni a mano
+  // ni por defecto) NO cuenta acá: cae en "Sin asignar" en el modal, que no es una franja
+  // horaria puntual, así que no debe inflar el conteo de "ahora" con tareas de todo el día.
   const { areas: todayAreas, projects: todayProjects } = useSkillTree();
   const currentSlotKey = getCurrentTimeSlotKey();
   const { data: todaySlotsData } = useTodayTaskSlots(todayStr, true);
   const slotByTaskKey = new Map<string, string>();
   (todaySlotsData || []).forEach((s) => slotByTaskKey.set(`${s.taskType}:${s.taskId}`, s.slot));
-  const isInCurrentSegment = (key: string) => {
-    const slot = slotByTaskKey.get(key);
-    return slot === undefined || slot === currentSlotKey;
+  const habitDefaultSlotsById = new Map<string, string[]>();
+  (habitsData || []).forEach((h) => {
+    const raw = Array.isArray(h.defaultTimeSlots) ? h.defaultTimeSlots : [];
+    if (raw.length > 0) habitDefaultSlotsById.set(h.id, raw);
+  });
+  const isInCurrentSegment = (key: string, habitId?: string) => {
+    const manual = slotByTaskKey.get(key);
+    if (manual !== undefined) return manual === currentSlotKey;
+    if (habitId) return (habitDefaultSlotsById.get(habitId) ?? []).includes(currentSlotKey);
+    return false;
   };
 
   const pendingHabitsInSegment = habitsScheduledToday.filter((h, i) => {
     const done = (todayRecordQueries[i]?.data as HabitRecord[] | undefined)?.some(
       (r) => r.date === todayStr && r.completed === 1
     );
-    return !done && isInCurrentSegment(`habit:${h.id}`);
+    return !done && isInCurrentSegment(`habit:${h.id}`, h.id);
   }).length;
 
   const countPendingNodesInSegment = (list: (Area | Project)[]) =>
@@ -385,6 +394,13 @@ interface BugRecordXpAward {
 interface BugRecordCreateResponse extends SourceBugRecord {
   xpAward?: BugRecordXpAward;
   xpAwards?: BugRecordXpAward[];
+  bugProgress?: {
+    bugName: string;
+    victoryCountBefore: number;
+    victoryCountAfter: number;
+    statusBefore: "identificado" | "debugueando" | "debugueado";
+    statusAfter: "identificado" | "debugueando" | "debugueado";
+  };
 }
 
 interface SourceBug {
@@ -6633,12 +6649,12 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
   const { showXpPopup, hideXpPopup } = useXpPopup();
   const { addBodyBlock } = useBodyProgress();
   const { showBodyGainPopup, hideBodyGainPopup } = useBodyGainPopup();
+  const { showBugProgressPopup } = useBugProgressPopup();
   const queryClient = useQueryClient();
   const [selectedBugRef, setSelectedBugRef] = useState<{ areaId: string; bugId: string } | null>(null);
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
   const [recordContextMenuId, setRecordContextMenuId] = useState<string | null>(null);
   const [isRecordFormOpen, setIsRecordFormOpen] = useState(false);
-  const recordAddLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recordItemLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [recordFecha, setRecordFecha] = useState(new Date().toISOString().slice(0, 10));
   const [recordSituacion, setRecordSituacion] = useState("");
@@ -6648,6 +6664,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
   const [recordBodyLinks, setRecordBodyLinks] = useState<BodyLink[]>([]);
   const [recordResultado, setRecordResultado] = useState<"victoria" | "empate" | "derrota">("victoria");
   const [expandedAreaId, setExpandedAreaId] = useState<string | null>(null);
+  const [recordFormError, setRecordFormError] = useState<string | null>(null);
 
   const growLinkedBody = (links: BodyLink[], xpPopupsShown: number) => {
     links.forEach((link, index) => {
@@ -6768,18 +6785,31 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
         body: JSON.stringify(data),
       });
       if (!res.ok) {
-        throw new Error("No se pudo crear el registro");
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.message || "No se pudo crear el registro");
       }
       return res.json();
     },
-    onSuccess: async (createdRecord) => {
+    onSuccess: async (createdRecord, variables) => {
       await queryClient.invalidateQueries({ queryKey: ["all-area-bugs"] });
       await queryClient.invalidateQueries({ predicate: (query) => (query.queryKey[0] as string)?.startsWith?.("/api/global-skills/") });
 
-      const xpPopupsShown = showBugRecordXpAwards(createdRecord?.xpAwards, true);
+      // El pop-up de progreso del bug va primero en la cola, así que los que ya
+      // existían (XP de skills, crecimiento de cuerpo) arrancan después en vez de
+      // solaparse con él.
+      const runXpAndBodyPopups = () => {
+        const xpPopupsShown = showBugRecordXpAwards(createdRecord?.xpAwards, true);
+        growLinkedBody(Array.isArray(createdRecord?.bodyLinks) ? createdRecord.bodyLinks : [], xpPopupsShown);
+      };
 
-      growLinkedBody(Array.isArray(createdRecord?.bodyLinks) ? createdRecord.bodyLinks : [], xpPopupsShown);
+      if (createdRecord?.bugProgress) {
+        showBugProgressPopup({ ...createdRecord.bugProgress, resultado: variables.data.resultado });
+        window.setTimeout(runXpAndBodyPopups, 1800);
+      } else {
+        runXpAndBodyPopups();
+      }
 
+      setRecordFormError(null);
       setIsRecordFormOpen(false);
       setRecordFecha(new Date().toISOString().slice(0, 10));
       setRecordSituacion("");
@@ -6788,6 +6818,9 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
       setRecordSkillIds([]);
       setRecordBodyLinks([]);
       setRecordResultado("victoria");
+    },
+    onError: (error: Error) => {
+      setRecordFormError(error.message || "No se pudo crear el registro");
     },
   });
 
@@ -6814,16 +6847,23 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
         body: JSON.stringify(data),
       });
       if (!res.ok) {
-        throw new Error("No se pudo actualizar el registro");
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.message || "No se pudo actualizar el registro");
       }
       return res.json();
     },
-    onSuccess: async (updatedRecord) => {
+    onSuccess: async (updatedRecord, variables) => {
       await queryClient.invalidateQueries({ queryKey: ["all-area-bugs"] });
       await queryClient.invalidateQueries({ predicate: (query) => (query.queryKey[0] as string)?.startsWith?.("/api/global-skills/") });
 
-      showBugRecordXpAwards(updatedRecord?.xpAwards, false);
+      if (updatedRecord?.bugProgress && variables.data.resultado) {
+        showBugProgressPopup({ ...updatedRecord.bugProgress, resultado: variables.data.resultado });
+        window.setTimeout(() => showBugRecordXpAwards(updatedRecord?.xpAwards, false), 1800);
+      } else {
+        showBugRecordXpAwards(updatedRecord?.xpAwards, false);
+      }
 
+      setRecordFormError(null);
       setEditingRecordId(null);
       setIsRecordFormOpen(false);
       setRecordFecha(new Date().toISOString().slice(0, 10));
@@ -6832,6 +6872,9 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
       setRecordEstrategia("");
       setRecordSkillIds([]);
       setRecordResultado("victoria");
+    },
+    onError: (error: Error) => {
+      setRecordFormError(error.message || "No se pudo actualizar el registro");
     },
   });
 
@@ -6875,6 +6918,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
       setRecordSenal("");
       setRecordEstrategia("");
       setRecordResultado("victoria");
+      setRecordFormError(null);
     }
   }, [open]);
 
@@ -6882,6 +6926,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
     setEditingRecordId(null);
     setRecordContextMenuId(null);
     setIsRecordFormOpen(false);
+    setRecordFormError(null);
   }, [selectedBugRef?.areaId, selectedBugRef?.bugId]);
 
   const bugStatusLabel: Record<SourceBug["status"], string> = {
@@ -6910,7 +6955,11 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
 
   const handleCreateRecord = () => {
     if (!selectedBug) return;
-    if (!recordFecha.trim() || !recordSituacion.trim() || !recordSenal.trim() || !recordEstrategia.trim()) return;
+    if (!recordFecha.trim() || !recordSituacion.trim() || !recordSenal.trim() || !recordEstrategia.trim()) {
+      setRecordFormError("Completá fecha, situación, señal y estrategia para poder guardar el registro.");
+      return;
+    }
+    setRecordFormError(null);
 
     if (editingRecordId) {
       updateBugRecord.mutate({
@@ -6945,6 +6994,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
   };
 
   const openEditRecord = (record: SourceBugRecord) => {
+    setRecordFormError(null);
     setEditingRecordId(record.id);
     setRecordContextMenuId(null);
     setIsRecordFormOpen(true);
@@ -6958,6 +7008,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
   };
 
   const resetRecordForm = () => {
+    setRecordFormError(null);
     setEditingRecordId(null);
     setIsRecordFormOpen(false);
     setRecordFecha(new Date().toISOString().slice(0, 10));
@@ -6970,6 +7021,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
   };
 
   const openNewRecordForm = () => {
+    setRecordFormError(null);
     setEditingRecordId(null);
     setRecordContextMenuId(null);
     setIsRecordFormOpen(true);
@@ -6980,23 +7032,6 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
     setRecordSkillIds([]);
     setRecordBodyLinks([]);
     setRecordResultado("victoria");
-  };
-
-  const startRecordAddLongPress = () => {
-    if (!selectedBug) return;
-    if (recordAddLongPressTimer.current) {
-      clearTimeout(recordAddLongPressTimer.current);
-    }
-    recordAddLongPressTimer.current = setTimeout(() => {
-      openNewRecordForm();
-    }, 900);
-  };
-
-  const endRecordAddLongPress = () => {
-    if (recordAddLongPressTimer.current) {
-      clearTimeout(recordAddLongPressTimer.current);
-      recordAddLongPressTimer.current = null;
-    }
   };
 
   const startRecordItemLongPress = (recordId: string) => {
@@ -7118,14 +7153,9 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
                     <h5 className="text-xs font-semibold uppercase tracking-wide text-foreground">Registros</h5>
                     <div
                       className="space-y-2 max-h-[220px] overflow-y-auto pr-1"
-                      onMouseDown={startRecordAddLongPress}
-                      onMouseUp={endRecordAddLongPress}
-                      onMouseLeave={endRecordAddLongPress}
-                      onTouchStart={startRecordAddLongPress}
-                      onTouchEnd={endRecordAddLongPress}
                     >
                       {selectedBug.registros.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">Sin registros todavia (long press para agregar)</p>
+                        <p className="text-xs text-muted-foreground">Sin registros todavia (tocá + para agregar)</p>
                       ) : (
                         selectedBug.registros.map((registro) => (
                           <article
@@ -7192,17 +7222,14 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
                         ))
                       )}
                     </div>
-                    <div
-                      className="mt-1 flex items-center justify-center rounded-md border border-dashed border-border/60 bg-background/50 py-2 cursor-pointer select-none"
-                      onMouseDown={startRecordAddLongPress}
-                      onMouseUp={endRecordAddLongPress}
-                      onMouseLeave={endRecordAddLongPress}
-                      onTouchStart={startRecordAddLongPress}
-                      onTouchEnd={endRecordAddLongPress}
-                      title="Mantén presionado para agregar registro"
+                    <button
+                      type="button"
+                      className="mt-1 flex w-full items-center justify-center rounded-md border border-dashed border-border/60 bg-background/50 py-2 cursor-pointer select-none hover:bg-muted/40 transition-colors"
+                      onClick={openNewRecordForm}
+                      title="Agregar registro"
                     >
                       <Plus className="h-4 w-4 text-muted-foreground/80" />
-                    </div>
+                    </button>
                   </section>
 
                   {isRecordFormOpen && (
@@ -7286,18 +7313,15 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
                       />
                     </div>
 
+                    {recordFormError && (
+                      <p className="text-xs text-red-500">{recordFormError}</p>
+                    )}
+
                     <div className="flex justify-end">
                       <Button
                         type="button"
                         onClick={handleCreateRecord}
-                        disabled={
-                          createBugRecord.isPending ||
-                          updateBugRecord.isPending ||
-                          !recordFecha.trim() ||
-                          !recordSituacion.trim() ||
-                          !recordSenal.trim() ||
-                          !recordEstrategia.trim()
-                        }
+                        disabled={createBugRecord.isPending || updateBugRecord.isPending}
                       >
                         {createBugRecord.isPending || updateBugRecord.isPending
                           ? "Guardando..."
@@ -8068,7 +8092,11 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
 
       if (container && targetElement) {
         // Start at the very top (first level) so the scroll visibly travels down to the unlocked node.
-        container.scrollTop = 0;
+        // Must be an instant jump: the container has `scroll-smooth` (CSS scroll-behavior: smooth),
+        // so a plain `scrollTop = 0` assignment would itself animate smoothly and then get interrupted
+        // by the scrollIntoView below before it ever reaches the top — skipping the "start at the top"
+        // moment entirely. Passing behavior: "instant" explicitly overrides the CSS smooth behavior.
+        container.scrollTo({ top: 0, left: container.scrollLeft, behavior: "instant" });
         window.setTimeout(() => {
           if (!cancelled) {
             targetElement.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
@@ -8864,6 +8892,7 @@ export default function SkillTreePage() {
           <XpPopupProvider>
           <BodyProgressProvider>
           <BodyGainPopupProvider>
+          <BugProgressPopupProvider>
           <InsightsCounterPopupProvider>
           <PendingRewardsProvider>
             <MenuProvider>
@@ -8887,6 +8916,7 @@ export default function SkillTreePage() {
             </MenuProvider>
           </PendingRewardsProvider>
           </InsightsCounterPopupProvider>
+          </BugProgressPopupProvider>
           </BodyGainPopupProvider>
           </BodyProgressProvider>
           </XpPopupProvider>

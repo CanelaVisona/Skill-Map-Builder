@@ -2,6 +2,7 @@ import { useSkillTree, iconMap, type Project, type Area } from "@/lib/skill-cont
 import { useAuth } from "@/lib/auth-context";
 import { useMenu } from "@/lib/menu-context";
 import { useXpPopup } from "@/lib/xp-popup-context";
+import { useBugProgressPopup } from "@/lib/bug-progress-popup-context";
 import { useBodyProgress } from "@/lib/body-progress-context";
 import type { BodyLink } from "@/components/BodyLinkPicker";
 import { useToast } from "@/hooks/use-toast";
@@ -151,6 +152,13 @@ interface BugRecordCreateResponse extends SourceBugRecord {
     xpMax?: number | null;
     level?: number;
   };
+  bugProgress?: {
+    bugName: string;
+    victoryCountBefore: number;
+    victoryCountAfter: number;
+    statusBefore: "identificado" | "debugueando" | "debugueado";
+    statusAfter: "identificado" | "debugueando" | "debugueado";
+  };
 }
 
 interface SourceBug {
@@ -244,6 +252,7 @@ interface ViewSourceDialogProps {
 function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }: ViewSourceDialogProps) {
   const { areas } = useSkillTree();
   const { showXpPopup } = useXpPopup();
+  const { showBugProgressPopup } = useBugProgressPopup();
   const { addBodyBlock } = useBodyProgress();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -943,11 +952,12 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       }
       return res.json();
     },
-    onSuccess: (createdRecord) => {
+    onSuccess: (createdRecord, variables) => {
       queryClient.invalidateQueries({ queryKey: [`/api/source-bugs/${sourceType}/${sourceId}`] });
       queryClient.invalidateQueries({ predicate: (query) => (query.queryKey[0] as string)?.startsWith?.("/api/global-skills/") });
 
-      if (createdRecord?.xpAward) {
+      const showXpAward = () => {
+        if (!createdRecord?.xpAward) return;
         const areaColor = areas.find((area) => area.id === createdRecord.xpAward?.areaId)?.color || "#c85a2a";
         showXpPopup({
           skillName: createdRecord.xpAward.skillName,
@@ -958,6 +968,15 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
           level: createdRecord.xpAward.level ?? Math.floor(createdRecord.xpAward.xpBefore / 100) + 1,
           celebrateLevelUp: true,
         });
+      };
+
+      // El pop-up de progreso del bug va primero en la cola; el de XP arranca
+      // después en vez de solaparse con él.
+      if (createdRecord?.bugProgress) {
+        showBugProgressPopup({ ...createdRecord.bugProgress, resultado: variables.data.resultado });
+        window.setTimeout(showXpAward, 1800);
+      } else {
+        showXpAward();
       }
 
       setIsBugRecordFormOpen(false);
@@ -997,11 +1016,12 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       }
       return res.json();
     },
-    onSuccess: (updatedRecord) => {
+    onSuccess: (updatedRecord, variables) => {
       queryClient.invalidateQueries({ queryKey: [`/api/source-bugs/${sourceType}/${sourceId}`] });
       queryClient.invalidateQueries({ predicate: (query) => (query.queryKey[0] as string)?.startsWith?.("/api/global-skills/") });
 
-      if (updatedRecord?.xpAward) {
+      const showXpAward = () => {
+        if (!updatedRecord?.xpAward) return;
         const areaColor = areas.find((area) => area.id === updatedRecord.xpAward?.areaId)?.color || "#c85a2a";
         showXpPopup({
           skillName: updatedRecord.xpAward.skillName,
@@ -1012,6 +1032,13 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
           level: updatedRecord.xpAward.level ?? Math.floor(updatedRecord.xpAward.xpBefore / 100) + 1,
           celebrateLevelUp: true,
         });
+      };
+
+      if (updatedRecord?.bugProgress && variables.data.resultado) {
+        showBugProgressPopup({ ...updatedRecord.bugProgress, resultado: variables.data.resultado });
+        window.setTimeout(showXpAward, 1800);
+      } else {
+        showXpAward();
       }
 
       setIsBugRecordFormOpen(false);

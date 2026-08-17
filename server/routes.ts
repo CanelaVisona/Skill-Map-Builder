@@ -137,7 +137,7 @@ export async function registerRoutes(
             userId: user.id,
           });
           
-          // Generate the first level with 5 skills
+          // Generate the first level with 6 skills
           await storage.generateLevelWithSkills(exampleArea.id, 1, 100);
           
           // Update the first few skills with example content
@@ -392,7 +392,7 @@ export async function registerRoutes(
       
       // Get all skills for the response
       const allSkills = await storage.getSkills(area.id);
-      console.log(`[POST /api/areas] ✓ Area created with ${allSkills.length} total skills (4 levels × 5 nodes)`);
+      console.log(`[POST /api/areas] ✓ Area created with ${allSkills.length} total skills (4 levels × 6 nodes)`);
       res.status(201).json({ ...finalArea, skills: allSkills });
     } catch (error: any) {
       const validationError = fromError(error);
@@ -764,8 +764,8 @@ export async function registerRoutes(
           currentCount = await storage.countSubSkillsInLevel(validatedSkill.parentSkillId, skillLevel);
         }
         
-        if (currentCount >= 5) {
-          res.status(400).json({ message: "Este nivel ya tiene 5 nodos. Completa el nodo final para desbloquear el siguiente nivel." });
+        if (currentCount >= 6) {
+          res.status(400).json({ message: "Este nivel ya tiene 6 nodos. Completa el nodo final para desbloquear el siguiente nivel." });
           return;
         }
         
@@ -906,7 +906,7 @@ export async function registerRoutes(
         return;
       }
 
-      // Prevent bypassing lock system for positions 2-5
+      // Prevent bypassing lock system for positions 2-6
       // Only the auto-unlock system or mastering should change status of locked nodes
       // Exception: fromSubtaskCompletion bypasses this check (when subtasks are completed)
       // Structural-only patches (y, levelPosition, dependencies, x, isFinalNode — no status field)
@@ -1194,12 +1194,12 @@ export async function registerRoutes(
       
       // Check if target level is locked (no skills exist yet)
       if (targetLevelSkills.length === 0) {
-        // Auto-generate 5 placeholders for the new level
+        // Auto-generate 6 placeholders for the new level
         let createdPlaceholders: any[] = [];
         let previousSkillId: string | null = null;
 
         // Generate placeholder skills for the new level
-        for (let position = 1; position <= 5; position++) {
+        for (let position = 1; position <= 6; position++) {
           const id = crypto.randomUUID();
           const deps: string[] = previousSkillId ? [previousSkillId] : [];
           const skillData: typeof skills.$inferInsert = {
@@ -1215,7 +1215,7 @@ export async function registerRoutes(
             level: targetLevel,
             levelPosition: position,
             isAutoComplete: position === 1 ? 1 : 0,
-            isFinalNode: position === 5 ? 1 : 0,
+            isFinalNode: position === 6 ? 1 : 0,
             manualLock: 0 as 0 | 1,
           };
 
@@ -1247,7 +1247,7 @@ export async function registerRoutes(
       }
 
       // Move the skill to target level (don't delete any placeholders - append instead)
-      // This keeps all 5 placeholders + adds the moved skill = 6 total nodes
+      // This keeps all 6 placeholders + adds the moved skill = 7 total nodes
       const movedSkill = await storage.updateSkill(req.params.id, {
         level: targetLevel,
         status: "locked"
@@ -1366,6 +1366,199 @@ export async function registerRoutes(
       });
     } catch (error: any) {
       console.error("Error in move skill endpoint:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Change a skill's level from the Skill Designer, carrying its confirmation
+  // state across the move instead of always resetting it to "locked" like
+  // /move does:
+  // - mastered ("completado")            -> stays mastered, lands right after
+  //                                          the level's skeleton node (first
+  //                                          visible position of the target level)
+  // - available ("desbloqueado")          -> becomes locked ("bloqueado"),
+  //                                          lands at the end of the target level
+  // - locked ("no confirmado")            -> stays locked, lands at the end of
+  //                                          the target level
+  app.patch("/api/skills/:id/change-level", requireAuth, async (req, res) => {
+    try {
+      const { targetLevel, parentType, parentId } = req.body;
+
+      if (!targetLevel || typeof targetLevel !== "number") {
+        res.status(400).json({ message: "targetLevel is required and must be a number" });
+        return;
+      }
+
+      if (!parentType || !["area", "project"].includes(parentType)) {
+        res.status(400).json({ message: "parentType must be 'area' or 'project'" });
+        return;
+      }
+
+      if (!parentId) {
+        res.status(400).json({ message: "parentId is required" });
+        return;
+      }
+
+      const existingSkill = await storage.getSkill(req.params.id);
+      if (!existingSkill) {
+        res.status(404).json({ message: "Skill not found" });
+        return;
+      }
+
+      // Verify ownership
+      const isOwner = await verifySkillOwnership(existingSkill, req.userId!);
+      if (!isOwner) {
+        res.status(403).json({ message: "No tienes permiso para mover este skill" });
+        return;
+      }
+
+      const currentLevel = existingSkill.level;
+      if (targetLevel === currentLevel) {
+        res.status(400).json({ message: "El nodo ya está en ese nivel" });
+        return;
+      }
+
+      // The skeleton node (levelPosition 1 / isAutoComplete) anchors the level
+      // itself and can't be relocated independently of its level.
+      if (existingSkill.isAutoComplete === 1 || existingSkill.levelPosition === 1) {
+        res.status(400).json({ message: "No se puede mover el nodo base del nivel" });
+        return;
+      }
+
+      let allSkills = parentType === "area"
+        ? await storage.getSkills(parentId)
+        : await storage.getProjectSkills(parentId);
+
+      const maxLevel = Math.max(...allSkills.map(s => s.level), 0);
+      if (targetLevel < 1 || targetLevel > maxLevel + 3) {
+        res.status(400).json({ message: "Target level is out of range" });
+        return;
+      }
+
+      const startY = 100; // seed value for newly-generated placeholders; recalculateYCoordinates fixes the real y below
+
+      // Carry the confirmation state across the move: only a mastered node stays
+      // mastered. Anything else (locked or the single "available" frontier node)
+      // becomes locked in its new home.
+      const originalStatus = existingSkill.status;
+      const newStatus: "mastered" | "locked" = originalStatus === "mastered" ? "mastered" : "locked";
+
+      // Auto-generate the target level's placeholders if it doesn't exist yet
+      // (same behavior as /move, for consistency when moving into a future level).
+      let targetLevelSkills = allSkills.filter(s => s.level === targetLevel);
+      if (targetLevelSkills.length === 0) {
+        let previousSkillId: string | null = null;
+        for (let position = 1; position <= 6; position++) {
+          const id = crypto.randomUUID();
+          const deps: string[] = previousSkillId ? [previousSkillId] : [];
+          const skillData: typeof skills.$inferInsert = {
+            id,
+            areaId: parentType === "area" ? parentId : null,
+            projectId: parentType === "project" ? parentId : null,
+            title: position === 1 ? "" : "Nodo " + position,
+            description: "",
+            x: 50,
+            y: startY + (position - 1) * 150,
+            status: position === 1 ? "mastered" : "locked",
+            dependencies: deps,
+            level: targetLevel,
+            levelPosition: position,
+            isAutoComplete: position === 1 ? 1 : 0,
+            isFinalNode: position === 6 ? 1 : 0,
+            manualLock: 0 as 0 | 1,
+          };
+          await db.insert(skills).values(skillData);
+          previousSkillId = id;
+        }
+
+        if (parentType === "area") {
+          const currentArea = await storage.getArea(parentId);
+          const nextLevelToAssign = Math.max(currentArea?.nextLevelToAssign ?? 0, targetLevel + 1);
+          await storage.updateArea(parentId, { nextLevelToAssign });
+        } else {
+          const currentProject = await storage.getProject(parentId);
+          const nextLevelToAssign = Math.max(currentProject?.nextLevelToAssign ?? 0, targetLevel + 1);
+          await storage.updateProject(parentId, { nextLevelToAssign });
+        }
+
+        allSkills = parentType === "area"
+          ? await storage.getSkills(parentId)
+          : await storage.getProjectSkills(parentId);
+      }
+
+      // Move the skill itself: new level + carried-over status. levelPosition/y
+      // get finalized below once we know where it lands in the target level.
+      await storage.updateSkill(req.params.id, { level: targetLevel, status: newStatus });
+
+      // Close the gap left in the source level. Y coordinates are recalculated
+      // globally further down (recalculateYCoordinates) - here we only need
+      // levelPosition to be consecutive again.
+      const remainingSourceSkills = allSkills
+        .filter(s => s.level === currentLevel && s.id !== req.params.id)
+        .sort((a, b) => (a.levelPosition ?? 0) - (b.levelPosition ?? 0));
+
+      for (let i = 0; i < remainingSourceSkills.length; i++) {
+        await storage.updateSkill(remainingSourceSkills[i].id, { levelPosition: i + 1 });
+      }
+
+      // Work out where the moved skill lands among the target level's existing nodes.
+      const refreshedSkills = parentType === "area"
+        ? await storage.getSkills(parentId)
+        : await storage.getProjectSkills(parentId);
+
+      const targetExisting = refreshedSkills
+        .filter(s => s.level === targetLevel && s.id !== req.params.id)
+        .sort((a, b) => (a.levelPosition ?? 0) - (b.levelPosition ?? 0));
+
+      let orderedTargetIds: string[];
+      if (newStatus === "mastered") {
+        // First position of the level, right after the (always-mastered) skeleton.
+        const skeleton = targetExisting.find(s => s.levelPosition === 1 || s.isAutoComplete === 1);
+        const rest = targetExisting.filter(s => s.id !== skeleton?.id);
+        orderedTargetIds = skeleton
+          ? [skeleton.id, req.params.id, ...rest.map(s => s.id)]
+          : [req.params.id, ...rest.map(s => s.id)];
+      } else {
+        // Last position of the level.
+        orderedTargetIds = [...targetExisting.map(s => s.id), req.params.id];
+      }
+
+      for (let i = 0; i < orderedTargetIds.length; i++) {
+        await storage.updateSkill(orderedTargetIds[i], { levelPosition: i + 1 });
+      }
+
+      // Recalculate Y coordinates globally (not just for the two touched levels):
+      // y is a single cumulative sequence across the whole area/project, ordered by
+      // level then levelPosition - never a per-level 100-600 range. Moving a node
+      // across levels changes how many nodes sit ahead of every later level, so
+      // every level from here on needs its y shifted, not just source/target.
+      // Skipping this is what makes levels visually overlap on the canvas.
+      const parentInfo = {
+        areaId: parentType === "area" ? parentId : undefined,
+        projectId: parentType === "project" ? parentId : undefined,
+      };
+      await storage.recalculateYCoordinates(parentInfo);
+
+      // Recalculate final nodes and statuses for both levels. The moved skill's
+      // status is explicit (excludeSkillId), so it's never overwritten here even
+      // if the target level is still blocked (level > unlockedLevel).
+      await storage.recalculateFinalNodes(currentLevel, parentInfo);
+      await storage.recalculateFinalNodes(targetLevel, parentInfo);
+      await storage.recalculateAvailableStatus(currentLevel, parentInfo);
+      await storage.recalculateAvailableStatus(targetLevel, { ...parentInfo, excludeSkillId: req.params.id });
+
+      const finalAllSkills = parentType === "area"
+        ? await storage.getSkills(parentId)
+        : await storage.getProjectSkills(parentId);
+      const finalMovedSkill = finalAllSkills.find(s => s.id === req.params.id);
+
+      res.json({
+        movedSkill: finalMovedSkill,
+        sourceLevel: { skills: finalAllSkills.filter(s => s.level === currentLevel).sort((a, b) => a.levelPosition - b.levelPosition) },
+        targetLevel: { skills: finalAllSkills.filter(s => s.level === targetLevel).sort((a, b) => a.levelPosition - b.levelPosition) },
+      });
+    } catch (error: any) {
+      console.error("Error in change-level endpoint:", error);
       res.status(500).json({ message: error.message });
     }
   });
@@ -1489,7 +1682,7 @@ export async function registerRoutes(
     }
   });
 
-  // Generate 5 placeholder nodes for a new level (transactional, idempotent)
+  // Generate 6 placeholder nodes for a new level (transactional, idempotent)
   app.post("/api/areas/:id/generate-level", requireAuth, async (req, res) => {
     try {
       const { level, force } = req.body;
@@ -1665,7 +1858,7 @@ export async function registerRoutes(
       
       // Get all skills for the response
       const allSkills = await storage.getProjectSkills(project.id);
-      console.log(`[POST /api/projects] ✓ Project created with ${allSkills.length} total skills (4 levels × 5 nodes)`);
+      console.log(`[POST /api/projects] ✓ Project created with ${allSkills.length} total skills (4 levels × 6 nodes)`);
       res.status(201).json({ ...finalProject, skills: allSkills });
     } catch (error: any) {
       const validationError = fromError(error);
@@ -1969,8 +2162,8 @@ export async function registerRoutes(
       
       const currentCount = await storage.countProjectSkillsInLevel(projectId, skillLevel);
       
-      if (currentCount >= 5) {
-        res.status(400).json({ message: "Este nivel ya tiene 5 nodos. Completa el nodo final para desbloquear el siguiente nivel." });
+      if (currentCount >= 6) {
+        res.status(400).json({ message: "Este nivel ya tiene 6 nodos. Completa el nodo final para desbloquear el siguiente nivel." });
         return;
       }
       
@@ -2114,8 +2307,8 @@ export async function registerRoutes(
       
       const currentCount = await storage.countSubSkillsInLevel(parentSkillId, skillLevel);
       
-      if (currentCount >= 5) {
-        res.status(400).json({ message: "Este nivel ya tiene 5 nodos. Completa el nodo final para desbloquear el siguiente nivel." });
+      if (currentCount >= 6) {
+        res.status(400).json({ message: "Este nivel ya tiene 6 nodos. Completa el nodo final para desbloquear el siguiente nivel." });
         return;
       }
       
@@ -2489,14 +2682,25 @@ export async function registerRoutes(
   app.get("/api/journal/learnings", requireAuth, async (req, res) => {
     try {
       const skillId = req.query.skillId as string | undefined;
-      console.log("[GET /api/journal/learnings]", { userId: req.userId, skillId });
-      
+      const areaId = req.query.areaId as string | undefined;
+      const projectId = req.query.projectId as string | undefined;
+      console.log("[GET /api/journal/learnings]", { userId: req.userId, skillId, areaId, projectId });
+
       const learnings = await storage.getJournalLearnings(req.userId!);
       console.log("[GET /api/journal/learnings] Total learnings:", learnings.length);
-      
-      const filtered = skillId ? learnings.filter(l => l.skillId === skillId) : learnings;
-      console.log("[GET /api/journal/learnings] Filtered learnings:", filtered.length, "for skillId:", skillId);
-      
+
+      let filtered = learnings;
+      if (skillId) {
+        filtered = learnings.filter(l => l.skillId === skillId);
+      } else if (areaId || projectId) {
+        // Every skill id in this area/quest, including sub-skill trees at any depth -- a
+        // learning logged against a node inside a sub-skill tree still counts toward its
+        // owning area/quest's own tally (see getAllSkillIdsInScope).
+        const scopeSkillIds = new Set(await storage.getAllSkillIdsInScope({ areaId, projectId }));
+        filtered = learnings.filter(l => l.skillId != null && scopeSkillIds.has(l.skillId));
+      }
+      console.log("[GET /api/journal/learnings] Filtered learnings:", filtered.length, "for skillId:", skillId, "areaId:", areaId, "projectId:", projectId);
+
       res.json(filtered);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -2566,14 +2770,22 @@ export async function registerRoutes(
   app.get("/api/journal/tools", requireAuth, async (req, res) => {
     try {
       const skillId = req.query.skillId as string | undefined;
-      console.log("[GET /api/journal/tools]", { userId: req.userId, skillId });
-      
+      const areaId = req.query.areaId as string | undefined;
+      const projectId = req.query.projectId as string | undefined;
+      console.log("[GET /api/journal/tools]", { userId: req.userId, skillId, areaId, projectId });
+
       const tools = await storage.getJournalTools(req.userId!);
       console.log("[GET /api/journal/tools] Total tools:", tools.length);
-      
-      const filtered = skillId ? tools.filter(t => t.skillId === skillId) : tools;
-      console.log("[GET /api/journal/tools] Filtered tools:", filtered.length, "for skillId:", skillId);
-      
+
+      let filtered = tools;
+      if (skillId) {
+        filtered = tools.filter(t => t.skillId === skillId);
+      } else if (areaId || projectId) {
+        const scopeSkillIds = new Set(await storage.getAllSkillIdsInScope({ areaId, projectId }));
+        filtered = tools.filter(t => t.skillId != null && scopeSkillIds.has(t.skillId));
+      }
+      console.log("[GET /api/journal/tools] Filtered tools:", filtered.length, "for skillId:", skillId, "areaId:", areaId, "projectId:", projectId);
+
       res.json(filtered);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -2643,20 +2855,22 @@ export async function registerRoutes(
   app.get("/api/journal/thoughts", requireAuth, async (req, res) => {
     try {
       const skillId = req.query.skillId as string | undefined;
-      console.log("[GET /api/journal/thoughts]", { userId: req.userId, skillId });
-      
+      const areaId = req.query.areaId as string | undefined;
+      const projectId = req.query.projectId as string | undefined;
+      console.log("[GET /api/journal/thoughts]", { userId: req.userId, skillId, areaId, projectId });
+
       const thoughts = await storage.getJournalThoughts(req.userId!);
       console.log("[GET /api/journal/thoughts] Total thoughts:", thoughts.length);
-      
-      const filtered = skillId ? thoughts.filter(t => {
-        const match = t.skillId === skillId;
-        if (!match) {
-          console.log(`[GET /api/journal/thoughts] Filtering: thought.skillId=${t.skillId} vs ${skillId} = ${match}`);
-        }
-        return match;
-      }) : thoughts;
-      
-      console.log("[GET /api/journal/thoughts] Filtered thoughts:", filtered.length);
+
+      let filtered = thoughts;
+      if (skillId) {
+        filtered = thoughts.filter(t => t.skillId === skillId);
+      } else if (areaId || projectId) {
+        const scopeSkillIds = new Set(await storage.getAllSkillIdsInScope({ areaId, projectId }));
+        filtered = thoughts.filter(t => t.skillId != null && scopeSkillIds.has(t.skillId));
+      }
+      console.log("[GET /api/journal/thoughts] Filtered thoughts:", filtered.length, "for skillId:", skillId, "areaId:", areaId, "projectId:", projectId);
+
       res.json(filtered);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -3059,8 +3273,14 @@ export async function registerRoutes(
     color: string;
     status: "have" | "missing";
     style: "deporte" | "casual" | "salida";
+    comfort: number;
+    condition: number;
+    styleScore: number;
   }> {
     if (!Array.isArray(input)) return [];
+
+    const isValidRating = (v: unknown): v is number =>
+      typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 5;
 
     return input
       .map((item) => {
@@ -3075,9 +3295,13 @@ export async function registerRoutes(
           return null;
         }
 
-        // "style" is additive on top of the original schema — default it instead of
-        // dropping the item, so prendas saved before this field existed still load.
+        // "style", "comfort", "condition" and "styleScore" are additive on top of
+        // the original schema — default them instead of dropping the item, so
+        // prendas saved before these fields existed still load.
         const style = clothing.style === "deporte" || clothing.style === "casual" || clothing.style === "salida" ? clothing.style : "casual";
+        const comfort = isValidRating(clothing.comfort) ? clothing.comfort : 3;
+        const condition = isValidRating(clothing.condition) ? clothing.condition : 3;
+        const styleScore = isValidRating(clothing.styleScore) ? clothing.styleScore : 3;
 
         return {
           id: clothing.id,
@@ -3086,6 +3310,9 @@ export async function registerRoutes(
           color: clothing.color,
           status: clothing.status,
           style,
+          comfort,
+          condition,
+          styleScore,
         };
       })
       .filter((item): item is {
@@ -3095,6 +3322,9 @@ export async function registerRoutes(
         color: string;
         status: "have" | "missing";
         style: "deporte" | "casual" | "salida";
+        comfort: number;
+        condition: number;
+        styleScore: number;
       } => item !== null);
   }
 
@@ -3641,6 +3871,12 @@ export async function registerRoutes(
       const data = { ...req.body, bugId: req.params.id, userId: req.userId };
       const validated = insertSourceBugRecordSchema.parse(data);
 
+      const bugBefore = await storage.getSourceBug(req.params.id);
+      if (!bugBefore || bugBefore.userId !== req.userId) {
+        res.status(404).json({ message: "Source bug not found" });
+        return;
+      }
+
       const effectiveSkillIds = Array.from(new Set(
         (validated.skillIds && validated.skillIds.length > 0
           ? validated.skillIds
@@ -3648,26 +3884,13 @@ export async function registerRoutes(
       ));
 
       if (effectiveSkillIds.length > 0) {
-        const bug = await storage.getSourceBug(req.params.id);
-        if (!bug || bug.userId !== req.userId) {
-          res.status(404).json({ message: "Source bug not found" });
-          return;
-        }
-
+        // Los skills linkeados pueden pertenecer a cualquier área/proyecto, no solo
+        // al del bug: un bug puede disparar patrones que se resuelven practicando
+        // skills de otra área.
         for (const skillId of effectiveSkillIds) {
           const linkedSkill = await storage.getGlobalSkill(skillId);
           if (!linkedSkill || linkedSkill.userId !== req.userId) {
             res.status(400).json({ message: "Skill link inválido" });
-            return;
-          }
-
-          if (bug.areaId && linkedSkill.areaId !== bug.areaId) {
-            res.status(400).json({ message: "El skill debe pertenecer al área del bug" });
-            return;
-          }
-
-          if (bug.projectId && linkedSkill.projectId && linkedSkill.projectId !== bug.projectId) {
-            res.status(400).json({ message: "El skill debe pertenecer al proyecto del bug" });
             return;
           }
         }
@@ -3679,8 +3902,17 @@ export async function registerRoutes(
         skillIds: effectiveSkillIds,
       });
 
+      const bugAfter = await storage.getSourceBug(req.params.id);
+      const bugProgress = {
+        bugName: bugBefore.nombre,
+        victoryCountBefore: bugBefore.victoryCount,
+        victoryCountAfter: bugAfter?.victoryCount ?? bugBefore.victoryCount,
+        statusBefore: bugBefore.status,
+        statusAfter: bugAfter?.status ?? bugBefore.status,
+      };
+
       if (effectiveSkillIds.length === 0) {
-        res.status(201).json(record);
+        res.status(201).json({ ...record, bugProgress });
         return;
       }
 
@@ -3706,6 +3938,7 @@ export async function registerRoutes(
 
       res.status(201).json({
         ...record,
+        bugProgress,
         xpAwards,
         xpAward: xpAwards[0] ?? null,
       });
@@ -3753,20 +3986,11 @@ export async function registerRoutes(
       }
 
       if (hasSkillInPayload && nextSkillIds.length > 0) {
+        // Igual que al crear: el skill linkeado puede ser de cualquier área/proyecto.
         for (const skillId of nextSkillIds) {
           const linkedSkill = await storage.getGlobalSkill(skillId);
           if (!linkedSkill || linkedSkill.userId !== req.userId) {
             res.status(400).json({ message: "Skill link inválido" });
-            return;
-          }
-
-          if (bug.areaId && linkedSkill.areaId !== bug.areaId) {
-            res.status(400).json({ message: "El skill debe pertenecer al área del bug" });
-            return;
-          }
-
-          if (bug.projectId && linkedSkill.projectId && linkedSkill.projectId !== bug.projectId) {
-            res.status(400).json({ message: "El skill debe pertenecer al proyecto del bug" });
             return;
           }
         }
@@ -3781,6 +4005,15 @@ export async function registerRoutes(
         res.status(404).json({ message: "Source bug record not found" });
         return;
       }
+
+      const bugAfter = await storage.getSourceBug(existing.bugId);
+      const bugProgress = {
+        bugName: bug.nombre,
+        victoryCountBefore: bug.victoryCount,
+        victoryCountAfter: bugAfter?.victoryCount ?? bug.victoryCount,
+        statusBefore: bug.status,
+        statusAfter: bugAfter?.status ?? bug.status,
+      };
 
       const xpAwards: Array<{
         xpAmount: number;
@@ -3822,7 +4055,7 @@ export async function registerRoutes(
         }
       }
 
-      res.json(xpAwards.length > 0 ? { ...updated, xpAwards, xpAward: xpAwards[0] } : updated);
+      res.json({ ...updated, bugProgress, ...(xpAwards.length > 0 ? { xpAwards, xpAward: xpAwards[0] } : {}) });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

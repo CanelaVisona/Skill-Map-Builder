@@ -24,6 +24,7 @@ import { useEffect, useState } from "react";
 import { usePopupPalette } from "@/lib/popup-theme";
 import { useLevelUpCelebration } from "@/lib/level-up-celebration-context";
 import { POPUP_VISIBLE_MS } from "@/lib/popup-coordinator";
+import { playProgressAdvanceSound } from "@/lib/sound";
 
 export interface ExperienceGainSnapshot {
   skillName: string;
@@ -114,6 +115,10 @@ export function ExperienceGainPopup({ snapshot, onClose }: ExperienceGainPopupPr
     setDisplayBlocks(Math.max(0, Math.min(totalBlocks, Math.round(progressPctBefore / 100 * totalBlocks))));
     setAnimationStage("initial");
 
+    if (xpAfter > xpBefore) {
+      playProgressAdvanceSound();
+    }
+
     const rafId = window.requestAnimationFrame(() => {
       if (!leveledUp) {
         setBarWidth(progressPct);
@@ -134,7 +139,11 @@ export function ExperienceGainPopup({ snapshot, onClose }: ExperienceGainPopupPr
 
         const secondTimer = window.setTimeout(() => {
           if (celebrateLevelUp) {
+            // La celebración de nivel es a pantalla completa y ocupa el mismo centro
+            // que esta card: hay que cerrar la card acá en vez de dejar que la cierre
+            // su propio timer de POPUP_VISIBLE_MS, o quedan superpuestas un rato.
             showLevelUpCelebration({ name: skillName, level: levelAfter });
+            onClose();
           } else {
             setShowLevelUp(true);
           }

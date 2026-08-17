@@ -1,7 +1,9 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { createPortal } from "react-dom";
 import { Sparkles } from "lucide-react";
+import { useEffect } from "react";
 import { usePopupPalette } from "@/lib/popup-theme";
+import { playProgressAdvanceSound } from "@/lib/sound";
 
 import type { AreaXpPopupSnapshot } from "@/lib/area-xp-popup-context";
 
@@ -12,6 +14,14 @@ interface AreaLevelGainPopupProps {
 
 export function AreaLevelGainPopup({ snapshot, onClose }: AreaLevelGainPopupProps) {
   const palette = usePopupPalette();
+
+  // The bar's fill animation starts as soon as this mounts (via framer's initial/animate
+  // props below, no staged state to hook into), so this fires right alongside it.
+  useEffect(() => {
+    if (snapshot && snapshot.progressAfterPct > snapshot.progressBeforePct) {
+      playProgressAdvanceSound();
+    }
+  }, [snapshot]);
 
   if (!snapshot || typeof document === "undefined") {
     return null;

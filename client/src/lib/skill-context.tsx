@@ -2,8 +2,9 @@ import { createContext, useContext, useState, useEffect, useRef } from "react";
 import { Music, Trophy, BookOpen, Home } from "lucide-react";
 import { useAreaXpPopup } from "@/lib/area-xp-popup-context";
 import { calculateLevelProgressPercentage, countMasteredSkillsInLevel, countSkillsInLevel } from "@/lib/area-progress";
-import { getPopupBusyDelay, hasPendingPopupChain, markPopupActive, POPUP_VISIBLE_MS } from "@/lib/popup-coordinator";
+import { beginPopupChain, endPopupChain, getPopupBusyDelay, hasPendingPopupChain, markPopupActive, POPUP_VISIBLE_MS } from "@/lib/popup-coordinator";
 import { getCurrentTimeSlotKey } from "@/lib/useTodayTaskSlots";
+import { playLevelUpSound } from "@/lib/sound";
 
 // Best-effort: places a just-confirmed node into today's matching "Tareas de hoy" time
 // slot (mañana/mediodía/tarde/noche) based on the hour it was confirmed at. Fire-and-forget,
@@ -127,6 +128,7 @@ interface SkillTreeContextType {
   toggleLock: (areaId: string, skillId: string) => void;
   moveSkill: (areaId: string, skillId: string, direction: "up" | "down") => void;
   moveSkillToLevel: (areaId: string, skillId: string, targetLevel: number) => Promise<void>;
+  changeSkillLevel: (areaId: string, skillId: string, targetLevel: number) => Promise<boolean>;
   reorderSkillWithinLevel: (areaId: string, skillId: string, direction: "up" | "down") => Promise<void>;
   swapAreaLevels: (areaId: string, levelA: number, levelB: number) => Promise<void>;
   addExtraAreaLevel: (areaId: string) => Promise<boolean>;
@@ -136,6 +138,7 @@ interface SkillTreeContextType {
   toggleProjectLock: (projectId: string, skillId: string) => void;
   moveProjectSkill: (projectId: string, skillId: string, direction: "up" | "down") => void;
   moveProjectSkillToLevel: (projectId: string, skillId: string, targetLevel: number) => Promise<void>;
+  changeProjectSkillLevel: (projectId: string, skillId: string, targetLevel: number) => Promise<boolean>;
   reorderProjectSkillWithinLevel: (projectId: string, skillId: string, direction: "up" | "down") => Promise<void>;
   swapProjectLevels: (projectId: string, levelA: number, levelB: number) => Promise<void>;
   addExtraProjectLevel: (projectId: string) => Promise<boolean>;
@@ -177,6 +180,9 @@ interface SkillTreeContextType {
   duplicateSkill: (areaId: string, skill: Skill) => Promise<void>;
   duplicateProjectSkill: (projectId: string, skill: Skill) => Promise<void>;
   duplicateSubSkill: (skill: Skill) => Promise<void>;
+  addSiblingSkill: (areaId: string, skill: Skill) => Promise<void>;
+  addSiblingProjectSkill: (projectId: string, skill: Skill) => Promise<void>;
+  addSiblingSubSkill: (skill: Skill) => Promise<void>;
   updateLevelSubtitle: (areaId: string, level: number, subtitle: string, description?: string) => Promise<void>;
   updateProjectLevelSubtitle: (projectId: string, level: number, subtitle: string, description?: string) => Promise<void>;
   toggleFinalNode: (areaId: string, skillId: string) => Promise<void>;
@@ -316,6 +322,19 @@ function getNextDuplicateTitle(sourceTitle: string): string {
   return `${trimmed} ${toRomanNumeral(2)}`;
 }
 
+// Sibling nodes use a plain "+N" counter instead of the roman-numeral scheme above:
+// adding a sibling to "Hola" gives "Hola +1", adding a sibling to "Hola +1" gives "Hola +2", etc.
+function getNextSiblingTitle(sourceTitle: string): string {
+  const trimmed = sourceTitle.trim();
+  if (!trimmed) return trimmed;
+
+  const match = trimmed.match(/^(.*?)\s+\+(\d+)$/);
+  if (match) {
+    return `${match[1]} +${parseInt(match[2], 10) + 1}`;
+  }
+  return `${trimmed} +1`;
+}
+
 export function SkillTreeProvider({ children }: { children: React.ReactNode }): React.ReactElement {
   const [areas, setAreas] = useState<Area[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -385,10 +404,15 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
   // "¡Subiste de nivel!" al confirmar el nodo final que abre el siguiente nivel — mismo
   // tratamiento visual (QuestUpdatedCelebration) que la celebración de subida de nivel de
-  // skills.
+  // skills. Every call site passes this exact text (see triggerLevelUpBanner below), so this
+  // is the one place a real level-up event happens -- the sound is triggered from here, not
+  // from QuestUpdatedCelebration's own mount lifecycle, since that component is rendered at
+  // two separate spots (area view / project view) and switching between them mid-celebration
+  // would remount whichever one is now visible and replay the sound with no new level-up.
   const triggerQuestCelebration = (text: string) => {
     markPopupActive(POPUP_VISIBLE_MS);
     setQuestCelebrationText(text);
+    playLevelUpSound();
     setTimeout(() => setQuestCelebrationText(null), POPUP_VISIBLE_MS);
   };
 
@@ -406,6 +430,24 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     const attempt = () => {
       if (getPopupBusyDelay() > 0 || hasPendingPopupChain()) {
         setTimeout(attempt, getPopupBusyDelay() + 150);
+        return;
+      }
+      fn();
+    };
+    setTimeout(attempt, 150);
+  };
+
+  // Same as runAfterPopupsClear, but only waits on busyUntil -- NOT on hasPendingPopupChain().
+  // Used for the área/quest "progress bar filling up" pop-up, which has to show FIRST, ahead
+  // of the node's own staged-reward chain (xp/fuerza/poderes/aprendizaje from Step 3, opened
+  // synchronously via beginPopupChain in SkillNode.tsx's runConfirmSequence right as the node
+  // confirm click happens). If this waited on the chain too, it would get stuck behind that
+  // entire chain instead of leading it.
+  const runAfterBusyClears = (fn: () => void) => {
+    const attempt = () => {
+      const delay = getPopupBusyDelay();
+      if (delay > 0) {
+        setTimeout(attempt, delay + 150);
         return;
       }
       fn();
@@ -465,7 +507,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     setActiveAreaId("");
   };
 
-  // Auto-create 5 locked skills for each blocked level
+  // Auto-create 6 locked skills for each blocked level
   const ensureLockedLevelSkills = async (targetAreas: Area[], targetProjects: Project[]) => {
     console.warn('[ensureLockedLevelSkills] Starting - Areas:', targetAreas.length, 'Projects:', targetProjects.length);
     
@@ -484,7 +526,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       if (startLevel <= targetNextLevel) {
         console.warn(`[ensureLockedLevelSkills] Need to create levels ${startLevel} to ${targetNextLevel} for area "${area.name}"`);
         for (let level = startLevel; level <= targetNextLevel; level++) {
-          console.warn(`[ensureLockedLevelSkills] Creating 5 skills for area "${area.name}", level ${level}`);
+          console.warn(`[ensureLockedLevelSkills] Creating 6 skills for area "${area.name}", level ${level}`);
           
           // Find the last node from previous level for dependency
           const prevLevelSkills = area.skills.filter(s => s.level === level - 1);
@@ -492,8 +534,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
             ? prevLevelSkills.reduce((max, s) => s.y > max.y ? s : max)
             : null;
 
-          // Create 5 locked placeholder nodes for this level
-          for (let position = 1; position <= 5; position++) {
+          // Create 6 locked placeholder nodes for this level
+          for (let position = 1; position <= 6; position++) {
             const newSkill = {
               areaId: area.id,
               parentSkillId: null,
@@ -640,7 +682,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       if (startLevel <= targetNextLevel) {
         console.warn(`[ensureLockedLevelSkills] Need to create levels ${startLevel} to ${targetNextLevel} for project "${project.name}"`);
         for (let level = startLevel; level <= targetNextLevel; level++) {
-          console.warn(`[ensureLockedLevelSkills] Creating 5 skills for project "${project.name}", level ${level}`);
+          console.warn(`[ensureLockedLevelSkills] Creating 6 skills for project "${project.name}", level ${level}`);
           
           // Find the last node from previous level for dependency
           const prevLevelSkills = project.skills.filter(s => s.level === level - 1);
@@ -648,8 +690,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
             ? prevLevelSkills.reduce((max, s) => s.y > max.y ? s : max)
             : null;
 
-          // Create 5 locked placeholder nodes for this level
-          for (let position = 1; position <= 5; position++) {
+          // Create 6 locked placeholder nodes for this level
+          for (let position = 1; position <= 6; position++) {
             const newSkill = {
               projectId: project.id,
               parentSkillId: null,
@@ -1040,7 +1082,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
     
     // Determine if the star is active: only when endOfAreaLevel equals this level
-    // isFinalNode: 1 is just an identifier (always on Node 5), not the control
+    // isFinalNode: 1 is just an identifier (always on Node 6), not the control
     const isStarActive = area.endOfAreaLevel === skill.level;
     // Only the true final node (by current position) may open/close the next level.
     const canOpenNewLevels = isFinalNodeByPosition && !isStarActive;
@@ -1050,6 +1092,20 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     // the server auto-unlocks the next node in the same PATCH, but that unlock must stay
     // hidden client-side until the pop-up disappears (see unlockGateOpen).
     const deferAutoUnlock = newStatus === "mastered" && !isFinalNodeByPosition && !isOpeningNewLevel;
+    // Claim the busy-gate AND the popup chain synchronously, right now -- before the PATCH
+    // round-trip -- so this area/quest progress pop-up is guaranteed to always play FIRST.
+    // Anything else triggered by this same click (e.g. the staged xp/fuerza/poder/aprendizaje
+    // reward sequence in SkillNode.tsx's runConfirmSequence, which now also opens its own chain
+    // synchronously, and "Quest updated!"/today-progress, which wait on hasPendingPopupChain())
+    // sees busy > 0 and/or the chain open immediately, and waits its turn instead of racing
+    // ahead -- closing the small timing gap that used to exist between this placeholder claim
+    // expiring and whichever pop-up fires next actually marking itself busy. The real
+    // showAreaXpPopup call below re-marks busy for its own real POPUP_VISIBLE_MS once it
+    // actually fires, and closes this same chain right after (see finally below).
+    if (deferAutoUnlock) {
+      markPopupActive(2000);
+      beginPopupChain();
+    }
 
     try {
       const response = await fetch(`/api/skills/${skillId}`, {
@@ -1077,10 +1133,12 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         // pop-up has shown and disappeared -- see triggerQuestUpdated.
         setUnlockGateOpen(false);
 
-        // Trigger area XP popup before quest popup -- but only once nothing else is currently
-        // showing/queued (e.g. a chain of xp/fuerza/poder pop-ups staged in Step 3 of the edit
-        // dialog), so it never lands on top of those instead of after them.
-        runAfterPopupsClear(() => {
+        // Trigger area XP popup before quest popup -- once busy clears (NOT once the popup
+        // chain clears too -- that chain is the one WE just opened above, checking it here
+        // would deadlock waiting on ourselves). Closes that same chain right as this pop-up
+        // fires, handing off cleanly into SkillNode.tsx's own reward chain (if any) with no gap
+        // where nothing is marked busy/pending.
+        runAfterBusyClears(() => {
           try {
             const totalInLevel = countSkillsInLevel(area.skills, area.unlockedLevel);
             const masteredBeforeInLevel = countMasteredSkillsInLevel(area.skills, area.unlockedLevel);
@@ -1098,6 +1156,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
             });
           } catch (e) {
             // ignore
+          } finally {
+            endPopupChain();
           }
         });
 
@@ -1295,7 +1355,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
             console.error(`Error resetting skill ${s.id}:`, error);
           });
         });
-      } else if (isFinalNodeByPosition && skill.levelPosition === 5 && skill.level === area.unlockedLevel - 1 && skill.status === "mastered" && newStatus === "available") {
+      } else if (isFinalNodeByPosition && skill.levelPosition === 6 && skill.level === area.unlockedLevel - 1 && skill.status === "mastered" && newStatus === "available") {
         // NEW RULE: Unconfirming final node of level immediately before active level
         // Hide the current active level and reset it to staged state
         console.log(`[toggleSkillStatus] Final node of previous level unconfirmed - hiding current active level`);
@@ -1370,6 +1430,13 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       }
     } catch (error) {
       console.error("Error toggling skill status:", error);
+      // The PATCH (or something before the area-pop-up branch) failed, so the chain opened
+      // above never got a chance to reach the runAfterBusyClears callback that would've closed
+      // it -- close it here instead, or it'd stay stuck open forever, silently blocking "Quest
+      // updated!"/today-progress for every confirm from then on.
+      if (deferAutoUnlock) {
+        endPopupChain();
+      }
     }
   };
 
@@ -1424,7 +1491,30 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     };
 
     const newStatus = nextStatus[skill.status];
-    
+
+    // Validate unconfirm action: mastered → available
+    // A mastered node can only be unconfirmed if the next node is "available" (not yet
+    // confirmed) -- mirrors the same guard in toggleSkillStatus (areas). Without this, a
+    // node could be unconfirmed even while the node after it is already mastered, leaving
+    // an "available" node stranded between two confirmed nodes.
+    if (skill.status === "mastered" && newStatus === "available") {
+      const currentNodeIndex = nodesSortedByPosition.findIndex(s => s.id === skill.id);
+      const nextNode = nodesSortedByPosition[currentNodeIndex + 1];
+
+      // Check if the next node has been mastered (progression beyond this node)
+      if (nextNode && nextNode.status === "mastered") {
+        console.log(`[toggleProjectSkillStatus] Cannot unconfirm - next node is already mastered`);
+        return; // Block unconfirm - the chain has already progressed
+      }
+
+      // For non-final nodes: check that next node exists and is available
+      // For final nodes: skip the next-node check (no next node in same level)
+      if (!isFinalNodeByPosition && (!nextNode || (nextNode.status !== "available"))) {
+        console.log(`[toggleProjectSkillStatus] Cannot unconfirm - next node is not available`);
+        return; // Block unconfirm - unexpected state
+      }
+    }
+
     // Check if star is active (endOfAreaLevel is set to this level)
     const isStarActive = project.endOfAreaLevel === skill.level;
 
@@ -1436,6 +1526,12 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     // the next node's auto-unlock (handled by the generic auto-unlock effect below) must
     // stay gated until the pop-up disappears (see unlockGateOpen).
     const deferAutoUnlock = newStatus === "mastered" && !isFinalNodeByPosition && !isOpeningNewLevel;
+    // Claim the busy-gate and the popup chain synchronously -- see matching comment in
+    // toggleSkillStatus above.
+    if (deferAutoUnlock) {
+      markPopupActive(2000);
+      beginPopupChain();
+    }
 
     try {
       await fetch(`/api/skills/${skillId}`, {
@@ -1459,9 +1555,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         // Close the unlock gate before the next node is allowed to appear available.
         setUnlockGateOpen(false);
 
-        // Trigger quest XP popup before quest updated banner -- only once nothing else is
-        // currently showing/queued (see the matching comment in toggleSkillStatus above).
-        runAfterPopupsClear(() => {
+        // Trigger quest XP popup before quest updated banner -- once busy clears (see matching
+        // comment in toggleSkillStatus above about why this checks busy only, not the chain).
+        runAfterBusyClears(() => {
           try {
             const totalInLevel = countSkillsInLevel(project.skills, project.unlockedLevel);
             const masteredBeforeInLevel = countMasteredSkillsInLevel(project.skills, project.unlockedLevel);
@@ -1479,6 +1575,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
             });
           } catch (e) {
             // ignore
+          } finally {
+            endPopupChain();
           }
         });
 
@@ -1605,6 +1703,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       }
     } catch (error) {
       console.error("Error toggling project skill status:", error);
+      // See matching comment in toggleSkillStatus's catch above.
+      if (deferAutoUnlock) {
+        endPopupChain();
+      }
     }
   };
 
@@ -3562,6 +3664,30 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     });
   };
 
+  // "Agregar nodo hermano": same insertion behavior as duplicate above, but the new node
+  // is titled after the source node's name plus a "+1" counter instead of a roman numeral.
+  const addSiblingSkill = async (areaId: string, skill: Skill) => {
+    await addSkillBelow(areaId, skill.id, getNextSiblingTitle(skill.title), {
+      plannedDate: skill.plannedDate,
+      plannedDuration: skill.plannedDuration,
+    });
+  };
+
+  const addSiblingProjectSkill = async (projectId: string, skill: Skill) => {
+    await addProjectSkillBelow(projectId, skill.id, getNextSiblingTitle(skill.title), {
+      plannedDate: skill.plannedDate,
+      plannedDuration: skill.plannedDuration,
+    });
+  };
+
+  const addSiblingSubSkill = async (skill: Skill) => {
+    if (!activeParentSkillId) return;
+    await addSubSkillBelow(skill.id, getNextSiblingTitle(skill.title), {
+      plannedDate: skill.plannedDate,
+      plannedDuration: skill.plannedDuration,
+    });
+  };
+
   // Auto-unlock logic for areas (also re-locks final nodes that shouldn't be available)
   useEffect(() => {
     if (isLoading || areas.length === 0) return;
@@ -4074,6 +4200,38 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
+  // Change a skill's level from the Skill Designer's node edit dialog. Unlike
+  // moveSkillToLevel above (forward-only, always lands locked), this carries the
+  // node's confirmation state across the move: mastered nodes stay mastered and
+  // land first in the target level; everything else (including the currently
+  // unlocked/"available" node) lands locked at the end of the target level.
+  const changeSkillLevel = async (areaId: string, skillId: string, targetLevel: number): Promise<boolean> => {
+    try {
+      const response = await fetch(`/api/skills/${skillId}/change-level`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetLevel,
+          parentType: "area",
+          parentId: areaId
+        }),
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.error("Error changing skill level:", error);
+        return false;
+      }
+
+      await refreshAllAreas();
+      return true;
+    } catch (error) {
+      console.error("Error changing skill level:", error);
+      return false;
+    }
+  };
+
   // Swap the entire contents (all nodes + subtitle/description) of two levels in an area.
   // Used by the Skill Designer to reorder future/blocked levels — both levels must already
   // be unlocked-adjacent look-ahead levels with real skill data (never the currently
@@ -4355,6 +4513,34 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       await refreshAllProjects();
     } catch (error) {
       console.error("Error moving project skill to level:", error);
+    }
+  };
+
+  // Project counterpart of changeSkillLevel above — same confirmation-carrying rules.
+  const changeProjectSkillLevel = async (projectId: string, skillId: string, targetLevel: number): Promise<boolean> => {
+    try {
+      const response = await fetch(`/api/skills/${skillId}/change-level`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetLevel,
+          parentType: "project",
+          parentId: projectId
+        }),
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.error("Error changing project skill level:", error);
+        return false;
+      }
+
+      await refreshAllProjects();
+      return true;
+    } catch (error) {
+      console.error("Error changing project skill level:", error);
+      return false;
     }
   };
 
@@ -4815,11 +5001,13 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       addProjectSkillBelow,
       addSubSkillBelow,
       moveSkillToLevel,
+      changeSkillLevel,
       reorderSkillWithinLevel,
       swapAreaLevels,
       addExtraAreaLevel,
       deleteAreaLevel,
       moveProjectSkillToLevel,
+      changeProjectSkillLevel,
       reorderProjectSkillWithinLevel,
       swapProjectLevels,
       addExtraProjectLevel,
@@ -4827,6 +5015,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       duplicateSkill,
       duplicateProjectSkill,
       duplicateSubSkill,
+      addSiblingSkill,
+      addSiblingProjectSkill,
+      addSiblingSubSkill,
       updateLevelSubtitle,
       updateProjectLevelSubtitle,
       toggleFinalNode,
