@@ -18,44 +18,9 @@ function getAudioContext(): AudioContext | null {
   return sharedAudioContext;
 }
 
-// Plays a short, pleasant two-note "ta-da" chime -- used when a node gets confirmed
-// (available -> mastered). Best-effort: silently no-ops if Web Audio isn't available.
-export function playNodeConfirmedSound() {
-  try {
-    const ctx = getAudioContext();
-    if (!ctx) return;
-
-    const notes: Array<{ freq: number; start: number; duration: number }> = [
-      { freq: 659.25, start: 0, duration: 0.14 }, // E5
-      { freq: 987.77, start: 0.1, duration: 0.28 }, // B5
-    ];
-
-    notes.forEach(({ freq, start, duration }) => {
-      const oscillator = ctx.createOscillator();
-      const gain = ctx.createGain();
-      oscillator.type = "sine";
-      oscillator.frequency.value = freq;
-
-      const startTime = ctx.currentTime + start;
-      const endTime = startTime + duration;
-      gain.gain.setValueAtTime(0, startTime);
-      gain.gain.linearRampToValueAtTime(0.22, startTime + 0.015);
-      gain.gain.exponentialRampToValueAtTime(0.0001, endTime);
-
-      oscillator.connect(gain);
-      gain.connect(ctx.destination);
-      oscillator.start(startTime);
-      oscillator.stop(endTime + 0.02);
-    });
-  } catch {
-    // Sound is a nice-to-have; never let it break node confirmation.
-  }
-}
-
 // Plays a short, quiet rising "tick" -- used when a progress popup's bar/number starts
-// growing (XP, insights count, body gain, area/today progress, bug victories). Subtler and
-// shorter than playNodeConfirmedSound() on purpose: this fires much more often, so it reads
-// as "ping, moving up" rather than competing with the node-confirmed chime.
+// growing (XP, insights count, body gain, area/today progress, bug victories). Deliberately
+// subtle since it fires often, reading as "ping, moving up" rather than a loud confirmation.
 export function playProgressAdvanceSound() {
   try {
     const ctx = getAudioContext();

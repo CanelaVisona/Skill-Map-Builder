@@ -121,7 +121,10 @@ export function BodyGainPopup({ snapshot, onClose }: BodyGainPopupProps) {
 
   const { zone, dimension, before, after } = snapshot;
   const useResetAnimation = animationStage === "afterReset";
-  const [, accentColor] = PALETTES[dimension];
+  // El ícono y el borde del rombo van del mismo dorado que el chip "Lv" del pop up de
+  // skills (palette.text), en vez del verde/azul de PALETTES -- ese esquema queda
+  // reservado para la barra de bloques, que sí necesita distinguir fuerza de flexibilidad.
+  const accentColor = palette.text;
 
   return createPortal(
     <AnimatePresence>
@@ -183,6 +186,10 @@ export function BodyGainPopup({ snapshot, onClose }: BodyGainPopupProps) {
               >
                 Lv {after.lvl}
               </div>
+            </div>
+
+            <div className="mt-3 text-center text-[13px] font-medium" style={{ color: palette.text }}>
+              {before.val} → {after.val}
             </div>
 
             <div className="mt-3">

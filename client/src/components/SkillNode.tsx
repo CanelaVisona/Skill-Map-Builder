@@ -15,7 +15,6 @@ import { usePowerCelebration } from "@/lib/power-celebration-context";
 import { usePendingRewards } from "@/lib/pending-rewards-context";
 import { beginPopupChain, endPopupChain, runPopupQueueAsync, getPopupBusyDelay } from "@/lib/popup-coordinator";
 import { getNodeTitleWordLimit, clampToWordLimit } from "@/lib/node-title-settings";
-import { playNodeConfirmedSound } from "@/lib/sound";
 import {
   Popover,
   PopoverContent,
@@ -946,25 +945,18 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [showXpAnimation, setShowXpAnimation] = useState(false);
   const [animatedXpValue, setAnimatedXpValue] = useState("");
 
-  // "Video game" rise-and-fade flourish played once per staged reward when the node is
-  // confirmed (see runConfirmSequence): each preview line that was staged below the title
-  // flies away, one at a time, immediately followed by its own celebration pop-up. Purely a
-  // cosmetic overlay -- doesn't affect the real title/preview rows, which disappear on their
-  // own the instant their underlying pending state is cleared.
-  const GHOST_FLY_AWAY_MS = 900;
-  const flyingGhostIdRef = useRef(0);
-  const [flyingGhost, setFlyingGhost] = useState<{ id: number; label: string } | null>(null);
-  const playGhostFlyAway = (label: string): Promise<void> => {
-    if (!label) return Promise.resolve();
-    flyingGhostIdRef.current += 1;
-    setFlyingGhost({ id: flyingGhostIdRef.current, label });
-    return new Promise((resolve) => setTimeout(() => { setFlyingGhost(null); resolve(); }, GHOST_FLY_AWAY_MS));
-  };
   // Learning/tool finalize dialog shown right before a node with a staged learning gets
   // confirmed -- see runConfirmSequence and the isLearningFinalizeOpen Dialog below.
   const [isLearningFinalizeOpen, setIsLearningFinalizeOpen] = useState(false);
   const [finalizeLearningTitle, setFinalizeLearningTitle] = useState("");
   const [finalizeLearningSentence, setFinalizeLearningSentence] = useState("");
+  // Set the moment "Confirmar" is pressed in that dialog, so a second tap on the node while
+  // the confirm PATCH is still in flight (skill.status/pendingLearning haven't updated yet --
+  // that round-trip plus the popup-chain busy-wait in runConfirmSequence can take a couple of
+  // seconds) doesn't re-open the same "Terminar aprendizaje" dialog. Reset back to false
+  // whenever a fresh learning gets staged (handleAddLearning), so a later legitimate
+  // stage-then-confirm cycle on this node isn't permanently blocked.
+  const learningFinalizeSubmittedRef = useRef(false);
 
   const pendingXpValue = useRef<string>("");
   const prevStatus = useRef<string>(skill.status);
@@ -983,13 +975,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   // Show XP animation when skill becomes mastered
   useEffect(() => {
     const justConfirmed = prevStatus.current !== "mastered" && skill.status === "mastered";
-    if (justConfirmed) {
-      // Fires off the actual status flip (available -> mastered) landing, not off the click --
-      // toggleSkillStatus/toggleProjectSkillStatus round-trip through a PATCH before the node
-      // re-renders as confirmed, so playing this at click time made the sound land noticeably
-      // before the node visually looked confirmed.
-      playNodeConfirmedSound();
-    }
     if (justConfirmed && pendingXpValue.current) {
       setAnimatedXpValue(pendingXpValue.current);
       setShowXpAnimation(true);
@@ -1231,6 +1216,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
     if (skill.status === "available") {
       setPendingLearning({ title: learningTitle.trim(), sentence: learningSentence.trim() });
+      // Fresh draft staged -- a previous "Confirmar" submission (if any) is no longer the
+      // relevant one, so re-arm the finalize dialog for this new draft.
+      learningFinalizeSubmittedRef.current = false;
       setLearningTitle("");
       setLearningSentence("");
       return;
@@ -1483,15 +1471,19 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     // may already be showing the area/quest "progress bar filling up" pop-up -- see the
     // synchronous markPopupActive + beginPopupChain claim in skill-context.tsx. That one always
     // has to play first, so if it's busy right now, wait for it to clear before doing anything
-    // else here (its own matching endPopupChain is what lets this busy-wait resolve).
-    if (getPopupBusyDelay() > 0) {
+    // else here (its own matching endPopupChain is what lets this busy-wait resolve). Re-checks
+    // on every wake-up instead of computing the wait once: the placeholder busy claimed at click
+    // time is just a stand-in for "the PATCH round-trip hasn't resolved yet" -- once the área
+    // pop-up actually fires (after that PATCH resolves), it re-marks busy for its own real
+    // POPUP_VISIBLE_MS, which is longer than what was left of the original placeholder. A
+    // one-shot wait computed up front would miss that extension and let the reward sequence
+    // below start while the área pop-up is still on screen.
+    while (getPopupBusyDelay() > 0) {
       await new Promise<void>((resolve) => setTimeout(resolve, getPopupBusyDelay() + 150));
     }
 
-    // Snapshot + clear every staged reward up front. The real preview row disappears
-    // immediately (as it always has) the moment its state is cleared; the ghost flourish
-    // below is what gives the player something to actually watch fly away, instead of it
-    // just vanishing.
+    // Snapshot + clear every staged reward up front -- the preview row below the title
+    // disappears immediately, the moment its state is cleared.
     const learning = learningOverride ?? pendingLearning;
     const tools = pendingTools;
     const xpSkillId = pendingXpSkillId;
@@ -1505,7 +1497,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     setPendingPowerId(null);
 
     // Same order the preview lines are rendered below the title (learning, tools, xp, body,
-    // power) -- that's also the order the ghost flourish + celebration pop-ups play in.
+    // power) -- that's also the order the celebration pop-ups play in.
     const blocks: ConfirmRewardBlock[] = [];
 
     if (learning) {
@@ -1561,30 +1553,31 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       return;
     }
 
-    // Each block's own preview line flies away at the same time its pop-up(s) show and grow
-    // (the "título de xp" rising/fading while the skill's own XP bar fills), instead of the
-    // ghost finishing first and only then handing off to the pop-up -- no leftover artifact
-    // needs cleaning up afterward either way, since nothing is skipped. Wrapped in try/finally
-    // so a failed mutation (e.g. a dropped request while creating the learning) can't leave the
-    // popup chain stuck open forever -- which would otherwise silently block "Quest updated!"
-    // /the area pop-up/the level-up banner for every confirm from then on.
+    // Each block's own preview row (below the title) disappears the instant its underlying
+    // pending state is cleared above; this just runs the block's actual mutation/API call and
+    // shows its celebration pop-up(s) right after. Wrapped in try/finally so a failed mutation
+    // (e.g. a dropped request while creating the learning) can't leave the popup chain stuck
+    // open forever -- which would otherwise silently block "Quest updated!"/the area pop-up/the
+    // level-up banner for every confirm from then on.
     try {
       for (const block of blocks) {
         try {
           const tasks: Array<() => void> = [];
-          await Promise.all([
-            playGhostFlyAway(block.label),
-            (async () => {
-              await block.run((fn) => tasks.push(fn));
-              await runPopupQueueAsync(tasks);
-            })(),
-          ]);
+          await block.run((fn) => tasks.push(fn));
+          await runPopupQueueAsync(tasks);
         } catch (error) {
           console.error("[runConfirmSequence] Reward block failed:", block.label, error);
         }
-        const delay = getPopupBusyDelay();
-        if (delay > 0) {
-          await new Promise((resolve) => setTimeout(resolve, delay + 150));
+        // Re-checks on every wake-up instead of computing the wait once -- a block that just
+        // finished can still have something trailing behind it that extends busy AFTER this is
+        // first computed (e.g. an xp block that leveled up the skill: ExperienceGainPopup only
+        // hands off to the full-screen "¡Subiste de nivel!" celebration -- re-marking busy for
+        // its own POPUP_VISIBLE_MS -- near the end of its own bar animation, well after
+        // runPopupQueueAsync above already resolved). A one-shot wait computed right after that
+        // resolves would miss that extension and let the next block (e.g. fuerza/flexibilidad)
+        // start while the level-up celebration is still on screen.
+        while (getPopupBusyDelay() > 0) {
+          await new Promise((resolve) => setTimeout(resolve, getPopupBusyDelay() + 150));
         }
       }
     } finally {
@@ -1897,10 +1890,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   // Actually confirms the node (calls the parent's onClick, which flips available -> mastered
   // in skill-context.tsx), running the staged-rewards sequence first if there's anything to
   // grant. `learningOverride` is threaded straight through to runConfirmSequence -- see there.
-  // The confirmation sound isn't played here -- see the skill.status effect above, which fires
-  // once the status actually lands as "mastered" instead of at click time (toggleSkillStatus
-  // below is an async PATCH round-trip, so playing here made the sound land noticeably before
-  // the node visually looked confirmed).
   const confirmNode = (learningOverride?: { title: string; sentence: string }) => {
     // onClick() first: it's what runs skill-context.tsx's toggleSkillStatus, which -- for a
     // regular confirm -- synchronously claims the busy-gate for the area/quest "progress bar
@@ -1916,6 +1905,12 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const handleLearningFinalizeConfirm = () => {
     const finalTitle = finalizeLearningTitle.trim() || pendingLearning?.title || "";
     const finalSentence = finalizeLearningSentence.trim();
+    // Mark this draft as already submitted right away -- confirmNode() below kicks off an
+    // async PATCH (+ the popup-chain busy-wait in runConfirmSequence) before skill.status and
+    // pendingLearning actually update, so without this an impatient second tap on the node in
+    // that window would see the same stale "available" + pendingLearning and reopen this same
+    // dialog (see handleClick).
+    learningFinalizeSubmittedRef.current = true;
     setIsLearningFinalizeOpen(false);
     confirmNode({ title: finalTitle, sentence: finalSentence });
   };
@@ -1982,7 +1977,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     // aprendizaje" dialog before actually confirming -- see the Dialog below and
     // handleLearningFinalizeConfirm. Otherwise confirm right away, granting whatever else
     // (XP/fuerza/poder/tools) was staged in Step 3 / the Journal.
-    if (skill.status === "available" && pendingLearning) {
+    if (skill.status === "available" && pendingLearning && !learningFinalizeSubmittedRef.current) {
       setFinalizeLearningTitle(pendingLearning.title);
       setFinalizeLearningSentence(pendingLearning.sentence);
       setIsLearningFinalizeOpen(true);
@@ -2242,23 +2237,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                   )}
                 </div>
               )}
-              {/* Rise-and-fade "collected" ghost, played one at a time by runConfirmSequence:
-                  each staged-reward line above flies away, immediately followed by its own
-                  celebration pop-up. Purely a cosmetic overlay on top of the preview rows --
-                  those disappear on their own instantly once confirmed, same as always. */}
-              <AnimatePresence>
-                {flyingGhost && (
-                  <motion.div
-                    key={flyingGhost.id}
-                    className="absolute left-0 top-0 whitespace-nowrap pointer-events-none select-none font-medium text-sm text-foreground"
-                    initial={{ opacity: 1, y: 0 }}
-                    animate={{ opacity: 0, y: -30 }}
-                    transition={{ duration: GHOST_FLY_AWAY_MS / 1000, ease: "easeOut" }}
-                  >
-                    {flyingGhost.label}
-                  </motion.div>
-                )}
-              </AnimatePresence>
               {/* Sub-skill tree completion badge: this node's own sub-skill tree is fully
                   mastered. Shown even once this node itself gets confirmed later, since it
                   stays true -- the small circle mirrors the mastered-node circle above. */}

@@ -128,6 +128,19 @@ export function SkillDiamond({
       style={{ minHeight: "96px", minWidth: "96px", display: "flex", alignItems: "center", justifyContent: "center" }}
       onClick={onClick}
     >
+      {/* Current level — a normal (non-absolute) row sitting above the medallion, so it takes
+          up its own space instead of overlapping the diamond, and can never get clipped by an
+          ancestor's overflow the way an absolutely-positioned badge poking outside its box
+          could. Right-aligned so it reads as sitting just above-and-right of the diamond's tip. */}
+      <div className="flex justify-end" style={{ width: `${svgBox}px` }}>
+        <span
+          className="text-[11px] leading-none font-bold px-1.5 py-0.5 rounded-md shadow-sm"
+          style={{ backgroundColor: "#1a1410", color: "#e8c77e", border: "1px solid #c8a96e" }}
+        >
+          {skill.level}
+        </span>
+      </div>
+
       {/* Medallion */}
       <div className="relative flex items-center justify-center">
         <motion.div
@@ -172,27 +185,6 @@ export function SkillDiamond({
                 outerVertices.map((v, i) => (
                   <circle key={i} cx={v.x} cy={v.y} r={1.4} fill={rarityTokens.ringColor ?? materialTokens.rimHighlight} opacity={0.85} />
                 ))}
-              {/* Current level — drawn on the plate itself (not an HTML overlay), a little
-                  in from the top point and off to the right, so it can never get clipped by
-                  an ancestor's overflow like the old absolutely-positioned badge did. The
-                  dark outline (paintOrder "stroke") keeps it legible over any material color. */}
-              {isUnlocked && (
-                <text
-                  x={renderSize * 0.62}
-                  y={renderSize * 0.26}
-                  textAnchor="middle"
-                  style={{
-                    fontSize: Math.max(9, renderSize * 0.18),
-                    fontWeight: 700,
-                    fill: "#fff8e0",
-                    stroke: "#000",
-                    strokeWidth: 2.5,
-                    paintOrder: "stroke",
-                  }}
-                >
-                  {skill.level}
-                </text>
-              )}
             </g>
           </svg>
         </motion.div>

@@ -35,7 +35,9 @@
       "Bash(node _repro_scroll_test.spec.mjs)",
       "Bash(echo \"grep_exit:$?\")",
       "Bash(curl -s -o /dev/null -w \"status:%{http_code}\\\\n\" http://localhost:3001/ --max-time 5)",
-      "Bash(awk 'NR==1436,NR==1900 && /catch \\\\\\(error\\\\\\)/{print NR\": \"$0}' client/src/lib/skill-context.tsx)"
+      "Bash(awk 'NR==1436,NR==1900 && /catch \\\\\\(error\\\\\\)/{print NR\": \"$0}' client/src/lib/skill-context.tsx)",
+      "Bash(grep -n \"deferAutoUnlock\\) {\\\\s*$\" client/src/lib/skill-context.tsx)",
+      "Bash(awk 'NR==967,NR==1830' client/src/lib/skill-context.tsx)"
     ]
   }
 }

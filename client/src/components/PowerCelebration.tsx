@@ -110,33 +110,60 @@ export function PowerCelebration({ celebration }: PowerCelebrationProps) {
     );
   }
 
+  // Same card footprint as ExperienceGainPopup/AreaLevelGainPopup (w-[min(92vw,356px)],
+  // rounded-[4px], px-[16px] py-[14px], same shadow) so "Poder desbloqueado" reads as part of
+  // the same family of pop-ups instead of a smaller, differently-shaped toast.
   return createPortal(
     <AnimatePresence>
       {celebration && (
         <motion.div
-          key="power-unlocked-toast"
-          className="fixed left-1/2 top-1/2 z-[300] -translate-x-1/2 -translate-y-1/2 pointer-events-none"
-          initial={{ opacity: 0, y: -6 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -6 }}
-          transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+          key="power-unlocked-popup"
+          className="fixed inset-0 z-[300] pointer-events-none"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
         >
           <div
-            className="flex items-center gap-2 rounded-full border px-3.5 py-2 shadow-[0_8px_24px_rgba(0,0,0,0.35)]"
-            style={{ backgroundColor: palette.bg, borderColor: palette.border }}
+            style={{
+              position: "fixed",
+              top: "50%",
+              left: "50%",
+              transform: "translateX(-50%) translateY(-50%)",
+              zIndex: 9999,
+            }}
           >
-            <span
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
-              style={{ backgroundColor: palette.blockEmpty, border: `1px solid ${palette.text}` }}
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+              className="w-[min(92vw,356px)] rounded-[4px] border px-[16px] py-[14px] shadow-[0_18px_40px_rgba(0,0,0,0.45)]"
+              style={{ backgroundColor: palette.bg, borderColor: palette.border }}
             >
-              <LockOpen className="h-3.5 w-3.5 text-amber-400" strokeWidth={2} />
-            </span>
-            <span className="text-xs" style={{ color: palette.textMuted }}>
-              Poder desbloqueado ·{" "}
-              <span className="font-medium" style={{ color: palette.text }}>
-                {celebration.name}
-              </span>
-            </span>
+              <div className="flex items-center gap-2">
+                <div className="relative flex h-8 w-8 shrink-0 items-center justify-center">
+                  <svg viewBox="0 0 32 32" className="absolute inset-0 h-full w-full">
+                    <polygon
+                      points="16,2 30,16 16,30 2,16"
+                      fill={palette.surfaceInset}
+                      stroke="#fbbf24"
+                      strokeWidth="1.5"
+                    />
+                  </svg>
+                  <LockOpen className="relative h-4 w-4 text-amber-400" strokeWidth={2.1} />
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[13px] font-medium" style={{ color: palette.text }}>
+                    {celebration.name}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-3 text-center text-[13px] font-medium" style={{ color: palette.text }}>
+                Poder desbloqueado
+              </div>
+            </motion.div>
           </div>
         </motion.div>
       )}

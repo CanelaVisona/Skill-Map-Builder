@@ -359,6 +359,15 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
   const [globalSkills, setGlobalSkills] = useState<GlobalSkill[]>([]);
   const [globalSkillsLoading, setGlobalSkillsLoading] = useState(true);
   const isReordering = useRef(false);
+  // Skill ids currently mid-way through a final-node "opening a new level" confirm: the node's
+  // own local status flip to "mastered" (and the level-completed "all nodes orange" cue that
+  // depends on it) is deliberately held back until the "¡Subiste de nivel!" banner appears (see
+  // isOpeningNewLevel below), and the new level's own nodes are held back further still, until
+  // that banner disappears. The server already has the node as mastered from the very first
+  // PATCH, so a re-tap on it during that window (while it still LOOKS unconfirmed client-side)
+  // would otherwise re-enter this same confirm flow -- double-granting XP, re-triggering the
+  // banner, etc. This closes that window off entirely instead.
+  const pendingFinalConfirmIds = useRef<Set<string>>(new Set());
 
   const { showAreaXpPopup } = useAreaXpPopup();
   const areaQuestUpdatedDelayMs = 1600;
@@ -409,11 +418,19 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
   // from QuestUpdatedCelebration's own mount lifecycle, since that component is rendered at
   // two separate spots (area view / project view) and switching between them mid-celebration
   // would remount whichever one is now visible and replay the sound with no new level-up.
-  const triggerQuestCelebration = (text: string) => {
+  // `onShow`/`onHide` let a caller synchronize something else with this banner's own
+  // lifecycle -- used by the isOpeningNewLevel confirm path below to flip the confirmed node's
+  // status to "mastered" (and the level-completed "all nodes orange" cue that depends on it)
+  // right as the banner appears, and reveal the new level's own nodes only once it disappears.
+  const triggerQuestCelebration = (text: string, onShow?: () => void, onHide?: () => void) => {
     markPopupActive(POPUP_VISIBLE_MS);
+    onShow?.();
     setQuestCelebrationText(text);
     playLevelUpSound();
-    setTimeout(() => setQuestCelebrationText(null), POPUP_VISIBLE_MS);
+    setTimeout(() => {
+      setQuestCelebrationText(null);
+      onHide?.();
+    }, POPUP_VISIBLE_MS);
   };
 
   const triggerLevelUpBanner = () => triggerQuestCelebration("¡Subiste de nivel!");
@@ -455,14 +472,19 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     setTimeout(attempt, 150);
   };
 
-  const triggerQuestCelebrationAfterToday = (text: string, _isPlannedForToday: boolean) => {
-    runAfterPopupsClear(() => triggerQuestCelebration(text));
-  };
+  // Holds whatever onHide callback the current "Quest updated!" call was given (see
+  // triggerQuestUpdated below), so hideQuestUpdatedPopup (manual dismiss) can also fire it.
+  // Cleared right after use so the popup's own setTimeout firing later doesn't call it a
+  // second time.
+  const questUpdatedHideCallback = useRef<(() => void) | null>(null);
 
   // "Quest updated!" al confirmar un nodo regular — de vuelta como pop-up (se había quitado),
   // ahora con la misma tarjeta/tamaño que ExperienceGainPopup y TodayProgressGainPopup en vez
-  // del texto grande suelto que tenía originalmente.
-  const triggerQuestUpdated = () => {
+  // del texto grande suelto que tenía originalmente. `onHide` lets a caller synchronize
+  // something else (e.g. refreshing the area/quest's XP total) with the exact moment this
+  // pop-up disappears, same idea as triggerQuestCelebration's onShow/onHide.
+  const triggerQuestUpdated = (onHide?: () => void) => {
+    questUpdatedHideCallback.current = onHide ?? null;
     markPopupActive(POPUP_VISIBLE_MS);
     setShowQuestUpdatedPopup(true);
     setTimeout(() => {
@@ -470,18 +492,19 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       // Reopen the unlock gate right as the pop-up disappears, so the next node becomes
       // available at that moment instead of the instant the node was confirmed.
       setUnlockGateOpen(true);
+      questUpdatedHideCallback.current?.();
+      questUpdatedHideCallback.current = null;
     }, POPUP_VISIBLE_MS);
   };
 
   const hideQuestUpdatedPopup = () => {
     setShowQuestUpdatedPopup(false);
     // Manual dismiss (tap outside) also counts as the pop-up "disappearing" -- reopen the
-    // unlock gate right away instead of leaving it closed until the timer would've fired.
+    // unlock gate right away instead of leaving it closed until the timer would've fired, and
+    // fire whatever onHide is still pending the same way.
     setUnlockGateOpen(true);
-  };
-
-  const triggerQuestUpdatedAfterToday = (_isPlannedForToday: boolean) => {
-    runAfterPopupsClear(triggerQuestUpdated);
+    questUpdatedHideCallback.current?.();
+    questUpdatedHideCallback.current = null;
   };
 
   const activeArea = Array.isArray(areas) ? areas.find(a => a.id === activeAreaId) : undefined;
@@ -974,7 +997,14 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
   const toggleSkillStatus = async (areaId: string, skillId: string) => {
     console.log(`[toggleSkillStatus] CALLED - areaId: ${areaId}, skillId: ${skillId}, timestamp: ${Date.now()}`);
-    
+
+    // Guard: a final-node confirm on this skill is still finishing its "¡Subiste de nivel!"
+    // sequence -- see pendingFinalConfirmIds above.
+    if (pendingFinalConfirmIds.current.has(skillId)) {
+      console.log('[toggleSkillStatus] Blocked - final-node confirm still finishing');
+      return;
+    }
+
     // Guard: Node 1 should never be clickable
     const tempArea = areas.find(a => a.id === areaId);
     const tempSkill = tempArea?.skills.find(s => s.id === skillId);
@@ -1092,6 +1122,11 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     // the server auto-unlocks the next node in the same PATCH, but that unlock must stay
     // hidden client-side until the pop-up disappears (see unlockGateOpen).
     const deferAutoUnlock = newStatus === "mastered" && !isFinalNodeByPosition && !isOpeningNewLevel;
+    // For isOpeningNewLevel only: resolves once the new level (and the following locked one)
+    // have been generated server-side -- reassigned below, once that fetch chain is kicked off.
+    // The new level's nodes aren't revealed to the client until BOTH this resolves AND the
+    // "¡Subiste de nivel!" banner has disappeared (see its onHide callback further below).
+    let newLevelGenerationDone: Promise<void> = Promise.resolve();
     // Claim the busy-gate AND the popup chain synchronously, right now -- before the PATCH
     // round-trip -- so this area/quest progress pop-up is guaranteed to always play FIRST.
     // Anything else triggered by this same click (e.g. the staged xp/fuerza/poder/aprendizaje
@@ -1102,9 +1137,12 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     // expiring and whichever pop-up fires next actually marking itself busy. The real
     // showAreaXpPopup call below re-marks busy for its own real POPUP_VISIBLE_MS once it
     // actually fires, and closes this same chain right after (see finally below).
-    if (deferAutoUnlock) {
+    if (deferAutoUnlock || isOpeningNewLevel) {
       markPopupActive(2000);
       beginPopupChain();
+    }
+    if (isOpeningNewLevel) {
+      pendingFinalConfirmIds.current.add(skillId);
     }
 
     try {
@@ -1127,17 +1165,21 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           await archiveArea(areaId);
           await refreshAllAreas();
         }, questCompletionArchiveDelayMs);
-      } else if (deferAutoUnlock) {
+      } else if (deferAutoUnlock || isOpeningNewLevel) {
         // Close the unlock gate: the next node (already auto-unlocked server-side in
         // updatedLevelSkills) must not become visible/available until the "Quest updated!"
-        // pop-up has shown and disappeared -- see triggerQuestUpdated.
+        // pop-up has shown and disappeared -- see triggerQuestUpdated. (For isOpeningNewLevel
+        // there's no "Quest updated!" and no next node in THIS level either -- see below -- but
+        // the gate still gets reopened once "¡Subiste de nivel!" hides, for symmetry.)
         setUnlockGateOpen(false);
 
-        // Trigger area XP popup before quest popup -- once busy clears (NOT once the popup
-        // chain clears too -- that chain is the one WE just opened above, checking it here
-        // would deadlock waiting on ourselves). Closes that same chain right as this pop-up
-        // fires, handing off cleanly into SkillNode.tsx's own reward chain (if any) with no gap
-        // where nothing is marked busy/pending.
+        // Trigger area XP popup before quest popup/level-up banner -- once busy clears (NOT
+        // once the popup chain clears too -- that chain is the one WE just opened above,
+        // checking it here would deadlock waiting on ourselves). Closes that same chain right
+        // as this pop-up fires, handing off cleanly into SkillNode.tsx's own reward chain (if
+        // any) with no gap where nothing is marked busy/pending. Also runs for
+        // isOpeningNewLevel -- the final node of a level still fills that level's own progress
+        // bar to 100%, and this pop-up must show before the "¡Subiste de nivel!" banner below.
         runAfterBusyClears(() => {
           try {
             const totalInLevel = countSkillsInLevel(area.skills, area.unlockedLevel);
@@ -1161,14 +1203,54 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           }
         });
 
-        const isPlannedForToday = skill.plannedDate === getTodayStr();
-        setTimeout(() => {
-          triggerQuestUpdatedAfterToday(isPlannedForToday);
-        }, areaQuestUpdatedDelayMs);
+        if (isOpeningNewLevel) {
+          // No "Quest updated!" for the final node of a level -- it goes straight from the
+          // área pop-up above to "¡Subiste de nivel!", which is the true last pop-up shown for
+          // this confirm.
+          setTimeout(() => {
+            runAfterPopupsClear(() => triggerQuestCelebration(
+              "¡Subiste de nivel!",
+              // onShow: flip the confirmed node to "mastered" locally right as the banner
+              // appears, in sync with it -- this is what makes every node in the level turn
+              // orange (isLevelCompleted) at that exact moment instead of earlier. Also lifts
+              // the re-tap guard now that the node genuinely looks confirmed.
+              () => {
+                setAreas(prev => prev.map(a => a.id !== areaId ? a : {
+                  ...a,
+                  skills: a.skills.map(s => s.id === skillId ? { ...s, status: "mastered" as SkillStatus } : s),
+                }));
+                pendingFinalConfirmIds.current.delete(skillId);
+              },
+              // onHide: reopen the gate (nothing in THIS level depends on it anymore, but
+              // leaving it closed would wrongly hold up some other area/quest's unlock), and
+              // reveal the new level's own nodes only once BOTH the banner has disappeared AND
+              // the server-side generation has actually finished -- this refresh also picks up
+              // the XP delta that addAreaXp above skipped.
+              () => {
+                setUnlockGateOpen(true);
+                void newLevelGenerationDone.then(() => refreshAllAreas());
+              },
+            ));
+          }, areaQuestUpdatedDelayMs);
+        } else {
+          setTimeout(() => {
+            runAfterPopupsClear(() => triggerQuestUpdated(
+              // onHide: pick up the XP delta that addAreaXp above deliberately skipped
+              // refreshing immediately, now that it's safe (the next node is revealed by this
+              // same pop-up disappearing, via the auto-unlock effect watching unlockGateOpen --
+              // this refresh is only about the area/quest's own XP total catching up).
+              () => { void refreshAllAreas(); },
+            ));
+          }, areaQuestUpdatedDelayMs);
+        }
       }
 
       if (newStatus === "mastered") {
-        void addAreaXp(areaId, false, 1);
+        // Skip the immediate refresh for deferAutoUnlock/isOpeningNewLevel -- those already
+        // have their own refresh scheduled for the right moment (unlockGateOpen reopening /
+        // the "¡Subiste de nivel!" banner hiding), which will pick up this XP delta too. An
+        // immediate refresh here would reveal the next node (or new level) way too early.
+        void addAreaXp(areaId, false, 1, deferAutoUnlock || isOpeningNewLevel);
         assignTodayTaskSlotForConfirmedNode(skillId);
       } else if (skill.status === "mastered" && newStatus === "available") {
         void addAreaXp(areaId, false, -1);
@@ -1193,17 +1275,21 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         }));
       }
 
-      // Handle level unlocking with atomic state update
+      // Handle level unlocking -- reveal is deferred until the "¡Subiste de nivel!" banner
+      // disappears, not applied atomically here (see below).
       if (isOpeningNewLevel) {
         const newUnlockedLevel = skill.level + 1;
 
-        // Trigger level up after the area popup has had time to animate
-        const isPlannedForTodayLevelUp = skill.plannedDate === getTodayStr();
-        setTimeout(() => triggerQuestCelebrationAfterToday("¡Subiste de nivel!", isPlannedForTodayLevelUp), areaLevelUpDelayMs);
+        // The "¡Subiste de nivel!" banner itself is triggered above, chained right after
+        // "Quest updated!" (see the deferAutoUnlock || isOpeningNewLevel branch) -- so it's
+        // always the very last pop-up shown for this confirm.
 
-        // Generate new level in the background - atomically update state once on completion
-        // This endpoint is idempotent, so it's safe to call even if nodes exist
-        fetch(`/api/areas/${areaId}/generate-level`, {
+        // Generate new level in the background. Deliberately does NOT call refreshAllAreas()
+        // itself anymore -- the new level's nodes must not become visible until the "¡Subiste
+        // de nivel!" banner disappears (its onHide callback above awaits this same promise and
+        // does that revealing). This endpoint is idempotent, so it's safe to call even if nodes
+        // exist.
+        newLevelGenerationDone = fetch(`/api/areas/${areaId}/generate-level`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ level: newUnlockedLevel }),
@@ -1212,19 +1298,19 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
             console.error("Failed to generate new level");
             return;
           }
-          
+
           return response.json().then(({ updatedArea, createdSkills }) => {
             // Immediately create the next future level AFTER receiving updated nextLevelToAssign
             // This maintains the 3 locked levels ahead of the newly visible level
             const nextFutureLevel = updatedArea.nextLevelToAssign;
-            
+
             // Check if the future level already exists in area skills
             const futureLeveSkills = area.skills.filter(s => s.level === nextFutureLevel);
-            
+
             console.log('[reconfirm] nextFutureLevel:', nextFutureLevel);
             console.log('[reconfirm] futureLeveSkills.length:', futureLeveSkills?.length);
             console.log('[reconfirm] skipping generation:', futureLeveSkills?.length > 0);
-            
+
             if (futureLeveSkills.length > 0) {
               // Future level already exists, skip generation
               console.log(`[toggleSkillStatus] Future level ${nextFutureLevel} already exists, skipping generation`);
@@ -1245,10 +1331,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
                 console.warn(`[toggleSkillStatus] Error creating future level ${nextFutureLevel}:`, error);
               });
             }
-            
-            // After level generation completes, refresh entire areas state from server
-            console.log("[toggleSkillStatus] Level generation complete, refreshing areas from server...");
-            return refreshAllAreas();
+
+            console.log("[toggleSkillStatus] Level generation complete, will refresh once the level-up banner hides...");
           });
         }).catch(error => {
           console.error("Error generating new level:", error);
@@ -1434,16 +1518,23 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       // above never got a chance to reach the runAfterBusyClears callback that would've closed
       // it -- close it here instead, or it'd stay stuck open forever, silently blocking "Quest
       // updated!"/today-progress for every confirm from then on.
-      if (deferAutoUnlock) {
+      if (deferAutoUnlock || isOpeningNewLevel) {
         endPopupChain();
       }
+      pendingFinalConfirmIds.current.delete(skillId);
     }
   };
 
   const toggleProjectSkillStatus = async (projectId: string, skillId: string) => {
+    // Guard: see matching comment on pendingFinalConfirmIds/toggleSkillStatus above.
+    if (pendingFinalConfirmIds.current.has(skillId)) {
+      console.log('[toggleProjectSkillStatus] Blocked - final-node confirm still finishing');
+      return;
+    }
+
     const project = projects.find(p => p.id === projectId);
     if (!project) return;
-    
+
     const skill = project.skills.find(s => s.id === skillId);
     if (!skill) return;
 
@@ -1526,11 +1617,16 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     // the next node's auto-unlock (handled by the generic auto-unlock effect below) must
     // stay gated until the pop-up disappears (see unlockGateOpen).
     const deferAutoUnlock = newStatus === "mastered" && !isFinalNodeByPosition && !isOpeningNewLevel;
+    // See matching comment in toggleSkillStatus above.
+    let newLevelGenerationDone: Promise<void> = Promise.resolve();
     // Claim the busy-gate and the popup chain synchronously -- see matching comment in
     // toggleSkillStatus above.
-    if (deferAutoUnlock) {
+    if (deferAutoUnlock || isOpeningNewLevel) {
       markPopupActive(2000);
       beginPopupChain();
+    }
+    if (isOpeningNewLevel) {
+      pendingFinalConfirmIds.current.add(skillId);
     }
 
     try {
@@ -1551,12 +1647,13 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           await archiveProject(projectId);
           await refreshAllAreas();
         }, questCompletionArchiveDelayMs);
-      } else if (deferAutoUnlock) {
+      } else if (deferAutoUnlock || isOpeningNewLevel) {
         // Close the unlock gate before the next node is allowed to appear available.
         setUnlockGateOpen(false);
 
         // Trigger quest XP popup before quest updated banner -- once busy clears (see matching
         // comment in toggleSkillStatus above about why this checks busy only, not the chain).
+        // Also runs for isOpeningNewLevel -- see matching comment in toggleSkillStatus above.
         runAfterBusyClears(() => {
           try {
             const totalInLevel = countSkillsInLevel(project.skills, project.unlockedLevel);
@@ -1580,14 +1677,37 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           }
         });
 
-        const isPlannedForToday = skill.plannedDate === getTodayStr();
-        setTimeout(() => {
-          triggerQuestUpdatedAfterToday(isPlannedForToday);
-        }, areaQuestUpdatedDelayMs);
+        if (isOpeningNewLevel) {
+          // No "Quest updated!" for the final node -- see matching comment in
+          // toggleSkillStatus above.
+          setTimeout(() => {
+            runAfterPopupsClear(() => triggerQuestCelebration(
+              "¡Subiste de nivel!",
+              () => {
+                setProjects(prev => prev.map(p => p.id !== projectId ? p : {
+                  ...p,
+                  skills: p.skills.map(s => s.id === skillId ? { ...s, status: "mastered" as SkillStatus } : s),
+                }));
+                pendingFinalConfirmIds.current.delete(skillId);
+              },
+              () => {
+                setUnlockGateOpen(true);
+                void newLevelGenerationDone.then(() => refreshAllProjects());
+              },
+            ));
+          }, areaQuestUpdatedDelayMs);
+        } else {
+          setTimeout(() => {
+            runAfterPopupsClear(() => triggerQuestUpdated(
+              () => { void refreshAllProjects(); },
+            ));
+          }, areaQuestUpdatedDelayMs);
+        }
       }
 
       if (newStatus === "mastered") {
-        void addAreaXp(projectId, true, 1);
+        // See matching comment in toggleSkillStatus above.
+        void addAreaXp(projectId, true, 1, deferAutoUnlock || isOpeningNewLevel);
         assignTodayTaskSlotForConfirmedNode(skillId);
       } else if (skill.status === "mastered" && newStatus === "available") {
         void addAreaXp(projectId, true, -1);
@@ -1595,26 +1715,15 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
       if (isOpeningNewLevel) {
         const newUnlockedLevel = skill.level + 1;
-        
-        // Update state immediately without waiting
-        setProjects(prev => prev.map(p => {
-          if (p.id !== projectId) return p;
-          return {
-            ...p,
-            unlockedLevel: newUnlockedLevel,
-            nextLevelToAssign: newUnlockedLevel,
-            skills: p.skills.map(s => 
-              s.id === skillId ? { ...s, status: newStatus } : s
-            )
-          };
-        }));
-        
-        // Trigger level up after the area popup has had time to animate
-        const isPlannedForTodayLevelUp = skill.plannedDate === getTodayStr();
-        setTimeout(() => triggerQuestCelebrationAfterToday("¡Subiste de nivel!", isPlannedForTodayLevelUp), areaLevelUpDelayMs);
+
+        // Unlike before, this no longer updates state immediately -- the confirmed node's own
+        // status flip happens in sync with the "¡Subiste de nivel!" banner appearing (its
+        // onShow callback above), and unlockedLevel/nextLevelToAssign/the new level's skills
+        // only get pulled in via refreshAllProjects() once that banner disappears (onHide
+        // above), once this generation is done.
 
         // Generate new level in the background without blocking
-        fetch(`/api/projects/${projectId}/generate-level`, {
+        newLevelGenerationDone = fetch(`/api/projects/${projectId}/generate-level`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ level: newUnlockedLevel }),
@@ -1623,7 +1732,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
             console.error("Failed to generate new level");
             return;
           }
-          
+
           // Also create the next future level (newUnlockedLevel + 3) in the background
           // This maintains the 3 locked levels ahead of the newly visible level
           const nextFutureLevel = newUnlockedLevel + 3;
@@ -1641,10 +1750,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           }).catch(error => {
             console.warn(`[toggleProjectSkillStatus] Error creating future level ${nextFutureLevel}:`, error);
           });
-          
-          // After level generation completes, refresh entire projects state from server
-          console.log("[toggleProjectSkillStatus] Level generation complete, refreshing projects from server...");
-          return refreshAllProjects();
+
+          console.log("[toggleProjectSkillStatus] Level generation complete, will refresh once the level-up banner hides...");
         }).catch(error => {
           console.error("Error generating new level:", error);
         });
@@ -1704,9 +1811,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     } catch (error) {
       console.error("Error toggling project skill status:", error);
       // See matching comment in toggleSkillStatus's catch above.
-      if (deferAutoUnlock) {
+      if (deferAutoUnlock || isOpeningNewLevel) {
         endPopupChain();
       }
+      pendingFinalConfirmIds.current.delete(skillId);
     }
   };
 
@@ -4836,7 +4944,14 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
-  const addAreaXp = async (areaOrProjectId: string, isProject: boolean, delta = 1): Promise<boolean> => {
+  // `skipRefresh` is used right after confirming a node whose next-node reveal (or, for the
+  // final node of a level, whose new-level reveal) is being deliberately held back -- the
+  // refresh this function normally does at the end pulls the ENTIRE area/project fresh from
+  // the server, skills included, which would blow right through that gating and reveal
+  // everything early. The XP delta itself is still saved server-side immediately either way;
+  // only the client picking it up is deferred, to whatever later refresh the caller already
+  // has scheduled for the right moment (see toggleSkillStatus/toggleProjectSkillStatus).
+  const addAreaXp = async (areaOrProjectId: string, isProject: boolean, delta = 1, skipRefresh = false): Promise<boolean> => {
     try {
       const endpoint = isProject
         ? `/api/projects/${areaOrProjectId}/xp`
@@ -4853,10 +4968,12 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         throw new Error(`Failed to update ${isProject ? "project" : "area"} XP`);
       }
 
-      if (isProject) {
-        await refreshAllProjects();
-      } else {
-        await refreshAllAreas();
+      if (!skipRefresh) {
+        if (isProject) {
+          await refreshAllProjects();
+        } else {
+          await refreshAllAreas();
+        }
       }
       return true;
     } catch (error) {
