@@ -1705,7 +1705,6 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
   const bugProgressCount = selectedBug?.status === "debugueado"
     ? 5
     : Math.min(selectedBug?.victoryCount || 0, 5);
-  const bugProgressPercent = (bugProgressCount / 5) * 100;
 
   const totalPowerCount = (powers || []).length;
   const masteredPowerCount = (powers || []).filter((p) => p.isUnlocked === 2).length;
@@ -1846,7 +1845,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
               </ScrollArea>
 
               {viewingExperienceId && (
-                <ScrollArea className={cn(viewingGrowthId ? "w-[78%] sm:w-2/5 shrink-0 border-r pr-3" : "flex-1 pr-4")}>
+                <ScrollArea className={cn(viewingGrowthId ? "w-[78%] sm:w-2/5 shrink-0 border-r pr-3" : "w-[78%] sm:w-auto sm:flex-1 shrink-0 sm:shrink pr-4")}>
                   <p className="text-xs font-medium text-muted-foreground mb-2">Crecimientos vinculados</p>
                   {linkedGrowthsForExperience.length === 0 ? (
                     <p className="text-sm text-muted-foreground">No hay crecimientos vinculados</p>
@@ -2132,11 +2131,15 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                       <div className="flex items-center justify-end mb-1">
                         <p className="text-[11px] text-muted-foreground">{bugProgressCount} / 5</p>
                       </div>
-                      <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-blue-500 rounded-full transition-all duration-300"
-                          style={{ width: `${bugProgressPercent}%` }}
-                        />
+                      <div className="w-full h-2.5 flex gap-0.5">
+                        {Array.from({ length: 5 }).map((_, index) => (
+                          <div
+                            key={index}
+                            className={`flex-1 h-full rounded-sm transition-colors duration-300 ${
+                              index < bugProgressCount ? "bg-emerald-500" : "bg-muted"
+                            }`}
+                          />
+                        ))}
                       </div>
                     </div>
 

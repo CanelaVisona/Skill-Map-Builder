@@ -14,6 +14,9 @@ export function TodayProgressPopupProvider({ children }: { children: ReactNode }
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevCompletedRef = useRef<number | null>(null);
+  // Base separada para decidir CUÁNDO disparar (excluye nodos dominados sin fecha planeada, ver
+  // useTodayProgressSummary). prevCompletedRef sigue siendo la base de lo que se muestra.
+  const prevTriggerRef = useRef<number | null>(null);
 
   const hidePopup = () => setSnapshot(null);
 
@@ -50,7 +53,7 @@ export function TodayProgressPopupProvider({ children }: { children: ReactNode }
   // Observa el total/completado de "hoy" en segundo plano (sin depender de que el modal de
   // Tareas de Hoy esté abierto) y dispara el pop-up apenas el completado sube — venga de un
   // hábito, un nodo dominado, una repetición espaciada confirmada, o una tarea manual tildada.
-  const { completed, total, isReady } = useTodayProgressSummary();
+  const { completed, total, completedForTrigger, isReady } = useTodayProgressSummary();
 
   useEffect(() => {
     // Mientras algo siga cargando, total/completed van subiendo de a poco con cada consulta
@@ -58,20 +61,25 @@ export function TodayProgressPopupProvider({ children }: { children: ReactNode }
     // antes de fijar la base o comparar, si no el pop-up dispara solo con entrar a la página.
     if (!isReady || total === 0) return;
 
-    if (prevCompletedRef.current === null) {
+    if (prevCompletedRef.current === null || prevTriggerRef.current === null) {
       // Primera vez con todo cargado: solo establece la base, no dispara el pop-up con datos
       // que ya existían antes de entrar.
       prevCompletedRef.current = completed;
+      prevTriggerRef.current = completedForTrigger;
       return;
     }
 
-    if (completed > prevCompletedRef.current) {
+    // Compara con completedForTrigger (no cuenta nodos dominados sin fecha planeada) para
+    // decidir si mostrar el pop-up, pero el snapshot que se muestra usa completed/total
+    // (incluye esos nodos) para que coincida con la barra del modal.
+    if (completedForTrigger > prevTriggerRef.current) {
       showTodayProgressPopup({ completedBefore: prevCompletedRef.current, completedAfter: completed, total });
     }
 
     prevCompletedRef.current = completed;
+    prevTriggerRef.current = completedForTrigger;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [completed, total, isReady]);
+  }, [completed, total, completedForTrigger, isReady]);
 
   useEffect(() => {
     return () => {

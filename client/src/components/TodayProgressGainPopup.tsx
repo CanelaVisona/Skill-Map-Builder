@@ -32,8 +32,9 @@ function getTodayLabel(): string {
 }
 
 // Misma "carcasa" (tamaño, forma, color) que los demás pop-ups de progreso (XP y cuerpo del
-// habit tracker: ExperienceGainPopup / BodyGainPopup) — sin ícono, y con la barra de progreso
-// continua del modal de Tareas de Hoy en vez de los bloques segmentados de esos otros pop-ups.
+// habit tracker: ExperienceGainPopup / BodyGainPopup) — sin ícono, y con los mismos bloques
+// segmentados que usa el modal de Tareas de Hoy (uno por tarea del día), en vez de una barra
+// continua.
 export function TodayProgressGainPopup({ snapshot, onClose }: TodayProgressGainPopupProps) {
   const palette = usePopupPalette();
 
@@ -108,14 +109,36 @@ export function TodayProgressGainPopup({ snapshot, onClose }: TodayProgressGainP
             </div>
 
             <div className="mt-3">
-              <div className="w-full h-3 rounded-full overflow-hidden" style={{ backgroundColor: palette.blockEmpty }}>
-                <motion.div
-                  className="h-full rounded-full"
-                  style={{ backgroundColor: PROGRESS_COLOR }}
-                  initial={{ width: `${pctBefore}%` }}
-                  animate={{ width: `${pctAfter}%` }}
-                  transition={{ duration: 0.7, ease: [0.4, 0, 0.2, 1] }}
-                />
+              <div className="w-full h-3 flex gap-1">
+                {total > 0 ? (
+                  Array.from({ length: total }).map((_, index) => {
+                    const isFilledBefore = index < completedBefore;
+                    const isNewlyFilled = index >= completedBefore && index < completedAfter;
+
+                    return (
+                      <div
+                        key={index}
+                        className="flex-1 h-full min-w-[3px] overflow-hidden rounded-sm"
+                        style={{ backgroundColor: palette.blockEmpty }}
+                      >
+                        {isFilledBefore && (
+                          <div style={{ width: "100%", height: "100%", backgroundColor: PROGRESS_COLOR }} />
+                        )}
+
+                        {isNewlyFilled && (
+                          <motion.div
+                            initial={{ width: "0%" }}
+                            animate={{ width: "100%" }}
+                            transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1], delay: (index - completedBefore) * 0.12 }}
+                            style={{ height: "100%", backgroundColor: PROGRESS_COLOR }}
+                          />
+                        )}
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="flex-1 h-full rounded-sm" style={{ backgroundColor: palette.blockEmpty }} />
+                )}
               </div>
 
               <div className="mt-2 flex items-center justify-between text-[9px]" style={{ color: palette.textDim }}>

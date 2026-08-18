@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
-import { BugProgressPopup, type BugProgressSnapshot } from "@/components/BugProgressPopup";
-import { markPopupActive, POPUP_VISIBLE_MS } from "@/lib/popup-coordinator";
+import { BugProgressPopup, BUG_POPUP_VISIBLE_MS, type BugProgressSnapshot } from "@/components/BugProgressPopup";
+import { markPopupActive } from "@/lib/popup-coordinator";
 
 interface BugProgressPopupContextValue {
   showBugProgressPopup: (snapshot: BugProgressSnapshot) => void;
@@ -13,7 +13,7 @@ export function BugProgressPopupProvider({ children }: { children: ReactNode }) 
   const [snapshot, setSnapshot] = useState<BugProgressSnapshot | null>(null);
 
   const showBugProgressPopup = useCallback((nextSnapshot: BugProgressSnapshot) => {
-    markPopupActive(POPUP_VISIBLE_MS);
+    markPopupActive(BUG_POPUP_VISIBLE_MS);
     setSnapshot(nextSnapshot);
   }, []);
 

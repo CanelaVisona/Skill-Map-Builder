@@ -315,8 +315,6 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // hoy), así que suman por igual a total y a completed.
   const total = totalConfigured + extraItems.length;
   const completed = completedHabits + completedNodes + completedPractices + completedManual + extraItems.length;
-  const progressPct = total > 0 ? (completed / total) * 100 : 0;
-
   const todayItems: TodayItem[] = [
     ...visibleHabitItems.map((h) => ({ key: `habit:${h.id}`, type: "habit" as const, id: h.id, label: h.label, done: h.done })),
     ...visiblePlannedNodesForView.map((n) => ({
@@ -422,6 +420,22 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // franja actual abiertas).
   const hasPendingUnassigned = itemBuckets.unassigned.some((item) => !item.done);
 
+  // Sección de franjas que debe estar abierta: "Sin asignar" tiene prioridad mientras tenga
+  // pendientes; si no (vacía, o solo con tareas ya hechas), se cierra siempre y se abre la
+  // franja horaria actual en su lugar. Es excluyente: nunca hay más de una sección abierta a
+  // la vez, así el resto queda visualmente "de fondo" (ver data-[state=closed] en el trigger).
+  const defaultOpenSlotSection: string = hasPendingUnassigned ? "unassigned" : getCurrentTimeSlotKey();
+  const [manualOpenSlotSection, setManualOpenSlotSection] = useState<string | null>(null);
+  // Al cambiar de día (previsualización) se descarta la elección manual y se vuelve a calcular
+  // la sección por defecto para ese día — abrir "Sin asignar" en un día no tiene por qué seguir
+  // abierto al pasar a previsualizar otro.
+  const [lastSlotSectionDate, setLastSlotSectionDate] = useState(effectiveDate);
+  if (effectiveDate !== lastSlotSectionDate) {
+    setLastSlotSectionDate(effectiveDate);
+    setManualOpenSlotSection(null);
+  }
+  const openSlotSection = manualOpenSlotSection ?? defaultOpenSlotSection;
+
   const moveItemToSlot = (item: TodayItem, slot: TaskSlotKey) => {
     setTaskSlot.mutate({ date: effectiveDate, taskType: item.type, taskId: item.id, slot });
   };
@@ -447,6 +461,28 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const deleteManualItem = (item: TodayItem) => {
     deleteManualTask.mutate({ id: item.id, date: effectiveDate });
   };
+
+  // Duplicar una tarea manual repite su título tal cual. Duplicar un hábito crea, en cambio,
+  // una tarea manual suelta (no ligada al hábito) con su nombre: la copia no marca el hábito
+  // como hecho al confirmarla, sino que se tilda a mano como cualquier tarea manual.
+  const duplicateManualItem = (item: TodayItem) => {
+    const task = manualTasks.find((t) => t.id === item.id);
+    if (!task) return;
+    createManualTask.mutate({ date: effectiveDate, title: task.title });
+  };
+
+  const duplicateHabitItem = (item: TodayItem) => {
+    const habit = (habitsData || []).find((h) => h.id === item.id);
+    const title = habit ? `${habit.emoji} ${habit.name}` : typeof item.label === "string" ? item.label : "Tarea duplicada";
+    createManualTask.mutate({ date: effectiveDate, title });
+  };
+
+  const duplicateItem = (item: TodayItem) => {
+    if (item.type === "manual") duplicateManualItem(item);
+    else if (item.type === "habit") duplicateHabitItem(item);
+  };
+
+  const canDuplicate = (item: TodayItem) => item.type === "manual" || item.type === "habit";
 
   // Mantener presionado el fondo (fuera de una tarea puntual) abre el diálogo para agregar
   // una tarea manual al día que se está viendo (hoy, o el día previsualizado).
@@ -640,11 +676,19 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                   {completed}/{total}
                 </span>
               </div>
-              <div className="w-full bg-muted rounded-full h-3 overflow-hidden">
-                <div
-                  className="h-full bg-emerald-500 transition-all duration-500"
-                  style={{ width: `${progressPct}%` }}
-                />
+              <div className="flex items-center gap-1">
+                {total > 0 ? (
+                  Array.from({ length: total }).map((_, i) => (
+                    <div
+                      key={i}
+                      className={`h-3 flex-1 min-w-[3px] rounded-sm transition-colors duration-500 ${
+                        i < completed ? "bg-emerald-500" : "bg-muted"
+                      }`}
+                    />
+                  ))
+                ) : (
+                  <div className="h-3 flex-1 rounded-sm bg-muted" />
+                )}
               </div>
             </div>
 
@@ -669,13 +713,14 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                   <>
                     {hasSlotSection && (
                       <Accordion
-                        type="multiple"
-                        defaultValue={hasPendingUnassigned ? ["unassigned"] : ["unassigned", getCurrentTimeSlotKey()]}
+                        type="single"
+                        value={openSlotSection}
+                        onValueChange={(v) => v && setManualOpenSlotSection(v)}
                         className="space-y-1"
                       >
                         {itemBuckets.unassigned.length > 0 && (
                           <AccordionItem value="unassigned" className="border-0">
-                            <AccordionTrigger className="py-1.5 hover:no-underline">
+                            <AccordionTrigger className="py-1.5 hover:no-underline data-[state=closed]:opacity-40 transition-opacity">
                               <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
                                 Sin asignar ({itemBuckets.unassigned.length})
                               </h3>
@@ -689,6 +734,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                     onMove={(slot) => moveItemToSlot(item, slot)}
                                     onHide={item.type !== "manual" ? () => hideItemFromToday(item) : undefined}
                                     onDelete={item.type === "manual" ? () => deleteManualItem(item) : undefined}
+                                    onDuplicate={canDuplicate(item) ? () => duplicateItem(item) : undefined}
                                     onToggleDone={item.type === "manual" ? () => toggleManualDone(item) : undefined}
                                   />
                                 ))}
@@ -699,7 +745,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
 
                         {TIME_SLOTS.map((s) => (
                           <AccordionItem key={s.key} value={s.key} className="border-0">
-                            <AccordionTrigger className="py-1.5 hover:no-underline">
+                            <AccordionTrigger className="py-1.5 hover:no-underline data-[state=closed]:opacity-40 transition-opacity">
                               <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
                                 {s.label} ({itemBuckets[s.key].filter((i) => i.done).length}/{itemBuckets[s.key].length})
                               </h3>
@@ -717,6 +763,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                       onClear={() => unassignItem(item)}
                                       onHide={item.type !== "manual" ? () => hideItemFromToday(item) : undefined}
                                       onDelete={item.type === "manual" ? () => deleteManualItem(item) : undefined}
+                                      onDuplicate={canDuplicate(item) ? () => duplicateItem(item) : undefined}
                                       onToggleDone={item.type === "manual" ? () => toggleManualDone(item) : undefined}
                                       onMoveUp={idx > 0 ? () => moveItemOrder(item, "up") : undefined}
                                       onMoveDown={idx < itemBuckets[s.key].length - 1 ? () => moveItemOrder(item, "down") : undefined}
@@ -741,7 +788,12 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                           <AccordionContent className="pt-0 pb-1">
                             <div className="space-y-1.5">
                               {itemBuckets.more.map((item) => (
-                                <TodayTaskRow key={item.key} item={item} onMove={(slot) => moveItemToSlot(item, slot)} />
+                                <TodayTaskRow
+                                  key={item.key}
+                                  item={item}
+                                  onMove={(slot) => moveItemToSlot(item, slot)}
+                                  onDuplicate={canDuplicate(item) ? () => duplicateItem(item) : undefined}
+                                />
                               ))}
                             </div>
                           </AccordionContent>
@@ -933,6 +985,7 @@ function TodayTaskRow({
   onClear,
   onHide,
   onDelete,
+  onDuplicate,
   onToggleDone,
   onMoveUp,
   onMoveDown,
@@ -942,6 +995,7 @@ function TodayTaskRow({
   onClear?: () => void;
   onHide?: () => void;
   onDelete?: () => void;
+  onDuplicate?: () => void;
   onToggleDone?: () => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
@@ -1021,6 +1075,12 @@ function TodayTaskRow({
             {(onMoveUp || onMoveDown) && <DropdownMenuSeparator />}
             {onMoveUp && <DropdownMenuItem onClick={onMoveUp}>Mover arriba</DropdownMenuItem>}
             {onMoveDown && <DropdownMenuItem onClick={onMoveDown}>Mover abajo</DropdownMenuItem>}
+            {onDuplicate && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={onDuplicate}>Duplicar</DropdownMenuItem>
+              </>
+            )}
             {(onHide || onDelete) && <DropdownMenuSeparator />}
             {onHide && (
               <DropdownMenuItem onClick={() => setHideConfirmOpen(true)} className="text-destructive focus:text-destructive">

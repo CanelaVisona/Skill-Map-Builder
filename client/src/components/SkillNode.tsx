@@ -125,9 +125,10 @@ interface CrossAreaTarget {
 }
 
 interface SkillPickerListProps {
-  selectedSkillId: string | null;
-  onSelect: (id: string | null) => void;
-  onClose: () => void;
+  // Several skills can be picked at once -- picking toggles membership instead of
+  // replacing the selection, and the popover stays open so more can be picked.
+  selectedSkillIds: string[];
+  onToggle: (id: string) => void;
   legacySkills: string[];
   scopedGlobalSkills: GlobalSkill[];
   areas: Array<{ id: string; name: string }>;
@@ -140,9 +141,8 @@ interface SkillPickerListProps {
 }
 
 function SkillPickerList({
-  selectedSkillId,
-  onSelect,
-  onClose,
+  selectedSkillIds,
+  onToggle,
   legacySkills,
   scopedGlobalSkills,
   areas,
@@ -156,11 +156,11 @@ function SkillPickerList({
   const [otherAreaTarget, setOtherAreaTarget] = useState<CrossAreaTarget | null>(null);
   const [browsingOtherAreas, setBrowsingOtherAreas] = useState(false);
 
+  // Doesn't close the popover or reset the current browsing view -- multi-select relies on
+  // staying put so several skills (including several from the same "Otra área") can be picked
+  // in a row.
   const pick = (id: string) => {
-    onSelect(selectedSkillId === id ? null : id);
-    onClose();
-    setOtherAreaTarget(null);
-    setBrowsingOtherAreas(false);
+    onToggle(id);
   };
 
   // Skills of the chosen other area/quest
@@ -195,12 +195,12 @@ function SkillPickerList({
                   variant="ghost"
                   size="sm"
                   className={`w-full justify-start h-8 px-3 text-xs font-medium ${
-                    selectedSkillId === gSkill.id ? "bg-muted text-foreground" : "hover:bg-muted/50"
+                    selectedSkillIds.includes(gSkill.id) ? "bg-muted text-foreground" : "hover:bg-muted/50"
                   }`}
                   onClick={() => pick(gSkill.id)}
                   data-testid={`${testIdPrefix}-button-select-otherarea-skill-${gSkill.id}`}
                 >
-                  {gSkill.name}
+                  {selectedSkillIds.includes(gSkill.id) ? "✓ " : ""}{gSkill.name}
                   <span className="ml-auto text-muted-foreground">Lv.{gSkill.level}</span>
                 </Button>
                 {skillsThere
@@ -211,12 +211,12 @@ function SkillPickerList({
                       variant="ghost"
                       size="sm"
                       className={`w-full justify-start h-7 px-3 pl-6 text-xs font-normal ${
-                        selectedSkillId === subSkill.id ? "bg-muted text-foreground" : "hover:bg-muted/50 text-muted-foreground"
+                        selectedSkillIds.includes(subSkill.id) ? "bg-muted text-foreground" : "hover:bg-muted/50 text-muted-foreground"
                       }`}
                       onClick={() => pick(subSkill.id)}
                       data-testid={`${testIdPrefix}-button-select-otherarea-subskill-${subSkill.id}`}
                     >
-                      ↳ {subSkill.name}
+                      ↳ {selectedSkillIds.includes(subSkill.id) ? "✓ " : ""}{subSkill.name}
                       <span className="ml-auto">Lv.{subSkill.level}</span>
                     </Button>
                   ))
@@ -303,12 +303,12 @@ function SkillPickerList({
                 variant="ghost"
                 size="sm"
                 className={`w-full justify-start h-8 px-3 text-xs font-normal ${
-                  selectedSkillId === optionId ? "bg-muted text-foreground" : "hover:bg-muted/50"
+                  selectedSkillIds.includes(optionId) ? "bg-muted text-foreground" : "hover:bg-muted/50"
                 }`}
                 onClick={() => pick(optionId)}
                 data-testid={`${testIdPrefix}-button-select-legacy-${skillName}`}
               >
-                {skillName}
+                {selectedSkillIds.includes(optionId) ? "✓ " : ""}{skillName}
               </Button>
             );
           })}
@@ -327,12 +327,12 @@ function SkillPickerList({
                   variant="ghost"
                   size="sm"
                   className={`w-full justify-start h-8 px-3 text-xs font-medium ${
-                    selectedSkillId === gSkill.id ? "bg-muted text-foreground" : "hover:bg-muted/50"
+                    selectedSkillIds.includes(gSkill.id) ? "bg-muted text-foreground" : "hover:bg-muted/50"
                   }`}
                   onClick={() => pick(gSkill.id)}
                   data-testid={`${testIdPrefix}-button-select-skill-${gSkill.id}`}
                 >
-                  {gSkill.name}
+                  {selectedSkillIds.includes(gSkill.id) ? "✓ " : ""}{gSkill.name}
                   <span className="ml-auto text-muted-foreground">Lv.{gSkill.level}</span>
                 </Button>
                 {/* Subskills of this parent */}
@@ -344,12 +344,12 @@ function SkillPickerList({
                       variant="ghost"
                       size="sm"
                       className={`w-full justify-start h-7 px-3 pl-6 text-xs font-normal ${
-                        selectedSkillId === subSkill.id ? "bg-muted text-foreground" : "hover:bg-muted/50 text-muted-foreground"
+                        selectedSkillIds.includes(subSkill.id) ? "bg-muted text-foreground" : "hover:bg-muted/50 text-muted-foreground"
                       }`}
                       onClick={() => pick(subSkill.id)}
                       data-testid={`${testIdPrefix}-button-select-subskill-${subSkill.id}`}
                     >
-                      ↳ {subSkill.name}
+                      ↳ {selectedSkillIds.includes(subSkill.id) ? "✓ " : ""}{subSkill.name}
                       <span className="ml-auto">Lv.{subSkill.level}</span>
                     </Button>
                   ))
@@ -667,14 +667,14 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   // stages a choice -- it must NOT touch the skill's XP, body progress, or power state. Those
   // mutations (and their celebration pop-ups) only run once the node itself gets confirmed
   // (see runConfirmSequence), so this state is deliberately kept separate from the Journal
-  // tab's own experienceSelectedSkill/selectedBodyZones/selectedPowerId, which apply immediately.
+  // tab's own experienceSelectedSkills/selectedBodyZones/selectedPowerId, which apply immediately.
   // Held in PendingRewardsContext (keyed by skill.id) instead of local useState so the staged
   // choice survives this component unmounting -- which happens on every "page" change, since
   // switching area/quest/Journal swaps out which skill nodes are mounted.
   const {
     getPendingRewards,
     setPendingRewardsTab: setPendingRewardsTabFor,
-    setPendingXpSkillId: setPendingXpSkillIdFor,
+    setPendingXpSkillIds: setPendingXpSkillIdsFor,
     setPendingBodyDimension: setPendingBodyDimensionFor,
     setPendingBodyZones: setPendingBodyZonesFor,
     setPendingPowerId: setPendingPowerIdFor,
@@ -683,7 +683,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   } = usePendingRewards();
   const {
     rewardsTab: pendingRewardsTab,
-    xpSkillId: pendingXpSkillId,
+    xpSkillIds: pendingXpSkillIds,
     bodyDimension: pendingBodyDimension,
     bodyZones: pendingBodyZones,
     powerId: pendingPowerId,
@@ -691,7 +691,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     tools: pendingTools,
   } = getPendingRewards(skill.id);
   const setPendingRewardsTab = (tab: "experience" | "body" | "powers" | "learning") => setPendingRewardsTabFor(skill.id, tab);
-  const setPendingXpSkillId = (xpSkillId: string | null) => setPendingXpSkillIdFor(skill.id, xpSkillId);
+  const setPendingXpSkillIds = (update: string[] | ((prev: string[]) => string[])) =>
+    setPendingXpSkillIdsFor(skill.id, update);
   const setPendingBodyDimension = (dimension: BodyDimension) => setPendingBodyDimensionFor(skill.id, dimension);
   const setPendingBodyZones = (update: BodyZone[] | ((prev: BodyZone[]) => BodyZone[])) =>
     setPendingBodyZonesFor(skill.id, update);
@@ -702,6 +703,12 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   ) => setPendingToolsFor(skill.id, update);
   const [showPendingXpSkillSelector, setShowPendingXpSkillSelector] = useState(false);
   const [showPendingBodyZoneSelector, setShowPendingBodyZoneSelector] = useState(false);
+
+  const togglePendingXpSkillId = (id: string) => {
+    setPendingXpSkillIds((prev) =>
+      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
+    );
+  };
 
   const togglePendingBodyZone = (zone: BodyZone) => {
     setPendingBodyZones((prev) =>
@@ -870,7 +877,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
   const selectedBug = sourceBugs.find((bug) => bug.id === selectedBugId) || null;
   const bugProgressCount = selectedBug?.status === "debugueado" ? 5 : Math.min(selectedBug?.victoryCount || 0, 5);
-  const bugProgressPercent = (bugProgressCount / 5) * 100;
 
   const bugStatusLabel: Record<SkillNodeSourceBug["status"], string> = {
     identificado: "Identificado",
@@ -884,8 +890,14 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     debugueado: "bg-emerald-400",
   };
 
-  // Experience tab state for editStep 2
-  const [experienceSelectedSkill, setExperienceSelectedSkill] = useState<string | null>(null);
+  // Experience tab state for editStep 2 -- several skills can be picked at once, each gets the
+  // full XP amount (see handleAddExperience).
+  const [experienceSelectedSkills, setExperienceSelectedSkills] = useState<string[]>([]);
+  const toggleExperienceSkill = (id: string) => {
+    setExperienceSelectedSkills((prev) =>
+      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
+    );
+  };
   const [showExperienceSkillSelector, setShowExperienceSkillSelector] = useState(false);
   
   // Legacy skill associations from localStorage
@@ -1393,10 +1405,22 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     }
   };
 
+  // Shared by every place that shows a picked skill id as text (legacy skills are prefixed
+  // "legacy:", global skills are looked up by id against the full globalSkills list).
+  const skillDisplayName = (id: string): string =>
+    id.startsWith("legacy:") ? id.replace("legacy:", "") : (globalSkills.find(s => s.id === id)?.name || "Skill");
+
   const handleAddExperience = async () => {
-    if (!experienceSelectedSkill) return;
-    await applyExperienceGain(experienceSelectedSkill);
-    setExperienceSelectedSkill(null);
+    if (experienceSelectedSkills.length === 0) return;
+    for (const id of experienceSelectedSkills) {
+      await applyExperienceGain(id);
+      // Lets each skill's celebration pop-up (and a possible level-up banner) finish before the
+      // next one's is shown, instead of stacking them all at once.
+      while (getPopupBusyDelay() > 0) {
+        await new Promise((resolve) => setTimeout(resolve, getPopupBusyDelay() + 150));
+      }
+    }
+    setExperienceSelectedSkills([]);
   };
 
   // Core fuerza/flex-gain logic, shared by the Journal tab's immediate "Agregar fuerza" button
@@ -1435,13 +1459,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   // preview until this runs -- it fires once, right when the node itself gets confirmed
   // (available -> mastered), and is what actually creates the learning/tools, grants the
   // XP/body progress/power, and shows their celebration pop-ups (see runConfirmSequence below).
-  const hasPendingRewards = !!pendingXpSkillId || pendingBodyZones.length > 0 || !!pendingPowerId || !!pendingLearning || pendingTools.length > 0;
+  const hasPendingRewards = pendingXpSkillIds.length > 0 || pendingBodyZones.length > 0 || !!pendingPowerId || !!pendingLearning || pendingTools.length > 0;
   // Human-readable labels for the pending-rewards subtitle shown under the node title.
-  const pendingXpSkillName = pendingXpSkillId
-    ? (pendingXpSkillId.startsWith("legacy:")
-        ? pendingXpSkillId.replace("legacy:", "")
-        : (globalSkills.find(s => s.id === pendingXpSkillId)?.name ?? null))
-    : null;
+  const pendingXpSkillNames = pendingXpSkillIds.map(skillDisplayName);
   const pendingPowerName = pendingSelectedPower?.name ?? null;
 
   interface ConfirmRewardBlock {
@@ -1486,13 +1506,13 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     // disappears immediately, the moment its state is cleared.
     const learning = learningOverride ?? pendingLearning;
     const tools = pendingTools;
-    const xpSkillId = pendingXpSkillId;
+    const xpSkillIds = pendingXpSkillIds;
     const bodyDimension = pendingBodyDimension;
     const bodyZones = pendingBodyZones;
     const powerId = pendingPowerId;
     setPendingLearning(null);
     setPendingTools([]);
-    setPendingXpSkillId(null);
+    setPendingXpSkillIds([]);
     setPendingBodyZones([]);
     setPendingPowerId(null);
 
@@ -1524,9 +1544,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       });
     }
 
-    if (xpSkillId) {
+    // One block per staged skill -- each gets the full XP amount and its own celebration pop-up.
+    for (const xpSkillId of xpSkillIds) {
       blocks.push({
-        label: `+${FIXED_XP_AMOUNT}xp${pendingXpSkillName ? ` ${pendingXpSkillName}` : ""}`,
+        label: `+${FIXED_XP_AMOUNT}xp ${skillDisplayName(xpSkillId)}`,
         run: (enqueue) => applyExperienceGain(xpSkillId, enqueue),
       });
     }
@@ -1713,10 +1734,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
     const xpNumber = FIXED_XP_AMOUNT;
     
-    // Add XP to skill (before mutations)
-    if (experienceSelectedSkill) {
+    // Add XP to each selected skill (before mutations)
+    for (const experienceSelectedSkill of experienceSelectedSkills) {
       const xpToAdd = FIXED_XP_AMOUNT;
-      
+
       // Check if it's a legacy skill
       if (experienceSelectedSkill.startsWith("legacy:")) {
         const legacySkillName = experienceSelectedSkill.replace("legacy:", "");
@@ -1786,7 +1807,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
         }
       }
     }
-    
+
     // Call mutations immediately (autosave without closing dialog)
     if (editTitle.trim() || editAction.trim()) {
       if (isSubSkillView) {
@@ -1819,15 +1840,15 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       }
       
       // Create journal learning entry when XP is added
-      if (experienceSelectedSkill && xpNumber > 0) {
+      if (experienceSelectedSkills.length > 0 && xpNumber > 0) {
         // Build the sentence from action and feedback
         const parts = [];
         if (editAction.trim()) parts.push(editAction.trim());
         if (editFeedback.trim()) parts.push(editFeedback.trim());
         const sentence = parts.length > 0 ? parts.join(" - ") : `${xpNumber} XP agregado`;
-        
+
         const learningEntry = {
-          title: `${editTitle || skill.title} (+${xpNumber} XP en ${experienceSelectedSkill})`,
+          title: `${editTitle || skill.title} (+${xpNumber} XP en ${experienceSelectedSkills.join(", ")})`,
           sentence: sentence,
           skillId: skill.id,
         };
@@ -2224,9 +2245,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                   {pendingTools.length > 0 && (
                     <span className="whitespace-nowrap">+{pendingTools.length} tool{pendingTools.length > 1 ? "s" : ""}</span>
                   )}
-                  {pendingXpSkillId && (
-                    <span className="whitespace-nowrap">+{FIXED_XP_AMOUNT}xp{pendingXpSkillName ? ` ${pendingXpSkillName}` : ""}</span>
-                  )}
+                  {pendingXpSkillNames.map((name, i) => (
+                    <span key={pendingXpSkillIds[i]} className="whitespace-nowrap">+{FIXED_XP_AMOUNT}xp {name}</span>
+                  ))}
                   {pendingBodyZones.length > 0 && (
                     <span className="whitespace-nowrap">
                       +{pendingBodyDimension === "fuerza" ? "Fuerza" : "Flexibilidad"}
@@ -2616,24 +2637,21 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                       className="bg-muted/50 hover:bg-muted w-full"
                       data-testid="button-select-skill"
                     >
-                      {experienceSelectedSkill
-                        ? `✓ ${experienceSelectedSkill.startsWith("legacy:")
-                            ? experienceSelectedSkill.replace("legacy:", "")
-                            : (globalSkills.find(s => s.id === experienceSelectedSkill)?.name || "Skill")}`
-                        : "Seleccionar skill"}
+                      {experienceSelectedSkills.length > 0
+                        ? `✓ ${experienceSelectedSkills.map(skillDisplayName).join(", ")}`
+                        : "Seleccionar skill(s)"}
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent 
-                    className="w-56 p-2 border-0 bg-background/95 backdrop-blur-sm z-[9999]" 
-                    align="center" 
+                  <PopoverContent
+                    className="w-56 p-2 border-0 bg-background/95 backdrop-blur-sm z-[9999]"
+                    align="center"
                     side="top"
                     sideOffset={8}
                     collisionPadding={16}
                   >
                     <SkillPickerList
-                      selectedSkillId={experienceSelectedSkill}
-                      onSelect={setExperienceSelectedSkill}
-                      onClose={() => setShowExperienceSkillSelector(false)}
+                      selectedSkillIds={experienceSelectedSkills}
+                      onToggle={toggleExperienceSkill}
                       legacySkills={filteredLegacySkills}
                       scopedGlobalSkills={availableGlobalSkills}
                       areas={areas}
@@ -2651,7 +2669,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                     variant="ghost"
                     size="sm"
                     onClick={handleAddExperience}
-                    disabled={!experienceSelectedSkill}
+                    disabled={experienceSelectedSkills.length === 0}
                     className="bg-muted/50 hover:bg-muted"
                     data-testid="button-new-experience"
                   >
@@ -2832,11 +2850,15 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                             <div className="flex items-center justify-end mb-1">
                               <p className="text-[11px] text-muted-foreground">{bugProgressCount} / 5</p>
                             </div>
-                            <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-blue-500 rounded-full transition-all duration-300"
-                                style={{ width: `${bugProgressPercent}%` }}
-                              />
+                            <div className="w-full h-2.5 flex gap-0.5">
+                              {Array.from({ length: 5 }).map((_, index) => (
+                                <div
+                                  key={index}
+                                  className={`flex-1 h-full rounded-sm transition-colors duration-300 ${
+                                    index < bugProgressCount ? "bg-emerald-500" : "bg-muted"
+                                  }`}
+                                />
+                              ))}
                             </div>
                           </div>
                         </div>
@@ -3372,11 +3394,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                           className="bg-muted/50 hover:bg-muted w-full"
                           data-testid="step3-button-select-skill"
                         >
-                          {pendingXpSkillId
-                            ? `✓ ${pendingXpSkillId.startsWith("legacy:")
-                                ? pendingXpSkillId.replace("legacy:", "")
-                                : (globalSkills.find(s => s.id === pendingXpSkillId)?.name || "Skill")}`
-                            : "Seleccionar skill"}
+                          {pendingXpSkillIds.length > 0
+                            ? `✓ ${pendingXpSkillNames.join(", ")}`
+                            : "Seleccionar skill(s)"}
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent
@@ -3387,9 +3407,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                         collisionPadding={16}
                       >
                         <SkillPickerList
-                          selectedSkillId={pendingXpSkillId}
-                          onSelect={setPendingXpSkillId}
-                          onClose={() => setShowPendingXpSkillSelector(false)}
+                          selectedSkillIds={pendingXpSkillIds}
+                          onToggle={togglePendingXpSkillId}
                           legacySkills={filteredLegacySkills}
                           scopedGlobalSkills={availableGlobalSkills}
                           areas={areas}

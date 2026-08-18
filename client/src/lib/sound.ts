@@ -48,6 +48,40 @@ export function playProgressAdvanceSound() {
   }
 }
 
+// Descending "you lost a life" jingle -- loosely modeled on the classic side-scroller death
+// tune (a quick run of falling square-wave notes). Used when a bug fight ends in "derrota" and
+// its last lit block falls off the progress bar.
+export function playBugLossSound() {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+
+    const startTime = ctx.currentTime;
+    const notes = [523.25, 493.88, 440, 392, 349.23, 293.66, 261.63, 196];
+    const noteDuration = 0.09;
+
+    notes.forEach((freq, i) => {
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
+      oscillator.type = "square";
+
+      const noteStart = startTime + i * noteDuration;
+      oscillator.frequency.setValueAtTime(freq, noteStart);
+
+      gain.gain.setValueAtTime(0, noteStart);
+      gain.gain.linearRampToValueAtTime(0.1, noteStart + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, noteStart + noteDuration);
+
+      oscillator.connect(gain);
+      gain.connect(ctx.destination);
+      oscillator.start(noteStart);
+      oscillator.stop(noteStart + noteDuration + 0.02);
+    });
+  } catch {
+    // Sound is a nice-to-have; never let it break the bug progress popup.
+  }
+}
+
 // Real audio file (not synthesized) for "¡Subiste de nivel!" -- served from client/public, so
 // it's just a static asset at this URL. Reused across plays instead of a `new Audio()` per
 // call, and rewound before each play so back-to-back level-ups (e.g. two levels in a row)

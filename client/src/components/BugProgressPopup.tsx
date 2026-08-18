@@ -3,10 +3,13 @@ import { createPortal } from "react-dom";
 import { Bug, ChevronDown, ChevronUp } from "lucide-react";
 import { useEffect } from "react";
 import { usePopupPalette } from "@/lib/popup-theme";
-import { POPUP_VISIBLE_MS } from "@/lib/popup-coordinator";
-import { playProgressAdvanceSound } from "@/lib/sound";
+import { playProgressAdvanceSound, playBugLossSound } from "@/lib/sound";
 
 export const BUG_PROGRESS_BLOCKS = 5;
+
+// Bug victories get a longer beat than the rest of the "growing progress" popup family: the
+// block-fall animation on a derrota needs time to actually play out before the popup closes.
+export const BUG_POPUP_VISIBLE_MS = 2600;
 
 export type BugRecordStatus = "identificado" | "debugueando" | "debugueado";
 
@@ -36,7 +39,7 @@ const RESULT_LABEL: Record<BugProgressSnapshot["resultado"], string> = {
   derrota: "Derrota",
 };
 
-const BAR_COLOR = "#2f7fe0";
+const BAR_COLOR = "#10b981";
 const UP_COLOR = "#2ecc2e";
 const DOWN_COLOR = "#e0524f";
 
@@ -45,15 +48,18 @@ export function BugProgressPopup({ snapshot, onClose }: BugProgressPopupProps) {
 
   useEffect(() => {
     if (!snapshot) return;
-    const closeTimer = window.setTimeout(onClose, POPUP_VISIBLE_MS);
+    const closeTimer = window.setTimeout(onClose, BUG_POPUP_VISIBLE_MS);
     return () => window.clearTimeout(closeTimer);
   }, [snapshot, onClose]);
 
   // The victory bar's fill animation starts as soon as this mounts (via framer's initial/
   // animate props below), so this fires right alongside it -- only on a win, not a loss.
   useEffect(() => {
-    if (snapshot && snapshot.victoryCountAfter > snapshot.victoryCountBefore) {
+    if (!snapshot) return;
+    if (snapshot.victoryCountAfter > snapshot.victoryCountBefore) {
       playProgressAdvanceSound();
+    } else if (snapshot.victoryCountAfter < snapshot.victoryCountBefore) {
+      playBugLossSound();
     }
   }, [snapshot]);
 
@@ -167,14 +173,16 @@ export function BugProgressPopup({ snapshot, onClose }: BugProgressPopupProps) {
 
                       {isShrinking && (
                         <motion.div
-                          initial={{ width: "100%" }}
-                          animate={{ width: "0%" }}
+                          // El último bloque encendido no solo se vacía: se pone rojo y cae,
+                          // como la muerte de Mario, en vez de derretirse en el lugar.
+                          initial={{ y: 0, opacity: 1 }}
+                          animate={{ y: 20, opacity: 0 }}
                           transition={{
-                            duration: 0.6,
-                            ease: [0.4, 0, 0.2, 1],
-                            delay: (victoryCountBefore - 1 - index) * 0.12,
+                            duration: 0.45,
+                            ease: [0.4, 0, 1, 1],
+                            delay: 0.15 + (victoryCountBefore - 1 - index) * 0.12,
                           }}
-                          style={{ height: "100%", backgroundColor: DOWN_COLOR }}
+                          style={{ width: "100%", height: "100%", backgroundColor: DOWN_COLOR }}
                         />
                       )}
                     </div>

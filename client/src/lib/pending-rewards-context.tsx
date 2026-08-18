@@ -19,7 +19,9 @@ export interface PendingLearningDraft {
 
 export interface PendingRewardSelection {
   rewardsTab: PendingRewardsTab;
-  xpSkillId: string | null;
+  // Several skills can be staged at once (see SkillPickerList's multi-select) -- each gets the
+  // full XP amount when the node is confirmed (see runConfirmSequence in SkillNode.tsx).
+  xpSkillIds: string[];
   bodyDimension: BodyDimension;
   bodyZones: BodyZone[];
   powerId: string | null;
@@ -34,7 +36,7 @@ export interface PendingRewardSelection {
 }
 
 function defaultSelection(): PendingRewardSelection {
-  return { rewardsTab: "experience", xpSkillId: null, bodyDimension: "fuerza", bodyZones: [], powerId: null, learning: null, tools: [] };
+  return { rewardsTab: "experience", xpSkillIds: [], bodyDimension: "fuerza", bodyZones: [], powerId: null, learning: null, tools: [] };
 }
 
 type PendingRewardsState = Record<string, PendingRewardSelection>;
@@ -61,20 +63,31 @@ function loadState(): PendingRewardsState {
 // ("experience"), making the tab look like it refuses to switch unless something (like an xp
 // skill) was already staged first.
 function isEmptySelection(entry: PendingRewardSelection): boolean {
-  return !entry.xpSkillId && entry.bodyZones.length === 0 && !entry.powerId && !entry.learning && entry.tools.length === 0
+  return entry.xpSkillIds.length === 0 && entry.bodyZones.length === 0 && !entry.powerId && !entry.learning && entry.tools.length === 0
     && entry.rewardsTab === "experience";
 }
 
 // Merges in defaults for any field missing on an entry loaded from an older localStorage
 // payload (from before `learning`/`tools` existed), so callers never see `undefined` here.
-function withDefaults(entry: PendingRewardSelection | undefined): PendingRewardSelection {
-  return { ...defaultSelection(), ...entry };
+// Also migrates the older single-value `xpSkillId` shape (from before multi-select) into
+// `xpSkillIds` -- without this, anything staged under the old shape would silently read back
+// as empty the moment this field got renamed, which looks exactly like "it lost what I staged"
+// even though nothing was actually cleared. Same idea applies to any future reshaping of this
+// object: a renamed/restructured field needs an explicit migration here, or old entries quietly
+// go empty instead of erroring, since the spread merge only fills in keys that are missing, not
+// ones that moved.
+function withDefaults(entry: (PendingRewardSelection & { xpSkillId?: string | null }) | undefined): PendingRewardSelection {
+  const merged = { ...defaultSelection(), ...entry };
+  if ((!entry?.xpSkillIds || entry.xpSkillIds.length === 0) && entry?.xpSkillId) {
+    merged.xpSkillIds = [entry.xpSkillId];
+  }
+  return merged;
 }
 
 interface PendingRewardsContextValue {
   getPendingRewards: (skillId: string) => PendingRewardSelection;
   setPendingRewardsTab: (skillId: string, tab: PendingRewardsTab) => void;
-  setPendingXpSkillId: (skillId: string, xpSkillId: string | null) => void;
+  setPendingXpSkillIds: (skillId: string, update: string[] | ((prev: string[]) => string[])) => void;
   setPendingBodyDimension: (skillId: string, dimension: BodyDimension) => void;
   setPendingBodyZones: (skillId: string, update: BodyZone[] | ((prev: BodyZone[]) => BodyZone[])) => void;
   setPendingPowerId: (skillId: string, powerId: string | null) => void;
@@ -118,7 +131,11 @@ export function PendingRewardsProvider({ children }: { children: ReactNode }) {
   const value: PendingRewardsContextValue = {
     getPendingRewards,
     setPendingRewardsTab: (skillId, tab) => updateEntry(skillId, { rewardsTab: tab }),
-    setPendingXpSkillId: (skillId, xpSkillId) => updateEntry(skillId, { xpSkillId }),
+    setPendingXpSkillIds: (skillId, update) => {
+      updateEntry(skillId, (current) => ({
+        xpSkillIds: typeof update === "function" ? update(current.xpSkillIds) : update,
+      }));
+    },
     setPendingBodyDimension: (skillId, bodyDimension) => updateEntry(skillId, { bodyDimension }),
     setPendingBodyZones: (skillId, update) => {
       updateEntry(skillId, (current) => ({
