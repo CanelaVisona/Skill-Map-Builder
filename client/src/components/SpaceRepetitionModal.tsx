@@ -115,8 +115,11 @@ function getAnchorTimestamp(practice: SpaceRepetitionPractice): string {
   return practice.lastConfirmedAt || practice.updatedAt || practice.createdAt || `${getReferenceDate(practice)}T00:00:00`;
 }
 
+// Nunca puede ser negativo: un ancla "en el futuro" (p.ej. por desfase de reloj/timezone entre
+// el server que la escribió y el cliente que la lee) se trata como si fuera ahora mismo (0hs
+// transcurridas), nunca como que todavía falta llegar a ese instante.
 function hoursSince(isoTimestamp: string): number {
-  return (Date.now() - new Date(isoTimestamp).getTime()) / (1000 * 60 * 60);
+  return Math.max(0, (Date.now() - new Date(isoTimestamp).getTime()) / (1000 * 60 * 60));
 }
 
 function formatDate(dateStr: string): string {

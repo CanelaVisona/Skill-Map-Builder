@@ -2333,11 +2333,18 @@ export class DbStorage implements IStorage {
 
   async createSpaceRepetitionPractice(practice: InsertSpaceRepetitionPractice & { userId: string }): Promise<SpaceRepetitionPractice> {
     const id = randomUUID();
+    // createdAt/updatedAt se fijan acá en vez de dejarlos en el default de la columna: el default
+    // usa NOW() de Postgres casteado a una columna sin timezone, y ese cast lo hace con el
+    // timezone de la sesión de la base (no UTC) — el valor guardado queda corrido varias horas
+    // hacia el futuro. Pasar un Date de JS explícito evita ese cast y guarda el instante real.
+    const now = new Date();
     const safeData = {
       ...practice,
       completedIntervals: Array.isArray(practice.completedIntervals) ? practice.completedIntervals : [] as any,
       completedIntervalsL2: Array.isArray(practice.completedIntervalsL2) ? practice.completedIntervalsL2 : [] as any,
       level: practice.level || 1,
+      createdAt: now,
+      updatedAt: now,
     };
     const result = await db.insert(spaceRepetitionPractices)
       .values({ id, ...safeData } as any)
