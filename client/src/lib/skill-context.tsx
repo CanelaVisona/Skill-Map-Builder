@@ -193,8 +193,8 @@ interface SkillTreeContextType {
   questCelebrationText: string | null;
   showQuestUpdatedPopup: boolean;
   hideQuestUpdatedPopup: () => void;
-  renameArea: (areaId: string, newName: string) => Promise<void>;
-  renameProject: (projectId: string, newName: string) => Promise<void>;
+  updateAreaDetails: (areaId: string, updates: { name?: string; description?: string; icon?: string }) => Promise<void>;
+  updateProjectDetails: (projectId: string, updates: { name?: string; description?: string; icon?: string }) => Promise<void>;
   sideQuests: Project[];
   archivedSideQuests: Project[];
   createSideQuest: (name: string, description: string, icon: string) => Promise<void>;
@@ -2913,43 +2913,43 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
-  const renameArea = async (areaId: string, newName: string) => {
+  const updateAreaDetails = async (areaId: string, updates: { name?: string; description?: string; icon?: string }) => {
     try {
       const response = await fetch(`/api/areas/${areaId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newName }),
+        body: JSON.stringify(updates),
       });
-      
+
       if (!response.ok) {
-        throw new Error("Failed to rename area");
+        throw new Error("Failed to update area");
       }
-      
-      setAreas(prev => prev.map(a => 
-        a.id === areaId ? { ...a, name: newName } : a
+
+      setAreas(prev => prev.map(a =>
+        a.id === areaId ? { ...a, ...updates } : a
       ));
     } catch (error) {
-      console.error("Error renaming area:", error);
+      console.error("Error updating area:", error);
     }
   };
 
-  const renameProject = async (projectId: string, newName: string) => {
+  const updateProjectDetails = async (projectId: string, updates: { name?: string; description?: string; icon?: string }) => {
     try {
       const response = await fetch(`/api/projects/${projectId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newName }),
+        body: JSON.stringify(updates),
       });
-      
+
       if (!response.ok) {
-        throw new Error("Failed to rename project");
+        throw new Error("Failed to update project");
       }
-      
-      setProjects(prev => prev.map(p => 
-        p.id === projectId ? { ...p, name: newName } : p
+
+      setProjects(prev => prev.map(p =>
+        p.id === projectId ? { ...p, ...updates } : p
       ));
     } catch (error) {
-      console.error("Error renaming project:", error);
+      console.error("Error updating project:", error);
     }
   };
 
@@ -5085,7 +5085,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       deleteArea,
       archiveArea,
       unarchiveArea,
-      renameArea,
+      updateAreaDetails,
       archivedAreas,
       loadArchivedAreas,
       activeArea,
@@ -5099,7 +5099,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       deleteProject,
       archiveProject,
       unarchiveProject,
-      renameProject,
+      updateProjectDetails,
       archivedProjects,
       archivedMainQuests,
       loadArchivedProjects,

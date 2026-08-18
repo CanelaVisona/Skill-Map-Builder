@@ -9,7 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ProgressBar } from "@/components/ProgressBar";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut, Archive, ArchiveRestore, Pencil, Zap, ChevronDown, ChevronRight, Mountain, Compass, Scroll, Eye, Swords, Lock, Target, Shield, Star, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor } from "lucide-react";
+import { Plus, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut, Archive, ArchiveRestore, Pencil, Zap, ChevronDown, ChevronRight, Mountain, Compass, Scroll, Eye, Swords, Lock, Target, Shield, Star, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Brain, GraduationCap, Wallet, TrendingUp, PiggyBank, Users, MessageCircle, Plane, Globe, MapPin, Leaf, Sun, Moon, Coffee, Bike, Wrench, Hammer, Lightbulb, Puzzle, Flag, PawPrint, Smile, Flame, Droplet } from "lucide-react";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "./ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "./ui/alert-dialog";
@@ -54,6 +54,45 @@ const availableIcons = [
   { name: "Gamepad2", icon: Gamepad2 },
   { name: "Camera", icon: Camera },
   { name: "FolderKanban", icon: FolderKanban },
+  { name: "Target", icon: Target },
+  { name: "Shield", icon: Shield },
+  { name: "Star", icon: Star },
+  { name: "Sparkles", icon: Sparkles },
+  { name: "Award", icon: Award },
+  { name: "Gem", icon: Gem },
+  { name: "Rocket", icon: Rocket },
+  { name: "Anchor", icon: Anchor },
+  { name: "Mountain", icon: Mountain },
+  { name: "Compass", icon: Compass },
+  { name: "Scroll", icon: Scroll },
+  { name: "Swords", icon: Swords },
+  { name: "Feather", icon: Feather },
+  { name: "Crosshair", icon: Crosshair },
+  { name: "Zap", icon: Zap },
+  { name: "Brain", icon: Brain },
+  { name: "GraduationCap", icon: GraduationCap },
+  { name: "Wallet", icon: Wallet },
+  { name: "TrendingUp", icon: TrendingUp },
+  { name: "PiggyBank", icon: PiggyBank },
+  { name: "Users", icon: Users },
+  { name: "MessageCircle", icon: MessageCircle },
+  { name: "Plane", icon: Plane },
+  { name: "Globe", icon: Globe },
+  { name: "MapPin", icon: MapPin },
+  { name: "Leaf", icon: Leaf },
+  { name: "Sun", icon: Sun },
+  { name: "Moon", icon: Moon },
+  { name: "Coffee", icon: Coffee },
+  { name: "Bike", icon: Bike },
+  { name: "Wrench", icon: Wrench },
+  { name: "Hammer", icon: Hammer },
+  { name: "Lightbulb", icon: Lightbulb },
+  { name: "Puzzle", icon: Puzzle },
+  { name: "Flag", icon: Flag },
+  { name: "PawPrint", icon: PawPrint },
+  { name: "Smile", icon: Smile },
+  { name: "Flame", icon: Flame },
+  { name: "Droplet", icon: Droplet },
 ];
 
 function getIconForTitle(title: string): string {
@@ -88,7 +127,46 @@ const extendedIconMap: Record<string, any> = {
   Code,
   Gamepad2,
   Camera,
-  FolderKanban
+  FolderKanban,
+  Target,
+  Shield,
+  Star,
+  Sparkles,
+  Award,
+  Gem,
+  Rocket,
+  Anchor,
+  Mountain,
+  Compass,
+  Scroll,
+  Swords,
+  Feather,
+  Crosshair,
+  Zap,
+  Brain,
+  GraduationCap,
+  Wallet,
+  TrendingUp,
+  PiggyBank,
+  Users,
+  MessageCircle,
+  Plane,
+  Globe,
+  MapPin,
+  Leaf,
+  Sun,
+  Moon,
+  Coffee,
+  Bike,
+  Wrench,
+  Hammer,
+  Lightbulb,
+  Puzzle,
+  Flag,
+  PawPrint,
+  Smile,
+  Flame,
+  Droplet
 };
 
 // Types for source view dialog
@@ -2620,14 +2698,16 @@ interface AreaItemProps {
   onSelect: () => void;
   onDelete: () => void;
   onArchive: () => void;
-  onRename: (newName: string) => void;
+  onEdit: (updates: { name: string; description: string; icon: string }) => void;
 }
 
-function AreaItem({ area, isActive, isMenuOpen, onSelect, onDelete, onArchive, onRename }: AreaItemProps) {
+function AreaItem({ area, isActive, isMenuOpen, onSelect, onDelete, onArchive, onEdit }: AreaItemProps) {
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
-  const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
-  const [newName, setNewName] = useState(area.name);
+  const [editName, setEditName] = useState(area.name);
+  const [editDescription, setEditDescription] = useState(area.description || "");
+  const [editIcon, setEditIcon] = useState(area.icon);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPress = useRef(false);
   const Icon = extendedIconMap[area.icon] || extendedIconMap.Home;
@@ -2742,42 +2822,90 @@ function AreaItem({ area, isActive, isMenuOpen, onSelect, onDelete, onArchive, o
             <Eye className="h-4 w-4 text-muted-foreground" />
             Ver
           </button>
-          <Dialog open={isRenameDialogOpen} onOpenChange={setIsRenameDialogOpen}>
+          <Dialog
+            open={isEditDialogOpen}
+            onOpenChange={(open) => {
+              setIsEditDialogOpen(open);
+              if (open) {
+                setEditName(area.name);
+                setEditDescription(area.description || "");
+                setEditIcon(area.icon);
+              }
+            }}
+          >
             <DialogTrigger asChild>
               <button
                 className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-foreground/80 hover:text-foreground hover:bg-muted/60 transition-colors"
-                data-testid={`button-rename-area-${area.id}`}
+                data-testid={`button-edit-area-${area.id}`}
               >
                 <Pencil className="h-4 w-4 text-muted-foreground" />
-                Renombrar
+                Editar
               </button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Renombrar área</DialogTitle>
+                <DialogTitle>Editar área</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 mt-4">
-                <Input 
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  placeholder="Nuevo nombre"
-                  data-testid="input-rename-area"
-                />
+                <div className="space-y-2">
+                  <Label>Icono</Label>
+                  <ScrollArea className="h-40 pr-3 -mr-3">
+                    <div className="grid grid-cols-7 gap-2 pb-1">
+                      {availableIcons.map(({ name, icon: IconComp }) => (
+                        <button
+                          key={name}
+                          type="button"
+                          onClick={() => setEditIcon(name)}
+                          className={cn(
+                            "w-9 h-9 rounded-lg flex items-center justify-center transition-all",
+                            editIcon === name
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground"
+                          )}
+                          data-testid={`icon-edit-area-${name.toLowerCase()}`}
+                        >
+                          <IconComp size={18} />
+                        </button>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-area-name">Nombre</Label>
+                  <Input
+                    id="edit-area-name"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    placeholder="Nombre del área"
+                    data-testid="input-edit-area-name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-area-description">Descripción</Label>
+                  <Textarea
+                    id="edit-area-description"
+                    value={editDescription}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    placeholder="Describe esta área de desarrollo"
+                    rows={3}
+                    data-testid="input-edit-area-description"
+                  />
+                </div>
                 <div className="flex gap-2">
-                  <Button variant="outline" onClick={() => setIsRenameDialogOpen(false)} className="flex-1">
+                  <Button variant="outline" onClick={() => setIsEditDialogOpen(false)} className="flex-1">
                     Cancelar
                   </Button>
-                  <Button 
+                  <Button
                     onClick={() => {
-                      if (newName.trim()) {
-                        onRename(newName.trim());
-                        setIsRenameDialogOpen(false);
+                      if (editName.trim()) {
+                        onEdit({ name: editName.trim(), description: editDescription.trim(), icon: editIcon });
+                        setIsEditDialogOpen(false);
                         setIsPopoverOpen(false);
                       }
-                    }} 
-                    disabled={!newName.trim()}
+                    }}
+                    disabled={!editName.trim()}
                     className="flex-1"
-                    data-testid="button-save-rename-area"
+                    data-testid="button-save-edit-area"
                   >
                     Guardar
                   </Button>
@@ -2848,14 +2976,16 @@ interface ProjectItemProps {
   onSelect: () => void;
   onDelete: () => void;
   onArchive: () => void;
-  onRename: (newName: string) => void;
+  onEdit: (updates: { name: string; description: string; icon: string }) => void;
 }
 
-function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete, onArchive, onRename }: ProjectItemProps) {
+function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete, onArchive, onEdit }: ProjectItemProps) {
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
-  const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
-  const [newName, setNewName] = useState(project.name);
+  const [editName, setEditName] = useState(project.name);
+  const [editDescription, setEditDescription] = useState(project.description || "");
+  const [editIcon, setEditIcon] = useState(project.icon);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPress = useRef(false);
   const Icon = extendedIconMap[project.icon] || FolderKanban;
@@ -2967,42 +3097,90 @@ function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete, onArch
             <Eye className="h-4 w-4 text-muted-foreground" />
             Ver
           </button>
-          <Dialog open={isRenameDialogOpen} onOpenChange={setIsRenameDialogOpen}>
+          <Dialog
+            open={isEditDialogOpen}
+            onOpenChange={(open) => {
+              setIsEditDialogOpen(open);
+              if (open) {
+                setEditName(project.name);
+                setEditDescription(project.description || "");
+                setEditIcon(project.icon);
+              }
+            }}
+          >
             <DialogTrigger asChild>
               <button
                 className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-foreground/80 hover:text-foreground hover:bg-muted/60 transition-colors"
-                data-testid={`button-rename-project-${project.id}`}
+                data-testid={`button-edit-project-${project.id}`}
               >
                 <Pencil className="h-4 w-4 text-muted-foreground" />
-                Renombrar
+                Editar
               </button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Renombrar Main Quest</DialogTitle>
+                <DialogTitle>Editar quest</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 mt-4">
-                <Input 
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  placeholder="Nuevo nombre"
-                  data-testid="input-rename-project"
-                />
+                <div className="space-y-2">
+                  <Label>Icono</Label>
+                  <ScrollArea className="h-40 pr-3 -mr-3">
+                    <div className="grid grid-cols-7 gap-2 pb-1">
+                      {availableIcons.map(({ name, icon: IconComp }) => (
+                        <button
+                          key={name}
+                          type="button"
+                          onClick={() => setEditIcon(name)}
+                          className={cn(
+                            "w-9 h-9 rounded-lg flex items-center justify-center transition-all",
+                            editIcon === name
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground"
+                          )}
+                          data-testid={`icon-edit-project-${name.toLowerCase()}`}
+                        >
+                          <IconComp size={18} />
+                        </button>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-project-name">Nombre</Label>
+                  <Input
+                    id="edit-project-name"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    placeholder="Nombre de la quest"
+                    data-testid="input-edit-project-name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-project-description">Descripción</Label>
+                  <Textarea
+                    id="edit-project-description"
+                    value={editDescription}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    placeholder="Describe esta quest"
+                    rows={3}
+                    data-testid="input-edit-project-description"
+                  />
+                </div>
                 <div className="flex gap-2">
-                  <Button variant="outline" onClick={() => setIsRenameDialogOpen(false)} className="flex-1">
+                  <Button variant="outline" onClick={() => setIsEditDialogOpen(false)} className="flex-1">
                     Cancelar
                   </Button>
-                  <Button 
+                  <Button
                     onClick={() => {
-                      if (newName.trim()) {
-                        onRename(newName.trim());
-                        setIsRenameDialogOpen(false);
+                      if (editName.trim()) {
+                        onEdit({ name: editName.trim(), description: editDescription.trim(), icon: editIcon });
+                        setIsEditDialogOpen(false);
                         setIsPopoverOpen(false);
                       }
-                    }} 
-                    disabled={!newName.trim()}
+                    }}
+                    disabled={!editName.trim()}
                     className="flex-1"
-                    data-testid="button-save-rename-project"
+                    data-testid="button-save-edit-project"
                   >
                     Guardar
                   </Button>
@@ -3070,7 +3248,7 @@ export function AreaMenu() {
   const { 
     areas, activeAreaId, setActiveAreaId, createArea, deleteArea, archiveArea, unarchiveArea, archivedAreas, loadArchivedAreas,
     mainQuests, sideQuests, emergentQuests, experienceQuests, activeProjectId, setActiveProjectId, createProject, createSideQuest, createEmergentQuest, createExperienceQuest, deleteProject, archiveProject, unarchiveProject, archivedMainQuests, archivedSideQuests, archivedEmergentQuests, archivedExperienceQuests, loadArchivedProjects,
-    renameArea, renameProject
+    updateAreaDetails, updateProjectDetails
   } = useSkillTree();
   const { user, logout } = useAuth();
   const { isMenuOpen: isOpen, setIsMenuOpen: setIsOpen } = useMenu();
@@ -3233,27 +3411,29 @@ export function AreaMenu() {
     <div className="space-y-4 mt-4">
       <div className="space-y-2">
         <Label>Icono</Label>
-        <div className="grid grid-cols-7 gap-2">
-          {availableIcons.map(({ name, icon: IconComp }) => (
-            <button
-              key={name}
-              type="button"
-              onClick={() => {
-                setSelectedIcon(name);
-                setManualIconSelected(true);
-              }}
-              className={cn(
-                "w-9 h-9 rounded-lg flex items-center justify-center transition-all",
-                selectedIcon === name 
-                  ? "bg-primary text-primary-foreground" 
-                  : "bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground"
-              )}
-              data-testid={`icon-${name.toLowerCase()}`}
-            >
-              <IconComp size={18} />
-            </button>
-          ))}
-        </div>
+        <ScrollArea className="h-40 pr-3 -mr-3">
+          <div className="grid grid-cols-7 gap-2 pb-1">
+            {availableIcons.map(({ name, icon: IconComp }) => (
+              <button
+                key={name}
+                type="button"
+                onClick={() => {
+                  setSelectedIcon(name);
+                  setManualIconSelected(true);
+                }}
+                className={cn(
+                  "w-9 h-9 rounded-lg flex items-center justify-center transition-all",
+                  selectedIcon === name
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground"
+                )}
+                data-testid={`icon-${name.toLowerCase()}`}
+              >
+                <IconComp size={18} />
+              </button>
+            ))}
+          </div>
+        </ScrollArea>
       </div>
       
       <div className="space-y-2">
@@ -3381,7 +3561,7 @@ export function AreaMenu() {
                   onSelect={() => setActiveAreaId(area.id)}
                   onDelete={() => deleteArea(area.id)}
                   onArchive={() => archiveArea(area.id)}
-                  onRename={(name) => renameArea(area.id, name)}
+                  onEdit={(updates) => updateAreaDetails(area.id, updates)}
                 />
               ))
             )}
@@ -3410,7 +3590,7 @@ export function AreaMenu() {
               onSelect={() => setActiveProjectId(project.id)}
               onDelete={() => deleteProject(project.id)}
               onArchive={() => archiveProject(project.id)}
-              onRename={(name) => renameProject(project.id, name)}
+              onEdit={(updates) => updateProjectDetails(project.id, updates)}
             />
           ))
         )}
@@ -3439,7 +3619,7 @@ export function AreaMenu() {
               onSelect={() => setActiveProjectId(project.id)}
               onDelete={() => deleteProject(project.id)}
               onArchive={() => archiveProject(project.id)}
-              onRename={(name) => renameProject(project.id, name)}
+              onEdit={(updates) => updateProjectDetails(project.id, updates)}
             />
           ))
         )}
@@ -3467,7 +3647,7 @@ export function AreaMenu() {
                 onSelect={() => setActiveProjectId(project.id)}
                 onDelete={() => deleteProject(project.id)}
                 onArchive={() => archiveProject(project.id)}
-                onRename={(name) => renameProject(project.id, name)}
+                onEdit={(updates) => updateProjectDetails(project.id, updates)}
               />
             ))}
           </div>
@@ -3496,7 +3676,7 @@ export function AreaMenu() {
                 onSelect={() => setActiveProjectId(project.id)}
                 onDelete={() => deleteProject(project.id)}
                 onArchive={() => archiveProject(project.id)}
-                onRename={(name) => renameProject(project.id, name)}
+                onEdit={(updates) => updateProjectDetails(project.id, updates)}
               />
             ))}
           </div>

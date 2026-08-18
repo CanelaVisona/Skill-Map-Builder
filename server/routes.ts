@@ -1375,11 +1375,21 @@ export async function registerRoutes(
   // /move does:
   // - mastered ("completado")            -> stays mastered, lands right after
   //                                          the level's skeleton node (first
-  //                                          visible position of the target level)
+  //                                          visible position of the target
+  //                                          level) - this is required to keep
+  //                                          the chain invariant that no mastered
+  //                                          node ever sits after a locked one
   // - available ("desbloqueado")          -> becomes locked ("bloqueado"),
-  //                                          lands at the end of the target level
-  // - locked ("no confirmado")            -> stays locked, lands at the end of
-  //                                          the target level
+  //                                          lands right after the last renamed
+  //                                          node in the target level (see below)
+  // - locked ("no confirmado")            -> stays locked, lands right after the
+  //                                          last renamed node in the target level
+  //
+  // "Right after the last renamed node" means: right after the skeleton (i.e.
+  // first) if the target level has no renamed nodes yet - including a level that
+  // didn't exist before this move - otherwise right after the last node whose
+  // title was actually customized, so it lands ahead of any untouched "Nodo N"
+  // placeholders.
   app.patch("/api/skills/:id/change-level", requireAuth, async (req, res) => {
     try {
       const { targetLevel, parentType, parentId } = req.body;
@@ -1510,17 +1520,41 @@ export async function registerRoutes(
         .filter(s => s.level === targetLevel && s.id !== req.params.id)
         .sort((a, b) => (a.levelPosition ?? 0) - (b.levelPosition ?? 0));
 
+      const skeleton = targetExisting.find(s => s.levelPosition === 1 || s.isAutoComplete === 1);
+      const rest = targetExisting
+        .filter(s => s.id !== skeleton?.id)
+        .sort((a, b) => (a.levelPosition ?? 0) - (b.levelPosition ?? 0));
+
       let orderedTargetIds: string[];
       if (newStatus === "mastered") {
-        // First position of the level, right after the (always-mastered) skeleton.
-        const skeleton = targetExisting.find(s => s.levelPosition === 1 || s.isAutoComplete === 1);
-        const rest = targetExisting.filter(s => s.id !== skeleton?.id);
+        // Chain invariant: a mastered node can never sit after a locked one, so a
+        // confirmed node always lands right after the (always-mastered) skeleton -
+        // first position of the level, ahead of everything else already there.
         orderedTargetIds = skeleton
           ? [skeleton.id, req.params.id, ...rest.map(s => s.id)]
           : [req.params.id, ...rest.map(s => s.id)];
       } else {
-        // Last position of the level.
-        orderedTargetIds = [...targetExisting.map(s => s.id), req.params.id];
+        // Not a confirmed node, so it doesn't need to lead the level - land it
+        // right after the last node whose title was actually customized (or right
+        // after the skeleton if the level has no renamed nodes yet, including a
+        // level that didn't exist before this move), ahead of any untouched
+        // "Nodo N" placeholders.
+        const isPlaceholderTitle = (title: string | null | undefined) =>
+          !title || title.trim() === "" || /^Nodo \d+$/.test(title.trim());
+
+        let lastRenamedIndex = -1;
+        for (let i = 0; i < rest.length; i++) {
+          if (!isPlaceholderTitle(rest[i].title)) {
+            lastRenamedIndex = i;
+          }
+        }
+
+        const before = rest.slice(0, lastRenamedIndex + 1);
+        const after = rest.slice(lastRenamedIndex + 1);
+
+        orderedTargetIds = skeleton
+          ? [skeleton.id, ...before.map(s => s.id), req.params.id, ...after.map(s => s.id)]
+          : [...before.map(s => s.id), req.params.id, ...after.map(s => s.id)];
       }
 
       for (let i = 0; i < orderedTargetIds.length; i++) {

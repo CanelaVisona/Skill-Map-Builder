@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useQuery, useQueries } from "@tanstack/react-query";
+import { useQuery, useQueries, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -7,13 +7,13 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
-import { Eye, ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
+import { Eye, ArrowLeft, ChevronLeft, ChevronRight, Pencil } from "lucide-react";
 import { useSkillTree, type Area, type Project, type Skill } from "@/lib/skill-context";
 import { useHabits } from "@/lib/useHabits";
 import { useTodayTaskSlots, useSetTodayTaskSlot, useClearTodayTaskSlot, useReorderTodayTaskSlot, getCurrentTimeSlotKey, getTimeSlotKeyForDate, type TaskSlotKey, type TaskType } from "@/lib/useTodayTaskSlots";
 import { useManualTasks, useCreateManualTask, useUpdateManualTask, useDeleteManualTask } from "@/lib/useManualTasks";
 import { calculateStatus, calculateStatusL2, type SpaceRepetitionPractice } from "@/components/SpaceRepetitionModal";
-import type { Habit, HabitRecord } from "@shared/schema";
+import type { Habit, HabitRecord, TodayTaskSlot } from "@shared/schema";
 
 const LONG_PRESS_MS = 1500;
 
@@ -71,6 +71,7 @@ function getFirstDayOfMonth(date: Date) {
 }
 
 export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const queryClient = useQueryClient();
   const { areas, projects } = useSkillTree();
   const { data: habitsData } = useHabits();
   const [viewMode, setViewMode] = useState<"progress" | "calendar">("progress");
@@ -81,7 +82,15 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const [previewDate, setPreviewDate] = useState<string | null>(null);
   const [addTaskDialogOpen, setAddTaskDialogOpen] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState("");
+  // Franja a la que se asigna la tarea que se está por crear: null = sin asignar (mantener
+  // presionado el fondo). Mantener presionado el título de una franja horaria en vez del fondo
+  // apunta la tarea nueva directo a esa franja, para que no caiga en "Sin asignar".
+  const [addTaskTargetSlot, setAddTaskTargetSlot] = useState<TaskSlotKey | null>(null);
   const backgroundLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const slotTitleLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Si el long-press del título ya disparó el diálogo, el click que sigue al soltar no debe
+  // además abrir/cerrar el acordeón de esa franja.
+  const slotTitleLongPressFired = useRef(false);
 
   const todayStr = getDateStr(new Date());
   const effectiveDate = previewDate ?? todayStr;
@@ -149,9 +158,13 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
 
   const plannedNodesForView = allPlannedNodes.filter((n) => n.plannedDate === effectiveDate);
 
-  // Prácticas de repetición espaciada que vencían hoy ("expires_soon") o que se confirmaron
-  // hoy (lastConfirmedAt cae en la fecha de hoy y ya avanzaron a otro estado). No aplica al
-  // previsualizar un día futuro: el "vencimiento" es relativo a ahora, no a un día futuro.
+  // Prácticas de repetición espaciada que vencían hoy ("expires_soon") o que se confirmaron el
+  // día que se está viendo (lastConfirmedAt cae en effectiveDate y ya avanzaron a otro estado).
+  // El "vencimiento" es siempre relativo a ahora (no al día del calendario que se esté viendo),
+  // así que solo cuenta cuando se está viendo el día real de hoy — en cualquier otro día (pasado
+  // o futuro) sólo importa si hubo una confirmación ese día puntual. Ojo: lastConfirmedAt sólo
+  // guarda la ÚLTIMA confirmación, así que un día pasado con confirmaciones más viejas (ya
+  // tapadas por una más reciente) no las va a mostrar acá — misma limitación que el calendario.
   const { data: practicesData } = useQuery({
     queryKey: ["space-repetition"],
     queryFn: async () => {
@@ -162,28 +175,29 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     enabled: open,
   });
 
-  const practicesToday = isPreview ? [] : (practicesData || [])
+  const practicesToday = (practicesData || [])
     .map((p) => {
       const status = p.level === 2 ? calculateStatusL2(p) : calculateStatus(p);
-      const pending = status === "expires_soon";
+      const pending = !isPreview && status === "expires_soon";
       const confirmedAt = p.lastConfirmedAt || p.updatedAt;
-      const confirmedToday = !pending && status !== "loss" && status !== "frozen" && !!confirmedAt && getDateStr(new Date(confirmedAt)) === todayStr;
-      return { practice: p, done: confirmedToday, include: pending || confirmedToday };
+      const confirmedOnViewedDay = !pending && status !== "loss" && status !== "frozen" && !!confirmedAt && getDateStr(new Date(confirmedAt)) === effectiveDate;
+      return { practice: p, done: confirmedOnViewedDay, include: pending || confirmedOnViewedDay };
     })
     .filter((entry) => entry.include);
 
-  // Actividad extra: hábitos y nodos hechos hoy que no estaban configurados para hoy
-  // (hábito no programado ese día, o nodo sin fecha planeada para hoy). Tampoco aplica a la
-  // previsualización: es actividad ya ocurrida, y un día futuro todavía no tiene nada hecho.
-  const habitsNotScheduledForView = isPreview ? [] : (habitsData || []).filter(
+  // Actividad extra: hábitos y nodos hechos el día que se está viendo que no estaban
+  // configurados para ese día (hábito no programado ese día, o nodo sin fecha planeada). Se
+  // calcula para cualquier día (no solo hoy) para que un día pasado también muestre lo que se
+  // hizo de más ese día; para un día futuro simplemente no va a haber nada confirmado todavía.
+  const habitsNotScheduledForView = (habitsData || []).filter(
     (h) => !habitsScheduledForView.some((s) => s.id === h.id)
   );
 
   const otherHabitRecordQueries = useQueries({
     queries: habitsNotScheduledForView.map((h) => ({
-      queryKey: ["habit-records", h.id, todayStr, todayStr],
+      queryKey: ["habit-records", h.id, effectiveDate, effectiveDate],
       queryFn: async () => {
-        const res = await fetch(`/api/habit-records/${h.id}?startDate=${todayStr}&endDate=${todayStr}`);
+        const res = await fetch(`/api/habit-records/${h.id}?startDate=${effectiveDate}&endDate=${effectiveDate}`);
         if (!res.ok) throw new Error("Failed to fetch habit records");
         return res.json() as Promise<HabitRecord[]>;
       },
@@ -196,7 +210,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       id: h.id,
       label: `${h.emoji} ${h.name}`,
       done: !!(otherHabitRecordQueries[i]?.data as HabitRecord[] | undefined)?.some(
-        (r) => r.date === todayStr && r.completed === 1
+        (r) => r.date === effectiveDate && r.completed === 1
       ),
     }))
     .filter((h) => h.done);
@@ -227,9 +241,12 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     return result;
   };
 
-  const extraNodes = isPreview ? [] : [
-    ...collectExtraCompletedNodes(Array.isArray(areas) ? areas : [], todayStr, todayStr),
-    ...collectExtraCompletedNodes(Array.isArray(projects) ? projects : [], todayStr, todayStr),
+  // Se usa effectiveDate (no todayStr) para que también aparezcan acá los nodos completados sin
+  // fecha planeada de un día pasado que se esté editando; para un día futuro no hay nada
+  // completado todavía, así que naturalmente da vacío.
+  const extraNodes = [
+    ...collectExtraCompletedNodes(Array.isArray(areas) ? areas : [], effectiveDate, effectiveDate),
+    ...collectExtraCompletedNodes(Array.isArray(projects) ? projects : [], effectiveDate, effectiveDate),
   ];
 
   const extraItems: TodayItem[] = [
@@ -485,10 +502,11 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const canDuplicate = (item: TodayItem) => item.type === "manual" || item.type === "habit";
 
   // Mantener presionado el fondo (fuera de una tarea puntual) abre el diálogo para agregar
-  // una tarea manual al día que se está viendo (hoy, o el día previsualizado).
+  // una tarea manual al día que se está viendo (hoy, o el día previsualizado), sin franja.
   const startBackgroundLongPress = () => {
     backgroundLongPressTimer.current = setTimeout(() => {
       setNewTaskTitle("");
+      setAddTaskTargetSlot(null);
       setAddTaskDialogOpen(true);
     }, LONG_PRESS_MS);
   };
@@ -500,11 +518,56 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     }
   };
 
-  const submitNewTask = () => {
+  // Mantener presionado el título de una franja horaria (La mañana/Mediodía/Tarde/Noche) abre
+  // el mismo diálogo pero apuntado a esa franja, para que la tarea nueva caiga directo ahí en
+  // vez de en "Sin asignar". stopPropagation evita que además dispare el long-press del fondo.
+  const startSlotTitleLongPress = (e: React.MouseEvent | React.TouchEvent, slot: TaskSlotKey) => {
+    e.stopPropagation();
+    slotTitleLongPressFired.current = false;
+    slotTitleLongPressTimer.current = setTimeout(() => {
+      slotTitleLongPressFired.current = true;
+      setNewTaskTitle("");
+      setAddTaskTargetSlot(slot);
+      setAddTaskDialogOpen(true);
+    }, LONG_PRESS_MS);
+  };
+
+  const cancelSlotTitleLongPress = (e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation();
+    if (slotTitleLongPressTimer.current) {
+      clearTimeout(slotTitleLongPressTimer.current);
+      slotTitleLongPressTimer.current = null;
+    }
+  };
+
+  const submitNewTask = async () => {
     const title = newTaskTitle.trim();
     if (!title) return;
-    createManualTask.mutate({ date: effectiveDate, title });
     setAddTaskDialogOpen(false);
+    const created = await createManualTask.mutateAsync({ date: effectiveDate, title });
+    // Si el diálogo se abrió apuntado a una franja (long-press en su título), la tarea recién
+    // creada se asigna directo ahí — queda última de la fila porque es la de updatedAt más
+    // reciente entre las tareas no hechas de esa franja.
+    if (addTaskTargetSlot) {
+      // Se mete la franja en el cache al toque, antes de esperar la respuesta del POST: si no,
+      // la consulta de tareas manuales (recién invalidada por createManualTask) puede volver
+      // primero y la tarea nueva se ve, aunque sea un instante, en "Sin asignar" hasta que
+      // llegue la respuesta de esta otra mutación.
+      queryClient.setQueryData<TodayTaskSlot[]>(["today-task-slots", effectiveDate], (old) => [
+        ...(old || []),
+        {
+          id: `optimistic:${created.id}`,
+          userId: "",
+          date: effectiveDate,
+          taskType: "manual",
+          taskId: created.id,
+          slot: addTaskTargetSlot,
+          sortOrder: 0,
+          updatedAt: new Date(),
+        },
+      ]);
+      setTaskSlot.mutate({ date: effectiveDate, taskType: "manual", taskId: created.id, slot: addTaskTargetSlot });
+    }
   };
 
   const viewLabel = new Date(effectiveDate + "T12:00:00").toLocaleDateString("es-AR", {
@@ -745,7 +808,21 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
 
                         {TIME_SLOTS.map((s) => (
                           <AccordionItem key={s.key} value={s.key} className="border-0">
-                            <AccordionTrigger className="py-1.5 hover:no-underline data-[state=closed]:opacity-40 transition-opacity">
+                            <AccordionTrigger
+                              className="py-1.5 hover:no-underline data-[state=closed]:opacity-40 transition-opacity"
+                              onMouseDown={(e) => startSlotTitleLongPress(e, s.key)}
+                              onMouseUp={cancelSlotTitleLongPress}
+                              onMouseLeave={cancelSlotTitleLongPress}
+                              onTouchStart={(e) => startSlotTitleLongPress(e, s.key)}
+                              onTouchEnd={cancelSlotTitleLongPress}
+                              onTouchCancel={cancelSlotTitleLongPress}
+                              onTouchMove={cancelSlotTitleLongPress}
+                              onClick={(e) => {
+                                // El long-press ya abrió el diálogo: no dejar que el click que
+                                // sigue al soltar también abra/cierre el acordeón.
+                                if (slotTitleLongPressFired.current) e.preventDefault();
+                              }}
+                            >
                               <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
                                 {s.label} ({itemBuckets[s.key].filter((i) => i.done).length}/{itemBuckets[s.key].length})
                               </h3>
@@ -911,9 +988,25 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                 <p className="text-xs text-muted-foreground">Tocá un día para ver qué se hizo.</p>
               ) : (
                 <div className="space-y-1">
-                  <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                    {new Date(selectedDay + "T12:00:00").toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" })}
-                  </p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                      {new Date(selectedDay + "T12:00:00").toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" })}
+                    </p>
+                    {/* Botón minimalista para abrir la vista completa de tareas de este día
+                        (mismas 4 franjas horarias que "Hoy") y poder completar ahí lo que no se
+                        marcó, o agregar tareas nuevas. */}
+                    <button
+                      onClick={() => {
+                        setPreviewDate(selectedDay);
+                        setViewMode("progress");
+                        setSelectedDay(null);
+                      }}
+                      className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border border-border/30 bg-muted hover:bg-muted/80 active:bg-muted/60 transition-colors"
+                      title="Ver y completar tareas de este día"
+                    >
+                      <Pencil className="h-3 w-3 text-muted-foreground" />
+                    </button>
+                  </div>
                   {selectedDayDetails && (selectedDayDetails.habitsDone.length > 0 || selectedDayDetails.nodesDone.length > 0 || selectedDayDetails.practicesDone.length > 0) ? (
                     <div className="space-y-1">
                       {selectedDayDetails.habitsDone.map((h) => (
@@ -948,7 +1041,11 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
 
     <Dialog open={addTaskDialogOpen} onOpenChange={setAddTaskDialogOpen}>
       <DialogContent className="max-w-sm rounded-2xl">
-        <DialogTitle>Nueva tarea para {isPreview ? "este día" : "hoy"}</DialogTitle>
+        <DialogTitle>
+          {addTaskTargetSlot
+            ? `Nueva tarea para ${TIME_SLOTS.find((s) => s.key === addTaskTargetSlot)?.label}`
+            : `Nueva tarea para ${isPreview ? "este día" : "hoy"}`}
+        </DialogTitle>
         <Input
           autoFocus
           value={newTaskTitle}

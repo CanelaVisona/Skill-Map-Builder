@@ -1930,23 +1930,118 @@ function BestiarySection({
   );
 }
 
+// A learning/tool entry is tagged with the skillId of the quest node it was created from.
+// This maps that skillId to the area/project ("quest") it belongs to, so entries can be
+// grouped into per-quest tabs inside the Journal's Discoveries/Tools sections.
+interface SkillQuestInfo {
+  key: string;
+  name: string;
+  color?: string;
+}
+type SkillQuestMap = Map<string, SkillQuestInfo>;
+
+interface QuestTabGroup {
+  key: string;
+  name: string;
+  color?: string;
+  count: number;
+}
+
+function useQuestGroups<T extends { skillId?: string | null }>(entries: T[], questMap: SkillQuestMap): QuestTabGroup[] {
+  return React.useMemo(() => {
+    const groups = new Map<string, QuestTabGroup>();
+    entries.forEach((entry) => {
+      const info = entry.skillId ? questMap.get(entry.skillId) : undefined;
+      if (!info) return;
+      const existing = groups.get(info.key);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        groups.set(info.key, { key: info.key, name: info.name, color: info.color, count: 1 });
+      }
+    });
+    return Array.from(groups.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [entries, questMap]);
+}
+
+function QuestFilterTabs({
+  groups,
+  selectedKey,
+  onSelect,
+  totalCount,
+}: {
+  groups: QuestTabGroup[];
+  selectedKey: string | null;
+  onSelect: (key: string | null) => void;
+  totalCount: number;
+}) {
+  if (groups.length === 0) return null;
+
+  return (
+    <div className="flex items-center gap-1.5 overflow-x-auto pb-2 mb-2 -mx-1 px-1 minimal-scrollbar">
+      <button
+        onClick={() => onSelect(null)}
+        className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all whitespace-nowrap border ${
+          selectedKey === null
+            ? "bg-secondary text-foreground border-border shadow-sm"
+            : "text-muted-foreground border-transparent hover:bg-secondary/50 hover:text-foreground/80"
+        }`}
+        data-testid="tab-quest-filter-all"
+      >
+        Todos <span className="opacity-60">({totalCount})</span>
+      </button>
+      {groups.map((group) => (
+        <button
+          key={group.key}
+          onClick={() => onSelect(group.key)}
+          className={`shrink-0 flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all whitespace-nowrap border ${
+            selectedKey === group.key
+              ? "bg-secondary text-foreground border-border shadow-sm"
+              : "text-muted-foreground border-transparent hover:bg-secondary/50 hover:text-foreground/80"
+          }`}
+          data-testid={`tab-quest-filter-${group.key}`}
+        >
+          {group.color && (
+            <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: group.color }} />
+          )}
+          <span className="truncate max-w-[9rem]">{group.name}</span>
+          <span className="opacity-60">({group.count})</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function ToolsSection({
   entries,
   isLoading,
   onDelete,
-  onUpdate
-}: { 
+  onUpdate,
+  questMap,
+}: {
   entries: JournalTool[];
   isLoading: boolean;
   onDelete: (id: string) => void;
   onUpdate?: (id: string, data: { title: string; sentence: string }) => void;
+  questMap: SkillQuestMap;
 }) {
   const [viewingEntry, setViewingEntry] = useState<JournalTool | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editSentence, setEditSentence] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [selectedQuestKey, setSelectedQuestKey] = useState<string | null>(null);
   const longPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const questGroups = useQuestGroups(entries, questMap);
+  const filteredEntries = selectedQuestKey === null
+    ? entries
+    : entries.filter((entry) => entry.skillId && questMap.get(entry.skillId)?.key === selectedQuestKey);
+
+  const handleSelectQuest = (key: string | null) => {
+    setSelectedQuestKey(key);
+    setViewingEntry(null);
+  };
 
   if (isLoading) {
     return <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">Loading...</div>;
@@ -2005,24 +2100,28 @@ function ToolsSection({
     <div className="h-full flex flex-col">
       <div className="mb-3 pb-2 border-b border-border">
         <span className="text-xs text-muted-foreground uppercase tracking-wider">
-          {entries.length} tools
+          {filteredEntries.length} tools
         </span>
         <div className="h-px w-8 bg-gradient-to-r from-muted-foreground to-transparent mt-1" />
       </div>
 
+      <QuestFilterTabs groups={questGroups} selectedKey={selectedQuestKey} onSelect={handleSelectQuest} totalCount={entries.length} />
+
       <div className="flex flex-1 min-h-0 flex-col sm:flex-row gap-5 sm:gap-4">
-        <div 
+        <div
           className="w-full sm:w-1/2 flex flex-col bg-secondary/30 rounded border border-border/50 p-3 cursor-pointer min-h-0"
         >
           <ScrollArea className="h-full">
-            {entries.length === 0 ? (
+            {filteredEntries.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <Wrench className="h-8 w-8 text-muted-foreground/50 mb-3" />
-                <p className="text-muted-foreground text-sm">No tools yet</p>
+                <p className="text-muted-foreground text-sm">
+                  {selectedQuestKey === null ? "No tools yet" : "No hay tools en esta quest todavía"}
+                </p>
               </div>
             ) : (
               <div className="space-y-0.5">
-                {entries.map((entry, index) => (
+                {filteredEntries.map((entry, index) => (
                   <div key={entry.id}>
                     <button
                       onClick={(e) => { e.stopPropagation(); setViewingEntry(entry); }}
@@ -2033,15 +2132,15 @@ function ToolsSection({
                       onMouseUp={handleLeftLongPressEnd}
                       onMouseLeave={handleLeftLongPressEnd}
                       className={`w-full text-left px-3 py-2 rounded text-sm transition-all cursor-pointer select-none ${
-                        viewingEntry?.id === entry.id 
-                          ? "bg-secondary text-foreground shadow-sm" 
+                        viewingEntry?.id === entry.id
+                          ? "bg-secondary text-foreground shadow-sm"
                           : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground/80"
                       }`}
                       data-testid={`card-tools-${entry.id}`}
                     >
                       {entry.title}
                     </button>
-                    {index < entries.length - 1 && (
+                    {index < filteredEntries.length - 1 && (
                       <div className="h-px bg-border/30 mx-2" />
                     )}
                   </div>
@@ -2188,23 +2287,36 @@ function ToolsSection({
   );
 }
 
-function LearningsSection({ 
+function LearningsSection({
   entries,
   isLoading,
   onDelete,
-  onUpdate
-}: { 
+  onUpdate,
+  questMap,
+}: {
   entries: JournalLearning[];
   isLoading: boolean;
   onDelete: (id: string) => void;
   onUpdate?: (id: string, data: { title: string; sentence: string }) => void;
+  questMap: SkillQuestMap;
 }) {
   const [viewingEntry, setViewingEntry] = useState<JournalLearning | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editSentence, setEditSentence] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [selectedQuestKey, setSelectedQuestKey] = useState<string | null>(null);
   const longPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const questGroups = useQuestGroups(entries, questMap);
+  const filteredEntries = selectedQuestKey === null
+    ? entries
+    : entries.filter((entry) => entry.skillId && questMap.get(entry.skillId)?.key === selectedQuestKey);
+
+  const handleSelectQuest = (key: string | null) => {
+    setSelectedQuestKey(key);
+    setViewingEntry(null);
+  };
 
   if (isLoading) {
     return <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">Loading...</div>;
@@ -2263,24 +2375,28 @@ function LearningsSection({
     <div className="h-full flex flex-col">
       <div className="mb-3 pb-2 border-b border-border">
         <span className="text-xs text-muted-foreground uppercase tracking-wider">
-          {entries.length} discoveries
+          {filteredEntries.length} discoveries
         </span>
         <div className="h-px w-8 bg-gradient-to-r from-muted-foreground to-transparent mt-1" />
       </div>
 
+      <QuestFilterTabs groups={questGroups} selectedKey={selectedQuestKey} onSelect={handleSelectQuest} totalCount={entries.length} />
+
       <div className="flex flex-1 min-h-0 flex-col sm:flex-row gap-5 sm:gap-4">
-        <div 
+        <div
           className="w-full sm:w-1/2 flex flex-col bg-secondary/30 rounded border border-border/50 p-3 cursor-pointer min-h-0"
         >
           <ScrollArea className="h-full">
-            {entries.length === 0 ? (
+            {filteredEntries.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <Lightbulb className="h-8 w-8 text-muted-foreground/50 mb-3" />
-                <p className="text-muted-foreground text-sm">No learnings yet</p>
+                <p className="text-muted-foreground text-sm">
+                  {selectedQuestKey === null ? "No learnings yet" : "No hay discoveries en esta quest todavía"}
+                </p>
               </div>
             ) : (
               <div className="space-y-0.5">
-                {entries.map((entry, index) => (
+                {filteredEntries.map((entry, index) => (
                   <div key={entry.id}>
                     <button
                       onClick={(e) => { e.stopPropagation(); setViewingEntry(entry); }}
@@ -2291,15 +2407,15 @@ function LearningsSection({
                       onMouseUp={handleLeftLongPressEnd}
                       onMouseLeave={handleLeftLongPressEnd}
                       className={`w-full text-left px-3 py-2 rounded text-sm transition-all cursor-pointer select-none ${
-                        viewingEntry?.id === entry.id 
-                          ? "bg-secondary text-foreground shadow-sm" 
+                        viewingEntry?.id === entry.id
+                          ? "bg-secondary text-foreground shadow-sm"
                           : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground/80"
                       }`}
                       data-testid={`card-learnings-${entry.id}`}
                     >
                       {entry.title}
                     </button>
-                    {index < entries.length - 1 && (
+                    {index < filteredEntries.length - 1 && (
                       <div className="h-px bg-border/30 mx-2" />
                     )}
                   </div>
@@ -2308,8 +2424,8 @@ function LearningsSection({
             )}
           </ScrollArea>
         </div>
-        
-        <div 
+
+        <div
           className="w-full sm:w-1/2 h-full flex flex-col bg-secondary/20 rounded border border-border/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)] dark:shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
           onTouchStart={handleRightLongPressStart}
           onTouchEnd={handleRightLongPressEnd}
@@ -7405,6 +7521,24 @@ function QuestDiary() {
   const { areas, projects } = useSkillTree();
   const [selectedPowerId, setSelectedPowerId] = useState<string | null>(null);
 
+  // Maps each skill (quest node) to the area or project ("quest") it belongs to, so
+  // Discoveries/Tools entries -- tagged with the skillId of the node they were created
+  // from -- can be grouped into per-quest tabs.
+  const skillQuestMap: SkillQuestMap = React.useMemo(() => {
+    const map: SkillQuestMap = new Map();
+    areas.forEach((area) => {
+      area.skills.forEach((skill) => {
+        map.set(skill.id, { key: `area-${area.id}`, name: area.name, color: area.color });
+      });
+    });
+    projects.forEach((project) => {
+      project.skills.forEach((skill) => {
+        map.set(skill.id, { key: `project-${project.id}`, name: project.name });
+      });
+    });
+    return map;
+  }, [areas, projects]);
+
   // Listen for XP updates and refresh skills section via localStorage event
   useEffect(() => {
     const handleSkillXpAdded = () => {
@@ -7739,6 +7873,7 @@ function QuestDiary() {
                 <LearningsSection
                   entries={learnings}
                   isLoading={loadingLearnings}
+                  questMap={skillQuestMap}
                   onDelete={(id) => deleteLearning.mutate(id)}
                   onUpdate={async (id, data) => {
                     await fetch(`/api/journal/learnings/${id}`, {
@@ -7755,6 +7890,7 @@ function QuestDiary() {
                 <ToolsSection
                   entries={tools}
                   isLoading={loadingTools}
+                  questMap={skillQuestMap}
                   onDelete={(id) => {
                     fetch(`/api/journal/tools/${id}`, { method: "DELETE" });
                     queryClient.invalidateQueries({ queryKey: ["/api/journal/tools"] });
@@ -7786,7 +7922,7 @@ function QuestDiary() {
                     <div className="flex-1 space-y-4 overflow-y-auto pr-1">
                       {areaPowerGroups.length > 0 && (
                         <section>
-                          <Accordion type="multiple" className="space-y-2">
+                          <Accordion type="multiple" className="space-y-2" defaultValue={areaPowerGroups.map((group) => `area-${group.id}`)}>
                             {areaPowerGroups.map((group) => (
                               <AccordionItem key={group.id} value={`area-${group.id}`} className="rounded-lg border border-border/50 bg-background/70">
                                 <AccordionTrigger className="px-3 py-2 text-left hover:no-underline">
@@ -7840,7 +7976,7 @@ function QuestDiary() {
                       {projectPowerGroups.length > 0 && (
                         <section>
                           <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Proyectos</h3>
-                          <Accordion type="multiple" className="space-y-2">
+                          <Accordion type="multiple" className="space-y-2" defaultValue={projectPowerGroups.map((group) => `project-${group.id}`)}>
                             {projectPowerGroups.map((group) => (
                               <AccordionItem key={group.id} value={`project-${group.id}`} className="rounded-lg border border-border/50 bg-background/70">
                                 <AccordionTrigger className="px-3 py-2 text-left hover:no-underline">

@@ -18,31 +18,30 @@ function getAudioContext(): AudioContext | null {
   return sharedAudioContext;
 }
 
-// Plays a short, quiet rising "tick" -- used when a progress popup's bar/number starts
-// growing (XP, insights count, body gain, area/today progress, bug victories). Deliberately
-// subtle since it fires often, reading as "ping, moving up" rather than a loud confirmation.
+// Real audio file (not synthesized) -- used when a progress popup's bar/number starts growing
+// (XP, insights count, body gain, area/today progress, bug victories). Served from
+// client/public, same reuse-across-plays / rewind-before-play pattern as the level-up clip
+// below, so back-to-back progress pops each play the full clip instead of the second call
+// doing nothing on an already-playing element.
+let progressAdvanceAudio: HTMLAudioElement | null = null;
+
+function getProgressAdvanceAudio(): HTMLAudioElement | null {
+  if (typeof Audio === "undefined") return null;
+  if (!progressAdvanceAudio) {
+    progressAdvanceAudio = new Audio(encodeURI("/Sounds/Progress bar sound.mp3"));
+  }
+  return progressAdvanceAudio;
+}
+
 export function playProgressAdvanceSound() {
   try {
-    const ctx = getAudioContext();
-    if (!ctx) return;
-
-    const oscillator = ctx.createOscillator();
-    const gain = ctx.createGain();
-    oscillator.type = "sine";
-
-    const startTime = ctx.currentTime;
-    const duration = 0.16;
-    oscillator.frequency.setValueAtTime(420, startTime);
-    oscillator.frequency.exponentialRampToValueAtTime(720, startTime + duration);
-
-    gain.gain.setValueAtTime(0, startTime);
-    gain.gain.linearRampToValueAtTime(0.14, startTime + 0.012);
-    gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
-
-    oscillator.connect(gain);
-    gain.connect(ctx.destination);
-    oscillator.start(startTime);
-    oscillator.stop(startTime + duration + 0.02);
+    const audio = getProgressAdvanceAudio();
+    if (!audio) return;
+    audio.currentTime = 0;
+    void audio.play().catch(() => {
+      // Autoplay can be blocked outside a user gesture; progress popups are always triggered
+      // from user actions, so this is best-effort only.
+    });
   } catch {
     // Sound is a nice-to-have; never let it break the progress popup.
   }
@@ -120,9 +119,10 @@ export function playLevelUpSound() {
 // be silently swallowed on an iPhone.
 //
 // The fix is the standard "unlock on first touch" trick: the very first tap anywhere in the
-// app resumes the shared AudioContext and silently primes the level-up <audio> element while
-// still inside that tap's call stack. Both then stay "unlocked" for the rest of the page's
-// life, so every later async playX call above works normally from then on.
+// app resumes the shared AudioContext and silently primes the level-up and progress-advance
+// <audio> elements while still inside that tap's call stack. All three then stay "unlocked"
+// for the rest of the page's life, so every later async playX call above works normally from
+// then on.
 let audioUnlocked = false;
 
 function unlockAudioForMobile() {
@@ -134,8 +134,8 @@ function unlockAudioForMobile() {
     ctx.resume().catch(() => {});
   }
 
-  const audio = getLevelUpAudio();
-  if (audio) {
+  for (const audio of [getLevelUpAudio(), getProgressAdvanceAudio()]) {
+    if (!audio) continue;
     const wasMuted = audio.muted;
     audio.muted = true;
     audio
