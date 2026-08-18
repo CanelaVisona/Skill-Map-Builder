@@ -1153,7 +1153,7 @@ function DetailPanel({
         )}
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin scrollbar-thumb-muted-foreground/10 px-4 py-4 space-y-4">
+      <div className="flex-1 min-h-0 overflow-y-auto minimal-scrollbar px-4 py-4 space-y-4">
         {/* Hoy Banner */}
         <div className="border border-yellow-500/40 bg-yellow-500/10 rounded-lg px-2.5 py-1.5 text-center">
           <div className="text-lg mb-0.5">🔥</div>
@@ -1297,7 +1297,7 @@ function AddPanel({
         <h2 className="text-lg font-semibold text-foreground">{editingBook ? "Editar Libro" : "Agregar Libro"}</h2>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-3 scrollbar-thin scrollbar-thumb-muted-foreground/10">
+      <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-3 minimal-scrollbar">
         <Input placeholder="Título" value={title} onChange={(e) => setTitle(e.target.value)} />
         <Input placeholder="Autor" value={author} onChange={(e) => setAuthor(e.target.value)} />
 
@@ -1486,7 +1486,7 @@ function ArchivedPanel({
       </div>
 
       {/* Books List */}
-      <div className="px-3 sm:px-5 py-3 flex flex-col gap-2 flex-1 min-h-0 overflow-y-auto scrollbar-thin scrollbar-thumb-muted-foreground/10">
+      <div className="px-3 sm:px-5 py-3 flex flex-col gap-2 flex-1 min-h-0 overflow-y-auto minimal-scrollbar">
         {!books || books.length === 0 ? (
           <p className="text-sm text-yellow-600/70 dark:text-yellow-400/70 py-4">
             No hay libros archivados
@@ -1836,7 +1836,7 @@ export function BookTracker() {
 
           {/* Book List */}
           <div
-            className="flex-1 min-h-0 overflow-y-auto px-5 py-3 flex flex-col gap-2 scrollbar-thin scrollbar-thumb-muted-foreground/10"
+            className="flex-1 min-h-0 overflow-y-auto px-5 py-3 flex flex-col gap-2 minimal-scrollbar"
             style={{
               scrollBehavior: 'smooth',
               WebkitOverflowScrolling: 'touch',

@@ -1066,7 +1066,7 @@ function MainPanel({
       </div>
 
       {/* Practices List */}
-      <div className="px-5 py-3 flex flex-col gap-2 max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-muted-foreground/20 scrollbar-track-transparent hover:scrollbar-thumb-muted-foreground/40">
+      <div className="px-5 py-3 flex flex-col gap-2 max-h-96 overflow-y-auto minimal-scrollbar">
         {practices.length === 0 ? (
           <p className="text-sm text-muted-foreground py-4 text-center">
             No tienes prácticas aún. ¡Crea una para empezar!
@@ -2221,7 +2221,7 @@ function ArchivedPanel({
       </div>
 
       {/* Archives List */}
-      <div className="px-5 py-3 flex flex-col gap-2 max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-yellow-500/20 scrollbar-track-transparent hover:scrollbar-thumb-yellow-500/40">
+      <div className="px-5 py-3 flex flex-col gap-2 max-h-96 overflow-y-auto minimal-scrollbar">
         {archived.length === 0 ? (
           <p className="text-sm text-muted-foreground py-4 text-center">
             No tienes prácticas archivadas

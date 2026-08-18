@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { useTheme } from "next-themes";
+import { playGrowingProgressBarSound } from "@/lib/sound";
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 const HOME_TASKS_STORAGE_KEY = "skill-map-home-needs-tasks-v1";
@@ -418,6 +419,7 @@ export default function NecesidadesCasa() {
   const [completingFrom, setCompletingFrom] = useState(0);
   const [completingProgress, setCompletingProgress] = useState(0);
   const completionRafRef = useRef<number | null>(null);
+  const growSoundRef = useRef<{ stop: () => void } | null>(null);
   const [remoteLoaded, setRemoteLoaded] = useState(false);
   const [remoteSyncEnabled, setRemoteSyncEnabled] = useState(true);
   const [isAddFormOpen, setIsAddFormOpen] = useState(false);
@@ -573,6 +575,9 @@ export default function NecesidadesCasa() {
     setCompletingFrom(startValue);
     setCompletingProgress(0);
 
+    growSoundRef.current?.stop();
+    growSoundRef.current = playGrowingProgressBarSound(duration);
+
     const step = (now: number) => {
       const t = Math.min(1, (now - startTime) / duration);
       setCompletingProgress(t);
@@ -583,6 +588,7 @@ export default function NecesidadesCasa() {
       setTasks((prev) => prev.map((task) => (task.id === taskId ? { ...task, lastDone: Date.now() } : task)));
       setCompletingId(null);
       completionRafRef.current = null;
+      growSoundRef.current = null;
       setFlashing(true);
       setTimeout(() => setFlashing(false), 400);
     };
@@ -593,6 +599,7 @@ export default function NecesidadesCasa() {
   useEffect(() => {
     return () => {
       if (completionRafRef.current) cancelAnimationFrame(completionRafRef.current);
+      growSoundRef.current?.stop();
     };
   }, []);
 
@@ -607,6 +614,11 @@ export default function NecesidadesCasa() {
     setFlashing(true);
     setTimeout(() => setFlashing(false), 400);
     setTasks((prev) => prev.map((t) => (t.id === selectedId ? { ...t, lastDone: Date.now() } : t)));
+
+    // No manual RAF here -- the bar itself fills via the "width 1s linear" CSS transition
+    // (see BigBar/MiniBar), so the sound's volume ramp is just timed to match that duration.
+    growSoundRef.current?.stop();
+    growSoundRef.current = playGrowingProgressBarSound(1000);
   };
 
   const askPeriodDays = useCallback((defaultValue: number) => {

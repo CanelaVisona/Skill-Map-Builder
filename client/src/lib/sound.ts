@@ -47,6 +47,70 @@ export function playProgressAdvanceSound() {
   }
 }
 
+// Same clip as playProgressAdvanceSound, but decoded through the Web Audio API instead of
+// played as a flat one-shot -- used by the home-tasks list (NecesidadesCasa.tsx) so the sound
+// can visibly "swell" in volume in step with a task's bar filling, rather than just firing once
+// at a fixed loudness. Decoded once and cached; each call gets its own BufferSource + GainNode
+// so overlapping plays (e.g. marking a second task done before the first's swell finishes)
+// don't cut each other off.
+let progressBarBufferPromise: Promise<AudioBuffer | null> | null = null;
+
+function loadProgressBarBuffer(ctx: AudioContext): Promise<AudioBuffer | null> {
+  if (!progressBarBufferPromise) {
+    progressBarBufferPromise = fetch(encodeURI("/Sounds/Progress bar sound.mp3"))
+      .then((res) => res.arrayBuffer())
+      .then((data) => ctx.decodeAudioData(data))
+      .catch(() => null);
+  }
+  return progressBarBufferPromise;
+}
+
+// Starts the clip looping under a GainNode ramped from near-silent up to full volume across
+// `durationMs`, so a caller can time it to match a bar-fill animation of that same length
+// (the loop means it keeps sounding for the whole ramp regardless of how short the source clip
+// is). Stops itself automatically once durationMs elapses; the returned `stop()` lets a caller
+// cut it short early instead (animation interrupted, component unmounted, etc).
+export function playGrowingProgressBarSound(durationMs: number): { stop: () => void } {
+  const ctx = getAudioContext();
+  if (!ctx) return { stop: () => {} };
+
+  let stopped = false;
+  let source: AudioBufferSourceNode | null = null;
+
+  void loadProgressBarBuffer(ctx).then((buffer) => {
+    if (!buffer || stopped) return;
+    try {
+      source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.loop = true;
+
+      const gain = ctx.createGain();
+      const startTime = ctx.currentTime;
+      const duration = durationMs / 1000;
+      gain.gain.setValueAtTime(0.0001, startTime);
+      gain.gain.exponentialRampToValueAtTime(1, startTime + duration);
+
+      source.connect(gain);
+      gain.connect(ctx.destination);
+      source.start(startTime);
+      source.stop(startTime + duration);
+    } catch {
+      // Sound is a nice-to-have; never let it break the task bar animation.
+    }
+  });
+
+  return {
+    stop: () => {
+      stopped = true;
+      try {
+        source?.stop();
+      } catch {
+        // Already stopped, or never got the chance to start -- fine either way.
+      }
+    },
+  };
+}
+
 // Descending "you lost a life" jingle -- loosely modeled on the classic side-scroller death
 // tune (a quick run of falling square-wave notes). Used when a bug fight ends in "derrota" and
 // its last lit block falls off the progress bar.

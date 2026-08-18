@@ -1406,17 +1406,17 @@ function BestiarySection({
         }
         /* Minimal scrollbar styling */
         .bestiary-description::-webkit-scrollbar {
-          width: 6px;
+          width: 3px;
         }
         .bestiary-description::-webkit-scrollbar-track {
           background: transparent;
         }
         .bestiary-description::-webkit-scrollbar-thumb {
-          background: rgba(120, 113, 108, 0.5);
-          border-radius: 3px;
+          background: rgba(120, 113, 108, 0.2);
+          border-radius: 2px;
         }
         .bestiary-description::-webkit-scrollbar-thumb:hover {
-          background: rgba(120, 113, 108, 0.8);
+          background: rgba(120, 113, 108, 0.5);
         }
       `}</style>
 
