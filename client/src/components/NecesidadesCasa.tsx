@@ -60,12 +60,38 @@ function mixHex(hexA: string, hexB: string, t: number) {
   return `rgb(${r}, ${g}, ${bl})`;
 }
 
-// Blends the red gradient into the green gradient as `progress` goes 0 -> 1,
-// used to animate the bar slowly filling from red to green on completion.
-function getCompletionGradient(progress: number) {
-  const start = mixHex("#991b1b", "#16a34a", progress);
-  const end = mixHex("#ef4444", "#4ade80", progress);
+// Same start/end hex pairs as getBarGradient, keyed for blending. "empty" (a task more than 2
+// days overdue, whose bar has gone neutral) has no real color of its own, so it gets a muted
+// gray stand-in purely so completion still has *something* to blend from.
+const TASK_COLOR_HEX: Record<Exclude<TaskColor, "empty">, [string, string]> & { empty: [string, string] } = {
+  green: ["#16a34a", "#4ade80"],
+  yellow: ["#ca8a04", "#facc15"],
+  orange: ["#c2410c", "#fb923c"],
+  red: ["#991b1b", "#ef4444"],
+  empty: ["#4b5563", "#9ca3af"],
+};
+
+// Blends a task's starting-color gradient into the green "done" gradient as `progress` goes
+// 0 -> 1, used to animate the bar filling on completion regardless of what color it started at.
+function getCompletionGradient(fromColor: TaskColor, progress: number) {
+  const [fromStart, fromEnd] = TASK_COLOR_HEX[fromColor];
+  const [toStart, toEnd] = TASK_COLOR_HEX.green;
+  const start = mixHex(fromStart, toStart, progress);
+  const end = mixHex(fromEnd, toEnd, progress);
   return `linear-gradient(90deg, ${start}, ${end})`;
+}
+
+// Completion animations run at a duration proportional to how far the bar actually has to
+// travel -- a task at 90% only needs a quick nudge to 100%, while one that's fully drained
+// needs a longer, more visible fill. Without this, every completion took the same fixed time
+// regardless of distance, which is what made the (fixed-duration) growing sound drift out of
+// sync with bars that had very different amounts of ground to cover.
+const MIN_COMPLETION_MS = 400;
+const MAX_COMPLETION_MS = 1500;
+
+function completionDurationFor(startValue: number) {
+  const distance = Math.min(100, Math.max(0, 100 - startValue)) / 100;
+  return MIN_COMPLETION_MS + (MAX_COMPLETION_MS - MIN_COMPLETION_MS) * distance;
 }
 
 function daysRemaining(lastDone: number, periodDays: number) {
@@ -417,6 +443,7 @@ export default function NecesidadesCasa() {
   const [, setTick] = useState(0);
   const [completingId, setCompletingId] = useState<number | null>(null);
   const [completingFrom, setCompletingFrom] = useState(0);
+  const [completingFromColor, setCompletingFromColor] = useState<TaskColor>("green");
   const [completingProgress, setCompletingProgress] = useState(0);
   const completionRafRef = useRef<number | null>(null);
   const growSoundRef = useRef<{ stop: () => void } | null>(null);
@@ -557,7 +584,7 @@ export default function NecesidadesCasa() {
     if (completingId === task.id) {
       return {
         value: completingFrom + (100 - completingFrom) * completingProgress,
-        gradient: getCompletionGradient(completingProgress),
+        gradient: getCompletionGradient(completingFromColor, completingProgress),
         instant: true,
       };
     }
@@ -568,11 +595,18 @@ export default function NecesidadesCasa() {
 
   const remaining = daysRemaining(selected.lastDone, selected.periodDays);
 
-  const runCompletionAnimation = useCallback((taskId: number, startValue: number) => {
-    const duration = 1400;
+  // Drives both the bar fill and its sound off the exact same clock (a single RAF loop),
+  // so they start and finish together instead of the sound (Web Audio) and the bar (a
+  // separate CSS transition, in the old per-branch version of this) drifting out of sync.
+  // Duration comes from completionDurationFor, so a bar that's nearly full animates quickly
+  // and a nearly-empty one takes longer -- and the sound is scheduled with that identical
+  // duration, so its pitch-climb always lines up with however long this particular bar takes.
+  const runCompletionAnimation = useCallback((taskId: number, startValue: number, startColor: TaskColor) => {
+    const duration = completionDurationFor(startValue);
     const startTime = performance.now();
     setCompletingId(taskId);
     setCompletingFrom(startValue);
+    setCompletingFromColor(startColor);
     setCompletingProgress(0);
 
     growSoundRef.current?.stop();
@@ -589,8 +623,6 @@ export default function NecesidadesCasa() {
       setCompletingId(null);
       completionRafRef.current = null;
       growSoundRef.current = null;
-      setFlashing(true);
-      setTimeout(() => setFlashing(false), 400);
     };
 
     completionRafRef.current = requestAnimationFrame(step);
@@ -606,19 +638,9 @@ export default function NecesidadesCasa() {
   const markDone = () => {
     if (completingId !== null) return;
 
-    if (selected.color === "red") {
-      runCompletionAnimation(selected.id, selected.value);
-      return;
-    }
-
     setFlashing(true);
     setTimeout(() => setFlashing(false), 400);
-    setTasks((prev) => prev.map((t) => (t.id === selectedId ? { ...t, lastDone: Date.now() } : t)));
-
-    // No manual RAF here -- the bar itself fills via the "width 1s linear" CSS transition
-    // (see BigBar/MiniBar), so the sound's volume ramp is just timed to match that duration.
-    growSoundRef.current?.stop();
-    growSoundRef.current = playGrowingProgressBarSound(1000);
+    runCompletionAnimation(selected.id, selected.value, selected.color);
   };
 
   const askPeriodDays = useCallback((defaultValue: number) => {

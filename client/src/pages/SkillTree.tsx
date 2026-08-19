@@ -149,12 +149,6 @@ function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpen
     })),
   });
 
-  const completedTodayCount = todayRecordQueries.filter((q) =>
-    (q.data as HabitRecord[] | undefined)?.some((r) => r.date === todayStr && r.completed === 1)
-  ).length;
-
-  const pendingHabitsCount = Math.max(habitsScheduledToday.length - completedTodayCount, 0);
-
   const { data: spaceRepPractices = [] } = useQuery({
     queryKey: ["space-repetition"],
     queryFn: async () => {
@@ -278,11 +272,6 @@ function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpen
               title="Habit Streak"
             >
               <Flame className="h-4 w-4 mx-auto" />
-              {pendingHabitsCount > 0 && (
-                <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full border border-background bg-black px-1 text-[10px] font-bold leading-none text-white dark:bg-white dark:text-black">
-                  {pendingHabitsCount > 99 ? "99+" : pendingHabitsCount}
-                </span>
-              )}
             </button>
             <button
               className="relative h-8 w-8 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
@@ -303,7 +292,9 @@ function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpen
             >
               <Dumbbell className="h-4 w-4 mx-auto" />
               {pendingSpaceRepCount > 0 && (
-                <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full border border-background bg-black px-1 text-[10px] font-bold leading-none text-white dark:bg-white dark:text-black">
+                // Más chico y más tenue que el badge de "Progreso de hoy": la notificación de
+                // repetición espaciada queda deliberadamente menos visible que la de hoy.
+                <span className="absolute -top-0.5 -right-0.5 flex h-3 min-w-3 items-center justify-center rounded-full border border-background bg-muted-foreground/60 px-0.5 text-[8px] font-semibold leading-none text-background">
                   {pendingSpaceRepCount > 99 ? "99+" : pendingSpaceRepCount}
                 </span>
               )}

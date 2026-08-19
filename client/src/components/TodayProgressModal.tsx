@@ -832,20 +832,30 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                 <p className="text-xs text-muted-foreground py-1">Nada asignado a esta franja.</p>
                               ) : (
                                 <div className="space-y-1.5">
-                                  {itemBuckets[s.key].map((item, idx) => (
-                                    <TodayTaskRow
-                                      key={item.key}
-                                      item={item}
-                                      onMove={(slot) => moveItemToSlot(item, slot)}
-                                      onClear={() => unassignItem(item)}
-                                      onHide={item.type !== "manual" ? () => hideItemFromToday(item) : undefined}
-                                      onDelete={item.type === "manual" ? () => deleteManualItem(item) : undefined}
-                                      onDuplicate={canDuplicate(item) ? () => duplicateItem(item) : undefined}
-                                      onToggleDone={item.type === "manual" ? () => toggleManualDone(item) : undefined}
-                                      onMoveUp={idx > 0 ? () => moveItemOrder(item, "up") : undefined}
-                                      onMoveDown={idx < itemBuckets[s.key].length - 1 ? () => moveItemOrder(item, "down") : undefined}
-                                    />
-                                  ))}
+                                  {(() => {
+                                    // Solo en la franja horaria actual (la de la hora real de
+                                    // ahora) la primera tarea sin hacer se destaca con opacidad
+                                    // normal; las siguientes sin hacer de esa misma franja, y
+                                    // TODAS las sin hacer del resto de las franjas (todavía no
+                                    // les toca), quedan más tenues.
+                                    const isActiveSlot = s.key === getCurrentTimeSlotKey();
+                                    const firstUndoneIdx = isActiveSlot ? itemBuckets[s.key].findIndex((i) => !i.done) : -1;
+                                    return itemBuckets[s.key].map((item, idx) => (
+                                      <TodayTaskRow
+                                        key={item.key}
+                                        item={item}
+                                        dimmed={!item.done && idx !== firstUndoneIdx}
+                                        onMove={(slot) => moveItemToSlot(item, slot)}
+                                        onClear={() => unassignItem(item)}
+                                        onHide={item.type !== "manual" ? () => hideItemFromToday(item) : undefined}
+                                        onDelete={item.type === "manual" ? () => deleteManualItem(item) : undefined}
+                                        onDuplicate={canDuplicate(item) ? () => duplicateItem(item) : undefined}
+                                        onToggleDone={item.type === "manual" ? () => toggleManualDone(item) : undefined}
+                                        onMoveUp={idx > 0 ? () => moveItemOrder(item, "up") : undefined}
+                                        onMoveDown={idx < itemBuckets[s.key].length - 1 ? () => moveItemOrder(item, "down") : undefined}
+                                      />
+                                    ));
+                                  })()}
                                 </div>
                               )}
                             </AccordionContent>
@@ -1078,6 +1088,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
 
 function TodayTaskRow({
   item,
+  dimmed,
   onMove,
   onClear,
   onHide,
@@ -1088,6 +1099,10 @@ function TodayTaskRow({
   onMoveDown,
 }: {
   item: TodayItem;
+  // Tarea sin hacer que no es "la que sigue" (la primera pendiente de la franja horaria
+  // actual): se muestra más tenue. Incluye tanto a las pendientes de más abajo en la franja
+  // activa como a todas las pendientes de las demás franjas, que todavía no les toca.
+  dimmed?: boolean;
   onMove: (slot: TaskSlotKey) => void;
   onClear?: () => void;
   onHide?: () => void;
@@ -1130,7 +1145,9 @@ function TodayTaskRow({
   return (
     <>
       <div
-        className="flex items-center gap-2 text-sm touch-none select-none"
+        className={`flex items-center gap-2 text-sm touch-none select-none transition-opacity ${
+          dimmed ? "opacity-45" : ""
+        }`}
         onMouseDown={startLongPress}
         onMouseUp={cancelLongPress}
         onMouseLeave={cancelLongPress}
