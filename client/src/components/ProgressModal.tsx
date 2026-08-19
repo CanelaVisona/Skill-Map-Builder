@@ -3,15 +3,17 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { useSkillTree, type Area, type Project } from "@/lib/skill-context";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { calculateLevelProgressPercentage, countMasteredSkillsInLevel, countSkillsInLevel } from "@/lib/area-progress";
 
 interface ProgressItem {
   id: string;
   name: string;
   icon?: string;
   type: "area" | "project";
-  completedNodes: number;
-  totalNodes: number;
   level: number;
+  subtitle?: string;
+  masteredInLevel: number;
+  totalInLevel: number;
 }
 
 export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
@@ -31,54 +33,25 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
     return colors[level] || "bg-green-500 dark:bg-green-500";
   };
 
-  const calculateProgress = (skills: Array<{ status: string }>): { completed: number; total: number } => {
-    const total = skills.length;
-    const completed = skills.filter(s => s.status === "mastered").length;
-    return { completed, total };
+  const buildProgressItem = (item: Area | Project, type: "area" | "project"): ProgressItem => {
+    const level = item.unlockedLevel;
+    const skills = item.skills || [];
+    return {
+      id: item.id,
+      name: item.name,
+      icon: item.icon,
+      type,
+      level,
+      subtitle: item.levelSubtitles?.[level.toString()],
+      masteredInLevel: countMasteredSkillsInLevel(skills, level),
+      totalInLevel: countSkillsInLevel(skills, level),
+    };
   };
 
-  const calculateLevel = (completedNodes: number): number => {
-    return Math.floor(completedNodes / 15) + 1;
-  };
-
-  const calculateProgressPercentage = (completedNodes: number): number => {
-    const nodesSinceLastLevel = completedNodes % 15;
-    return (nodesSinceLastLevel / 15) * 100;
-  };
-
-  const progressItems: ProgressItem[] = [];
-
-  // Add areas
-  if (Array.isArray(areas)) {
-    areas.forEach((area: Area) => {
-      const { completed, total } = calculateProgress(area.skills || []);
-      progressItems.push({
-        id: area.id,
-        name: area.name,
-        icon: area.icon,
-        type: "area",
-        completedNodes: completed,
-        totalNodes: total,
-        level: calculateLevel(completed),
-      });
-    });
-  }
-
-  // Add projects
-  if (Array.isArray(projects)) {
-    projects.forEach((project: Project) => {
-      const { completed, total } = calculateProgress(project.skills || []);
-      progressItems.push({
-        id: project.id,
-        name: project.name,
-        icon: project.icon,
-        type: "project",
-        completedNodes: completed,
-        totalNodes: total,
-        level: calculateLevel(completed),
-      });
-    });
-  }
+  const progressItems: ProgressItem[] = [
+    ...(Array.isArray(areas) ? areas.map((area) => buildProgressItem(area, "area")) : []),
+    ...(Array.isArray(projects) ? projects.map((project) => buildProgressItem(project, "project")) : []),
+  ];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -89,26 +62,34 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
         <div className="flex flex-col gap-4">
           <h2 className="text-2xl font-bold">Progress Tracker</h2>
           <ScrollArea className="h-[50vh] pr-4">
-            <div className="space-y-4">
+            <div className="space-y-5">
               {progressItems.map((item) => {
-                const nodesSinceLastLevel = item.completedNodes % 15;
-                const progress = calculateProgressPercentage(item.completedNodes);
+                const progress = calculateLevelProgressPercentage(item.masteredInLevel, item.totalInLevel);
 
                 return (
-                  <div key={`${item.type}-${item.id}`} className="space-y-2 pb-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg font-semibold">{item.name}</span>
-                        <span className={`text-xs font-bold px-2 py-1 rounded-full ${getLevelColor(item.level)} text-gray-900 dark:text-black`}>
+                  <div key={`${item.type}-${item.id}`} className="space-y-1.5 pb-4 border-b border-border/40 last:border-none">
+                    {/* Nombre + nivel */}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        {item.icon && <span className="text-base leading-none">{item.icon}</span>}
+                        <span className="text-lg font-semibold truncate">{item.name}</span>
+                        <span className={`shrink-0 text-xs font-bold px-2 py-1 rounded-full ${getLevelColor(item.level)} text-gray-900 dark:text-black`}>
                           Lvl {item.level}
                         </span>
                       </div>
-                      <span className="text-sm font-semibold text-muted-foreground">
-                        {nodesSinceLastLevel}/15
+                      <span className="shrink-0 text-sm font-semibold text-muted-foreground">
+                        {item.masteredInLevel}/{item.totalInLevel}
                       </span>
                     </div>
 
-                    <div className="w-full bg-muted rounded-full h-3 overflow-hidden">
+                    {/* Subtítulo del nivel actual: aclara de qué es la barra de abajo.
+                        Si no hay subtítulo cargado, se deja el renglón vacío (mismo alto) en vez de texto de relleno. */}
+                    <p className="text-sm text-muted-foreground/80 italic truncate min-h-[1.25rem]">
+                      {item.subtitle || " "}
+                    </p>
+
+                    {/* Barra de progreso del subtítulo/nivel actual */}
+                    <div className="w-full bg-muted rounded-full h-3 overflow-hidden mt-1.5">
                       <div
                         className={`h-full transition-all duration-500 ${getLevelColor(item.level)}`}
                         style={{ width: `${progress}%` }}
