@@ -4792,14 +4792,19 @@ export async function registerRoutes(
 
   app.post("/api/today-task-slots/reorder", requireAuth, async (req, res) => {
     try {
-      const { date, taskType, taskId, direction } = req.body;
-      if (!date || !taskType || !taskId || !direction) {
-        return res.status(400).json({ message: "date, taskType, taskId y direction son requeridos" });
+      const { date, slot, order } = req.body;
+      if (!date || !slot || !Array.isArray(order)) {
+        return res.status(400).json({ message: "date, slot y order (lista de tareas) son requeridos" });
       }
-      if (direction !== "up" && direction !== "down") {
-        return res.status(400).json({ message: "direction debe ser up o down" });
+      if (!["morning", "midday", "afternoon", "night", "hidden"].includes(slot)) {
+        return res.status(400).json({ message: "slot debe ser morning, midday, afternoon, night o hidden" });
       }
-      await storage.reorderTodayTaskSlot(req.userId!, date, taskType, taskId, direction);
+      for (const item of order) {
+        if (!item || !["habit", "node", "practice", "manual"].includes(item.taskType) || !item.taskId) {
+          return res.status(400).json({ message: "cada elemento de order necesita taskType y taskId válidos" });
+        }
+      }
+      await storage.reorderTodayTaskSlotBucket(req.userId!, date, slot, order);
       const slots = await storage.getTodayTaskSlots(req.userId!, date);
       res.json(slots);
     } catch (error: any) {

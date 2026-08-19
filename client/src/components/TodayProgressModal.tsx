@@ -457,8 +457,20 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     setTaskSlot.mutate({ date: effectiveDate, taskType: item.type, taskId: item.id, slot });
   };
 
-  const moveItemOrder = (item: TodayItem, direction: "up" | "down") => {
-    reorderTaskSlot.mutate({ date: effectiveDate, taskType: item.type, taskId: item.id, direction });
+  // Recibe el orden visual completo de la franja (itemBuckets[slot], ya con el swap aplicado)
+  // en vez de pedirle al backend que intercambie con el "vecino" guardado: así también
+  // funciona para ítems que todavía no tienen fila propia (hábitos con franja por defecto,
+  // actividad extra), que antes no se podían mover porque no había nada que swapear.
+  const moveItemOrder = (slot: TaskSlotKey, bucket: TodayItem[], index: number, direction: "up" | "down") => {
+    const swapIndex = direction === "up" ? index - 1 : index + 1;
+    if (swapIndex < 0 || swapIndex >= bucket.length) return;
+    const newOrder = bucket.slice();
+    [newOrder[index], newOrder[swapIndex]] = [newOrder[swapIndex], newOrder[index]];
+    reorderTaskSlot.mutate({
+      date: effectiveDate,
+      slot,
+      order: newOrder.map((it) => ({ taskType: it.type, taskId: it.id })),
+    });
   };
 
   const unassignItem = (item: TodayItem) => {
@@ -851,8 +863,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                         onDelete={item.type === "manual" ? () => deleteManualItem(item) : undefined}
                                         onDuplicate={canDuplicate(item) ? () => duplicateItem(item) : undefined}
                                         onToggleDone={item.type === "manual" ? () => toggleManualDone(item) : undefined}
-                                        onMoveUp={idx > 0 ? () => moveItemOrder(item, "up") : undefined}
-                                        onMoveDown={idx < itemBuckets[s.key].length - 1 ? () => moveItemOrder(item, "down") : undefined}
+                                        onMoveUp={idx > 0 ? () => moveItemOrder(s.key, itemBuckets[s.key], idx, "up") : undefined}
+                                        onMoveDown={idx < itemBuckets[s.key].length - 1 ? () => moveItemOrder(s.key, itemBuckets[s.key], idx, "down") : undefined}
                                       />
                                     ));
                                   })()}

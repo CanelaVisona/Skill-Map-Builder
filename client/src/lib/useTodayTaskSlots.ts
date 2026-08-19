@@ -69,19 +69,19 @@ export function useReorderTodayTaskSlot() {
   return useMutation({
     mutationFn: async ({
       date,
-      taskType,
-      taskId,
-      direction,
+      slot,
+      order,
     }: {
       date: string;
-      taskType: TaskType;
-      taskId: string;
-      direction: "up" | "down";
+      slot: TaskSlotKey;
+      // Orden visual completo de la franja (el front ya lo conoce, incluida la actividad sin
+      // fila propia todavía) — el backend renumera 0..n-1 y crea lo que haga falta.
+      order: { taskType: TaskType; taskId: string }[];
     }) => {
       const res = await fetch("/api/today-task-slots/reorder", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, taskType, taskId, direction }),
+        body: JSON.stringify({ date, slot, order }),
       });
       if (!res.ok) throw new Error("Failed to reorder today task slot");
       return res.json() as Promise<TodayTaskSlot[]>;

@@ -8871,10 +8871,21 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
 
                   const isNewOrUpdatedQuest = !levelCompleted;
                   
-                  // Calculate max width: leave some space before the node position
-                  // Nodes are positioned at skill.x%, so we need to convert that to pixels
-                  // Approximate max-width based on first available skill's X position
-                  const maxWidthPercent = Math.max(firstAvailableSkill.x - 15, 30); // Leave 15% margin before node
+                  // Calculate max width: the label must stay left of the node it's
+                  // labeling. The node is horizontally centered (-translate-x-1/2) at
+                  // firstAvailableSkill.x%, positioned with "left: x%" of THIS SAME
+                  // absolutely-positioned canvas div - and the label below is an
+                  // absolute sibling inside that identical container. So "%" is the
+                  // exact coordinate system the node itself uses; it's correct no
+                  // matter how wide the canvas actually renders (full viewport on
+                  // mobile, or narrower than the viewport next to a desktop sidebar -
+                  // see the vw-vs-% note in the style below, that's a *different*,
+                  // outer safety cap, not this one).
+                  // IMPORTANT: no artificial floor here - a fixed minimum (e.g. "at least
+                  // 30%") would exceed the real gap for any node positioned before ~45%,
+                  // letting long subtitles overlap the node instead of wrapping onto more
+                  // lines. The only floor is a small readability minimum, applied below.
+                  const maxWidthPercent = firstAvailableSkill.x;
                   
                   return [<motion.div
                     key={`quest-label-${level}-${activeItem.id}`}
@@ -8886,8 +8897,12 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
                     } : undefined}
                     viewport={isNewOrUpdatedQuest ? { once: false, amount: 0.5 } : undefined}
                     className={cn(
+                      // No whitespace-nowrap here (on any breakpoint): with a maxWidth in
+                      // place, nowrap doesn't clip the text - it just keeps it on one line
+                      // and lets it overflow straight through the node/next label instead
+                      // of wrapping. Wrapping (see break-words below) is what actually
+                      // keeps long subtitles inside their allotted width.
                       "absolute -translate-y-1/2 flex flex-col items-start z-30",
-                      "md:whitespace-nowrap",
                       "md:left-[20px]",
                       "left-[8px]",
                       "md:block",
@@ -8896,13 +8911,17 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
                     )}
                     style={{
                       top: `${midY}px`,
-                      // Sized in vw (true device viewport), not "%" of the containing block:
-                      // this canvas can sit inside scrollable/percentage-sized ancestors whose
-                      // own rendered width isn't the real screen width, so a "%" max-width can
-                      // resolve against a container narrower than the actual viewport and clip
-                      // long subtitles on phones (e.g. iPhone XR). "calc(100vw - 24px)" also
-                      // guarantees it never crosses the right edge of the real screen.
-                      maxWidth: `min(calc(100vw - 24px), ${maxWidthPercent}vw, 640px)`,
+                      // Primary bound is "%" of this canvas (calc(X% - 40px)): that's the
+                      // node's own coordinate system, so it's exact regardless of how wide
+                      // the canvas renders - e.g. narrower than the viewport next to a
+                      // desktop sidebar, where a vw-based width used to overshoot past the
+                      // node because vw doesn't know about the sidebar eating into the
+                      // canvas's real width. We subtract ~40px (node radius + a small gap)
+                      // so the label wraps before it ever reaches the node's circle instead
+                      // of overlapping it. "calc(100vw - 24px)" is kept only as an outer
+                      // safety cap so it can never cross the real screen edge, and max(64px, ...)
+                      // gives it a small readable floor.
+                      maxWidth: `max(64px, min(calc(${maxWidthPercent}% - 40px), calc(100vw - 24px), 640px))`,
                     }}
                   >
                     <div 

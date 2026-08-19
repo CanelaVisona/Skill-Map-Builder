@@ -2595,31 +2595,30 @@ export class DbStorage implements IStorage {
     await db.delete(todayTaskSlots).where(eq(todayTaskSlots.id, id));
   }
 
-  // Reordena una tarea dentro de su franja intercambiando su sortOrder con el vecino
-  // inmediato (arriba o abajo). No hace nada si ya está en el extremo.
-  async reorderTodayTaskSlot(userId: string, date: string, taskType: string, taskId: string, direction: "up" | "down"): Promise<void> {
-    const id = `${userId}:${date}:${taskType}:${taskId}`;
-    const current = await db.select().from(todayTaskSlots).where(eq(todayTaskSlots.id, id)).limit(1);
-    const row = current[0];
-    if (!row) return;
-
-    const siblings = await db.select().from(todayTaskSlots).where(
-      and(eq(todayTaskSlots.userId, userId), eq(todayTaskSlots.date, date), eq(todayTaskSlots.slot, row.slot))
-    );
-    // Desempata por updatedAt: filas de franjas asignadas antes de que existiera esta
-    // columna comparten sortOrder 0, así que ordenar solo por sortOrder las deja "empatadas"
-    // y swapear sus valores (0 con 0) no cambiaría nada.
-    const sorted = siblings.slice().sort((a, b) => a.sortOrder - b.sortOrder || a.updatedAt.getTime() - b.updatedAt.getTime());
-    const idx = sorted.findIndex((s) => s.id === row.id);
-    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
-    if (idx === -1 || swapIdx < 0 || swapIdx >= sorted.length) return;
-
-    // En vez de swapear los valores guardados (que pueden estar empatados), se intercambian
-    // posiciones en la lista ordenada y se renumera todo secuencialmente (0..n-1). Esto
-    // también autocura de una vez cualquier empate viejo dentro de esta franja.
-    [sorted[idx], sorted[swapIdx]] = [sorted[swapIdx], sorted[idx]];
+  // Reordena de una sola vez todas las tareas de una franja (date, slot) al orden que manda
+  // el front, que ya conoce el orden visual completo — incluida la actividad que todavía no
+  // tiene fila propia acá (hábitos con franja "por defecto", extra confirmada según la hora).
+  // Antes esto intercambiaba sortOrder contra el vecino en la tabla, pero eso no hacía nada
+  // con esos ítems sin fila (no había qué reordenar), así que "mover arriba/abajo" quedaba
+  // roto para cualquier tarea sin franja asignada a mano. Acá simplemente se renumera 0..n-1
+  // en el orden recibido, creando la fila que haga falta (con la franja dada) en el camino.
+  async reorderTodayTaskSlotBucket(
+    userId: string,
+    date: string,
+    slot: TodayTaskSlot["slot"],
+    order: { taskType: TodayTaskSlot["taskType"]; taskId: string }[]
+  ): Promise<void> {
     await Promise.all(
-      sorted.map((s, i) => (s.sortOrder === i ? null : db.update(todayTaskSlots).set({ sortOrder: i }).where(eq(todayTaskSlots.id, s.id))))
+      order.map(async (item, i) => {
+        const id = `${userId}:${date}:${item.taskType}:${item.taskId}`;
+        const existing = await db.select().from(todayTaskSlots).where(eq(todayTaskSlots.id, id)).limit(1);
+        if (existing[0]) {
+          if (existing[0].sortOrder === i && existing[0].slot === slot) return;
+          await db.update(todayTaskSlots).set({ sortOrder: i, slot, updatedAt: new Date() }).where(eq(todayTaskSlots.id, id));
+        } else {
+          await db.insert(todayTaskSlots).values({ id, userId, date, taskType: item.taskType, taskId: item.taskId, slot, sortOrder: i });
+        }
+      })
     );
   }
 
