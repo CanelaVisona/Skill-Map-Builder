@@ -86,7 +86,10 @@ export function BugProgressPopup({ snapshot, onClose }: BugProgressPopupProps) {
       >
         {/* Sin click-catcher a pantalla completa, igual que BodyGainPopup: este pop-up
             puede convivir con el modal de bugs abierto, y no debe robarle el próximo
-            click al usuario. Se cierra solo por el timer de arriba. */}
+            click al usuario. Se cierra solo por el timer de arriba. El fondo oscuro de
+            abajo es solo visual (pointer-events: none), no afecta esto. */}
+        <div className="absolute inset-0" style={{ backgroundColor: "rgba(0,0,0,0.5)" }} />
+
         <div
           style={{
             position: "fixed",

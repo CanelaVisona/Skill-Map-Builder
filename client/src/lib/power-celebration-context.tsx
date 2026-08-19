@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from "react";
 import { PowerCelebration, type PowerCelebrationState } from "@/components/PowerCelebration";
 import { markPopupActive, POPUP_VISIBLE_MS } from "@/lib/popup-coordinator";
+import { playLevelUpSound, playProgressAdvanceSound } from "@/lib/sound";
 
 interface PowerCelebrationContextValue {
   showPowerCelebration: (state: PowerCelebrationState) => void;
@@ -18,6 +19,13 @@ export function PowerCelebrationProvider({ children }: { children: ReactNode }) 
     }
     markPopupActive(POPUP_VISIBLE_MS);
     setCelebration(state);
+    // "unlocked" reuses the same chime as a skill's progress bar advancing; "confirmed"
+    // (poder dominado) reuses the level-up clip, same treatment as ¡Subiste de nivel!.
+    if (state.kind === "unlocked") {
+      playProgressAdvanceSound();
+    } else {
+      playLevelUpSound();
+    }
     hideTimer.current = window.setTimeout(() => setCelebration(null), POPUP_VISIBLE_MS);
   }, []);
 

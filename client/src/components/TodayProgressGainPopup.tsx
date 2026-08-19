@@ -66,7 +66,8 @@ export function TodayProgressGainPopup({ snapshot, onClose }: TodayProgressGainP
         <button
           type="button"
           aria-label="Cerrar popup de progreso de hoy"
-          className="absolute inset-0 cursor-default bg-transparent"
+          className="absolute inset-0 cursor-default"
+          style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
           onClick={onClose}
         />
 

@@ -49,7 +49,16 @@ export function LevelNavigationPanel({
         className="overflow-hidden transition-[width] duration-200 ease-out"
         style={{ width: isRailHovered ? `${expandedWidth}px` : "20px" }}
       >
-        <nav className="max-h-[62vh] overflow-y-auto overflow-x-hidden [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+        <nav
+          className={[
+            "max-h-[62vh] overflow-y-auto overflow-x-hidden",
+            "[scrollbar-width:thin] [scrollbar-color:rgba(161,161,170,0.25)_transparent]",
+            "[&::-webkit-scrollbar]:w-[3px]",
+            "[&::-webkit-scrollbar-track]:bg-transparent",
+            "[&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-zinc-400/25",
+            "hover:[&::-webkit-scrollbar-thumb]:bg-zinc-400/40",
+          ].join(" ")}
+        >
           <ul className="flex flex-col gap-2 py-2">
             {levels.map((level) => {
               const isActive = level.id === activeLevelId;

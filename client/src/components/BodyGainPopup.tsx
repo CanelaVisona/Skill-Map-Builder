@@ -139,7 +139,10 @@ export function BodyGainPopup({ snapshot, onClose }: BodyGainPopupProps) {
             skill-node step-2 popover is still open and in active use (dropdown, tabs,
             repeated "Agregar" clicks). A blocking backdrop would eat the user's next
             click instead of letting it reach the popover underneath. Dismissal is via
-            the timer below and the explicit hide calls from the XP flow. */}
+            the timer below and the explicit hide calls from the XP flow. The dim below
+            is purely visual (pointer-events: none) so it doesn't affect that. */}
+        <div className="absolute inset-0" style={{ backgroundColor: "rgba(0,0,0,0.5)" }} />
+
         <div
           style={{
             position: "fixed",

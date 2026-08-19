@@ -373,6 +373,13 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
   const areaQuestUpdatedDelayMs = 1600;
   const areaLevelUpDelayMs = 4300;
   const questCompletionArchiveDelayMs = 3000;
+  // "Quest updated!" is plain text with no bar-fill animation to wait out (unlike
+  // ExperienceGainPopup/AreaLevelGainPopup, which need POPUP_VISIBLE_MS as a floor for their
+  // own progress-bar animations), so it can stay up for less than the shared POPUP_VISIBLE_MS
+  // without cutting anything off. This is also exactly how long the next node stays gated
+  // after this pop-up appears (see triggerQuestUpdated), so shortening it directly shortens
+  // that wait.
+  const questUpdatedVisibleMs = 300;
 
   const triggerCompleted = () => {
     setShowCompleted(true);
@@ -485,7 +492,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
   // pop-up disappears, same idea as triggerQuestCelebration's onShow/onHide.
   const triggerQuestUpdated = (onHide?: () => void) => {
     questUpdatedHideCallback.current = onHide ?? null;
-    markPopupActive(POPUP_VISIBLE_MS);
+    markPopupActive(questUpdatedVisibleMs);
     setShowQuestUpdatedPopup(true);
     setTimeout(() => {
       setShowQuestUpdatedPopup(false);
@@ -494,7 +501,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       setUnlockGateOpen(true);
       questUpdatedHideCallback.current?.();
       questUpdatedHideCallback.current = null;
-    }, POPUP_VISIBLE_MS);
+    }, questUpdatedVisibleMs);
   };
 
   const hideQuestUpdatedPopup = () => {

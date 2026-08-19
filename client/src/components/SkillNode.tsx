@@ -2526,31 +2526,26 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             </div>
 
             <Tabs value={feedbackActiveTab} onValueChange={(v) => setFeedbackActiveTab(v as "thoughts" | "tools" | "learnings" | "experience" | "body" | "powers" | "bugs")} className="w-full flex flex-col flex-1">
-              <TabsList className="w-full grid grid-cols-7 bg-muted/50">
-                <TabsTrigger value="thoughts" className="text-xs" data-testid="feedback-tab-thoughts">
-                  <Pencil className="h-3 w-3 mr-1" />
+              <TabsList className="w-full flex flex-nowrap items-center justify-start gap-1 overflow-x-auto minimal-scrollbar bg-muted/50">
+                <TabsTrigger value="thoughts" className="shrink-0 text-xs" data-testid="feedback-tab-thoughts">
                   Thoughts
                 </TabsTrigger>
-                <TabsTrigger value="learnings" className="text-xs" data-testid="feedback-tab-learnings">
-                  <Lightbulb className="h-3 w-3 mr-1" />
+                <TabsTrigger value="learnings" className="shrink-0 text-xs" data-testid="feedback-tab-learnings">
                   Learnings
                 </TabsTrigger>
-                <TabsTrigger value="experience" className="text-xs" data-testid="feedback-tab-experience">
-                  <span className="text-xs font-bold mr-1">XP</span>
+                <TabsTrigger value="experience" className="shrink-0 text-xs" data-testid="feedback-tab-experience">
+                  Experiencia
                 </TabsTrigger>
-                <TabsTrigger value="body" className="text-xs" data-testid="feedback-tab-body" title="Fuerza / Flexibilidad">
-                  <BicepsFlexed className="h-3 w-3" />
+                <TabsTrigger value="body" className="shrink-0 text-xs" data-testid="feedback-tab-body" title="Fuerza / Flexibilidad">
+                  Fuerza
                 </TabsTrigger>
-                <TabsTrigger value="powers" className="text-xs" data-testid="feedback-tab-powers">
-                  <Zap className="h-3 w-3 mr-1" />
+                <TabsTrigger value="powers" className="shrink-0 text-xs" data-testid="feedback-tab-powers">
                   Poderes
                 </TabsTrigger>
-                <TabsTrigger value="bugs" className="text-xs" data-testid="feedback-tab-bugs">
-                  <Bug className="h-3 w-3 mr-1" />
+                <TabsTrigger value="bugs" className="shrink-0 text-xs" data-testid="feedback-tab-bugs">
                   Bugs
                 </TabsTrigger>
-                <TabsTrigger value="tools" className="text-xs" data-testid="feedback-tab-tools">
-                  <Wrench className="h-3 w-3 mr-1" />
+                <TabsTrigger value="tools" className="shrink-0 text-xs" data-testid="feedback-tab-tools">
                   Tools
                 </TabsTrigger>
               </TabsList>

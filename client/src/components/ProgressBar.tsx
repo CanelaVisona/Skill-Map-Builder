@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { Skill } from "@/lib/skill-context";
 import { useAreaXpPopup } from "@/lib/area-xp-popup-context";
-import { calculateLevelProgressPercentage, countMasteredSkillsInLevel, countSkillsInLevel } from "@/lib/area-progress";
+import { countMasteredSkillsInLevel, countSkillsInLevel } from "@/lib/area-progress";
 
 interface ProgressBarProps {
   skills: Skill[];
@@ -38,7 +38,6 @@ export function ProgressBar({ skills, size = "lg", areaOrProjectId, unlockedLeve
   const level = unlockedLevel;
   const totalInLevel = countSkillsInLevel(skills, level);
   const masteredInLevel = countMasteredSkillsInLevel(skills, level);
-  const progressPercentage = calculateLevelProgressPercentage(masteredInLevel, totalInLevel);
   const activeAreaXpSnapshot = areaXpSnapshot?.areaOrProjectId === areaOrProjectId ? areaXpSnapshot : null;
   const bonusWidth = activeAreaXpSnapshot ? Math.max(0, activeAreaXpSnapshot.progressAfterPct - activeAreaXpSnapshot.progressBeforePct) : 0;
 
@@ -104,7 +103,6 @@ export function ProgressBar({ skills, size = "lg", areaOrProjectId, unlockedLeve
     ? "text-xs" 
     : "text-[10px]";
 
-  const displayWidth = showLevelComplete ? 100 : progressPercentage;
   const levelColor = getLevelColor(level);
   const barColor = showLevelComplete 
     ? "bg-yellow-500 dark:bg-yellow-400" 
@@ -131,32 +129,43 @@ export function ProgressBar({ skills, size = "lg", areaOrProjectId, unlockedLeve
       
       {/* Bar container */}
       <div className={`${barHeight} relative rounded-sm overflow-hidden bg-gray-200 dark:bg-gray-700`}>
-        {/* Progress fill with animation */}
-        <div className="absolute inset-0">
-          <motion.div
-            className={`h-full transition-all duration-300 ${barColor}`}
-            style={{ width: `${displayWidth}%` }}
-            animate={isAnimating && !showLevelComplete ? { boxShadow: ["0 0 0 0 rgba(249, 115, 22, 0.7)", "0 0 0 8px rgba(249, 115, 22, 0)"] } : {}}
-            transition={{ duration: 1.5 }}
-          />
+        {/* Progress fill as discrete blocks, one per skill del nivel */}
+        <div className="absolute inset-0 flex gap-[2px] p-[1px]">
+          {Array.from({ length: Math.max(totalInLevel, 1) }).map((_, index) => {
+            const isFilled = showLevelComplete || index < masteredInLevel;
+            const isLastFilled = !showLevelComplete && index === masteredInLevel - 1;
 
-          <AnimatePresence>
-            {activeAreaXpSnapshot && bonusWidth > 0 && (
+            return (
               <motion.div
-                key="area-progress-bonus"
-                initial={{ opacity: 0, left: `${activeAreaXpSnapshot.progressBeforePct}%`, width: `${bonusWidth}%` }}
-                animate={{ opacity: 0.75, left: `${activeAreaXpSnapshot.progressBeforePct}%`, width: `${bonusWidth}%` }}
-                exit={{ opacity: 0, left: `${activeAreaXpSnapshot.progressBeforePct}%`, width: `${bonusWidth}%` }}
-                transition={{ duration: 0.45, ease: [0.4, 0, 0.2, 1] }}
-                className="absolute top-0 h-full"
-                style={{ backgroundColor: activeAreaXpSnapshot.areaColor, mixBlendMode: "screen" }}
+                key={index}
+                className={`h-full flex-1 rounded-[2px] transition-colors duration-300 ${isFilled ? barColor : "bg-gray-300 dark:bg-gray-600"}`}
+                animate={isAnimating && isLastFilled ? { boxShadow: ["0 0 0 0 rgba(249, 115, 22, 0.7)", "0 0 0 8px rgba(249, 115, 22, 0)"] } : {}}
+                transition={{ duration: 1.5 }}
               />
-            )}
-          </AnimatePresence>
+            );
+          })}
         </div>
-        
-        {/* Level text integrated inside bar */}
-        <div className={`absolute inset-0 flex items-center justify-center ${textSize} font-semibold text-gray-900 dark:text-black pointer-events-none`}>
+
+        <AnimatePresence>
+          {activeAreaXpSnapshot && bonusWidth > 0 && (
+            <motion.div
+              key="area-progress-bonus"
+              initial={{ opacity: 0, left: `${activeAreaXpSnapshot.progressBeforePct}%`, width: `${bonusWidth}%` }}
+              animate={{ opacity: 0.75, left: `${activeAreaXpSnapshot.progressBeforePct}%`, width: `${bonusWidth}%` }}
+              exit={{ opacity: 0, left: `${activeAreaXpSnapshot.progressBeforePct}%`, width: `${bonusWidth}%` }}
+              transition={{ duration: 0.45, ease: [0.4, 0, 0.2, 1] }}
+              className="absolute top-0 h-full pointer-events-none"
+              style={{ backgroundColor: activeAreaXpSnapshot.areaColor, mixBlendMode: "screen" }}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* Level text integrated inside bar -- blanco con sombra para que se lea sobre
+            cualquier bloque (relleno o vacío) en ambos temas */}
+        <div
+          className={`absolute inset-0 flex items-center justify-center ${textSize} font-semibold text-white pointer-events-none`}
+          style={{ textShadow: "0 1px 2px rgba(0,0,0,0.85)" }}
+        >
           Lvl {level}
         </div>
       </div>

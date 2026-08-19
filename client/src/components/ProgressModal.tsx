@@ -40,7 +40,7 @@ function ProgressItemRow({ item, onGoToItem }: { item: ProgressItem; onGoToItem:
   const progress = calculateLevelProgressPercentage(item.masteredInLevel, item.totalInLevel);
 
   return (
-    <div className="space-y-1 pb-4 border-b border-border/40 last:border-none">
+    <div className="space-y-1 pb-3 border-b border-border/40 last:border-none">
       {/* Nombre del área/quest: referencia chica, no es lo protagonista */}
       <span className="block text-xs font-medium uppercase tracking-wide text-muted-foreground truncate">
         {item.name}
@@ -56,7 +56,7 @@ function ProgressItemRow({ item, onGoToItem }: { item: ProgressItem; onGoToItem:
           title={`Ir al skill tree de ${item.name}`}
           className={`truncate min-w-0 text-left hover:opacity-70 active:opacity-60 transition-opacity ${
             item.subtitle
-              ? "text-base sm:text-lg font-semibold text-foreground"
+              ? "text-sm sm:text-lg font-semibold text-foreground"
               : "text-xs italic text-muted-foreground/70"
           }`}
         >
@@ -68,13 +68,13 @@ function ProgressItemRow({ item, onGoToItem }: { item: ProgressItem; onGoToItem:
       </div>
 
       {/* Barra de progreso del subtítulo/nivel actual, en bloques (uno por nodo del nivel) */}
-      <div className="flex items-center gap-1 mt-1.5" title={`${progress.toFixed(0)}%`}>
+      <div className="flex items-center gap-1 mt-1" title={`${progress.toFixed(0)}%`}>
         {Array.from({ length: totalBlocks }).map((_, idx) => {
           const filled = item.totalInLevel > 0 && idx < item.masteredInLevel;
           return (
             <div
               key={idx}
-              className={`h-3 flex-1 rounded-sm transition-colors duration-500 ${
+              className={`h-2.5 flex-1 rounded-sm transition-colors duration-500 ${
                 filled ? getLevelColor(item.level) : "bg-muted"
               }`}
             />
@@ -111,7 +111,7 @@ function ProgressSection({
         </span>
         <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 ${isOpen ? "" : "-rotate-90"}`} />
       </CollapsibleTrigger>
-      <CollapsibleContent className="space-y-5 pt-3">
+      <CollapsibleContent className="space-y-3 pt-2">
         {items.map((item) => (
           <ProgressItemRow key={`${item.type}-${item.id}`} item={item} onGoToItem={onGoToItem} />
         ))}
@@ -164,24 +164,24 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className="max-w-xl w-[calc(100vw-1.5rem)] sm:w-[min(92vw,36rem)] max-h-[calc(100dvh-2rem)] overflow-y-auto minimal-scrollbar rounded-2xl border-none p-4 sm:p-6"
+        className="max-w-xl w-[calc(100vw-1.5rem)] sm:w-[min(92vw,36rem)] max-h-[75dvh] overflow-hidden flex flex-col gap-3 rounded-2xl border-none p-4 sm:p-6"
       >
         <VisuallyHidden>
           <DialogTitle>Progress Tracker</DialogTitle>
         </VisuallyHidden>
-        <div className="flex flex-col gap-4">
-          <h2 className="text-xl sm:text-2xl font-bold">Progress Tracker</h2>
-          <div className="space-y-6">
-            <ProgressSection title="Áreas" items={areaItems} onGoToItem={goToItem} />
-            <ProgressSection title="Main Quest" items={mainQuestItems} onGoToItem={goToItem} />
-            <ProgressSection title="Side Quest" items={sideQuestItems} onGoToItem={goToItem} />
+        <h2 className="shrink-0 text-lg sm:text-2xl font-bold">Progress Tracker</h2>
+        {/* Único contenedor con scroll: vertical nada más, con scrollbar fina y su propio
+            colchón a la derecha (pr-2 -mr-2) para que la barra no le coma ancho al contenido. */}
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden minimal-scrollbar pr-2 -mr-2 space-y-4">
+          <ProgressSection title="Áreas" items={areaItems} onGoToItem={goToItem} />
+          <ProgressSection title="Main Quest" items={mainQuestItems} onGoToItem={goToItem} />
+          <ProgressSection title="Side Quest" items={sideQuestItems} onGoToItem={goToItem} />
 
-            {!hasAnyItems && (
-              <div className="text-center py-8 text-muted-foreground">
-                No areas or projects yet. Start creating them to track your progress!
-              </div>
-            )}
-          </div>
+          {!hasAnyItems && (
+            <div className="text-center py-8 text-muted-foreground">
+              No areas or projects yet. Start creating them to track your progress!
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>

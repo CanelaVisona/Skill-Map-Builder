@@ -123,6 +123,10 @@ export function PowerCelebration({ celebration }: PowerCelebrationProps) {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
         >
+          {/* Dim puramente visual (pointer-events: none, igual que el resto de este
+              wrapper): esta variante no bloquea clicks a propósito. */}
+          <div className="absolute inset-0" style={{ backgroundColor: "rgba(0,0,0,0.5)" }} />
+
           <div
             style={{
               position: "fixed",

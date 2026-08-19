@@ -108,7 +108,8 @@ export function InsightsCounterPopup({ snapshot, onClose }: InsightsCounterPopup
         <button
           type="button"
           aria-label="Cerrar popup de registros"
-          className="absolute inset-0 cursor-default bg-transparent"
+          className="absolute inset-0 cursor-default"
+          style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
           onClick={onClose}
         />
 

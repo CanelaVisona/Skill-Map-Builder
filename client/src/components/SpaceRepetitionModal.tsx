@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/compone
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
-import { ArrowLeft, Plus, Trash2, Archive, Pencil } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Archive } from "lucide-react";
 import { useTheme } from "next-themes";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Area } from "@shared/schema";
@@ -656,6 +656,7 @@ export function SpaceRepetitionModal({
   const showEdit = (id: string) => {
     const practice = practices.find((p) => p.id === id);
     if (!practice) return;
+    setSelectedPracticeId(id);
     setEditingId(id);
     setEditEmoji(practice.emoji);
     setEditName(practice.name);
@@ -925,7 +926,7 @@ export function SpaceRepetitionModal({
                 setCurrentPanel("detail");
               }}
               onArchived={() => setCurrentPanel("archived")}
-              onDelete={deletePractice}
+              onEdit={(id) => showEdit(id)}
               onRegister={(practiceId, intervalIdx) => {
                 toggleInterval(practiceId, intervalIdx);
               }}
@@ -966,7 +967,6 @@ export function SpaceRepetitionModal({
                 setSelectedPracticeId(null);
                 setCurrentPanel("main");
               }}
-              onEdit={() => showEdit(selectedPractice.id)}
               onToggleInterval={(idx) => toggleInterval(selectedPractice.id, idx)}
               onReset={() => handleExpiredReset(selectedPractice.id)}
               onRecover={() => handleRecover(selectedPractice.id)}
@@ -1022,7 +1022,7 @@ function MainPanel({
   onLongPressAdd,
   onDetail,
   onArchived,
-  onDelete,
+  onEdit,
   onRegister,
   onRecover,
 }: {
@@ -1032,7 +1032,7 @@ function MainPanel({
   onLongPressAdd: () => void;
   onDetail: (id: string) => void;
   onArchived: () => void;
-  onDelete: (id: string) => void;
+  onEdit: (id: string) => void;
   onRegister: (practiceId: string, intervalIdx: number) => void;
   onRecover: (practiceId: string) => void;
 }) {
@@ -1087,7 +1087,7 @@ function MainPanel({
                     key={practice.id}
                     practice={practice}
                     onDetail={() => onDetail(practice.id)}
-                    onDelete={() => onDelete(practice.id)}
+                    onEdit={() => onEdit(practice.id)}
                     onRegister={() => {
                       if (practice.nextIdx >= 0) {
                         onRegister(practice.id, practice.nextIdx);
@@ -1115,7 +1115,7 @@ function MainPanel({
                         practice={practice}
                         daysLeft={daysLeft}
                         onDetail={() => onDetail(practice.id)}
-                        onDelete={() => onDelete(practice.id)}
+                        onEdit={() => onEdit(practice.id)}
                       />
                     );
                   })}
@@ -1173,19 +1173,18 @@ function RockNode() {
 function PracticeCardWithLongPress({
   practice,
   onDetail,
-  onDelete,
+  onEdit,
   onRegister,
   onRecover,
 }: {
   practice: SpaceRepetitionPractice & { status: PracticeStatus; nextIdx: number };
   onDetail: () => void;
-  onDelete: () => void;
+  onEdit: () => void;
   onRegister: () => void;
   onRecover?: () => void;
 }) {
-  const [showDelete, setShowDelete] = useState(false);
   const [, setCurrentTime] = useState(Date.now());
-  const longPressHandler = useLongPress(() => setShowDelete(true), 800);
+  const longPressHandler = useLongPress(onEdit, 800);
   const completedIntervalsArray = Array.isArray(practice.completedIntervals)
     ? practice.completedIntervals
     : typeof practice.completedIntervals === "string"
@@ -1236,9 +1235,7 @@ function PracticeCardWithLongPress({
             : "active:bg-muted/10";
 
   const handleClick = () => {
-    if (!showDelete) {
-      onDetail();
-    }
+    onDetail();
   };
 
   const statusMessage = formatTimeMessage(practice.status, practice);
@@ -1387,33 +1384,7 @@ function PracticeCardWithLongPress({
       </div>
 
       {/* Botones */}
-      {showDelete ? (
-        <motion.div
-          initial={{ opacity: 0, y: -5 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex gap-2"
-        >
-          <Button
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowDelete(false);
-            }}
-            className="flex-1 rounded-xl bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 hover:bg-yellow-500/30 border border-yellow-500/50 text-xs h-8"
-          >
-            Cancelar
-          </Button>
-          <Button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-            className="flex-1 rounded-xl bg-red-500/20 text-red-700 dark:text-red-400 hover:bg-red-500/30 border border-red-500/50 text-xs h-8"
-          >
-            <Trash2 className="h-3 w-3 mr-1" />
-            Eliminar
-          </Button>
-        </motion.div>
-      ) : showWellDone ? (
+      {showWellDone ? (
         <p className="text-center text-sm font-semibold text-green-400 py-1">
           🎉 Well done! You have finished {lastCompletedLabel}
         </p>
@@ -1456,17 +1427,16 @@ function PracticeWaitingCardWithLongPress({
   practice,
   daysLeft,
   onDetail,
-  onDelete,
+  onEdit,
 }: {
   practice: SpaceRepetitionPractice & { status: PracticeStatus; nextIdx: number };
   daysLeft: number;
   onDetail: () => void;
-  onDelete: () => void;
+  onEdit: () => void;
 }) {
-  const [showDelete, setShowDelete] = useState(false);
   const [, setCurrentTime] = useState(Date.now());
-  const longPressHandler = useLongPress(() => setShowDelete(true), 800);
-  
+  const longPressHandler = useLongPress(onEdit, 800);
+
   // Update countdown every second
   useEffect(() => {
     const interval = setInterval(() => {
@@ -1523,10 +1493,7 @@ function PracticeWaitingCardWithLongPress({
   const isLevel2Waiting = practice.status === "level2_waiting";
 
   const handleClick = () => {
-    // No abrir el DetailPanel si estamos mostrando los botones de eliminar
-    if (!showDelete) {
-      onDetail();
-    }
+    onDetail();
   };
 
   return (
@@ -1612,39 +1579,6 @@ function PracticeWaitingCardWithLongPress({
           </div>
         </div>
       </div>
-
-      {/* Botones de eliminar */}
-      {showDelete && (
-        <motion.div
-          initial={{ opacity: 0, y: -5 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex gap-2"
-        >
-          <Button
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowDelete(false);
-            }}
-            className={`flex-1 rounded-xl border text-xs h-8 ${
-              practice.status === "level2_waiting"
-                ? "bg-indigo-500/20 text-indigo-700 dark:text-indigo-400 border-indigo-500/50 hover:bg-indigo-500/30"
-                : "bg-green-500/20 text-green-700 dark:text-green-400 border-green-500/50 hover:bg-green-500/30"
-            }`}
-          >
-            Cancelar
-          </Button>
-          <Button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-            className="flex-1 rounded-xl bg-red-500/20 text-red-700 dark:text-red-400 hover:bg-red-500/30 border border-red-500/50 text-xs h-8"
-          >
-            <Trash2 className="h-3 w-3 mr-1" />
-            Eliminar
-          </Button>
-        </motion.div>
-      )}
     </motion.div>
   );
 }
@@ -1952,14 +1886,12 @@ function EditPanel({
 function DetailPanel({
   practice,
   onBack,
-  onEdit,
   onToggleInterval,
   onReset,
   onRecover,
 }: {
   practice: SpaceRepetitionPractice;
   onBack: () => void;
-  onEdit: () => void;
   onToggleInterval: (index: number) => void;
   onReset: () => void;
   onRecover?: () => void;
@@ -2000,13 +1932,6 @@ function DetailPanel({
             {practice.level === 2 ? "L2 iniciado" : "Iniciado"} {refDate} ({daysSince} días)
           </p>
         </div>
-        <button
-          onClick={onEdit}
-          className="flex-shrink-0 text-muted-foreground hover:text-foreground transition-colors"
-          title="Editar"
-        >
-          <Pencil className="h-4 w-4" />
-        </button>
       </div>
 
       {/* Content */}
