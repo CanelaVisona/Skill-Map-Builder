@@ -326,6 +326,7 @@ export const habits = pgTable("habits", {
   bodyLinks: jsonb("body_links").notNull().$type<BodyLink[]>().default([]), // Link a componentes corporales para crecimiento de fuerza/flex
   scheduledDays: jsonb("scheduled_days").notNull().$type<number[]>().default([0,1,2,3,4,5,6]), // Days of week (0=Mon, 6=Sun)
   habitType: text("habit_type").notNull().default("mini").$type<"mini" | "deep">(), // "mini" = corta duración/casi diaria, "deep" = actividades más largas y menos frecuentes
+  minMinutes: integer("min_minutes"), // Minutos mínimos sugeridos para la tarea, se muestran junto al hábito en "Tareas de hoy"
   freezeDates: text("freeze_dates").default("[]").notNull(), // Array of frozen dates as JSON string (YYYY-MM-DD format)
   defaultTimeSlots: jsonb("default_time_slots").notNull().$type<("morning" | "midday" | "afternoon" | "night")[]>().default([]), // Franjas horarias por defecto: si tiene una o más, el hábito aparece ahí en el modal de tareas del día sin necesidad de asignarlo día a día (más de una franja = aparece duplicado en cada una)
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -349,6 +350,7 @@ export const spaceRepetitionPractices = pgTable("space_repetition_practices", {
   areaId: varchar("area_id").references(() => areas.id, { onDelete: "set null" }),
   skillIds: jsonb("skill_ids").notNull().$type<string[]>().default([]), // Skills linked for XP rewards on interval registration
   bodyLinks: jsonb("body_links").notNull().$type<BodyLink[]>().default([]), // Link a componentes corporales para crecimiento de fuerza/flex
+  minMinutes: integer("min_minutes"), // Minutos mínimos sugeridos para la práctica, se muestran junto a ella en "Tareas de hoy"
   startDate: varchar("start_date").notNull(), // YYYY-MM-DD format
   completedIntervals: jsonb("completed_intervals").notNull().$type<number[]>().default([]),
   archived: integer("archived").$type<0 | 1>().default(0),

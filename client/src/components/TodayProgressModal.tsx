@@ -63,6 +63,16 @@ interface PlannedNode {
   // Solo presente en nodos "extra" (sin fecha planeada, detectados por su confirmación): el
   // momento exacto de confirmación, para poder derivar su franja horaria por defecto.
   completedAt?: string;
+  // Minutos que se cargaron en el nodo (plannedDuration), para mostrarlos junto a la tarea.
+  plannedDuration?: number | null;
+}
+
+// Sufijo "· Xmin" que se agrega al lado del título de una tarea cuando tiene una duración
+// cargada (nodos: plannedDuration; hábitos/prácticas: minMinutes). Mismo criterio visual en
+// los 3 casos, para que "Tareas de hoy" muestre el tiempo estimado sin importar la fuente.
+function MinutesSuffix({ minutes }: { minutes?: number | null }) {
+  if (!minutes) return null;
+  return <span className="text-muted-foreground"> · {minutes}min</span>;
 }
 
 function getFirstDayOfMonth(date: Date) {
@@ -127,7 +137,12 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
 
   const habitItems = habitsScheduledForView.map((h, i) => ({
     id: h.id,
-    label: `${h.emoji} ${h.name}`,
+    label: (
+      <>
+        {h.emoji} {h.name}
+        <MinutesSuffix minutes={h.minMinutes} />
+      </>
+    ),
     done: !!(viewRecordQueries[i]?.data as HabitRecord[] | undefined)?.some(
       (r) => r.date === effectiveDate && r.completed === 1
     ),
@@ -144,6 +159,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
             parentName: parent.name,
             plannedDate: skill.plannedDate,
             done: skill.status === "mastered",
+            plannedDuration: skill.plannedDuration,
           });
         }
       });
@@ -208,7 +224,12 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const extraHabits = habitsNotScheduledForView
     .map((h, i) => ({
       id: h.id,
-      label: `${h.emoji} ${h.name}`,
+      label: (
+        <>
+          {h.emoji} {h.name}
+          <MinutesSuffix minutes={h.minMinutes} />
+        </>
+      ),
       done: !!(otherHabitRecordQueries[i]?.data as HabitRecord[] | undefined)?.some(
         (r) => r.date === effectiveDate && r.completed === 1
       ),
@@ -233,6 +254,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
               plannedDate: completedDateStr,
               done: true,
               completedAt: skill.completedAt,
+              plannedDuration: skill.plannedDuration,
             });
           }
         }
@@ -258,6 +280,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       label: (
         <>
           {n.title} <span className="text-muted-foreground">· {n.parentName}</span>
+          <MinutesSuffix minutes={n.plannedDuration} />
         </>
       ),
       done: true,
@@ -341,6 +364,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       label: (
         <>
           {n.title} <span className="text-muted-foreground">· {n.parentName}</span>
+          <MinutesSuffix minutes={n.plannedDuration} />
         </>
       ),
       done: n.done,
@@ -349,7 +373,12 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       key: `practice:${p.id}`,
       type: "practice" as const,
       id: p.id,
-      label: `${p.emoji} ${p.name}`,
+      label: (
+        <>
+          {p.emoji} {p.name}
+          <MinutesSuffix minutes={p.minMinutes} />
+        </>
+      ),
       done,
     })),
     ...manualTasks.map((t) => ({

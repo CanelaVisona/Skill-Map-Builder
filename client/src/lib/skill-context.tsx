@@ -243,8 +243,15 @@ function computeLevelSwapYUpdates(
   levelB: number
 ): Map<string, number> {
   const lowerLevel = Math.min(levelA, levelB);
-  const lowerSkills = levelA === lowerLevel ? skillsA : skillsB;
-  const higherSkills = levelA === lowerLevel ? skillsB : skillsA;
+  // Swapping reassigns skillsA to levelB and skillsB to levelA, so the group that ENDS UP
+  // on the lower level number is whichever one originally sat on the higher one -- opposite
+  // of levelA/levelB. Getting this backwards makes the y reassignment a no-op whenever the
+  // two levels were already Y-contiguous in level-number order (the normal case), since each
+  // group's original y values are already the smallest/largest N in the combined pool: the
+  // level field flips but y doesn't, leaving the swapped-in content stranded at its old
+  // vertical spot relative to its new neighbors.
+  const lowerSkills = levelA === lowerLevel ? skillsB : skillsA;
+  const higherSkills = levelA === lowerLevel ? skillsA : skillsB;
 
   const allYs = [...lowerSkills, ...higherSkills].map(s => s.y).sort((a, b) => a - b);
   const lowerYs = allYs.slice(0, lowerSkills.length);

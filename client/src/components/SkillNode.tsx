@@ -15,6 +15,7 @@ import { usePowerCelebration } from "@/lib/power-celebration-context";
 import { usePendingRewards } from "@/lib/pending-rewards-context";
 import { beginPopupChain, endPopupChain, runPopupQueueAsync, getPopupBusyDelay } from "@/lib/popup-coordinator";
 import { getNodeTitleWordLimit, clampToWordLimit } from "@/lib/node-title-settings";
+import { useToast } from "@/hooks/use-toast";
 import {
   Popover,
   PopoverContent,
@@ -628,9 +629,13 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const levelLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const titleLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTitleLongPress = useRef(false);
+  // Long-press on the background of the Step 3 "Poderes" tab, to create a new power
+  // without leaving the title-long-press edit dialog.
+  const newPowerLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Tools & Learnings form state
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [feedbackActiveTab, setFeedbackActiveTab] = useState<"thoughts" | "tools" | "learnings" | "experience" | "body" | "powers" | "bugs">("thoughts");
   const [thoughtTitle, setThoughtTitle] = useState("");
   const [thoughtSentence, setThoughtSentence] = useState("");
@@ -703,6 +708,11 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   ) => setPendingToolsFor(skill.id, update);
   const [showPendingXpSkillSelector, setShowPendingXpSkillSelector] = useState(false);
   const [showPendingBodyZoneSelector, setShowPendingBodyZoneSelector] = useState(false);
+  // Inline "new power" form, opened by long-pressing the background of the Step 3
+  // Poderes tab (see handlePowersTabBackgroundLongPressStart).
+  const [isAddingPendingPower, setIsAddingPendingPower] = useState(false);
+  const [newPowerName, setNewPowerName] = useState("");
+  const [newPowerDescription, setNewPowerDescription] = useState("");
 
   const togglePendingXpSkillId = (id: string) => {
     setPendingXpSkillIds((prev) =>
@@ -822,6 +832,55 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       console.error("updateSourcePower error:", error);
     },
   });
+
+  // Lets the Step 3 "Poderes" tab create a brand-new power on the spot (see
+  // handlePowersTabBackgroundLongPressStart / handleCreatePendingPower), same endpoint the
+  // area/project menu's power form uses. New powers start locked and are staged as the
+  // pending pick right away, same as picking an existing one from the list.
+  const createSourcePower = useMutation({
+    mutationFn: async (data: { name: string; description: string }) => {
+      if (!sourceType || !sourceId) {
+        throw new Error("No hay área o proyecto activo para crear el poder");
+      }
+      const body = {
+        name: data.name,
+        description: data.description,
+        isUnlocked: 0,
+        ...(sourceType === "area" ? { areaId: sourceId } : { projectId: sourceId }),
+      };
+      const res = await fetch("/api/source-powers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || "Failed to create power");
+      }
+      return res.json() as Promise<SkillNodeSourcePower>;
+    },
+    onSuccess: (created) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/source-powers/${sourceType}/${sourceId}`] });
+      setPendingPowerId(created.id);
+      setNewPowerName("");
+      setNewPowerDescription("");
+      setIsAddingPendingPower(false);
+    },
+    onError: (error) => {
+      console.error("createSourcePower error:", error);
+      toast({ title: "No se pudo crear el poder", variant: "destructive" });
+    },
+  });
+
+  const handleCreatePendingPower = () => {
+    const finalName = newPowerName.trim();
+    if (!finalName || createSourcePower.isPending) return;
+    if (finalName.split(/\s+/).filter(Boolean).length > 3) {
+      toast({ title: "Título muy largo", description: "Los poderes usan un máximo de 3 palabras.", variant: "destructive" });
+      return;
+    }
+    createSourcePower.mutate({ name: finalName, description: newPowerDescription.trim() });
+  };
 
   // Core power unlock/master logic, shared by the Journal tab's immediate "Desbloquear"/"Dominar"
   // button and by runConfirmSequence.
@@ -1642,6 +1701,28 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     if (titleLongPressTimer.current) {
       clearTimeout(titleLongPressTimer.current);
       titleLongPressTimer.current = null;
+    }
+  };
+
+  // Long-press on the background of the Step 3 "Poderes" tab opens the inline "new power"
+  // form (handleCreatePendingPower). Only fires on the background, not on individual power
+  // buttons, since those stop propagation on their own onClick.
+  const handlePowersTabBackgroundLongPressStart = (e: React.TouchEvent | React.MouseEvent) => {
+    // Only the empty background should start this -- not a press that landed on one of the
+    // power cards themselves (those have their own tap-to-select behavior).
+    if ((e.target as HTMLElement).closest("button")) return;
+    e.stopPropagation();
+    newPowerLongPressTimer.current = setTimeout(() => {
+      setNewPowerName("");
+      setNewPowerDescription("");
+      setIsAddingPendingPower(true);
+    }, 500);
+  };
+
+  const handlePowersTabBackgroundLongPressEnd = () => {
+    if (newPowerLongPressTimer.current) {
+      clearTimeout(newPowerLongPressTimer.current);
+      newPowerLongPressTimer.current = null;
     }
   };
 
@@ -3476,52 +3557,103 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                   </TabsContent>
 
                   <TabsContent value="powers" className="mt-4 space-y-3 flex flex-col flex-1">
-                    <div className="flex-1 space-y-3">
-                      {sourcePowers.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">No hay poderes disponibles para este contexto todavía.</p>
-                      ) : (
-                        <>
-                          <div className="space-y-2">
-                            {sourcePowers.map((power) => {
-                              const isSelected = pendingPowerId === power.id;
-                              return (
-                                <button
-                                  key={power.id}
-                                  type="button"
-                                  onClick={() => setPendingPowerId(isSelected ? null : power.id)}
-                                  className={cn(
-                                    "w-full rounded-lg border p-3 text-left transition-colors",
-                                    isSelected ? "border-primary/50 bg-primary/10" : "border-border/60 bg-muted/40 hover:bg-muted/60"
-                                  )}
-                                >
-                                  <div className="flex items-start justify-between gap-2">
-                                    <div className="min-w-0">
-                                      <p className="text-sm font-medium">{power.name}</p>
-                                      {power.description && (
-                                        <p className="mt-1 text-xs text-muted-foreground break-words">{power.description}</p>
-                                      )}
+                    {isAddingPendingPower ? (
+                      <div className="flex-1 space-y-3">
+                        <Label className="text-[11px] text-muted-foreground uppercase tracking-wide block">Nuevo poder</Label>
+                        <Input
+                          placeholder="TITLE"
+                          value={newPowerName}
+                          onChange={(e) => setNewPowerName(e.target.value.toUpperCase())}
+                          className="uppercase border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
+                          data-testid="step3-input-new-power-name"
+                          autoFocus
+                        />
+                        <Input
+                          placeholder="Description"
+                          value={newPowerDescription}
+                          onChange={(e) => setNewPowerDescription(e.target.value)}
+                          className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
+                          data-testid="step3-input-new-power-description"
+                        />
+                        <div className="flex justify-end items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setIsAddingPendingPower(false)}
+                            className="bg-muted/50 hover:bg-muted"
+                            data-testid="step3-button-cancel-new-power"
+                          >
+                            Cancelar
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={handleCreatePendingPower}
+                            disabled={!newPowerName.trim() || createSourcePower.isPending}
+                            data-testid="step3-button-create-power"
+                          >
+                            <Plus className="h-3 w-3 mr-1" />
+                            Crear poder
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        className="flex-1 space-y-3"
+                        onTouchStart={handlePowersTabBackgroundLongPressStart}
+                        onTouchEnd={handlePowersTabBackgroundLongPressEnd}
+                        onTouchCancel={handlePowersTabBackgroundLongPressEnd}
+                        onMouseDown={handlePowersTabBackgroundLongPressStart}
+                        onMouseUp={handlePowersTabBackgroundLongPressEnd}
+                        onMouseLeave={handlePowersTabBackgroundLongPressEnd}
+                      >
+                        {sourcePowers.length === 0 ? (
+                          <p className="text-sm text-muted-foreground">No hay poderes disponibles para este contexto todavía. Mantené presionado acá para crear uno.</p>
+                        ) : (
+                          <>
+                            <div className="space-y-2">
+                              {sourcePowers.map((power) => {
+                                const isSelected = pendingPowerId === power.id;
+                                return (
+                                  <button
+                                    key={power.id}
+                                    type="button"
+                                    onClick={() => setPendingPowerId(isSelected ? null : power.id)}
+                                    className={cn(
+                                      "w-full rounded-lg border p-3 text-left transition-colors",
+                                      isSelected ? "border-primary/50 bg-primary/10" : "border-border/60 bg-muted/40 hover:bg-muted/60"
+                                    )}
+                                  >
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="min-w-0">
+                                        <p className="text-sm font-medium">{power.name}</p>
+                                        {power.description && (
+                                          <p className="mt-1 text-xs text-muted-foreground break-words">{power.description}</p>
+                                        )}
+                                      </div>
                                     </div>
-                                  </div>
-                                </button>
-                              );
-                            })}
-                          </div>
-
-                          {pendingSelectedPower && (
-                            <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
-                              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Poder seleccionado</p>
-                              <p className="mt-1 text-sm font-medium">{pendingSelectedPower.name}</p>
-                              {pendingSelectedPower.description && (
-                                <p className="mt-1 text-sm text-muted-foreground">{pendingSelectedPower.description}</p>
-                              )}
-                              <p className="mt-2 text-[11px] text-muted-foreground">
-                                Al confirmar el nodo: {pendingSelectedPower.isUnlocked === 0 ? "se desbloqueará" : pendingSelectedPower.isUnlocked === 1 ? "se dominará" : "ya dominado"}
-                              </p>
+                                  </button>
+                                );
+                              })}
                             </div>
-                          )}
-                        </>
-                      )}
-                    </div>
+
+                            {pendingSelectedPower && (
+                              <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
+                                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Poder seleccionado</p>
+                                <p className="mt-1 text-sm font-medium">{pendingSelectedPower.name}</p>
+                                {pendingSelectedPower.description && (
+                                  <p className="mt-1 text-sm text-muted-foreground">{pendingSelectedPower.description}</p>
+                                )}
+                                <p className="mt-2 text-[11px] text-muted-foreground">
+                                  Al confirmar el nodo: {pendingSelectedPower.isUnlocked === 0 ? "se desbloqueará" : pendingSelectedPower.isUnlocked === 1 ? "se dominará" : "ya dominado"}
+                                </p>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
                   </TabsContent>
 
                   <TabsContent value="learning" className="mt-4 space-y-3 flex flex-col flex-1">

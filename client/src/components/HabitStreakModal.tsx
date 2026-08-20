@@ -177,6 +177,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
   const [newHabitScheduledDays, setNewHabitScheduledDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
   const [newHabitType, setNewHabitType] = useState<"mini" | "deep">("mini");
   const [newHabitDefaultTimeSlots, setNewHabitDefaultTimeSlots] = useState<TimeSlot[]>([]);
+  const [newHabitMinMinutes, setNewHabitMinMinutes] = useState<number | null>(null);
   const [editHabitEmoji, setEditHabitEmoji] = useState("");
   const [editHabitName, setEditHabitName] = useState("");
   const [editHabitEndDate, setEditHabitEndDate] = useState("");
@@ -185,6 +186,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
   const [editHabitScheduledDays, setEditHabitScheduledDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
   const [editHabitType, setEditHabitType] = useState<"mini" | "deep">("mini");
   const [editHabitDefaultTimeSlots, setEditHabitDefaultTimeSlots] = useState<TimeSlot[]>([]);
+  const [editHabitMinMinutes, setEditHabitMinMinutes] = useState<number | null>(null);
   const [newHabitSkillIds, setNewHabitSkillIds] = useState<string[]>([]);
   const [editHabitSkillIds, setEditHabitSkillIds] = useState<string[]>([]);
   const [newHabitBodyLinks, setNewHabitBodyLinks] = useState<BodyLink[]>([]);
@@ -481,6 +483,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       scheduledDays: number[];
       habitType: "mini" | "deep";
       defaultTimeSlots?: TimeSlot[];
+      minMinutes?: number | null;
     }) => {
       const res = await fetch("/api/habits", {
         method: "POST",
@@ -509,6 +512,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       scheduledDays?: number[];
       habitType?: "mini" | "deep";
       defaultTimeSlots?: TimeSlot[];
+      minMinutes?: number | null;
     }) => {
       const res = await fetch(`/api/habits/${data.id}`, {
         method: "PATCH",
@@ -525,6 +529,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
           scheduledDays: data.scheduledDays,
           habitType: data.habitType,
           defaultTimeSlots: data.defaultTimeSlots,
+          minMinutes: data.minMinutes,
         }),
       });
       if (!res.ok) throw new Error("Failed to update habit");
@@ -663,6 +668,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       setEditHabitScheduledDays(habit.scheduledDays || [0, 1, 2, 3, 4, 5, 6]);
       setEditHabitType(habit.habitType || "mini");
       setEditHabitDefaultTimeSlots(Array.isArray(habit.defaultTimeSlots) ? (habit.defaultTimeSlots as TimeSlot[]) : []);
+      setEditHabitMinMinutes(habit.minMinutes ?? null);
       showPanel("edit");
     }
   };
@@ -677,6 +683,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
     setNewHabitScheduledDays([0, 1, 2, 3, 4, 5, 6]);
     setNewHabitType("mini");
     setNewHabitDefaultTimeSlots([]);
+    setNewHabitMinMinutes(null);
   };
   const resetEditForm = () => {
     setEditHabitEmoji("");
@@ -689,6 +696,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
     setEditHabitScheduledDays([0, 1, 2, 3, 4, 5, 6]);
     setEditHabitType("mini");
     setEditHabitDefaultTimeSlots([]);
+    setEditHabitMinMinutes(null);
     setSelectedHabitId(null);
   };
 
@@ -811,6 +819,8 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
               onHabitTypeChange={setNewHabitType}
               defaultTimeSlots={newHabitDefaultTimeSlots}
               onDefaultTimeSlotsChange={setNewHabitDefaultTimeSlots}
+              minMinutes={newHabitMinMinutes}
+              onMinMinutesChange={setNewHabitMinMinutes}
               onEmojiChange={setNewHabitEmoji}
               onNameChange={setNewHabitName}
               onEndDateChange={setNewHabitEndDate}
@@ -837,6 +847,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                       scheduledDays: newHabitScheduledDays,
                       habitType: newHabitType,
                       defaultTimeSlots: newHabitDefaultTimeSlots,
+                      minMinutes: newHabitMinMinutes,
                     });
                     resetForm();
                     showMain();
@@ -870,6 +881,8 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
               onHabitTypeChange={setEditHabitType}
               defaultTimeSlots={editHabitDefaultTimeSlots}
               onDefaultTimeSlotsChange={setEditHabitDefaultTimeSlots}
+              minMinutes={editHabitMinMinutes}
+              onMinMinutesChange={setEditHabitMinMinutes}
               onEmojiChange={setEditHabitEmoji}
               onNameChange={setEditHabitName}
               onEndDateChange={setEditHabitEndDate}
@@ -897,6 +910,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                       scheduledDays: editHabitScheduledDays,
                       habitType: editHabitType,
                       defaultTimeSlots: editHabitDefaultTimeSlots,
+                      minMinutes: editHabitMinMinutes,
                     });
                     resetEditForm();
                     showMain();
@@ -1880,6 +1894,8 @@ function AddPanel({
   onHabitTypeChange,
   defaultTimeSlots,
   onDefaultTimeSlotsChange,
+  minMinutes,
+  onMinMinutesChange,
   onBack,
   onSubmit,
   isLoading,
@@ -1907,6 +1923,8 @@ function AddPanel({
   onHabitTypeChange: (type: "mini" | "deep") => void;
   defaultTimeSlots: TimeSlot[];
   onDefaultTimeSlotsChange: (slots: TimeSlot[]) => void;
+  minMinutes: number | null;
+  onMinMinutesChange: (minutes: number | null) => void;
   onBack: () => void;
   onSubmit: () => void;
   isLoading: boolean;
@@ -2090,6 +2108,28 @@ function AddPanel({
           </p>
         </div>
 
+        {/* Minimum Minutes Input */}
+        <div>
+          <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
+            Minutos mínimos
+          </label>
+          <input
+            type="number"
+            min={1}
+            value={minMinutes ?? ""}
+            onChange={(e) => {
+              const raw = e.target.value;
+              onMinMinutesChange(raw === "" ? null : Math.max(1, parseInt(raw, 10) || 1));
+            }}
+            placeholder="Ej: 15"
+            disabled={isLoading}
+            className="mt-2 w-full px-3 py-2.5 border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm touch-manipulation"
+          />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Opcional: se muestra junto al hábito en "Tareas de hoy"
+          </p>
+        </div>
+
         {/* Area Select */}
         <div>
           <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
@@ -2208,6 +2248,8 @@ function EditPanel({
   onHabitTypeChange,
   defaultTimeSlots,
   onDefaultTimeSlotsChange,
+  minMinutes,
+  onMinMinutesChange,
   onBack,
   onSubmit,
   onDelete,
@@ -2237,6 +2279,8 @@ function EditPanel({
   onHabitTypeChange: (type: "mini" | "deep") => void;
   defaultTimeSlots: TimeSlot[];
   onDefaultTimeSlotsChange: (slots: TimeSlot[]) => void;
+  minMinutes: number | null;
+  onMinMinutesChange: (minutes: number | null) => void;
   onBack: () => void;
   onSubmit: () => void;
   onDelete: () => void;
@@ -2415,6 +2459,28 @@ function EditPanel({
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
             Opcional: podés elegir más de una — el hábito va a aparecer agrupado ahí en "Tareas de hoy" sin tener que asignarlo cada día (si elegís varias, aparece duplicado en cada una)
+          </p>
+        </div>
+
+        {/* Minimum Minutes Input */}
+        <div>
+          <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
+            Minutos mínimos
+          </label>
+          <input
+            type="number"
+            min={1}
+            value={minMinutes ?? ""}
+            onChange={(e) => {
+              const raw = e.target.value;
+              onMinMinutesChange(raw === "" ? null : Math.max(1, parseInt(raw, 10) || 1));
+            }}
+            placeholder="Ej: 15"
+            disabled={isLoading}
+            className="mt-2 w-full px-3 py-2.5 border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm touch-manipulation"
+          />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Opcional: se muestra junto al hábito en "Tareas de hoy"
           </p>
         </div>
 

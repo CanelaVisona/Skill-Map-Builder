@@ -28,6 +28,7 @@ export interface SpaceRepetitionPractice {
   areaId?: string | null;
   skillIds?: string[];
   bodyLinks?: BodyLink[];
+  minMinutes?: number | null;
   lastConfirmedAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
@@ -426,6 +427,7 @@ export function SpaceRepetitionModal({
   const [newAreaId, setNewAreaId] = useState<string | null>(null);
   const [newSkillIds, setNewSkillIds] = useState<string[]>([]);
   const [newBodyLinks, setNewBodyLinks] = useState<BodyLink[]>([]);
+  const [newMinMinutes, setNewMinMinutes] = useState<number | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
   const { theme } = useTheme();
   const queryClient = useQueryClient();
@@ -468,6 +470,7 @@ export function SpaceRepetitionModal({
   const [editAreaId, setEditAreaId] = useState<string | null>(null);
   const [editSkillIds, setEditSkillIds] = useState<string[]>([]);
   const [editBodyLinks, setEditBodyLinks] = useState<BodyLink[]>([]);
+  const [editMinMinutes, setEditMinMinutes] = useState<number | null>(null);
   const [editPanelSkills, setEditPanelSkills] = useState<any[]>([]);
 
   useEffect(() => {
@@ -635,6 +638,7 @@ export function SpaceRepetitionModal({
           areaId: newAreaId,
           skillIds: newSkillIds,
           bodyLinks: newBodyLinks,
+          minMinutes: newMinMinutes,
         })
       });
       if (!res.ok) throw new Error("Error creating practice");
@@ -645,6 +649,7 @@ export function SpaceRepetitionModal({
       setNewAreaId(null);
       setNewSkillIds([]);
       setNewBodyLinks([]);
+      setNewMinMinutes(null);
       setCurrentPanel("main");
     } catch (error) {
       console.error("Error adding practice:", error);
@@ -663,6 +668,7 @@ export function SpaceRepetitionModal({
     setEditAreaId(practice.areaId ?? null);
     setEditSkillIds(practice.skillIds ?? []);
     setEditBodyLinks(practice.bodyLinks ?? []);
+    setEditMinMinutes(practice.minMinutes ?? null);
     setCurrentPanel("edit");
   };
 
@@ -678,6 +684,7 @@ export function SpaceRepetitionModal({
           areaId: editAreaId,
           skillIds: editSkillIds,
           bodyLinks: editBodyLinks,
+          minMinutes: editMinMinutes,
         }),
       });
       if (!res.ok) throw new Error("Error updating practice");
@@ -943,17 +950,20 @@ export function SpaceRepetitionModal({
               bodyLinks={newBodyLinks}
               areas={areas}
               skills={newPanelSkills}
+              minMinutes={newMinMinutes}
               onEmojiChange={setNewEmoji}
               onNameChange={setNewName}
               onAreaIdChange={setNewAreaId}
               onSkillIdsChange={setNewSkillIds}
               onBodyLinksChange={setNewBodyLinks}
+              onMinMinutesChange={setNewMinMinutes}
               onBack={() => {
                 setNewName("");
                 setNewEmoji("💪");
                 setNewAreaId(null);
                 setNewSkillIds([]);
                 setNewBodyLinks([]);
+                setNewMinMinutes(null);
                 setCurrentPanel("main");
               }}
               onSubmit={addPractice}
@@ -982,11 +992,13 @@ export function SpaceRepetitionModal({
               bodyLinks={editBodyLinks}
               areas={areas}
               skills={editPanelSkills}
+              minMinutes={editMinMinutes}
               onEmojiChange={setEditEmoji}
               onNameChange={setEditName}
               onAreaIdChange={setEditAreaId}
               onSkillIdsChange={setEditSkillIds}
               onBodyLinksChange={setEditBodyLinks}
+              onMinMinutesChange={setEditMinMinutes}
               onBack={() => {
                 setEditingId(null);
                 setCurrentPanel("detail");
@@ -1591,11 +1603,13 @@ function AddPanel({
   bodyLinks,
   areas,
   skills,
+  minMinutes,
   onEmojiChange,
   onNameChange,
   onAreaIdChange,
   onSkillIdsChange,
   onBodyLinksChange,
+  onMinMinutesChange,
   onBack,
   onSubmit,
 }: {
@@ -1606,11 +1620,13 @@ function AddPanel({
   bodyLinks: BodyLink[];
   areas: Area[];
   skills: any[];
+  minMinutes: number | null;
   onEmojiChange: (emoji: string) => void;
   onNameChange: (name: string) => void;
   onAreaIdChange: (id: string | null) => void;
   onSkillIdsChange: (ids: string[]) => void;
   onBodyLinksChange: (links: BodyLink[]) => void;
+  onMinMinutesChange: (minutes: number | null) => void;
   onBack: () => void;
   onSubmit: () => void;
 }) {
@@ -1660,6 +1676,27 @@ function AddPanel({
             placeholder="Por ej: Vocabulario, Guitarra..."
             className="rounded-xl"
           />
+        </div>
+
+        {/* Minimum Minutes Input */}
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-2">
+            Minutos mínimos
+          </label>
+          <Input
+            type="number"
+            min={1}
+            value={minMinutes ?? ""}
+            onChange={(e) => {
+              const raw = e.target.value;
+              onMinMinutesChange(raw === "" ? null : Math.max(1, parseInt(raw, 10) || 1));
+            }}
+            placeholder="Ej: 15"
+            className="rounded-xl"
+          />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Opcional: se muestra junto a la práctica en "Tareas de hoy"
+          </p>
         </div>
 
         {/* Area Select */}
@@ -1736,11 +1773,13 @@ function EditPanel({
   bodyLinks,
   areas,
   skills,
+  minMinutes,
   onEmojiChange,
   onNameChange,
   onAreaIdChange,
   onSkillIdsChange,
   onBodyLinksChange,
+  onMinMinutesChange,
   onBack,
   onSubmit,
   onDelete,
@@ -1752,11 +1791,13 @@ function EditPanel({
   bodyLinks: BodyLink[];
   areas: Area[];
   skills: any[];
+  minMinutes: number | null;
   onEmojiChange: (emoji: string) => void;
   onNameChange: (name: string) => void;
   onAreaIdChange: (id: string | null) => void;
   onSkillIdsChange: (ids: string[]) => void;
   onBodyLinksChange: (links: BodyLink[]) => void;
+  onMinMinutesChange: (minutes: number | null) => void;
   onBack: () => void;
   onSubmit: () => void;
   onDelete: () => void;
@@ -1807,6 +1848,27 @@ function EditPanel({
             placeholder="Por ej: Vocabulario, Guitarra..."
             className="rounded-xl"
           />
+        </div>
+
+        {/* Minimum Minutes Input */}
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-2">
+            Minutos mínimos
+          </label>
+          <Input
+            type="number"
+            min={1}
+            value={minMinutes ?? ""}
+            onChange={(e) => {
+              const raw = e.target.value;
+              onMinMinutesChange(raw === "" ? null : Math.max(1, parseInt(raw, 10) || 1));
+            }}
+            placeholder="Ej: 15"
+            className="rounded-xl"
+          />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Opcional: se muestra junto a la práctica en "Tareas de hoy"
+          </p>
         </div>
 
         {/* Area Select */}

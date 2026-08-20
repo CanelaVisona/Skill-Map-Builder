@@ -33,6 +33,7 @@ export function useCreateHabit() {
       name: string;
       description: string;
       defaultTimeSlots?: ("morning" | "midday" | "afternoon" | "night")[];
+      minMinutes?: number | null;
     }) => {
       const res = await fetch("/api/habits", {
         method: "POST",
