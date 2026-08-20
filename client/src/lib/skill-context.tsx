@@ -386,7 +386,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
   // without cutting anything off. This is also exactly how long the next node stays gated
   // after this pop-up appears (see triggerQuestUpdated), so shortening it directly shortens
   // that wait.
-  const questUpdatedVisibleMs = 300;
+  const questUpdatedVisibleMs = 900;
 
   const triggerCompleted = () => {
     setShowCompleted(true);

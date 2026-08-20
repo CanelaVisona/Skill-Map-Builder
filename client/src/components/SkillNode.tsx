@@ -48,6 +48,18 @@ interface QuickDateOption {
   value: string;
 }
 
+type PlannedTaskSlotKey = "morning" | "midday" | "afternoon" | "night";
+
+// Mismas franjas y labels que el selector de franja horaria del modal de "Tareas de hoy"
+// (TodayProgressModal), así la tarea recién planeada queda agrupada prolijamente ahí sin
+// tener que asignarla a mano después.
+const PLANNED_TASK_SLOT_OPTIONS: { key: PlannedTaskSlotKey; label: string }[] = [
+  { key: "morning", label: "La mañana" },
+  { key: "midday", label: "Mediodía" },
+  { key: "afternoon", label: "Tarde" },
+  { key: "night", label: "Noche" },
+];
+
 const CUSTOM_DURATION_VALUE = "__custom_duration__";
 
 interface QuickDurationOption {
@@ -579,6 +591,14 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   // records which option id we've just deselected on pointerup, letting the subsequent
   // click on that same item be swallowed before it can re-select it out from under us.
   const suppressWhenOptionClickRef = useRef<string | null>(null);
+  // Mini-flujo que aparece apenas se elige un día en "When exactly?": primero pregunta la
+  // franja horaria (mañana/mediodía/tarde/noche) y después la posición dentro de esa franja
+  // (al principio/al final), y con esas dos respuestas registra la tarea en "Tareas de hoy"
+  // para ese día. null = no hay ningún prompt activo. Solo se dispara al elegir la fecha a
+  // mano (no al abrir el diálogo de edición sobre un nodo que ya tenía plannedDate).
+  const [plannedSlotPrompt, setPlannedSlotPrompt] = useState<
+    { step: "segment"; date: string } | { step: "position"; date: string; slot: PlannedTaskSlotKey } | null
+  >(null);
   const [editPlannedDuration, setEditPlannedDuration] = useState<number | null>(skill.plannedDuration ?? null);
   const [showCustomDurationInput, setShowCustomDurationInput] = useState(false);
   // Mirrors pendingCustomDate above, but for the custom duration input.
@@ -1676,6 +1696,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       setEditPlannedDate(skill.plannedDate || "");
       setShowCustomCalendar(false);
       setPendingCustomDate(false);
+      setPlannedSlotPrompt(null);
       setEditPlannedDuration(skill.plannedDuration ?? null);
       setShowCustomDurationInput(false);
       setPendingCustomDuration(false);
@@ -1972,6 +1993,46 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
     return () => clearTimeout(timer);
   }, [editTitle, editAction, editPlannedDate, editPlannedDuration, isEditDialogOpen, skill.id, skill.title, skill.description, skill.plannedDate, skill.plannedDuration, isSubSkillView, isProject, activeId, updateSubSkill, updateProjectSkill, updateSkill]);
+
+  // Registra el nodo en "Tareas de hoy" para el día elegido, en la franja y posición
+  // decididas en el mini-flujo de plannedSlotPrompt (ver ese estado). "Al final" es el
+  // comportamiento por defecto del backend (agrega al final de la franja); "al principio"
+  // arma a mano el orden completo de la franja con el nodo primero. El orden de "hecha vs.
+  // no hecha" lo sigue resolviendo la propia vista de Tareas de hoy en base al estado real
+  // de cada tarea, así que esto solo importa en relación a las demás tareas sin hacer.
+  const applyPlannedSlotChoice = async (position: "start" | "end") => {
+    if (!plannedSlotPrompt || plannedSlotPrompt.step !== "position") return;
+    const { date, slot } = plannedSlotPrompt;
+    try {
+      if (position === "end") {
+        await fetch("/api/today-task-slots", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ date, taskType: "node", taskId: skill.id, slot }),
+        });
+      } else {
+        const res = await fetch(`/api/today-task-slots?date=${date}`);
+        const existing = res.ok ? await res.json() : [];
+        const siblings = (Array.isArray(existing) ? existing : [])
+          .filter((s: any) => s.slot === slot && !(s.taskType === "node" && s.taskId === skill.id))
+          .sort((a: any, b: any) => a.sortOrder - b.sortOrder);
+        const order = [
+          { taskType: "node", taskId: skill.id },
+          ...siblings.map((s: any) => ({ taskType: s.taskType, taskId: s.taskId })),
+        ];
+        await fetch("/api/today-task-slots/reorder", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ date, slot, order }),
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: ["today-task-slots", date] });
+    } catch (error) {
+      console.error("Error asignando franja horaria al nodo:", error);
+    } finally {
+      setPlannedSlotPrompt(null);
+    }
+  };
 
   const handleTouchStart = () => {
     if (isInicioNode) return; // "inicio" nodes are not interactive
@@ -3290,6 +3351,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                       setPendingCustomDate(false);
                       setShowCustomCalendar(false);
                       setIsWhenSelectOpen(false);
+                      setPlannedSlotPrompt(null);
                     };
 
                     return (
@@ -3306,7 +3368,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                                   setShowCustomCalendar(true);
                                 } else {
                                   const chosen = quickOptions.find((opt) => opt.id === value);
-                                  if (chosen) setEditPlannedDate(chosen.value);
+                                  if (chosen) {
+                                    setEditPlannedDate(chosen.value);
+                                    setPlannedSlotPrompt({ step: "segment", date: chosen.value });
+                                  }
                                   setPendingCustomDate(false);
                                   setShowCustomCalendar(false);
                                 }
@@ -3386,7 +3451,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                             selected={editPlannedDate ? new Date(editPlannedDate + "T00:00:00") : undefined}
                             onSelect={(date) => {
                               if (date) {
-                                setEditPlannedDate(formatLocalDate(date));
+                                const formatted = formatLocalDate(date);
+                                setEditPlannedDate(formatted);
+                                setPlannedSlotPrompt({ step: "segment", date: formatted });
                                 setPendingCustomDate(false);
                                 setShowCustomCalendar(false);
                               }
@@ -3397,6 +3464,50 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                     );
                   })()}
                 </div>
+
+                {/* Mini-flujo de 2 pasos que aparece apenas se elige un día arriba: primero la
+                    franja horaria, después la posición dentro de esa franja. Con esas dos
+                    respuestas el nodo queda registrado en "Tareas de hoy" para ese día. */}
+                {plannedSlotPrompt && (
+                  <div className="rounded-lg border border-border/50 bg-muted/40 p-3 flex flex-col gap-2">
+                    {plannedSlotPrompt.step === "segment" ? (
+                      <>
+                        <p className="text-xs font-semibold text-foreground uppercase tracking-wide">
+                          ¿En qué momento del día?
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {PLANNED_TASK_SLOT_OPTIONS.map((opt) => (
+                            <Button
+                              key={opt.key}
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                setPlannedSlotPrompt({ step: "position", date: plannedSlotPrompt.date, slot: opt.key })
+                              }
+                            >
+                              {opt.label}
+                            </Button>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-xs font-semibold text-foreground uppercase tracking-wide">
+                          ¿Dónde en la fila?
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <Button variant="outline" size="sm" onClick={() => applyPlannedSlotChoice("start")}>
+                            Al principio
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => applyPlannedSlotChoice("end")}>
+                            Al final
+                          </Button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
                 <div className="flex justify-between mt-auto pt-4">
                   {skill.levelPosition !== 1 ? (
                     <Button
