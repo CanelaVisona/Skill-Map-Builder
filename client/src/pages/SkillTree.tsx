@@ -20,8 +20,10 @@ import { BookTracker } from "@/components/BookTracker";
 import RewiringTracker from "@/components/RewiringTracker";
 import NecesidadesCasa from "../components/NecesidadesCasa";
 import ClothingInventory from "../components/ClothingInventory";
+import HouseInventory, { useHouseInventoryItems } from "../components/HouseInventory";
+import HousePriorityList from "../components/HousePriorityList";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Swords, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt } from "lucide-react";
+import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Swords, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt, OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -31,6 +33,8 @@ import { InsightsCounterPopupProvider } from "@/lib/insights-counter-popup-conte
 import { BodyProgressProvider, useBodyProgress } from "@/lib/body-progress-context";
 import { BodyGainPopupProvider, useBodyGainPopup } from "@/lib/body-gain-popup-context";
 import { BugProgressPopupProvider, useBugProgressPopup } from "@/lib/bug-progress-popup-context";
+import { ErrorProgressPopupProvider } from "@/lib/error-progress-popup-context";
+import { ErrorCelebrationProvider } from "@/lib/error-celebration-context";
 import type { BugProgressSnapshot } from "@/components/BugProgressPopup";
 import { LevelUpCelebrationProvider } from "@/lib/level-up-celebration-context";
 import { PowerCelebrationProvider } from "@/lib/power-celebration-context";
@@ -6671,7 +6675,20 @@ function RewiringTrackerModalWrapper({ open, onOpenChange }: { open: boolean; on
   );
 }
 
+const HOME_NEEDS_TABS = [
+  { key: "necesidades", label: "Necesidades de casa" },
+  { key: "inventario", label: "Inventario" },
+  { key: "prioridades", label: "Lista de prioridades" },
+] as const;
+
+type HomeNeedsTabKey = (typeof HOME_NEEDS_TABS)[number]["key"];
+
 function HomeNeedsModalWrapper({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const [activeTab, setActiveTab] = useState<HomeNeedsTabKey>("necesidades");
+  // Shared by the Inventario and Lista de prioridades tabs so a reorder or a
+  // purchase made in one is immediately reflected in the other.
+  const { items: houseItems, setItems: setHouseItems } = useHouseInventoryItems();
+
   return (
     <AnimatePresence>
       {open && (
@@ -6690,19 +6707,36 @@ function HomeNeedsModalWrapper({ open, onOpenChange }: { open: boolean; onOpenCh
             className="overflow-hidden rounded-3xl border border-border/50 bg-background max-w-5xl w-full max-h-[90dvh]"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="px-5 py-4 border-b border-border/50 flex items-center justify-between">
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-foreground">Necesidades de tu casa</h3>
+            <div className="px-5 py-3 border-b border-border/50 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-1 overflow-x-auto">
+                {HOME_NEEDS_TABS.map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setActiveTab(tab.key)}
+                    className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition-colors ${
+                      activeTab === tab.key
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
               <button
                 type="button"
                 onClick={() => onOpenChange(false)}
-                className="text-muted-foreground hover:text-foreground transition-colors"
+                className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
                 aria-label="Cerrar modal de casa"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="max-h-[calc(90dvh-70px)] overflow-y-auto overflow-x-hidden p-3 sm:p-4">
-              <NecesidadesCasa />
+            <div className="max-h-[calc(90dvh-64px)] overflow-y-auto overflow-x-hidden p-3 sm:p-4">
+              {activeTab === "necesidades" && <NecesidadesCasa />}
+              {activeTab === "inventario" && <HouseInventory items={houseItems} setItems={setHouseItems} />}
+              {activeTab === "prioridades" && <HousePriorityList items={houseItems} setItems={setHouseItems} />}
             </div>
           </motion.div>
         </motion.div>
@@ -7658,6 +7692,159 @@ function QuestDiary() {
     };
   };
 
+  // "Errores" tab -- se ve como la de Poderes de arriba (misma grilla de tarjetas con ícono +
+  // chip + glow). La mayoría de los errores vienen de un nodo puntual (skillId) y se agrupan
+  // por su quest vía skillQuestMap, igual que Learnings/Tools -- pero acá también se puede
+  // mantener presionado el fondo de un quest para agregar un error directo a esa área/proyecto
+  // (sin nodo), igual patrón que source_bugs/source_powers. Por eso, a diferencia de Poderes,
+  // se listan TODAS las áreas/proyectos (no solo los que ya tienen algo) -- si no, no habría
+  // fondo sobre el que mantener presionado para crear el primer error de un quest vacío.
+  interface JournalNodeError {
+    id: string;
+    skillId: string | null;
+    areaId: string | null;
+    projectId: string | null;
+    nombre: string;
+    points: number;
+    confirmed: 0 | 1;
+  }
+
+  const [selectedJournalErrorId, setSelectedJournalErrorId] = useState<string | null>(null);
+  const [addErrorTarget, setAddErrorTarget] = useState<{ key: string; name: string; areaId: string | null; projectId: string | null } | null>(null);
+  const [newJournalErrorName, setNewJournalErrorName] = useState("");
+  const journalErrorAddLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const { data: allNodeErrors = [] } = useQuery<JournalNodeError[]>({
+    queryKey: ["/api/node-errors"],
+    queryFn: async () => {
+      const res = await fetch("/api/node-errors");
+      if (!res.ok) throw new Error("Failed to fetch node errors");
+      return res.json();
+    },
+    enabled: isDiaryOpen,
+  });
+
+  interface ErrorQuestGroup {
+    key: string;
+    name: string;
+    areaId: string | null;
+    projectId: string | null;
+    errors: JournalNodeError[];
+  }
+
+  const errorQuestGroups: ErrorQuestGroup[] = React.useMemo(() => {
+    const groups = new Map<string, ErrorQuestGroup>();
+    areas.forEach((area) => {
+      groups.set(`area-${area.id}`, { key: `area-${area.id}`, name: area.name, areaId: area.id, projectId: null, errors: [] });
+    });
+    projects.forEach((project) => {
+      groups.set(`project-${project.id}`, { key: `project-${project.id}`, name: project.name, areaId: null, projectId: project.id, errors: [] });
+    });
+
+    for (const error of allNodeErrors) {
+      let key: string;
+      if (error.areaId) key = `area-${error.areaId}`;
+      else if (error.projectId) key = `project-${error.projectId}`;
+      else if (error.skillId) key = skillQuestMap.get(error.skillId)?.key ?? "other";
+      else key = "other";
+
+      let group = groups.get(key);
+      if (!group) {
+        // Área/proyecto borrado, o nodo que ya no aparece en skillQuestMap -- se agrupan
+        // aparte en vez de perderse.
+        group = groups.get("other") ?? { key: "other", name: "Otros", areaId: null, projectId: null, errors: [] };
+        groups.set("other", group);
+      }
+      group.errors.push(error);
+    }
+
+    return Array.from(groups.values());
+  }, [allNodeErrors, skillQuestMap, areas, projects]);
+
+  const createJournalNodeError = useMutation({
+    mutationFn: async (data: { nombre: string; areaId: string | null; projectId: string | null }) => {
+      const res = await fetch("/api/node-errors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nombre: data.nombre,
+          ...(data.areaId ? { areaId: data.areaId } : {}),
+          ...(data.projectId ? { projectId: data.projectId } : {}),
+        }),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || "Failed to create error");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/node-errors"] });
+      setAddErrorTarget(null);
+      setNewJournalErrorName("");
+    },
+  });
+
+  const handleCreateJournalError = () => {
+    const finalName = newJournalErrorName.trim();
+    if (!finalName || !addErrorTarget || createJournalNodeError.isPending) return;
+    createJournalNodeError.mutate({ nombre: finalName, areaId: addErrorTarget.areaId, projectId: addErrorTarget.projectId });
+  };
+
+  // Long-press sobre el fondo vacío de la grilla de un quest -- igual patrón que
+  // handlePowersTabBackgroundLongPressStart en SkillNode.tsx: no dispara si el press empezó
+  // sobre una tarjeta de error ya existente.
+  const startJournalErrorAddLongPress = (group: ErrorQuestGroup) => (e: React.TouchEvent | React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("button")) return;
+    e.stopPropagation();
+    journalErrorAddLongPressTimer.current = setTimeout(() => {
+      setNewJournalErrorName("");
+      setAddErrorTarget({ key: group.key, name: group.name, areaId: group.areaId, projectId: group.projectId });
+    }, 500);
+  };
+
+  const endJournalErrorAddLongPress = () => {
+    if (journalErrorAddLongPressTimer.current) {
+      clearTimeout(journalErrorAddLongPressTimer.current);
+      journalErrorAddLongPressTimer.current = null;
+    }
+  };
+
+  const ERROR_ICON_PALETTE = [OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation, Skull] as const;
+
+  const getErrorIcon = (id: string) => {
+    const hash = Array.from(id).reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    return ERROR_ICON_PALETTE[hash % ERROR_ICON_PALETTE.length];
+  };
+
+  // Mismo esqueleto que renderPowerState -- "confirmed === 0" (recién detectado, sin
+  // confirmar) hace de "isUnlocked === 0" (bloqueado), y "vencido" (barra llena) hace de
+  // "isUnlocked === 2" (dominado), solo que en rojo en vez de dorado -- acá llegar al techo es
+  // un evento negativo, no un logro.
+  const renderErrorState = (error: { confirmed: 0 | 1; points: number }) => {
+    if (error.confirmed === 0) {
+      return {
+        cardClass: "border-white/7 text-[#5a5648]",
+        chipClass: "bg-white/[0.03] border-white/10",
+        iconColorClass: "text-[#5a5648]",
+        showPending: true,
+        showGlow: false,
+        backgroundClass: "bg-[#0f0b07]",
+      };
+    }
+
+    const vencido = error.points >= 50;
+
+    return {
+      cardClass: vencido ? "border-[#EF4444] text-[#FCA5A5]" : "border-white/13 text-[#c9a8a8]",
+      chipClass: vencido ? "bg-gradient-to-b from-[#FCA5A5] to-[#EF4444] border-transparent" : "bg-white/[0.05] border-white/15",
+      iconColorClass: vencido ? "text-[#1A0606]" : "text-[#c98a8a]",
+      showPending: false,
+      showGlow: vencido,
+      backgroundClass: vencido ? "bg-[#2a0a0a]" : "bg-[#221010]",
+    };
+  };
+
   const createCharacter = useMutation({
     mutationFn: async (data: { name: string; action: string; description: string }) => {
       const res = await fetch("/api/journal/characters", {
@@ -7826,6 +8013,9 @@ function QuestDiary() {
               </TabsTrigger>
               <TabsTrigger value="powers" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-powers" title="Poderes">
                 <Swords className="h-5 w-5" />
+              </TabsTrigger>
+              <TabsTrigger value="errores" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-errores" title="Errores">
+                <OctagonAlert className="h-5 w-5" />
               </TabsTrigger>
               <TabsTrigger value="body" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-body" title="Fuerza">
                 <BicepsFlexed className="h-5 w-5" />
@@ -8021,7 +8211,133 @@ function QuestDiary() {
                   )}
                 </div>
               </TabsContent>
-              
+
+              <TabsContent value="errores" className="flex-1 min-h-0 min-w-0 mt-0">
+                <div className="flex h-full flex-col gap-4">
+                  <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
+                    <p className="text-sm text-muted-foreground">
+                      Aquí aparecen todos los errores de tus nodos, áreas y proyectos. Mantené presionado el fondo de un quest para agregar uno directo a esa área/proyecto.
+                    </p>
+                  </div>
+
+                  {errorQuestGroups.length === 0 ? (
+                    <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-border/70 bg-muted/10 p-6 text-center text-sm text-muted-foreground">
+                      Todavía no tienes áreas o proyectos.
+                    </div>
+                  ) : (
+                    <div className="flex-1 space-y-4 overflow-y-auto pr-1">
+                      <Accordion type="multiple" className="space-y-2" defaultValue={errorQuestGroups.map((group) => group.key)}>
+                        {errorQuestGroups.map((group) => {
+                          const isAddingHere = addErrorTarget?.key === group.key;
+                          const canAddHere = !!(group.areaId || group.projectId);
+
+                          return (
+                            <AccordionItem key={group.key} value={group.key} className="rounded-lg border border-border/50 bg-background/70">
+                              <AccordionTrigger className="px-3 py-2 text-left hover:no-underline">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium">{group.name}</span>
+                                  <span className="text-xs text-muted-foreground">({group.errors.length})</span>
+                                </div>
+                              </AccordionTrigger>
+                              <AccordionContent className="px-3 pb-3">
+                                {isAddingHere ? (
+                                  <div className="space-y-2">
+                                    <Label className="text-[11px] text-muted-foreground uppercase tracking-wide block">Nuevo error en {group.name}</Label>
+                                    <Input
+                                      placeholder="NOMBRE"
+                                      value={newJournalErrorName}
+                                      onChange={(e) => setNewJournalErrorName(e.target.value.toUpperCase())}
+                                      className="uppercase"
+                                      autoFocus
+                                      data-testid="journal-input-new-error-name"
+                                    />
+                                    <div className="flex justify-end items-center gap-2">
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => setAddErrorTarget(null)}
+                                        data-testid="journal-button-cancel-new-error"
+                                      >
+                                        Cancelar
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        onClick={handleCreateJournalError}
+                                        disabled={!newJournalErrorName.trim() || createJournalNodeError.isPending}
+                                        data-testid="journal-button-create-error"
+                                      >
+                                        <Plus className="h-3 w-3 mr-1" />
+                                        Crear error
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div
+                                    className="min-h-[52px]"
+                                    onTouchStart={canAddHere ? startJournalErrorAddLongPress(group) : undefined}
+                                    onTouchEnd={canAddHere ? endJournalErrorAddLongPress : undefined}
+                                    onTouchCancel={canAddHere ? endJournalErrorAddLongPress : undefined}
+                                    onMouseDown={canAddHere ? startJournalErrorAddLongPress(group) : undefined}
+                                    onMouseUp={canAddHere ? endJournalErrorAddLongPress : undefined}
+                                    onMouseLeave={canAddHere ? endJournalErrorAddLongPress : undefined}
+                                  >
+                                    {group.errors.length === 0 ? (
+                                      <p className="text-xs text-muted-foreground">
+                                        {canAddHere ? "Sin errores todavía. Mantené presionado acá para agregar uno." : "Sin errores."}
+                                      </p>
+                                    ) : (
+                                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                        {group.errors.map((error) => {
+                                          const state = renderErrorState(error);
+                                          const ErrorIcon = getErrorIcon(error.id);
+                                          const isSelected = selectedJournalErrorId === error.id;
+                                          const vencido = error.confirmed === 1 && error.points >= 50;
+
+                                          return (
+                                            <button
+                                              key={error.id}
+                                              type="button"
+                                              onClick={() => setSelectedJournalErrorId((current) => current === error.id ? null : error.id)}
+                                              className={`relative flex min-h-[60px] w-full items-start gap-2 overflow-hidden rounded-lg border p-2 text-left text-xs font-medium transition-all ${state.cardClass} ${state.backgroundClass}`}
+                                            >
+                                              <span className={`relative flex h-8 w-8 flex-none items-center justify-center rounded-md border ${state.chipClass}`}>
+                                                <ErrorIcon className={`h-4 w-4 ${state.iconColorClass}`} />
+                                                {state.showPending && (
+                                                  <span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full border border-white/15 bg-[#1D1911]">
+                                                    <CircleAlert className="h-2 w-2 text-[#7A7161]" />
+                                                  </span>
+                                                )}
+                                              </span>
+                                              <div className="min-w-0 flex-1">
+                                                <p className="truncate">{error.nombre}</p>
+                                                {isSelected && (
+                                                  <p className="mt-1 text-[11px] leading-snug text-muted-foreground break-words">
+                                                    {error.confirmed === 0 ? "Pendiente de confirmar" : `${error.points} / 50${vencido ? " · Vencido" : ""}`}
+                                                  </p>
+                                                )}
+                                              </div>
+                                              {state.showGlow && (
+                                                <div className="pointer-events-none absolute inset-0 rounded-lg bg-[linear-gradient(135deg,rgba(239,68,68,0.2)_0%,rgba(153,27,27,0.06)_100%)]" />
+                                              )}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </AccordionContent>
+                            </AccordionItem>
+                          );
+                        })}
+                      </Accordion>
+                    </div>
+                  )}
+                </div>
+              </TabsContent>
+
               <TabsContent value="profile" className="flex-1 min-h-0 min-w-0 mt-0">
                 <ProfileSection />
               </TabsContent>
@@ -9039,6 +9355,8 @@ export default function SkillTreePage() {
           <BodyProgressProvider>
           <BodyGainPopupProvider>
           <BugProgressPopupProvider>
+          <ErrorProgressPopupProvider>
+          <ErrorCelebrationProvider>
           <InsightsCounterPopupProvider>
           <PendingRewardsProvider>
             <MenuProvider>
@@ -9062,6 +9380,8 @@ export default function SkillTreePage() {
             </MenuProvider>
           </PendingRewardsProvider>
           </InsightsCounterPopupProvider>
+          </ErrorCelebrationProvider>
+          </ErrorProgressPopupProvider>
           </BugProgressPopupProvider>
           </BodyGainPopupProvider>
           </BodyProgressProvider>

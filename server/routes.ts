@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
-import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertJournalShadowPageSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertSourceObjectiveSchema, insertSourceBeliefSchema, insertSourceVisionSchema, insertSourcePowersSchema, insertSourceBugSchema, insertSourceBugRecordSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema, insertSpaceRepetitionPracticeSchema, insertRewiringTrackerSchema, type InsertSpaceRepetitionPractice, type SpaceRepetitionPractice, type RewiringTracker, skills, areas, projects, spaceRepetitionPractices } from "@shared/schema";
+import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertJournalShadowPageSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertSourceObjectiveSchema, insertSourceBeliefSchema, insertSourceVisionSchema, insertSourcePowersSchema, insertSourceBugSchema, insertSourceBugRecordSchema, insertNodeErrorSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema, insertSpaceRepetitionPracticeSchema, insertRewiringTrackerSchema, type InsertSpaceRepetitionPractice, type SpaceRepetitionPractice, type RewiringTracker, skills, areas, projects, spaceRepetitionPractices } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import cookieParser from "cookie-parser";
 import crypto from "crypto";
@@ -3410,6 +3410,109 @@ export async function registerRoutes(
     }
   });
 
+  // House Inventory - cross-device sync (shared by the "Inventario" and "Lista de
+  // prioridades" tabs inside the home-needs modal)
+  const HOUSE_INVENTORY_STORAGE_NAME = "__house_inventory_items__";
+
+  function sanitizeHouseItems(input: unknown): Array<{
+    id: number;
+    name: string;
+    type: string;
+    status: "have" | "missing";
+    utility: number;
+    condition: number;
+    importance: number;
+  }> {
+    if (!Array.isArray(input)) return [];
+
+    const isValidRating = (v: unknown): v is number =>
+      typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 5;
+
+    return input
+      .map((item) => {
+        const house = item as Record<string, unknown>;
+        if (
+          typeof house.id !== "number" ||
+          typeof house.name !== "string" ||
+          typeof house.type !== "string" ||
+          (house.status !== "have" && house.status !== "missing")
+        ) {
+          return null;
+        }
+
+        const utility = isValidRating(house.utility) ? house.utility : 3;
+        const condition = isValidRating(house.condition) ? house.condition : 3;
+        const importance = isValidRating(house.importance) ? house.importance : 3;
+
+        return {
+          id: house.id,
+          name: house.name,
+          type: house.type,
+          status: house.status,
+          utility,
+          condition,
+          importance,
+        };
+      })
+      .filter((item): item is {
+        id: number;
+        name: string;
+        type: string;
+        status: "have" | "missing";
+        utility: number;
+        condition: number;
+        importance: number;
+      } => item !== null);
+  }
+
+  app.get("/api/house-inventory/items", requireAuth, async (req, res) => {
+    try {
+      const entries = await storage.getProfileAboutEntries(req.userId!);
+      const storageEntry = entries.find((entry) => entry.name === HOUSE_INVENTORY_STORAGE_NAME);
+
+      if (!storageEntry) {
+        res.json([]);
+        return;
+      }
+
+      let parsed: unknown = [];
+      try {
+        parsed = JSON.parse(storageEntry.description || "[]");
+      } catch {
+        parsed = [];
+      }
+
+      res.json(sanitizeHouseItems(parsed));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/house-inventory/items", requireAuth, async (req, res) => {
+    try {
+      const items = sanitizeHouseItems(req.body?.items);
+      const entries = await storage.getProfileAboutEntries(req.userId!);
+      const storageEntry = entries.find((entry) => entry.name === HOUSE_INVENTORY_STORAGE_NAME);
+
+      if (storageEntry) {
+        const updated = await storage.updateProfileAboutEntry(storageEntry.id, {
+          description: JSON.stringify(items),
+        });
+        res.json({ ok: true, id: updated?.id ?? storageEntry.id });
+        return;
+      }
+
+      const created = await storage.createProfileAboutEntry({
+        userId: req.userId!,
+        name: HOUSE_INVENTORY_STORAGE_NAME,
+        description: JSON.stringify(items),
+      });
+      res.json({ ok: true, id: created.id });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Profile - Experiences
   app.get("/api/profile/experiences", requireAuth, async (req, res) => {
     try {
@@ -4121,6 +4224,109 @@ export async function registerRoutes(
 
       await storage.deleteSourceBugRecord(req.params.id);
       res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Node Errors -- tab "Errores" del nodo (a diferencia de los bugs, viven por nodo, no por
+  // área/proyecto: no hay XP linkeada, solo una barra de 0-50 en pasos de 10).
+  // Sin :skillId -- todos los errores del usuario, para la tab "Errores" del Journal/Quest
+  // Diary (que los agrupa por área/proyecto vía el skillId de cada uno).
+  app.get("/api/node-errors", requireAuth, async (req, res) => {
+    try {
+      const errors = await storage.getAllNodeErrors(req.userId!);
+      res.json(errors);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to fetch node errors" });
+    }
+  });
+
+  app.get("/api/node-errors/:skillId", requireAuth, async (req, res) => {
+    try {
+      const errors = await storage.getNodeErrors(req.userId!, req.params.skillId);
+      res.json(errors);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to fetch node errors" });
+    }
+  });
+
+  app.post("/api/node-errors", requireAuth, async (req, res) => {
+    try {
+      const validated = insertNodeErrorSchema.parse({ ...req.body, userId: req.userId });
+      if (!validated.skillId && !validated.areaId && !validated.projectId) {
+        res.status(400).json({ message: "El error necesita un nodo, área o proyecto" });
+        return;
+      }
+      const created = await storage.createNodeError(validated);
+      res.status(201).json(created);
+    } catch (error: any) {
+      const validationError = fromError(error);
+      res.status(400).json({ message: validationError.toString() });
+    }
+  });
+
+  app.patch("/api/node-errors/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getNodeError(req.params.id);
+      if (!existing || existing.userId !== req.userId) {
+        res.status(404).json({ message: "Error not found" });
+        return;
+      }
+      const updated = await storage.updateNodeError(req.params.id, req.body);
+      if (!updated) {
+        res.status(404).json({ message: "Error not found" });
+        return;
+      }
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/node-errors/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getNodeError(req.params.id);
+      if (!existing || existing.userId !== req.userId) {
+        res.status(404).json({ message: "Error not found" });
+        return;
+      }
+      await storage.deleteNodeError(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/node-errors/:id/records", requireAuth, async (req, res) => {
+    try {
+      const errorBefore = await storage.getNodeError(req.params.id);
+      if (!errorBefore || errorBefore.userId !== req.userId) {
+        res.status(404).json({ message: "Error not found" });
+        return;
+      }
+
+      const delta = req.body?.delta === -10 ? -10 : req.body?.delta === 10 ? 10 : null;
+      if (delta === null) {
+        res.status(400).json({ message: "delta debe ser 10 o -10" });
+        return;
+      }
+
+      const { record, pointsBefore, pointsAfter } = await storage.createNodeErrorRecord(req.params.id, delta, req.userId);
+
+      // "Vencido": la barra llega a 50 cruzando desde abajo. Si ya estaba en 50 y se vuelve a
+      // tocar 50 (p.ej. -10 y +10 seguidos) no se repite el pop-up.
+      const vencido = pointsBefore < 50 && pointsAfter >= 50;
+
+      res.status(201).json({
+        ...record,
+        errorProgress: {
+          errorName: errorBefore.nombre,
+          pointsBefore,
+          pointsAfter,
+        },
+        vencido,
+      });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

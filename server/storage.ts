@@ -1,7 +1,7 @@
 import { eq, and, asc, sql, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db, pool } from "./db";
-import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type JournalShadowPage, type InsertJournalShadowPage, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourceObjective, type InsertSourceObjective, type SourceBelief, type InsertSourceBelief, type SourceVision, type InsertSourceVision, type SourcePowers, type InsertSourcePowers, type SourceBug, type InsertSourceBug, type SourceBugRecord, type InsertSourceBugRecord, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, type BodyProgressRow, type InsertBodyProgress, type TodayTaskSlot, type InsertTodayTaskSlot, type ManualTodayTask, type InsertManualTodayTask, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, journalShadowPages, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourceObjectives, sourceBeliefs, sourceVision, sourcePowers, sourceBugs, sourceBugRecords, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, rewiringTrackers, rewiringTrackerRecords, bodyProgress, todayTaskSlots, manualTodayTasks } from "@shared/schema";
+import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type JournalShadowPage, type InsertJournalShadowPage, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourceObjective, type InsertSourceObjective, type SourceBelief, type InsertSourceBelief, type SourceVision, type InsertSourceVision, type SourcePowers, type InsertSourcePowers, type SourceBug, type InsertSourceBug, type SourceBugRecord, type InsertSourceBugRecord, type NodeError, type InsertNodeError, type NodeErrorRecord, type InsertNodeErrorRecord, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, type BodyProgressRow, type InsertBodyProgress, type TodayTaskSlot, type InsertTodayTaskSlot, type ManualTodayTask, type InsertManualTodayTask, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, journalShadowPages, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourceObjectives, sourceBeliefs, sourceVision, sourcePowers, sourceBugs, sourceBugRecords, nodeErrors, nodeErrorRecords, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, rewiringTrackers, rewiringTrackerRecords, bodyProgress, todayTaskSlots, manualTodayTasks } from "@shared/schema";
 
 const normalizeSourceBugStatus = (status: string): "identificado" | "debugueando" | "debugueado" => {
   if (status === "activo") return "identificado";
@@ -178,6 +178,15 @@ export interface IStorage {
   createSourceBugRecord(entry: InsertSourceBugRecord): Promise<SourceBugRecord>;
   updateSourceBugRecord(id: string, entry: Partial<InsertSourceBugRecord>): Promise<SourceBugRecord | undefined>;
   deleteSourceBugRecord(id: string): Promise<void>;
+
+  // Node Errors (tab "Errores" del nodo)
+  getAllNodeErrors(userId: string): Promise<NodeError[]>;
+  getNodeErrors(userId: string, skillId: string): Promise<NodeError[]>;
+  getNodeError(id: string): Promise<NodeError | undefined>;
+  createNodeError(entry: InsertNodeError): Promise<NodeError>;
+  updateNodeError(id: string, entry: Partial<InsertNodeError>): Promise<NodeError | undefined>;
+  deleteNodeError(id: string): Promise<void>;
+  createNodeErrorRecord(errorId: string, delta: 10 | -10, userId?: string | null): Promise<{ record: NodeErrorRecord; pointsBefore: number; pointsAfter: number }>;
 
   // Profile - About Entries
   getProfileAboutEntries(userId: string): Promise<ProfileAboutEntry[]>;
@@ -1848,6 +1857,69 @@ export class DbStorage implements IStorage {
     if (bugId) {
       await this.recalculateSourceBugProgress(bugId);
     }
+  }
+
+  // Node Errors
+  async getAllNodeErrors(userId: string): Promise<NodeError[]> {
+    return await db
+      .select()
+      .from(nodeErrors)
+      .where(eq(nodeErrors.userId, userId))
+      .orderBy(asc(nodeErrors.createdAt));
+  }
+
+  async getNodeErrors(userId: string, skillId: string): Promise<NodeError[]> {
+    return await db
+      .select()
+      .from(nodeErrors)
+      .where(and(eq(nodeErrors.userId, userId), eq(nodeErrors.skillId, skillId)))
+      .orderBy(asc(nodeErrors.createdAt));
+  }
+
+  async getNodeError(id: string): Promise<NodeError | undefined> {
+    const result = await db.select().from(nodeErrors).where(eq(nodeErrors.id, id));
+    return result[0];
+  }
+
+  async createNodeError(entry: InsertNodeError): Promise<NodeError> {
+    const id = randomUUID();
+    const result = await db.insert(nodeErrors).values({ id, ...entry } as any).returning();
+    return result[0];
+  }
+
+  async updateNodeError(id: string, entry: Partial<InsertNodeError>): Promise<NodeError | undefined> {
+    const result = await db
+      .update(nodeErrors)
+      .set({ ...entry, updatedAt: new Date() } as any)
+      .where(eq(nodeErrors.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteNodeError(id: string): Promise<void> {
+    await db.delete(nodeErrors).where(eq(nodeErrors.id, id));
+  }
+
+  // Aplica el delta a los puntos del error (clamp 0-50), deja registrado el movimiento y
+  // devuelve el antes/después para que la ruta arme el pop-up de progreso y detecte "vencido"
+  // (cruzar el techo de 50 desde abajo).
+  async createNodeErrorRecord(errorId: string, delta: 10 | -10, userId?: string | null): Promise<{ record: NodeErrorRecord; pointsBefore: number; pointsAfter: number }> {
+    const existing = await this.getNodeError(errorId);
+    const pointsBefore = existing?.points ?? 0;
+    const pointsAfter = Math.min(50, Math.max(0, pointsBefore + delta));
+
+    const id = randomUUID();
+    const [record] = await db
+      .insert(nodeErrorRecords)
+      .values({ id, errorId, userId: userId ?? null, delta } as any)
+      .returning();
+
+    await db
+      .update(nodeErrors)
+      .set({ points: pointsAfter, updatedAt: new Date() })
+      .where(eq(nodeErrors.id, errorId));
+
+    return { record, pointsBefore, pointsAfter };
   }
 
   // Profile - Missions

@@ -846,7 +846,7 @@ export default function NecesidadesCasa() {
     titlePressStartPointRef.current = null;
   }, []);
 
-  const startTitleLongPress = useCallback((event: ReactPointerEvent<HTMLHeadingElement>) => {
+  const startTitleLongPress = useCallback((event: ReactPointerEvent<HTMLParagraphElement>) => {
     cancelTitleLongPress();
 
     titlePointerIdRef.current = event.pointerId;
@@ -858,7 +858,7 @@ export default function NecesidadesCasa() {
     }, 550);
   }, [cancelTitleLongPress, openAddTaskForm]);
 
-  const moveTitleLongPress = useCallback((event: ReactPointerEvent<HTMLHeadingElement>) => {
+  const moveTitleLongPress = useCallback((event: ReactPointerEvent<HTMLParagraphElement>) => {
     if (titlePointerIdRef.current !== event.pointerId || !titlePressStartPointRef.current) return;
 
     const dx = Math.abs(event.clientX - titlePressStartPointRef.current.x);
@@ -868,7 +868,7 @@ export default function NecesidadesCasa() {
     }
   }, [cancelTitleLongPress]);
 
-  const endTitleLongPress = useCallback((event: ReactPointerEvent<HTMLHeadingElement>) => {
+  const endTitleLongPress = useCallback((event: ReactPointerEvent<HTMLParagraphElement>) => {
     if (titlePointerIdRef.current !== event.pointerId) return;
     cancelTitleLongPress();
   }, [cancelTitleLongPress]);
@@ -927,42 +927,24 @@ export default function NecesidadesCasa() {
       >
         <div className="ncasa-grid" style={{ width: "100%", padding: "16px" }}>
           <div>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "4px" }}>
-              <div
-                onPointerDown={startTitleLongPress}
-                onPointerMove={moveTitleLongPress}
-                onPointerUp={endTitleLongPress}
-                onPointerCancel={endTitleLongPress}
-                onPointerLeave={endTitleLongPress}
-                onContextMenu={(e) => e.preventDefault()}
-                style={{
-                  display: "inline-flex",
-                  padding: "4px 8px",
-                  marginLeft: "-8px",
-                  borderRadius: "8px",
-                  userSelect: "none",
-                  touchAction: "manipulation",
-                  cursor: "pointer",
-                }}
-                title="Long press para agregar componente"
-              >
-                <h1
-                  style={{
-                    fontFamily: "'Orbitron', monospace",
-                    fontSize: "15px",
-                    fontWeight: 700,
-                    color: colors.title,
-                    letterSpacing: "0.04em",
-                    textTransform: "uppercase",
-                    margin: 0,
-                  }}
-                >
-                  Necesidades de tu Casa
-                </h1>
-              </div>
-            </div>
-            <p style={{ color: colors.subtitle, fontSize: "11px", marginBottom: "14px" }}>
-              Mantene tu casa en buen estado. Long press en una tarea para editarla. Long press en el titulo para agregar.
+            <p
+              onPointerDown={startTitleLongPress}
+              onPointerMove={moveTitleLongPress}
+              onPointerUp={endTitleLongPress}
+              onPointerCancel={endTitleLongPress}
+              onPointerLeave={endTitleLongPress}
+              onContextMenu={(e) => e.preventDefault()}
+              style={{
+                color: colors.subtitle,
+                fontSize: "11px",
+                marginBottom: "14px",
+                userSelect: "none",
+                touchAction: "manipulation",
+                cursor: "pointer",
+              }}
+              title="Long press para agregar componente"
+            >
+              Mantene tu casa en buen estado. Long press en una tarea para editarla. Long press aqui para agregar.
             </p>
             {isAddFormOpen && (
               <div

@@ -10,11 +10,23 @@ import type { BodyDimension, BodyZone } from "@/lib/body-progress-context";
 // Keeping it here instead, keyed by skillId and held above the views that come and go, makes
 // the selection survive navigation; localStorage makes it survive a reload too.
 
-export type PendingRewardsTab = "experience" | "body" | "powers" | "learning";
+export type PendingRewardsTab = "experience" | "body" | "powers" | "learning" | "errores";
 
 export interface PendingLearningDraft {
   title: string;
   sentence: string;
+}
+
+// Step 3's "Errores" tab only stages actions on already-existing node errors (created
+// immediately, same as a new Poder -- see createNodeError in SkillNode.tsx): confirming a
+// freshly-detected error, or a +10p/-10p point adjustment. Each is its own queue entry (not a
+// single net delta) so replaying them at confirm time reproduces the exact same sequence of
+// pop-ups the player would have seen pressing them one by one, just deferred.
+export interface PendingErrorAction {
+  type: "confirm" | "adjust";
+  errorId: string;
+  errorName: string;
+  delta?: 10 | -10; // only set when type === "adjust"
 }
 
 export interface PendingRewardSelection {
@@ -33,10 +45,11 @@ export interface PendingRewardSelection {
   // reasonably pick up several.
   learning: PendingLearningDraft | null;
   tools: PendingLearningDraft[];
+  errorActions: PendingErrorAction[];
 }
 
 function defaultSelection(): PendingRewardSelection {
-  return { rewardsTab: "experience", xpSkillIds: [], bodyDimension: "fuerza", bodyZones: [], powerId: null, learning: null, tools: [] };
+  return { rewardsTab: "experience", xpSkillIds: [], bodyDimension: "fuerza", bodyZones: [], powerId: null, learning: null, tools: [], errorActions: [] };
 }
 
 type PendingRewardsState = Record<string, PendingRewardSelection>;
@@ -64,7 +77,7 @@ function loadState(): PendingRewardsState {
 // skill) was already staged first.
 function isEmptySelection(entry: PendingRewardSelection): boolean {
   return entry.xpSkillIds.length === 0 && entry.bodyZones.length === 0 && !entry.powerId && !entry.learning && entry.tools.length === 0
-    && entry.rewardsTab === "experience";
+    && entry.errorActions.length === 0 && entry.rewardsTab === "experience";
 }
 
 // Merges in defaults for any field missing on an entry loaded from an older localStorage
@@ -93,6 +106,7 @@ interface PendingRewardsContextValue {
   setPendingPowerId: (skillId: string, powerId: string | null) => void;
   setPendingLearning: (skillId: string, learning: PendingLearningDraft | null) => void;
   setPendingTools: (skillId: string, update: PendingLearningDraft[] | ((prev: PendingLearningDraft[]) => PendingLearningDraft[])) => void;
+  setPendingErrorActions: (skillId: string, update: PendingErrorAction[] | ((prev: PendingErrorAction[]) => PendingErrorAction[])) => void;
   clearPendingRewards: (skillId: string) => void;
 }
 
@@ -147,6 +161,11 @@ export function PendingRewardsProvider({ children }: { children: ReactNode }) {
     setPendingTools: (skillId, update) => {
       updateEntry(skillId, (current) => ({
         tools: typeof update === "function" ? update(current.tools) : update,
+      }));
+    },
+    setPendingErrorActions: (skillId, update) => {
+      updateEntry(skillId, (current) => ({
+        errorActions: typeof update === "function" ? update(current.errorActions) : update,
       }));
     },
     clearPendingRewards: (skillId) => {

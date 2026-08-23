@@ -2,7 +2,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { type Skill, type GlobalSkill, useSkillTree } from "@/lib/skill-context";
 import { type JournalThought, type JournalLearning, type JournalTool } from "@shared/schema";
 import { cn } from "@/lib/utils";
-import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus, Star, ChevronRight, ChevronLeft, Wrench, Lightbulb, BicepsFlexed, Zap, Bug } from "lucide-react";
+import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus, Star, ChevronRight, ChevronLeft, Wrench, Lightbulb, BicepsFlexed, Zap, Bug, OctagonAlert } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { type ExperienceGainSnapshot } from "./ExperienceGainPopup";
@@ -12,8 +12,10 @@ import { useBodyProgress, BODY_ZONES, BODY_ZONE_LABELS, type BodyZone, type Body
 import { useBodyGainPopup } from "@/lib/body-gain-popup-context";
 import { useLevelUpCelebration } from "@/lib/level-up-celebration-context";
 import { usePowerCelebration } from "@/lib/power-celebration-context";
-import { usePendingRewards } from "@/lib/pending-rewards-context";
-import { beginPopupChain, endPopupChain, runPopupQueueAsync, getPopupBusyDelay } from "@/lib/popup-coordinator";
+import { usePendingRewards, type PendingErrorAction } from "@/lib/pending-rewards-context";
+import { useErrorProgressPopup } from "@/lib/error-progress-popup-context";
+import { useErrorCelebration } from "@/lib/error-celebration-context";
+import { beginPopupChain, endPopupChain, runPopupQueueAsync, runPopupQueue, getPopupBusyDelay } from "@/lib/popup-coordinator";
 import { getNodeTitleWordLimit, clampToWordLimit } from "@/lib/node-title-settings";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -656,7 +658,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   // Tools & Learnings form state
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const [feedbackActiveTab, setFeedbackActiveTab] = useState<"thoughts" | "tools" | "learnings" | "experience" | "body" | "powers" | "bugs">("thoughts");
+  const [feedbackActiveTab, setFeedbackActiveTab] = useState<"thoughts" | "tools" | "learnings" | "experience" | "body" | "powers" | "bugs" | "errores">("thoughts");
   const [thoughtTitle, setThoughtTitle] = useState("");
   const [thoughtSentence, setThoughtSentence] = useState("");
   const [toolTitle, setToolTitle] = useState("");
@@ -676,6 +678,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const { showInsightsCounterPopup } = useInsightsCounterPopup();
   const { showLevelUpCelebration } = useLevelUpCelebration();
   const { showPowerCelebration } = usePowerCelebration();
+  const { showErrorProgressPopup } = useErrorProgressPopup();
+  const { showErrorCelebration } = useErrorCelebration();
   const { addBodyBlock } = useBodyProgress();
   const { showBodyGainPopup, hideBodyGainPopup } = useBodyGainPopup();
   const [selectedBodyDimension, setSelectedBodyDimension] = useState<BodyDimension>("fuerza");
@@ -705,6 +709,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     setPendingPowerId: setPendingPowerIdFor,
     setPendingLearning: setPendingLearningFor,
     setPendingTools: setPendingToolsFor,
+    setPendingErrorActions: setPendingErrorActionsFor,
   } = usePendingRewards();
   const {
     rewardsTab: pendingRewardsTab,
@@ -714,8 +719,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     powerId: pendingPowerId,
     learning: pendingLearning,
     tools: pendingTools,
+    errorActions: pendingErrorActions,
   } = getPendingRewards(skill.id);
-  const setPendingRewardsTab = (tab: "experience" | "body" | "powers" | "learning") => setPendingRewardsTabFor(skill.id, tab);
+  const setPendingRewardsTab = (tab: "experience" | "body" | "powers" | "learning" | "errores") => setPendingRewardsTabFor(skill.id, tab);
   const setPendingXpSkillIds = (update: string[] | ((prev: string[]) => string[])) =>
     setPendingXpSkillIdsFor(skill.id, update);
   const setPendingBodyDimension = (dimension: BodyDimension) => setPendingBodyDimensionFor(skill.id, dimension);
@@ -726,6 +732,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const setPendingTools = (
     update: Array<{ title: string; sentence: string }> | ((prev: Array<{ title: string; sentence: string }>) => Array<{ title: string; sentence: string }>)
   ) => setPendingToolsFor(skill.id, update);
+  const setPendingErrorActions = (
+    update: PendingErrorAction[] | ((prev: PendingErrorAction[]) => PendingErrorAction[])
+  ) => setPendingErrorActionsFor(skill.id, update);
   const [showPendingXpSkillSelector, setShowPendingXpSkillSelector] = useState(false);
   const [showPendingBodyZoneSelector, setShowPendingBodyZoneSelector] = useState(false);
   // Inline "new power" form, opened by long-pressing the background of the Step 3
@@ -967,6 +976,198 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     identificado: "bg-red-400",
     debugueando: "bg-amber-400",
     debugueado: "bg-emerald-400",
+  };
+
+  // ============ NODE ERRORS ("Errores" tab) ============
+  // A diferencia de los bugs (compartidos por área/proyecto), los errores son propios de este
+  // nodo puntual -- scopeados por skill.id, igual que journalLearnings/journalTools. Cada uno
+  // tiene una barra de 0 a 50 puntos, de a pasos de +10/-10.
+  interface SkillNodeError {
+    id: string;
+    nombre: string;
+    points: number;
+    confirmed: 0 | 1;
+  }
+
+  const [selectedErrorId, setSelectedErrorId] = useState<string | null>(null);
+  const [isAddingNodeError, setIsAddingNodeError] = useState(false);
+  const [newErrorName, setNewErrorName] = useState("");
+  const nodeErrorAddLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const { data: nodeErrorsList = [] } = useQuery<SkillNodeError[]>({
+    queryKey: [`/api/node-errors/${skill.id}`],
+    queryFn: async () => {
+      const res = await fetch(`/api/node-errors/${skill.id}`);
+      if (!res.ok) {
+        throw new Error("Failed to fetch node errors");
+      }
+      return res.json();
+    },
+  });
+
+  useEffect(() => {
+    if (selectedErrorId && !nodeErrorsList.some((error) => error.id === selectedErrorId)) {
+      setSelectedErrorId(null);
+    }
+  }, [nodeErrorsList, selectedErrorId]);
+
+  const selectedNodeError = nodeErrorsList.find((error) => error.id === selectedErrorId) || null;
+  const errorProgressBlocks = selectedNodeError ? Math.min(5, Math.round(selectedNodeError.points / 10)) : 0;
+
+  // Vista previa para el Step 3 (staged): aplica las acciones ya encoladas en
+  // pendingErrorActions sobre nodeErrorsList sin tocar el servidor, para que esa tab muestre
+  // cómo va a quedar sin disparar nada todavía -- eso recién pasa al confirmar el nodo (ver
+  // runConfirmSequence). El Step 2 (Journal, node long-press) sigue usando nodeErrorsList/
+  // selectedNodeError de arriba tal cual, sin preview: ahí las acciones son inmediatas.
+  const previewNodeErrors: SkillNodeError[] = nodeErrorsList.map((error) => {
+    const actions = pendingErrorActions.filter((action) => action.errorId === error.id);
+    const pendingDelta = actions.reduce((sum, action) => sum + (action.type === "adjust" ? (action.delta || 0) : 0), 0);
+    const pendingConfirm = actions.some((action) => action.type === "confirm");
+    return {
+      ...error,
+      points: Math.min(50, Math.max(0, error.points + pendingDelta)),
+      confirmed: pendingConfirm ? 1 : error.confirmed,
+    };
+  });
+  const selectedPreviewError = previewNodeErrors.find((error) => error.id === selectedErrorId) || null;
+  const previewErrorProgressBlocks = selectedPreviewError ? Math.min(5, Math.round(selectedPreviewError.points / 10)) : 0;
+
+  const createNodeError = useMutation({
+    mutationFn: async (data: { nombre: string }) => {
+      const res = await fetch("/api/node-errors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ skillId: skill.id, nombre: data.nombre }),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || "Failed to create error");
+      }
+      return res.json() as Promise<SkillNodeError>;
+    },
+    onSuccess: (created) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/node-errors/${skill.id}`] });
+      // Se selecciona de una -- así aparece el aviso "Error nuevo detectado" debajo del
+      // título sin que haga falta un segundo tap sobre la lista.
+      setSelectedErrorId(created.id);
+      setNewErrorName("");
+      setIsAddingNodeError(false);
+    },
+    onError: (error) => {
+      console.error("createNodeError error:", error);
+      toast({ title: "No se pudo crear el error", variant: "destructive" });
+    },
+  });
+
+  // Confirma un error recién detectado: dispara el pop-up "¡Error nuevo detectado!" (igual
+  // familia que "Poder desbloqueado") y recién ahí queda asentado -- antes de esto solo muestra
+  // el aviso inline debajo del título.
+  const confirmNodeError = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/node-errors/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmed: 1 }),
+      });
+      if (!res.ok) {
+        throw new Error("Failed to confirm error");
+      }
+      return res.json() as Promise<SkillNodeError>;
+    },
+    onSuccess: (updated) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/node-errors/${skill.id}`] });
+      showErrorCelebration({ name: updated.nombre, kind: "detected" });
+    },
+    onError: (error) => {
+      console.error("confirmNodeError error:", error);
+    },
+  });
+
+  // +10p / -10p: registra el movimiento, muestra el pop-up de barra creciendo/achicándose
+  // (igual que BugProgressPopup) y, si la barra llega a 50, encadena el pop-up "¡Error vencido!"
+  // recién después de que ese primero termine (ver popup-coordinator).
+  const adjustNodeErrorPoints = useMutation({
+    mutationFn: async ({ id, delta }: { id: string; delta: 10 | -10 }) => {
+      const res = await fetch(`/api/node-errors/${id}/records`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ delta }),
+      });
+      if (!res.ok) {
+        throw new Error("Failed to register error points");
+      }
+      return res.json() as Promise<{
+        errorProgress: { errorName: string; pointsBefore: number; pointsAfter: number };
+        vencido: boolean;
+      }>;
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/node-errors/${skill.id}`] });
+      showErrorProgressPopup(result.errorProgress);
+      if (result.vencido) {
+        runPopupQueue([
+          () => showErrorCelebration({ name: result.errorProgress.errorName, kind: "vencido" }),
+        ]);
+      }
+    },
+    onError: (error) => {
+      console.error("adjustNodeErrorPoints error:", error);
+    },
+  });
+
+  const handleCreateNodeError = () => {
+    const finalName = newErrorName.trim();
+    if (!finalName || createNodeError.isPending) return;
+    createNodeError.mutate({ nombre: finalName });
+  };
+
+  const handleConfirmNodeError = () => {
+    if (!selectedNodeError || selectedNodeError.confirmed === 1 || confirmNodeError.isPending) return;
+    confirmNodeError.mutate(selectedNodeError.id);
+  };
+
+  const handleAdjustNodeError = (delta: 10 | -10) => {
+    if (!selectedNodeError || adjustNodeErrorPoints.isPending) return;
+    adjustNodeErrorPoints.mutate({ id: selectedNodeError.id, delta });
+  };
+
+  // Step 3 (title-long-press dialog): a diferencia de los handlers de arriba, estos NO tocan el
+  // servidor ni disparan ningún pop-up -- solo encolan la acción en pendingErrorActions. Se
+  // aplican de verdad, en el mismo orden y con sus mismos pop-ups, recién cuando el nodo se
+  // confirma (ver runConfirmSequence).
+  const handleStageErrorConfirm = () => {
+    if (!selectedPreviewError || selectedPreviewError.confirmed === 1) return;
+    setPendingErrorActions((prev) => [
+      ...prev,
+      { type: "confirm", errorId: selectedPreviewError.id, errorName: selectedPreviewError.nombre },
+    ]);
+  };
+
+  const handleStageErrorAdjust = (delta: 10 | -10) => {
+    if (!selectedPreviewError) return;
+    setPendingErrorActions((prev) => [
+      ...prev,
+      { type: "adjust", errorId: selectedPreviewError.id, errorName: selectedPreviewError.nombre, delta },
+    ]);
+  };
+
+  // Long-press sobre el fondo vacío de la tab "Errores" abre el formulario de "nuevo error",
+  // igual que handlePowersTabBackgroundLongPressStart -- no dispara si el press empezó sobre
+  // un botón (una tarjeta de error ya existente, o +10p/-10p).
+  const startNodeErrorAddLongPress = (e: React.TouchEvent | React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("button")) return;
+    e.stopPropagation();
+    nodeErrorAddLongPressTimer.current = setTimeout(() => {
+      setNewErrorName("");
+      setIsAddingNodeError(true);
+    }, 500);
+  };
+
+  const endNodeErrorAddLongPress = () => {
+    if (nodeErrorAddLongPressTimer.current) {
+      clearTimeout(nodeErrorAddLongPressTimer.current);
+      nodeErrorAddLongPressTimer.current = null;
+    }
   };
 
   // Experience tab state for editStep 2 -- several skills can be picked at once, each gets the
@@ -1538,7 +1739,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   // preview until this runs -- it fires once, right when the node itself gets confirmed
   // (available -> mastered), and is what actually creates the learning/tools, grants the
   // XP/body progress/power, and shows their celebration pop-ups (see runConfirmSequence below).
-  const hasPendingRewards = pendingXpSkillIds.length > 0 || pendingBodyZones.length > 0 || !!pendingPowerId || !!pendingLearning || pendingTools.length > 0;
+  const hasPendingRewards = pendingXpSkillIds.length > 0 || pendingBodyZones.length > 0 || !!pendingPowerId || !!pendingLearning || pendingTools.length > 0 || pendingErrorActions.length > 0;
   // Human-readable labels for the pending-rewards subtitle shown under the node title.
   const pendingXpSkillNames = pendingXpSkillIds.map(skillDisplayName);
   const pendingPowerName = pendingSelectedPower?.name ?? null;
@@ -1589,11 +1790,13 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     const bodyDimension = pendingBodyDimension;
     const bodyZones = pendingBodyZones;
     const powerId = pendingPowerId;
+    const errorActions = pendingErrorActions;
     setPendingLearning(null);
     setPendingTools([]);
     setPendingXpSkillIds([]);
     setPendingBodyZones([]);
     setPendingPowerId(null);
+    setPendingErrorActions([]);
 
     // Same order the preview lines are rendered below the title (learning, tools, xp, body,
     // power) -- that's also the order the celebration pop-ups play in.
@@ -1646,6 +1849,30 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
           run: (enqueue) => applyPowerAction(power, enqueue),
         });
       }
+    }
+
+    // Errores: una acción por entrada encolada en Step 3, aplicada en el mismo orden en que se
+    // apretaron los botones -- cada una hace su propia llamada al servidor y encola su propio
+    // pop-up (barra creciendo/achicándose, y "¡Error vencido!" si corresponde), igual que si se
+    // hubiera hecho desde el Journal en el momento.
+    if (errorActions.length > 0) {
+      blocks.push({
+        label: `+${errorActions.length} error${errorActions.length > 1 ? "es" : ""}`,
+        run: async (enqueue) => {
+          for (const action of errorActions) {
+            if (action.type === "confirm") {
+              const updated = await confirmNodeError.mutateAsync(action.errorId);
+              enqueue(() => showErrorCelebration({ name: updated.nombre, kind: "detected" }));
+            } else {
+              const result = await adjustNodeErrorPoints.mutateAsync({ id: action.errorId, delta: action.delta! });
+              enqueue(() => showErrorProgressPopup(result.errorProgress));
+              if (result.vencido) {
+                enqueue(() => showErrorCelebration({ name: result.errorProgress.errorName, kind: "vencido" }));
+              }
+            }
+          }
+        },
+      });
     }
 
     if (blocks.length === 0) {
@@ -2398,6 +2625,13 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                   {pendingPowerId && (
                     <span className="whitespace-nowrap">+{pendingPowerName || "Poder"}</span>
                   )}
+                  {pendingErrorActions.map((action, i) => (
+                    <span key={i} className="whitespace-nowrap">
+                      {action.type === "confirm"
+                        ? `+Error detectado: ${action.errorName}`
+                        : `${action.delta! > 0 ? "+" : ""}${action.delta}p ${action.errorName}`}
+                    </span>
+                  ))}
                 </div>
               )}
               {/* Sub-skill tree completion badge: this node's own sub-skill tree is fully
@@ -2667,7 +2901,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               <span className="text-xs font-medium text-muted-foreground">Journal</span>
             </div>
 
-            <Tabs value={feedbackActiveTab} onValueChange={(v) => setFeedbackActiveTab(v as "thoughts" | "tools" | "learnings" | "experience" | "body" | "powers" | "bugs")} className="w-full flex flex-col flex-1">
+            <Tabs value={feedbackActiveTab} onValueChange={(v) => setFeedbackActiveTab(v as "thoughts" | "tools" | "learnings" | "experience" | "body" | "powers" | "bugs" | "errores")} className="w-full flex flex-col flex-1">
               <TabsList className="w-full flex flex-nowrap items-center justify-start gap-1 overflow-x-auto minimal-scrollbar bg-muted/50">
                 <TabsTrigger value="thoughts" className="shrink-0 text-xs" data-testid="feedback-tab-thoughts">
                   Thoughts
@@ -2687,11 +2921,14 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 <TabsTrigger value="bugs" className="shrink-0 text-xs" data-testid="feedback-tab-bugs">
                   Bugs
                 </TabsTrigger>
+                <TabsTrigger value="errores" className="shrink-0 text-xs" data-testid="feedback-tab-errores">
+                  Errores
+                </TabsTrigger>
                 <TabsTrigger value="tools" className="shrink-0 text-xs" data-testid="feedback-tab-tools">
                   Tools
                 </TabsTrigger>
               </TabsList>
-              
+
               <TabsContent value="thoughts" className="mt-4 space-y-3 flex flex-col flex-1">
                 <div className="flex-1">
                   <Input
@@ -3003,6 +3240,147 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                     </>
                   )}
                 </div>
+              </TabsContent>
+
+              <TabsContent value="errores" className="mt-4 space-y-3 flex flex-col flex-1">
+                {isAddingNodeError ? (
+                  <div className="flex-1 space-y-3">
+                    <Label className="text-[11px] text-muted-foreground uppercase tracking-wide block">Nuevo error</Label>
+                    <Input
+                      placeholder="NOMBRE"
+                      value={newErrorName}
+                      onChange={(e) => setNewErrorName(e.target.value.toUpperCase())}
+                      className="uppercase border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
+                      data-testid="input-new-error-name"
+                      autoFocus
+                    />
+                    <div className="flex justify-end items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setIsAddingNodeError(false)}
+                        className="bg-muted/50 hover:bg-muted"
+                        data-testid="button-cancel-new-error"
+                      >
+                        Cancelar
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={handleCreateNodeError}
+                        disabled={!newErrorName.trim() || createNodeError.isPending}
+                        data-testid="button-create-error"
+                      >
+                        <Plus className="h-3 w-3 mr-1" />
+                        Crear error
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    className="flex-1 space-y-3"
+                    onTouchStart={startNodeErrorAddLongPress}
+                    onTouchEnd={endNodeErrorAddLongPress}
+                    onTouchCancel={endNodeErrorAddLongPress}
+                    onMouseDown={startNodeErrorAddLongPress}
+                    onMouseUp={endNodeErrorAddLongPress}
+                    onMouseLeave={endNodeErrorAddLongPress}
+                  >
+                    {nodeErrorsList.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No hay errores registrados para este nodo todavía. Mantené presionado acá para agregar uno.</p>
+                    ) : (
+                      <>
+                        <div className="space-y-2">
+                          {nodeErrorsList.map((error) => {
+                            const isSelected = selectedErrorId === error.id;
+                            return (
+                              <button
+                                key={error.id}
+                                type="button"
+                                onClick={() => setSelectedErrorId(isSelected ? null : error.id)}
+                                className={cn(
+                                  "w-full rounded-lg border p-3 text-left transition-colors",
+                                  isSelected ? "border-primary/50 bg-primary/10" : "border-border/60 bg-muted/40 hover:bg-muted/60"
+                                )}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="text-sm font-medium truncate">{error.nombre}</p>
+                                  <span className="text-[11px] text-muted-foreground shrink-0">{Math.min(50, error.points)} / 50</span>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {selectedNodeError && (
+                          <div className="rounded-lg border border-border/60 bg-muted/30 p-3 space-y-2">
+                            <p className="text-sm font-medium">{selectedNodeError.nombre}</p>
+
+                            {selectedNodeError.confirmed === 0 ? (
+                              <>
+                                <p className="text-xs text-muted-foreground">Error nuevo detectado</p>
+                                <div className="flex justify-end pt-1">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    onClick={handleConfirmNodeError}
+                                    disabled={confirmNodeError.isPending}
+                                    data-testid="button-confirm-error"
+                                  >
+                                    Confirmar
+                                  </Button>
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <div>
+                                  <div className="flex items-center justify-end mb-1">
+                                    <p className="text-[11px] text-muted-foreground">{selectedNodeError.points} / 50</p>
+                                  </div>
+                                  <div className="w-full h-2.5 flex gap-0.5">
+                                    {Array.from({ length: 5 }).map((_, index) => (
+                                      <div
+                                        key={index}
+                                        className={`flex-1 h-full rounded-sm transition-colors duration-300 ${
+                                          index < errorProgressBlocks ? "bg-red-500" : "bg-muted"
+                                        }`}
+                                      />
+                                    ))}
+                                  </div>
+                                </div>
+                                <div className="flex justify-end items-center gap-2 pt-1">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleAdjustNodeError(-10)}
+                                    disabled={selectedNodeError.points <= 0 || adjustNodeErrorPoints.isPending}
+                                    className="bg-muted/50 hover:bg-muted"
+                                    data-testid="button-error-minus-10"
+                                  >
+                                    -10p
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleAdjustNodeError(10)}
+                                    disabled={selectedNodeError.points >= 50 || adjustNodeErrorPoints.isPending}
+                                    className="bg-muted/50 hover:bg-muted"
+                                    data-testid="button-error-plus-10"
+                                  >
+                                    +10p
+                                  </Button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
               </TabsContent>
 
               <TabsContent value="tools" className="mt-4 space-y-3 flex flex-col flex-1">
@@ -3544,11 +3922,11 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 transition={{ duration: 0.2 }}
                 className="flex-1 flex flex-col"
               >
-                <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-1 block">PASO 3: XP, Fuerza, Poderes y Aprendizaje</Label>
-                <p className="text-[11px] text-muted-foreground/70 mb-2">Se sumará recién al confirmar el nodo</p>
+                <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-1 block">PASO 3: XP, Fuerza, Poderes, Aprendizaje y Errores</Label>
+                <p className="text-[11px] text-muted-foreground/70 mb-2">Se sumará recién al confirmar el nodo (los errores quedan aparte, se registran al toque)</p>
 
-                <Tabs value={pendingRewardsTab} onValueChange={(v) => setPendingRewardsTab(v as "experience" | "body" | "powers" | "learning")} className="w-full flex flex-col flex-1">
-                  <TabsList className="w-full grid grid-cols-4 bg-muted/50">
+                <Tabs value={pendingRewardsTab} onValueChange={(v) => setPendingRewardsTab(v as "experience" | "body" | "powers" | "learning" | "errores")} className="w-full flex flex-col flex-1">
+                  <TabsList className="w-full grid grid-cols-5 bg-muted/50">
                     <TabsTrigger value="experience" className="text-xs" data-testid="step3-tab-experience">
                       <span className="text-xs font-bold mr-1">XP</span>
                     </TabsTrigger>
@@ -3563,6 +3941,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                     <TabsTrigger value="learning" className="text-xs" data-testid="step3-tab-learning">
                       <Lightbulb className="h-3 w-3 mr-1" />
                       Aprendizaje
+                    </TabsTrigger>
+                    <TabsTrigger value="errores" className="text-xs" data-testid="step3-tab-errores">
+                      <OctagonAlert className="h-3 w-3 mr-1" />
+                      Errores
                     </TabsTrigger>
                   </TabsList>
 
@@ -3792,6 +4174,151 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                     <p className="text-[11px] text-muted-foreground/70">
                       Queda registrado debajo del título del nodo al presionar Guardar.
                     </p>
+                  </TabsContent>
+
+                  <TabsContent value="errores" className="mt-4 space-y-3 flex flex-col flex-1">
+                    {isAddingNodeError ? (
+                      <div className="flex-1 space-y-3">
+                        <Label className="text-[11px] text-muted-foreground uppercase tracking-wide block">Nuevo error</Label>
+                        <Input
+                          placeholder="NOMBRE"
+                          value={newErrorName}
+                          onChange={(e) => setNewErrorName(e.target.value.toUpperCase())}
+                          className="uppercase border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
+                          data-testid="step3-input-new-error-name"
+                          autoFocus
+                        />
+                        <div className="flex justify-end items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setIsAddingNodeError(false)}
+                            className="bg-muted/50 hover:bg-muted"
+                            data-testid="step3-button-cancel-new-error"
+                          >
+                            Cancelar
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={handleCreateNodeError}
+                            disabled={!newErrorName.trim() || createNodeError.isPending}
+                            data-testid="step3-button-create-error"
+                          >
+                            <Plus className="h-3 w-3 mr-1" />
+                            Crear error
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        className="flex-1 space-y-3"
+                        onTouchStart={startNodeErrorAddLongPress}
+                        onTouchEnd={endNodeErrorAddLongPress}
+                        onTouchCancel={endNodeErrorAddLongPress}
+                        onMouseDown={startNodeErrorAddLongPress}
+                        onMouseUp={endNodeErrorAddLongPress}
+                        onMouseLeave={endNodeErrorAddLongPress}
+                      >
+                        {previewNodeErrors.length === 0 ? (
+                          <p className="text-sm text-muted-foreground">No hay errores registrados para este nodo todavía. Mantené presionado acá para agregar uno.</p>
+                        ) : (
+                          <>
+                            <div className="space-y-2">
+                              {previewNodeErrors.map((error) => {
+                                const isSelected = selectedErrorId === error.id;
+                                return (
+                                  <button
+                                    key={error.id}
+                                    type="button"
+                                    onClick={() => setSelectedErrorId(isSelected ? null : error.id)}
+                                    className={cn(
+                                      "w-full rounded-lg border p-3 text-left transition-colors",
+                                      isSelected ? "border-primary/50 bg-primary/10" : "border-border/60 bg-muted/40 hover:bg-muted/60"
+                                    )}
+                                  >
+                                    <div className="flex items-center justify-between gap-2">
+                                      <p className="text-sm font-medium truncate">{error.nombre}</p>
+                                      <span className="text-[11px] text-muted-foreground shrink-0">{Math.min(50, error.points)} / 50</span>
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            {selectedPreviewError && (
+                              <div className="rounded-lg border border-border/60 bg-muted/30 p-3 space-y-2">
+                                <p className="text-sm font-medium">{selectedPreviewError.nombre}</p>
+
+                                {selectedPreviewError.confirmed === 0 ? (
+                                  <>
+                                    <p className="text-xs text-muted-foreground">Error nuevo detectado</p>
+                                    <div className="flex justify-end pt-1">
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        onClick={handleStageErrorConfirm}
+                                        data-testid="step3-button-confirm-error"
+                                      >
+                                        Confirmar
+                                      </Button>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <>
+                                    <div>
+                                      <div className="flex items-center justify-end mb-1">
+                                        <p className="text-[11px] text-muted-foreground">{selectedPreviewError.points} / 50</p>
+                                      </div>
+                                      <div className="w-full h-2.5 flex gap-0.5">
+                                        {Array.from({ length: 5 }).map((_, index) => (
+                                          <div
+                                            key={index}
+                                            className={`flex-1 h-full rounded-sm transition-colors duration-300 ${
+                                              index < previewErrorProgressBlocks ? "bg-red-500" : "bg-muted"
+                                            }`}
+                                          />
+                                        ))}
+                                      </div>
+                                    </div>
+                                    <div className="flex justify-end items-center gap-2 pt-1">
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleStageErrorAdjust(-10)}
+                                        disabled={selectedPreviewError.points <= 0}
+                                        className="bg-muted/50 hover:bg-muted"
+                                        data-testid="step3-button-error-minus-10"
+                                      >
+                                        -10p
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleStageErrorAdjust(10)}
+                                        disabled={selectedPreviewError.points >= 50}
+                                        className="bg-muted/50 hover:bg-muted"
+                                        data-testid="step3-button-error-plus-10"
+                                      >
+                                        +10p
+                                      </Button>
+                                    </div>
+                                  </>
+                                )}
+                                {pendingErrorActions.some((a) => a.errorId === selectedPreviewError.id) && (
+                                  <p className="text-[11px] text-muted-foreground/70 pt-1">
+                                    Se registra y muestra su pop-up recién al confirmar el nodo
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
                   </TabsContent>
                 </Tabs>
 

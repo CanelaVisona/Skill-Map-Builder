@@ -246,6 +246,33 @@ export const sourceBugRecords = pgTable("source_bug_records", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// ============ NODE ERRORS (tab "Errores" en el nodo, y en el Journal/Quest Diary) ============
+// La mayoría son propios de un nodo puntual (skillId) -- viven y mueren con él, igual que
+// journal_learnings/journal_tools. Pero también se puede agregar uno directo a un área/proyecto
+// (long-press en el fondo de un quest en la tab "Errores" del Journal), sin nodo asociado --
+// ahí queda con areaId o projectId en vez de skillId, igual patrón que source_bugs/
+// source_powers. Exactamente uno de los tres (skillId/areaId/projectId) debería estar presente.
+export const nodeErrors = pgTable("node_errors", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  skillId: varchar("skill_id"),
+  areaId: varchar("area_id"),
+  projectId: varchar("project_id"),
+  nombre: text("nombre").notNull(),
+  points: integer("points").notNull().default(0), // 0-50, de a pasos de 10 (+10p / -10p)
+  confirmed: integer("confirmed").$type<0 | 1>().notNull().default(0), // 0 = recién detectado, sin confirmar todavía
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const nodeErrorRecords = pgTable("node_error_records", {
+  id: varchar("id").primaryKey(),
+  errorId: varchar("error_id").notNull().references(() => nodeErrors.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  delta: integer("delta").notNull(), // +10 o -10
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 export const journalLearnings = pgTable("journal_learnings", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
@@ -569,6 +596,21 @@ export type InsertSourceBug = z.infer<typeof insertSourceBugSchema>;
 export type SourceBug = typeof sourceBugs.$inferSelect;
 export type InsertSourceBugRecord = z.infer<typeof insertSourceBugRecordSchema>;
 export type SourceBugRecord = typeof sourceBugRecords.$inferSelect;
+export const insertNodeErrorSchema = createInsertSchema(nodeErrors)
+  .omit({ id: true, createdAt: true, updatedAt: true })
+  .extend({
+    points: z.number().int().min(0).max(50).optional().default(0),
+    confirmed: z.union([z.literal(0), z.literal(1)]).optional().default(0),
+  });
+export const insertNodeErrorRecordSchema = createInsertSchema(nodeErrorRecords)
+  .omit({ id: true, createdAt: true })
+  .extend({
+    delta: z.union([z.literal(10), z.literal(-10)]),
+  });
+export type InsertNodeError = z.infer<typeof insertNodeErrorSchema>;
+export type NodeError = typeof nodeErrors.$inferSelect;
+export type InsertNodeErrorRecord = z.infer<typeof insertNodeErrorRecordSchema>;
+export type NodeErrorRecord = typeof nodeErrorRecords.$inferSelect;
 export const profileMissions = pgTable("profile_missions", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
