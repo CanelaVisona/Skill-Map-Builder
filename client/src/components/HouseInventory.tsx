@@ -11,86 +11,65 @@ export type HouseStatus = "have" | "missing";
 
 export type HouseGroup = "Cocina" | "Living y Comedor" | "Dormitorio" | "Baño" | "Lavadero" | "Pasillo" | "Patio" | "Otros";
 
-export type HouseItemType =
-  | "ollas"
-  | "vajilla"
-  | "cubiertos"
-  | "electrodomesticos"
-  | "heladera"
-  | "sofa"
-  | "mesa"
-  | "tv"
-  | "decoracion"
-  | "iluminacion"
-  | "cama"
-  | "ropadecama"
-  | "placard"
-  | "toallas"
-  | "ducha"
-  | "higiene"
-  | "lavarropa"
-  | "limpieza"
-  | "balde"
-  | "espejo"
-  | "perchero"
-  | "plantas"
-  | "parrilla"
-  | "reposera"
-  | "otro";
-
-export const HOUSE_TYPE_META: Record<HouseItemType, { label: string; group: HouseGroup; emoji: string }> = {
-  ollas: { label: "Ollas y sartenes", group: "Cocina", emoji: "🍲" },
-  vajilla: { label: "Vajilla", group: "Cocina", emoji: "🍽️" },
-  cubiertos: { label: "Cubiertos", group: "Cocina", emoji: "🍴" },
-  electrodomesticos: { label: "Electrodomésticos", group: "Cocina", emoji: "🔌" },
-  heladera: { label: "Heladera", group: "Cocina", emoji: "🧊" },
-  sofa: { label: "Sofá", group: "Living y Comedor", emoji: "🛋️" },
-  mesa: { label: "Mesa y sillas", group: "Living y Comedor", emoji: "🪑" },
-  tv: { label: "TV", group: "Living y Comedor", emoji: "📺" },
-  decoracion: { label: "Decoración", group: "Living y Comedor", emoji: "🖼️" },
-  iluminacion: { label: "Iluminación", group: "Living y Comedor", emoji: "💡" },
-  cama: { label: "Cama", group: "Dormitorio", emoji: "🛏️" },
-  ropadecama: { label: "Sábanas y ropa de cama", group: "Dormitorio", emoji: "🧺" },
-  placard: { label: "Placard / Ropero", group: "Dormitorio", emoji: "🚪" },
-  toallas: { label: "Toallas y textiles", group: "Baño", emoji: "🧻" },
-  ducha: { label: "Ducha / Bañera", group: "Baño", emoji: "🚿" },
-  higiene: { label: "Higiene", group: "Baño", emoji: "🧴" },
-  lavarropa: { label: "Lavarropa", group: "Lavadero", emoji: "🌀" },
-  limpieza: { label: "Productos de limpieza", group: "Lavadero", emoji: "🧹" },
-  balde: { label: "Balde y trapos", group: "Lavadero", emoji: "🪣" },
-  espejo: { label: "Espejo", group: "Pasillo", emoji: "🪞" },
-  perchero: { label: "Perchero", group: "Pasillo", emoji: "🧥" },
-  plantas: { label: "Plantas", group: "Patio", emoji: "🌿" },
-  parrilla: { label: "Parrilla", group: "Patio", emoji: "🔥" },
-  reposera: { label: "Reposera / Sombrilla", group: "Patio", emoji: "⛱️" },
-  otro: { label: "Otro", group: "Otros", emoji: "📦" },
-};
-
-export const HOUSE_TYPE_ORDER = Object.keys(HOUSE_TYPE_META) as HouseItemType[];
 export const HOUSE_GROUP_ORDER: HouseGroup[] = ["Cocina", "Living y Comedor", "Dormitorio", "Baño", "Lavadero", "Pasillo", "Patio", "Otros"];
-const HOUSE_GROUP_ICON_TYPE: Record<HouseGroup, HouseItemType> = {
-  "Cocina": "ollas",
-  "Living y Comedor": "sofa",
-  "Dormitorio": "cama",
-  "Baño": "ducha",
-  "Lavadero": "lavarropa",
-  "Pasillo": "espejo",
-  "Patio": "plantas",
-  "Otros": "otro",
+
+// Just a sensible default icon per category -- offered as the starting emoji when
+// you pick a category, and used for group headers/filters/summary. The object's
+// own emoji (chosen when registering it) is what actually gets shown on its card.
+export const HOUSE_GROUP_EMOJI: Record<HouseGroup, string> = {
+  "Cocina": "🍳",
+  "Living y Comedor": "🛋️",
+  "Dormitorio": "🛏️",
+  "Baño": "🚿",
+  "Lavadero": "🧺",
+  "Pasillo": "🚪",
+  "Patio": "🌿",
+  "Otros": "📦",
 };
 
-export function isHouseItemType(value: unknown): value is HouseItemType {
-  return typeof value === "string" && value in HOUSE_TYPE_META;
+export function isHouseGroup(value: unknown): value is HouseGroup {
+  return typeof value === "string" && (HOUSE_GROUP_ORDER as string[]).includes(value);
 }
+
+// Only for migrating items saved under the old fine-grained "type" catalog
+// (before it was replaced by the flat "group" category picker) -- lets old data
+// recover its category instead of getting dropped on load.
+const LEGACY_TYPE_TO_GROUP: Record<string, HouseGroup> = {
+  ollas: "Cocina",
+  vajilla: "Cocina",
+  cubiertos: "Cocina",
+  electrodomesticos: "Cocina",
+  heladera: "Cocina",
+  sofa: "Living y Comedor",
+  mesa: "Living y Comedor",
+  tv: "Living y Comedor",
+  decoracion: "Living y Comedor",
+  iluminacion: "Living y Comedor",
+  cama: "Dormitorio",
+  ropadecama: "Dormitorio",
+  placard: "Dormitorio",
+  toallas: "Baño",
+  ducha: "Baño",
+  higiene: "Baño",
+  lavarropa: "Lavadero",
+  limpieza: "Lavadero",
+  balde: "Lavadero",
+  espejo: "Pasillo",
+  perchero: "Pasillo",
+  plantas: "Patio",
+  parrilla: "Patio",
+  reposera: "Patio",
+  otro: "Otros",
+};
 
 export type HouseItem = {
   id: number;
   name: string;
-  type: HouseItemType;
   // Chosen freely when registering the object (defaults to the category's emoji
-  // but can be overridden), independent of `type` — `type` still drives grouping
-  // and filters, this is purely the icon shown for this specific object.
+  // but can be overridden) -- independent of `group`, which only drives grouping
+  // and filters.
   emoji: string;
+  group: HouseGroup;
   status: HouseStatus;
   // 1-5 "bloquecitos" ratings, same idea as the clothing inventory — utility (how
   // useful/needed it is), condition (how worn/new it is) and importance (how much
@@ -104,12 +83,12 @@ export type HouseItem = {
 const now = Date.now();
 
 export const INITIAL_HOUSE_ITEMS: HouseItem[] = [
-  { id: now - 6, name: "Juego de ollas", type: "ollas", emoji: HOUSE_TYPE_META.ollas.emoji, status: "have", utility: 5, condition: 4, importance: 5 },
-  { id: now - 5, name: "Heladera", type: "heladera", emoji: HOUSE_TYPE_META.heladera.emoji, status: "have", utility: 5, condition: 4, importance: 5 },
-  { id: now - 4, name: "Sofá", type: "sofa", emoji: HOUSE_TYPE_META.sofa.emoji, status: "missing", utility: 4, condition: 3, importance: 4 },
-  { id: now - 3, name: "Aspiradora", type: "limpieza", emoji: HOUSE_TYPE_META.limpieza.emoji, status: "missing", utility: 4, condition: 3, importance: 3 },
-  { id: now - 2, name: "Mesa de living", type: "mesa", emoji: HOUSE_TYPE_META.mesa.emoji, status: "missing", utility: 3, condition: 3, importance: 3 },
-  { id: now - 1, name: "Cortina de baño", type: "ducha", emoji: HOUSE_TYPE_META.ducha.emoji, status: "missing", utility: 3, condition: 3, importance: 2 },
+  { id: now - 6, name: "Juego de ollas", emoji: "🍲", group: "Cocina", status: "have", utility: 5, condition: 4, importance: 5 },
+  { id: now - 5, name: "Heladera", emoji: "🧊", group: "Cocina", status: "have", utility: 5, condition: 4, importance: 5 },
+  { id: now - 4, name: "Sofá", emoji: "🛋️", group: "Living y Comedor", status: "missing", utility: 4, condition: 3, importance: 4 },
+  { id: now - 3, name: "Aspiradora", emoji: "🧹", group: "Lavadero", status: "missing", utility: 4, condition: 3, importance: 3 },
+  { id: now - 2, name: "Mesa de living", emoji: "🪑", group: "Living y Comedor", status: "missing", utility: 3, condition: 3, importance: 3 },
+  { id: now - 1, name: "Cortina de baño", emoji: "🚿", group: "Baño", status: "missing", utility: 3, condition: 3, importance: 2 },
 ];
 
 function isValidStatus(value: unknown): value is HouseStatus {
@@ -125,20 +104,26 @@ export function sanitizeHouseItems(input: unknown): HouseItem[] | null {
 
   const items = input
     .map((item) => {
-      const raw = item as Partial<HouseItem>;
-      if (typeof raw.id !== "number" || typeof raw.name !== "string" || !isHouseItemType(raw.type) || !isValidStatus(raw.status)) {
+      const raw = item as Partial<HouseItem> & { type?: unknown };
+
+      // Items saved before "type" (a fine-grained catalog) was replaced by "group"
+      // (just the 8 categories) still carry a `type` string instead of `group` --
+      // recover their category through that legacy map instead of dropping them.
+      const group = isHouseGroup(raw.group) ? raw.group : LEGACY_TYPE_TO_GROUP[String(raw.type)] ?? null;
+
+      if (typeof raw.id !== "number" || typeof raw.name !== "string" || !group || !isValidStatus(raw.status)) {
         return null;
       }
 
       // "emoji" is additive on top of the original schema — items saved before
       // this field existed fall back to their category's default emoji.
-      const emoji = typeof raw.emoji === "string" && raw.emoji.trim() ? raw.emoji.trim() : HOUSE_TYPE_META[raw.type].emoji;
+      const emoji = typeof raw.emoji === "string" && raw.emoji.trim() ? raw.emoji.trim() : HOUSE_GROUP_EMOJI[group];
 
       return {
         id: raw.id,
         name: raw.name,
-        type: raw.type,
         emoji,
+        group,
         status: raw.status,
         utility: isValidRating(raw.utility) ? raw.utility : 3,
         condition: isValidRating(raw.condition) ? raw.condition : 3,
@@ -297,7 +282,7 @@ function useLongPress<T extends HTMLElement>(onLongPress: () => void, { delay = 
 type ItemFormState = {
   name: string;
   emoji: string;
-  type: HouseItemType;
+  group: HouseGroup;
   status: HouseStatus;
   utility: number;
   condition: number;
@@ -306,8 +291,8 @@ type ItemFormState = {
 
 const EMPTY_FORM: ItemFormState = {
   name: "",
-  emoji: HOUSE_TYPE_META.otro.emoji,
-  type: "otro",
+  emoji: HOUSE_GROUP_EMOJI.Otros,
+  group: "Otros",
   status: "have",
   utility: 3,
   condition: 3,
@@ -361,75 +346,65 @@ function MiniRatingBlocks({ value }: { value: number }) {
   );
 }
 
-function TypePicker({
+// A flat row of the 8 categories -- picking one is just "which room/area is this
+// for", nothing more. The object's own identity (emoji + name) is chosen
+// separately above, so this is no longer a catalog of predefined object types.
+function CategoryPicker({
   value,
   onChange,
   colors,
   isDark,
 }: {
-  value: HouseItemType;
-  onChange: (type: HouseItemType) => void;
+  value: HouseGroup;
+  onChange: (group: HouseGroup) => void;
   colors: Record<string, string>;
   isDark: boolean;
 }) {
   return (
-    <div style={{ display: "grid", gap: "10px" }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(72px, 1fr))", gap: "6px" }}>
       {HOUSE_GROUP_ORDER.map((group) => {
-        const types = HOUSE_TYPE_ORDER.filter((t) => HOUSE_TYPE_META[t].group === group);
-        if (types.length === 0) return null;
+        const active = value === group;
         return (
-          <div key={group}>
-            <div style={{ fontSize: "9px", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", color: colors.subtitle, marginBottom: "4px" }}>
+          <button
+            key={group}
+            type="button"
+            onClick={() => onChange(group)}
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: "3px",
+              padding: "8px 4px",
+              borderRadius: "8px",
+              cursor: "pointer",
+              position: "relative",
+              border: active ? "1px solid #4ade80" : colors.chipBorder,
+              background: active ? (isDark ? "rgba(74,222,128,0.12)" : "#ecfdf3") : isDark ? "#0f1a0f" : "#ffffff",
+            }}
+          >
+            {active && (
+              <span
+                style={{
+                  position: "absolute",
+                  top: "2px",
+                  right: "2px",
+                  width: "12px",
+                  height: "12px",
+                  borderRadius: "50%",
+                  background: "linear-gradient(135deg, #16a34a, #22c55e)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Check size={8} color="#052e16" strokeWidth={3} />
+              </span>
+            )}
+            <span style={{ fontSize: "18px", lineHeight: 1 }}>{HOUSE_GROUP_EMOJI[group]}</span>
+            <span style={{ fontSize: "8.5px", fontWeight: 600, color: active ? colors.title : colors.subtitle, textAlign: "center", lineHeight: 1.1 }}>
               {group}
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(56px, 1fr))", gap: "6px" }}>
-              {types.map((t) => {
-                const active = value === t;
-                return (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => onChange(t)}
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      gap: "3px",
-                      padding: "6px 2px",
-                      borderRadius: "8px",
-                      cursor: "pointer",
-                      position: "relative",
-                      border: active ? "1px solid #4ade80" : colors.chipBorder,
-                      background: active ? (isDark ? "rgba(74,222,128,0.12)" : "#ecfdf3") : isDark ? "#0f1a0f" : "#ffffff",
-                    }}
-                  >
-                    {active && (
-                      <span
-                        style={{
-                          position: "absolute",
-                          top: "2px",
-                          right: "2px",
-                          width: "12px",
-                          height: "12px",
-                          borderRadius: "50%",
-                          background: "linear-gradient(135deg, #16a34a, #22c55e)",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
-                      >
-                        <Check size={8} color="#052e16" strokeWidth={3} />
-                      </span>
-                    )}
-                    <span style={{ fontSize: "18px", lineHeight: 1 }}>{HOUSE_TYPE_META[t].emoji}</span>
-                    <span style={{ fontSize: "8.5px", fontWeight: 600, color: active ? colors.title : colors.subtitle, textAlign: "center", lineHeight: 1.1 }}>
-                      {HOUSE_TYPE_META[t].label}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+            </span>
+          </button>
         );
       })}
     </div>
@@ -490,15 +465,15 @@ function ItemForm({
 
       <div>
         <div style={labelStyle}>Categoría</div>
-        <TypePicker
-          value={form.type}
-          onChange={(type) => {
+        <CategoryPicker
+          value={form.group}
+          onChange={(group) => {
             // Keeps the emoji in sync with the category by default, but only while
             // it still matches the previous category's default -- once the user
             // types a custom emoji, switching category no longer overwrites it.
-            const previousDefaultEmoji = HOUSE_TYPE_META[form.type].emoji;
-            const nextEmoji = form.emoji.trim() === previousDefaultEmoji ? HOUSE_TYPE_META[type].emoji : form.emoji;
-            onChange({ ...form, type, emoji: nextEmoji });
+            const previousDefaultEmoji = HOUSE_GROUP_EMOJI[form.group];
+            const nextEmoji = form.emoji.trim() === previousDefaultEmoji ? HOUSE_GROUP_EMOJI[group] : form.emoji;
+            onChange({ ...form, group, emoji: nextEmoji });
           }}
           colors={colors}
           isDark={isDark}
@@ -632,7 +607,7 @@ function ItemPopup({
           {heading}
         </div>
         <div style={{ display: "flex", justifyContent: "center", marginBottom: "8px", fontSize: "40px" }}>
-          {form.emoji.trim() || HOUSE_TYPE_META[form.type].emoji}
+          {form.emoji.trim() || HOUSE_GROUP_EMOJI[form.group]}
         </div>
         <ItemForm form={form} onChange={onChange} colors={colors} isDark={isDark} />
         <div style={{ display: "flex", gap: "8px", justifyContent: onDelete ? "space-between" : "flex-end", marginTop: "12px" }}>
@@ -869,54 +844,6 @@ function sortHaveFirst(items: HouseItem[]) {
   });
 }
 
-function TypeSection({
-  type,
-  items,
-  colors,
-  isDark,
-  celebratingId,
-  onConfirmPurchase,
-  onStartEdit,
-}: {
-  type: HouseItemType;
-  items: HouseItem[];
-  colors: Record<string, string>;
-  isDark: boolean;
-  celebratingId: number | null;
-  onConfirmPurchase: (id: number) => void;
-  onStartEdit: (item: HouseItem) => void;
-}) {
-  const haveCount = items.filter((i) => i.status === "have").length;
-  const orderedItems = sortHaveFirst(items);
-
-  return (
-    <div style={{ marginBottom: "10px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
-        <span style={{ fontSize: "13px" }}>{HOUSE_TYPE_META[type].emoji}</span>
-        <span style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "0.03em", textTransform: "uppercase", color: colors.subtitle }}>
-          {HOUSE_TYPE_META[type].label}
-        </span>
-        <span style={{ fontSize: "9.5px", color: colors.subtitle, opacity: 0.8 }}>
-          ({haveCount}/{items.length})
-        </span>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(78px, 1fr))", gap: "8px" }}>
-        {orderedItems.map((item) => (
-          <HouseCard
-            key={item.id}
-            item={item}
-            colors={colors}
-            isDark={isDark}
-            celebrating={item.id === celebratingId}
-            onConfirmPurchase={onConfirmPurchase}
-            onStartEdit={onStartEdit}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function GroupSection({
   group,
   items,
@@ -935,7 +862,7 @@ function GroupSection({
   onStartEdit: (item: HouseItem) => void;
 }) {
   const haveCount = items.filter((i) => i.status === "have").length;
-  const typesPresent = HOUSE_TYPE_ORDER.filter((t) => items.some((i) => i.type === t));
+  const orderedItems = sortHaveFirst(items);
 
   return (
     <div style={{ marginBottom: "16px" }} onPointerDown={(e) => e.stopPropagation()}>
@@ -949,7 +876,7 @@ function GroupSection({
           borderBottom: isDark ? "1px solid #1e2d1e" : "1px solid #e2e8f0",
         }}
       >
-        <span style={{ fontSize: "16px" }}>{HOUSE_TYPE_META[HOUSE_GROUP_ICON_TYPE[group]].emoji}</span>
+        <span style={{ fontSize: "16px" }}>{HOUSE_GROUP_EMOJI[group]}</span>
         <span
           style={{
             fontFamily: "'Orbitron', monospace",
@@ -966,18 +893,19 @@ function GroupSection({
           ({haveCount}/{items.length})
         </span>
       </div>
-      {typesPresent.map((type) => (
-        <TypeSection
-          key={type}
-          type={type}
-          items={items.filter((i) => i.type === type)}
-          colors={colors}
-          isDark={isDark}
-          celebratingId={celebratingId}
-          onConfirmPurchase={onConfirmPurchase}
-          onStartEdit={onStartEdit}
-        />
-      ))}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(78px, 1fr))", gap: "8px" }}>
+        {orderedItems.map((item) => (
+          <HouseCard
+            key={item.id}
+            item={item}
+            colors={colors}
+            isDark={isDark}
+            celebrating={item.id === celebratingId}
+            onConfirmPurchase={onConfirmPurchase}
+            onStartEdit={onStartEdit}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -1001,7 +929,7 @@ function HouseSummaryPanel({
   const progressPct = (totalHave / totalCount) * 100;
 
   const groupStats = HOUSE_GROUP_ORDER.map((group) => {
-    const groupItems = items.filter((i) => HOUSE_TYPE_META[i.type].group === group);
+    const groupItems = items.filter((i) => i.group === group);
     const have = groupItems.filter((i) => i.status === "have").length;
     return { group, have, total: groupItems.length };
   }).filter((stat) => stat.total > 0);
@@ -1052,7 +980,7 @@ function HouseSummaryPanel({
             return (
               <div key={group} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                 <span style={{ fontSize: "13px", width: "16px", textAlign: "center", flexShrink: 0 }}>
-                  {HOUSE_TYPE_META[HOUSE_GROUP_ICON_TYPE[group]].emoji}
+                  {HOUSE_GROUP_EMOJI[group]}
                 </span>
                 <span
                   style={{
@@ -1124,7 +1052,7 @@ export default function HouseInventory({
     };
   }, []);
 
-  const groupsPresent = HOUSE_GROUP_ORDER.filter((g) => items.some((i) => HOUSE_TYPE_META[i.type].group === g));
+  const groupsPresent = HOUSE_GROUP_ORDER.filter((g) => items.some((i) => i.group === g));
 
   const openAddForm = () => {
     setEditingId(null);
@@ -1144,8 +1072,8 @@ export default function HouseInventory({
     const nextItem: HouseItem = {
       id: Date.now(),
       name: cleanName,
-      emoji: addForm.emoji.trim() || HOUSE_TYPE_META[addForm.type].emoji,
-      type: addForm.type,
+      emoji: addForm.emoji.trim() || HOUSE_GROUP_EMOJI[addForm.group],
+      group: addForm.group,
       status: addForm.status,
       utility: addForm.utility,
       condition: addForm.condition,
@@ -1163,7 +1091,7 @@ export default function HouseInventory({
     setEditForm({
       name: item.name,
       emoji: item.emoji,
-      type: item.type,
+      group: item.group,
       status: item.status,
       utility: item.utility,
       condition: item.condition,
@@ -1185,8 +1113,8 @@ export default function HouseInventory({
           ? {
               ...item,
               name: cleanName,
-              emoji: editForm.emoji.trim() || HOUSE_TYPE_META[editForm.type].emoji,
-              type: editForm.type,
+              emoji: editForm.emoji.trim() || HOUSE_GROUP_EMOJI[editForm.group],
+              group: editForm.group,
               status: editForm.status,
               utility: editForm.utility,
               condition: editForm.condition,
@@ -1283,7 +1211,7 @@ export default function HouseInventory({
                   color: active ? "#052e16" : colors.subtitle,
                 }}
               >
-                {g !== "Todas" && <span>{HOUSE_TYPE_META[HOUSE_GROUP_ICON_TYPE[g]].emoji}</span>}
+                {g !== "Todas" && <span>{HOUSE_GROUP_EMOJI[g]}</span>}
                 {g}
               </span>
             );
@@ -1325,7 +1253,7 @@ export default function HouseInventory({
           <GroupSection
             key={group}
             group={group}
-            items={items.filter((i) => HOUSE_TYPE_META[i.type].group === group)}
+            items={items.filter((i) => i.group === group)}
             colors={colors}
             isDark={isDark}
             celebratingId={celebratingId}

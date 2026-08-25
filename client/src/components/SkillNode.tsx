@@ -1056,6 +1056,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   interface SkillNodeError {
     id: string;
     nombre: string;
+    comoSi: string;
     points: number;
     confirmed: 0 | 1;
     estrategias: string[];
@@ -1065,6 +1066,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [selectedErrorId, setSelectedErrorId] = useState<string | null>(null);
   const [isAddingNodeError, setIsAddingNodeError] = useState(false);
   const [newErrorName, setNewErrorName] = useState("");
+  // En vez del error, cómo sería la situación que sí se quiere -- se completa junto con el
+  // nombre al crear el error (ver handleCreateNodeError).
+  const [newErrorComoSi, setNewErrorComoSi] = useState("");
   // Estrategias/disparadores cargados de una en el formulario de "nuevo error", antes de que el
   // error exista -- se mandan juntos con el nombre al crearlo (ver handleCreateNodeError).
   const [newErrorEstrategias, setNewErrorEstrategias] = useState<string[]>([]);
@@ -1072,11 +1076,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [newErrorDisparadores, setNewErrorDisparadores] = useState<string[]>([]);
   const [newErrorDisparadorDraft, setNewErrorDisparadorDraft] = useState("");
   const nodeErrorAddLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Inputs para agregar una estrategia/disparador directo desde la sección "Estrategias"/
-  // "Disparadores" del error seleccionado (no confundir con newPickerOptionText, que es la del
-  // picker que se abre al sumar/restar xp -- ver más abajo).
-  const [newStrategyText, setNewStrategyText] = useState("");
-  const [newDisparadorText, setNewDisparadorText] = useState("");
 
   // Picker que se abre al apretar "+10p"/"-10p": lista las estrategias/disparadores ya
   // guardados del error + la opción "Estrategia nueva"/"Disparador nuevo". errorPicker !== null
@@ -1087,10 +1086,17 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [isAddingNewPickerOption, setIsAddingNewPickerOption] = useState(false);
   const [newPickerOptionText, setNewPickerOptionText] = useState("");
 
+  // Trae los errores propios de este nodo MÁS, si hay un área/proyecto activo, los que se
+  // cargaron directo ahí desde el Journal (sin nodo) -- así quedan disponibles en el Step 2/
+  // Step 3 de cualquier nodo de esa misma área/proyecto, no solo desde el Journal.
   const { data: nodeErrorsList = [] } = useQuery<SkillNodeError[]>({
-    queryKey: [`/api/node-errors/${skill.id}`],
+    queryKey: [`/api/node-errors/${skill.id}`, sourceType, sourceId],
     queryFn: async () => {
-      const res = await fetch(`/api/node-errors/${skill.id}`);
+      const params = new URLSearchParams();
+      if (sourceType === "area" && sourceId) params.set("areaId", sourceId);
+      if (sourceType === "project" && sourceId) params.set("projectId", sourceId);
+      const qs = params.toString();
+      const res = await fetch(`/api/node-errors/${skill.id}${qs ? `?${qs}` : ""}`);
       if (!res.ok) {
         throw new Error("Failed to fetch node errors");
       }
@@ -1116,11 +1122,11 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     : [];
 
   const createNodeError = useMutation({
-    mutationFn: async (data: { nombre: string; estrategias: string[]; disparadores: string[] }) => {
+    mutationFn: async (data: { nombre: string; comoSi: string; estrategias: string[]; disparadores: string[] }) => {
       const res = await fetch("/api/node-errors", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ skillId: skill.id, nombre: data.nombre, estrategias: data.estrategias, disparadores: data.disparadores }),
+        body: JSON.stringify({ skillId: skill.id, nombre: data.nombre, comoSi: data.comoSi, estrategias: data.estrategias, disparadores: data.disparadores }),
       });
       if (!res.ok) {
         const error = await res.json();
@@ -1134,6 +1140,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       // título sin que haga falta un segundo tap sobre la lista.
       setSelectedErrorId(created.id);
       setNewErrorName("");
+      setNewErrorComoSi("");
       setNewErrorEstrategias([]);
       setNewErrorEstrategiaDraft("");
       setNewErrorDisparadores([]);
@@ -1163,7 +1170,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     },
     onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: [`/api/node-errors/${skill.id}`] });
-      showErrorCelebration({ name: updated.nombre, kind: "detected" });
+      // runPopupQueue (no una llamada directa) para que respete si hay otro pop-up (de
+      // cualquier familia) todavía en pantalla, en vez de solaparse con él.
+      runPopupQueue([() => showErrorCelebration({ name: updated.nombre, kind: "detected" })]);
     },
     onError: (error) => {
       console.error("confirmNodeError error:", error);
@@ -1191,12 +1200,14 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: [`/api/node-errors/${skill.id}`] });
-      showErrorProgressPopup(result.errorProgress);
+      // Ambos pop-ups (la barra, y "vencido" si corresponde) van en una sola cola: así el
+      // segundo espera a que el primero termine, Y el primero espera su turno si hay otro
+      // pop-up (de cualquier familia) todavía en pantalla, en vez de solaparse.
+      const tasks: Array<() => void> = [() => showErrorProgressPopup(result.errorProgress)];
       if (result.vencido) {
-        runPopupQueue([
-          () => showErrorCelebration({ name: result.errorProgress.errorName, kind: "vencido" }),
-        ]);
+        tasks.push(() => showErrorCelebration({ name: result.errorProgress.errorName, kind: "vencido" }));
       }
+      runPopupQueue(tasks);
     },
     onError: (error) => {
       console.error("adjustNodeErrorPoints error:", error);
@@ -1229,7 +1240,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const handleCreateNodeError = () => {
     const finalName = newErrorName.trim();
     if (!finalName || createNodeError.isPending) return;
-    createNodeError.mutate({ nombre: finalName, estrategias: newErrorEstrategias, disparadores: newErrorDisparadores });
+    createNodeError.mutate({ nombre: finalName, comoSi: newErrorComoSi.trim(), estrategias: newErrorEstrategias, disparadores: newErrorDisparadores });
   };
 
   // Chips de estrategia/disparador cargados en el formulario de "nuevo error" -- todavía no
@@ -1265,40 +1276,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const handleConfirmNodeError = () => {
     if (!selectedNodeError || selectedNodeError.confirmed === 1 || confirmNodeError.isPending) return;
     confirmNodeError.mutate(selectedNodeError.id);
-  };
-
-  const handleAddStrategyToSelectedError = () => {
-    if (!selectedNodeError) return;
-    const finalText = newStrategyText.trim();
-    if (!finalText || addNodeErrorListItem.isPending) return;
-    if (selectedNodeError.estrategias.includes(finalText)) {
-      setNewStrategyText("");
-      return;
-    }
-    addNodeErrorListItem.mutate({ id: selectedNodeError.id, field: "estrategias", items: [...selectedNodeError.estrategias, finalText] });
-    setNewStrategyText("");
-  };
-
-  const handleAddDisparadorToSelectedError = () => {
-    if (!selectedNodeError) return;
-    const finalText = newDisparadorText.trim();
-    if (!finalText || addNodeErrorListItem.isPending) return;
-    if (selectedNodeError.disparadores.includes(finalText)) {
-      setNewDisparadorText("");
-      return;
-    }
-    addNodeErrorListItem.mutate({ id: selectedNodeError.id, field: "disparadores", items: [...selectedNodeError.disparadores, finalText] });
-    setNewDisparadorText("");
-  };
-
-  const handleRemoveStrategyFromSelectedError = (index: number) => {
-    if (!selectedNodeError) return;
-    addNodeErrorListItem.mutate({ id: selectedNodeError.id, field: "estrategias", items: selectedNodeError.estrategias.filter((_, i) => i !== index) });
-  };
-
-  const handleRemoveDisparadorFromSelectedError = (index: number) => {
-    if (!selectedNodeError) return;
-    addNodeErrorListItem.mutate({ id: selectedNodeError.id, field: "disparadores", items: selectedNodeError.disparadores.filter((_, i) => i !== index) });
   };
 
   const handleAdjustNodeError = (delta: 10 | -10, estrategia?: string, disparador?: string) => {
@@ -1385,6 +1362,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     e.stopPropagation();
     nodeErrorAddLongPressTimer.current = setTimeout(() => {
       setNewErrorName("");
+      setNewErrorComoSi("");
       setNewErrorEstrategias([]);
       setNewErrorEstrategiaDraft("");
       setNewErrorDisparadores([]);
@@ -2082,23 +2060,18 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     }
 
     // Errores: una acción por entrada encolada en Step 3, aplicada en el mismo orden en que se
-    // apretaron los botones -- cada una hace su propia llamada al servidor y encola su propio
-    // pop-up (barra creciendo/achicándose, y "¡Error vencido!" si corresponde), igual que si se
-    // hubiera hecho desde el Journal en el momento.
+    // apretaron los botones. Cada una de estas dos mutaciones ya muestra su propio pop-up (por
+    // su cuenta, vía runPopupQueue en su propio onSuccess) -- no hay que volver a encolarlo acá
+    // encima, o el mismo pop-up aparece duplicado.
     if (errorActions.length > 0) {
       blocks.push({
         label: `+${errorActions.length} error${errorActions.length > 1 ? "es" : ""}`,
-        run: async (enqueue) => {
+        run: async () => {
           for (const action of errorActions) {
             if (action.type === "confirm") {
-              const updated = await confirmNodeError.mutateAsync(action.errorId);
-              enqueue(() => showErrorCelebration({ name: updated.nombre, kind: "detected" }));
+              await confirmNodeError.mutateAsync(action.errorId);
             } else {
-              const result = await adjustNodeErrorPoints.mutateAsync({ id: action.errorId, delta: action.delta!, estrategia: action.estrategia, disparador: action.disparador });
-              enqueue(() => showErrorProgressPopup(result.errorProgress));
-              if (result.vencido) {
-                enqueue(() => showErrorCelebration({ name: result.errorProgress.errorName, kind: "vencido" }));
-              }
+              await adjustNodeErrorPoints.mutateAsync({ id: action.errorId, delta: action.delta!, estrategia: action.estrategia, disparador: action.disparador });
             }
           }
         },
@@ -3485,6 +3458,18 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                       autoFocus
                     />
 
+                    <div className="space-y-1.5">
+                      <Label className="text-[11px] text-muted-foreground uppercase tracking-wide block">¿Cómo sí?</Label>
+                      <Textarea
+                        placeholder="En vez del error, ¿cómo sería la situación que sí querés?"
+                        value={newErrorComoSi}
+                        onChange={(e) => setNewErrorComoSi(e.target.value)}
+                        rows={2}
+                        className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+                        data-testid="input-new-error-como-si"
+                      />
+                    </div>
+
                     <ChipListInput
                       label="Estrategias"
                       placeholder="Nueva estrategia"
@@ -3627,34 +3612,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                                   >
                                     +10p
                                   </Button>
-                                </div>
-
-                                <div className="pt-1 border-t border-border/40">
-                                  <ChipListInput
-                                    label="Estrategias"
-                                    placeholder="Nueva estrategia"
-                                    items={selectedNodeError.estrategias}
-                                    draft={newStrategyText}
-                                    onDraftChange={setNewStrategyText}
-                                    onAdd={handleAddStrategyToSelectedError}
-                                    onRemove={handleRemoveStrategyFromSelectedError}
-                                    addDisabled={addNodeErrorListItem.isPending}
-                                    testIdPrefix="error-strategy"
-                                  />
-                                </div>
-
-                                <div className="pt-1 border-t border-border/40">
-                                  <ChipListInput
-                                    label="Disparadores"
-                                    placeholder="Nuevo disparador"
-                                    items={selectedNodeError.disparadores}
-                                    draft={newDisparadorText}
-                                    onDraftChange={setNewDisparadorText}
-                                    onAdd={handleAddDisparadorToSelectedError}
-                                    onRemove={handleRemoveDisparadorFromSelectedError}
-                                    addDisabled={addNodeErrorListItem.isPending}
-                                    testIdPrefix="error-disparador"
-                                  />
                                 </div>
                               </>
                             )}
@@ -4472,6 +4429,18 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                           autoFocus
                         />
 
+                        <div className="space-y-1.5">
+                          <Label className="text-[11px] text-muted-foreground uppercase tracking-wide block">¿Cómo sí?</Label>
+                          <Textarea
+                            placeholder="En vez del error, ¿cómo sería la situación que sí querés?"
+                            value={newErrorComoSi}
+                            onChange={(e) => setNewErrorComoSi(e.target.value)}
+                            rows={2}
+                            className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+                            data-testid="step3-input-new-error-como-si"
+                          />
+                        </div>
+
                         <ChipListInput
                           label="Estrategias"
                           placeholder="Nueva estrategia"
@@ -4620,34 +4589,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                                       >
                                         +10p
                                       </Button>
-                                    </div>
-
-                                    <div className="pt-1 border-t border-border/40">
-                                      <ChipListInput
-                                        label="Estrategias"
-                                        placeholder="Nueva estrategia"
-                                        items={selectedNodeError.estrategias}
-                                        draft={newStrategyText}
-                                        onDraftChange={setNewStrategyText}
-                                        onAdd={handleAddStrategyToSelectedError}
-                                        onRemove={handleRemoveStrategyFromSelectedError}
-                                        addDisabled={addNodeErrorListItem.isPending}
-                                        testIdPrefix="step3-error-strategy"
-                                      />
-                                    </div>
-
-                                    <div className="pt-1 border-t border-border/40">
-                                      <ChipListInput
-                                        label="Disparadores"
-                                        placeholder="Nuevo disparador"
-                                        items={selectedNodeError.disparadores}
-                                        draft={newDisparadorText}
-                                        onDraftChange={setNewDisparadorText}
-                                        onAdd={handleAddDisparadorToSelectedError}
-                                        onRemove={handleRemoveDisparadorFromSelectedError}
-                                        addDisabled={addNodeErrorListItem.isPending}
-                                        testIdPrefix="step3-error-disparador"
-                                      />
                                     </div>
                                   </>
                                 )}

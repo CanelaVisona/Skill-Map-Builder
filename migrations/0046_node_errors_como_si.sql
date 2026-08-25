@@ -1,0 +1,1 @@
+ALTER TABLE "node_errors" ADD COLUMN IF NOT EXISTS "como_si" text DEFAULT '' NOT NULL;

@@ -3417,11 +3417,42 @@ export async function registerRoutes(
   // prioridades" tabs inside the home-needs modal)
   const HOUSE_INVENTORY_STORAGE_NAME = "__house_inventory_items__";
 
+  // Only for migrating items saved under the old fine-grained "type" catalog
+  // (before the client replaced it with a flat "group" category picker) -- lets
+  // old data recover its category on the next GET instead of getting dropped.
+  const HOUSE_LEGACY_TYPE_TO_GROUP: Record<string, string> = {
+    ollas: "Cocina",
+    vajilla: "Cocina",
+    cubiertos: "Cocina",
+    electrodomesticos: "Cocina",
+    heladera: "Cocina",
+    sofa: "Living y Comedor",
+    mesa: "Living y Comedor",
+    tv: "Living y Comedor",
+    decoracion: "Living y Comedor",
+    iluminacion: "Living y Comedor",
+    cama: "Dormitorio",
+    ropadecama: "Dormitorio",
+    placard: "Dormitorio",
+    toallas: "Baño",
+    ducha: "Baño",
+    higiene: "Baño",
+    lavarropa: "Lavadero",
+    limpieza: "Lavadero",
+    balde: "Lavadero",
+    espejo: "Pasillo",
+    perchero: "Pasillo",
+    plantas: "Patio",
+    parrilla: "Patio",
+    reposera: "Patio",
+    otro: "Otros",
+  };
+
   function sanitizeHouseItems(input: unknown): Array<{
     id: number;
     name: string;
     emoji: string;
-    type: string;
+    group: string;
     status: "have" | "missing";
     utility: number;
     condition: number;
@@ -3435,10 +3466,14 @@ export async function registerRoutes(
     return input
       .map((item) => {
         const house = item as Record<string, unknown>;
+        // "group" replaces the old fine-grained "type" catalog -- still just a
+        // free-form string here, the client owns the fixed set of valid categories.
+        const group = typeof house.group === "string" ? house.group : HOUSE_LEGACY_TYPE_TO_GROUP[String(house.type)];
+
         if (
           typeof house.id !== "number" ||
           typeof house.name !== "string" ||
-          typeof house.type !== "string" ||
+          typeof group !== "string" ||
           (house.status !== "have" && house.status !== "missing")
         ) {
           return null;
@@ -3455,7 +3490,7 @@ export async function registerRoutes(
           id: house.id,
           name: house.name,
           emoji,
-          type: house.type,
+          group,
           status: house.status,
           utility,
           condition,
@@ -3466,7 +3501,7 @@ export async function registerRoutes(
         id: number;
         name: string;
         emoji: string;
-        type: string;
+        group: string;
         status: "have" | "missing";
         utility: number;
         condition: number;
@@ -4324,7 +4359,11 @@ export async function registerRoutes(
 
   app.get("/api/node-errors/:skillId", requireAuth, async (req, res) => {
     try {
-      const errors = await storage.getNodeErrors(req.userId!, req.params.skillId);
+      // areaId/projectId opcionales -- el área/proyecto activo del nodo, para traer también los
+      // errores cargados directo ahí (sin nodo) desde el Journal.
+      const areaId = typeof req.query.areaId === "string" ? req.query.areaId : undefined;
+      const projectId = typeof req.query.projectId === "string" ? req.query.projectId : undefined;
+      const errors = await storage.getNodeErrors(req.userId!, req.params.skillId, { areaId, projectId });
       res.json(errors);
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Failed to fetch node errors" });

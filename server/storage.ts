@@ -1,4 +1,4 @@
-import { eq, and, asc, sql, inArray } from "drizzle-orm";
+import { eq, and, or, asc, sql, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db, pool } from "./db";
 import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type JournalShadowPage, type InsertJournalShadowPage, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourceObjective, type InsertSourceObjective, type SourceBelief, type InsertSourceBelief, type SourceVision, type InsertSourceVision, type SourcePowers, type InsertSourcePowers, type SourceBug, type InsertSourceBug, type SourceBugRecord, type InsertSourceBugRecord, type NodeError, type InsertNodeError, type NodeErrorRecord, type InsertNodeErrorRecord, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, type BodyProgressRow, type InsertBodyProgress, type TodayTaskSlot, type InsertTodayTaskSlot, type ManualTodayTask, type InsertManualTodayTask, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, journalShadowPages, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourceObjectives, sourceBeliefs, sourceVision, sourcePowers, sourceBugs, sourceBugRecords, nodeErrors, nodeErrorRecords, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, rewiringTrackers, rewiringTrackerRecords, bodyProgress, todayTaskSlots, manualTodayTasks } from "@shared/schema";
@@ -181,7 +181,7 @@ export interface IStorage {
 
   // Node Errors (tab "Errores" del nodo)
   getAllNodeErrors(userId: string): Promise<NodeError[]>;
-  getNodeErrors(userId: string, skillId: string): Promise<NodeError[]>;
+  getNodeErrors(userId: string, skillId: string, scope?: { areaId?: string; projectId?: string }): Promise<NodeError[]>;
   getNodeError(id: string): Promise<NodeError | undefined>;
   createNodeError(entry: InsertNodeError): Promise<NodeError>;
   updateNodeError(id: string, entry: Partial<InsertNodeError>): Promise<NodeError | undefined>;
@@ -1868,11 +1868,18 @@ export class DbStorage implements IStorage {
       .orderBy(asc(nodeErrors.createdAt));
   }
 
-  async getNodeErrors(userId: string, skillId: string): Promise<NodeError[]> {
+  // Devuelve los errores propios de este nodo (skillId) más, si se pasa el área/proyecto activo,
+  // los que se cargaron directo ahí (sin nodo, desde el Journal) -- así un error de área aparece
+  // disponible en el Step 2/Step 3 de cualquier nodo de esa misma área.
+  async getNodeErrors(userId: string, skillId: string, scope?: { areaId?: string; projectId?: string }): Promise<NodeError[]> {
+    const scopeConditions = [eq(nodeErrors.skillId, skillId)];
+    if (scope?.areaId) scopeConditions.push(eq(nodeErrors.areaId, scope.areaId));
+    if (scope?.projectId) scopeConditions.push(eq(nodeErrors.projectId, scope.projectId));
+
     return await db
       .select()
       .from(nodeErrors)
-      .where(and(eq(nodeErrors.userId, userId), eq(nodeErrors.skillId, skillId)))
+      .where(and(eq(nodeErrors.userId, userId), or(...scopeConditions)))
       .orderBy(asc(nodeErrors.createdAt));
   }
 

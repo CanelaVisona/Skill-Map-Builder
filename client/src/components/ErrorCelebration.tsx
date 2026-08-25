@@ -145,11 +145,11 @@ export function ErrorCelebration({ celebration }: ErrorCelebrationProps) {
                     <polygon
                       points="16,2 30,16 16,30 2,16"
                       fill={palette.surfaceInset}
-                      stroke="#ef4444"
+                      stroke="#f97316"
                       strokeWidth="1.5"
                     />
                   </svg>
-                  <OctagonAlert className="relative h-4 w-4 text-red-500" strokeWidth={2.1} />
+                  <OctagonAlert className="relative h-4 w-4 text-orange-500" strokeWidth={2.1} />
                 </div>
 
                 <div className="min-w-0 flex-1">

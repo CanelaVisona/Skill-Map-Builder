@@ -3,6 +3,7 @@ import { SkillTreeProvider, useSkillTree, type Skill, type GlobalSkill, type Are
 import { MenuProvider, useMenu } from "@/lib/menu-context";
 import { AreaMenu } from "@/components/AreaMenu";
 import { SkillNode } from "@/components/SkillNode";
+import { getErrorBarBlocks } from "@/components/ErrorProgressPopup";
 import { SkillConnection } from "@/components/SkillConnection";
 import { SkillDesigner } from "@/components/SkillDesigner";
 import { QuestCompletedCelebration } from "@/components/QuestCompletedCelebration";
@@ -43,7 +44,7 @@ import { TodayProgressPopupProvider } from "@/lib/today-progress-popup-context";
 import { PendingRewardsProvider } from "@/lib/pending-rewards-context";
 import { BodyLinkPicker, type BodyLink } from "@/components/BodyLinkPicker";
 import { SkillLinkPicker } from "@/components/SkillLinkPicker";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -7708,6 +7709,7 @@ function QuestDiary() {
     areaId: string | null;
     projectId: string | null;
     nombre: string;
+    comoSi: string;
     points: number;
     confirmed: 0 | 1;
   }
@@ -7715,6 +7717,7 @@ function QuestDiary() {
   const [selectedJournalErrorId, setSelectedJournalErrorId] = useState<string | null>(null);
   const [addErrorTarget, setAddErrorTarget] = useState<{ key: string; name: string; areaId: string | null; projectId: string | null } | null>(null);
   const [newJournalErrorName, setNewJournalErrorName] = useState("");
+  const [newJournalErrorComoSi, setNewJournalErrorComoSi] = useState("");
   const journalErrorAddLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data: allNodeErrors = [] } = useQuery<JournalNodeError[]>({
@@ -7765,12 +7768,13 @@ function QuestDiary() {
   }, [allNodeErrors, skillQuestMap, areas, projects]);
 
   const createJournalNodeError = useMutation({
-    mutationFn: async (data: { nombre: string; areaId: string | null; projectId: string | null }) => {
+    mutationFn: async (data: { nombre: string; comoSi: string; areaId: string | null; projectId: string | null }) => {
       const res = await fetch("/api/node-errors", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           nombre: data.nombre,
+          comoSi: data.comoSi,
           ...(data.areaId ? { areaId: data.areaId } : {}),
           ...(data.projectId ? { projectId: data.projectId } : {}),
         }),
@@ -7785,13 +7789,14 @@ function QuestDiary() {
       queryClient.invalidateQueries({ queryKey: ["/api/node-errors"] });
       setAddErrorTarget(null);
       setNewJournalErrorName("");
+      setNewJournalErrorComoSi("");
     },
   });
 
   const handleCreateJournalError = () => {
     const finalName = newJournalErrorName.trim();
     if (!finalName || !addErrorTarget || createJournalNodeError.isPending) return;
-    createJournalNodeError.mutate({ nombre: finalName, areaId: addErrorTarget.areaId, projectId: addErrorTarget.projectId });
+    createJournalNodeError.mutate({ nombre: finalName, comoSi: newJournalErrorComoSi.trim(), areaId: addErrorTarget.areaId, projectId: addErrorTarget.projectId });
   };
 
   // Long-press sobre el fondo vacío de la grilla de un quest -- igual patrón que
@@ -7802,6 +7807,7 @@ function QuestDiary() {
     e.stopPropagation();
     journalErrorAddLongPressTimer.current = setTimeout(() => {
       setNewJournalErrorName("");
+      setNewJournalErrorComoSi("");
       setAddErrorTarget({ key: group.key, name: group.name, areaId: group.areaId, projectId: group.projectId });
     }, 500);
   };
@@ -7813,6 +7819,73 @@ function QuestDiary() {
     }
   };
 
+  // Mantener presionada una tarjeta de error ya existente abre su formulario de editar/borrar
+  // -- mismo patrón que startBugLongPress en AreaMenu.tsx. journalErrorLongPressCompleted evita
+  // que el click que sigue al soltar el dedo dispare también la selección de la tarjeta.
+  const [editingJournalError, setEditingJournalError] = useState<JournalNodeError | null>(null);
+  const [editJournalErrorNombre, setEditJournalErrorNombre] = useState("");
+  const [editJournalErrorComoSi, setEditJournalErrorComoSi] = useState("");
+  const journalErrorEditLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const journalErrorLongPressCompleted = useRef(false);
+
+  const startJournalErrorEditLongPress = (error: JournalNodeError) => (e: React.TouchEvent | React.MouseEvent) => {
+    e.stopPropagation();
+    journalErrorLongPressCompleted.current = false;
+    journalErrorEditLongPressTimer.current = setTimeout(() => {
+      journalErrorLongPressCompleted.current = true;
+      setEditingJournalError(error);
+      setEditJournalErrorNombre(error.nombre);
+      setEditJournalErrorComoSi(error.comoSi);
+    }, 500);
+  };
+
+  const endJournalErrorEditLongPress = () => {
+    if (journalErrorEditLongPressTimer.current) {
+      clearTimeout(journalErrorEditLongPressTimer.current);
+      journalErrorEditLongPressTimer.current = null;
+    }
+  };
+
+  const updateJournalNodeError = useMutation({
+    mutationFn: async ({ id, nombre, comoSi }: { id: string; nombre: string; comoSi: string }) => {
+      const res = await fetch(`/api/node-errors/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nombre, comoSi }),
+      });
+      if (!res.ok) throw new Error("Failed to update error");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/node-errors"] });
+      setEditingJournalError(null);
+    },
+  });
+
+  const deleteJournalNodeError = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/node-errors/${id}`, { method: "DELETE" });
+      if (!res.ok && res.status !== 204) throw new Error("Failed to delete error");
+    },
+    onSuccess: (_data, id) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/node-errors"] });
+      setEditingJournalError(null);
+      setSelectedJournalErrorId((current) => current === id ? null : current);
+    },
+  });
+
+  const handleSaveJournalError = () => {
+    if (!editingJournalError) return;
+    const finalName = editJournalErrorNombre.trim();
+    if (!finalName || updateJournalNodeError.isPending) return;
+    updateJournalNodeError.mutate({ id: editingJournalError.id, nombre: finalName, comoSi: editJournalErrorComoSi.trim() });
+  };
+
+  const handleDeleteJournalError = () => {
+    if (!editingJournalError || deleteJournalNodeError.isPending) return;
+    deleteJournalNodeError.mutate(editingJournalError.id);
+  };
+
   const ERROR_ICON_PALETTE = [OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation, Skull] as const;
 
   const getErrorIcon = (id: string) => {
@@ -7822,8 +7895,7 @@ function QuestDiary() {
 
   // Mismo esqueleto que renderPowerState -- "confirmed === 0" (recién detectado, sin
   // confirmar) hace de "isUnlocked === 0" (bloqueado), y "vencido" (barra llena) hace de
-  // "isUnlocked === 2" (dominado), solo que en rojo en vez de dorado -- acá llegar al techo es
-  // un evento negativo, no un logro.
+  // "isUnlocked === 2" (dominado), en naranja -- es el color de toda la sección Errores.
   const renderErrorState = (error: { confirmed: 0 | 1; points: number }) => {
     if (error.confirmed === 0) {
       return {
@@ -7839,12 +7911,12 @@ function QuestDiary() {
     const vencido = error.points >= 50;
 
     return {
-      cardClass: vencido ? "border-[#EF4444] text-[#FCA5A5]" : "border-white/13 text-[#c9a8a8]",
-      chipClass: vencido ? "bg-gradient-to-b from-[#FCA5A5] to-[#EF4444] border-transparent" : "bg-white/[0.05] border-white/15",
-      iconColorClass: vencido ? "text-[#1A0606]" : "text-[#c98a8a]",
+      cardClass: vencido ? "border-[#F97316] text-[#FDBA74]" : "border-[#F97316]/40 text-[#FDBA74]/80",
+      chipClass: vencido ? "bg-gradient-to-b from-[#FDBA74] to-[#F97316] border-transparent" : "bg-[#F97316]/10 border-[#F97316]/30",
+      iconColorClass: vencido ? "text-[#2a1206]" : "text-[#F97316]",
       showPending: false,
       showGlow: vencido,
-      backgroundClass: vencido ? "bg-[#2a0a0a]" : "bg-[#221010]",
+      backgroundClass: vencido ? "bg-[#2a1502]" : "bg-[#1f1509]",
     };
   };
 
@@ -7985,6 +8057,7 @@ function QuestDiary() {
   });
   
   return (
+    <>
     <Dialog open={isDiaryOpen} modal={false} onOpenChange={(open) => !open && closeDiary()}>
       <DialogContent
         className="w-[calc(100vw-1.5rem)] max-w-[calc(100vw-1.5rem)] sm:max-w-4xl h-[92dvh] sm:h-[75vh] p-0 overflow-hidden bg-background border-2 border-border shadow-2xl"
@@ -8254,6 +8327,17 @@ function QuestDiary() {
                                       autoFocus
                                       data-testid="journal-input-new-error-name"
                                     />
+                                    <div className="space-y-1.5">
+                                      <Label className="text-[11px] text-muted-foreground uppercase tracking-wide block">¿Cómo sí?</Label>
+                                      <Textarea
+                                        placeholder="En vez del error, ¿cómo sería la situación que sí querés?"
+                                        value={newJournalErrorComoSi}
+                                        onChange={(e) => setNewJournalErrorComoSi(e.target.value)}
+                                        rows={2}
+                                        className="resize-none"
+                                        data-testid="journal-input-new-error-como-si"
+                                      />
+                                    </div>
                                     <div className="flex justify-end items-center gap-2">
                                       <Button
                                         type="button"
@@ -8297,12 +8381,25 @@ function QuestDiary() {
                                           const ErrorIcon = getErrorIcon(error.id);
                                           const isSelected = selectedJournalErrorId === error.id;
                                           const vencido = error.confirmed === 1 && error.points >= 50;
+                                          const bar = getErrorBarBlocks(error.points);
 
                                           return (
                                             <button
                                               key={error.id}
                                               type="button"
-                                              onClick={() => setSelectedJournalErrorId((current) => current === error.id ? null : error.id)}
+                                              onClick={() => {
+                                                if (journalErrorLongPressCompleted.current) {
+                                                  journalErrorLongPressCompleted.current = false;
+                                                  return;
+                                                }
+                                                setSelectedJournalErrorId((current) => current === error.id ? null : error.id);
+                                              }}
+                                              onTouchStart={startJournalErrorEditLongPress(error)}
+                                              onTouchEnd={endJournalErrorEditLongPress}
+                                              onTouchCancel={endJournalErrorEditLongPress}
+                                              onMouseDown={startJournalErrorEditLongPress(error)}
+                                              onMouseUp={endJournalErrorEditLongPress}
+                                              onMouseLeave={endJournalErrorEditLongPress}
                                               className={`relative flex min-h-[60px] w-full items-start gap-2 overflow-hidden rounded-lg border p-2 text-left text-xs font-medium transition-all ${state.cardClass} ${state.backgroundClass}`}
                                             >
                                               <span className={`relative flex h-8 w-8 flex-none items-center justify-center rounded-md border ${state.chipClass}`}>
@@ -8316,13 +8413,27 @@ function QuestDiary() {
                                               <div className="min-w-0 flex-1">
                                                 <p className="truncate">{error.nombre}</p>
                                                 {isSelected && (
-                                                  <p className="mt-1 text-[11px] leading-snug text-muted-foreground break-words">
-                                                    {error.confirmed === 0 ? "Pendiente de confirmar" : `${Math.abs(error.points)} / 50${error.points < 0 ? " (en contra)" : ""}${vencido ? " · Vencido" : ""}`}
-                                                  </p>
+                                                  <>
+                                                    <p className="mt-1 text-[11px] leading-snug text-muted-foreground break-words">
+                                                      {error.confirmed === 0 ? "Pendiente de confirmar" : `${Math.abs(error.points)} / 50${error.points < 0 ? " (en contra)" : ""}${vencido ? " · Vencido" : ""}`}
+                                                    </p>
+                                                    {error.confirmed === 1 && (
+                                                      <div className="mt-1.5 w-full h-2 flex gap-0.5">
+                                                        {Array.from({ length: 5 }).map((_, index) => (
+                                                          <div
+                                                            key={index}
+                                                            className={`flex-1 h-full rounded-sm ${
+                                                              index < bar.count ? (bar.color === "red" ? "bg-red-500" : "bg-emerald-500") : "bg-white/10"
+                                                            }`}
+                                                          />
+                                                        ))}
+                                                      </div>
+                                                    )}
+                                                  </>
                                                 )}
                                               </div>
                                               {state.showGlow && (
-                                                <div className="pointer-events-none absolute inset-0 rounded-lg bg-[linear-gradient(135deg,rgba(239,68,68,0.2)_0%,rgba(153,27,27,0.06)_100%)]" />
+                                                <div className="pointer-events-none absolute inset-0 rounded-lg bg-[linear-gradient(135deg,rgba(249,115,22,0.2)_0%,rgba(194,65,12,0.06)_100%)]" />
                                               )}
                                             </button>
                                           );
@@ -8353,6 +8464,62 @@ function QuestDiary() {
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* Mantener presionada una tarjeta de error (tab "Errores") abre esto: editar el nombre o
+        borrarlo directamente. */}
+    <Dialog open={!!editingJournalError} onOpenChange={(open) => { if (!open) setEditingJournalError(null); }}>
+      <DialogContent className="sm:max-w-[400px] border-0 shadow-2xl">
+        <DialogHeader>
+          <DialogTitle className="text-lg font-medium">Editar error</DialogTitle>
+          <DialogDescription className="text-xs text-muted-foreground">
+            Cambiá el nombre o borralo del todo.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label className="text-xs text-muted-foreground uppercase tracking-wide block mb-1">Nombre</Label>
+            <Input
+              value={editJournalErrorNombre}
+              onChange={(e) => setEditJournalErrorNombre(e.target.value.toUpperCase())}
+              className="uppercase border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
+              data-testid="input-edit-journal-error-name"
+              autoFocus
+            />
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground uppercase tracking-wide block mb-1">¿Cómo sí?</Label>
+            <Textarea
+              placeholder="En vez del error, ¿cómo sería la situación que sí querés?"
+              value={editJournalErrorComoSi}
+              onChange={(e) => setEditJournalErrorComoSi(e.target.value)}
+              rows={2}
+              className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+              data-testid="input-edit-journal-error-como-si"
+            />
+          </div>
+        </div>
+        <DialogFooter className="flex gap-2 pt-2 sm:justify-between">
+          <Button
+            variant="destructive"
+            onClick={handleDeleteJournalError}
+            disabled={deleteJournalNodeError.isPending}
+            data-testid="button-delete-journal-error"
+          >
+            <Trash2 className="h-3.5 w-3.5 mr-1" />
+            Borrar
+          </Button>
+          <Button
+            onClick={handleSaveJournalError}
+            disabled={!editJournalErrorNombre.trim() || updateJournalNodeError.isPending}
+            className="border-0"
+            data-testid="button-save-journal-error"
+          >
+            Guardar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
 

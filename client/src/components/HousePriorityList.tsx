@@ -3,7 +3,7 @@ import { useTheme } from "next-themes";
 import { ChevronUp, ChevronDown, ChevronsDown, ChevronsUp, Lock, ShoppingCart } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { playProgressAdvanceSound } from "@/lib/sound";
-import { HOUSE_TYPE_META, getHouseColors, type HouseItem } from "./HouseInventory";
+import { getHouseColors, type HouseItem } from "./HouseInventory";
 
 // Moves the item with `id` one slot up/down among the "missing" items only, by
 // swapping its position with the neighboring missing item inside the full array
@@ -104,7 +104,7 @@ function PriorityRow({
         >
           {item.name}
         </div>
-        <div style={{ fontSize: "9.5px", color: colors.subtitle }}>{HOUSE_TYPE_META[item.type].label}</div>
+        <div style={{ fontSize: "9.5px", color: colors.subtitle }}>{item.group}</div>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>

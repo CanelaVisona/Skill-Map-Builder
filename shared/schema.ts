@@ -259,6 +259,9 @@ export const nodeErrors = pgTable("node_errors", {
   areaId: varchar("area_id"),
   projectId: varchar("project_id"),
   nombre: text("nombre").notNull(),
+  // "¿Cómo sí?" -- en vez del error, cómo sería la situación que sí se quiere. Se completa al
+  // crear el error (o después, al editarlo desde el Journal).
+  comoSi: text("como_si").notNull().default(""),
   points: integer("points").notNull().default(0), // -50 a 50, de a pasos de 10 (+10p / -10p)
   confirmed: integer("confirmed").$type<0 | 1>().notNull().default(0), // 0 = recién detectado, sin confirmar todavía
   // Lista de estrategias para combatir este error -- se arma con el tiempo: cada vez que se
@@ -615,6 +618,7 @@ export const insertNodeErrorSchema = createInsertSchema(nodeErrors)
     confirmed: z.union([z.literal(0), z.literal(1)]).optional().default(0),
     estrategias: z.array(z.string()).optional().default([]),
     disparadores: z.array(z.string()).optional().default([]),
+    comoSi: z.string().optional().default(""),
   });
 export const insertNodeErrorRecordSchema = createInsertSchema(nodeErrorRecords)
   .omit({ id: true, createdAt: true })

@@ -45,7 +45,35 @@ const TIME_SLOT_OPTIONS: { key: TimeSlot; label: string }[] = [
   { key: "night", label: "Noche" },
 ];
 
-type PanelType = "main" | "history" | "detail" | "add" | "edit" | "archived" | "archived-detail";
+type PanelType = "main" | "history" | "detail" | "add" | "edit" | "skill-picker" | "archived" | "archived-detail";
+
+// Skills disponibles para linkear en un área: legacy (localStorage) + globales (API). Se
+// reusa desde los paneles de alta/edición y desde el selector rápido de skills de la tarjeta.
+async function fetchSkillsForArea(areaId: string): Promise<any[]> {
+  const legacySkillsData: Record<string, { name: string; currentXp: number; level: number }> = {};
+  const stored = localStorage.getItem("skillsProgress");
+  if (stored) {
+    try {
+      Object.assign(legacySkillsData, JSON.parse(stored));
+    } catch (e) {
+      console.error("Error parsing legacy skills:", e);
+    }
+  }
+
+  const res = await fetch(`/api/global-skills/area/${areaId}`);
+  const globalSkillsData = res.ok ? await res.json() : [];
+
+  return [
+    ...Object.entries(legacySkillsData).map(([name, skill]) => ({
+      id: `legacy-${name}`,
+      name,
+      currentXp: skill.currentXp,
+      level: skill.level,
+      isLegacy: true,
+    })),
+    ...globalSkillsData,
+  ];
+}
 
 // Helper function to get local date string in YYYY-MM-DD format (not UTC)
 function getLocalDateString(date: Date = new Date()): string {
@@ -191,6 +219,11 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
   const [editHabitSkillIds, setEditHabitSkillIds] = useState<string[]>([]);
   const [newHabitBodyLinks, setNewHabitBodyLinks] = useState<BodyLink[]>([]);
   const [editHabitBodyLinks, setEditHabitBodyLinks] = useState<BodyLink[]>([]);
+  // Selector rápido de skills (tocar un "+ skill" en la tarjeta): solo el picker, sin el
+  // resto del formulario de edición del hábito.
+  const [skillPickerHabitId, setSkillPickerHabitId] = useState<string | null>(null);
+  const [skillPickerSkillIds, setSkillPickerSkillIds] = useState<string[]>([]);
+  const [skillPickerAreaSkills, setSkillPickerAreaSkills] = useState<any[]>([]);
   const { theme } = useTheme();
   const queryClient = useQueryClient();
   const { globalSkills, refetchGlobalSkills } = useSkillTree();
@@ -291,93 +324,29 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
   const [editPanelSkills, setEditPanelSkills] = useState<any[]>([]);
 
   useEffect(() => {
-    const loadSkillsByArea = async () => {
-      if (!newHabitAreaId) {
-        setNewPanelSkills([]);
-        return;
-      }
-      try {
-        // Load legacy skills from localStorage
-        const legacySkillsData: Record<string, { name: string; currentXp: number; level: number }> = {};
-        const stored = localStorage.getItem("skillsProgress");
-        if (stored) {
-          try {
-            Object.assign(legacySkillsData, JSON.parse(stored));
-          } catch (e) {
-            console.error("Error parsing legacy skills:", e);
-          }
-        }
-
-        // Load global skills from API
-        const res = await fetch(`/api/global-skills/area/${newHabitAreaId}`);
-        const globalSkillsData = res.ok ? await res.json() : [];
-
-        // Combine: legacy skills first, then global skills
-        const combined = [
-          // Convert legacy skills to same format as global skills
-          ...Object.entries(legacySkillsData).map(([name, skill]) => ({
-            id: `legacy-${name}`,
-            name: name,
-            currentXp: skill.currentXp,
-            level: skill.level,
-            isLegacy: true,
-          })),
-          // Add global skills
-          ...globalSkillsData,
-        ];
-
-        setNewPanelSkills(combined);
-      } catch (error) {
+    if (!newHabitAreaId) {
+      setNewPanelSkills([]);
+      return;
+    }
+    fetchSkillsForArea(newHabitAreaId)
+      .then(setNewPanelSkills)
+      .catch((error) => {
         console.error("Error loading skills:", error);
         setNewPanelSkills([]);
-      }
-    };
-    loadSkillsByArea();
+      });
   }, [newHabitAreaId]);
 
   useEffect(() => {
-    const loadSkillsByArea = async () => {
-      if (!editHabitAreaId) {
-        setEditPanelSkills([]);
-        return;
-      }
-      try {
-        // Load legacy skills from localStorage
-        const legacySkillsData: Record<string, { name: string; currentXp: number; level: number }> = {};
-        const stored = localStorage.getItem("skillsProgress");
-        if (stored) {
-          try {
-            Object.assign(legacySkillsData, JSON.parse(stored));
-          } catch (e) {
-            console.error("Error parsing legacy skills:", e);
-          }
-        }
-
-        // Load global skills from API
-        const res = await fetch(`/api/global-skills/area/${editHabitAreaId}`);
-        const globalSkillsData = res.ok ? await res.json() : [];
-
-        // Combine: legacy skills first, then global skills
-        const combined = [
-          // Convert legacy skills to same format as global skills
-          ...Object.entries(legacySkillsData).map(([name, skill]) => ({
-            id: `legacy-${name}`,
-            name: name,
-            currentXp: skill.currentXp,
-            level: skill.level,
-            isLegacy: true,
-          })),
-          // Add global skills
-          ...globalSkillsData,
-        ];
-
-        setEditPanelSkills(combined);
-      } catch (error) {
+    if (!editHabitAreaId) {
+      setEditPanelSkills([]);
+      return;
+    }
+    fetchSkillsForArea(editHabitAreaId)
+      .then(setEditPanelSkills)
+      .catch((error) => {
         console.error("Error loading skills:", error);
         setEditPanelSkills([]);
-      }
-    };
-    loadSkillsByArea();
+      });
   }, [editHabitAreaId]);
 
   // Transform habits with their records
@@ -672,6 +641,22 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       showPanel("edit");
     }
   };
+  const showSkillPicker = (habitId: string) => {
+    const habit = habitsWithRecords.find((h) => h.id === habitId);
+    if (!habit) return;
+    setSkillPickerHabitId(habitId);
+    setSkillPickerSkillIds(habit.skillIds?.length ? habit.skillIds : habit.skillId ? [habit.skillId] : []);
+    setSkillPickerAreaSkills([]);
+    if (habit.areaId) {
+      fetchSkillsForArea(habit.areaId)
+        .then(setSkillPickerAreaSkills)
+        .catch((error) => {
+          console.error("Error loading skills:", error);
+          setSkillPickerAreaSkills([]);
+        });
+    }
+    showPanel("skill-picker");
+  };
   const resetForm = () => {
     setNewHabitEmoji("");
     setNewHabitName("");
@@ -717,6 +702,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
               onArchived={showArchived}
               onAddClick={showAdd}
               onEditClick={showEdit}
+              onSkillPickerClick={showSkillPicker}
               onToggle={(habitId) => {
                 const today = getLocalDateString();
                 const habit = habitsWithRecords.find((h) => h.id === habitId);
@@ -937,6 +923,47 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
             />
           )}
 
+          {currentPanel === "skill-picker" && skillPickerHabitId && (() => {
+            const habit = habitsWithRecords.find((h) => h.id === skillPickerHabitId);
+            if (!habit) return null;
+            return (
+              <SkillPickerPanel
+                habitEmoji={habit.emoji}
+                habitName={habit.name}
+                skills={skillPickerAreaSkills}
+                skillIds={skillPickerSkillIds}
+                onSkillIdsChange={setSkillPickerSkillIds}
+                areas={areas}
+                areaId={habit.areaId ?? null}
+                onBack={showMain}
+                onSave={async () => {
+                  try {
+                    await updateHabitMutation.mutateAsync({
+                      id: habit.id,
+                      emoji: habit.emoji,
+                      name: habit.name,
+                      endDate: habit.endDate || undefined,
+                      areaId: habit.areaId,
+                      projectId: habit.projectId,
+                      skillId: skillPickerSkillIds[0] ?? null,
+                      skillIds: skillPickerSkillIds,
+                      bodyLinks: habit.bodyLinks,
+                      scheduledDays: habit.scheduledDays,
+                      habitType: habit.habitType,
+                      defaultTimeSlots: Array.isArray(habit.defaultTimeSlots) ? (habit.defaultTimeSlots as TimeSlot[]) : [],
+                      minMinutes: habit.minMinutes,
+                    });
+                    showMain();
+                  } catch (error: any) {
+                    console.error("Error updating habit skills:", error);
+                    alert(`❌ Error: ${error?.message || "Intenta de nuevo"}`);
+                  }
+                }}
+                isLoading={updateHabitMutation.isPending}
+              />
+            );
+          })()}
+
           {currentPanel === "archived" && (
             <ArchivedPanel
               habits={habitsWithRecords.filter((h) => h.endDate && h.endDate < getLocalDateString())}
@@ -1034,6 +1061,7 @@ function HabitCard({
   onToggle,
   onDetailed,
   onEditClick,
+  onSkillPickerClick,
   onPressStart,
   onPressEnd,
 }: {
@@ -1045,6 +1073,7 @@ function HabitCard({
   onToggle: (habitId: string) => void;
   onDetailed: (id: string) => void;
   onEditClick: (id: string) => void;
+  onSkillPickerClick: (id: string) => void;
   onPressStart: (habitId: string) => void;
   onPressEnd: (habitId: string) => void;
 }) {
@@ -1236,24 +1265,113 @@ function HabitCard({
       </div>
 
       {/* Skills y componentes corporales linkeados: cada uno como "+ nombre", sin
-          etiqueta de sección. Desaparecen en cuanto el hábito se confirma hoy. */}
+          etiqueta de sección. Desaparecen en cuanto el hábito se confirma hoy. Tocar un
+          skill abre solo el selector de skills (no el formulario entero); tocar un
+          componente corporal sigue abriendo la edición completa del hábito. */}
       {(linkedSkillNames.length > 0 || linkedBodyNames.length > 0) && !isToday && (
-        <div
-          onClick={(e) => {
-            e.stopPropagation();
-            onEditClick(habit.id);
-          }}
-          className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs font-medium text-foreground hover:text-primary transition-colors cursor-pointer"
-        >
-          {[...linkedSkillNames, ...linkedBodyNames].map((name, i) => (
-            <span key={name} className="flex items-center gap-x-2">
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs font-medium text-foreground">
+          {[
+            ...linkedSkillNames.map((name) => ({ name, type: "skill" as const })),
+            ...linkedBodyNames.map((name) => ({ name, type: "body" as const })),
+          ].map((item, i) => (
+            <span key={`${item.type}-${item.name}`} className="flex items-center gap-x-2">
               {i > 0 && <span className="text-muted-foreground">•</span>}
-              <span>+ {name}</span>
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (item.type === "skill") onSkillPickerClick(habit.id);
+                  else onEditClick(habit.id);
+                }}
+                className="cursor-pointer hover:text-primary transition-colors"
+              >
+                + {item.name}
+              </span>
             </span>
           ))}
         </div>
       )}
 
+    </div>
+  );
+}
+
+// Panel compacto que muestra solo el selector de skills de un hábito (sin el resto del
+// formulario de edición), abierto al tocar un "+ skill" en la tarjeta.
+function SkillPickerPanel({
+  habitEmoji,
+  habitName,
+  skills,
+  skillIds,
+  onSkillIdsChange,
+  areas,
+  areaId,
+  onBack,
+  onSave,
+  isLoading,
+}: {
+  habitEmoji: string;
+  habitName: string;
+  skills: any[];
+  skillIds: string[];
+  onSkillIdsChange: (ids: string[]) => void;
+  areas: Area[];
+  areaId: string | null;
+  onBack: () => void;
+  onSave: () => void;
+  isLoading: boolean;
+}) {
+  return (
+    <div className="w-full">
+      {/* Header */}
+      <div className="border-b border-border/30 px-4 sm:px-6 py-5">
+        <div className="flex items-start gap-3 sm:gap-4">
+          <button
+            onClick={onBack}
+            disabled={isLoading}
+            className="flex-shrink-0 mt-0.5 sm:mt-1 rounded hover:bg-muted p-1.5 sm:p-1 transition-colors disabled:opacity-50 h-8 w-8 sm:h-auto sm:w-auto touch-manipulation"
+          >
+            <ArrowLeft className="h-5 w-5 sm:h-5 sm:w-5 text-muted-foreground" />
+          </button>
+          <div className="min-w-0">
+            <h2 className="font-black text-lg sm:text-xl text-foreground truncate">
+              {habitEmoji} {habitName}
+            </h2>
+            <p className="mt-1 text-xs sm:text-sm text-muted-foreground">Skills linkeados</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="px-4 sm:px-6 py-4">
+        <SkillLinkPicker
+          skills={skills}
+          value={skillIds}
+          onChange={onSkillIdsChange}
+          disabled={isLoading}
+          emptyLabel="Sin skills disponibles"
+          areas={areas}
+          currentAreaId={areaId}
+        />
+      </div>
+
+      {/* Footer */}
+      <div className="border-t border-border/30 px-4 sm:px-6 py-3.5 sm:py-4 flex gap-3">
+        <Button
+          variant="outline"
+          onClick={onBack}
+          disabled={isLoading}
+          className="flex-1 h-10 sm:h-auto touch-manipulation"
+        >
+          Cancelar
+        </Button>
+        <Button
+          onClick={onSave}
+          disabled={isLoading}
+          className="flex-1 h-10 sm:h-auto bg-purple-600 hover:bg-purple-700 text-white touch-manipulation"
+        >
+          {isLoading ? "Guardando..." : "Guardar"}
+        </Button>
+      </div>
     </div>
   );
 }
@@ -1266,6 +1384,7 @@ function MainPanel({
   onArchived,
   onAddClick,
   onEditClick,
+  onSkillPickerClick,
   onToggle,
   isLoading,
 }: {
@@ -1276,6 +1395,7 @@ function MainPanel({
   onArchived: () => void;
   onAddClick: () => void;
   onEditClick: (id: string) => void;
+  onSkillPickerClick: (id: string) => void;
   onToggle: (habitId: string) => void;
   isLoading: boolean;
 }) {
@@ -1456,6 +1576,7 @@ function MainPanel({
                     onToggle={onToggle}
                     onDetailed={onDetailed}
                     onEditClick={onEditClick}
+                    onSkillPickerClick={onSkillPickerClick}
                     onPressStart={handleHabitPressStart}
                     onPressEnd={handleHabitPressEnd}
                   />
@@ -1479,6 +1600,7 @@ function MainPanel({
                     onToggle={onToggle}
                     onDetailed={onDetailed}
                     onEditClick={onEditClick}
+                    onSkillPickerClick={onSkillPickerClick}
                     onPressStart={handleHabitPressStart}
                     onPressEnd={handleHabitPressEnd}
                   />
@@ -1502,6 +1624,7 @@ function MainPanel({
                     onToggle={onToggle}
                     onDetailed={onDetailed}
                     onEditClick={onEditClick}
+                    onSkillPickerClick={onSkillPickerClick}
                     onPressStart={handleHabitPressStart}
                     onPressEnd={handleHabitPressEnd}
                   />
