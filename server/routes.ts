@@ -3306,7 +3306,7 @@ export async function registerRoutes(
     type: string;
     color: string;
     status: "have" | "missing";
-    style: "deporte" | "casual" | "salida";
+    style: "deporte" | "casual" | "salida" | "entrecasa";
     comfort: number;
     condition: number;
     styleScore: number;
@@ -3332,7 +3332,10 @@ export async function registerRoutes(
         // "style", "comfort", "condition" and "styleScore" are additive on top of
         // the original schema — default them instead of dropping the item, so
         // prendas saved before these fields existed still load.
-        const style = clothing.style === "deporte" || clothing.style === "casual" || clothing.style === "salida" ? clothing.style : "casual";
+        const style =
+          clothing.style === "deporte" || clothing.style === "casual" || clothing.style === "salida" || clothing.style === "entrecasa"
+            ? clothing.style
+            : "casual";
         const comfort = isValidRating(clothing.comfort) ? clothing.comfort : 3;
         const condition = isValidRating(clothing.condition) ? clothing.condition : 3;
         const styleScore = isValidRating(clothing.styleScore) ? clothing.styleScore : 3;
@@ -3355,7 +3358,7 @@ export async function registerRoutes(
         type: string;
         color: string;
         status: "have" | "missing";
-        style: "deporte" | "casual" | "salida";
+        style: "deporte" | "casual" | "salida" | "entrecasa";
         comfort: number;
         condition: number;
         styleScore: number;
@@ -3417,6 +3420,7 @@ export async function registerRoutes(
   function sanitizeHouseItems(input: unknown): Array<{
     id: number;
     name: string;
+    emoji: string;
     type: string;
     status: "have" | "missing";
     utility: number;
@@ -3443,10 +3447,14 @@ export async function registerRoutes(
         const utility = isValidRating(house.utility) ? house.utility : 3;
         const condition = isValidRating(house.condition) ? house.condition : 3;
         const importance = isValidRating(house.importance) ? house.importance : 3;
+        // "emoji" is additive on top of the original schema -- default to a generic
+        // box so items saved before this field existed still round-trip cleanly.
+        const emoji = typeof house.emoji === "string" && house.emoji.trim() ? house.emoji.trim() : "📦";
 
         return {
           id: house.id,
           name: house.name,
+          emoji,
           type: house.type,
           status: house.status,
           utility,
@@ -3457,6 +3465,7 @@ export async function registerRoutes(
       .filter((item): item is {
         id: number;
         name: string;
+        emoji: string;
         type: string;
         status: "have" | "missing";
         utility: number;
@@ -3505,6 +3514,77 @@ export async function registerRoutes(
       const created = await storage.createProfileAboutEntry({
         userId: req.userId!,
         name: HOUSE_INVENTORY_STORAGE_NAME,
+        description: JSON.stringify(items),
+      });
+      res.json({ ok: true, id: created.id });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // House Repairs - cross-device sync (the "Lista de arreglos" tab inside the
+  // home-needs modal)
+  const HOUSE_REPAIRS_STORAGE_NAME = "__house_repairs_items__";
+
+  function sanitizeHouseRepairs(input: unknown): Array<{
+    id: number;
+    text: string;
+    done: boolean;
+  }> {
+    if (!Array.isArray(input)) return [];
+
+    return input
+      .map((item) => {
+        const repair = item as Record<string, unknown>;
+        if (typeof repair.id !== "number" || typeof repair.text !== "string" || typeof repair.done !== "boolean") {
+          return null;
+        }
+
+        return { id: repair.id, text: repair.text, done: repair.done };
+      })
+      .filter((item): item is { id: number; text: string; done: boolean } => item !== null);
+  }
+
+  app.get("/api/house-repairs/items", requireAuth, async (req, res) => {
+    try {
+      const entries = await storage.getProfileAboutEntries(req.userId!);
+      const storageEntry = entries.find((entry) => entry.name === HOUSE_REPAIRS_STORAGE_NAME);
+
+      if (!storageEntry) {
+        res.json([]);
+        return;
+      }
+
+      let parsed: unknown = [];
+      try {
+        parsed = JSON.parse(storageEntry.description || "[]");
+      } catch {
+        parsed = [];
+      }
+
+      res.json(sanitizeHouseRepairs(parsed));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/house-repairs/items", requireAuth, async (req, res) => {
+    try {
+      const items = sanitizeHouseRepairs(req.body?.items);
+      const entries = await storage.getProfileAboutEntries(req.userId!);
+      const storageEntry = entries.find((entry) => entry.name === HOUSE_REPAIRS_STORAGE_NAME);
+
+      if (storageEntry) {
+        const updated = await storage.updateProfileAboutEntry(storageEntry.id, {
+          description: JSON.stringify(items),
+        });
+        res.json({ ok: true, id: updated?.id ?? storageEntry.id });
+        return;
+      }
+
+      const created = await storage.createProfileAboutEntry({
+        userId: req.userId!,
+        name: HOUSE_REPAIRS_STORAGE_NAME,
         description: JSON.stringify(items),
       });
       res.json({ ok: true, id: created.id });
@@ -4312,7 +4392,22 @@ export async function registerRoutes(
         return;
       }
 
-      const { record, pointsBefore, pointsAfter } = await storage.createNodeErrorRecord(req.params.id, delta, req.userId);
+      // Sumar xp siempre va con una estrategia (elegida de las ya guardadas, o una nueva
+      // recién cargada); restar xp va igual, pero con un disparador.
+      const rawEstrategia = typeof req.body?.estrategia === "string" ? req.body.estrategia.trim() : "";
+      const rawDisparador = typeof req.body?.disparador === "string" ? req.body.disparador.trim() : "";
+      if (delta === 10 && !rawEstrategia) {
+        res.status(400).json({ message: "Elegí o cargá una estrategia para sumar xp" });
+        return;
+      }
+      if (delta === -10 && !rawDisparador) {
+        res.status(400).json({ message: "Elegí o cargá un disparador para restar xp" });
+        return;
+      }
+      const estrategia = delta === 10 ? rawEstrategia : null;
+      const disparador = delta === -10 ? rawDisparador : null;
+
+      const { record, pointsBefore, pointsAfter } = await storage.createNodeErrorRecord(req.params.id, delta, req.userId, estrategia, disparador);
 
       // "Vencido": la barra llega a 50 cruzando desde abajo. Si ya estaba en 50 y se vuelve a
       // tocar 50 (p.ej. -10 y +10 seguidos) no se repite el pop-up.
@@ -4324,6 +4419,8 @@ export async function registerRoutes(
           errorName: errorBefore.nombre,
           pointsBefore,
           pointsAfter,
+          estrategia,
+          disparador,
         },
         vencido,
       });

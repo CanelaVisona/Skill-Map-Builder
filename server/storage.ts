@@ -186,7 +186,7 @@ export interface IStorage {
   createNodeError(entry: InsertNodeError): Promise<NodeError>;
   updateNodeError(id: string, entry: Partial<InsertNodeError>): Promise<NodeError | undefined>;
   deleteNodeError(id: string): Promise<void>;
-  createNodeErrorRecord(errorId: string, delta: 10 | -10, userId?: string | null): Promise<{ record: NodeErrorRecord; pointsBefore: number; pointsAfter: number }>;
+  createNodeErrorRecord(errorId: string, delta: 10 | -10, userId?: string | null, estrategia?: string | null, disparador?: string | null): Promise<{ record: NodeErrorRecord; pointsBefore: number; pointsAfter: number }>;
 
   // Profile - About Entries
   getProfileAboutEntries(userId: string): Promise<ProfileAboutEntry[]>;
@@ -1900,18 +1900,19 @@ export class DbStorage implements IStorage {
     await db.delete(nodeErrors).where(eq(nodeErrors.id, id));
   }
 
-  // Aplica el delta a los puntos del error (clamp 0-50), deja registrado el movimiento y
-  // devuelve el antes/después para que la ruta arme el pop-up de progreso y detecte "vencido"
-  // (cruzar el techo de 50 desde abajo).
-  async createNodeErrorRecord(errorId: string, delta: 10 | -10, userId?: string | null): Promise<{ record: NodeErrorRecord; pointsBefore: number; pointsAfter: number }> {
+  // Aplica el delta a los puntos del error (clamp -50 a 50, firmado -- ver getErrorBarBlocks en
+  // ErrorProgressPopup.tsx), deja registrado el movimiento -- con la estrategia usada en un
+  // +10, o el disparador en un -10 -- y devuelve el antes/después para que la ruta arme el
+  // pop-up de progreso y detecte "vencido" (cruzar el techo de 50 desde abajo).
+  async createNodeErrorRecord(errorId: string, delta: 10 | -10, userId?: string | null, estrategia?: string | null, disparador?: string | null): Promise<{ record: NodeErrorRecord; pointsBefore: number; pointsAfter: number }> {
     const existing = await this.getNodeError(errorId);
     const pointsBefore = existing?.points ?? 0;
-    const pointsAfter = Math.min(50, Math.max(0, pointsBefore + delta));
+    const pointsAfter = Math.min(50, Math.max(-50, pointsBefore + delta));
 
     const id = randomUUID();
     const [record] = await db
       .insert(nodeErrorRecords)
-      .values({ id, errorId, userId: userId ?? null, delta } as any)
+      .values({ id, errorId, userId: userId ?? null, delta, estrategia: estrategia ?? null, disparador: disparador ?? null } as any)
       .returning();
 
     await db

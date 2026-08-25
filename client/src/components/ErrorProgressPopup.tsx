@@ -5,7 +5,12 @@ import { useEffect } from "react";
 import { usePopupPalette } from "@/lib/popup-theme";
 import { playProgressAdvanceSound, playBugLossSound } from "@/lib/sound";
 
-// 5 bloques de 10 puntos cada uno = barra de 0 a 50, misma cuadrícula visual que BugProgressPopup.
+// 5 bloques de 10 puntos cada uno. A diferencia de la barra de bugs (0 a 5), acá el valor es
+// firmado: de -50 a +50. Sumar xp construye la barra en VERDE (el objetivo es completarla
+// entera para superar el error); restar xp le quita el último bloque ganado -- y si ya no
+// quedaba ningún bloque verde, sigue "cayendo" hacia el rojo (la barra se llena de rojo en
+// sentido contrario). Sumar xp con la barra en rojo primero le va sacando bloques rojos antes
+// de volver a construir en verde. Ver getErrorBarBlocks más abajo.
 export const ERROR_PROGRESS_BLOCKS = 5;
 export const ERROR_POINTS_PER_BLOCK = 10;
 
@@ -15,6 +20,12 @@ export interface ErrorProgressSnapshot {
   errorName: string;
   pointsBefore: number;
   pointsAfter: number;
+  // Solo presente en un +10 -- la estrategia elegida (o recién cargada) en el picker que se
+  // abre al sumar xp. null/undefined en un -10.
+  estrategia?: string | null;
+  // Espejo de estrategia, pero para un -10 -- el disparador elegido (o recién cargado) en el
+  // mismo picker. null/undefined en un +10.
+  disparador?: string | null;
 }
 
 interface ErrorProgressPopupProps {
@@ -22,11 +33,21 @@ interface ErrorProgressPopupProps {
   onClose: () => void;
 }
 
-// A diferencia de los bugs (donde subir la barra es la victoria), acá subir puntos es que el
-// error empeora -- así que el color de "crece" es de alarma y el de "baja" es de alivio.
-const BAR_COLOR = "#ef4444";
-const UP_COLOR = "#ef4444";
-const DOWN_COLOR = "#2ecc2e";
+export const ERROR_GREEN = "#2ecc2e";
+export const ERROR_RED = "#ef4444";
+
+// Dado el valor firmado actual de un error (-50..50), cuántos bloques mostrar y de qué color.
+// Un valor positivo se ve como bloques verdes creciendo hacia superar el error; uno negativo,
+// como bloques rojos. En 0 la barra está vacía (ninguno de los dos colores).
+export function getErrorBarBlocks(points: number): { color: "green" | "red" | "empty"; count: number } {
+  if (points > 0) {
+    return { color: "green", count: Math.min(ERROR_PROGRESS_BLOCKS, Math.round(points / ERROR_POINTS_PER_BLOCK)) };
+  }
+  if (points < 0) {
+    return { color: "red", count: Math.min(ERROR_PROGRESS_BLOCKS, Math.round(-points / ERROR_POINTS_PER_BLOCK)) };
+  }
+  return { color: "empty", count: 0 };
+}
 
 export function ErrorProgressPopup({ snapshot, onClose }: ErrorProgressPopupProps) {
   const palette = usePopupPalette();
@@ -50,13 +71,22 @@ export function ErrorProgressPopup({ snapshot, onClose }: ErrorProgressPopupProp
     return null;
   }
 
-  const { errorName, pointsBefore, pointsAfter } = snapshot;
-  const blocksBefore = Math.min(ERROR_PROGRESS_BLOCKS, Math.round(pointsBefore / ERROR_POINTS_PER_BLOCK));
-  const blocksAfter = Math.min(ERROR_PROGRESS_BLOCKS, Math.round(pointsAfter / ERROR_POINTS_PER_BLOCK));
+  const { errorName, pointsBefore, pointsAfter, estrategia, disparador } = snapshot;
+  const delta = pointsAfter - pointsBefore;
+
+  const before = getErrorBarBlocks(pointsBefore);
+  const after = getErrorBarBlocks(pointsAfter);
+  // Un solo +-10/-10 nunca puede pasar de un lado al otro del cero en un solo paso (siempre pasa
+  // por 0 primero), así que como mucho uno de los dos colores tiene bloques en este snapshot --
+  // ese es el que se anima (el otro lado se trata como 0 bloques).
+  const barColor: "green" | "red" = before.color !== "empty" ? before.color : after.color !== "empty" ? after.color : "green";
+  const blocksBefore = before.color === barColor ? before.count : 0;
+  const blocksAfter = after.color === barColor ? after.count : 0;
+
   const increasing = blocksAfter > blocksBefore;
   const decreasing = blocksAfter < blocksBefore;
-  const delta = pointsAfter - pointsBefore;
-  const directionColor = increasing ? UP_COLOR : decreasing ? DOWN_COLOR : palette.textDim;
+  const fillColor = barColor === "red" ? ERROR_RED : ERROR_GREEN;
+  const directionColor = increasing ? ERROR_GREEN : decreasing ? ERROR_RED : palette.textDim;
   const staticFilled = Math.min(blocksBefore, blocksAfter);
 
   return createPortal(
@@ -97,16 +127,22 @@ export function ErrorProgressPopup({ snapshot, onClose }: ErrorProgressPopupProp
                   <polygon
                     points="16,2 30,16 16,30 2,16"
                     fill={palette.surfaceInset}
-                    stroke={BAR_COLOR}
+                    stroke={fillColor}
                     strokeWidth="1.5"
                   />
                 </svg>
-                <OctagonAlert className="relative h-4 w-4" style={{ color: BAR_COLOR }} strokeWidth={2.1} />
+                <OctagonAlert className="relative h-4 w-4" style={{ color: fillColor }} strokeWidth={2.1} />
               </div>
 
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[13px] font-medium" style={{ color: palette.text }}>
-                  {delta > 0 ? `+${delta}p en ${errorName}` : `${delta}p en ${errorName}`}
+                <div className="text-[13px] font-medium leading-snug break-words" style={{ color: palette.text }}>
+                  {delta > 0
+                    ? (estrategia
+                        ? `+${delta} xp en ${errorName} con la estrategia: ${estrategia}`
+                        : `+${delta} xp en ${errorName}`)
+                    : (disparador
+                        ? `${delta} xp en ${errorName} con el disparador: ${disparador}`
+                        : `${delta} xp en ${errorName}`)}
                 </div>
               </div>
             </div>
@@ -131,7 +167,7 @@ export function ErrorProgressPopup({ snapshot, onClose }: ErrorProgressPopupProp
                   return (
                     <div key={index} className="flex-1 h-full overflow-hidden rounded-sm" style={{ backgroundColor: palette.blockEmpty }}>
                       {isStaticFilled && (
-                        <div style={{ width: "100%", height: "100%", backgroundColor: BAR_COLOR }} />
+                        <div style={{ width: "100%", height: "100%", backgroundColor: fillColor }} />
                       )}
 
                       {isGrowing && (
@@ -143,12 +179,15 @@ export function ErrorProgressPopup({ snapshot, onClose }: ErrorProgressPopupProp
                             ease: [0.4, 0, 0.2, 1],
                             delay: (index - blocksBefore) * 0.12,
                           }}
-                          style={{ height: "100%", backgroundColor: UP_COLOR }}
+                          style={{ height: "100%", backgroundColor: fillColor }}
                         />
                       )}
 
                       {isShrinking && (
                         <motion.div
+                          // El bloque que se pierde no solo se vacía: cae, como la muerte de
+                          // Mario -- mismo trato tanto si es un bloque verde que se pierde al
+                          // restar xp, como si es el último bloque rojo que se saca al sumar.
                           initial={{ y: 0, opacity: 1 }}
                           animate={{ y: 20, opacity: 0 }}
                           transition={{
@@ -156,7 +195,7 @@ export function ErrorProgressPopup({ snapshot, onClose }: ErrorProgressPopupProp
                             ease: [0.4, 0, 1, 1],
                             delay: 0.15 + (blocksBefore - 1 - index) * 0.12,
                           }}
-                          style={{ width: "100%", height: "100%", backgroundColor: DOWN_COLOR }}
+                          style={{ width: "100%", height: "100%", backgroundColor: fillColor }}
                         />
                       )}
                     </div>
@@ -165,7 +204,7 @@ export function ErrorProgressPopup({ snapshot, onClose }: ErrorProgressPopupProp
               </div>
 
               <div className="mt-2 flex items-center justify-between text-[9px]" style={{ color: palette.textDim }}>
-                <span>{pointsAfter} / 50</span>
+                <span>{Math.abs(pointsAfter)} / 50{pointsAfter < 0 ? " (en contra)" : ""}</span>
               </div>
             </div>
           </motion.div>

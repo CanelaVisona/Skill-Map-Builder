@@ -22,6 +22,7 @@ import NecesidadesCasa from "../components/NecesidadesCasa";
 import ClothingInventory from "../components/ClothingInventory";
 import HouseInventory, { useHouseInventoryItems } from "../components/HouseInventory";
 import HousePriorityList from "../components/HousePriorityList";
+import HouseRepairsList from "../components/HouseRepairsList";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Swords, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt, OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -6679,6 +6680,7 @@ const HOME_NEEDS_TABS = [
   { key: "necesidades", label: "Necesidades de casa" },
   { key: "inventario", label: "Inventario" },
   { key: "prioridades", label: "Lista de prioridades" },
+  { key: "arreglos", label: "Lista de arreglos" },
 ] as const;
 
 type HomeNeedsTabKey = (typeof HOME_NEEDS_TABS)[number]["key"];
@@ -6737,6 +6739,7 @@ function HomeNeedsModalWrapper({ open, onOpenChange }: { open: boolean; onOpenCh
               {activeTab === "necesidades" && <NecesidadesCasa />}
               {activeTab === "inventario" && <HouseInventory items={houseItems} setItems={setHouseItems} />}
               {activeTab === "prioridades" && <HousePriorityList items={houseItems} setItems={setHouseItems} />}
+              {activeTab === "arreglos" && <HouseRepairsList />}
             </div>
           </motion.div>
         </motion.div>
@@ -8314,7 +8317,7 @@ function QuestDiary() {
                                                 <p className="truncate">{error.nombre}</p>
                                                 {isSelected && (
                                                   <p className="mt-1 text-[11px] leading-snug text-muted-foreground break-words">
-                                                    {error.confirmed === 0 ? "Pendiente de confirmar" : `${error.points} / 50${vencido ? " · Vencido" : ""}`}
+                                                    {error.confirmed === 0 ? "Pendiente de confirmar" : `${Math.abs(error.points)} / 50${error.points < 0 ? " (en contra)" : ""}${vencido ? " · Vencido" : ""}`}
                                                   </p>
                                                 )}
                                               </div>

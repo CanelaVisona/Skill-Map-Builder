@@ -87,6 +87,10 @@ export type HouseItem = {
   id: number;
   name: string;
   type: HouseItemType;
+  // Chosen freely when registering the object (defaults to the category's emoji
+  // but can be overridden), independent of `type` — `type` still drives grouping
+  // and filters, this is purely the icon shown for this specific object.
+  emoji: string;
   status: HouseStatus;
   // 1-5 "bloquecitos" ratings, same idea as the clothing inventory — utility (how
   // useful/needed it is), condition (how worn/new it is) and importance (how much
@@ -100,12 +104,12 @@ export type HouseItem = {
 const now = Date.now();
 
 export const INITIAL_HOUSE_ITEMS: HouseItem[] = [
-  { id: now - 6, name: "Juego de ollas", type: "ollas", status: "have", utility: 5, condition: 4, importance: 5 },
-  { id: now - 5, name: "Heladera", type: "heladera", status: "have", utility: 5, condition: 4, importance: 5 },
-  { id: now - 4, name: "Sofá", type: "sofa", status: "missing", utility: 4, condition: 3, importance: 4 },
-  { id: now - 3, name: "Aspiradora", type: "limpieza", status: "missing", utility: 4, condition: 3, importance: 3 },
-  { id: now - 2, name: "Mesa de living", type: "mesa", status: "missing", utility: 3, condition: 3, importance: 3 },
-  { id: now - 1, name: "Cortina de baño", type: "ducha", status: "missing", utility: 3, condition: 3, importance: 2 },
+  { id: now - 6, name: "Juego de ollas", type: "ollas", emoji: HOUSE_TYPE_META.ollas.emoji, status: "have", utility: 5, condition: 4, importance: 5 },
+  { id: now - 5, name: "Heladera", type: "heladera", emoji: HOUSE_TYPE_META.heladera.emoji, status: "have", utility: 5, condition: 4, importance: 5 },
+  { id: now - 4, name: "Sofá", type: "sofa", emoji: HOUSE_TYPE_META.sofa.emoji, status: "missing", utility: 4, condition: 3, importance: 4 },
+  { id: now - 3, name: "Aspiradora", type: "limpieza", emoji: HOUSE_TYPE_META.limpieza.emoji, status: "missing", utility: 4, condition: 3, importance: 3 },
+  { id: now - 2, name: "Mesa de living", type: "mesa", emoji: HOUSE_TYPE_META.mesa.emoji, status: "missing", utility: 3, condition: 3, importance: 3 },
+  { id: now - 1, name: "Cortina de baño", type: "ducha", emoji: HOUSE_TYPE_META.ducha.emoji, status: "missing", utility: 3, condition: 3, importance: 2 },
 ];
 
 function isValidStatus(value: unknown): value is HouseStatus {
@@ -126,10 +130,15 @@ export function sanitizeHouseItems(input: unknown): HouseItem[] | null {
         return null;
       }
 
+      // "emoji" is additive on top of the original schema — items saved before
+      // this field existed fall back to their category's default emoji.
+      const emoji = typeof raw.emoji === "string" && raw.emoji.trim() ? raw.emoji.trim() : HOUSE_TYPE_META[raw.type].emoji;
+
       return {
         id: raw.id,
         name: raw.name,
         type: raw.type,
+        emoji,
         status: raw.status,
         utility: isValidRating(raw.utility) ? raw.utility : 3,
         condition: isValidRating(raw.condition) ? raw.condition : 3,
@@ -287,6 +296,7 @@ function useLongPress<T extends HTMLElement>(onLongPress: () => void, { delay = 
 
 type ItemFormState = {
   name: string;
+  emoji: string;
   type: HouseItemType;
   status: HouseStatus;
   utility: number;
@@ -296,6 +306,7 @@ type ItemFormState = {
 
 const EMPTY_FORM: ItemFormState = {
   name: "",
+  emoji: HOUSE_TYPE_META.otro.emoji,
   type: "otro",
   status: "have",
   utility: 3,
@@ -459,18 +470,39 @@ function ItemForm({
   return (
     <div style={{ display: "grid", gap: "12px" }}>
       <div>
-        <div style={labelStyle}>Nombre del objeto</div>
-        <input
-          value={form.name}
-          onChange={(e) => onChange({ ...form, name: e.target.value })}
-          placeholder="Ej: Aspiradora"
-          style={inputStyle}
-        />
+        <div style={labelStyle}>Emoji y nombre del objeto</div>
+        <div style={{ display: "grid", gridTemplateColumns: "56px 1fr", gap: "8px" }}>
+          <input
+            value={form.emoji}
+            onChange={(e) => onChange({ ...form, emoji: e.target.value })}
+            maxLength={4}
+            placeholder="📦"
+            style={{ ...inputStyle, textAlign: "center", fontSize: "18px", padding: 0 }}
+          />
+          <input
+            value={form.name}
+            onChange={(e) => onChange({ ...form, name: e.target.value })}
+            placeholder="Ej: Aspiradora"
+            style={inputStyle}
+          />
+        </div>
       </div>
 
       <div>
         <div style={labelStyle}>Categoría</div>
-        <TypePicker value={form.type} onChange={(type) => onChange({ ...form, type })} colors={colors} isDark={isDark} />
+        <TypePicker
+          value={form.type}
+          onChange={(type) => {
+            // Keeps the emoji in sync with the category by default, but only while
+            // it still matches the previous category's default -- once the user
+            // types a custom emoji, switching category no longer overwrites it.
+            const previousDefaultEmoji = HOUSE_TYPE_META[form.type].emoji;
+            const nextEmoji = form.emoji.trim() === previousDefaultEmoji ? HOUSE_TYPE_META[type].emoji : form.emoji;
+            onChange({ ...form, type, emoji: nextEmoji });
+          }}
+          colors={colors}
+          isDark={isDark}
+        />
       </div>
 
       <div>
@@ -600,7 +632,7 @@ function ItemPopup({
           {heading}
         </div>
         <div style={{ display: "flex", justifyContent: "center", marginBottom: "8px", fontSize: "40px" }}>
-          {HOUSE_TYPE_META[form.type].emoji}
+          {form.emoji.trim() || HOUSE_TYPE_META[form.type].emoji}
         </div>
         <ItemForm form={form} onChange={onChange} colors={colors} isDark={isDark} />
         <div style={{ display: "flex", gap: "8px", justifyContent: onDelete ? "space-between" : "flex-end", marginTop: "12px" }}>
@@ -754,7 +786,7 @@ function HouseCard({
         }}
       >
         <div style={{ width: "40px", height: "40px", display: "flex", alignItems: "center", justifyContent: "center", marginTop: "2px", fontSize: "26px" }}>
-          {HOUSE_TYPE_META[item.type].emoji}
+          {item.emoji}
         </div>
 
         <span
@@ -1112,6 +1144,7 @@ export default function HouseInventory({
     const nextItem: HouseItem = {
       id: Date.now(),
       name: cleanName,
+      emoji: addForm.emoji.trim() || HOUSE_TYPE_META[addForm.type].emoji,
       type: addForm.type,
       status: addForm.status,
       utility: addForm.utility,
@@ -1129,6 +1162,7 @@ export default function HouseInventory({
     setEditingId(item.id);
     setEditForm({
       name: item.name,
+      emoji: item.emoji,
       type: item.type,
       status: item.status,
       utility: item.utility,
@@ -1151,6 +1185,7 @@ export default function HouseInventory({
           ? {
               ...item,
               name: cleanName,
+              emoji: editForm.emoji.trim() || HOUSE_TYPE_META[editForm.type].emoji,
               type: editForm.type,
               status: editForm.status,
               utility: editForm.utility,

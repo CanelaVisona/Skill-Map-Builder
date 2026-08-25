@@ -88,7 +88,7 @@ function PriorityRow({
           opacity: isUnlocked ? 1 : 0.6,
         }}
       >
-        {HOUSE_TYPE_META[item.type].emoji}
+        {item.emoji}
       </div>
 
       <div style={{ flex: 1, minWidth: 0 }}>

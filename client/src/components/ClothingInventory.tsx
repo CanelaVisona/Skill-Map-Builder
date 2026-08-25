@@ -7,17 +7,18 @@ const CLOTHING_STORAGE_KEY = "skill-map-clothing-inventory-v2";
 
 type ClothingStatus = "have" | "missing";
 
-type ClothingStyle = "deporte" | "casual" | "salida";
+type ClothingStyle = "deporte" | "casual" | "salida" | "entrecasa";
 
 const STYLE_META: Record<ClothingStyle, { label: string; emoji: string; color: string }> = {
   deporte: { label: "Deporte", emoji: "🏃", color: "#2563eb" },
   casual: { label: "Casual", emoji: "😎", color: "#d97706" },
   salida: { label: "Salida", emoji: "✨", color: "#7c3aed" },
+  entrecasa: { label: "Entrecasa", emoji: "🏠", color: "#0d9488" },
 };
-const STYLE_ORDER: ClothingStyle[] = ["deporte", "casual", "salida"];
+const STYLE_ORDER: ClothingStyle[] = ["deporte", "casual", "salida", "entrecasa"];
 
 function isValidStyle(value: unknown): value is ClothingStyle {
-  return value === "deporte" || value === "casual" || value === "salida";
+  return value === "deporte" || value === "casual" || value === "salida" || value === "entrecasa";
 }
 
 type GarmentGroup = "Superior" | "Inferior" | "Calzado" | "Accesorios" | "Otros";

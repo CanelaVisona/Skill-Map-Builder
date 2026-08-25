@@ -27,6 +27,12 @@ export interface PendingErrorAction {
   errorId: string;
   errorName: string;
   delta?: 10 | -10; // only set when type === "adjust"
+  // Only set on a staged +10 -- the strategy chosen (or freshly typed) in the picker that opens
+  // when adding xp. Not asked on a -10.
+  estrategia?: string;
+  // Mirror of estrategia, for a staged -10 -- the trigger chosen (or freshly typed). Not asked
+  // on a +10.
+  disparador?: string;
 }
 
 export interface PendingRewardSelection {

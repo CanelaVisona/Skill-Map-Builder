@@ -259,8 +259,14 @@ export const nodeErrors = pgTable("node_errors", {
   areaId: varchar("area_id"),
   projectId: varchar("project_id"),
   nombre: text("nombre").notNull(),
-  points: integer("points").notNull().default(0), // 0-50, de a pasos de 10 (+10p / -10p)
+  points: integer("points").notNull().default(0), // -50 a 50, de a pasos de 10 (+10p / -10p)
   confirmed: integer("confirmed").$type<0 | 1>().notNull().default(0), // 0 = recién detectado, sin confirmar todavía
+  // Lista de estrategias para combatir este error -- se arma con el tiempo: cada vez que se
+  // suman xp (ver node_error_records.estrategia abajo) se puede elegir una ya usada o cargar
+  // una nueva, que queda guardada acá para la próxima vez.
+  estrategias: jsonb("estrategias").notNull().$type<string[]>().default([]),
+  // Espejo de estrategias, pero para cuando se restan xp: qué disparó ese retroceso.
+  disparadores: jsonb("disparadores").notNull().$type<string[]>().default([]),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -270,6 +276,10 @@ export const nodeErrorRecords = pgTable("node_error_records", {
   errorId: varchar("error_id").notNull().references(() => nodeErrors.id, { onDelete: "cascade" }),
   userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
   delta: integer("delta").notNull(), // +10 o -10
+  // Estrategia usada para ganar estos +10 -- null en un -10 (ahí no se pide estrategia).
+  estrategia: text("estrategia"),
+  // Disparador que motivó estos -10 -- null en un +10 (ahí no se pide disparador).
+  disparador: text("disparador"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -599,13 +609,19 @@ export type SourceBugRecord = typeof sourceBugRecords.$inferSelect;
 export const insertNodeErrorSchema = createInsertSchema(nodeErrors)
   .omit({ id: true, createdAt: true, updatedAt: true })
   .extend({
-    points: z.number().int().min(0).max(50).optional().default(0),
+    // Firmado: -50 (barra roja completa) a +50 (barra verde completa, "vencido"). Positivo = xp
+    // ganado hacia superar el error; negativo = sin bloques verdes ganados y encima en contra.
+    points: z.number().int().min(-50).max(50).optional().default(0),
     confirmed: z.union([z.literal(0), z.literal(1)]).optional().default(0),
+    estrategias: z.array(z.string()).optional().default([]),
+    disparadores: z.array(z.string()).optional().default([]),
   });
 export const insertNodeErrorRecordSchema = createInsertSchema(nodeErrorRecords)
   .omit({ id: true, createdAt: true })
   .extend({
     delta: z.union([z.literal(10), z.literal(-10)]),
+    estrategia: z.string().optional().nullable(),
+    disparador: z.string().optional().nullable(),
   });
 export type InsertNodeError = z.infer<typeof insertNodeErrorSchema>;
 export type NodeError = typeof nodeErrors.$inferSelect;

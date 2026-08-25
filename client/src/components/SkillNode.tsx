@@ -2,7 +2,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { type Skill, type GlobalSkill, useSkillTree } from "@/lib/skill-context";
 import { type JournalThought, type JournalLearning, type JournalTool } from "@shared/schema";
 import { cn } from "@/lib/utils";
-import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus, Star, ChevronRight, ChevronLeft, Wrench, Lightbulb, BicepsFlexed, Zap, Bug, OctagonAlert } from "lucide-react";
+import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus, Star, ChevronRight, ChevronLeft, Wrench, Lightbulb, BicepsFlexed, Zap, Bug, OctagonAlert, X } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { type ExperienceGainSnapshot } from "./ExperienceGainPopup";
@@ -14,6 +14,7 @@ import { useLevelUpCelebration } from "@/lib/level-up-celebration-context";
 import { usePowerCelebration } from "@/lib/power-celebration-context";
 import { usePendingRewards, type PendingErrorAction } from "@/lib/pending-rewards-context";
 import { useErrorProgressPopup } from "@/lib/error-progress-popup-context";
+import { getErrorBarBlocks } from "@/components/ErrorProgressPopup";
 import { useErrorCelebration } from "@/lib/error-celebration-context";
 import { beginPopupChain, endPopupChain, runPopupQueueAsync, runPopupQueue, getPopupBusyDelay } from "@/lib/popup-coordinator";
 import { getNodeTitleWordLimit, clampToWordLimit } from "@/lib/node-title-settings";
@@ -385,6 +386,76 @@ function SkillPickerList({
       >
         Otra área
       </Button>
+    </div>
+  );
+}
+
+// Editor chico de "lista de chips de texto" -- usado tanto para las Estrategias/Disparadores
+// que ya tiene un error guardado (onAdd/onRemove pegan al servidor), como para las que se
+// cargan al vuelo en el formulario de "nuevo error" (onAdd/onRemove solo tocan estado local,
+// recién se mandan al crear el error).
+function ChipListInput({
+  label,
+  placeholder,
+  items,
+  draft,
+  onDraftChange,
+  onAdd,
+  onRemove,
+  addDisabled,
+  testIdPrefix,
+}: {
+  label: string;
+  placeholder: string;
+  items: string[];
+  draft: string;
+  onDraftChange: (value: string) => void;
+  onAdd: () => void;
+  onRemove: (index: number) => void;
+  addDisabled?: boolean;
+  testIdPrefix: string;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground block">{label}</Label>
+      {items.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {items.map((item, i) => (
+            <span key={i} className="inline-flex items-center gap-1 text-[11px] rounded border border-border/60 bg-muted/40 pl-2 pr-1 py-0.5">
+              {item}
+              <button
+                type="button"
+                onClick={() => onRemove(i)}
+                className="text-muted-foreground hover:text-foreground"
+                data-testid={`${testIdPrefix}-remove-${i}`}
+              >
+                <X className="h-2.5 w-2.5" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="flex items-center gap-1.5">
+        <Input
+          placeholder={placeholder}
+          value={draft}
+          onChange={(e) => onDraftChange(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onAdd(); } }}
+          className="h-7 text-[11px] border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
+          data-testid={`${testIdPrefix}-input`}
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={onAdd}
+          disabled={!draft.trim() || addDisabled}
+          className="h-7 px-2 bg-muted/50 hover:bg-muted shrink-0"
+          data-testid={`${testIdPrefix}-add`}
+        >
+          <Plus className="h-3 w-3" />
+        </Button>
+      </div>
     </div>
   );
 }
@@ -987,12 +1058,34 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     nombre: string;
     points: number;
     confirmed: 0 | 1;
+    estrategias: string[];
+    disparadores: string[];
   }
 
   const [selectedErrorId, setSelectedErrorId] = useState<string | null>(null);
   const [isAddingNodeError, setIsAddingNodeError] = useState(false);
   const [newErrorName, setNewErrorName] = useState("");
+  // Estrategias/disparadores cargados de una en el formulario de "nuevo error", antes de que el
+  // error exista -- se mandan juntos con el nombre al crearlo (ver handleCreateNodeError).
+  const [newErrorEstrategias, setNewErrorEstrategias] = useState<string[]>([]);
+  const [newErrorEstrategiaDraft, setNewErrorEstrategiaDraft] = useState("");
+  const [newErrorDisparadores, setNewErrorDisparadores] = useState<string[]>([]);
+  const [newErrorDisparadorDraft, setNewErrorDisparadorDraft] = useState("");
   const nodeErrorAddLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Inputs para agregar una estrategia/disparador directo desde la sección "Estrategias"/
+  // "Disparadores" del error seleccionado (no confundir con newPickerOptionText, que es la del
+  // picker que se abre al sumar/restar xp -- ver más abajo).
+  const [newStrategyText, setNewStrategyText] = useState("");
+  const [newDisparadorText, setNewDisparadorText] = useState("");
+
+  // Picker que se abre al apretar "+10p"/"-10p": lista las estrategias/disparadores ya
+  // guardados del error + la opción "Estrategia nueva"/"Disparador nuevo". errorPicker !== null
+  // mientras está abierto. "kind" decide si suma xp (con estrategia) o resta (con disparador);
+  // "mode" decide si el movimiento es inmediato (Step 2, Journal) o encolado (Step 3, staged --
+  // ver handleStageErrorAdjust).
+  const [errorPicker, setErrorPicker] = useState<{ errorId: string; errorName: string; mode: "immediate" | "staged"; kind: "estrategia" | "disparador" } | null>(null);
+  const [isAddingNewPickerOption, setIsAddingNewPickerOption] = useState(false);
+  const [newPickerOptionText, setNewPickerOptionText] = useState("");
 
   const { data: nodeErrorsList = [] } = useQuery<SkillNodeError[]>({
     queryKey: [`/api/node-errors/${skill.id}`],
@@ -1012,32 +1105,22 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   }, [nodeErrorsList, selectedErrorId]);
 
   const selectedNodeError = nodeErrorsList.find((error) => error.id === selectedErrorId) || null;
-  const errorProgressBlocks = selectedNodeError ? Math.min(5, Math.round(selectedNodeError.points / 10)) : 0;
-
-  // Vista previa para el Step 3 (staged): aplica las acciones ya encoladas en
-  // pendingErrorActions sobre nodeErrorsList sin tocar el servidor, para que esa tab muestre
-  // cómo va a quedar sin disparar nada todavía -- eso recién pasa al confirmar el nodo (ver
-  // runConfirmSequence). El Step 2 (Journal, node long-press) sigue usando nodeErrorsList/
-  // selectedNodeError de arriba tal cual, sin preview: ahí las acciones son inmediatas.
-  const previewNodeErrors: SkillNodeError[] = nodeErrorsList.map((error) => {
-    const actions = pendingErrorActions.filter((action) => action.errorId === error.id);
-    const pendingDelta = actions.reduce((sum, action) => sum + (action.type === "adjust" ? (action.delta || 0) : 0), 0);
-    const pendingConfirm = actions.some((action) => action.type === "confirm");
-    return {
-      ...error,
-      points: Math.min(50, Math.max(0, error.points + pendingDelta)),
-      confirmed: pendingConfirm ? 1 : error.confirmed,
-    };
-  });
-  const selectedPreviewError = previewNodeErrors.find((error) => error.id === selectedErrorId) || null;
-  const previewErrorProgressBlocks = selectedPreviewError ? Math.min(5, Math.round(selectedPreviewError.points / 10)) : 0;
+  const errorBar = selectedNodeError ? getErrorBarBlocks(selectedNodeError.points) : { color: "empty" as const, count: 0 };
+  // Acciones ya encoladas para el error seleccionado (Step 3, staged) -- solo se usan para
+  // mostrar qué está "pendiente de registrar" (texto), NUNCA para mover la barra: esa sección
+  // es solo de registro, la barra real no cambia hasta que el nodo se confirma (ver
+  // runConfirmSequence). Step 2 (Journal) ni siquiera pasa por acá -- ahí las acciones son
+  // inmediatas.
+  const pendingActionsForSelectedError = selectedNodeError
+    ? pendingErrorActions.filter((action) => action.errorId === selectedNodeError.id)
+    : [];
 
   const createNodeError = useMutation({
-    mutationFn: async (data: { nombre: string }) => {
+    mutationFn: async (data: { nombre: string; estrategias: string[]; disparadores: string[] }) => {
       const res = await fetch("/api/node-errors", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ skillId: skill.id, nombre: data.nombre }),
+        body: JSON.stringify({ skillId: skill.id, nombre: data.nombre, estrategias: data.estrategias, disparadores: data.disparadores }),
       });
       if (!res.ok) {
         const error = await res.json();
@@ -1051,6 +1134,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       // título sin que haga falta un segundo tap sobre la lista.
       setSelectedErrorId(created.id);
       setNewErrorName("");
+      setNewErrorEstrategias([]);
+      setNewErrorEstrategiaDraft("");
+      setNewErrorDisparadores([]);
+      setNewErrorDisparadorDraft("");
       setIsAddingNodeError(false);
     },
     onError: (error) => {
@@ -1085,19 +1172,20 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
   // +10p / -10p: registra el movimiento, muestra el pop-up de barra creciendo/achicándose
   // (igual que BugProgressPopup) y, si la barra llega a 50, encadena el pop-up "¡Error vencido!"
-  // recién después de que ese primero termine (ver popup-coordinator).
+  // recién después de que ese primero termine (ver popup-coordinator). Un +10 siempre viaja con
+  // la estrategia elegida en errorPicker; un -10, con el disparador elegido.
   const adjustNodeErrorPoints = useMutation({
-    mutationFn: async ({ id, delta }: { id: string; delta: 10 | -10 }) => {
+    mutationFn: async ({ id, delta, estrategia, disparador }: { id: string; delta: 10 | -10; estrategia?: string | null; disparador?: string | null }) => {
       const res = await fetch(`/api/node-errors/${id}/records`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ delta }),
+        body: JSON.stringify({ delta, estrategia: estrategia ?? null, disparador: disparador ?? null }),
       });
       if (!res.ok) {
         throw new Error("Failed to register error points");
       }
       return res.json() as Promise<{
-        errorProgress: { errorName: string; pointsBefore: number; pointsAfter: number };
+        errorProgress: { errorName: string; pointsBefore: number; pointsAfter: number; estrategia?: string | null; disparador?: string | null };
         vencido: boolean;
       }>;
     },
@@ -1115,10 +1203,63 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     },
   });
 
+  // Agrega una estrategia o disparador a la lista guardada del error -- tanto desde las
+  // secciones "Estrategias"/"Disparadores" del registro como desde la opción "nueva" en el
+  // picker que se abre al sumar/restar xp.
+  const addNodeErrorListItem = useMutation({
+    mutationFn: async ({ id, field, items }: { id: string; field: "estrategias" | "disparadores"; items: string[] }) => {
+      const res = await fetch(`/api/node-errors/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [field]: items }),
+      });
+      if (!res.ok) {
+        throw new Error(`Failed to update error ${field}`);
+      }
+      return res.json() as Promise<SkillNodeError>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/node-errors/${skill.id}`] });
+    },
+    onError: (error) => {
+      console.error("addNodeErrorListItem error:", error);
+    },
+  });
+
   const handleCreateNodeError = () => {
     const finalName = newErrorName.trim();
     if (!finalName || createNodeError.isPending) return;
-    createNodeError.mutate({ nombre: finalName });
+    createNodeError.mutate({ nombre: finalName, estrategias: newErrorEstrategias, disparadores: newErrorDisparadores });
+  };
+
+  // Chips de estrategia/disparador cargados en el formulario de "nuevo error" -- todavía no
+  // existe el error, así que solo tocan el estado local del borrador.
+  const handleAddNewErrorEstrategia = () => {
+    const finalText = newErrorEstrategiaDraft.trim();
+    if (!finalText || newErrorEstrategias.includes(finalText)) {
+      setNewErrorEstrategiaDraft("");
+      return;
+    }
+    setNewErrorEstrategias((prev) => [...prev, finalText]);
+    setNewErrorEstrategiaDraft("");
+  };
+
+  const handleRemoveNewErrorEstrategia = (index: number) => {
+    setNewErrorEstrategias((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleAddNewErrorDisparador = () => {
+    const finalText = newErrorDisparadorDraft.trim();
+    if (!finalText || newErrorDisparadores.includes(finalText)) {
+      setNewErrorDisparadorDraft("");
+      return;
+    }
+    setNewErrorDisparadores((prev) => [...prev, finalText]);
+    setNewErrorDisparadorDraft("");
+  };
+
+  const handleRemoveNewErrorDisparador = (index: number) => {
+    setNewErrorDisparadores((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleConfirmNodeError = () => {
@@ -1126,29 +1267,114 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     confirmNodeError.mutate(selectedNodeError.id);
   };
 
-  const handleAdjustNodeError = (delta: 10 | -10) => {
+  const handleAddStrategyToSelectedError = () => {
+    if (!selectedNodeError) return;
+    const finalText = newStrategyText.trim();
+    if (!finalText || addNodeErrorListItem.isPending) return;
+    if (selectedNodeError.estrategias.includes(finalText)) {
+      setNewStrategyText("");
+      return;
+    }
+    addNodeErrorListItem.mutate({ id: selectedNodeError.id, field: "estrategias", items: [...selectedNodeError.estrategias, finalText] });
+    setNewStrategyText("");
+  };
+
+  const handleAddDisparadorToSelectedError = () => {
+    if (!selectedNodeError) return;
+    const finalText = newDisparadorText.trim();
+    if (!finalText || addNodeErrorListItem.isPending) return;
+    if (selectedNodeError.disparadores.includes(finalText)) {
+      setNewDisparadorText("");
+      return;
+    }
+    addNodeErrorListItem.mutate({ id: selectedNodeError.id, field: "disparadores", items: [...selectedNodeError.disparadores, finalText] });
+    setNewDisparadorText("");
+  };
+
+  const handleRemoveStrategyFromSelectedError = (index: number) => {
+    if (!selectedNodeError) return;
+    addNodeErrorListItem.mutate({ id: selectedNodeError.id, field: "estrategias", items: selectedNodeError.estrategias.filter((_, i) => i !== index) });
+  };
+
+  const handleRemoveDisparadorFromSelectedError = (index: number) => {
+    if (!selectedNodeError) return;
+    addNodeErrorListItem.mutate({ id: selectedNodeError.id, field: "disparadores", items: selectedNodeError.disparadores.filter((_, i) => i !== index) });
+  };
+
+  const handleAdjustNodeError = (delta: 10 | -10, estrategia?: string, disparador?: string) => {
     if (!selectedNodeError || adjustNodeErrorPoints.isPending) return;
-    adjustNodeErrorPoints.mutate({ id: selectedNodeError.id, delta });
+    adjustNodeErrorPoints.mutate({ id: selectedNodeError.id, delta, estrategia, disparador });
   };
 
   // Step 3 (title-long-press dialog): a diferencia de los handlers de arriba, estos NO tocan el
-  // servidor ni disparan ningún pop-up -- solo encolan la acción en pendingErrorActions. Se
-  // aplican de verdad, en el mismo orden y con sus mismos pop-ups, recién cuando el nodo se
-  // confirma (ver runConfirmSequence).
+  // servidor ni disparan ningún pop-up -- solo encolan la acción en pendingErrorActions. Esa tab
+  // es solo de registro: la barra/estado que muestra siguen siendo los reales (selectedNodeError/
+  // errorBar), sin previsualizar el resultado de lo encolado. Todo se aplica de verdad, en el
+  // mismo orden y con sus mismos pop-ups, recién cuando el nodo se confirma (ver
+  // runConfirmSequence).
   const handleStageErrorConfirm = () => {
-    if (!selectedPreviewError || selectedPreviewError.confirmed === 1) return;
+    if (!selectedNodeError || selectedNodeError.confirmed === 1) return;
+    // No duplica si ya hay una confirmación encolada para este error.
+    if (pendingErrorActions.some((a) => a.type === "confirm" && a.errorId === selectedNodeError.id)) return;
     setPendingErrorActions((prev) => [
       ...prev,
-      { type: "confirm", errorId: selectedPreviewError.id, errorName: selectedPreviewError.nombre },
+      { type: "confirm", errorId: selectedNodeError.id, errorName: selectedNodeError.nombre },
     ]);
   };
 
-  const handleStageErrorAdjust = (delta: 10 | -10) => {
-    if (!selectedPreviewError) return;
+  const handleStageErrorAdjust = (delta: 10 | -10, estrategia?: string, disparador?: string) => {
+    if (!selectedNodeError) return;
     setPendingErrorActions((prev) => [
       ...prev,
-      { type: "adjust", errorId: selectedPreviewError.id, errorName: selectedPreviewError.nombre, delta },
+      { type: "adjust", errorId: selectedNodeError.id, errorName: selectedNodeError.nombre, delta, estrategia, disparador },
     ]);
+  };
+
+  // Picker de estrategia/disparador (ver errorPicker más arriba): se abre al apretar "+10p"
+  // (kind "estrategia") o "-10p" (kind "disparador"), tanto en el Journal (mode "immediate")
+  // como en Step 3 (mode "staged").
+  const openErrorPicker = (error: { id: string; nombre: string }, mode: "immediate" | "staged", kind: "estrategia" | "disparador") => {
+    setErrorPicker({ errorId: error.id, errorName: error.nombre, mode, kind });
+    setIsAddingNewPickerOption(false);
+    setNewPickerOptionText("");
+  };
+
+  const closeErrorPicker = () => {
+    setErrorPicker(null);
+    setIsAddingNewPickerOption(false);
+    setNewPickerOptionText("");
+  };
+
+  // Aplica el +10/-10 con la estrategia/disparador elegido (ya guardado, o recién tipeado),
+  // inmediato o encolado según errorPicker.mode, y cierra el picker.
+  const applyErrorPickerChoice = (value: string) => {
+    if (!errorPicker) return;
+    const delta: 10 | -10 = errorPicker.kind === "estrategia" ? 10 : -10;
+    const estrategia = errorPicker.kind === "estrategia" ? value : undefined;
+    const disparador = errorPicker.kind === "disparador" ? value : undefined;
+    if (errorPicker.mode === "immediate") {
+      adjustNodeErrorPoints.mutate({ id: errorPicker.errorId, delta, estrategia, disparador });
+    } else {
+      setPendingErrorActions((prev) => [
+        ...prev,
+        { type: "adjust", errorId: errorPicker.errorId, errorName: errorPicker.errorName, delta, estrategia, disparador },
+      ]);
+    }
+    closeErrorPicker();
+  };
+
+  const handleConfirmNewPickerOption = () => {
+    if (!errorPicker) return;
+    const finalText = newPickerOptionText.trim();
+    if (!finalText) return;
+    // Guarda la opción nueva en la lista correspondiente del error (si no estaba ya) para la
+    // próxima vez.
+    const target = nodeErrorsList.find((e) => e.id === errorPicker.errorId);
+    const field = errorPicker.kind === "estrategia" ? "estrategias" : "disparadores";
+    if (target && !target[field].includes(finalText)) {
+      addNodeErrorListItem.mutate({ id: target.id, field, items: [...target[field], finalText] });
+    }
+    applyErrorPickerChoice(finalText);
   };
 
   // Long-press sobre el fondo vacío de la tab "Errores" abre el formulario de "nuevo error",
@@ -1159,6 +1385,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     e.stopPropagation();
     nodeErrorAddLongPressTimer.current = setTimeout(() => {
       setNewErrorName("");
+      setNewErrorEstrategias([]);
+      setNewErrorEstrategiaDraft("");
+      setNewErrorDisparadores([]);
+      setNewErrorDisparadorDraft("");
       setIsAddingNodeError(true);
     }, 500);
   };
@@ -1864,7 +2094,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               const updated = await confirmNodeError.mutateAsync(action.errorId);
               enqueue(() => showErrorCelebration({ name: updated.nombre, kind: "detected" }));
             } else {
-              const result = await adjustNodeErrorPoints.mutateAsync({ id: action.errorId, delta: action.delta! });
+              const result = await adjustNodeErrorPoints.mutateAsync({ id: action.errorId, delta: action.delta!, estrategia: action.estrategia, disparador: action.disparador });
               enqueue(() => showErrorProgressPopup(result.errorProgress));
               if (result.vencido) {
                 enqueue(() => showErrorCelebration({ name: result.errorProgress.errorName, kind: "vencido" }));
@@ -2629,7 +2859,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                     <span key={i} className="whitespace-nowrap">
                       {action.type === "confirm"
                         ? `+Error detectado: ${action.errorName}`
-                        : `${action.delta! > 0 ? "+" : ""}${action.delta}p ${action.errorName}`}
+                        : `${action.delta! > 0 ? "+" : ""}${action.delta}p ${action.errorName}${(action.estrategia || action.disparador) ? ` (${action.estrategia || action.disparador})` : ""}`}
                     </span>
                   ))}
                 </div>
@@ -3244,7 +3474,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
               <TabsContent value="errores" className="mt-4 space-y-3 flex flex-col flex-1">
                 {isAddingNodeError ? (
-                  <div className="flex-1 space-y-3">
+                  <div className="flex-1 space-y-3 overflow-y-auto">
                     <Label className="text-[11px] text-muted-foreground uppercase tracking-wide block">Nuevo error</Label>
                     <Input
                       placeholder="NOMBRE"
@@ -3254,6 +3484,29 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                       data-testid="input-new-error-name"
                       autoFocus
                     />
+
+                    <ChipListInput
+                      label="Estrategias"
+                      placeholder="Nueva estrategia"
+                      items={newErrorEstrategias}
+                      draft={newErrorEstrategiaDraft}
+                      onDraftChange={setNewErrorEstrategiaDraft}
+                      onAdd={handleAddNewErrorEstrategia}
+                      onRemove={handleRemoveNewErrorEstrategia}
+                      testIdPrefix="new-error-estrategia"
+                    />
+
+                    <ChipListInput
+                      label="Disparadores"
+                      placeholder="Nuevo disparador"
+                      items={newErrorDisparadores}
+                      draft={newErrorDisparadorDraft}
+                      onDraftChange={setNewErrorDisparadorDraft}
+                      onAdd={handleAddNewErrorDisparador}
+                      onRemove={handleRemoveNewErrorDisparador}
+                      testIdPrefix="new-error-disparador"
+                    />
+
                     <div className="flex justify-end items-center gap-2">
                       <Button
                         type="button"
@@ -3306,7 +3559,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                               >
                                 <div className="flex items-center justify-between gap-2">
                                   <p className="text-sm font-medium truncate">{error.nombre}</p>
-                                  <span className="text-[11px] text-muted-foreground shrink-0">{Math.min(50, error.points)} / 50</span>
+                                  <span className="text-[11px] text-muted-foreground shrink-0">{Math.abs(error.points)} / 50</span>
                                 </div>
                               </button>
                             );
@@ -3336,14 +3589,16 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                               <>
                                 <div>
                                   <div className="flex items-center justify-end mb-1">
-                                    <p className="text-[11px] text-muted-foreground">{selectedNodeError.points} / 50</p>
+                                    <p className="text-[11px] text-muted-foreground">
+                                      {Math.abs(selectedNodeError.points)} / 50{selectedNodeError.points < 0 ? " (en contra)" : ""}
+                                    </p>
                                   </div>
                                   <div className="w-full h-2.5 flex gap-0.5">
                                     {Array.from({ length: 5 }).map((_, index) => (
                                       <div
                                         key={index}
                                         className={`flex-1 h-full rounded-sm transition-colors duration-300 ${
-                                          index < errorProgressBlocks ? "bg-red-500" : "bg-muted"
+                                          index < errorBar.count ? (errorBar.color === "red" ? "bg-red-500" : "bg-emerald-500") : "bg-muted"
                                         }`}
                                       />
                                     ))}
@@ -3354,8 +3609,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                                     type="button"
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => handleAdjustNodeError(-10)}
-                                    disabled={selectedNodeError.points <= 0 || adjustNodeErrorPoints.isPending}
+                                    onClick={() => openErrorPicker(selectedNodeError, "immediate", "disparador")}
+                                    disabled={selectedNodeError.points <= -50 || adjustNodeErrorPoints.isPending}
                                     className="bg-muted/50 hover:bg-muted"
                                     data-testid="button-error-minus-10"
                                   >
@@ -3365,13 +3620,41 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                                     type="button"
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => handleAdjustNodeError(10)}
+                                    onClick={() => openErrorPicker(selectedNodeError, "immediate", "estrategia")}
                                     disabled={selectedNodeError.points >= 50 || adjustNodeErrorPoints.isPending}
                                     className="bg-muted/50 hover:bg-muted"
                                     data-testid="button-error-plus-10"
                                   >
                                     +10p
                                   </Button>
+                                </div>
+
+                                <div className="pt-1 border-t border-border/40">
+                                  <ChipListInput
+                                    label="Estrategias"
+                                    placeholder="Nueva estrategia"
+                                    items={selectedNodeError.estrategias}
+                                    draft={newStrategyText}
+                                    onDraftChange={setNewStrategyText}
+                                    onAdd={handleAddStrategyToSelectedError}
+                                    onRemove={handleRemoveStrategyFromSelectedError}
+                                    addDisabled={addNodeErrorListItem.isPending}
+                                    testIdPrefix="error-strategy"
+                                  />
+                                </div>
+
+                                <div className="pt-1 border-t border-border/40">
+                                  <ChipListInput
+                                    label="Disparadores"
+                                    placeholder="Nuevo disparador"
+                                    items={selectedNodeError.disparadores}
+                                    draft={newDisparadorText}
+                                    onDraftChange={setNewDisparadorText}
+                                    onAdd={handleAddDisparadorToSelectedError}
+                                    onRemove={handleRemoveDisparadorFromSelectedError}
+                                    addDisabled={addNodeErrorListItem.isPending}
+                                    testIdPrefix="error-disparador"
+                                  />
                                 </div>
                               </>
                             )}
@@ -4178,7 +4461,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
                   <TabsContent value="errores" className="mt-4 space-y-3 flex flex-col flex-1">
                     {isAddingNodeError ? (
-                      <div className="flex-1 space-y-3">
+                      <div className="flex-1 space-y-3 overflow-y-auto">
                         <Label className="text-[11px] text-muted-foreground uppercase tracking-wide block">Nuevo error</Label>
                         <Input
                           placeholder="NOMBRE"
@@ -4188,6 +4471,29 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                           data-testid="step3-input-new-error-name"
                           autoFocus
                         />
+
+                        <ChipListInput
+                          label="Estrategias"
+                          placeholder="Nueva estrategia"
+                          items={newErrorEstrategias}
+                          draft={newErrorEstrategiaDraft}
+                          onDraftChange={setNewErrorEstrategiaDraft}
+                          onAdd={handleAddNewErrorEstrategia}
+                          onRemove={handleRemoveNewErrorEstrategia}
+                          testIdPrefix="step3-new-error-estrategia"
+                        />
+
+                        <ChipListInput
+                          label="Disparadores"
+                          placeholder="Nuevo disparador"
+                          items={newErrorDisparadores}
+                          draft={newErrorDisparadorDraft}
+                          onDraftChange={setNewErrorDisparadorDraft}
+                          onAdd={handleAddNewErrorDisparador}
+                          onRemove={handleRemoveNewErrorDisparador}
+                          testIdPrefix="step3-new-error-disparador"
+                        />
+
                         <div className="flex justify-end items-center gap-2">
                           <Button
                             type="button"
@@ -4221,12 +4527,12 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                         onMouseUp={endNodeErrorAddLongPress}
                         onMouseLeave={endNodeErrorAddLongPress}
                       >
-                        {previewNodeErrors.length === 0 ? (
+                        {nodeErrorsList.length === 0 ? (
                           <p className="text-sm text-muted-foreground">No hay errores registrados para este nodo todavía. Mantené presionado acá para agregar uno.</p>
                         ) : (
                           <>
                             <div className="space-y-2">
-                              {previewNodeErrors.map((error) => {
+                              {nodeErrorsList.map((error) => {
                                 const isSelected = selectedErrorId === error.id;
                                 return (
                                   <button
@@ -4240,18 +4546,20 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                                   >
                                     <div className="flex items-center justify-between gap-2">
                                       <p className="text-sm font-medium truncate">{error.nombre}</p>
-                                      <span className="text-[11px] text-muted-foreground shrink-0">{Math.min(50, error.points)} / 50</span>
+                                      <span className="text-[11px] text-muted-foreground shrink-0">{Math.abs(error.points)} / 50</span>
                                     </div>
                                   </button>
                                 );
                               })}
                             </div>
 
-                            {selectedPreviewError && (
+                            {selectedNodeError && (() => {
+                              const alreadyStagedConfirm = pendingErrorActions.some((a) => a.type === "confirm" && a.errorId === selectedNodeError.id);
+                              return (
                               <div className="rounded-lg border border-border/60 bg-muted/30 p-3 space-y-2">
-                                <p className="text-sm font-medium">{selectedPreviewError.nombre}</p>
+                                <p className="text-sm font-medium">{selectedNodeError.nombre}</p>
 
-                                {selectedPreviewError.confirmed === 0 ? (
+                                {selectedNodeError.confirmed === 0 ? (
                                   <>
                                     <p className="text-xs text-muted-foreground">Error nuevo detectado</p>
                                     <div className="flex justify-end pt-1">
@@ -4259,24 +4567,31 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                                         type="button"
                                         size="sm"
                                         onClick={handleStageErrorConfirm}
+                                        disabled={alreadyStagedConfirm}
                                         data-testid="step3-button-confirm-error"
                                       >
-                                        Confirmar
+                                        {alreadyStagedConfirm ? "Confirmación pendiente" : "Confirmar"}
                                       </Button>
                                     </div>
                                   </>
                                 ) : (
                                   <>
+                                    {/* Esta tab es solo de registro: la barra que se ve acá es siempre la real
+                                        (nunca una previsualización). Elegir estrategia/disparador solo encola
+                                        la acción -- se aplica de verdad, y ahí sí mueve la barra, recién al
+                                        confirmar el nodo (ver runConfirmSequence). */}
                                     <div>
                                       <div className="flex items-center justify-end mb-1">
-                                        <p className="text-[11px] text-muted-foreground">{selectedPreviewError.points} / 50</p>
+                                        <p className="text-[11px] text-muted-foreground">
+                                          {Math.abs(selectedNodeError.points)} / 50{selectedNodeError.points < 0 ? " (en contra)" : ""}
+                                        </p>
                                       </div>
                                       <div className="w-full h-2.5 flex gap-0.5">
                                         {Array.from({ length: 5 }).map((_, index) => (
                                           <div
                                             key={index}
                                             className={`flex-1 h-full rounded-sm transition-colors duration-300 ${
-                                              index < previewErrorProgressBlocks ? "bg-red-500" : "bg-muted"
+                                              index < errorBar.count ? (errorBar.color === "red" ? "bg-red-500" : "bg-emerald-500") : "bg-muted"
                                             }`}
                                           />
                                         ))}
@@ -4287,8 +4602,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                                         type="button"
                                         variant="ghost"
                                         size="sm"
-                                        onClick={() => handleStageErrorAdjust(-10)}
-                                        disabled={selectedPreviewError.points <= 0}
+                                        onClick={() => openErrorPicker(selectedNodeError, "staged", "disparador")}
+                                        disabled={selectedNodeError.points <= -50}
                                         className="bg-muted/50 hover:bg-muted"
                                         data-testid="step3-button-error-minus-10"
                                       >
@@ -4298,23 +4613,62 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                                         type="button"
                                         variant="ghost"
                                         size="sm"
-                                        onClick={() => handleStageErrorAdjust(10)}
-                                        disabled={selectedPreviewError.points >= 50}
+                                        onClick={() => openErrorPicker(selectedNodeError, "staged", "estrategia")}
+                                        disabled={selectedNodeError.points >= 50}
                                         className="bg-muted/50 hover:bg-muted"
                                         data-testid="step3-button-error-plus-10"
                                       >
                                         +10p
                                       </Button>
                                     </div>
+
+                                    <div className="pt-1 border-t border-border/40">
+                                      <ChipListInput
+                                        label="Estrategias"
+                                        placeholder="Nueva estrategia"
+                                        items={selectedNodeError.estrategias}
+                                        draft={newStrategyText}
+                                        onDraftChange={setNewStrategyText}
+                                        onAdd={handleAddStrategyToSelectedError}
+                                        onRemove={handleRemoveStrategyFromSelectedError}
+                                        addDisabled={addNodeErrorListItem.isPending}
+                                        testIdPrefix="step3-error-strategy"
+                                      />
+                                    </div>
+
+                                    <div className="pt-1 border-t border-border/40">
+                                      <ChipListInput
+                                        label="Disparadores"
+                                        placeholder="Nuevo disparador"
+                                        items={selectedNodeError.disparadores}
+                                        draft={newDisparadorText}
+                                        onDraftChange={setNewDisparadorText}
+                                        onAdd={handleAddDisparadorToSelectedError}
+                                        onRemove={handleRemoveDisparadorFromSelectedError}
+                                        addDisabled={addNodeErrorListItem.isPending}
+                                        testIdPrefix="step3-error-disparador"
+                                      />
+                                    </div>
                                   </>
                                 )}
-                                {pendingErrorActions.some((a) => a.errorId === selectedPreviewError.id) && (
-                                  <p className="text-[11px] text-muted-foreground/70 pt-1">
-                                    Se registra y muestra su pop-up recién al confirmar el nodo
-                                  </p>
+                                {pendingActionsForSelectedError.length > 0 && (
+                                  <div className="pt-1 border-t border-border/40 space-y-1">
+                                    <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Pendiente de registrar</p>
+                                    {pendingActionsForSelectedError.map((action, i) => (
+                                      <p key={i} className="text-[11px] text-muted-foreground">
+                                        {action.type === "confirm"
+                                          ? "Confirmación de error nuevo"
+                                          : `${action.delta! > 0 ? "+" : ""}${action.delta}p${(action.estrategia || action.disparador) ? ` con ${action.estrategia ? "estrategia" : "disparador"}: ${action.estrategia || action.disparador}` : ""}`}
+                                      </p>
+                                    ))}
+                                    <p className="text-[11px] text-muted-foreground/70">
+                                      Se registra y muestra su(s) pop-up(s) recién al confirmar el nodo
+                                    </p>
+                                  </div>
                                 )}
                               </div>
-                            )}
+                              );
+                            })()}
                           </>
                         )}
                       </div>
@@ -4400,6 +4754,95 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             Confirmar
           </Button>
         </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    {/* Picker de estrategia/disparador: se abre al apretar "+10p" (estrategia) o "-10p"
+        (disparador) en la tab Errores (Journal o Step 3). Elegir una opción ya guardada, o
+        cargar una nueva, es lo que realmente dispara el movimiento (ver
+        applyErrorPickerChoice/handleConfirmNewPickerOption). */}
+    <Dialog open={!!errorPicker} onOpenChange={(open) => { if (!open) closeErrorPicker(); }}>
+      <DialogContent className="sm:max-w-[400px] border-0 shadow-2xl">
+        <DialogHeader>
+          <DialogTitle className="text-lg font-medium">
+            {errorPicker?.kind === "disparador" ? "¿Con qué disparador?" : "¿Con qué estrategia?"}
+          </DialogTitle>
+          <DialogDescription className="text-xs text-muted-foreground">
+            {errorPicker ? `${errorPicker.kind === "disparador" ? "-10" : "+10"} xp en ${errorPicker.errorName}` : ""}
+          </DialogDescription>
+        </DialogHeader>
+
+        {isAddingNewPickerOption ? (
+          <div className="space-y-3">
+            <Label className="text-xs text-muted-foreground uppercase tracking-wide block">
+              {errorPicker?.kind === "disparador" ? "Disparador nuevo" : "Estrategia nueva"}
+            </Label>
+            <Input
+              value={newPickerOptionText}
+              onChange={(e) => setNewPickerOptionText(e.target.value)}
+              placeholder={errorPicker?.kind === "disparador" ? "¿Qué lo disparó?" : "¿Qué estrategia vas a usar?"}
+              className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
+              data-testid="input-picker-new-option"
+              autoFocus
+            />
+            <div className="flex justify-end items-center gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsAddingNewPickerOption(false)}
+                className="bg-muted/50 hover:bg-muted"
+                data-testid="button-cancel-picker-new-option"
+              >
+                Volver
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleConfirmNewPickerOption}
+                disabled={!newPickerOptionText.trim()}
+                data-testid="button-confirm-picker-new-option"
+              >
+                {errorPicker?.kind === "disparador" ? "Usar este disparador" : "Usar esta estrategia"}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {(() => {
+              const targetError = errorPicker ? nodeErrorsList.find((e) => e.id === errorPicker.errorId) : null;
+              const options = errorPicker?.kind === "disparador" ? (targetError?.disparadores ?? []) : (targetError?.estrategias ?? []);
+              return options.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  {errorPicker?.kind === "disparador" ? "Todavía no hay disparadores guardados para este error." : "Todavía no hay estrategias guardadas para este error."}
+                </p>
+              ) : (
+                options.map((option, i) => (
+                  <Button
+                    key={i}
+                    type="button"
+                    variant="ghost"
+                    onClick={() => applyErrorPickerChoice(option)}
+                    className="w-full justify-start bg-muted/50 hover:bg-muted text-left h-auto py-2 whitespace-normal"
+                    data-testid={`button-picker-option-${i}`}
+                  >
+                    {option}
+                  </Button>
+                ))
+              );
+            })()}
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setIsAddingNewPickerOption(true)}
+              className="w-full justify-center bg-muted/30 hover:bg-muted border border-dashed border-border/60"
+              data-testid="button-open-picker-new-option"
+            >
+              <Plus className="h-3 w-3 mr-1" />
+              {errorPicker?.kind === "disparador" ? "Disparador nuevo" : "Estrategia nueva"}
+            </Button>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
 
