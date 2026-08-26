@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { TodayTaskSlot } from "@shared/schema";
 
 export type TaskSlotKey = "morning" | "midday" | "afternoon" | "night" | "hidden";
-export type TaskType = "habit" | "node" | "practice" | "manual";
+export type TaskType = "habit" | "node" | "practice" | "manual" | "rewiring";
 
 // Mañana 6-11, mediodía 12-16, tarde 17-20, noche 21-23 y también las horas de
 // madrugada (0-5), que caen dentro del tramo nocturno del día anterior.

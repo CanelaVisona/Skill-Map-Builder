@@ -15,6 +15,23 @@ function dateStrToDayOfWeek(dateStr: string): number {
   return dow === 0 ? 6 : dow - 1;
 }
 
+interface RewiringTrackerSummary {
+  archivedAt?: string | null;
+  timesPerDay?: number | null;
+  history?: { timestamp: string; date?: string }[];
+}
+
+// A rewiring counts as "done today" once its daily quota is met — classic trackers (no
+// timesPerDay) only need one action today; "veces por día" trackers need all of them. Mirrors
+// the same rule RewiringTracker.tsx uses for its own "+Acción" button/ring.
+function isRewiringDoneToday(tracker: RewiringTrackerSummary, todayStr: string): boolean {
+  if (tracker.archivedAt) return false;
+  const reps = (tracker.history || []).filter(
+    (h) => (h.date ?? getDateStr(new Date(h.timestamp))) === todayStr
+  ).length;
+  return reps >= (tracker.timesPerDay || 1);
+}
+
 // Espejo simplificado (sin la "foto" de ocultos al abrir el modal, que solo tiene sentido
 // durante una sesión del modal) del total/completado que muestra TodayProgressModal, pensado
 // para poder observarse en segundo plano y detectar cuándo sube el completado, sin depender
@@ -72,6 +89,17 @@ export function useTodayProgressSummary() {
       ),
     }))
     .filter((h) => h.done);
+
+  const rewiringQuery = useQuery({
+    queryKey: ["rewiring-trackers"],
+    queryFn: async () => {
+      const res = await fetch("/api/rewiring-trackers");
+      if (!res.ok) throw new Error("Failed to fetch rewiring trackers");
+      return res.json() as Promise<RewiringTrackerSummary[]>;
+    },
+  });
+  const { data: rewiringData } = rewiringQuery;
+  const extraRewiringsDoneToday = (rewiringData || []).filter((t) => isRewiringDoneToday(t, todayStr));
 
   const practicesQuery = useQuery({
     queryKey: ["space-repetition"],
@@ -150,7 +178,8 @@ export function useTodayProgressSummary() {
     visiblePractices.length +
     manualTasks.length +
     extraHabitsDoneToday.length +
-    extraNodesToday.length;
+    extraNodesToday.length +
+    extraRewiringsDoneToday.length;
 
   const completed =
     visibleHabits.filter((h) => h.done).length +
@@ -158,7 +187,8 @@ export function useTodayProgressSummary() {
     visiblePractices.filter((p) => p.done).length +
     manualTasks.filter((t) => t.done === 1).length +
     extraHabitsDoneToday.length +
-    extraNodesToday.length;
+    extraNodesToday.length +
+    extraRewiringsDoneToday.length;
 
   // Igual que "completed", pero sin los nodos dominados sin fecha planeada: completar un nodo
   // que no estaba registrado para hoy no debe disparar el pop-up de "Hoy" (aunque sí sume a la
@@ -169,7 +199,8 @@ export function useTodayProgressSummary() {
     visibleNodes.filter((n) => n.done).length +
     visiblePractices.filter((p) => p.done).length +
     manualTasks.filter((t) => t.done === 1).length +
-    extraHabitsDoneToday.length;
+    extraHabitsDoneToday.length +
+    extraRewiringsDoneToday.length;
 
   // Solo se puede confiar en total/completed una vez que TODAS las consultas involucradas
   // resolvieron al menos una vez (incluidas las de registros por hábito, que se crean recién
@@ -179,6 +210,7 @@ export function useTodayProgressSummary() {
   const isReady =
     !isSkillTreeLoading &&
     !habitsQuery.isPending &&
+    !rewiringQuery.isPending &&
     !practicesQuery.isPending &&
     !manualTasksQuery.isPending &&
     !slotsQuery.isPending &&

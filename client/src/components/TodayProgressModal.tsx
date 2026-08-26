@@ -236,6 +236,33 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     }))
     .filter((h) => h.done);
 
+  // Rewirings (RewiringTracker.tsx): actividad extra igual que los hábitos de arriba, pero sin
+  // concepto de "programado para hoy" — un rewiring cuenta como hecho el día que se le
+  // registraron todas sus repeticiones diarias (o, sin "veces por día", cualquier acción de ese
+  // día). Mismo criterio que usa el propio RewiringTracker para su botón "+ Acción".
+  const { data: rewiringTrackersData } = useQuery({
+    queryKey: ["rewiring-trackers"],
+    queryFn: async () => {
+      const res = await fetch("/api/rewiring-trackers");
+      if (!res.ok) throw new Error("Failed to fetch rewiring trackers");
+      return res.json() as Promise<{ id: string; name: string; archivedAt?: string | null; timesPerDay?: number | null; history?: { timestamp: string; date?: string }[] }[]>;
+    },
+    enabled: open,
+  });
+
+  const extraRewirings = (rewiringTrackersData || [])
+    .filter((t) => !t.archivedAt)
+    .map((t) => {
+      const repsOnDay = (t.history || []).filter(
+        (h) => (h.date ?? getDateStr(new Date(h.timestamp))) === effectiveDate
+      );
+      const lastRepAt = repsOnDay.length > 0
+        ? repsOnDay.reduce((latest, h) => (new Date(h.timestamp) > new Date(latest) ? h.timestamp : latest), repsOnDay[0].timestamp)
+        : undefined;
+      return { id: t.id, name: t.name, done: repsOnDay.length >= (t.timesPerDay || 1), lastRepAt };
+    })
+    .filter((t) => t.done);
+
   // Nodos sin fecha planeada (columna "When exactly?" vacía) que se confirmaron dentro del
   // rango [startDate, endDate]. Se usa tanto para "Más" (rango = solo hoy) como para el
   // calendario (rango = mes mostrado), reusando plannedDate para cargar la fecha en la que
@@ -285,6 +312,14 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       ),
       done: true,
       defaultSlot: n.completedAt ? getTimeSlotKeyForDate(new Date(n.completedAt)) : undefined,
+    })),
+    ...extraRewirings.map((r) => ({
+      key: `rewiring:${r.id}`,
+      type: "rewiring" as const,
+      id: r.id,
+      label: <>🔄 {r.name}</>,
+      done: true,
+      defaultSlot: r.lastRepAt ? getTimeSlotKeyForDate(new Date(r.lastRepAt)) : undefined,
     })),
   ];
 

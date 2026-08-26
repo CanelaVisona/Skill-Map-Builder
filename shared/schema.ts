@@ -435,9 +435,13 @@ export const rewiringTrackers = pgTable("rewiring_trackers", {
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   count: integer("count").notNull().default(0),
-  // Target level chosen at creation (null = legacy default of 9, i.e. 10 total actions).
-  // Total actions to complete = targetLevel + 1.
+  // Target level chosen at creation (number of levels to reach, null = DEFAULT_TARGET_LEVEL
+  // on the client). Total actions to complete = targetLevel * actions-per-level (3, or 1 per
+  // day when timesPerDay is set).
   targetLevel: integer("target_level"),
+  // Null/absent = classic mode (unlimited actions/day, 3 actions per level). A number >= 1 =
+  // "veces por día" mode: that many reps required each day, 1 level gained per full day.
+  timesPerDay: integer("times_per_day"),
   areaId: varchar("area_id").references(() => areas.id, { onDelete: "set null" }),
   projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
   skillId: varchar("skill_id").references(() => globalSkills.id, { onDelete: "set null" }),
@@ -454,6 +458,10 @@ export const rewiringTrackerRecords = pgTable("rewiring_tracker_records", {
   trackerId: varchar("tracker_id").notNull().references(() => rewiringTrackers.id, { onDelete: "cascade" }),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   timestamp: timestamp("timestamp").notNull().defaultNow(),
+  // Local calendar day (YYYY-MM-DD) the client considered this record to belong to, same
+  // convention as habit_records/today_task_slots — decided client-side to avoid server/user
+  // timezone drift. Nullable: older records predate this column.
+  date: varchar("date"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -482,7 +490,7 @@ export const todayTaskSlots = pgTable("today_task_slots", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   date: varchar("date").notNull(), // YYYY-MM-DD format
-  taskType: text("task_type").$type<"habit" | "node" | "practice" | "manual">().notNull(),
+  taskType: text("task_type").$type<"habit" | "node" | "practice" | "manual" | "rewiring">().notNull(),
   taskId: varchar("task_id").notNull(),
   slot: text("slot").$type<"morning" | "midday" | "afternoon" | "night" | "hidden">().notNull(),
   // Orden dentro de su (date, slot): más chico va primero. Se asigna automáticamente al

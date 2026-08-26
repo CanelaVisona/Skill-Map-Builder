@@ -13,7 +13,7 @@ import { BodyLinkPicker, type BodyLink } from "@/components/BodyLinkPicker";
 import { SkillLinkPicker } from "@/components/SkillLinkPicker";
 
 interface Level {
-  name: string;
+  label: string;
   from: number;
   to: number;
   col: string;
@@ -21,31 +21,72 @@ interface Level {
   txt: string;
 }
 
-// Legacy default: no explicit target level chosen = reach level 9 (10 total actions),
-// matching the tracker's original fixed 0-3 / 3-6 / 6-10 behavior.
-const DEFAULT_TARGET_LEVEL = 9;
+// Target level = how many numbered levels ("Nivel 1", "Nivel 2"...) the tracker wants to
+// reach, not a raw action count. No explicit choice = 3 levels.
+const DEFAULT_TARGET_LEVEL = 3;
 
-function getTotalActions(targetLevel: number | null | undefined): number {
-  return (targetLevel ?? DEFAULT_TARGET_LEVEL) + 1;
+// Classic rewirings: 3 actions per level, no daily cap. "Veces por día" rewirings: 1 level
+// per fully-completed day (that day's quota of reps), regardless of the quota's size.
+function getActionsPerLevel(timesPerDay: number | null | undefined): number {
+  return timesPerDay && timesPerDay >= 1 ? 1 : 3;
 }
 
-// The 3 named tiers keep the original 30% / 30% / 40% split, just scaled to
-// whatever total the tracker's chosen target level implies (totalActions = level + 1).
-function getLevelsForTotal(totalActions: number): Level[] {
-  const total = Math.max(2, totalActions);
-  const iniTo = Math.min(total - 2, Math.max(1, Math.round(total * 0.3)));
-  const avanTo = Math.min(total - 1, Math.max(iniTo + 1, Math.round(total * 0.6)));
-  return [
-    { name: "Iniciante", from: 0, to: iniTo, col: "#378ADD", bg: "#E6F1FB", txt: "#185FA5" },
-    { name: "Avanzado", from: iniTo, to: avanTo, col: "#7F77DD", bg: "#EEEDFE", txt: "#534AB7" },
-    { name: "Maestro", from: avanTo, to: total, col: "#BA7517", bg: "#FAEEDA", txt: "#854F0B" },
-  ];
+function getTotalForTarget(targetLevel: number | null | undefined, timesPerDay: number | null | undefined): number {
+  const levels = Math.max(1, targetLevel ?? DEFAULT_TARGET_LEVEL);
+  return levels * getActionsPerLevel(timesPerDay);
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function rgbToHex([r, g, b]: [number, number, number]): string {
+  return "#" + [r, g, b].map((v) => Math.round(v).toString(16).padStart(2, "0")).join("");
+}
+
+function mixHex(a: string, b: string, t: number): string {
+  const [ar, ag, ab] = hexToRgb(a);
+  const [br, bg, bb] = hexToRgb(b);
+  return rgbToHex([ar + (br - ar) * t, ag + (bg - ag) * t, ab + (bb - ab) * t]);
+}
+
+// 3 color anchors (blue → violet → gold) carried over from the original 3-tier design, now
+// interpolated across however many numbered levels the tracker has, so early levels still
+// read "cool" and later ones "warm" no matter the total.
+const LEVEL_COLOR_ANCHORS = [
+  { col: "#378ADD", bg: "#E6F1FB", txt: "#185FA5" },
+  { col: "#7F77DD", bg: "#EEEDFE", txt: "#534AB7" },
+  { col: "#BA7517", bg: "#FAEEDA", txt: "#854F0B" },
+];
+
+function colorForT(t: number): { col: string; bg: string; txt: string } {
+  const clamped = Math.min(1, Math.max(0, t));
+  const [a, b, c] = LEVEL_COLOR_ANCHORS;
+  const [from, to, localT] = clamped <= 0.5 ? [a, b, clamped / 0.5] : [b, c, (clamped - 0.5) / 0.5];
+  return {
+    col: mixHex(from.col, to.col, localT),
+    bg: mixHex(from.bg, to.bg, localT),
+    txt: mixHex(from.txt, to.txt, localT),
+  };
+}
+
+function getLevels(targetLevel: number | null | undefined, timesPerDay: number | null | undefined): Level[] {
+  const n = Math.max(1, targetLevel ?? DEFAULT_TARGET_LEVEL);
+  const perLevel = getActionsPerLevel(timesPerDay);
+  return Array.from({ length: n }, (_, i) => {
+    const t = n <= 1 ? 1 : i / (n - 1);
+    return { label: `Nivel ${i + 1}`, from: i * perLevel, to: (i + 1) * perLevel, ...colorForT(t) };
+  });
 }
 
 const CIRC = 2 * Math.PI * 88;
 
 interface HistoryEntry {
   timestamp: string;
+  // Local calendar day (YYYY-MM-DD) this action was registered on. Older entries may not
+  // have it — callers fall back to deriving it from `timestamp`.
+  date?: string;
 }
 
 interface TrackerData {
@@ -59,6 +100,7 @@ interface TrackerData {
   skillIds?: string[];
   bodyLinks?: BodyLink[];
   targetLevel?: number | null;
+  timesPerDay?: number | null;
 }
 
 interface ArchivedTracker {
@@ -67,6 +109,7 @@ interface ArchivedTracker {
   completedDate: string;
   startDate?: string;
   totalActions: number;
+  timesPerDay?: number | null;
 }
 
 interface RewiringTrackerProps {
@@ -98,6 +141,13 @@ function getLocalDateString(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+// Local calendar day a history entry belongs to: prefers the server-stored `date` (decided
+// client-side at the moment of the action, immune to server/user timezone drift); falls back
+// to deriving it from `timestamp` for entries recorded before that column existed.
+function entryDateStr(entry: HistoryEntry): string {
+  return entry.date ?? getLocalDateString(new Date(entry.timestamp));
+}
+
 // Map each day that had at least one action to the cumulative tracker count
 // reached by the end of that day (the last action's running total).
 function buildDailyProgress(history: HistoryEntry[]): Map<string, number> {
@@ -106,7 +156,38 @@ function buildDailyProgress(history: HistoryEntry[]): Map<string, number> {
   );
   const map = new Map<string, number>();
   sorted.forEach((entry, idx) => {
-    map.set(getLocalDateString(new Date(entry.timestamp)), idx + 1);
+    map.set(entryDateStr(entry), idx + 1);
+  });
+  return map;
+}
+
+// How many reps were registered today — used to drive the "veces por día" daily quota (button
+// disable, ring progress, "Tareas de hoy"). Classic trackers never call this for gating, but it
+// still works for them (any history entry belongs to some day).
+function repsToday(history: HistoryEntry[]): number {
+  const todayStr = getLocalDateString(new Date());
+  return history.filter((h) => entryDateStr(h) === todayStr).length;
+}
+
+// "Veces por día" trackers: day → { level reached by end of day, progress within that day's
+// quota }. Unlike buildDailyProgress (cumulative action count), the level only advances once a
+// day's full quota of reps is hit — so this walks days in order tracking level-ups earned so
+// far, same shape CalendarDayRing already expects.
+function buildDailyLevelRings(history: HistoryEntry[], timesPerDay: number, levels: Level[]): Map<string, { level: Level; progress: number }> {
+  const repsByDay = new Map<string, number>();
+  history.forEach((entry) => {
+    const day = entryDateStr(entry);
+    repsByDay.set(day, (repsByDay.get(day) ?? 0) + 1);
+  });
+  const days = Array.from(repsByDay.keys()).sort();
+  const map = new Map<string, { level: Level; progress: number }>();
+  let levelUpsSoFar = 0;
+  days.forEach((day) => {
+    const reps = repsByDay.get(day) ?? 0;
+    const full = reps >= timesPerDay;
+    const levelIdx = Math.min(levelUpsSoFar, levels.length - 1);
+    map.set(day, { level: levels[levelIdx], progress: full ? 1 : reps / timesPerDay });
+    if (full) levelUpsSoFar += 1;
   });
   return map;
 }
@@ -121,6 +202,64 @@ function getLevelIndex(count: number, levels: Level[]): number {
     if (count >= levels[i].from) return i;
   }
   return 0;
+}
+
+interface ProgressDisplay {
+  centerValue: number;
+  centerSuffix: string;
+  progressPercent: number;
+  remainingText: string;
+  // Numeric version of remainingText's count, for stat tiles ("Para completar"); null once
+  // fully complete (nothing left to count down).
+  remainingCount: number | null;
+  isComplete: boolean;
+  // "Veces por día" only: today's quota of reps was already met (not the same as the whole
+  // tracker being complete — the level just doesn't advance again until tomorrow).
+  isDoneForToday: boolean;
+  actionDisabled: boolean;
+}
+
+// Shared by TrackerCard and DetailPanel so the ring/center-text/"acciones faltan" copy stays
+// consistent between the two modes (classic vs "veces por día") without duplicating the
+// branching logic in both components.
+function getProgressDisplay(data: TrackerData, levels: Level[], levelIndex: number): ProgressDisplay {
+  const level = levels[levelIndex];
+  const isMaxLevel = levelIndex === levels.length - 1;
+  const isComplete = isMaxLevel && data.count >= level.to;
+
+  if (data.timesPerDay && data.timesPerDay >= 1) {
+    const reps = repsToday(data.history);
+    const isDoneForToday = reps >= data.timesPerDay;
+    const remainingReps = Math.max(0, data.timesPerDay - reps);
+    return {
+      centerValue: reps,
+      centerSuffix: `de ${data.timesPerDay} hoy`,
+      progressPercent: Math.min(1, reps / data.timesPerDay),
+      remainingText: isComplete
+        ? "¡Completado!"
+        : isDoneForToday
+          ? "¡Listo por hoy! Volvé mañana"
+          : `${remainingReps} repetición${remainingReps === 1 ? "" : "es"} más hoy`,
+      remainingCount: isComplete ? null : remainingReps,
+      isComplete,
+      isDoneForToday,
+      actionDisabled: isComplete || isDoneForToday,
+    };
+  }
+
+  const remainingActions = level.to - data.count;
+  return {
+    centerValue: data.count,
+    centerSuffix: `de ${level.to}`,
+    progressPercent: Math.min(1, (data.count - level.from) / (level.to - level.from)),
+    remainingText: isComplete
+      ? "¡Completado!"
+      : `${remainingActions} acción${remainingActions === 1 ? "" : "es"} falta${remainingActions === 1 ? "" : "n"}`,
+    remainingCount: isComplete ? null : remainingActions,
+    isComplete,
+    isDoneForToday: false,
+    actionDisabled: isComplete,
+  };
 }
 
 function useLongPress(callback: () => void, duration = 500) {
@@ -214,6 +353,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
   const [editingTrackerSkillIds, setEditingTrackerSkillIds] = useState<string[]>([]);
   const [editingTrackerBodyLinks, setEditingTrackerBodyLinks] = useState<BodyLink[]>([]);
   const [editingTrackerTargetLevel, setEditingTrackerTargetLevel] = useState(String(DEFAULT_TARGET_LEVEL));
+  const [editingTrackerTimesPerDay, setEditingTrackerTimesPerDay] = useState("");
   const [editingSkillsForArea, setEditingSkillsForArea] = useState<any[]>([]);
   const [xpPopupSnapshot, setXpPopupSnapshot] = useState<ExperienceGainSnapshot | null>(null);
   const { addBodyBlock } = useBodyProgress();
@@ -223,6 +363,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
   const [newTrackerSkillIds, setNewTrackerSkillIds] = useState<string[]>([]);
   const [newTrackerBodyLinks, setNewTrackerBodyLinks] = useState<BodyLink[]>([]);
   const [newTrackerTargetLevel, setNewTrackerTargetLevel] = useState(String(DEFAULT_TARGET_LEVEL));
+  const [newTrackerTimesPerDay, setNewTrackerTimesPerDay] = useState("");
 
   // Muestra el pop-up de crecimiento corporal; si en la misma confirmación ya se mostró el de
   // XP (que acá es local, no el contexto compartido), espera a que termine de leerse.
@@ -356,6 +497,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
             skillIds: Array.isArray(tracker.skillIds) && tracker.skillIds.length > 0 ? tracker.skillIds : (tracker.skillId ? [tracker.skillId] : []),
             bodyLinks: Array.isArray(tracker.bodyLinks) ? tracker.bodyLinks : [],
             targetLevel: tracker.targetLevel,
+            timesPerDay: tracker.timesPerDay,
           };
         }
 
@@ -368,6 +510,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           completedDate: tracker.archivedAt,
           startDate: tracker.startDate,
           totalActions: tracker.count || 0,
+          timesPerDay: tracker.timesPerDay,
         }));
         setArchivedTrackers(archivedList);
 
@@ -405,7 +548,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
       const archiveOnClose = async () => {
         try {
           const completedTrackerIds = Object.entries(trackerData)
-            .filter(([_, data]) => data.count >= getTotalActions(data.targetLevel))
+            .filter(([_, data]) => data.count >= getTotalForTarget(data.targetLevel, data.timesPerDay))
             .map(([id, _]) => id);
 
           for (const trackerId of completedTrackerIds) {
@@ -601,6 +744,10 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
     const targetLevel = Number.isFinite(parsedTargetLevel) && parsedTargetLevel >= 1
       ? Math.round(parsedTargetLevel)
       : DEFAULT_TARGET_LEVEL;
+    const parsedTimesPerDay = Number(newTrackerTimesPerDay);
+    const timesPerDay = Number.isFinite(parsedTimesPerDay) && parsedTimesPerDay >= 1
+      ? Math.round(parsedTimesPerDay)
+      : null;
     try {
       let newTracker: any = null;
 
@@ -618,6 +765,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
             skillIds: newTrackerSkillIds,
             bodyLinks: newTrackerBodyLinks,
             targetLevel,
+            timesPerDay,
           }),
         });
 
@@ -644,6 +792,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           skillIds: newTrackerSkillIds,
           bodyLinks: newTrackerBodyLinks,
           targetLevel,
+          timesPerDay,
         };
         console.log("[Rewiring] Created local tracker:", newTracker);
       }
@@ -662,6 +811,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
         skillIds: Array.isArray(newTracker.skillIds) ? newTracker.skillIds : (newTracker.skillId ? [newTracker.skillId] : []),
         bodyLinks: Array.isArray(newTracker.bodyLinks) ? newTracker.bodyLinks : [],
         targetLevel: newTracker.targetLevel,
+        timesPerDay: newTracker.timesPerDay,
       };
       console.log("[Rewiring] New tracker data:", newTrackerData);
 
@@ -690,6 +840,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
       setNewTrackerSkillIds([]);
       setNewTrackerBodyLinks([]);
       setNewTrackerTargetLevel(String(DEFAULT_TARGET_LEVEL));
+      setNewTrackerTimesPerDay("");
       setSelectedTrackerId(newTracker.id);
 
       console.log("[Rewiring] Tracker created and saved:", newTracker.id, newTrackerData);
@@ -742,7 +893,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
     }
   };
 
-  const handleUpdateTracker = async (trackerId: string, updates: { name: string; areaId: string | null; projectId: string | null; skillIds: string[]; bodyLinks?: BodyLink[]; targetLevel: number }) => {
+  const handleUpdateTracker = async (trackerId: string, updates: { name: string; areaId: string | null; projectId: string | null; skillIds: string[]; bodyLinks?: BodyLink[]; targetLevel: number; timesPerDay: number | null }) => {
     if (!updates.name.trim()) return;
 
     try {
@@ -759,6 +910,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
             skillIds: updates.skillIds,
             bodyLinks: updates.bodyLinks ?? [],
             targetLevel: updates.targetLevel,
+            timesPerDay: updates.timesPerDay,
           }),
         });
 
@@ -784,6 +936,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           skillIds: updates.skillIds,
           bodyLinks: updates.bodyLinks ?? [],
           targetLevel: updates.targetLevel,
+          timesPerDay: updates.timesPerDay,
         };
       }
 
@@ -796,6 +949,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
       setEditingTrackerProjectId(null);
       setEditingTrackerSkillIds([]);
       setEditingTrackerBodyLinks([]);
+      setEditingTrackerTimesPerDay("");
 
       // Save to localStorage
       storage.setItem("rewiring_tracker_list", JSON.stringify(updatedTrackers));
@@ -812,14 +966,17 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
     if (!data) return;
 
     try {
+      const todayStr = getLocalDateString(new Date());
+
       // Call API to record action
       const res = await fetch(`/api/rewiring-trackers/${trackerId}/record`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date: todayStr }),
       });
 
       let newCount = data.count + 1;
-      
+
       if (!res.ok) {
         console.warn("API error, using local increment");
         // If API fails, still update locally
@@ -827,12 +984,13 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
         const updatedTracker = await res.json();
         newCount = updatedTracker.count;
       }
-      
-      const newHistory = [...data.history, { timestamp: new Date().toISOString() }];
 
-      // Trigger level completion animation whenever a tier boundary (Iniciante/
-      // Avanzado/Maestro) is crossed, scaled to this tracker's own target level.
-      const levels = getLevelsForTotal(getTotalActions(data.targetLevel));
+      const newHistory = [...data.history, { timestamp: new Date().toISOString(), date: todayStr }];
+
+      // Trigger level completion animation whenever a numbered level is crossed, scaled to
+      // this tracker's own target level (and, for "veces por día" trackers, only actually
+      // moves when newCount comes back bumped from the server).
+      const levels = getLevels(data.targetLevel, data.timesPerDay);
       if (levels.some((lvl) => lvl.to === newCount)) {
         setLevelCompletingTrackerId(trackerId);
       }
@@ -908,7 +1066,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
     try {
       // Find all trackers that reached their own target level (completed)
       const completedTrackerIds = Object.entries(trackerData)
-        .filter(([_, data]) => data.count >= getTotalActions(data.targetLevel))
+        .filter(([_, data]) => data.count >= getTotalForTarget(data.targetLevel, data.timesPerDay))
         .map(([id, _]) => id);
 
       // Archive each completed tracker
@@ -972,6 +1130,8 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           onNewTrackerBodyLinksChange={setNewTrackerBodyLinks}
           newTrackerTargetLevel={newTrackerTargetLevel}
           onNewTrackerTargetLevel={setNewTrackerTargetLevel}
+          newTrackerTimesPerDay={newTrackerTimesPerDay}
+          onNewTrackerTimesPerDay={setNewTrackerTimesPerDay}
           areas={areas}
           projects={projects}
           availableSkills={availableSkills}
@@ -994,6 +1154,8 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           onEditingTrackerBodyLinksChange={setEditingTrackerBodyLinks}
           editingTrackerTargetLevel={editingTrackerTargetLevel}
           onEditingTrackerTargetLevel={setEditingTrackerTargetLevel}
+          editingTrackerTimesPerDay={editingTrackerTimesPerDay}
+          onEditingTrackerTimesPerDay={setEditingTrackerTimesPerDay}
           editingSkillsForArea={editingSkillsForArea}
           onEditingSkillsForArea={setEditingSkillsForArea}
           levelCompletingTrackerId={levelCompletingTrackerId}
@@ -1076,6 +1238,8 @@ function TrackerCard({
   onEditingTrackerBodyLinksChange,
   editingTrackerTargetLevel,
   onEditingTrackerTargetLevel,
+  editingTrackerTimesPerDay,
+  onEditingTrackerTimesPerDay,
   editingSkillsForArea,
   onEditingSkillsForArea,
 }: {
@@ -1089,7 +1253,7 @@ function TrackerCard({
   onContextMenuTrackerId: (id: string | null) => void;
   onEditingTrackerName: (name: string) => void;
   onSetEditingTrackerId: (id: string | null) => void;
-  onUpdateTracker: (id: string, updates: { name: string; areaId: string | null; projectId: string | null; skillIds: string[]; bodyLinks?: BodyLink[]; targetLevel: number }) => void;
+  onUpdateTracker: (id: string, updates: { name: string; areaId: string | null; projectId: string | null; skillIds: string[]; bodyLinks?: BodyLink[]; targetLevel: number; timesPerDay: number | null }) => void;
   onDeleteTracker: (id: string) => void;
   onRegisterAction: (id: string) => void;
   onSelectTracker: (id: string) => void;
@@ -1106,16 +1270,14 @@ function TrackerCard({
   onEditingTrackerBodyLinksChange: (links: BodyLink[]) => void;
   editingTrackerTargetLevel: string;
   onEditingTrackerTargetLevel: (level: string) => void;
+  editingTrackerTimesPerDay: string;
+  onEditingTrackerTimesPerDay: (value: string) => void;
   editingSkillsForArea: any[];
   onEditingSkillsForArea: (skills: any[]) => void;
 }) {
-  const levels = getLevelsForTotal(getTotalActions(data.targetLevel));
+  const levels = getLevels(data.targetLevel, data.timesPerDay);
   const level = levels[levelIndex];
-  const isComplete = levelIndex === levels.length - 1 && data.count >= level.to;
-  const remainingActions = level.to - data.count;
-  const progressInLevel = data.count - level.from;
-  const levelRange = level.to - level.from;
-  const progressPercent = Math.min(1, progressInLevel / levelRange);
+  const progress = getProgressDisplay(data, levels, levelIndex);
   const [animatingLevel, setAnimatingLevel] = useState(false);
 
   // Handle level completion animation
@@ -1138,7 +1300,7 @@ function TrackerCard({
   };
 
   // Calculate animation progress for level completion
-  let animatedProgressPercent = progressPercent;
+  let animatedProgressPercent = progress.progressPercent;
   let animatedLevel = level;
   if (animatingLevel) {
     animatedProgressPercent = 1;
@@ -1244,6 +1406,21 @@ function TrackerCard({
             </div>
           </div>
 
+          {/* Times Per Day */}
+          <div>
+            <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
+              ¿Cuántas veces por día? (opcional)
+            </label>
+            <Input
+              type="number"
+              min={1}
+              value={editingTrackerTimesPerDay}
+              onChange={(e) => onEditingTrackerTimesPerDay(e.target.value)}
+              placeholder="Sin límite diario"
+              className="mt-1 text-sm"
+            />
+          </div>
+
           {/* Target Level */}
           <div>
             <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
@@ -1261,7 +1438,11 @@ function TrackerCard({
               {(() => {
                 const parsed = Number(editingTrackerTargetLevel);
                 const previewLevel = Number.isFinite(parsed) && parsed >= 1 ? Math.round(parsed) : DEFAULT_TARGET_LEVEL;
-                return `Nivel ${previewLevel} = ${getTotalActions(previewLevel)} acciones en total`;
+                const parsedTpd = Number(editingTrackerTimesPerDay);
+                const previewTpd = Number.isFinite(parsedTpd) && parsedTpd >= 1 ? Math.round(parsedTpd) : null;
+                return previewTpd
+                  ? `Nivel ${previewLevel} = ${previewLevel} día${previewLevel === 1 ? "" : "s"} completos de ${previewTpd} veces cada uno`
+                  : `Nivel ${previewLevel} = ${previewLevel * 3} acciones en total (3 acciones por nivel)`;
               })()}
             </p>
           </div>
@@ -1278,6 +1459,7 @@ function TrackerCard({
                 onEditingTrackerSkillIds([]);
                 onEditingTrackerBodyLinksChange([]);
                 onEditingTrackerTargetLevel(String(DEFAULT_TARGET_LEVEL));
+                onEditingTrackerTimesPerDay("");
                 onEditingSkillsForArea([]);
               }}
               variant="outline"
@@ -1293,6 +1475,10 @@ function TrackerCard({
                   const targetLevel = Number.isFinite(parsedLevel) && parsedLevel >= 1
                     ? Math.round(parsedLevel)
                     : DEFAULT_TARGET_LEVEL;
+                  const parsedTpd = Number(editingTrackerTimesPerDay);
+                  const timesPerDay = Number.isFinite(parsedTpd) && parsedTpd >= 1
+                    ? Math.round(parsedTpd)
+                    : null;
                   onUpdateTracker(tracker.id, {
                     name: editingTrackerName,
                     areaId: editingTrackerAreaId,
@@ -1300,6 +1486,7 @@ function TrackerCard({
                     skillIds: editingTrackerSkillIds,
                     bodyLinks: editingTrackerBodyLinks,
                     targetLevel,
+                    timesPerDay,
                   });
                 }
               }}
@@ -1344,10 +1531,10 @@ function TrackerCard({
               {/* Center text */}
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <div className="text-3xl font-bold" style={{ color: animatedLevel.col }}>
-                  {data.count}
+                  {progress.centerValue}
                 </div>
                 <div className="text-xs font-semibold text-foreground/80">
-                  de {level.to}
+                  {progress.centerSuffix}
                 </div>
               </div>
             </div>
@@ -1361,20 +1548,18 @@ function TrackerCard({
                 className="text-xs px-2 py-1 rounded-full font-bold text-gray-900"
                 style={{ background: level.col }}
               >
-                {level.name}
+                {level.label}
               </span>
             </div>
             <div className="text-xs text-muted-foreground mb-3">
-              {isComplete
-                ? "¡Completado!"
-                : `${remainingActions} acción${remainingActions === 1 ? "" : "es"} falta${remainingActions === 1 ? "" : "n"}`}
+              {progress.remainingText}
             </div>
             <Button
               onClick={(e) => {
                 e.stopPropagation();
                 onRegisterAction(tracker.id);
               }}
-              disabled={isComplete}
+              disabled={progress.actionDisabled}
               className="w-full rounded-xl text-xs h-8"
               style={{
                 background: animatedLevel.col,
@@ -1405,6 +1590,7 @@ function TrackerCard({
                 onEditingTrackerSkillIds(data.skillIds?.length ? data.skillIds : data.skillId ? [data.skillId] : []);
                 onEditingTrackerBodyLinksChange(Array.isArray(data.bodyLinks) ? data.bodyLinks : []);
                 onEditingTrackerTargetLevel(String(data.targetLevel ?? DEFAULT_TARGET_LEVEL));
+                onEditingTrackerTimesPerDay(data.timesPerDay ? String(data.timesPerDay) : "");
                 onSetEditingTrackerId(tracker.id);
                 onContextMenuTrackerId(null);
 
@@ -1472,6 +1658,8 @@ function MainPanel({
   onNewTrackerBodyLinksChange,
   newTrackerTargetLevel,
   onNewTrackerTargetLevel,
+  newTrackerTimesPerDay,
+  onNewTrackerTimesPerDay,
   areas,
   projects,
   availableSkills,
@@ -1494,6 +1682,8 @@ function MainPanel({
   onEditingTrackerBodyLinksChange,
   editingTrackerTargetLevel,
   onEditingTrackerTargetLevel,
+  editingTrackerTimesPerDay,
+  onEditingTrackerTimesPerDay,
   editingSkillsForArea,
   onEditingSkillsForArea,
   levelCompletingTrackerId,
@@ -1519,6 +1709,8 @@ function MainPanel({
   onNewTrackerBodyLinksChange: (links: BodyLink[]) => void;
   newTrackerTargetLevel: string;
   onNewTrackerTargetLevel: (level: string) => void;
+  newTrackerTimesPerDay: string;
+  onNewTrackerTimesPerDay: (value: string) => void;
   areas: any[];
   projects: any[];
   availableSkills: any[];
@@ -1529,7 +1721,7 @@ function MainPanel({
   editingTrackerId: string | null;
   editingTrackerName: string | null;
   onEditingTrackerName: (name: string) => void;
-  onUpdateTracker: (id: string, updates: { name: string; areaId: string | null; projectId: string | null; skillIds: string[]; bodyLinks?: BodyLink[]; targetLevel: number }) => void;
+  onUpdateTracker: (id: string, updates: { name: string; areaId: string | null; projectId: string | null; skillIds: string[]; bodyLinks?: BodyLink[]; targetLevel: number; timesPerDay: number | null }) => void;
   onSetEditingTrackerId: (id: string | null) => void;
   editingTrackerAreaId: string | null;
   onEditingTrackerAreaId: (id: string | null) => void;
@@ -1541,6 +1733,8 @@ function MainPanel({
   onEditingTrackerBodyLinksChange: (links: BodyLink[]) => void;
   editingTrackerTargetLevel: string;
   onEditingTrackerTargetLevel: (level: string) => void;
+  editingTrackerTimesPerDay: string;
+  onEditingTrackerTimesPerDay: (value: string) => void;
   editingSkillsForArea: any[];
   onEditingSkillsForArea: (skills: any[]) => void;
   levelCompletingTrackerId: string | null;
@@ -1578,7 +1772,7 @@ function MainPanel({
             const data = trackerData[tracker.id];
             if (!data) return null;
 
-            const levelIndex = getLevelIndex(data.count, getLevelsForTotal(getTotalActions(data.targetLevel)));
+            const levelIndex = getLevelIndex(data.count, getLevels(data.targetLevel, data.timesPerDay));
             const isEditMode = editingTrackerId === tracker.id;
             const isContextMenuOpen = contextMenuTrackerId === tracker.id;
 
@@ -1612,6 +1806,8 @@ function MainPanel({
                 onEditingTrackerBodyLinksChange={onEditingTrackerBodyLinksChange}
                 editingTrackerTargetLevel={editingTrackerTargetLevel}
                 onEditingTrackerTargetLevel={onEditingTrackerTargetLevel}
+                editingTrackerTimesPerDay={editingTrackerTimesPerDay}
+                onEditingTrackerTimesPerDay={onEditingTrackerTimesPerDay}
                 editingSkillsForArea={editingSkillsForArea}
                 onEditingSkillsForArea={onEditingSkillsForArea}
               />
@@ -1716,6 +1912,24 @@ function MainPanel({
                   <p className="mt-1 text-xs text-muted-foreground">Opcional: linkear a uno o más componentes de fuerza/flexibilidad para hacerlos crecer al completar</p>
                 </div>
 
+                {/* Times Per Day */}
+                <div className="mb-4">
+                  <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
+                    ¿Cuántas veces por día? (opcional)
+                  </label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={newTrackerTimesPerDay}
+                    onChange={(e) => onNewTrackerTimesPerDay(e.target.value)}
+                    placeholder="Sin límite diario"
+                    className="mt-2"
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Opcional: si lo completás, cada día vuelve a cero (sin perder el nivel) y subís de nivel al completar todas las veces de un día
+                  </p>
+                </div>
+
                 {/* Target Level */}
                 <div className="mb-4">
                   <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
@@ -1733,7 +1947,11 @@ function MainPanel({
                     {(() => {
                       const parsed = Number(newTrackerTargetLevel);
                       const previewLevel = Number.isFinite(parsed) && parsed >= 1 ? Math.round(parsed) : DEFAULT_TARGET_LEVEL;
-                      return `Nivel ${previewLevel} = ${getTotalActions(previewLevel)} acciones en total`;
+                      const parsedTpd = Number(newTrackerTimesPerDay);
+                      const previewTpd = Number.isFinite(parsedTpd) && parsedTpd >= 1 ? Math.round(parsedTpd) : null;
+                      return previewTpd
+                        ? `Nivel ${previewLevel} = ${previewLevel} día${previewLevel === 1 ? "" : "s"} completos de ${previewTpd} veces cada uno`
+                        : `Nivel ${previewLevel} = ${previewLevel * 3} acciones en total (3 acciones por nivel)`;
                     })()}
                   </p>
                 </div>
@@ -1749,6 +1967,7 @@ function MainPanel({
                       onNewTrackerSkillIds([]);
                       onNewTrackerBodyLinksChange([]);
                       onNewTrackerTargetLevel(String(DEFAULT_TARGET_LEVEL));
+                      onNewTrackerTimesPerDay("");
                     }}
                     className="flex-1"
                   >
@@ -1802,15 +2021,10 @@ function DetailPanel({
   isLevelCompleting: boolean;
   onViewCalendar: () => void;
 }) {
-  const levels = getLevelsForTotal(getTotalActions(data.targetLevel));
+  const levels = getLevels(data.targetLevel, data.timesPerDay);
   const levelIndex = getLevelIndex(data.count, levels);
   const currentLevel = levels[levelIndex];
-  const isMaxLevel = levelIndex === levels.length - 1;
-  const isComplete = isMaxLevel && data.count >= currentLevel.to;
-  const remainingActions = currentLevel.to - data.count;
-  const progressInLevel = data.count - currentLevel.from;
-  const levelRange = currentLevel.to - currentLevel.from;
-  const progressPercent = Math.min(1, progressInLevel / levelRange);
+  const progress = getProgressDisplay(data, levels, levelIndex);
   const [animatingLevel, setAnimatingLevel] = useState(false);
 
   // Handle level completion animation
@@ -1821,7 +2035,7 @@ function DetailPanel({
   }, [isLevelCompleting]);
 
   // Calculate animation progress for level completion
-  let animatedProgressPercent = progressPercent;
+  let animatedProgressPercent = progress.progressPercent;
   let animatedLevel = currentLevel;
   if (animatingLevel) {
     animatedProgressPercent = 1;
@@ -1883,8 +2097,8 @@ function DetailPanel({
             </svg>
             {/* Center text */}
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <div className="text-4xl font-medium">{data.count}</div>
-              <div className="text-xs text-muted-foreground">de {currentLevel.to}</div>
+              <div className="text-4xl font-medium">{progress.centerValue}</div>
+              <div className="text-xs text-muted-foreground">{progress.centerSuffix}</div>
             </div>
           </div>
         </div>
@@ -1895,28 +2109,26 @@ function DetailPanel({
             className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium"
             style={{ background: animatedLevel.bg, color: animatedLevel.txt }}
           >
-            Nivel {levelIndex + 1} — {animatedLevel.name}
+            {animatedLevel.label}
           </div>
         </div>
 
         {/* Progress text */}
         <div className="text-center text-sm text-muted-foreground">
-          {isComplete
-            ? "Maestro completo — ¡todo logrado!"
-            : `${remainingActions} acción${remainingActions === 1 ? "" : "es"} para completar`}
+          {progress.remainingText}
         </div>
 
         {/* Register action button */}
         <motion.button
           onClick={() => onRegisterAction(trackerId)}
-          disabled={isComplete}
+          disabled={progress.actionDisabled}
           className="w-full py-3 rounded-full border"
           style={{
             borderColor: animatedLevel.col,
             background: animatedLevel.bg,
             color: animatedLevel.txt,
           }}
-          whileTap={isComplete ? {} : { scale: 0.97 }}
+          whileTap={progress.actionDisabled ? {} : { scale: 0.97 }}
         >
           + Registrar acción
         </motion.button>
@@ -1929,9 +2141,11 @@ function DetailPanel({
           </div>
           <div className="bg-muted/50 dark:bg-muted/40 rounded-lg p-4 text-center border border-border/20 dark:border-border/40">
             <div className="text-2xl font-medium">
-              {isComplete ? "—" : remainingActions}
+              {progress.remainingCount ?? "—"}
             </div>
-            <div className="text-xs text-muted-foreground mt-1">Para completar</div>
+            <div className="text-xs text-muted-foreground mt-1">
+              {data.timesPerDay ? "Repeticiones hoy" : "Para completar"}
+            </div>
           </div>
         </div>
 
@@ -1973,11 +2187,12 @@ function DetailPanel({
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium">
                       {isActive ? "→ " : ""}
-                      Nivel {idx + 1}: {level.name}
+                      {level.label}
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      {actionsInLevel} / {level.to - level.from} acciones
-                      {isDone && " · completado"}
+                      {data.timesPerDay
+                        ? isDone ? "Día completado" : isActive ? "En progreso" : "Pendiente"
+                        : `${actionsInLevel} / ${level.to - level.from} acciones${isDone ? " · completado" : ""}`}
                     </div>
                   </div>
                   <div style={{ color: level.col }}>
@@ -2062,8 +2277,12 @@ function CalendarPanel({
   onMonthChange: (delta: number) => void;
   onBack: () => void;
 }) {
-  const levels = getLevelsForTotal(getTotalActions(data.targetLevel));
-  const dailyProgress = buildDailyProgress(data.history);
+  const levels = getLevels(data.targetLevel, data.timesPerDay);
+  // Classic trackers: day → cumulative action count reached. "Veces por día" trackers: day →
+  // { level, progress within that day's quota } directly, since level only advances once a
+  // day's full quota of reps is hit (not once per action).
+  const dailyProgress = data.timesPerDay ? null : buildDailyProgress(data.history);
+  const dailyLevelRings = data.timesPerDay ? buildDailyLevelRings(data.history, data.timesPerDay, levels) : null;
 
   const year = month.getFullYear();
   const monthIndex = month.getMonth();
@@ -2125,15 +2344,19 @@ function CalendarPanel({
             const dObj = new Date(year, monthIndex, day);
             const isFuture = dObj > today;
             const isToday = getLocalDateString(today) === dateStr;
-            const reachedCount = dailyProgress.get(dateStr);
 
             let ring: { level: Level; progress: number } | null = null;
-            if (reachedCount !== undefined) {
-              const levelIdx = getLevelIndex(reachedCount, levels);
-              const lvl = levels[levelIdx];
-              const range = lvl.to - lvl.from;
-              const progress = range > 0 ? Math.min(1, (reachedCount - lvl.from) / range) : 1;
-              ring = { level: lvl, progress };
+            if (dailyLevelRings) {
+              ring = dailyLevelRings.get(dateStr) ?? null;
+            } else {
+              const reachedCount = dailyProgress?.get(dateStr);
+              if (reachedCount !== undefined) {
+                const levelIdx = getLevelIndex(reachedCount, levels);
+                const lvl = levels[levelIdx];
+                const range = lvl.to - lvl.from;
+                const progress = range > 0 ? Math.min(1, (reachedCount - lvl.from) / range) : 1;
+                ring = { level: lvl, progress };
+              }
             }
 
             return (
@@ -2156,9 +2379,9 @@ function CalendarPanel({
       {/* Legend */}
       <div className="border-t border-border/30 flex flex-wrap gap-3 px-4 sm:px-5 py-3">
         {levels.map((lvl) => (
-          <div key={lvl.name} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <div key={lvl.label} className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <div className="h-2.5 w-2.5 rounded-full" style={{ background: lvl.col }} />
-            <span>{lvl.name}</span>
+            <span>{lvl.label}</span>
           </div>
         ))}
       </div>
@@ -2247,7 +2470,7 @@ function ArchivedItemCard({
             </div>
           </div>
           <div className="pl-11 flex items-center gap-2 text-xs text-yellow-700/70 dark:text-yellow-300/70">
-            <span className="font-semibold">Acciones completadas:</span>
+            <span className="font-semibold">{item.timesPerDay ? "Días completados:" : "Acciones completadas:"}</span>
             <span className="font-bold text-yellow-700 dark:text-yellow-300">{item.totalActions}</span>
           </div>
         </>

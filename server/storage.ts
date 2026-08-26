@@ -267,7 +267,7 @@ export interface IStorage {
   createRewiringTracker(tracker: InsertRewiringTracker & { userId: string; id?: string; history?: Array<{ timestamp: string | Date }> }): Promise<RewiringTracker>;
   updateRewiringTracker(id: string, tracker: Partial<InsertRewiringTracker>): Promise<RewiringTracker | undefined>;
   deleteRewiringTracker(id: string): Promise<void>;
-  recordRewiringTrackerAction(trackerId: string, userId: string): Promise<{ tracker: RewiringTracker; record: RewiringTrackerRecord }>;
+  recordRewiringTrackerAction(trackerId: string, userId: string, date: string): Promise<{ tracker: RewiringTracker; record: RewiringTrackerRecord }>;
   archiveRewiringTracker(id: string): Promise<RewiringTracker | undefined>;
 }
 
@@ -2545,6 +2545,7 @@ export class DbStorage implements IStorage {
       name: tracker.name,
       count: initialCount,
       targetLevel: tracker.targetLevel ?? null,
+      timesPerDay: tracker.timesPerDay ?? null,
       areaId: tracker.areaId ?? null,
       projectId: tracker.projectId ?? null,
       skillId: tracker.skillId ?? null,
@@ -2580,7 +2581,7 @@ export class DbStorage implements IStorage {
     await db.delete(rewiringTrackers).where(eq(rewiringTrackers.id, id));
   }
 
-  async recordRewiringTrackerAction(trackerId: string, userId: string): Promise<{ tracker: RewiringTracker; record: RewiringTrackerRecord }> {
+  async recordRewiringTrackerAction(trackerId: string, userId: string, date: string): Promise<{ tracker: RewiringTracker; record: RewiringTrackerRecord }> {
     const tracker = await this.getRewiringTracker(trackerId);
     if (!tracker) {
       throw new Error("Tracker not found");
@@ -2592,10 +2593,21 @@ export class DbStorage implements IStorage {
       trackerId,
       userId,
       timestamp: new Date(),
+      date,
     } as any).returning();
 
+    // Classic mode: every action bumps count by 1, same as before. "Veces por día" mode:
+    // count only bumps once the day's full quota of reps is reached (level-up per completed
+    // day), so we need today's rep tally including the record just inserted above.
+    let newCount = (tracker.count || 0) + 1;
+    if (tracker.timesPerDay && tracker.timesPerDay >= 1) {
+      const records = await this.getRewiringTrackerRecords(trackerId);
+      const repsToday = records.filter((r) => (r.date ?? "") === date).length;
+      newCount = repsToday === tracker.timesPerDay ? (tracker.count || 0) + 1 : (tracker.count || 0);
+    }
+
     const [updatedTracker] = await db.update(rewiringTrackers)
-      .set({ count: (tracker.count || 0) + 1, updatedAt: new Date() } as any)
+      .set({ count: newCount, updatedAt: new Date() } as any)
       .where(eq(rewiringTrackers.id, trackerId))
       .returning();
 

@@ -4734,7 +4734,7 @@ export async function registerRoutes(
         const records = await storage.getRewiringTrackerRecords(tracker.id);
         return {
           ...tracker,
-          history: records.map((record) => ({ timestamp: record.timestamp })),
+          history: records.map((record) => ({ timestamp: record.timestamp, date: record.date })),
         };
       }));
       res.json(withHistory);
@@ -4757,7 +4757,7 @@ export async function registerRoutes(
         history: req.body.history,
       } as any);
       const records = await storage.getRewiringTrackerRecords(tracker.id);
-      res.status(201).json({ ...tracker, history: records.map((record) => ({ timestamp: record.timestamp })) });
+      res.status(201).json({ ...tracker, history: records.map((record) => ({ timestamp: record.timestamp, date: record.date })) });
     } catch (error: any) {
       if (error.name === "ZodError") {
         return res.status(400).json({ message: fromError(error).toString() });
@@ -4785,6 +4785,7 @@ export async function registerRoutes(
         skillIds: updateSkillIds,
         bodyLinks: Array.isArray(req.body.bodyLinks) ? req.body.bodyLinks : [],
         ...(req.body.targetLevel !== undefined ? { targetLevel: req.body.targetLevel } : {}),
+        ...(req.body.timesPerDay !== undefined ? { timesPerDay: req.body.timesPerDay } : {}),
       };
 
       const updated = await storage.updateRewiringTracker(req.params.id, updateData as any);
@@ -4793,7 +4794,7 @@ export async function registerRoutes(
       }
 
       const records = await storage.getRewiringTrackerRecords(updated.id);
-      res.json({ ...updated, history: records.map((record) => ({ timestamp: record.timestamp })) });
+      res.json({ ...updated, history: records.map((record) => ({ timestamp: record.timestamp, date: record.date })) });
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Internal server error" });
     }
@@ -4820,9 +4821,14 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Tracker not found" });
       }
 
-      const { tracker } = await storage.recordRewiringTrackerAction(req.params.id, req.userId!);
+      const { date } = req.body;
+      if (!date) {
+        return res.status(400).json({ message: "date es requerido (formato YYYY-MM-DD)" });
+      }
+
+      const { tracker } = await storage.recordRewiringTrackerAction(req.params.id, req.userId!, date);
       const records = await storage.getRewiringTrackerRecords(tracker.id);
-      res.json({ ...tracker, history: records.map((record) => ({ timestamp: record.timestamp })) });
+      res.json({ ...tracker, history: records.map((record) => ({ timestamp: record.timestamp, date: record.date })) });
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Internal server error" });
     }
@@ -4841,7 +4847,7 @@ export async function registerRoutes(
       }
 
       const records = await storage.getRewiringTrackerRecords(archived.id);
-      res.json({ ...archived, history: records.map((record) => ({ timestamp: record.timestamp })) });
+      res.json({ ...archived, history: records.map((record) => ({ timestamp: record.timestamp, date: record.date })) });
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Internal server error" });
     }
