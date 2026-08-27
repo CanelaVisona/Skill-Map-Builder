@@ -270,6 +270,11 @@ export const nodeErrors = pgTable("node_errors", {
   estrategias: jsonb("estrategias").notNull().$type<string[]>().default([]),
   // Espejo de estrategias, pero para cuando se restan xp: qué disparó ese retroceso.
   disparadores: jsonb("disparadores").notNull().$type<string[]>().default([]),
+  // Skills/componentes corporales EXTRA que este error puede linkear (opcional, más allá de la
+  // flexibilidad mental que crece siempre para todo error) -- solo suman/crecen con un +10, ver
+  // POST /api/node-errors/:id/records y su manejo client-side en SkillNode.tsx.
+  skillIds: jsonb("skill_ids").notNull().$type<string[]>().default([]),
+  bodyLinks: jsonb("body_links").notNull().$type<BodyLink[]>().default([]),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -465,6 +470,44 @@ export const rewiringTrackerRecords = pgTable("rewiring_tracker_records", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// ============ MEAL TRACKER (Mi Día) ============
+// Registro diario del "plato saludable": una fila por (usuario, día) con el estado de las 4
+// comidas (desayuno/almuerzo/merienda/cena) y sus categorías/ítems tildados. id determinístico
+// `${userId}:${date}` para permitir upsert directo, igual que body_progress.
+export const mealTrackerDays = pgTable("meal_tracker_days", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  date: varchar("date").notNull(), // YYYY-MM-DD format
+  // { [mealId]: { [categoryKey]: { [itemName]: boolean } } }
+  meals: jsonb("meals").notNull().$type<Record<string, Record<string, Record<string, boolean>>>>().default({}),
+  // Comidas para las que ya se mostró el pop-up de "¡Registraste tu X!" este día.
+  regCelebrated: jsonb("reg_celebrated").notNull().$type<Record<string, boolean>>().default({}),
+  // Si ya se mostró el resumen de "día completo" (los 4 grupos) este día.
+  celebrated: boolean("celebrated").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Opciones propias agregadas por el usuario a una categoría ("+ Agregar"); persisten para
+// siempre y se ofrecen junto a las opciones base de esa categoría/tipo de comida.
+export const mealTrackerCustomOptions = pgTable("meal_tracker_custom_options", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  mealKind: text("meal_kind").$type<"main" | "light">().notNull(),
+  categoryKey: text("category_key").notNull(),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Racha de días completos (los 4 grupos), un renglón por usuario. Se actualiza por evento
+// (cuando un día pasa a estar completo), no se recalcula de cero desde el historial.
+export const mealTrackerMeta = pgTable("meal_tracker_meta", {
+  userId: varchar("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  streak: integer("streak").notNull().default(0),
+  lastCompleteDate: varchar("last_complete_date"), // YYYY-MM-DD, null si nunca se completó un día
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 // ============ BODY PROGRESS (Fuerza/Flexibilidad) ============
 // id determinístico `${userId}:${zone}:${dimension}` — una fila por combinación, permite
 // upsert directo (buscar por id) sin índice único compuesto aparte.
@@ -627,6 +670,7 @@ export const insertNodeErrorSchema = createInsertSchema(nodeErrors)
     estrategias: z.array(z.string()).optional().default([]),
     disparadores: z.array(z.string()).optional().default([]),
     comoSi: z.string().optional().default(""),
+    skillIds: z.array(z.string()).optional().default([]),
   });
 export const insertNodeErrorRecordSchema = createInsertSchema(nodeErrorRecords)
   .omit({ id: true, createdAt: true })
@@ -702,3 +746,11 @@ export type InsertRewiringTracker = z.infer<typeof insertRewiringTrackerSchema>;
 export type RewiringTracker = typeof rewiringTrackers.$inferSelect;
 export type InsertRewiringTrackerRecord = z.infer<typeof insertRewiringTrackerRecordSchema>;
 export type RewiringTrackerRecord = typeof rewiringTrackerRecords.$inferSelect;
+
+export const insertMealTrackerDaySchema = createInsertSchema(mealTrackerDays).omit({ createdAt: true, updatedAt: true });
+export type InsertMealTrackerDay = z.infer<typeof insertMealTrackerDaySchema>;
+export type MealTrackerDay = typeof mealTrackerDays.$inferSelect;
+export const insertMealTrackerCustomOptionSchema = createInsertSchema(mealTrackerCustomOptions).omit({ id: true, createdAt: true });
+export type InsertMealTrackerCustomOption = z.infer<typeof insertMealTrackerCustomOptionSchema>;
+export type MealTrackerCustomOption = typeof mealTrackerCustomOptions.$inferSelect;
+export type MealTrackerMeta = typeof mealTrackerMeta.$inferSelect;

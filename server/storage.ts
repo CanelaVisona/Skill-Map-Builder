@@ -1,7 +1,7 @@
 import { eq, and, or, asc, sql, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db, pool } from "./db";
-import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type JournalShadowPage, type InsertJournalShadowPage, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourceObjective, type InsertSourceObjective, type SourceBelief, type InsertSourceBelief, type SourceVision, type InsertSourceVision, type SourcePowers, type InsertSourcePowers, type SourceBug, type InsertSourceBug, type SourceBugRecord, type InsertSourceBugRecord, type NodeError, type InsertNodeError, type NodeErrorRecord, type InsertNodeErrorRecord, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, type BodyProgressRow, type InsertBodyProgress, type TodayTaskSlot, type InsertTodayTaskSlot, type ManualTodayTask, type InsertManualTodayTask, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, journalShadowPages, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourceObjectives, sourceBeliefs, sourceVision, sourcePowers, sourceBugs, sourceBugRecords, nodeErrors, nodeErrorRecords, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, rewiringTrackers, rewiringTrackerRecords, bodyProgress, todayTaskSlots, manualTodayTasks } from "@shared/schema";
+import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type JournalShadowPage, type InsertJournalShadowPage, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourceObjective, type InsertSourceObjective, type SourceBelief, type InsertSourceBelief, type SourceVision, type InsertSourceVision, type SourcePowers, type InsertSourcePowers, type SourceBug, type InsertSourceBug, type SourceBugRecord, type InsertSourceBugRecord, type NodeError, type InsertNodeError, type NodeErrorRecord, type InsertNodeErrorRecord, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, type BodyProgressRow, type InsertBodyProgress, type TodayTaskSlot, type InsertTodayTaskSlot, type ManualTodayTask, type InsertManualTodayTask, type MealTrackerDay, type InsertMealTrackerDay, type MealTrackerCustomOption, type InsertMealTrackerCustomOption, type MealTrackerMeta, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, journalShadowPages, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourceObjectives, sourceBeliefs, sourceVision, sourcePowers, sourceBugs, sourceBugRecords, nodeErrors, nodeErrorRecords, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, rewiringTrackers, rewiringTrackerRecords, bodyProgress, todayTaskSlots, manualTodayTasks, mealTrackerDays, mealTrackerCustomOptions, mealTrackerMeta } from "@shared/schema";
 
 const normalizeSourceBugStatus = (status: string): "identificado" | "debugueando" | "debugueado" => {
   if (status === "activo") return "identificado";
@@ -246,6 +246,15 @@ export interface IStorage {
   createSpaceRepetitionPractice(practice: InsertSpaceRepetitionPractice & { userId: string }): Promise<SpaceRepetitionPractice>;
   updateSpaceRepetitionPractice(id: string, practice: Partial<InsertSpaceRepetitionPractice>): Promise<SpaceRepetitionPractice | undefined>;
   deleteSpaceRepetitionPractice(id: string): Promise<void>;
+
+  // Meal Tracker (Mi Día)
+  getMealTrackerDay(userId: string, date: string): Promise<MealTrackerDay | undefined>;
+  upsertMealTrackerDay(userId: string, date: string, data: Partial<Pick<InsertMealTrackerDay, "meals" | "regCelebrated" | "celebrated">>): Promise<MealTrackerDay>;
+  getMealTrackerCustomOptions(userId: string): Promise<MealTrackerCustomOption[]>;
+  createMealTrackerCustomOption(option: InsertMealTrackerCustomOption & { userId: string }): Promise<MealTrackerCustomOption>;
+  deleteMealTrackerCustomOption(userId: string, mealKind: string, categoryKey: string, name: string): Promise<void>;
+  getMealTrackerMeta(userId: string): Promise<MealTrackerMeta | undefined>;
+  upsertMealTrackerMeta(userId: string, data: { streak: number; lastCompleteDate: string }): Promise<MealTrackerMeta>;
 
   // Book Reading Tracker
   getBooks(userId: string): Promise<Book[]>;
@@ -1868,13 +1877,21 @@ export class DbStorage implements IStorage {
       .orderBy(asc(nodeErrors.createdAt));
   }
 
-  // Devuelve los errores propios de este nodo (skillId) más, si se pasa el área/proyecto activo,
-  // los que se cargaron directo ahí (sin nodo, desde el Journal) -- así un error de área aparece
-  // disponible en el Step 2/Step 3 de cualquier nodo de esa misma área.
+  // Devuelve los errores propios de este nodo (skillId) más, si se pasa el área/proyecto activo:
+  // los que se cargaron directo ahí (sin nodo, desde el Journal), Y los que se cargaron en
+  // CUALQUIER OTRO nodo (o subskill, a cualquier profundidad) de esa misma área/proyecto -- así
+  // un error agregado en un nodo queda disponible como opción para el resto de los nodos del área.
   async getNodeErrors(userId: string, skillId: string, scope?: { areaId?: string; projectId?: string }): Promise<NodeError[]> {
     const scopeConditions = [eq(nodeErrors.skillId, skillId)];
     if (scope?.areaId) scopeConditions.push(eq(nodeErrors.areaId, scope.areaId));
     if (scope?.projectId) scopeConditions.push(eq(nodeErrors.projectId, scope.projectId));
+
+    if (scope?.areaId || scope?.projectId) {
+      const scopedSkillIds = await this.getAllSkillIdsInScope({ areaId: scope.areaId, projectId: scope.projectId });
+      if (scopedSkillIds.length > 0) {
+        scopeConditions.push(inArray(nodeErrors.skillId, scopedSkillIds));
+      }
+    }
 
     return await db
       .select()
@@ -2618,6 +2635,82 @@ export class DbStorage implements IStorage {
     const result = await db.update(rewiringTrackers)
       .set({ archivedAt: new Date(), updatedAt: new Date() } as any)
       .where(eq(rewiringTrackers.id, id))
+      .returning();
+    return result[0];
+  }
+
+  // Meal Tracker (Mi Día)
+  async getMealTrackerDay(userId: string, date: string): Promise<MealTrackerDay | undefined> {
+    const id = `${userId}:${date}`;
+    const result = await db.select().from(mealTrackerDays).where(eq(mealTrackerDays.id, id)).limit(1);
+    return result[0];
+  }
+
+  async upsertMealTrackerDay(userId: string, date: string, data: Partial<Pick<InsertMealTrackerDay, "meals" | "regCelebrated" | "celebrated">>): Promise<MealTrackerDay> {
+    const id = `${userId}:${date}`;
+    const existing = await db.select().from(mealTrackerDays).where(eq(mealTrackerDays.id, id)).limit(1);
+
+    if (existing[0]) {
+      const result = await db.update(mealTrackerDays)
+        .set({ ...data, updatedAt: new Date() } as any)
+        .where(eq(mealTrackerDays.id, id))
+        .returning();
+      return result[0];
+    }
+
+    const now = new Date();
+    const result = await db.insert(mealTrackerDays)
+      .values({
+        id,
+        userId,
+        date,
+        meals: data.meals ?? {},
+        regCelebrated: data.regCelebrated ?? {},
+        celebrated: data.celebrated ?? false,
+        createdAt: now,
+        updatedAt: now,
+      } as any)
+      .returning();
+    return result[0];
+  }
+
+  async getMealTrackerCustomOptions(userId: string): Promise<MealTrackerCustomOption[]> {
+    return await db.select().from(mealTrackerCustomOptions).where(eq(mealTrackerCustomOptions.userId, userId));
+  }
+
+  async createMealTrackerCustomOption(option: InsertMealTrackerCustomOption & { userId: string }): Promise<MealTrackerCustomOption> {
+    const id = randomUUID();
+    const result = await db.insert(mealTrackerCustomOptions).values({ id, ...option } as any).returning();
+    return result[0];
+  }
+
+  async deleteMealTrackerCustomOption(userId: string, mealKind: string, categoryKey: string, name: string): Promise<void> {
+    await db.delete(mealTrackerCustomOptions).where(
+      and(
+        eq(mealTrackerCustomOptions.userId, userId),
+        eq(mealTrackerCustomOptions.mealKind, mealKind as "main" | "light"),
+        eq(mealTrackerCustomOptions.categoryKey, categoryKey),
+        eq(mealTrackerCustomOptions.name, name)
+      )
+    );
+  }
+
+  async getMealTrackerMeta(userId: string): Promise<MealTrackerMeta | undefined> {
+    const result = await db.select().from(mealTrackerMeta).where(eq(mealTrackerMeta.userId, userId)).limit(1);
+    return result[0];
+  }
+
+  async upsertMealTrackerMeta(userId: string, data: { streak: number; lastCompleteDate: string }): Promise<MealTrackerMeta> {
+    const existing = await db.select().from(mealTrackerMeta).where(eq(mealTrackerMeta.userId, userId)).limit(1);
+    if (existing[0]) {
+      const result = await db.update(mealTrackerMeta)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(mealTrackerMeta.userId, userId))
+        .returning();
+      return result[0];
+    }
+    const result = await db.insert(mealTrackerMeta)
+      .values({ userId, ...data, updatedAt: new Date() } as any)
       .returning();
     return result[0];
   }

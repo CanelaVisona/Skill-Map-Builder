@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { createPortal } from "react-dom";
-import { OctagonAlert, Skull } from "lucide-react";
+import { Skull, Sparkles } from "lucide-react";
 import { usePopupPalette } from "@/lib/popup-theme";
 
 export interface ErrorCelebrationState {
@@ -110,6 +110,8 @@ export function ErrorCelebration({ celebration }: ErrorCelebrationProps) {
   }
 
   // Toast chico, mismo formato que ExperienceGainPopup/PowerCelebration "unlocked".
+  // Detectar un error es un logro (lo cazaste), no una alarma: misma paleta dorada
+  // que las demás celebraciones de la app.
   return createPortal(
     <AnimatePresence>
       {celebration && (
@@ -136,21 +138,25 @@ export function ErrorCelebration({ celebration }: ErrorCelebrationProps) {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-              className="w-[min(92vw,356px)] rounded-[4px] border px-[16px] py-[14px] shadow-[0_18px_40px_rgba(0,0,0,0.45)]"
+              className="relative w-[min(92vw,356px)] rounded-[4px] border px-[16px] py-[14px] shadow-[0_18px_40px_rgba(0,0,0,0.45)]"
               style={{ backgroundColor: palette.bg, borderColor: palette.border }}
             >
               <div className="flex items-center gap-2">
-                <div className="relative flex h-8 w-8 shrink-0 items-center justify-center">
+                <motion.div
+                  className="relative flex h-8 w-8 shrink-0 items-center justify-center"
+                  animate={{ scale: [1, 1.12, 1] }}
+                  transition={{ duration: 1.1, repeat: 2, ease: "easeInOut" }}
+                >
                   <svg viewBox="0 0 32 32" className="absolute inset-0 h-full w-full">
                     <polygon
                       points="16,2 30,16 16,30 2,16"
                       fill={palette.surfaceInset}
-                      stroke="#f97316"
+                      stroke="#fbbf24"
                       strokeWidth="1.5"
                     />
                   </svg>
-                  <OctagonAlert className="relative h-4 w-4 text-orange-500" strokeWidth={2.1} />
-                </div>
+                  <Sparkles className="relative h-4 w-4 text-amber-400" strokeWidth={2.1} />
+                </motion.div>
 
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[13px] font-medium" style={{ color: palette.text }}>
@@ -159,7 +165,7 @@ export function ErrorCelebration({ celebration }: ErrorCelebrationProps) {
                 </div>
               </div>
 
-              <div className="mt-3 text-center text-[13px] font-medium" style={{ color: palette.text }}>
+              <div className="mt-3 text-center text-[13px] font-bold" style={{ color: palette.text }}>
                 ¡Error nuevo detectado!
               </div>
             </motion.div>

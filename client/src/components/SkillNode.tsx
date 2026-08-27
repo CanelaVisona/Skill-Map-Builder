@@ -19,6 +19,8 @@ import { useErrorCelebration } from "@/lib/error-celebration-context";
 import { beginPopupChain, endPopupChain, runPopupQueueAsync, runPopupQueue, getPopupBusyDelay } from "@/lib/popup-coordinator";
 import { getNodeTitleWordLimit, clampToWordLimit } from "@/lib/node-title-settings";
 import { useToast } from "@/hooks/use-toast";
+import { SkillLinkPicker } from "@/components/SkillLinkPicker";
+import { BodyLinkPicker, type BodyLink } from "@/components/BodyLinkPicker";
 import {
   Popover,
   PopoverContent,
@@ -1061,6 +1063,11 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     confirmed: 0 | 1;
     estrategias: string[];
     disparadores: string[];
+    // Skills/componentes EXTRA linkeados a este error (opcional) -- solo suman/crecen con un
+    // +10, nunca con un -10 (ver adjustNodeErrorPoints). La flexibilidad mental crece siempre,
+    // en +10 y en -10, y no vive acá -- es un crecimiento fijo aparte, no editable.
+    skillIds: string[];
+    bodyLinks: BodyLink[];
   }
 
   const [selectedErrorId, setSelectedErrorId] = useState<string | null>(null);
@@ -1069,6 +1076,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   // En vez del error, cómo sería la situación que sí se quiere -- se completa junto con el
   // nombre al crear el error (ver handleCreateNodeError).
   const [newErrorComoSi, setNewErrorComoSi] = useState("");
+  // Skills/componentes corporales extra a linkear, cargados en el mismo formulario de "nuevo
+  // error" -- se mandan junto con el resto al crearlo.
+  const [newErrorSkillIds, setNewErrorSkillIds] = useState<string[]>([]);
+  const [newErrorBodyLinks, setNewErrorBodyLinks] = useState<BodyLink[]>([]);
   // Estrategias/disparadores cargados de una en el formulario de "nuevo error", antes de que el
   // error exista -- se mandan juntos con el nombre al crearlo (ver handleCreateNodeError).
   const [newErrorEstrategias, setNewErrorEstrategias] = useState<string[]>([]);
@@ -1122,11 +1133,11 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     : [];
 
   const createNodeError = useMutation({
-    mutationFn: async (data: { nombre: string; comoSi: string; estrategias: string[]; disparadores: string[] }) => {
+    mutationFn: async (data: { nombre: string; comoSi: string; estrategias: string[]; disparadores: string[]; skillIds: string[]; bodyLinks: BodyLink[] }) => {
       const res = await fetch("/api/node-errors", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ skillId: skill.id, nombre: data.nombre, comoSi: data.comoSi, estrategias: data.estrategias, disparadores: data.disparadores }),
+        body: JSON.stringify({ skillId: skill.id, nombre: data.nombre, comoSi: data.comoSi, estrategias: data.estrategias, disparadores: data.disparadores, skillIds: data.skillIds, bodyLinks: data.bodyLinks }),
       });
       if (!res.ok) {
         const error = await res.json();
@@ -1145,6 +1156,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       setNewErrorEstrategiaDraft("");
       setNewErrorDisparadores([]);
       setNewErrorDisparadorDraft("");
+      setNewErrorSkillIds([]);
+      setNewErrorBodyLinks([]);
       setIsAddingNodeError(false);
     },
     onError: (error) => {
@@ -1198,16 +1211,48 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
         vencido: boolean;
       }>;
     },
-    onSuccess: (result) => {
+    // Todo error crece siempre "Flexibilidad mental" (mente/flex) al mover la barra, sea +10 o
+    // -10 -- fijo, no editable, aparte de los skills/componentes extra que el usuario haya
+    // linkeado (esos SOLO suman con un +10). Todos los pop-ups (barra, "vencido", flexibilidad
+    // mental, y los extra) van en una sola secuencia -- el mismo patrón de "bloques" que usa
+    // runConfirmSequence -- para que ninguno se solape ni con los demás ni con otro pop-up (de
+    // cualquier familia) que ya esté en pantalla.
+    onSuccess: async (result, variables) => {
       queryClient.invalidateQueries({ queryKey: [`/api/node-errors/${skill.id}`] });
-      // Ambos pop-ups (la barra, y "vencido" si corresponde) van en una sola cola: así el
-      // segundo espera a que el primero termine, Y el primero espera su turno si hay otro
-      // pop-up (de cualquier familia) todavía en pantalla, en vez de solaparse.
-      const tasks: Array<() => void> = [() => showErrorProgressPopup(result.errorProgress)];
-      if (result.vencido) {
-        tasks.push(() => showErrorCelebration({ name: result.errorProgress.errorName, kind: "vencido" }));
+
+      const targetError = nodeErrorsList.find((e) => e.id === variables.id);
+
+      const blocks: Array<(enqueue: (fn: () => void) => void) => Promise<void> | void> = [];
+
+      blocks.push((enqueue) => {
+        enqueue(() => showErrorProgressPopup(result.errorProgress));
+        if (result.vencido) {
+          enqueue(() => showErrorCelebration({ name: result.errorProgress.errorName, kind: "vencido" }));
+        }
+        const { before, after } = addBodyBlock("mente", "flex");
+        enqueue(() => showBodyGainPopup({ zone: "mente", dimension: "flex", before, after }));
+      });
+
+      if (variables.delta > 0 && targetError) {
+        for (const skillId of targetError.skillIds) {
+          blocks.push((enqueue) => applyExperienceGain(skillId, enqueue));
+        }
+        for (const link of targetError.bodyLinks) {
+          blocks.push((enqueue) => {
+            const { before, after } = addBodyBlock(link.zone, link.dimension);
+            enqueue(() => showBodyGainPopup({ zone: link.zone, dimension: link.dimension, before, after }));
+          });
+        }
       }
-      runPopupQueue(tasks);
+
+      for (const block of blocks) {
+        const tasks: Array<() => void> = [];
+        await block((fn) => tasks.push(fn));
+        await runPopupQueueAsync(tasks);
+        while (getPopupBusyDelay() > 0) {
+          await new Promise((resolve) => setTimeout(resolve, getPopupBusyDelay() + 150));
+        }
+      }
     },
     onError: (error) => {
       console.error("adjustNodeErrorPoints error:", error);
@@ -1240,7 +1285,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const handleCreateNodeError = () => {
     const finalName = newErrorName.trim();
     if (!finalName || createNodeError.isPending) return;
-    createNodeError.mutate({ nombre: finalName, comoSi: newErrorComoSi.trim(), estrategias: newErrorEstrategias, disparadores: newErrorDisparadores });
+    createNodeError.mutate({ nombre: finalName, comoSi: newErrorComoSi.trim(), estrategias: newErrorEstrategias, disparadores: newErrorDisparadores, skillIds: newErrorSkillIds, bodyLinks: newErrorBodyLinks });
   };
 
   // Chips de estrategia/disparador cargados en el formulario de "nuevo error" -- todavía no
@@ -1367,6 +1412,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       setNewErrorEstrategiaDraft("");
       setNewErrorDisparadores([]);
       setNewErrorDisparadorDraft("");
+      setNewErrorSkillIds([]);
+      setNewErrorBodyLinks([]);
       setIsAddingNodeError(true);
     }, 500);
   };
@@ -3492,6 +3539,26 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                       testIdPrefix="new-error-disparador"
                     />
 
+                    <div className="space-y-1.5">
+                      <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground block">Skills a linkear</Label>
+                      <SkillLinkPicker
+                        skills={availableGlobalSkills.map((s) => ({ id: s.id, name: s.name }))}
+                        value={newErrorSkillIds}
+                        onChange={setNewErrorSkillIds}
+                        emptyLabel="No hay skills disponibles"
+                        areas={areas}
+                        currentAreaId={activeAreaId}
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground block">Componentes a linkear</Label>
+                      <BodyLinkPicker value={newErrorBodyLinks} onChange={setNewErrorBodyLinks} />
+                      <p className="text-[10px] text-muted-foreground/70">
+                        Flexibilidad mental crece siempre, no hace falta linkearla. Estos, y los skills de arriba, solo suman con +10p.
+                      </p>
+                    </div>
+
                     <div className="flex justify-end items-center gap-2">
                       <Button
                         type="button"
@@ -4462,6 +4529,26 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                           onRemove={handleRemoveNewErrorDisparador}
                           testIdPrefix="step3-new-error-disparador"
                         />
+
+                        <div className="space-y-1.5">
+                          <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground block">Skills a linkear</Label>
+                          <SkillLinkPicker
+                            skills={availableGlobalSkills.map((s) => ({ id: s.id, name: s.name }))}
+                            value={newErrorSkillIds}
+                            onChange={setNewErrorSkillIds}
+                            emptyLabel="No hay skills disponibles"
+                            areas={areas}
+                            currentAreaId={activeAreaId}
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground block">Componentes a linkear</Label>
+                          <BodyLinkPicker value={newErrorBodyLinks} onChange={setNewErrorBodyLinks} />
+                          <p className="text-[10px] text-muted-foreground/70">
+                            Flexibilidad mental crece siempre, no hace falta linkearla. Estos, y los skills de arriba, solo suman con +10p.
+                          </p>
+                        </div>
 
                         <div className="flex justify-end items-center gap-2">
                           <Button

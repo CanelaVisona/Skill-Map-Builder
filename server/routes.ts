@@ -5366,6 +5366,203 @@ export async function registerRoutes(
     }
   });
 
+  // ============ MEAL TRACKER (Mi Día) ============
+  const MEAL_TRACKER_MEAL_IDS = ["desayuno", "almuerzo", "merienda", "cena"];
+
+  function mealTrackerCatOn(meals: Record<string, Record<string, Record<string, boolean>>>, mealId: string, catKey: string): boolean {
+    const cat = meals?.[mealId]?.[catKey];
+    return cat ? Object.values(cat).some(Boolean) : false;
+  }
+
+  function mealTrackerCoreComplete(meals: Record<string, Record<string, Record<string, boolean>>>): boolean {
+    const proteina = MEAL_TRACKER_MEAL_IDS.some((m) => mealTrackerCatOn(meals, m, "proteina"));
+    const vegetales = mealTrackerCatOn(meals, "almuerzo", "vegetales") || mealTrackerCatOn(meals, "cena", "vegetales");
+    const carbos = MEAL_TRACKER_MEAL_IDS.some((m) => mealTrackerCatOn(meals, m, "carbos"));
+    const fruta = MEAL_TRACKER_MEAL_IDS.some((m) => mealTrackerCatOn(meals, m, "fruta"));
+    return proteina && vegetales && carbos && fruta;
+  }
+
+  function mealTrackerDaysBetween(a: string, b: string): number {
+    const [ay, am, ad] = a.split("-").map(Number);
+    const [by, bm, bd] = b.split("-").map(Number);
+    const dateA = new Date(ay, am - 1, ad);
+    const dateB = new Date(by, bm - 1, bd);
+    return Math.round((dateB.getTime() - dateA.getTime()) / 86400000);
+  }
+
+  function groupMealTrackerCustomOptions(options: { mealKind: string; categoryKey: string; name: string }[]): Record<string, string[]> {
+    const grouped: Record<string, string[]> = {};
+    options.forEach((o) => {
+      const key = `${o.mealKind}:${o.categoryKey}`;
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(o.name);
+    });
+    return grouped;
+  }
+
+  app.get("/api/meal-tracker/today", requireAuth, async (req, res) => {
+    try {
+      const { date } = req.query;
+      if (!date) return res.status(400).json({ message: "date es requerido (formato YYYY-MM-DD)" });
+
+      let day = await storage.getMealTrackerDay(req.userId!, date as string);
+      if (!day) {
+        day = await storage.upsertMealTrackerDay(req.userId!, date as string, { meals: {}, regCelebrated: {}, celebrated: false });
+      }
+
+      const meta = await storage.getMealTrackerMeta(req.userId!);
+      let streak = 0;
+      if (meta?.lastCompleteDate) {
+        const gap = mealTrackerDaysBetween(meta.lastCompleteDate, date as string);
+        streak = (gap === 0 || gap === 1) ? meta.streak : 0;
+      }
+
+      res.json({ ...day, streak });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/meal-tracker/custom-options", requireAuth, async (req, res) => {
+    try {
+      const options = await storage.getMealTrackerCustomOptions(req.userId!);
+      res.json(groupMealTrackerCustomOptions(options));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/meal-tracker/toggle", requireAuth, async (req, res) => {
+    try {
+      const { date, mealId, categoryKey, item } = req.body;
+      if (!date || !mealId || !categoryKey || !item) {
+        return res.status(400).json({ message: "date, mealId, categoryKey e item son requeridos" });
+      }
+      const day = await storage.getMealTrackerDay(req.userId!, date);
+      const meals: Record<string, Record<string, Record<string, boolean>>> = day?.meals ? JSON.parse(JSON.stringify(day.meals)) : {};
+      if (!meals[mealId]) meals[mealId] = {};
+      if (!meals[mealId][categoryKey]) meals[mealId][categoryKey] = {};
+      meals[mealId][categoryKey][item] = !meals[mealId][categoryKey][item];
+      const updated = await storage.upsertMealTrackerDay(req.userId!, date, { meals });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/meal-tracker/custom-option", requireAuth, async (req, res) => {
+    try {
+      const { date, mealId, mealKind, categoryKey, name } = req.body;
+      if (!date || !mealId || !mealKind || !categoryKey || !name) {
+        return res.status(400).json({ message: "date, mealId, mealKind, categoryKey y name son requeridos" });
+      }
+      if (mealKind !== "main" && mealKind !== "light") {
+        return res.status(400).json({ message: "mealKind inválido" });
+      }
+      const trimmed = String(name).trim().slice(0, 28);
+      if (!trimmed) return res.status(400).json({ message: "name vacío" });
+
+      const existingOptions = await storage.getMealTrackerCustomOptions(req.userId!);
+      const alreadyCustom = existingOptions.some(
+        (o) => o.mealKind === mealKind && o.categoryKey === categoryKey && o.name.toLowerCase() === trimmed.toLowerCase()
+      );
+      if (!alreadyCustom) {
+        await storage.createMealTrackerCustomOption({ userId: req.userId!, mealKind, categoryKey, name: trimmed });
+      }
+
+      const day = await storage.getMealTrackerDay(req.userId!, date);
+      const meals: Record<string, Record<string, Record<string, boolean>>> = day?.meals ? JSON.parse(JSON.stringify(day.meals)) : {};
+      if (!meals[mealId]) meals[mealId] = {};
+      if (!meals[mealId][categoryKey]) meals[mealId][categoryKey] = {};
+      meals[mealId][categoryKey][trimmed] = true;
+      const updatedDay = await storage.upsertMealTrackerDay(req.userId!, date, { meals });
+
+      const options = await storage.getMealTrackerCustomOptions(req.userId!);
+      res.json({ day: updatedDay, customOptions: groupMealTrackerCustomOptions(options) });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/meal-tracker/custom-option", requireAuth, async (req, res) => {
+    try {
+      const { date, mealKind, categoryKey, name } = req.body;
+      if (!date || !mealKind || !categoryKey || !name) {
+        return res.status(400).json({ message: "date, mealKind, categoryKey y name son requeridos" });
+      }
+      await storage.deleteMealTrackerCustomOption(req.userId!, mealKind, categoryKey, name);
+
+      // Además de sacarla del catálogo, se destilda hoy en las comidas de ese tipo (si estaba
+      // marcada) para no dejar un ítem fantasma coloreando el plato.
+      let day = await storage.getMealTrackerDay(req.userId!, date);
+      if (day) {
+        const meals: Record<string, Record<string, Record<string, boolean>>> = JSON.parse(JSON.stringify(day.meals));
+        let changed = false;
+        MEAL_TRACKER_MEAL_IDS.forEach((mealId) => {
+          const kindOfMeal = (mealId === "almuerzo" || mealId === "cena") ? "main" : "light";
+          if (kindOfMeal === mealKind && meals[mealId]?.[categoryKey]?.[name] !== undefined) {
+            delete meals[mealId][categoryKey][name];
+            changed = true;
+          }
+        });
+        if (changed) {
+          day = await storage.upsertMealTrackerDay(req.userId!, date, { meals });
+        }
+      }
+
+      const options = await storage.getMealTrackerCustomOptions(req.userId!);
+      res.json({ day, customOptions: groupMealTrackerCustomOptions(options) });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/meal-tracker/mark-registered", requireAuth, async (req, res) => {
+    try {
+      const { date, mealId } = req.body;
+      if (!date || !mealId) return res.status(400).json({ message: "date y mealId son requeridos" });
+      const day = await storage.getMealTrackerDay(req.userId!, date);
+      if (!day) return res.status(404).json({ message: "Día no encontrado" });
+      const regCelebrated = { ...(day.regCelebrated as Record<string, boolean> || {}), [mealId]: true };
+      const updated = await storage.upsertMealTrackerDay(req.userId!, date, { regCelebrated });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/meal-tracker/complete-day", requireAuth, async (req, res) => {
+    try {
+      const { date } = req.body;
+      if (!date) return res.status(400).json({ message: "date es requerido" });
+      const day = await storage.getMealTrackerDay(req.userId!, date);
+      if (!day || day.celebrated || !mealTrackerCoreComplete(day.meals as any)) {
+        return res.json({ celebrated: false, streak: 0 });
+      }
+
+      const meta = await storage.getMealTrackerMeta(req.userId!);
+      const gap = meta?.lastCompleteDate ? mealTrackerDaysBetween(meta.lastCompleteDate, date) : Infinity;
+      const newStreak = gap === 1 ? (meta?.streak || 0) + 1 : 1;
+      await storage.upsertMealTrackerMeta(req.userId!, { streak: newStreak, lastCompleteDate: date });
+      await storage.upsertMealTrackerDay(req.userId!, date, { celebrated: true });
+
+      res.json({ celebrated: true, streak: newStreak });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/meal-tracker/reset-day", requireAuth, async (req, res) => {
+    try {
+      const { date } = req.body;
+      if (!date) return res.status(400).json({ message: "date es requerido" });
+      const updated = await storage.upsertMealTrackerDay(req.userId!, date, { meals: {}, regCelebrated: {}, celebrated: false });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Book Reading Tracker
   app.get("/api/books", requireAuth, async (req, res) => {
     try {

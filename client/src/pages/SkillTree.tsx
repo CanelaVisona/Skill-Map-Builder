@@ -14,6 +14,7 @@ import { useHabits } from "@/lib/useHabits";
 import { useManualTasks } from "@/lib/useManualTasks";
 import { useTodayTaskSlots, getCurrentTimeSlotKey } from "@/lib/useTodayTaskSlots";
 import { SpaceRepetitionModal, calculateStatus, calculateStatusL2, type SpaceRepetitionPractice } from "@/components/SpaceRepetitionModal";
+import { MealTrackerModal } from "@/components/MealTrackerModal";
 import { ProgressModal } from "@/components/ProgressModal";
 import { TodayProgressModal } from "@/components/TodayProgressModal";
 import { ProgressBar } from "@/components/ProgressBar";
@@ -25,7 +26,7 @@ import HouseInventory, { useHouseInventoryItems } from "../components/HouseInven
 import HousePriorityList from "../components/HousePriorityList";
 import HouseRepairsList from "../components/HouseRepairsList";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Swords, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt, OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation } from "lucide-react";
+import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Utensils, Swords, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt, OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -122,7 +123,7 @@ function calculateVisibleLevels(skills: Skill[], endOfAreaLevel?: number): Set<n
   return visibleLevels;
 }
 
-function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpenBookTracker, onOpenRewiringTracker, onOpenAllAreaBugs, onOpenHomeNeeds, onOpenClothingInventory, onOpenTodayProgress }: { onOpenDesigner: () => void; onOpenHabits: () => void; onOpenStrength: () => void; onOpenBookTracker: () => void; onOpenRewiringTracker: () => void; onOpenAllAreaBugs: () => void; onOpenHomeNeeds: () => void; onOpenClothingInventory: () => void; onOpenTodayProgress: () => void }) {
+function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpenMealTracker, onOpenBookTracker, onOpenRewiringTracker, onOpenAllAreaBugs, onOpenHomeNeeds, onOpenClothingInventory, onOpenTodayProgress }: { onOpenDesigner: () => void; onOpenHabits: () => void; onOpenStrength: () => void; onOpenMealTracker: () => void; onOpenBookTracker: () => void; onOpenRewiringTracker: () => void; onOpenAllAreaBugs: () => void; onOpenHomeNeeds: () => void; onOpenClothingInventory: () => void; onOpenTodayProgress: () => void }) {
   const { theme, setTheme, resolvedTheme } = useTheme();
   const currentTheme = resolvedTheme || theme;
   const { openDiary } = useDiary();
@@ -304,6 +305,13 @@ function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpen
                   {pendingSpaceRepCount > 99 ? "99+" : pendingSpaceRepCount}
                 </span>
               )}
+            </button>
+            <button
+              className="h-8 w-8 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
+              onClick={() => handleAction(onOpenMealTracker)}
+              title="Comida"
+            >
+              <Utensils className="h-4 w-4 mx-auto" />
             </button>
             <button
               className="h-8 w-8 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
@@ -9500,6 +9508,7 @@ export default function SkillTreePage() {
   const [isProgressOpen, setIsProgressOpen] = useState(false);
   const [isHabitsOpen, setIsHabitsOpen] = useState(false);
   const [isStrengthOpen, setIsStrengthOpen] = useState(false);
+  const [isMealTrackerOpen, setIsMealTrackerOpen] = useState(false);
   const [isBookTrackerOpen, setIsBookTrackerOpen] = useState(false);
   const [isRewiringTrackerOpen, setIsRewiringTrackerOpen] = useState(false);
   const [isAllAreaBugsOpen, setIsAllAreaBugsOpen] = useState(false);
@@ -9531,12 +9540,13 @@ export default function SkillTreePage() {
           <PendingRewardsProvider>
             <MenuProvider>
               <div className="flex h-screen w-full bg-background text-foreground overflow-hidden font-body selection:bg-primary/30">
-                <TopRightControls onOpenDesigner={() => setIsDesignerOpen(true)} onOpenHabits={() => setIsHabitsOpen(true)} onOpenStrength={() => setIsStrengthOpen(true)} onOpenBookTracker={() => setIsBookTrackerOpen(true)} onOpenRewiringTracker={() => setIsRewiringTrackerOpen(true)} onOpenAllAreaBugs={() => setIsAllAreaBugsOpen(true)} onOpenHomeNeeds={() => setIsHomeNeedsOpen(true)} onOpenClothingInventory={() => setIsClothingInventoryOpen(true)} onOpenTodayProgress={() => setIsTodayProgressOpen(true)} />
+                <TopRightControls onOpenDesigner={() => setIsDesignerOpen(true)} onOpenHabits={() => setIsHabitsOpen(true)} onOpenStrength={() => setIsStrengthOpen(true)} onOpenMealTracker={() => setIsMealTrackerOpen(true)} onOpenBookTracker={() => setIsBookTrackerOpen(true)} onOpenRewiringTracker={() => setIsRewiringTrackerOpen(true)} onOpenAllAreaBugs={() => setIsAllAreaBugsOpen(true)} onOpenHomeNeeds={() => setIsHomeNeedsOpen(true)} onOpenClothingInventory={() => setIsClothingInventoryOpen(true)} onOpenTodayProgress={() => setIsTodayProgressOpen(true)} />
                 <ProgressModal open={isProgressOpen} onOpenChange={setIsProgressOpen} />
                 <TodayProgressModal open={isTodayProgressOpen} onOpenChange={setIsTodayProgressOpen} />
                 <SkillDesigner open={isDesignerOpen} onOpenChange={setIsDesignerOpen} />
                 <HabitStreakModal open={isHabitsOpen} onOpenChange={setIsHabitsOpen} />
                 <SpaceRepetitionModal open={isStrengthOpen} onOpenChange={setIsStrengthOpen} />
+                <MealTrackerModal open={isMealTrackerOpen} onOpenChange={setIsMealTrackerOpen} />
                 <BookTrackerModalWrapper open={isBookTrackerOpen} onOpenChange={setIsBookTrackerOpen} />
                 <RewiringTrackerModalWrapper open={isRewiringTrackerOpen} onOpenChange={setIsRewiringTrackerOpen} />
                 <AllAreaBugsModalWrapper open={isAllAreaBugsOpen} onOpenChange={setIsAllAreaBugsOpen} />
