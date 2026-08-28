@@ -433,6 +433,17 @@ export const bookReadingSessions = pgTable("book_reading_sessions", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// Biblioteca: wishlist / catálogo de libros con estado de lectura
+export const bookWishlist = pgTable("book_wishlist", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  author: text("author").notNull().default(""),
+  status: text("status").notNull().$type<"leido" | "no_leido" | "en_proceso">().default("no_leido"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 // ============ REWIRING TRACKER TABLES ============
 
 export const rewiringTrackers = pgTable("rewiring_trackers", {
@@ -452,6 +463,10 @@ export const rewiringTrackers = pgTable("rewiring_trackers", {
   skillId: varchar("skill_id").references(() => globalSkills.id, { onDelete: "set null" }),
   skillIds: jsonb("skill_ids").notNull().$type<string[]>().default([]),
   bodyLinks: jsonb("body_links").notNull().$type<BodyLink[]>().default([]), // Link a componentes corporales para crecimiento de fuerza/flex
+  // Solo para rewirings "veces por día": al completar la cuota de repeticiones de un día, el
+  // hábito linkeado queda confirmado hoy y corre su flujo normal (award-xp + crecimiento de
+  // cuerpo). Null = sin hábito linkeado.
+  habitId: varchar("habit_id").references(() => habits.id, { onDelete: "set null" }),
   startDate: timestamp("start_date").notNull().defaultNow(),
   archivedAt: timestamp("archived_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -496,6 +511,19 @@ export const mealTrackerCustomOptions = pgTable("meal_tracker_custom_options", {
   mealKind: text("meal_kind").$type<"main" | "light">().notNull(),
   categoryKey: text("category_key").notNull(),
   name: text("name").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Platos combinados que el usuario arma para desayuno/merienda: un nombre y los ítems que lo
+// componen (proteína, carbohidrato, …). Confirmar el plato tilda todos sus componentes de una;
+// des-confirmarlo los destilda. Persisten para siempre, como las opciones propias.
+export const mealTrackerDishes = pgTable("meal_tracker_dishes", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  mealKind: text("meal_kind").$type<"main" | "light">().notNull(),
+  name: text("name").notNull(),
+  // [{ categoryKey: "proteina", item: "Huevo" }, { categoryKey: "carbos", item: "Pan" }]
+  components: jsonb("components").notNull().$type<{ categoryKey: string; item: string }[]>().default([]),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -727,6 +755,9 @@ export const insertSpaceRepetitionPracticeSchema = createInsertSchema(spaceRepet
 });
 export const insertBooksLibrarySchema = createInsertSchema(booksLibrary).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertBookReadingSessionSchema = createInsertSchema(bookReadingSessions).omit({ id: true, createdAt: true });
+export const insertBookWishlistSchema = createInsertSchema(bookWishlist).omit({ id: true, createdAt: true, updatedAt: true }).extend({
+  status: z.enum(["leido", "no_leido", "en_proceso"]).optional().default("no_leido"),
+});
 export type InsertHabit = z.infer<typeof insertHabitSchema>;
 export type Habit = typeof habits.$inferSelect;
 export type InsertHabitRecord = z.infer<typeof insertHabitRecordSchema>;
@@ -737,6 +768,8 @@ export type InsertBook = z.infer<typeof insertBooksLibrarySchema>;
 export type Book = typeof booksLibrary.$inferSelect;
 export type InsertBookReadingSession = z.infer<typeof insertBookReadingSessionSchema>;
 export type BookReadingSession = typeof bookReadingSessions.$inferSelect;
+export type InsertBookWishlistItem = z.infer<typeof insertBookWishlistSchema>;
+export type BookWishlistItem = typeof bookWishlist.$inferSelect;
 
 export const insertRewiringTrackerSchema = createInsertSchema(rewiringTrackers).omit({ id: true, createdAt: true, updatedAt: true, userId: true }).extend({
   skillIds: z.array(z.string()).optional().default([]),
@@ -753,4 +786,7 @@ export type MealTrackerDay = typeof mealTrackerDays.$inferSelect;
 export const insertMealTrackerCustomOptionSchema = createInsertSchema(mealTrackerCustomOptions).omit({ id: true, createdAt: true });
 export type InsertMealTrackerCustomOption = z.infer<typeof insertMealTrackerCustomOptionSchema>;
 export type MealTrackerCustomOption = typeof mealTrackerCustomOptions.$inferSelect;
+export const insertMealTrackerDishSchema = createInsertSchema(mealTrackerDishes).omit({ id: true, createdAt: true });
+export type InsertMealTrackerDish = z.infer<typeof insertMealTrackerDishSchema>;
+export type MealTrackerDish = typeof mealTrackerDishes.$inferSelect;
 export type MealTrackerMeta = typeof mealTrackerMeta.$inferSelect;

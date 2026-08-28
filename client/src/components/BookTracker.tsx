@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Trash2, Edit, Swords } from "lucide-react";
+import { ArrowLeft, Trash2, Edit } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 const GREEN_RAMP = [
@@ -1041,7 +1041,7 @@ function BookCardWithLongPress({
             }}
             className="flex-1 min-w-[60px] rounded-xl bg-purple-500/20 text-purple-700 dark:text-purple-400 hover:bg-purple-500/30 border border-purple-500/50 text-xs h-8"
           >
-            Archivar
+            A biblioteca
           </Button>
           <Button
             onClick={(e) => {
@@ -1364,181 +1364,256 @@ function AddPanel({
   );
 }
 
-// Archived Panel
-function ArchivedPanel({
-  books,
-  onBack,
-  onDetail,
-  onUnarchive,
+// ============ BIBLIOTECA (wishlist / catálogo) ============
+
+type WishlistStatus = "leido" | "no_leido" | "en_proceso";
+
+interface WishlistItem {
+  id: string;
+  userId: string;
+  title: string;
+  author: string;
+  status: WishlistStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const WISHLIST_STATUS_LABEL: Record<WishlistStatus, string> = {
+  leido: "Leído",
+  en_proceso: "En proceso",
+  no_leido: "No leído",
+};
+
+const WISHLIST_STATUS_ORDER: Record<WishlistStatus, number> = {
+  en_proceso: 0,
+  leido: 1,
+  no_leido: 2,
+};
+
+const NEXT_WISHLIST_STATUS: Record<WishlistStatus, WishlistStatus> = {
+  no_leido: "en_proceso",
+  en_proceso: "leido",
+  leido: "no_leido",
+};
+
+function WishlistItemRow({
+  item,
+  onCycleStatus,
   onDelete,
 }: {
-  books: Book[];
-  onBack: () => void;
-  onDetail: (bookId: string) => void;
-  onUnarchive: (bookId: string) => void;
-  onDelete: (bookId: string) => void;
+  item: WishlistItem;
+  onCycleStatus: () => void;
+  onDelete: () => void;
 }) {
-  const [showButtonsForBook, setShowButtonsForBook] = useState<Record<string, boolean>>({});
-  const panelRef = useRef<HTMLDivElement>(null);
-  const touchStartX = useRef<Record<string, number>>({});
-  const touchStartY = useRef<Record<string, number>>({});
-  const hasMoveDetected = useRef<Record<string, boolean>>({});
+  const [showDelete, setShowDelete] = useState(false);
+  const { isPressed: _lpPressed, cancel: _lpCancel, ...longPress } = useLongPress(
+    () => setShowDelete((v) => !v),
+    500
+  );
+  const isDimmed = item.status === "no_leido";
 
-  // Register native touch listeners for archived book items - ONCE on mount
-  useEffect(() => {
-    const panel = panelRef.current;
-    if (!panel) return;
-
-    console.log('[ArchivedPanel] Registering native touch listeners');
-
-    // Find all archived book buttons and register listeners
-    const bookButtons = panel.querySelectorAll('[data-book-id]') as NodeListOf<Element>;
-    const listeners: Map<Element, { touchstart: (e: TouchEvent) => void; touchmove: (e: TouchEvent) => void; touchend: (e: TouchEvent) => void }> = new Map();
-
-    bookButtons.forEach((button) => {
-      const bookId = (button as HTMLElement).getAttribute('data-book-id');
-      if (!bookId) return;
-
-      const handleBookTouchStart = (e: TouchEvent) => {
-        console.log('[ArchivedPanel] Native touch start on book:', bookId);
-        touchStartX.current[bookId] = e.touches[0].clientX;
-        touchStartY.current[bookId] = e.touches[0].clientY;
-        hasMoveDetected.current[bookId] = false;
-
-        const timerId = setTimeout(() => {
-          if (!hasMoveDetected.current[bookId]) {
-            console.log('[ArchivedPanel] Long press detected on book:', bookId);
-            setShowButtonsForBook(prev => ({ ...prev, [bookId]: true }));
-            navigator.vibrate?.(50);
-          }
-        }, 500);
-        
-        // Store timeout id for cleanup
-        (button as any)._longPressTimer = timerId;
-      };
-
-      const handleBookTouchMove = (e: TouchEvent) => {
-        const dx = Math.abs(e.touches[0].clientX - (touchStartX.current[bookId] || 0));
-        const dy = Math.abs(e.touches[0].clientY - (touchStartY.current[bookId] || 0));
-        
-        if (dx > 8 || dy > 8) {
-          console.log('[ArchivedPanel] Touch move detected on book:', bookId);
-          hasMoveDetected.current[bookId] = true;
-          if ((button as any)._longPressTimer) {
-            clearTimeout((button as any)._longPressTimer);
-            (button as any)._longPressTimer = null;
-          }
-        }
-      };
-
-      const handleBookTouchEnd = () => {
-        console.log('[ArchivedPanel] Native touch end on book:', bookId);
-        if ((button as any)._longPressTimer) {
-          clearTimeout((button as any)._longPressTimer);
-          (button as any)._longPressTimer = null;
-        }
-      };
-
-      button.addEventListener('touchstart' as any, handleBookTouchStart, { passive: true });
-      button.addEventListener('touchmove' as any, handleBookTouchMove, { passive: true });
-      button.addEventListener('touchend' as any, handleBookTouchEnd, { passive: true });
-
-      listeners.set(button, { touchstart: handleBookTouchStart, touchmove: handleBookTouchMove, touchend: handleBookTouchEnd });
-    });
-
-    return () => {
-      console.log('[ArchivedPanel] Removing native touch listeners');
-      listeners.forEach((handlers, button) => {
-        button.removeEventListener('touchstart' as any, handlers.touchstart);
-        button.removeEventListener('touchmove' as any, handlers.touchmove);
-        button.removeEventListener('touchend' as any, handlers.touchend);
-      });
-    };
-  }, []); // Empty dependencies - register ONCE
-
-  const handleBookClick = (bookId: string) => {
-    if (!showButtonsForBook[bookId]) {
-      onDetail(bookId);
-    }
-  };
+  const statusColor =
+    item.status === "leido"
+      ? "bg-green-500/30 text-green-700 dark:text-green-400"
+      : item.status === "en_proceso"
+      ? "bg-yellow-500/30 text-yellow-700 dark:text-yellow-400"
+      : "bg-muted text-muted-foreground";
 
   return (
-    <div ref={panelRef} className="w-full flex flex-col h-full min-h-0">
-      {/* Header */}
-      <div className="border-b border-yellow-500/30 px-4 sm:px-6 py-5 bg-gradient-to-r from-yellow-500/5 to-amber-500/5">
-        <div className="flex items-start gap-3 sm:gap-4">
-          <button
-            onClick={onBack}
-            className="flex-shrink-0 mt-0.5 sm:mt-1 rounded hover:bg-yellow-500/10 p-1.5 sm:p-1 transition-colors h-8 w-8 sm:h-auto sm:w-auto touch-manipulation"
-          >
-            <ArrowLeft className="h-5 w-5 sm:h-5 sm:w-5 text-yellow-600 dark:text-yellow-400" />
-          </button>
-          <div className="min-w-0 flex-1">
-            <h2 className="font-black text-base sm:text-lg text-yellow-700 dark:text-yellow-300 flex items-center gap-2 flex-wrap">
-              <Swords className="h-5 w-5 text-green-700 dark:text-green-400" />
-              <span>Experiencias</span>
-            </h2>
-            <p className="mt-1 text-xs sm:text-sm text-yellow-600/70 dark:text-yellow-400/70">
-              Viviste estos libros
-            </p>
-          </div>
+    <motion.div
+      initial={{ opacity: 0, y: -6 }}
+      animate={{ opacity: isDimmed ? 0.4 : 1, y: 0 }}
+      // Stop the container long-press from firing when interacting with a row
+      onMouseDown={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+      className={`rounded-xl border border-border/40 bg-background-secondary/40 px-3 py-2.5 ${
+        isDimmed ? "grayscale" : ""
+      }`}
+    >
+      <div
+        className="flex items-center gap-2 cursor-pointer select-none"
+        onClick={onCycleStatus}
+        {...longPress}
+      >
+        <div className="flex-1 min-w-0">
+          <span className="font-bold text-sm text-foreground block truncate">{item.title}</span>
+          {item.author ? (
+            <span className="text-xs text-muted-foreground block truncate">{item.author}</span>
+          ) : null}
         </div>
+        <span className={`text-[11px] px-2 py-1 rounded-full font-bold flex-shrink-0 whitespace-nowrap ${statusColor}`}>
+          {WISHLIST_STATUS_LABEL[item.status]}
+        </span>
       </div>
 
-      {/* Books List */}
-      <div className="px-3 sm:px-5 py-3 flex flex-col gap-2 flex-1 min-h-0 overflow-y-auto minimal-scrollbar">
-        {!books || books.length === 0 ? (
-          <p className="text-sm text-yellow-600/70 dark:text-yellow-400/70 py-4">
-            No hay libros archivados
-          </p>
-        ) : (
-          books.map((book) => {
-            const prevPage = getPrevPage(book.sessions || []);
-            const showButtons = showButtonsForBook[book.id] || false;
-            return (
-              <motion.button
-                key={book.id}
-                data-book-id={book.id}
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                onClick={() => handleBookClick(book.id)}
-                className="w-full text-left rounded-2xl border-2 border-yellow-400/50 px-3 sm:px-4 py-2.5 sm:py-3 bg-gradient-to-br from-yellow-500/20 via-amber-500/10 to-yellow-500/10 hover:border-yellow-400 hover:from-yellow-500/30 hover:via-amber-500/20 active:scale-95 transition-all shadow-md hover:shadow-lg hover:shadow-yellow-500/20 touch-manipulation"
+      {showDelete && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-2 mt-2">
+          <Button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowDelete(false);
+            }}
+            className="flex-1 rounded-lg bg-green-500/20 text-green-700 dark:text-green-400 hover:bg-green-500/30 border border-green-500/50 text-xs h-8"
+          >
+            Cancelar
+          </Button>
+          <Button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+              setShowDelete(false);
+            }}
+            className="flex-1 rounded-lg bg-red-500/20 text-red-700 dark:text-red-400 hover:bg-red-500/30 border border-red-500/50 text-xs h-8"
+          >
+            <Trash2 className="h-3 w-3 mr-1" />
+            Eliminar
+          </Button>
+        </motion.div>
+      )}
+    </motion.div>
+  );
+}
+
+function BibliotecaPanel() {
+  const queryClient = useQueryClient();
+  const [showForm, setShowForm] = useState(false);
+  const [title, setTitle] = useState("");
+  const [author, setAuthor] = useState("");
+  const [status, setStatus] = useState<WishlistStatus>("no_leido");
+
+  const { isPressed: _lpPressed2, cancel: _lpCancel2, ...longPress } = useLongPress(() => {
+    setShowForm(true);
+    navigator.vibrate?.(50);
+  }, 500);
+
+  const { data: items = [], isLoading } = useQuery<WishlistItem[]>({
+    queryKey: ["/api/book-wishlist"],
+    queryFn: async () => {
+      const res = await fetch("/api/book-wishlist");
+      if (!res.ok) throw new Error("Failed to fetch biblioteca");
+      return res.json();
+    },
+  });
+
+  const createItem = useMutation({
+    mutationFn: async (data: { title: string; author: string; status: WishlistStatus }) => {
+      const res = await fetch("/api/book-wishlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to create item");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/book-wishlist"] });
+    },
+  });
+
+  const updateItem = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: WishlistStatus }) => {
+      const res = await fetch(`/api/book-wishlist/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) throw new Error("Failed to update item");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/book-wishlist"] });
+    },
+  });
+
+  const deleteItem = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/book-wishlist/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete item");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/book-wishlist"] });
+    },
+  });
+
+  const handleSubmit = () => {
+    const t = title.trim();
+    if (!t) return;
+    createItem.mutate({ title: t, author: author.trim(), status });
+    setTitle("");
+    setAuthor("");
+    setStatus("no_leido");
+    setShowForm(false);
+  };
+
+  const sortedItems = [...items].sort((a, b) => {
+    const diff = WISHLIST_STATUS_ORDER[a.status] - WISHLIST_STATUS_ORDER[b.status];
+    if (diff !== 0) return diff;
+    return a.title.localeCompare(b.title);
+  });
+
+  return (
+    <div className="flex-1 min-h-0 flex flex-col">
+      {showForm && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="border-b border-border/30 px-5 py-3 space-y-2 bg-background-secondary/30"
+        >
+          <Input placeholder="Nombre" value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
+          <Input placeholder="Autor" value={author} onChange={(e) => setAuthor(e.target.value)} />
+          <div className="grid grid-cols-3 gap-1.5">
+            {(["leido", "no_leido", "en_proceso"] as WishlistStatus[]).map((s) => (
+              <button
+                key={s}
+                onClick={() => setStatus(s)}
+                className={`py-1.5 px-2 text-xs rounded font-medium transition-colors ${
+                  status === s
+                    ? "bg-green-100 border border-green-600 text-green-900"
+                    : "bg-background-secondary border border-border/30 text-muted-foreground"
+                }`}
               >
-                <div className="flex items-center gap-2 sm:gap-3 mb-1.5 sm:mb-2 flex-wrap">
-                  <div className="flex-1 min-w-0">
-                    <span className="font-bold text-xs sm:text-sm text-foreground block truncate">{book.title}</span>
-                    <span className="text-xs text-muted-foreground block">{book.author}</span>
-                  </div>
-                  <span className="text-xs bg-yellow-500/30 text-yellow-700 dark:text-yellow-400 px-2 py-1 rounded-full font-bold flex-shrink-0 whitespace-nowrap">
-                    {getCurrentDisplayPage(book.sessions || [])}/{book.totalPages}
-                  </span>
-                </div>
-                {showButtons && (
-                  <div className="flex gap-2 mt-2">
-                    <Button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onUnarchive(book.id);
-                      }}
-                      className="flex-1 rounded-lg bg-green-500/20 text-green-700 dark:text-green-400 hover:bg-green-500/30 border border-green-500/50 text-xs h-8"
-                    >
-                      Restaurar
-                    </Button>
-                    <Button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDelete(book.id);
-                      }}
-                      className="flex-1 rounded-lg bg-red-500/20 text-red-700 dark:text-red-400 hover:bg-red-500/30 border border-red-500/50 text-xs h-8"
-                    >
-                      <Trash2 className="h-3 w-3 mr-1" />
-                      Eliminar
-                    </Button>
-                  </div>
-                )}
-              </motion.button>
-            );
-          })
+                {WISHLIST_STATUS_LABEL[s]}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2 pt-1">
+            <Button
+              onClick={() => {
+                setShowForm(false);
+                setTitle("");
+                setAuthor("");
+                setStatus("no_leido");
+              }}
+              className="flex-1 rounded-xl bg-muted text-muted-foreground hover:bg-muted/80 text-xs h-9"
+            >
+              Cancelar
+            </Button>
+            <Button onClick={handleSubmit} disabled={!title.trim()} className="flex-1 rounded-xl text-xs h-9">
+              Agregar
+            </Button>
+          </div>
+        </motion.div>
+      )}
+
+      <div
+        className="flex-1 min-h-0 overflow-y-auto px-5 py-3 flex flex-col gap-2 minimal-scrollbar select-none"
+        {...longPress}
+      >
+        {isLoading ? (
+          <div className="p-4 text-center text-sm text-muted-foreground">Cargando biblioteca...</div>
+        ) : sortedItems.length === 0 ? (
+          <div className="flex-1 flex items-center justify-center p-4 text-center text-sm text-muted-foreground">
+            Mantené presionado el fondo para agregar un libro.
+          </div>
+        ) : (
+          sortedItems.map((item) => (
+            <WishlistItemRow
+              key={item.id}
+              item={item}
+              onCycleStatus={() => updateItem.mutate({ id: item.id, status: NEXT_WISHLIST_STATUS[item.status] })}
+              onDelete={() => deleteItem.mutate(item.id)}
+            />
+          ))
         )}
       </div>
     </div>
@@ -1547,10 +1622,10 @@ function ArchivedPanel({
 
 // Main Component
 export function BookTracker() {
-  const [currentPanel, setCurrentPanel] = useState<"main" | "add" | "detail" | "archived" | "archived-detail">("main");
+  const [currentPanel, setCurrentPanel] = useState<"main" | "add" | "detail">("main");
+  const [mainTab, setMainTab] = useState<"tracker" | "biblioteca">("tracker");
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
   const [editingBookId, setEditingBookId] = useState<string | null>(null);
-  const [selectedArchivedBookId, setSelectedArchivedBookId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const { data: books = [], isLoading } = useQuery<Book[]>({
@@ -1558,24 +1633,6 @@ export function BookTracker() {
     queryFn: async () => {
       const res = await fetch("/api/books?archived=false");
       if (!res.ok) throw new Error("Failed to fetch books");
-      const data = await res.json();
-
-      const booksWithSessions = await Promise.all(
-        data.map(async (book: Book) => {
-          const sessionsRes = await fetch(`/api/books/${book.id}/sessions`);
-          const sessions = await sessionsRes.json();
-          return { ...book, sessions };
-        })
-      );
-      return booksWithSessions;
-    },
-  });
-
-  const { data: archivedBooks = [] } = useQuery<Book[]>({
-    queryKey: ["/api/books", "archived"],
-    queryFn: async () => {
-      const res = await fetch("/api/books?archived=true");
-      if (!res.ok) throw new Error("Failed to fetch archived books");
       const data = await res.json();
 
       const booksWithSessions = await Promise.all(
@@ -1632,35 +1689,22 @@ export function BookTracker() {
     },
   });
 
-  const archiveBook = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await fetch(`/api/books/${id}/archive`, {
-        method: "PATCH",
+  // Mueve un libro de Lectura a la Biblioteca (reemplaza el viejo "archivar" / Experiencias).
+  const moveToLibrary = useMutation({
+    mutationFn: async ({ id, status = "leido" }: { id: string; status?: WishlistStatus }) => {
+      const res = await fetch(`/api/books/${id}/to-library`, {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
       });
-      if (!res.ok) throw new Error("Failed to archive book");
+      if (!res.ok) throw new Error("Failed to move book to library");
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/books"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/book-wishlist"] });
       setSelectedBookId(null);
       setCurrentPanel("main");
-    },
-  });
-
-  const unarchiveBook = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await fetch(`/api/books/${id}/unarchive`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (!res.ok) throw new Error("Failed to unarchive book");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/books"] });
-      setSelectedArchivedBookId(null);
-      setCurrentPanel("archived");
     },
   });
 
@@ -1732,21 +1776,23 @@ export function BookTracker() {
         throw new Error("Failed to register page");
       }
       
-      // Auto-archive if completed
+      // Al completar el libro, pasa automáticamente a la Biblioteca (como "leído")
       if (validatedPage === book.totalPages) {
-        console.log("[registerPage] Auto-archiving book");
-        const archiveRes = await fetch(`/api/books/${bookId}/archive`, {
-          method: "PATCH",
+        console.log("[registerPage] Book completed - moving to biblioteca");
+        const moveRes = await fetch(`/api/books/${bookId}/to-library`, {
+          method: "POST",
           headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "leido" }),
         });
-        if (!archiveRes.ok) console.error("Failed to auto-archive book");
+        if (!moveRes.ok) console.error("Failed to move completed book to biblioteca");
       }
-      
+
       return JSON.parse(responseText);
     },
     onSuccess: () => {
       console.log("[registerPage] Mutation successful, invalidating queries");
       queryClient.invalidateQueries({ queryKey: ["/api/books"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/book-wishlist"] });
     },
   });
 
@@ -1829,57 +1875,75 @@ export function BookTracker() {
           {/* Header con long press para agregar */}
           <div
             ref={headerRef}
-            className="border-b border-border/30 px-5 py-3 cursor-pointer active:bg-muted/50 transition-colors"
+            className="border-b border-border/30 px-5 pt-3 cursor-pointer active:bg-muted/50 transition-colors"
           >
             <h2 className="font-black text-lg text-foreground">Mis libros</h2>
+            {/* Tabs */}
+            <div className="flex gap-4 mt-2 -mb-px">
+              <button
+                onClick={(e) => { e.stopPropagation(); setMainTab("tracker"); }}
+                className={`pb-2 text-sm font-bold border-b-2 transition-colors ${
+                  mainTab === "tracker"
+                    ? "border-green-600 text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Lectura
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setMainTab("biblioteca"); }}
+                className={`pb-2 text-sm font-bold border-b-2 transition-colors ${
+                  mainTab === "biblioteca"
+                    ? "border-green-600 text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Biblioteca de experiencias
+              </button>
+            </div>
           </div>
 
-          {/* Book List */}
-          <div
-            className="flex-1 min-h-0 overflow-y-auto px-5 py-3 flex flex-col gap-2 minimal-scrollbar"
-            style={{
-              scrollBehavior: 'smooth',
-              WebkitOverflowScrolling: 'touch',
-            }}
-          >
-            {isLoading ? (
-              <div className="p-4 text-center text-sm text-muted-foreground">Cargando libros...</div>
-            ) : books.length === 0 ? (
-              <div className="p-4 text-center text-sm text-muted-foreground">
-                No hay libros. Mantén presionado el título para crear uno.
+          {mainTab === "biblioteca" ? (
+            <BibliotecaPanel />
+          ) : (
+            <>
+              {/* Book List */}
+              <div
+                className="flex-1 min-h-0 overflow-y-auto px-5 py-3 flex flex-col gap-2 minimal-scrollbar"
+                style={{
+                  scrollBehavior: 'smooth',
+                  WebkitOverflowScrolling: 'touch',
+                }}
+              >
+                {isLoading ? (
+                  <div className="p-4 text-center text-sm text-muted-foreground">Cargando libros...</div>
+                ) : books.length === 0 ? (
+                  <div className="p-4 text-center text-sm text-muted-foreground">
+                    No hay libros. Mantén presionado el título para crear uno.
+                  </div>
+                ) : (
+                  books.map((book) => (
+                    <BookCardWithLongPress
+                      key={book.id}
+                      book={book}
+                      sessions={book.sessions || []}
+                      onDetail={() => {
+                        setSelectedBookId(book.id);
+                        setCurrentPanel("detail");
+                      }}
+                      onDelete={() => deleteBook.mutate(book.id)}
+                      onEdit={() => {
+                        setEditingBookId(book.id);
+                        setCurrentPanel("add");
+                      }}
+                      onArchive={() => moveToLibrary.mutate({ id: book.id })}
+                      onRegisterPage={(bookId, page) => registerPage.mutate({ bookId, page })}
+                    />
+                  ))
+                )}
               </div>
-            ) : (
-              books.map((book) => (
-                <BookCardWithLongPress
-                  key={book.id}
-                  book={book}
-                  sessions={book.sessions || []}
-                  onDetail={() => {
-                    setSelectedBookId(book.id);
-                    setCurrentPanel("detail");
-                  }}
-                  onDelete={() => deleteBook.mutate(book.id)}
-                  onEdit={() => {
-                    setEditingBookId(book.id);
-                    setCurrentPanel("add");
-                  }}
-                  onArchive={() => archiveBook.mutate(book.id)}
-                  onRegisterPage={(bookId, page) => registerPage.mutate({ bookId, page })}
-                />
-              ))
-            )}
-          </div>
-
-          {/* Footer */}
-          <div className="border-t border-border/30 flex items-center justify-end px-4 sm:px-6 py-3 gap-2">
-            <button
-              onClick={() => setCurrentPanel("archived")}
-              className="inline-flex items-center justify-center rounded-full bg-green-500/20 p-2 text-green-700 hover:opacity-80 dark:text-green-400 active:opacity-60 transition-colors touch-manipulation h-9 w-9"
-              title="Libros archivados"
-            >
-              <Swords className="h-4 w-4" />
-            </button>
-          </div>
+            </>
+          )}
         </div>
       )}
 
@@ -1908,34 +1972,7 @@ export function BookTracker() {
             setCurrentPanel("main");
             setSelectedBookId(null);
           }}
-          onArchive={() => archiveBook.mutate(selectedBook.id)}
-        />
-      )}
-
-      {currentPanel === "archived" && (
-        <ArchivedPanel
-          books={archivedBooks}
-          onBack={() => setCurrentPanel("main")}
-          onDetail={(bookId) => {
-            setSelectedArchivedBookId(bookId);
-            setCurrentPanel("archived-detail");
-          }}
-          onUnarchive={(bookId) => unarchiveBook.mutate(bookId)}
-          onDelete={(bookId) => deleteBook.mutate(bookId)}
-        />
-      )}
-
-      {currentPanel === "archived-detail" && selectedArchivedBookId && (
-        <DetailPanel
-          book={archivedBooks.find((b) => b.id === selectedArchivedBookId)!}
-          sessions={archivedBooks.find((b) => b.id === selectedArchivedBookId)?.sessions || []}
-          isArchived={true}
-          onBack={() => {
-            setCurrentPanel("archived");
-            setSelectedArchivedBookId(null);
-          }}
-          onUnarchive={() => unarchiveBook.mutate(selectedArchivedBookId)}
-          onDelete={() => deleteBook.mutate(selectedArchivedBookId)}
+          onArchive={() => moveToLibrary.mutate({ id: selectedBook.id })}
         />
       )}
     </div>

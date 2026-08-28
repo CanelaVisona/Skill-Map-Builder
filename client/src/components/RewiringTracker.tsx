@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -101,6 +102,8 @@ interface TrackerData {
   bodyLinks?: BodyLink[];
   targetLevel?: number | null;
   timesPerDay?: number | null;
+  // Solo "veces por día": hábito que se confirma al completar la cuota diaria.
+  habitId?: string | null;
 }
 
 interface ArchivedTracker {
@@ -354,16 +357,19 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
   const [editingTrackerBodyLinks, setEditingTrackerBodyLinks] = useState<BodyLink[]>([]);
   const [editingTrackerTargetLevel, setEditingTrackerTargetLevel] = useState(String(DEFAULT_TARGET_LEVEL));
   const [editingTrackerTimesPerDay, setEditingTrackerTimesPerDay] = useState("");
+  const [editingTrackerHabitId, setEditingTrackerHabitId] = useState<string | null>(null);
   const [editingSkillsForArea, setEditingSkillsForArea] = useState<any[]>([]);
   const [xpPopupSnapshot, setXpPopupSnapshot] = useState<ExperienceGainSnapshot | null>(null);
   const { addBodyBlock } = useBodyProgress();
   const { showBodyGainPopup } = useBodyGainPopup();
+  const queryClient = useQueryClient();
   const [newTrackerAreaId, setNewTrackerAreaId] = useState<string | null>(null);
   const [newTrackerProjectId, setNewTrackerProjectId] = useState<string | null>(null);
   const [newTrackerSkillIds, setNewTrackerSkillIds] = useState<string[]>([]);
   const [newTrackerBodyLinks, setNewTrackerBodyLinks] = useState<BodyLink[]>([]);
   const [newTrackerTargetLevel, setNewTrackerTargetLevel] = useState(String(DEFAULT_TARGET_LEVEL));
   const [newTrackerTimesPerDay, setNewTrackerTimesPerDay] = useState("");
+  const [newTrackerHabitId, setNewTrackerHabitId] = useState<string | null>(null);
 
   // Muestra el pop-up de crecimiento corporal; si en la misma confirmación ya se mostró el de
   // XP (que acá es local, no el contexto compartido), espera a que termine de leerse.
@@ -384,6 +390,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
   };
   const [areas, setAreas] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
+  const [habits, setHabits] = useState<any[]>([]);
   const [availableSkills, setAvailableSkills] = useState<any[]>([]);
   const [levelCompletingTrackerId, setLevelCompletingTrackerId] = useState<string | null>(null);
 
@@ -498,6 +505,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
             bodyLinks: Array.isArray(tracker.bodyLinks) ? tracker.bodyLinks : [],
             targetLevel: tracker.targetLevel,
             timesPerDay: tracker.timesPerDay,
+            habitId: tracker.habitId ?? null,
           };
         }
 
@@ -566,13 +574,14 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
     };
   }, [trackerData]);
 
-  // Load areas and projects on mount
+  // Load areas, projects and habits on mount
   useEffect(() => {
     const loadAreasAndProjects = async () => {
       try {
         const areasRes = await fetch("/api/areas");
         const projectsRes = await fetch("/api/projects");
-        
+        const habitsRes = await fetch("/api/habits");
+
         if (areasRes.ok) {
           const areasData = await areasRes.json();
           setAreas(areasData);
@@ -581,8 +590,12 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           const projectsData = await projectsRes.json();
           setProjects(projectsData);
         }
+        if (habitsRes.ok) {
+          const habitsData = await habitsRes.json();
+          setHabits(Array.isArray(habitsData) ? habitsData : []);
+        }
       } catch (error) {
-        console.error("Error loading areas and projects:", error);
+        console.error("Error loading areas, projects and habits:", error);
       }
     };
     loadAreasAndProjects();
@@ -733,6 +746,88 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
     return snapshots.length;
   };
 
+  // "Veces por día": al completar la cuota de repeticiones del día, el hábito linkeado queda
+  // confirmado hoy y corre su flujo normal (award-xp de sus skills + crecimiento de sus
+  // bodyLinks). Los pop-ups arrancan en `startDelayMs` (después de los del propio rewiring) y
+  // se escalonan 1800ms como awardSkillsXP/growLinkedBody, para no solaparse con los otros.
+  const confirmLinkedHabit = async (habitId: string, startDelayMs: number) => {
+    try {
+      const todayStr = getLocalDateString(new Date());
+
+      // 1. Marcar el hábito como hecho hoy (upsert idempotente).
+      await fetch(`/api/habit-records/${habitId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date: todayStr, completed: 1 }),
+      });
+
+      // 2. Award XP de los skills linkeados al hábito (regla propia del hábito).
+      let awards: Array<{ skillId: string; skillName: string; newXp: number; newLevel: number; xpAwarded: number }> = [];
+      try {
+        const xpRes = await fetch(`/api/habits/${habitId}/award-xp`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+        if (xpRes.ok) {
+          const xpData = await xpRes.json();
+          awards = Array.isArray(xpData?.xpAwards) ? xpData.xpAwards : [];
+        }
+      } catch (error) {
+        console.error("[Rewiring] Error awarding habit XP:", error);
+      }
+
+      // 3. Un pop-up de XP por skill, escalonados a partir de startDelayMs.
+      let slot = 0;
+      for (const award of awards) {
+        let areaColor = "#c85a2a";
+        let xpMax: number | null = null;
+        let xpBefore = Math.max(0, award.newXp - award.xpAwarded);
+        try {
+          const skillRes = await fetch(`/api/global-skills/${award.skillId}`);
+          const linkedSkill = skillRes.ok ? await skillRes.json() : null;
+          if (linkedSkill) {
+            const area = areas.find((areaEntry) => areaEntry.id === linkedSkill.areaId);
+            areaColor = area?.color || areaColor;
+            xpMax = linkedSkill.goalXp ?? null;
+          }
+        } catch {
+          // sin datos del skill, usamos los del award
+        }
+        const snapshot: ExperienceGainSnapshot = {
+          skillName: award.skillName,
+          areaColor,
+          xpBefore,
+          xpAfter: award.newXp,
+          xpMax,
+          level: award.newLevel,
+          celebrateLevelUp: true,
+        };
+        const delay = startDelayMs + slot * 1800;
+        setTimeout(() => setXpPopupSnapshot(snapshot), delay);
+        slot += 1;
+      }
+
+      // 4. Crecimiento de los componentes corporales linkeados al hábito.
+      const habit = habits.find((h) => h.id === habitId);
+      const habitBodyLinks: BodyLink[] = Array.isArray(habit?.bodyLinks) ? habit.bodyLinks : [];
+      habitBodyLinks.forEach((link) => {
+        const delay = startDelayMs + slot * 1800;
+        setTimeout(() => {
+          const { before, after } = addBodyBlock(link.zone, link.dimension);
+          setXpPopupSnapshot(null);
+          showBodyGainPopup({ zone: link.zone, dimension: link.dimension, before, after });
+        }, delay);
+        slot += 1;
+      });
+
+      // 5. Refrescar consumidores del estado de hábitos (modal de rachas, tareas de hoy, badge).
+      queryClient.invalidateQueries({ queryKey: ["habits"] });
+      queryClient.invalidateQueries({ queryKey: ["habit-records"] });
+    } catch (error) {
+      console.error("[Rewiring] Error confirming linked habit:", error);
+    }
+  };
+
   const handleCreateTracker = async () => {
     console.log("[Rewiring] handleCreateTracker called, name:", newTrackerName);
     if (!newTrackerName.trim()) {
@@ -748,6 +843,8 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
     const timesPerDay = Number.isFinite(parsedTimesPerDay) && parsedTimesPerDay >= 1
       ? Math.round(parsedTimesPerDay)
       : null;
+    // El hábito linkeado solo aplica en modo "veces por día".
+    const habitId = timesPerDay ? newTrackerHabitId : null;
     try {
       let newTracker: any = null;
 
@@ -766,6 +863,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
             bodyLinks: newTrackerBodyLinks,
             targetLevel,
             timesPerDay,
+            habitId,
           }),
         });
 
@@ -793,6 +891,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           bodyLinks: newTrackerBodyLinks,
           targetLevel,
           timesPerDay,
+          habitId,
         };
         console.log("[Rewiring] Created local tracker:", newTracker);
       }
@@ -812,6 +911,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
         bodyLinks: Array.isArray(newTracker.bodyLinks) ? newTracker.bodyLinks : [],
         targetLevel: newTracker.targetLevel,
         timesPerDay: newTracker.timesPerDay,
+        habitId: newTracker.habitId ?? null,
       };
       console.log("[Rewiring] New tracker data:", newTrackerData);
 
@@ -841,6 +941,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
       setNewTrackerBodyLinks([]);
       setNewTrackerTargetLevel(String(DEFAULT_TARGET_LEVEL));
       setNewTrackerTimesPerDay("");
+      setNewTrackerHabitId(null);
       setSelectedTrackerId(newTracker.id);
 
       console.log("[Rewiring] Tracker created and saved:", newTracker.id, newTrackerData);
@@ -893,8 +994,11 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
     }
   };
 
-  const handleUpdateTracker = async (trackerId: string, updates: { name: string; areaId: string | null; projectId: string | null; skillIds: string[]; bodyLinks?: BodyLink[]; targetLevel: number; timesPerDay: number | null }) => {
+  const handleUpdateTracker = async (trackerId: string, updates: { name: string; areaId: string | null; projectId: string | null; skillIds: string[]; bodyLinks?: BodyLink[]; targetLevel: number; timesPerDay: number | null; habitId?: string | null }) => {
     if (!updates.name.trim()) return;
+
+    // El hábito linkeado solo aplica en modo "veces por día".
+    const habitId = updates.timesPerDay ? (updates.habitId ?? null) : null;
 
     try {
       // Try to update via API
@@ -911,6 +1015,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
             bodyLinks: updates.bodyLinks ?? [],
             targetLevel: updates.targetLevel,
             timesPerDay: updates.timesPerDay,
+            habitId,
           }),
         });
 
@@ -937,6 +1042,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           bodyLinks: updates.bodyLinks ?? [],
           targetLevel: updates.targetLevel,
           timesPerDay: updates.timesPerDay,
+          habitId,
         };
       }
 
@@ -950,6 +1056,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
       setEditingTrackerSkillIds([]);
       setEditingTrackerBodyLinks([]);
       setEditingTrackerTimesPerDay("");
+      setEditingTrackerHabitId(null);
 
       // Save to localStorage
       storage.setItem("rewiring_tracker_list", JSON.stringify(updatedTrackers));
@@ -1003,6 +1110,16 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
 
       // Grow linked body component (fuerza/flexibilidad), if any
       growLinkedBody(Array.isArray(data.bodyLinks) ? data.bodyLinks : [], xpPopupsShown);
+
+      // "Veces por día" con hábito linkeado: si esta repetición completó la cuota del día,
+      // confirmar el hábito hoy y correr su flujo normal. El `=== timesPerDay` exacto hace que
+      // dispare una sola vez (repeticiones extra dan repsToday > timesPerDay). Los pop-ups del
+      // hábito arrancan después de los del propio rewiring, sin solaparse.
+      const repsToday = newHistory.filter((h) => (h.date ?? "") === todayStr).length;
+      if (data.timesPerDay && data.timesPerDay >= 1 && repsToday === data.timesPerDay && data.habitId) {
+        const rewiringPopups = xpPopupsShown + (Array.isArray(data.bodyLinks) ? data.bodyLinks.length : 0);
+        confirmLinkedHabit(data.habitId, rewiringPopups * 1800);
+      }
 
       // Always update tracker data (whether complete or not)
       const updatedData = {
@@ -1132,8 +1249,11 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           onNewTrackerTargetLevel={setNewTrackerTargetLevel}
           newTrackerTimesPerDay={newTrackerTimesPerDay}
           onNewTrackerTimesPerDay={setNewTrackerTimesPerDay}
+          newTrackerHabitId={newTrackerHabitId}
+          onNewTrackerHabitId={setNewTrackerHabitId}
           areas={areas}
           projects={projects}
+          habits={habits}
           availableSkills={availableSkills}
           onDeleteTracker={handleDeleteTracker}
           onRegisterAction={handleIncrement}
@@ -1156,6 +1276,8 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           onEditingTrackerTargetLevel={setEditingTrackerTargetLevel}
           editingTrackerTimesPerDay={editingTrackerTimesPerDay}
           onEditingTrackerTimesPerDay={setEditingTrackerTimesPerDay}
+          editingTrackerHabitId={editingTrackerHabitId}
+          onEditingTrackerHabitId={setEditingTrackerHabitId}
           editingSkillsForArea={editingSkillsForArea}
           onEditingSkillsForArea={setEditingSkillsForArea}
           levelCompletingTrackerId={levelCompletingTrackerId}
@@ -1228,6 +1350,7 @@ function TrackerCard({
   isLevelCompleting,
   areas,
   projects,
+  habits,
   editingTrackerAreaId,
   onEditingTrackerAreaId,
   editingTrackerProjectId,
@@ -1240,6 +1363,8 @@ function TrackerCard({
   onEditingTrackerTargetLevel,
   editingTrackerTimesPerDay,
   onEditingTrackerTimesPerDay,
+  editingTrackerHabitId,
+  onEditingTrackerHabitId,
   editingSkillsForArea,
   onEditingSkillsForArea,
 }: {
@@ -1253,13 +1378,14 @@ function TrackerCard({
   onContextMenuTrackerId: (id: string | null) => void;
   onEditingTrackerName: (name: string) => void;
   onSetEditingTrackerId: (id: string | null) => void;
-  onUpdateTracker: (id: string, updates: { name: string; areaId: string | null; projectId: string | null; skillIds: string[]; bodyLinks?: BodyLink[]; targetLevel: number; timesPerDay: number | null }) => void;
+  onUpdateTracker: (id: string, updates: { name: string; areaId: string | null; projectId: string | null; skillIds: string[]; bodyLinks?: BodyLink[]; targetLevel: number; timesPerDay: number | null; habitId?: string | null }) => void;
   onDeleteTracker: (id: string) => void;
   onRegisterAction: (id: string) => void;
   onSelectTracker: (id: string) => void;
   isLevelCompleting: boolean;
   areas: any[];
   projects: any[];
+  habits: any[];
   editingTrackerAreaId: string | null;
   onEditingTrackerAreaId: (id: string | null) => void;
   editingTrackerProjectId: string | null;
@@ -1272,6 +1398,8 @@ function TrackerCard({
   onEditingTrackerTargetLevel: (level: string) => void;
   editingTrackerTimesPerDay: string;
   onEditingTrackerTimesPerDay: (value: string) => void;
+  editingTrackerHabitId: string | null;
+  onEditingTrackerHabitId: (id: string | null) => void;
   editingSkillsForArea: any[];
   onEditingSkillsForArea: (skills: any[]) => void;
 }) {
@@ -1421,6 +1549,31 @@ function TrackerCard({
             />
           </div>
 
+          {/* Habit to confirm — solo para rewirings "veces por día" */}
+          {(() => {
+            const parsedTpd = Number(editingTrackerTimesPerDay);
+            if (!(Number.isFinite(parsedTpd) && parsedTpd >= 1)) return null;
+            const todayStr = getLocalDateString(new Date());
+            const activeHabits = habits.filter((h: any) => !h.endDate || h.endDate >= todayStr);
+            return (
+              <div>
+                <label className="text-xs font-semibold text-foreground uppercase tracking-wide">Hábito a confirmar</label>
+                <select
+                  value={editingTrackerHabitId ?? ""}
+                  onChange={(e) => onEditingTrackerHabitId(e.target.value || null)}
+                  className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                >
+                  <option value="">Sin hábito</option>
+                  {activeHabits.map((h: any) => (
+                    <option key={h.id} value={h.id}>
+                      {h.emoji} {h.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            );
+          })()}
+
           {/* Target Level */}
           <div>
             <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
@@ -1460,6 +1613,7 @@ function TrackerCard({
                 onEditingTrackerBodyLinksChange([]);
                 onEditingTrackerTargetLevel(String(DEFAULT_TARGET_LEVEL));
                 onEditingTrackerTimesPerDay("");
+                onEditingTrackerHabitId(null);
                 onEditingSkillsForArea([]);
               }}
               variant="outline"
@@ -1487,6 +1641,7 @@ function TrackerCard({
                     bodyLinks: editingTrackerBodyLinks,
                     targetLevel,
                     timesPerDay,
+                    habitId: timesPerDay ? editingTrackerHabitId : null,
                   });
                 }
               }}
@@ -1591,6 +1746,7 @@ function TrackerCard({
                 onEditingTrackerBodyLinksChange(Array.isArray(data.bodyLinks) ? data.bodyLinks : []);
                 onEditingTrackerTargetLevel(String(data.targetLevel ?? DEFAULT_TARGET_LEVEL));
                 onEditingTrackerTimesPerDay(data.timesPerDay ? String(data.timesPerDay) : "");
+                onEditingTrackerHabitId(data.habitId ?? null);
                 onSetEditingTrackerId(tracker.id);
                 onContextMenuTrackerId(null);
 
@@ -1660,8 +1816,11 @@ function MainPanel({
   onNewTrackerTargetLevel,
   newTrackerTimesPerDay,
   onNewTrackerTimesPerDay,
+  newTrackerHabitId,
+  onNewTrackerHabitId,
   areas,
   projects,
+  habits,
   availableSkills,
   onDeleteTracker,
   onRegisterAction,
@@ -1684,6 +1843,8 @@ function MainPanel({
   onEditingTrackerTargetLevel,
   editingTrackerTimesPerDay,
   onEditingTrackerTimesPerDay,
+  editingTrackerHabitId,
+  onEditingTrackerHabitId,
   editingSkillsForArea,
   onEditingSkillsForArea,
   levelCompletingTrackerId,
@@ -1711,8 +1872,11 @@ function MainPanel({
   onNewTrackerTargetLevel: (level: string) => void;
   newTrackerTimesPerDay: string;
   onNewTrackerTimesPerDay: (value: string) => void;
+  newTrackerHabitId: string | null;
+  onNewTrackerHabitId: (id: string | null) => void;
   areas: any[];
   projects: any[];
+  habits: any[];
   availableSkills: any[];
   onDeleteTracker: (id: string) => void;
   onRegisterAction: (id: string) => void;
@@ -1721,7 +1885,7 @@ function MainPanel({
   editingTrackerId: string | null;
   editingTrackerName: string | null;
   onEditingTrackerName: (name: string) => void;
-  onUpdateTracker: (id: string, updates: { name: string; areaId: string | null; projectId: string | null; skillIds: string[]; bodyLinks?: BodyLink[]; targetLevel: number; timesPerDay: number | null }) => void;
+  onUpdateTracker: (id: string, updates: { name: string; areaId: string | null; projectId: string | null; skillIds: string[]; bodyLinks?: BodyLink[]; targetLevel: number; timesPerDay: number | null; habitId?: string | null }) => void;
   onSetEditingTrackerId: (id: string | null) => void;
   editingTrackerAreaId: string | null;
   onEditingTrackerAreaId: (id: string | null) => void;
@@ -1735,6 +1899,8 @@ function MainPanel({
   onEditingTrackerTargetLevel: (level: string) => void;
   editingTrackerTimesPerDay: string;
   onEditingTrackerTimesPerDay: (value: string) => void;
+  editingTrackerHabitId: string | null;
+  onEditingTrackerHabitId: (id: string | null) => void;
   editingSkillsForArea: any[];
   onEditingSkillsForArea: (skills: any[]) => void;
   levelCompletingTrackerId: string | null;
@@ -1796,6 +1962,7 @@ function MainPanel({
                 isLevelCompleting={levelCompletingTrackerId === tracker.id}
                 areas={areas}
                 projects={projects}
+                habits={habits}
                 editingTrackerAreaId={editingTrackerAreaId}
                 onEditingTrackerAreaId={onEditingTrackerAreaId}
                 editingTrackerProjectId={editingTrackerProjectId}
@@ -1808,6 +1975,8 @@ function MainPanel({
                 onEditingTrackerTargetLevel={onEditingTrackerTargetLevel}
                 editingTrackerTimesPerDay={editingTrackerTimesPerDay}
                 onEditingTrackerTimesPerDay={onEditingTrackerTimesPerDay}
+                editingTrackerHabitId={editingTrackerHabitId}
+                onEditingTrackerHabitId={onEditingTrackerHabitId}
                 editingSkillsForArea={editingSkillsForArea}
                 onEditingSkillsForArea={onEditingSkillsForArea}
               />
@@ -1930,6 +2099,34 @@ function MainPanel({
                   </p>
                 </div>
 
+                {/* Habit to confirm — solo para rewirings "veces por día" */}
+                {(() => {
+                  const parsedTpd = Number(newTrackerTimesPerDay);
+                  if (!(Number.isFinite(parsedTpd) && parsedTpd >= 1)) return null;
+                  const todayStr = getLocalDateString(new Date());
+                  const activeHabits = habits.filter((h: any) => !h.endDate || h.endDate >= todayStr);
+                  return (
+                    <div className="mb-4">
+                      <label className="text-xs font-semibold text-foreground uppercase tracking-wide">Hábito a confirmar</label>
+                      <select
+                        value={newTrackerHabitId ?? ""}
+                        onChange={(e) => onNewTrackerHabitId(e.target.value || null)}
+                        className="mt-2 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                      >
+                        <option value="">Sin hábito</option>
+                        {activeHabits.map((h: any) => (
+                          <option key={h.id} value={h.id}>
+                            {h.emoji} {h.name}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Opcional: al completar todas las veces de un día, el hábito queda confirmado hoy y corre su flujo normal (XP + cuerpo)
+                      </p>
+                    </div>
+                  );
+                })()}
+
                 {/* Target Level */}
                 <div className="mb-4">
                   <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
@@ -1968,6 +2165,7 @@ function MainPanel({
                       onNewTrackerBodyLinksChange([]);
                       onNewTrackerTargetLevel(String(DEFAULT_TARGET_LEVEL));
                       onNewTrackerTimesPerDay("");
+                      onNewTrackerHabitId(null);
                     }}
                     className="flex-1"
                   >

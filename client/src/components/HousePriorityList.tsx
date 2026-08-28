@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useTheme } from "next-themes";
-import { ChevronUp, ChevronDown, ChevronsDown, ChevronsUp, Lock, ShoppingCart } from "lucide-react";
+import { Check, ChevronUp, ChevronDown, ChevronsDown, ChevronsUp, Lock, ShoppingCart, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { playProgressAdvanceSound } from "@/lib/sound";
-import { getHouseColors, type HouseItem } from "./HouseInventory";
+import { getHouseColors, useLongPress, HOUSE_GROUP_EMOJI, type HouseItem } from "./HouseInventory";
+import HouseEditPopup, { houseEditInputStyle } from "./HouseEditPopup";
 
 // Moves the item with `id` one slot up/down among the "missing" items only, by
 // swapping its position with the neighboring missing item inside the full array
@@ -37,6 +38,7 @@ function PriorityRow({
   isDark,
   onMove,
   onConfirmPurchase,
+  onStartEdit,
 }: {
   item: HouseItem;
   index: number;
@@ -45,17 +47,29 @@ function PriorityRow({
   isDark: boolean;
   onMove: (id: number, direction: "up" | "down") => void;
   onConfirmPurchase: (id: number) => void;
+  onStartEdit: (id: number) => void;
 }) {
   const isUnlocked = index === 0;
+  const longPress = useLongPress<HTMLDivElement>(() => onStartEdit(item.id), { delay: 600 });
 
   return (
     <div
+      onPointerDown={longPress.onPointerDown}
+      onPointerMove={longPress.onPointerMove}
+      onPointerUp={longPress.onPointerUp}
+      onPointerCancel={longPress.onPointerCancel}
+      onPointerLeave={longPress.onPointerLeave}
+      onContextMenu={(e) => e.preventDefault()}
+      title="Mantené apretado para editar"
       style={{
         display: "flex",
         alignItems: "center",
         gap: "10px",
         padding: "10px 12px",
         borderRadius: "10px",
+        userSelect: "none",
+        WebkitUserSelect: "none",
+        touchAction: "manipulation",
         border: isUnlocked ? "1px solid rgba(212,175,55,0.6)" : isDark ? "1px solid #23291f" : "1px solid #dde1e8",
         background: isUnlocked ? (isDark ? "rgba(212,175,55,0.13)" : "rgba(212,175,55,0.1)") : isDark ? "#12140f" : "#eef0f3",
       }}
@@ -111,6 +125,7 @@ function PriorityRow({
         <button
           type="button"
           onClick={() => onMove(item.id, "up")}
+          onPointerDown={(e) => e.stopPropagation()}
           disabled={index === 0}
           style={{
             width: "20px",
@@ -130,6 +145,7 @@ function PriorityRow({
         <button
           type="button"
           onClick={() => onMove(item.id, "down")}
+          onPointerDown={(e) => e.stopPropagation()}
           disabled={isLast}
           style={{
             width: "20px",
@@ -152,6 +168,7 @@ function PriorityRow({
         <button
           type="button"
           onClick={() => onConfirmPurchase(item.id)}
+          onPointerDown={(e) => e.stopPropagation()}
           style={{
             height: "26px",
             borderRadius: "13px",
@@ -216,9 +233,84 @@ export default function HousePriorityList({
   const visiblePending = expanded ? pending : pending.slice(0, 1);
   const hiddenCount = pending.length - visiblePending.length;
 
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editEmoji, setEditEmoji] = useState("");
+  const [isAdding, setIsAdding] = useState(false);
+  const [addName, setAddName] = useState("");
+
   const move = (id: number, direction: "up" | "down") => {
     setItems((prev) => moveMissingItem(prev, id, direction));
   };
+
+  // Long press sobre un objeto abre este modal -- edita emoji y nombre, y adentro
+  // esta la opcion de eliminarlo de la lista (y del inventario).
+  const startEdit = useCallback((id: number) => {
+    const target = items.find((i) => i.id === id);
+    if (!target) return;
+    setIsAdding(false);
+    setEditingId(id);
+    setEditName(target.name);
+    setEditEmoji(target.emoji);
+  }, [items]);
+
+  const saveEdit = useCallback(() => {
+    if (editingId === null) return;
+    const cleanName = editName.trim();
+    if (!cleanName) {
+      window.alert("El nombre no puede estar vacio.");
+      return;
+    }
+    setItems((prev) =>
+      prev.map((i) =>
+        i.id === editingId ? { ...i, name: cleanName, emoji: editEmoji.trim() || i.emoji } : i,
+      ),
+    );
+    setEditingId(null);
+  }, [editingId, editName, editEmoji, setItems]);
+
+  const deleteEditing = useCallback(() => {
+    if (editingId === null) return;
+    setItems((prev) => prev.filter((i) => i.id !== editingId));
+    setEditingId(null);
+  }, [editingId, setItems]);
+
+  const editingItem = editingId !== null ? items.find((i) => i.id === editingId) ?? null : null;
+
+  // Long press en el fondo abre un popup (mismo estilo que los del Inventario,
+  // pero solo con el nombre) para agregar un objeto pendiente sin salir de esta
+  // pestaña. Queda con la categoria "Otros" y el emoji por defecto -- se puede
+  // afinar despues con long press desde el Inventario.
+  const openAdd = useCallback(() => {
+    setEditingId(null);
+    setAddName("");
+    setIsAdding(true);
+  }, []);
+
+  const backgroundLongPress = useLongPress<HTMLDivElement>(openAdd, { delay: 600 });
+
+  const confirmAdd = useCallback(() => {
+    const cleanName = addName.trim();
+    if (!cleanName) {
+      window.alert("El nombre no puede estar vacio.");
+      return;
+    }
+
+    const nextItem: HouseItem = {
+      id: Date.now(),
+      name: cleanName,
+      emoji: HOUSE_GROUP_EMOJI.Otros,
+      group: "Otros",
+      status: "missing",
+      utility: 3,
+      condition: 3,
+      importance: 3,
+    };
+
+    setItems((prev) => [...prev, nextItem]);
+    setIsAdding(false);
+    toast({ title: `Agregaste ${cleanName}`, description: "Quedo al final de la lista de prioridades." });
+  }, [addName, setItems, toast]);
 
   const confirmPurchase = (id: number) => {
     const boughtItem = items.find((i) => i.id === id);
@@ -230,11 +322,98 @@ export default function HousePriorityList({
     }
   };
 
+  // Los objetos ya comprados (status "have") -- se muestran abajo en "Conseguidos".
+  // Tocar el tilde deshace la compra y los devuelve a la lista de pendientes.
+  const bought = items.filter((item) => item.status === "have");
+
+  const undoPurchase = useCallback((id: number) => {
+    setItems((prev) => prev.map((item) => (item.id === id ? { ...item, status: "missing" } : item)));
+  }, [setItems]);
+
+  const removeItem = useCallback((id: number) => {
+    setItems((prev) => prev.filter((item) => item.id !== id));
+  }, [setItems]);
+
   return (
-    <div style={{ fontFamily: "'Exo 2', 'Segoe UI', sans-serif", width: "100%" }}>
+    <div
+      style={{ fontFamily: "'Exo 2', 'Segoe UI', sans-serif", width: "100%", touchAction: "manipulation" }}
+      onPointerDown={backgroundLongPress.onPointerDown}
+      onPointerMove={backgroundLongPress.onPointerMove}
+      onPointerUp={backgroundLongPress.onPointerUp}
+      onPointerCancel={backgroundLongPress.onPointerCancel}
+      onPointerLeave={backgroundLongPress.onPointerLeave}
+      onContextMenu={(e) => e.preventDefault()}
+    >
       <p style={{ color: colors.subtitle, fontSize: "11px", marginBottom: "14px" }}>
-        Solo el primer objeto esta desbloqueado para comprar. Usa las flechas para cambiar el orden de prioridad -- al comprar el primero, el siguiente se desbloquea.
+        Solo el primer objeto esta desbloqueado para comprar. Usa las flechas para cambiar el orden de prioridad -- al comprar el primero, el siguiente se desbloquea. Long press en el fondo para agregar un objeto nuevo, o sobre un objeto para editarlo o eliminarlo.
       </p>
+
+      {isAdding && (
+        <HouseEditPopup
+          heading="Nuevo objeto"
+          colors={colors}
+          isDark={isDark}
+          onCancel={() => setIsAdding(false)}
+          onSubmit={confirmAdd}
+          submitLabel="Agregar"
+        >
+          <div>
+            <div
+              style={{
+                fontSize: "10px",
+                fontWeight: 700,
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+                color: colors.subtitle,
+                marginBottom: "6px",
+              }}
+            >
+              Nombre del objeto
+            </div>
+            <input
+              value={addName}
+              onChange={(e) => setAddName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") confirmAdd();
+              }}
+              autoFocus
+              placeholder="Ej: Aspiradora"
+              style={houseEditInputStyle(colors, isDark)}
+            />
+          </div>
+        </HouseEditPopup>
+      )}
+
+      {editingItem && (
+        <HouseEditPopup
+          heading={`Editando "${editingItem.name}"`}
+          colors={colors}
+          isDark={isDark}
+          onCancel={() => setEditingId(null)}
+          onSubmit={saveEdit}
+          onDelete={deleteEditing}
+        >
+          <div style={{ display: "grid", gridTemplateColumns: "56px 1fr", gap: "8px" }}>
+            <input
+              value={editEmoji}
+              onChange={(e) => setEditEmoji(e.target.value)}
+              maxLength={4}
+              placeholder="📦"
+              style={{ ...houseEditInputStyle(colors, isDark), textAlign: "center", fontSize: "18px", padding: 0 }}
+            />
+            <input
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") saveEdit();
+              }}
+              autoFocus
+              placeholder="Ej: Aspiradora"
+              style={houseEditInputStyle(colors, isDark)}
+            />
+          </div>
+        </HouseEditPopup>
+      )}
 
       {pending.length === 0 && (
         <p style={{ color: colors.subtitle, fontSize: "11px" }}>
@@ -242,7 +421,7 @@ export default function HousePriorityList({
         </p>
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }} onPointerDown={(e) => e.stopPropagation()}>
         {visiblePending.map((item, index) => (
           <PriorityRow
             key={item.id}
@@ -253,6 +432,7 @@ export default function HousePriorityList({
             isDark={isDark}
             onMove={move}
             onConfirmPurchase={confirmPurchase}
+            onStartEdit={startEdit}
           />
         ))}
       </div>
@@ -308,6 +488,88 @@ export default function HousePriorityList({
           Ocultar
           <ChevronsUp size={13} />
         </button>
+      )}
+
+      {bought.length > 0 && (
+        <div style={{ marginTop: "18px" }} onPointerDown={(e) => e.stopPropagation()}>
+          <div style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: colors.subtitle, marginBottom: "8px" }}>
+            Conseguidos ({bought.length})
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+            {bought.map((item) => (
+              <div
+                key={item.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  padding: "8px 12px",
+                  borderRadius: "10px",
+                  border: isDark ? "1px solid #1e2d1e" : "1px solid #e2e8f0",
+                  opacity: 0.6,
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => undoPurchase(item.id)}
+                  aria-label="Deshacer compra"
+                  title="Toca para volver a pendientes"
+                  style={{
+                    width: "20px",
+                    height: "20px",
+                    borderRadius: "50%",
+                    border: "none",
+                    background: "linear-gradient(135deg, #16a34a, #22c55e)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: "pointer",
+                    flexShrink: 0,
+                    padding: 0,
+                  }}
+                >
+                  <Check size={11} color="#052e16" strokeWidth={3} />
+                </button>
+                <span style={{ fontSize: "14px", flexShrink: 0 }}>{item.emoji}</span>
+                <span
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    color: colors.subtitle,
+                    textDecoration: "line-through",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {item.name}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => removeItem(item.id)}
+                  aria-label="Eliminar objeto"
+                  style={{
+                    width: "22px",
+                    height: "22px",
+                    borderRadius: "6px",
+                    border: "none",
+                    background: "transparent",
+                    color: isDark ? "#7f1d1d" : "#b91c1c",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );

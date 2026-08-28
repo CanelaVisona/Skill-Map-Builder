@@ -1088,6 +1088,21 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [newErrorDisparadorDraft, setNewErrorDisparadorDraft] = useState("");
   const nodeErrorAddLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Formulario de edición de un error ya existente -- se abre manteniendo apretada su tarjeta
+  // en la lista (Step 2 o Step 3) y permite renombrarlo y sumarle disparadores/estrategias.
+  // editingErrorId !== null mientras el formulario está abierto; los chips y el nombre se
+  // siembran desde el error al abrirlo y se guardan con un PATCH (ver handleSaveEditingError).
+  const [editingErrorId, setEditingErrorId] = useState<string | null>(null);
+  const [editErrorName, setEditErrorName] = useState("");
+  const [editErrorEstrategias, setEditErrorEstrategias] = useState<string[]>([]);
+  const [editErrorEstrategiaDraft, setEditErrorEstrategiaDraft] = useState("");
+  const [editErrorDisparadores, setEditErrorDisparadores] = useState<string[]>([]);
+  const [editErrorDisparadorDraft, setEditErrorDisparadorDraft] = useState("");
+  const nodeErrorCardLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Se pone en true cuando el long-press sobre una tarjeta de error ya abrió el formulario,
+  // para que el click que dispara el dedo/mouse al soltar no seleccione/deseleccione el error.
+  const isNodeErrorCardLongPress = useRef(false);
+
   // Picker que se abre al apretar "+10p"/"-10p": lista las estrategias/disparadores ya
   // guardados del error + la opción "Estrategia nueva"/"Disparador nuevo". errorPicker !== null
   // mientras está abierto. "kind" decide si suma xp (con estrategia) o resta (con disparador);
@@ -1282,6 +1297,30 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     },
   });
 
+  // Edición de un error ya existente desde el formulario que se abre manteniendo apretada su
+  // tarjeta en la lista (Step 2 / Step 3): renombrar y reemplazar sus listas de
+  // estrategias/disparadores en un solo PATCH.
+  const updateNodeError = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { nombre?: string; estrategias?: string[]; disparadores?: string[] } }) => {
+      const res = await fetch(`/api/node-errors/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        throw new Error("Failed to update error");
+      }
+      return res.json() as Promise<SkillNodeError>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/node-errors/${skill.id}`] });
+    },
+    onError: (error) => {
+      console.error("updateNodeError error:", error);
+      toast({ title: "No se pudo actualizar el error", variant: "destructive" });
+    },
+  });
+
   const handleCreateNodeError = () => {
     const finalName = newErrorName.trim();
     if (!finalName || createNodeError.isPending) return;
@@ -1423,6 +1462,61 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       clearTimeout(nodeErrorAddLongPressTimer.current);
       nodeErrorAddLongPressTimer.current = null;
     }
+  };
+
+  // Long-press sobre la tarjeta de un error ya existente: abre el formulario de edición
+  // sembrado con su nombre y sus listas actuales de estrategias/disparadores.
+  const startNodeErrorCardLongPress = (errorId: string) => {
+    isNodeErrorCardLongPress.current = false;
+    nodeErrorCardLongPressTimer.current = setTimeout(() => {
+      const target = nodeErrorsList.find((err) => err.id === errorId);
+      if (!target) return;
+      isNodeErrorCardLongPress.current = true;
+      setEditErrorName(target.nombre);
+      setEditErrorEstrategias(target.estrategias ?? []);
+      setEditErrorDisparadores(target.disparadores ?? []);
+      setEditErrorEstrategiaDraft("");
+      setEditErrorDisparadorDraft("");
+      setEditingErrorId(errorId);
+    }, 500);
+  };
+
+  const endNodeErrorCardLongPress = () => {
+    if (nodeErrorCardLongPressTimer.current) {
+      clearTimeout(nodeErrorCardLongPressTimer.current);
+      nodeErrorCardLongPressTimer.current = null;
+    }
+  };
+
+  // Chips del formulario de edición -- solo tocan el estado local hasta que se guarda.
+  const handleAddEditErrorEstrategia = () => {
+    const finalText = editErrorEstrategiaDraft.trim();
+    if (!finalText || editErrorEstrategias.includes(finalText)) {
+      setEditErrorEstrategiaDraft("");
+      return;
+    }
+    setEditErrorEstrategias((prev) => [...prev, finalText]);
+    setEditErrorEstrategiaDraft("");
+  };
+
+  const handleAddEditErrorDisparador = () => {
+    const finalText = editErrorDisparadorDraft.trim();
+    if (!finalText || editErrorDisparadores.includes(finalText)) {
+      setEditErrorDisparadorDraft("");
+      return;
+    }
+    setEditErrorDisparadores((prev) => [...prev, finalText]);
+    setEditErrorDisparadorDraft("");
+  };
+
+  const handleSaveEditingError = () => {
+    if (!editingErrorId) return;
+    const finalName = editErrorName.trim();
+    if (!finalName || updateNodeError.isPending) return;
+    updateNodeError.mutate(
+      { id: editingErrorId, data: { nombre: finalName, estrategias: editErrorEstrategias, disparadores: editErrorDisparadores } },
+      { onSuccess: () => setEditingErrorId(null) }
+    );
   };
 
   // Experience tab state for editStep 2 -- several skills can be picked at once, each gets the
@@ -3603,7 +3697,19 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                               <button
                                 key={error.id}
                                 type="button"
-                                onClick={() => setSelectedErrorId(isSelected ? null : error.id)}
+                                onClick={() => {
+                                  if (isNodeErrorCardLongPress.current) {
+                                    isNodeErrorCardLongPress.current = false;
+                                    return;
+                                  }
+                                  setSelectedErrorId(isSelected ? null : error.id);
+                                }}
+                                onTouchStart={() => startNodeErrorCardLongPress(error.id)}
+                                onTouchEnd={endNodeErrorCardLongPress}
+                                onTouchCancel={endNodeErrorCardLongPress}
+                                onMouseDown={() => startNodeErrorCardLongPress(error.id)}
+                                onMouseUp={endNodeErrorCardLongPress}
+                                onMouseLeave={endNodeErrorCardLongPress}
                                 className={cn(
                                   "w-full rounded-lg border p-3 text-left transition-colors",
                                   isSelected ? "border-primary/50 bg-primary/10" : "border-border/60 bg-muted/40 hover:bg-muted/60"
@@ -4594,7 +4700,19 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                                   <button
                                     key={error.id}
                                     type="button"
-                                    onClick={() => setSelectedErrorId(isSelected ? null : error.id)}
+                                    onClick={() => {
+                                      if (isNodeErrorCardLongPress.current) {
+                                        isNodeErrorCardLongPress.current = false;
+                                        return;
+                                      }
+                                      setSelectedErrorId(isSelected ? null : error.id);
+                                    }}
+                                    onTouchStart={() => startNodeErrorCardLongPress(error.id)}
+                                    onTouchEnd={endNodeErrorCardLongPress}
+                                    onTouchCancel={endNodeErrorCardLongPress}
+                                    onMouseDown={() => startNodeErrorCardLongPress(error.id)}
+                                    onMouseUp={endNodeErrorCardLongPress}
+                                    onMouseLeave={endNodeErrorCardLongPress}
                                     className={cn(
                                       "w-full rounded-lg border p-3 text-left transition-colors",
                                       isSelected ? "border-primary/50 bg-primary/10" : "border-border/60 bg-muted/40 hover:bg-muted/60"
@@ -4871,6 +4989,71 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             </Button>
           </div>
         )}
+      </DialogContent>
+    </Dialog>
+
+    {/* Editar un error ya existente: se abre manteniendo apretada su tarjeta en la lista de
+        errores (Journal / Step 3). Permite renombrarlo y sumarle/quitarle
+        disparadores y estrategias; todo se guarda junto con un PATCH al presionar Guardar. */}
+    <Dialog open={editingErrorId !== null} onOpenChange={(open) => { if (!open) setEditingErrorId(null); }}>
+      <DialogContent className="sm:max-w-[400px] border-0 shadow-2xl max-h-[90vh] overflow-y-auto minimal-scrollbar">
+        <DialogHeader>
+          <DialogTitle className="text-lg font-medium">Editar error</DialogTitle>
+          <DialogDescription className="sr-only">Editar nombre, disparadores y estrategias del error</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label className="text-[11px] text-muted-foreground uppercase tracking-wide block">Nombre</Label>
+            <Input
+              placeholder="NOMBRE"
+              value={editErrorName}
+              onChange={(e) => setEditErrorName(e.target.value.toUpperCase())}
+              className="uppercase border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
+              data-testid="input-edit-error-name"
+              autoFocus
+            />
+          </div>
+
+          <ChipListInput
+            label="Estrategias"
+            placeholder="Nueva estrategia"
+            items={editErrorEstrategias}
+            draft={editErrorEstrategiaDraft}
+            onDraftChange={setEditErrorEstrategiaDraft}
+            onAdd={handleAddEditErrorEstrategia}
+            onRemove={(i) => setEditErrorEstrategias((prev) => prev.filter((_, idx) => idx !== i))}
+            testIdPrefix="edit-error-estrategia"
+          />
+
+          <ChipListInput
+            label="Disparadores"
+            placeholder="Nuevo disparador"
+            items={editErrorDisparadores}
+            draft={editErrorDisparadorDraft}
+            onDraftChange={setEditErrorDisparadorDraft}
+            onAdd={handleAddEditErrorDisparador}
+            onRemove={(i) => setEditErrorDisparadores((prev) => prev.filter((_, idx) => idx !== i))}
+            testIdPrefix="edit-error-disparador"
+          />
+        </div>
+        <div className="flex gap-2 pt-2">
+          <Button
+            variant="ghost"
+            onClick={() => setEditingErrorId(null)}
+            className="flex-1 bg-muted/50 hover:bg-muted"
+            data-testid="button-cancel-edit-error"
+          >
+            Cancelar
+          </Button>
+          <Button
+            onClick={handleSaveEditingError}
+            disabled={!editErrorName.trim() || updateNodeError.isPending}
+            className="flex-1 border-0"
+            data-testid="button-save-edit-error"
+          >
+            Guardar
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
 

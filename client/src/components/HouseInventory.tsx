@@ -238,7 +238,7 @@ export function getHouseColors(isDark: boolean) {
   };
 }
 
-function useLongPress<T extends HTMLElement>(onLongPress: () => void, { delay = 600, moveTolerance = 10 } = {}) {
+export function useLongPress<T extends HTMLElement>(onLongPress: () => void, { delay = 600, moveTolerance = 10 } = {}) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pointerIdRef = useRef<number | null>(null);
   const startPointRef = useRef<{ x: number; y: number } | null>(null);

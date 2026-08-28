@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/compone
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
-import { ArrowLeft, Plus, Check, RotateCcw, Trash2, Coffee, UtensilsCrossed, Cookie, Moon, Beef, Carrot, Wheat, Apple, GlassWater } from "lucide-react";
+import { ArrowLeft, Plus, Check, RotateCcw, Trash2, Coffee, UtensilsCrossed, Cookie, Moon, Beef, Carrot, Wheat, Apple, GlassWater, CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface MealTrackerModalProps {
@@ -13,6 +13,20 @@ interface MealTrackerModalProps {
 }
 
 type MealKind = "main" | "light";
+
+interface DishComponent {
+  categoryKey: string;
+  item: string;
+}
+interface Dish {
+  id: string;
+  mealKind: MealKind;
+  name: string;
+  components: DishComponent[];
+}
+// Categorías que un plato puede combinar. Se intersecan con las categorías reales de cada
+// comida: en las principales da proteína/vegetales/carbo, en las livianas proteína/carbo.
+const DISH_CAT_KEYS = ["proteina", "vegetales", "carbos"];
 
 interface CatDef {
   key: string;
@@ -110,6 +124,44 @@ function coreComplete(meals: MealsState): boolean {
   return n.proteina && n.vegetales && n.carbos && n.fruta;
 }
 
+// ── Calendario de comidas ──────────────────────────────────────────────────
+const MONTHS = [
+  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+];
+const DAY_LBLS = ["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"];
+// Un color por comida, para los puntitos de cada día del calendario.
+const MEAL_DOT_COLORS: Record<string, string> = {
+  desayuno: "#8B6B4A",
+  almuerzo: "#D9663F",
+  merienda: "#E8A93C",
+  cena: "#185FA5",
+};
+
+// Lunes = 0 … Domingo = 6, para el offset del primer día del mes en la grilla.
+function getFirstDayOfMonth(date: Date) {
+  const firstDow = new Date(date.getFullYear(), date.getMonth(), 1).getDay();
+  return firstDow === 0 ? 6 : firstDow - 1;
+}
+
+// Ítems tildados de una comida en un día (para el detalle del calendario).
+function mealCheckedItems(meals: MealsState, meal: MealDef): string[] {
+  const items: string[] = [];
+  meal.cats.forEach((c) => {
+    const catObj = meals?.[meal.id]?.[c.key] || {};
+    Object.entries(catObj).forEach(([item, on]) => {
+      if (on) items.push(item);
+    });
+  });
+  return items;
+}
+
+interface RangeDay {
+  date: string;
+  meals: MealsState;
+  celebrated: boolean;
+}
+
 // Colores base "sin marcar", theme-aware vía tokens de la app; las cuñas/objetos toman su
 // color de categoría (fijo, igual en claro/oscuro) apenas se tilda algo, igual que el plato del
 // mi-dia.html original.
@@ -200,7 +252,7 @@ async function fetchJson(url: string, opts?: RequestInit) {
 
 export function MealTrackerModal({ open, onOpenChange }: MealTrackerModalProps) {
   const queryClient = useQueryClient();
-  const [panel, setPanel] = useState<"day" | "meal" | "add" | "summary">("day");
+  const [panel, setPanel] = useState<"day" | "meal" | "add" | "add-dish" | "summary" | "calendar">("day");
   const [activeMealId, setActiveMealId] = useState<string | null>(null);
   const [addCatKey, setAddCatKey] = useState<string | null>(null);
   const [addValue, setAddValue] = useState("");
@@ -216,6 +268,12 @@ export function MealTrackerModal({ open, onOpenChange }: MealTrackerModalProps) 
   const { data: customOptions = {} } = useQuery<Record<string, string[]>>({
     queryKey: ["/api/meal-tracker/custom-options"],
     queryFn: () => fetchJson("/api/meal-tracker/custom-options"),
+    enabled: open,
+  });
+
+  const { data: dishes = [] } = useQuery<Dish[]>({
+    queryKey: ["/api/meal-tracker/dishes"],
+    queryFn: () => fetchJson("/api/meal-tracker/dishes"),
     enabled: open,
   });
 
@@ -265,6 +323,38 @@ export function MealTrackerModal({ open, onOpenChange }: MealTrackerModalProps) 
     setAddValue("");
     setPanel("meal");
     setNotification(`Agregado: ${name}`);
+  };
+
+  // Confirmar/des-confirmar un plato: tilda o destilda de una todos sus componentes linkeados.
+  const applyDish = async (meal: MealDef, dish: Dish, active: boolean) => {
+    const updated = await fetchJson("/api/meal-tracker/apply-dish", {
+      method: "POST",
+      body: JSON.stringify({ date: today, mealId: meal.id, components: dish.components, active }),
+    });
+    queryClient.setQueryData(["/api/meal-tracker/today", today], (prev: DayData | undefined) => ({
+      ...(prev as DayData),
+      meals: updated.meals,
+    }));
+  };
+
+  const submitDish = async (name: string, components: DishComponent[]) => {
+    if (!activeMeal) return;
+    const result = await fetchJson("/api/meal-tracker/dish", {
+      method: "POST",
+      body: JSON.stringify({ mealKind: activeMeal.kind, name, components }),
+    });
+    queryClient.setQueryData(["/api/meal-tracker/dishes"], result.dishes);
+    setPanel("meal");
+    setNotification(`Plato agregado: ${name}`);
+  };
+
+  const deleteDish = async (dish: Dish) => {
+    const result = await fetchJson("/api/meal-tracker/dish", {
+      method: "DELETE",
+      body: JSON.stringify({ id: dish.id }),
+    });
+    queryClient.setQueryData(["/api/meal-tracker/dishes"], result.dishes);
+    setNotification(`Plato eliminado: ${dish.name}`);
   };
 
   const closeMealPanel = async () => {
@@ -358,8 +448,13 @@ export function MealTrackerModal({ open, onOpenChange }: MealTrackerModalProps) 
                 setPanel("meal");
               }}
               onSummary={() => setPanel("summary")}
+              onCalendar={() => setPanel("calendar")}
               onReset={resetDay}
             />
+          )}
+
+          {panel === "calendar" && (
+            <CalendarPanel today={today} onBack={() => setPanel("day")} />
           )}
 
           {panel === "meal" && activeMeal && (
@@ -367,6 +462,7 @@ export function MealTrackerModal({ open, onOpenChange }: MealTrackerModalProps) 
               meal={activeMeal}
               meals={meals}
               customOptions={customOptions}
+              dishes={dishes}
               onToggle={toggleItem}
               onDeleteItem={deleteCustomOption}
               onAdd={(catKey) => {
@@ -374,6 +470,9 @@ export function MealTrackerModal({ open, onOpenChange }: MealTrackerModalProps) 
                 setAddValue("");
                 setPanel("add");
               }}
+              onApplyDish={applyDish}
+              onDeleteDish={deleteDish}
+              onNewDish={() => setPanel("add-dish")}
               onBack={closeMealPanel}
             />
           )}
@@ -384,6 +483,15 @@ export function MealTrackerModal({ open, onOpenChange }: MealTrackerModalProps) 
               value={addValue}
               onChange={setAddValue}
               onSubmit={submitAdd}
+              onBack={() => setPanel("meal")}
+            />
+          )}
+
+          {panel === "add-dish" && activeMeal && (
+            <AddDishPanel
+              meal={activeMeal}
+              customOptions={customOptions}
+              onSubmit={submitDish}
               onBack={() => setPanel("meal")}
             />
           )}
@@ -404,6 +512,7 @@ function DayPanel({
   curIdx,
   onOpenMeal,
   onSummary,
+  onCalendar,
   onReset,
 }: {
   day: DayData | undefined;
@@ -412,6 +521,7 @@ function DayPanel({
   curIdx: number;
   onOpenMeal: (id: string) => void;
   onSummary: () => void;
+  onCalendar: () => void;
   onReset: () => void;
 }) {
   const todayStr = new Date().toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" });
@@ -423,11 +533,20 @@ function DayPanel({
           <h2 className="font-black text-xl text-foreground">Comida</h2>
           <p className="mt-1 text-sm text-muted-foreground capitalize">{todayStr}</p>
         </div>
-        {(day?.streak ?? 0) > 0 && (
-          <span className="flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-400">
-            🔥 {day?.streak} días
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {(day?.streak ?? 0) > 0 && (
+            <span className="flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-400">
+              🔥 {day?.streak} días
+            </span>
+          )}
+          <button
+            onClick={onCalendar}
+            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-border/30 bg-muted hover:bg-muted/80 active:bg-muted/60 transition-colors"
+            title="Ver calendario de comidas"
+          >
+            <CalendarDays className="h-4 w-4 text-muted-foreground" />
+          </button>
+        </div>
       </div>
 
       <div className="px-5 py-4">
@@ -505,25 +624,36 @@ function DayPanel({
   );
 }
 
-// Duración del mantener-apretado, compartida por el fondo de categoría (agregar) y los chips
-// (eliminar), para que ambos gestos se sientan iguales.
-const LONG_PRESS_MS = 550;
+// Duración del mantener-apretado, compartida por el fondo de categoría / sección (agregar) y
+// los chips (eliminar), para que todos los gestos se sientan iguales: 1,5 s.
+const LONG_PRESS_MS = 1500;
+// El resaltado del mantener-apretado (rojo para eliminar, gris para agregar) recién aparece
+// pasado este tiempo, así un toque simple nunca se ve ni actúa como un borrado.
+const ARM_AFTER_MS = 450;
 
 function MealPanel({
   meal,
   meals,
   customOptions,
+  dishes,
   onToggle,
   onDeleteItem,
   onAdd,
+  onApplyDish,
+  onDeleteDish,
+  onNewDish,
   onBack,
 }: {
   meal: MealDef;
   meals: MealsState;
   customOptions: Record<string, string[]>;
+  dishes: Dish[];
   onToggle: (meal: MealDef, catKey: string, item: string) => void;
   onDeleteItem: (catKey: string, item: string) => void;
   onAdd: (catKey: string) => void;
+  onApplyDish: (meal: MealDef, dish: Dish, active: boolean) => void;
+  onDeleteDish: (dish: Dish) => void;
+  onNewDish: () => void;
   onBack: () => void;
 }) {
   return (
@@ -544,13 +674,22 @@ function MealPanel({
         </div>
       </div>
 
-      <div className="px-5 py-4 flex flex-col gap-4 max-h-[60vh] overflow-y-auto minimal-scrollbar">
+      <div className="px-5 py-4 flex flex-col gap-4">
         <p className="text-xs text-muted-foreground -mt-1">
           {meal.kind === "main"
             ? "El plato saludable: mitad vegetales, un cuarto proteína y un cuarto carbohidrato. Sumale fruta y agua."
             : "Una bebida y un plato, con su fruta y un vaso de agua. Marcá lo que tuviste."}
-          {" "}Mantené apretado el fondo de una categoría para sumar tu opción, o un ítem agregado por vos para eliminarlo.
+          {" "}Mantené apretado el fondo de una categoría (o de Comidas) para sumar tu opción, o un ítem agregado por vos para eliminarlo.
         </p>
+
+        <DishSection
+          meal={meal}
+          meals={meals}
+          dishes={dishes.filter((d) => d.mealKind === meal.kind)}
+          onApplyDish={onApplyDish}
+          onDeleteDish={onDeleteDish}
+          onNewDish={onNewDish}
+        />
 
         {meal.cats.map((cat) => {
           const customList = customOptions[`${meal.kind}:${cat.key}`] || [];
@@ -580,6 +719,273 @@ function MealPanel({
   );
 }
 
+// Un plato está "confirmado" cuando todos sus componentes linkeados están tildados en esta
+// comida. Tocarlo confirma (tilda todo) o des-confirma (destilda todo) de una.
+function dishActive(meals: MealsState, mealId: string, dish: Dish): boolean {
+  if (dish.components.length === 0) return false;
+  return dish.components.every((c) => !!meals?.[mealId]?.[c.categoryKey]?.[c.item]);
+}
+
+// Sección "Comidas" — arriba de las categorías en las cuatro comidas. Lista los platos
+// combinados del usuario; confirmar uno activa sus componentes (proteína, vegetales, carbo)
+// de una. Mantener apretado el fondo de la sección arma un plato nuevo, igual que las
+// categorías con sus opciones.
+function DishSection({
+  meal,
+  meals,
+  dishes,
+  onApplyDish,
+  onDeleteDish,
+  onNewDish,
+}: {
+  meal: MealDef;
+  meals: MealsState;
+  dishes: Dish[];
+  onApplyDish: (meal: MealDef, dish: Dish, active: boolean) => void;
+  onDeleteDish: (dish: Dish) => void;
+  onNewDish: () => void;
+}) {
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const armRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startPos = useRef<{ x: number; y: number } | null>(null);
+  const [holding, setHolding] = useState(false);
+
+  const cancel = () => {
+    setHolding(false);
+    startPos.current = null;
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    if (armRef.current) { clearTimeout(armRef.current); armRef.current = null; }
+  };
+
+  const start = (e: React.PointerEvent) => {
+    // El mantener-apretado de un chip lo maneja el propio chip (eliminar plato), no el fondo.
+    if ((e.target as HTMLElement).closest("button")) return;
+    startPos.current = { x: e.clientX, y: e.clientY };
+    armRef.current = setTimeout(() => setHolding(true), ARM_AFTER_MS);
+    timerRef.current = setTimeout(() => {
+      setHolding(false);
+      onNewDish();
+    }, LONG_PRESS_MS);
+  };
+
+  const move = (e: React.PointerEvent) => {
+    if (!startPos.current) return;
+    if (Math.abs(e.clientX - startPos.current.x) > 10 || Math.abs(e.clientY - startPos.current.y) > 10) cancel();
+  };
+
+  return (
+    <div
+      onPointerDown={start}
+      onPointerMove={move}
+      onPointerUp={cancel}
+      onPointerLeave={cancel}
+      onPointerCancel={cancel}
+      onContextMenu={(e) => e.preventDefault()}
+      className={`-mx-2 rounded-2xl px-2 py-1.5 transition-colors touch-pan-y ${holding ? "bg-muted/50" : ""}`}
+    >
+      <div className="flex items-center gap-1.5 mb-2">
+        <UtensilsCrossed className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="text-xs font-bold uppercase tracking-wide text-foreground">Comidas</span>
+        <span className="text-[10px] font-medium text-muted-foreground">(mantené apretado para armar un plato)</span>
+      </div>
+      {dishes.length === 0 ? (
+        <p className="text-[11px] text-muted-foreground">
+          Todavía no tenés platos. Mantené apretado acá para armar uno: al confirmarlo se tildan sus componentes de una.
+        </p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {dishes.map((dish) => (
+            <DishChip
+              key={dish.id}
+              dish={dish}
+              active={dishActive(meals, meal.id, dish)}
+              onToggle={() => onApplyDish(meal, dish, !dishActive(meals, meal.id, dish))}
+              onDelete={() => onDeleteDish(dish)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DishChip({
+  dish,
+  active,
+  onToggle,
+  onDelete,
+}: {
+  dish: Dish;
+  active: boolean;
+  onToggle: () => void;
+  onDelete: () => void;
+}) {
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const armRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const firedRef = useRef(false);
+  const startPos = useRef<{ x: number; y: number } | null>(null);
+  const [holding, setHolding] = useState(false);
+
+  const cancel = () => {
+    setHolding(false);
+    startPos.current = null;
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    if (armRef.current) { clearTimeout(armRef.current); armRef.current = null; }
+  };
+
+  const start = (e: React.PointerEvent) => {
+    startPos.current = { x: e.clientX, y: e.clientY };
+    firedRef.current = false;
+    // El rojo de "eliminar" recién aparece pasado ARM_AFTER_MS: un toque simple confirma el
+    // plato y nunca se ve como un borrado.
+    armRef.current = setTimeout(() => setHolding(true), ARM_AFTER_MS);
+    timerRef.current = setTimeout(() => {
+      firedRef.current = true;
+      setHolding(false);
+      if (confirm(`¿Eliminar el plato "${dish.name}"?`)) onDelete();
+    }, LONG_PRESS_MS);
+  };
+
+  const move = (e: React.PointerEvent) => {
+    if (!startPos.current) return;
+    if (Math.abs(e.clientX - startPos.current.x) > 10 || Math.abs(e.clientY - startPos.current.y) > 10) cancel();
+  };
+
+  const handleClick = () => {
+    if (firedRef.current) {
+      firedRef.current = false;
+      return;
+    }
+    onToggle();
+  };
+
+  return (
+    <button
+      onClick={handleClick}
+      onPointerDown={start}
+      onPointerMove={move}
+      onPointerUp={cancel}
+      onPointerLeave={cancel}
+      onPointerCancel={cancel}
+      onContextMenu={(e) => e.preventDefault()}
+      className={`inline-flex flex-col items-start gap-0.5 text-sm font-medium px-3 py-2 rounded-xl border transition-colors touch-pan-y ${
+        holding
+          ? "bg-red-500/15 border-red-500/50 text-red-600 dark:text-red-400"
+          : active
+            ? "bg-green-500/15 border-green-500/50 text-green-700 dark:text-green-400"
+            : "bg-muted/30 border-border/40 text-foreground hover:bg-muted/50"
+      }`}
+    >
+      <span className="inline-flex items-center gap-1.5">
+        {holding ? <Trash2 className="h-3.5 w-3.5" /> : active && <Check className="h-3.5 w-3.5" />}
+        {dish.name}
+      </span>
+      {dish.components.length > 0 && (
+        <span className="text-[10px] font-normal text-muted-foreground">
+          {dish.components.map((c) => c.item).join(" · ")}
+        </span>
+      )}
+    </button>
+  );
+}
+
+// Armador de plato: nombre + selección de ítems ya existentes de proteína y carbohidrato.
+// Para un ingrediente nuevo, primero se agrega por el flujo normal de la categoría.
+function AddDishPanel({
+  meal,
+  customOptions,
+  onSubmit,
+  onBack,
+}: {
+  meal: MealDef;
+  customOptions: Record<string, string[]>;
+  onSubmit: (name: string, components: DishComponent[]) => void;
+  onBack: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [selected, setSelected] = useState<DishComponent[]>([]);
+
+  const dishCats = meal.cats.filter((c) => DISH_CAT_KEYS.includes(c.key));
+
+  const isSelected = (catKey: string, item: string) =>
+    selected.some((c) => c.categoryKey === catKey && c.item === item);
+
+  const toggle = (catKey: string, item: string) => {
+    setSelected((prev) =>
+      isSelected(catKey, item)
+        ? prev.filter((c) => !(c.categoryKey === catKey && c.item === item))
+        : [...prev, { categoryKey: catKey, item }],
+    );
+  };
+
+  const canSubmit = name.trim().length > 0 && selected.length > 0;
+
+  return (
+    <div className="w-full">
+      <div className="border-b border-border/30 px-4 py-4 flex items-center gap-3">
+        <button onClick={onBack} className="text-muted-foreground hover:text-foreground transition-colors p-1">
+          <ArrowLeft className="h-5 w-5" />
+        </button>
+        <h2 className="font-black text-lg text-foreground">Nuevo plato</h2>
+      </div>
+      <div className="px-5 py-4 flex flex-col gap-4">
+        <p className="text-xs text-muted-foreground">
+          Poné un nombre y elegí sus componentes. Al confirmar el plato en{" "}
+          {meal.label.toLowerCase()} se tildan esos ítems de una; al des-confirmarlo se destildan.
+          Para un ingrediente nuevo, agregalo primero en su categoría.
+        </p>
+        <Input
+          autoFocus
+          maxLength={40}
+          placeholder="Ej: Tostadas con huevo"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+
+        {dishCats.map((cat) => {
+          const items = [...cat.items, ...(customOptions[`${meal.kind}:${cat.key}`] || [])];
+          return (
+            <div key={cat.key}>
+              <div className="flex items-center gap-1.5 mb-2">
+                <cat.icon className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-xs font-bold uppercase tracking-wide text-foreground">{cat.label}</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {items.map((item) => {
+                  const on = isSelected(cat.key, item);
+                  return (
+                    <button
+                      key={item}
+                      onClick={() => toggle(cat.key, item)}
+                      className={`inline-flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-xl border transition-colors ${
+                        on
+                          ? "bg-green-500/15 border-green-500/50 text-green-700 dark:text-green-400"
+                          : "bg-muted/30 border-border/40 text-foreground hover:bg-muted/50"
+                      }`}
+                    >
+                      {on && <Check className="h-3.5 w-3.5" />}
+                      {item}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+
+        <div className="flex gap-2 mt-1">
+          <Button className="flex-1" onClick={() => onSubmit(name.trim(), selected)} disabled={!canSubmit}>
+            Guardar plato
+          </Button>
+          <Button variant="outline" onClick={onBack}>
+            Cancelar
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CategoryBlock({
   cat,
   items,
@@ -598,35 +1004,45 @@ function CategoryBlock({
   onAdd: () => void;
 }) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const armRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startPos = useRef<{ x: number; y: number } | null>(null);
   const [holding, setHolding] = useState(false);
 
   const cancel = () => {
     setHolding(false);
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
+    startPos.current = null;
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    if (armRef.current) { clearTimeout(armRef.current); armRef.current = null; }
   };
 
   const start = (e: React.PointerEvent) => {
     // No interceptar el mantener-apretado si arrancó sobre un chip: ese gesto lo maneja el
     // propio chip (eliminar), no el fondo de la categoría (agregar).
     if ((e.target as HTMLElement).closest("button")) return;
-    setHolding(true);
+    startPos.current = { x: e.clientX, y: e.clientY };
+    armRef.current = setTimeout(() => setHolding(true), ARM_AFTER_MS);
     timerRef.current = setTimeout(() => {
       setHolding(false);
       onAdd();
     }, LONG_PRESS_MS);
   };
 
+  // Si el dedo se mueve, es un scroll: cancelamos el mantener-apretado y dejamos que la lista
+  // se desplace (touch-pan-y permite el scroll vertical sobre toda la superficie).
+  const move = (e: React.PointerEvent) => {
+    if (!startPos.current) return;
+    if (Math.abs(e.clientX - startPos.current.x) > 10 || Math.abs(e.clientY - startPos.current.y) > 10) cancel();
+  };
+
   return (
     <div
       onPointerDown={start}
+      onPointerMove={move}
       onPointerUp={cancel}
       onPointerLeave={cancel}
       onPointerCancel={cancel}
       onContextMenu={(e) => e.preventDefault()}
-      className={`-mx-2 rounded-2xl px-2 py-1.5 transition-colors touch-none ${holding ? "bg-muted/50" : ""}`}
+      className={`-mx-2 rounded-2xl px-2 py-1.5 transition-colors touch-pan-y ${holding ? "bg-muted/50" : ""}`}
     >
       <div className="flex items-center gap-1.5 mb-2">
         <cat.icon className="h-3.5 w-3.5 text-muted-foreground" />
@@ -663,21 +1079,25 @@ function ItemChip({
   onDelete: () => void;
 }) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const armRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const firedRef = useRef(false);
+  const startPos = useRef<{ x: number; y: number } | null>(null);
   const [holding, setHolding] = useState(false);
 
   const cancel = () => {
     setHolding(false);
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
+    startPos.current = null;
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    if (armRef.current) { clearTimeout(armRef.current); armRef.current = null; }
   };
 
-  const start = () => {
+  const start = (e: React.PointerEvent) => {
     if (!deletable) return; // solo las opciones agregadas por el usuario se pueden eliminar
+    startPos.current = { x: e.clientX, y: e.clientY };
     firedRef.current = false;
-    setHolding(true);
+    // El rojo recién aparece pasado ARM_AFTER_MS: un toque simple tilda/destilda y nunca se
+    // ve como un borrado.
+    armRef.current = setTimeout(() => setHolding(true), ARM_AFTER_MS);
     timerRef.current = setTimeout(() => {
       firedRef.current = true;
       setHolding(false);
@@ -685,6 +1105,13 @@ function ItemChip({
         onDelete();
       }
     }, LONG_PRESS_MS);
+  };
+
+  // Si el dedo se desplaza, es un scroll: cancelamos el mantener-apretado para no disparar
+  // "eliminar" mientras la lista se desplaza.
+  const move = (e: React.PointerEvent) => {
+    if (!startPos.current) return;
+    if (Math.abs(e.clientX - startPos.current.x) > 10 || Math.abs(e.clientY - startPos.current.y) > 10) cancel();
   };
 
   const handleClick = () => {
@@ -699,11 +1126,12 @@ function ItemChip({
     <button
       onClick={handleClick}
       onPointerDown={start}
+      onPointerMove={move}
       onPointerUp={cancel}
       onPointerLeave={cancel}
       onPointerCancel={cancel}
       onContextMenu={(e) => e.preventDefault()}
-      className={`inline-flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-xl border transition-colors touch-none ${
+      className={`inline-flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-xl border transition-colors touch-pan-y ${
         holding
           ? "bg-red-500/15 border-red-500/50 text-red-600 dark:text-red-400"
           : on
@@ -838,6 +1266,164 @@ function SummaryPanel({
         <Button className="w-full" onClick={onBack}>
           Cerrar
         </Button>
+      </div>
+    </div>
+  );
+}
+
+// Calendario mensual de comidas — mismo patrón visual que el "Calendario de actividades" de
+// Tareas del día: grilla de 7 columnas, un mes por vez, cada día con puntitos por comida
+// registrada y ✓✓ si el día quedó completo (los 4 grupos). Tocar un día muestra el detalle.
+function CalendarPanel({ today, onBack }: { today: string; onBack: () => void }) {
+  const [calendarDate, setCalendarDate] = useState(new Date());
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+
+  const calYear = calendarDate.getFullYear();
+  const calMonth = calendarDate.getMonth();
+  const calDim = new Date(calYear, calMonth + 1, 0).getDate();
+  const monthStart = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-01`;
+  const monthEnd = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(calDim).padStart(2, "0")}`;
+
+  const { data: rangeDays = [] } = useQuery<RangeDay[]>({
+    queryKey: ["/api/meal-tracker/range", monthStart, monthEnd],
+    queryFn: () => fetchJson(`/api/meal-tracker/range?start=${monthStart}&end=${monthEnd}`),
+  });
+
+  const dayByDate = new Map(rangeDays.map((d) => [d.date, d]));
+  const offset = getFirstDayOfMonth(calendarDate);
+  const todayObj = new Date(today + "T12:00:00");
+  todayObj.setHours(0, 0, 0, 0);
+
+  const changeMonth = (delta: number) => {
+    setCalendarDate(new Date(calYear, calMonth + delta, 1));
+    setSelectedDay(null);
+  };
+
+  const selectedMeals: MealsState = selectedDay ? dayByDate.get(selectedDay)?.meals || {} : {};
+  const selectedRegistered = MEALS.filter((m) => mealRegistered(selectedMeals, m));
+
+  return (
+    <div className="w-full">
+      <div className="border-b border-border/30 px-4 py-4 flex items-center gap-3">
+        <button onClick={onBack} className="text-muted-foreground hover:text-foreground transition-colors p-1">
+          <ArrowLeft className="h-5 w-5" />
+        </button>
+        <h2 className="font-black text-lg text-foreground">Calendario de comidas</h2>
+      </div>
+
+      <div className="px-5 py-4 flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-2">
+          <button
+            onClick={() => changeMonth(-1)}
+            className="flex h-8 w-8 items-center justify-center rounded border border-border/30 bg-muted hover:bg-muted/80 active:bg-muted/60 transition-colors"
+          >
+            <ChevronLeft className="h-4 w-4 text-muted-foreground" />
+          </button>
+          <span className="font-bold text-sm text-foreground capitalize flex-1 text-center">
+            {MONTHS[calMonth]} {calYear}
+          </span>
+          <button
+            onClick={() => changeMonth(1)}
+            className="flex h-8 w-8 items-center justify-center rounded border border-border/30 bg-muted hover:bg-muted/80 active:bg-muted/60 transition-colors"
+          >
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-7 gap-1">
+          {DAY_LBLS.map((lbl) => (
+            <div key={lbl} className="text-center text-xs font-medium text-muted-foreground uppercase mb-1">
+              {lbl}
+            </div>
+          ))}
+
+          {Array.from({ length: offset }).map((_, i) => (
+            <div key={`empty-${i}`} />
+          ))}
+
+          {Array.from({ length: calDim }).map((_, d) => {
+            const day = d + 1;
+            const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+            const dObj = new Date(dateStr + "T12:00:00");
+            dObj.setHours(0, 0, 0, 0);
+            const isFuture = dObj > todayObj;
+            const isToday = dateStr === today;
+
+            const dayMeals: MealsState = dayByDate.get(dateStr)?.meals || {};
+            const registered = MEALS.filter((m) => mealRegistered(dayMeals, m));
+            const allDone = coreComplete(dayMeals);
+
+            return (
+              <button
+                key={day}
+                onClick={() => setSelectedDay((prev) => (prev === dateStr ? null : dateStr))}
+                className={`relative aspect-square rounded-lg flex flex-col items-center justify-center text-xs font-medium transition-all cursor-pointer active:scale-95 ${
+                  allDone ? "bg-green-500/20" : isFuture ? "opacity-20" : "bg-muted/30"
+                } ${isToday ? "ring-2 ring-green-500" : ""} ${
+                  selectedDay === dateStr ? "ring-2 ring-foreground" : ""
+                }`}
+              >
+                <div className={isToday ? "font-medium text-green-600 dark:text-green-400" : "font-medium"}>
+                  {day}
+                </div>
+                {allDone && !isFuture && (
+                  <div className="text-xs font-bold text-green-600 dark:text-green-400">✓✓</div>
+                )}
+                {registered.length > 0 && !allDone && !isFuture && (
+                  <div className="flex gap-1 flex-wrap justify-center max-w-full">
+                    {registered.map((m) => (
+                      <div
+                        key={m.id}
+                        className="h-1.5 w-1.5 rounded-full"
+                        style={{ background: MEAL_DOT_COLORS[m.id] }}
+                      />
+                    ))}
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="rounded-lg border border-border/30 bg-muted/20 px-3 py-2.5 min-h-[3rem]">
+          {!selectedDay ? (
+            <p className="text-xs text-muted-foreground">Tocá un día para ver qué comiste.</p>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                {new Date(selectedDay + "T12:00:00").toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" })}
+              </p>
+              {selectedRegistered.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nada registrado ese día.</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {selectedRegistered.map((m) => {
+                    const items = mealCheckedItems(selectedMeals, m);
+                    return (
+                      <div key={m.id} className="flex items-start gap-2 text-sm">
+                        <div
+                          className="mt-1.5 h-2 w-2 rounded-full flex-shrink-0"
+                          style={{ background: MEAL_DOT_COLORS[m.id] }}
+                        />
+                        <span>
+                          <span className="font-semibold">{m.label}</span>
+                          {items.length > 0 && (
+                            <span className="text-muted-foreground"> · {items.join(", ")}</span>
+                          )}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {coreComplete(selectedMeals) && (
+                    <p className="text-xs font-semibold text-green-600 dark:text-green-400 pt-0.5">
+                      ✓ Día completo — los cuatro grupos
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

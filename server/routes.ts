@@ -4784,6 +4784,7 @@ export async function registerRoutes(
         skillId: updateSkillIds[0] ?? null,
         skillIds: updateSkillIds,
         bodyLinks: Array.isArray(req.body.bodyLinks) ? req.body.bodyLinks : [],
+        habitId: req.body.habitId ?? null,
         ...(req.body.targetLevel !== undefined ? { targetLevel: req.body.targetLevel } : {}),
         ...(req.body.timesPerDay !== undefined ? { timesPerDay: req.body.timesPerDay } : {}),
       };
@@ -5552,11 +5553,96 @@ export async function registerRoutes(
     }
   });
 
+  // Historial de comidas para el calendario (un mes por request). Devuelve solo los días que
+  // tienen fila (algún registro); los días vacíos simplemente no vienen.
+  app.get("/api/meal-tracker/range", requireAuth, async (req, res) => {
+    try {
+      const { start, end } = req.query;
+      if (!start || !end) {
+        return res.status(400).json({ message: "start y end son requeridos (formato YYYY-MM-DD)" });
+      }
+      const days = await storage.getMealTrackerDaysInRange(req.userId!, start as string, end as string);
+      res.json(days.map((d) => ({ date: d.date, meals: d.meals, celebrated: d.celebrated })));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.post("/api/meal-tracker/reset-day", requireAuth, async (req, res) => {
     try {
       const { date } = req.body;
       if (!date) return res.status(400).json({ message: "date es requerido" });
       const updated = await storage.upsertMealTrackerDay(req.userId!, date, { meals: {}, regCelebrated: {}, celebrated: false });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ── Platos combinados (sección "Comidas" de desayuno/merienda) ──────────────
+  app.get("/api/meal-tracker/dishes", requireAuth, async (req, res) => {
+    try {
+      const dishes = await storage.getMealTrackerDishes(req.userId!);
+      res.json(dishes);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/meal-tracker/dish", requireAuth, async (req, res) => {
+    try {
+      const { mealKind, name, components } = req.body;
+      if (!mealKind || !name || !Array.isArray(components)) {
+        return res.status(400).json({ message: "mealKind, name y components son requeridos" });
+      }
+      if (mealKind !== "main" && mealKind !== "light") {
+        return res.status(400).json({ message: "mealKind inválido" });
+      }
+      const trimmed = String(name).trim().slice(0, 40);
+      if (!trimmed) return res.status(400).json({ message: "name vacío" });
+      const cleanComponents = (components as any[])
+        .filter((c) => c && typeof c.categoryKey === "string" && typeof c.item === "string" && c.item.trim())
+        .map((c) => ({ categoryKey: c.categoryKey, item: String(c.item).trim().slice(0, 28) }));
+      if (cleanComponents.length === 0) {
+        return res.status(400).json({ message: "El plato necesita al menos un componente" });
+      }
+      const dish = await storage.createMealTrackerDish({ userId: req.userId!, mealKind, name: trimmed, components: cleanComponents });
+      const dishes = await storage.getMealTrackerDishes(req.userId!);
+      res.json({ dish, dishes });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/meal-tracker/dish", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.body;
+      if (!id) return res.status(400).json({ message: "id es requerido" });
+      await storage.deleteMealTrackerDish(req.userId!, id);
+      const dishes = await storage.getMealTrackerDishes(req.userId!);
+      res.json({ dishes });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Confirmar/des-confirmar un plato: tilda (o destilda) de una todos sus componentes en la
+  // comida indicada. active=true al confirmar, active=false al des-confirmar.
+  app.post("/api/meal-tracker/apply-dish", requireAuth, async (req, res) => {
+    try {
+      const { date, mealId, components, active } = req.body;
+      if (!date || !mealId || !Array.isArray(components)) {
+        return res.status(400).json({ message: "date, mealId y components son requeridos" });
+      }
+      const day = await storage.getMealTrackerDay(req.userId!, date);
+      const meals: Record<string, Record<string, Record<string, boolean>>> = day?.meals ? JSON.parse(JSON.stringify(day.meals)) : {};
+      if (!meals[mealId]) meals[mealId] = {};
+      for (const c of components as any[]) {
+        if (!c || typeof c.categoryKey !== "string" || typeof c.item !== "string") continue;
+        if (!meals[mealId][c.categoryKey]) meals[mealId][c.categoryKey] = {};
+        meals[mealId][c.categoryKey][c.item] = !!active;
+      }
+      const updated = await storage.upsertMealTrackerDay(req.userId!, date, { meals });
       res.json(updated);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -5671,9 +5757,38 @@ export async function registerRoutes(
       if (book.userId !== req.userId) {
         return res.status(403).json({ message: "No tienes permiso para desarchivar este libro" });
       }
-      
+
       const updated = await storage.updateBook(req.params.id, { archivedAt: null });
       res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Pasa un libro del tracker de Lectura a la Biblioteca (antes: "Experiencias" / archivo).
+  // Crea la entrada en book_wishlist y elimina el libro del tracker (sus sesiones caen por cascade).
+  app.post("/api/books/:id/to-library", requireAuth, async (req, res) => {
+    try {
+      const book = await storage.getBook(req.params.id);
+      if (!book) {
+        return res.status(404).json({ message: "Libro no encontrado" });
+      }
+      if (book.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para mover este libro" });
+      }
+
+      const status = ["leido", "no_leido", "en_proceso"].includes(req.body?.status)
+        ? req.body.status
+        : "leido";
+
+      const item = await storage.createBookWishlistItem({
+        userId: req.userId!,
+        title: book.title,
+        author: book.author || "",
+        status,
+      });
+      await storage.deleteBook(req.params.id);
+      res.status(201).json(item);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -5715,6 +5830,75 @@ export async function registerRoutes(
         page: req.body.page
       });
       res.status(201).json(session);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Biblioteca (book wishlist)
+  const VALID_WISHLIST_STATUS = ["leido", "no_leido", "en_proceso"];
+
+  app.get("/api/book-wishlist", requireAuth, async (req, res) => {
+    try {
+      const items = await storage.getBookWishlist(req.userId!);
+      res.json(items);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/book-wishlist", requireAuth, async (req, res) => {
+    try {
+      const title = String(req.body.title || "").trim();
+      if (!title) {
+        return res.status(400).json({ message: "El título es obligatorio" });
+      }
+      const status = VALID_WISHLIST_STATUS.includes(req.body.status) ? req.body.status : "no_leido";
+      const item = await storage.createBookWishlistItem({
+        userId: req.userId!,
+        title,
+        author: String(req.body.author || "").trim(),
+        status,
+      });
+      res.status(201).json(item);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/book-wishlist/:id", requireAuth, async (req, res) => {
+    try {
+      const item = await storage.getBookWishlistItem(req.params.id);
+      if (!item) {
+        return res.status(404).json({ message: "Libro no encontrado" });
+      }
+      if (item.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para modificar este libro" });
+      }
+      const patch: Record<string, any> = {};
+      if (req.body.title !== undefined) patch.title = String(req.body.title).trim();
+      if (req.body.author !== undefined) patch.author = String(req.body.author).trim();
+      if (req.body.status !== undefined && VALID_WISHLIST_STATUS.includes(req.body.status)) {
+        patch.status = req.body.status;
+      }
+      const updated = await storage.updateBookWishlistItem(req.params.id, patch);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/book-wishlist/:id", requireAuth, async (req, res) => {
+    try {
+      const item = await storage.getBookWishlistItem(req.params.id);
+      if (!item) {
+        return res.status(404).json({ message: "Libro no encontrado" });
+      }
+      if (item.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para eliminar este libro" });
+      }
+      await storage.deleteBookWishlistItem(req.params.id);
+      res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
