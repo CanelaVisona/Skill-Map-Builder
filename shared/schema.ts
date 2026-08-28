@@ -571,7 +571,7 @@ export const todayTaskSlots = pgTable("today_task_slots", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 export const insertTodayTaskSlotSchema = createInsertSchema(todayTaskSlots).omit({ id: true, updatedAt: true }).extend({
-  taskType: z.enum(["habit", "node", "practice", "manual"]),
+  taskType: z.enum(["habit", "node", "practice", "manual", "rewiring"]),
   slot: z.enum(["morning", "midday", "afternoon", "night", "hidden"]),
   sortOrder: z.number().optional().default(0),
 });

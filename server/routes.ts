@@ -5106,8 +5106,8 @@ export async function registerRoutes(
       if (!date || !taskType || !taskId || !slot) {
         return res.status(400).json({ message: "date, taskType, taskId y slot son requeridos" });
       }
-      if (!["habit", "node", "practice", "manual"].includes(taskType)) {
-        return res.status(400).json({ message: "taskType debe ser habit, node, practice o manual" });
+      if (!["habit", "node", "practice", "manual", "rewiring"].includes(taskType)) {
+        return res.status(400).json({ message: "taskType debe ser habit, node, practice, manual o rewiring" });
       }
       if (!["morning", "midday", "afternoon", "night", "hidden"].includes(slot)) {
         return res.status(400).json({ message: "slot debe ser morning, midday, afternoon, night o hidden" });
@@ -5149,7 +5149,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "slot debe ser morning, midday, afternoon, night o hidden" });
       }
       for (const item of order) {
-        if (!item || !["habit", "node", "practice", "manual"].includes(item.taskType) || !item.taskId) {
+        if (!item || !["habit", "node", "practice", "manual", "rewiring"].includes(item.taskType) || !item.taskId) {
           return res.status(400).json({ message: "cada elemento de order necesita taskType y taskId válidos" });
         }
       }

@@ -245,13 +245,17 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     queryFn: async () => {
       const res = await fetch("/api/rewiring-trackers");
       if (!res.ok) throw new Error("Failed to fetch rewiring trackers");
-      return res.json() as Promise<{ id: string; name: string; archivedAt?: string | null; timesPerDay?: number | null; history?: { timestamp: string; date?: string }[] }[]>;
+      return res.json() as Promise<{ id: string; name: string; archivedAt?: string | null; timesPerDay?: number | null; habitId?: string | null; history?: { timestamp: string; date?: string }[] }[]>;
     },
     enabled: open,
   });
 
   const extraRewirings = (rewiringTrackersData || [])
     .filter((t) => !t.archivedAt)
+    // Si el rewiring está linkeado a un hábito, al completarse ya confirma ese hábito, que
+    // aparece en las tareas del día por sí mismo. Mostrar también el rewiring sería duplicar
+    // la misma actividad, así que en ese caso queda solo el hábito.
+    .filter((t) => !t.habitId)
     .map((t) => {
       const repsOnDay = (t.history || []).filter(
         (h) => (h.date ?? getDateStr(new Date(h.timestamp))) === effectiveDate
