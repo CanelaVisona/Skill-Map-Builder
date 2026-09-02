@@ -1712,8 +1712,8 @@ function TrackerCard({
         </div>
       ) : (
         <>
-          {/* Circular Ring */}
-          <div className="flex justify-center mb-3">
+          {/* Circular Ring — con el tiempo por rewiring al lado */}
+          <div className="flex items-center justify-center gap-2 mb-3">
             <div className="relative w-32 h-32">
               <svg viewBox="0 0 210 210" className="w-full h-full">
                 <circle
@@ -1751,6 +1751,13 @@ function TrackerCard({
                 </div>
               </div>
             </div>
+            {data.minutesPerRep ? (
+              <div className="text-[11px] font-medium text-muted-foreground leading-tight text-center flex-shrink-0">
+                ⏱ {data.minutesPerRep}
+                <br />
+                min c/u
+              </div>
+            ) : null}
           </div>
 
           {/* Tracker Info */}
@@ -2352,8 +2359,8 @@ function DetailPanel({
 
       {/* Content */}
       <div className="px-6 py-5 flex flex-col gap-5 bg-background dark:bg-background">
-        {/* Circular progress ring */}
-        <div className="flex justify-center">
+        {/* Circular progress ring — con el tiempo por rewiring al lado */}
+        <div className="flex items-center justify-center gap-2">
           <div className="relative w-48 h-48">
             <svg viewBox="0 0 210 210" className="w-full h-full">
               <circle
@@ -2387,6 +2394,13 @@ function DetailPanel({
               <div className="text-xs text-muted-foreground">{progress.centerSuffix}</div>
             </div>
           </div>
+          {data.minutesPerRep ? (
+            <div className="text-xs font-medium text-muted-foreground leading-tight text-center flex-shrink-0">
+              ⏱ {data.minutesPerRep}
+              <br />
+              min c/u
+            </div>
+          ) : null}
         </div>
 
         {/* Level badge */}
@@ -2403,13 +2417,6 @@ function DetailPanel({
         <div className="text-center text-sm text-muted-foreground">
           {progress.remainingText}
         </div>
-
-        {/* Minutos por rewiring — informativo */}
-        {data.minutesPerRep ? (
-          <div className="text-center text-xs text-muted-foreground">
-            ⏱ {data.minutesPerRep} min por rewiring
-          </div>
-        ) : null}
 
         {/* Register action button */}
         <motion.button

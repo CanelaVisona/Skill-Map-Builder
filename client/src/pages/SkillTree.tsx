@@ -333,13 +333,7 @@ function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpen
               onClick={() => handleAction(onOpenAllAreaBugs)}
               title="Bugs de areas"
             >
-              <svg
-                viewBox="0 0 24 24"
-                className="h-4 w-4 mx-auto"
-                aria-hidden="true"
-              >
-                <path d="M12 5 L19 18 H5 Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
-              </svg>
+              <Bug className="h-4 w-4 mx-auto" />
             </button>
             <button
               className="h-8 w-8 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
@@ -6798,7 +6792,7 @@ function ClothingInventoryModalWrapper({ open, onOpenChange }: { open: boolean; 
   );
 }
 
-function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyResolved = false }: { open: boolean; onOpenChange?: (open: boolean) => void; embedded?: boolean; onlyResolved?: boolean }) {
   const { areas } = useSkillTree();
   const { showXpPopup, hideXpPopup } = useXpPopup();
   const { addBodyBlock } = useBodyProgress();
@@ -6806,6 +6800,10 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
   const { showBugProgressPopup } = useBugProgressPopup();
   const queryClient = useQueryClient();
   const [selectedBugRef, setSelectedBugRef] = useState<{ areaId: string; bugId: string } | null>(null);
+  // Alta de un bug nuevo directo a un área (mismo lugar en el modal y en el Journal).
+  const [addBugAreaId, setAddBugAreaId] = useState<string | null>(null);
+  const [newBugNombre, setNewBugNombre] = useState("");
+  const [newBugDesc, setNewBugDesc] = useState("");
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
   const [recordContextMenuId, setRecordContextMenuId] = useState<string | null>(null);
   const [isRecordFormOpen, setIsRecordFormOpen] = useState(false);
@@ -6910,7 +6908,39 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
         }),
       );
 
-      return results.filter((result) => result.bugs.length > 0);
+      return results;
+    },
+  });
+
+  // Grupos visibles: en el Journal (embedded) se muestran todas las áreas para poder agregar
+  // bugs; en el modal, solo las que ya tienen alguno. "Debugueados" filtra a status resuelto.
+  const visibleGroups = React.useMemo(() => {
+    let groups = areaBugs;
+    if (onlyResolved) {
+      groups = groups
+        .map((g) => ({ ...g, bugs: g.bugs.filter((b) => b.status === "debugueado") }))
+        .filter((g) => g.bugs.length > 0);
+    } else if (!embedded) {
+      groups = groups.filter((g) => g.bugs.length > 0);
+    }
+    return groups;
+  }, [areaBugs, onlyResolved, embedded]);
+
+  const createBug = useMutation({
+    mutationFn: async ({ areaId, nombre, desc }: { areaId: string; nombre: string; desc: string }) => {
+      const res = await fetch("/api/source-bugs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ areaId, nombre, desc }),
+      });
+      if (!res.ok) throw new Error("No se pudo crear el bug");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["all-area-bugs"] });
+      setAddBugAreaId(null);
+      setNewBugNombre("");
+      setNewBugDesc("");
     },
   });
 
@@ -7246,43 +7276,14 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
     }
   };
 
-  return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          key="all-area-bugs-modal"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
-          onClick={() => onOpenChange(false)}
-        >
-          <motion.div
-            initial={{ scale: 0.95, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.95, opacity: 0 }}
-            className="overflow-hidden rounded-3xl border border-border/50 bg-background max-w-4xl w-full max-h-[85dvh]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-5 py-4 border-b border-border/50 flex items-center justify-between">
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-foreground">Bugs de todas las areas</h3>
-              <button
-                type="button"
-                onClick={() => onOpenChange(false)}
-                className="text-muted-foreground hover:text-foreground transition-colors"
-                aria-label="Cerrar modal de bugs"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="p-4 sm:p-5 overflow-y-auto overflow-x-hidden max-h-[calc(85dvh-70px)]">
+  const panelBody = (
+            <>
               {isLoading ? (
                 <div className="text-sm text-muted-foreground">Cargando bugs...</div>
               ) : isError ? (
                 <div className="text-sm text-red-500">No se pudieron cargar los bugs de las areas.</div>
-              ) : areaBugs.length === 0 ? (
-                <div className="text-sm text-muted-foreground">No hay bugs registrados en tus areas.</div>
+              ) : visibleGroups.length === 0 ? (
+                <div className="text-sm text-muted-foreground">{onlyResolved ? "Todavía no debugueaste ningún bug." : "No hay bugs registrados en tus areas."}</div>
               ) : selectedBug && selectedAreaGroup ? (
                 <div className="space-y-4 min-w-0">
                   <div className="flex items-center justify-between gap-3 min-w-0">
@@ -7581,7 +7582,9 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
                 </div>
               ) : (
                 <div className="space-y-4 min-w-0">
-                  {areaBugs.map((group) => (
+                  {visibleGroups.map((group) => {
+                    const isAddingHere = addBugAreaId === group.areaId;
+                    return (
                     <section key={group.areaId} className="rounded-xl border border-border/50 bg-muted/10 min-w-0 overflow-hidden">
                       <button
                         type="button"
@@ -7630,12 +7633,92 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
                               })()}
                             </article>
                           ))}
+
+                          {!onlyResolved && (isAddingHere ? (
+                            <div className="rounded-lg border border-dashed border-border/60 bg-background/40 p-3 space-y-2">
+                              <Input
+                                placeholder="NOMBRE"
+                                value={newBugNombre}
+                                onChange={(e) => setNewBugNombre(e.target.value.toUpperCase())}
+                                className="uppercase h-8 text-xs"
+                                autoFocus
+                              />
+                              <Textarea
+                                placeholder="¿Qué patrón/comportamiento es este bug?"
+                                rows={2}
+                                value={newBugDesc}
+                                onChange={(e) => setNewBugDesc(e.target.value)}
+                                className="text-xs resize-none"
+                              />
+                              <div className="flex justify-end gap-2">
+                                <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setAddBugAreaId(null); setNewBugNombre(""); setNewBugDesc(""); }}>Cancelar</Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  className="h-7 text-xs"
+                                  disabled={!newBugNombre.trim() || createBug.isPending}
+                                  onClick={() => createBug.mutate({ areaId: group.areaId, nombre: newBugNombre.trim(), desc: newBugDesc.trim() })}
+                                >
+                                  Crear bug
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              className="flex w-full items-center justify-center rounded-lg border border-dashed border-border/60 bg-background/40 py-2 text-xs text-muted-foreground hover:bg-muted/40 transition-colors"
+                              onClick={() => { setAddBugAreaId(group.areaId); setNewBugNombre(""); setNewBugDesc(""); }}
+                              data-testid="all-bugs-add-bug"
+                            >
+                              <Plus className="h-3.5 w-3.5 mr-1" /> Nuevo bug
+                            </button>
+                          ))}
                         </div>
                       )}
                     </section>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
+            </>
+  );
+
+  if (embedded) {
+    return <div className="min-w-0">{panelBody}</div>;
+  }
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          key="all-area-bugs-modal"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+          onClick={() => onOpenChange?.(false)}
+        >
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.95, opacity: 0 }}
+            className="overflow-hidden rounded-3xl border border-border/50 bg-background max-w-4xl w-full max-h-[85dvh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 border-b border-border/50 flex items-center justify-between">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-foreground">Bugs de todas las areas</h3>
+              <button
+                type="button"
+                onClick={() => onOpenChange?.(false)}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                aria-label="Cerrar modal de bugs"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="p-4 sm:p-5 overflow-y-auto overflow-x-hidden max-h-[calc(85dvh-70px)]">
+              {panelBody}
             </div>
           </motion.div>
         </motion.div>
@@ -8021,216 +8104,6 @@ function QuestDiary() {
     };
   };
 
-  // ============ BUGS (icon-tabs "Bugs" y "Debugueados") ============
-  // Bugs y errores son lo mismo: la fuente unificada es source_bugs (por área/proyecto). Cada
-  // error de nodo, al confirmarse, crea su bug acá. La tab "Bugs" lista todos; "Debugueados",
-  // solo los de status "debugueado".
-  interface JournalBug {
-    id: string;
-    areaId: string | null;
-    projectId: string | null;
-    nombre: string;
-    desc: string;
-    status: "identificado" | "debugueando" | "debugueado";
-    victoryCount: number;
-  }
-
-  const bugAreaQueries = useQueries({
-    queries: areas.map((area) => ({
-      queryKey: [`/api/source-bugs/area/${area.id}`],
-      queryFn: async () => {
-        const res = await fetch(`/api/source-bugs/area/${area.id}`);
-        if (!res.ok) throw new Error("Failed to fetch bugs");
-        return res.json() as Promise<JournalBug[]>;
-      },
-      enabled: isDiaryOpen,
-    })),
-  });
-
-  const bugProjectQueries = useQueries({
-    queries: projects.map((project) => ({
-      queryKey: [`/api/source-bugs/project/${project.id}`],
-      queryFn: async () => {
-        const res = await fetch(`/api/source-bugs/project/${project.id}`);
-        if (!res.ok) throw new Error("Failed to fetch bugs");
-        return res.json() as Promise<JournalBug[]>;
-      },
-      enabled: isDiaryOpen,
-    })),
-  });
-
-  interface BugQuestGroup {
-    key: string;
-    name: string;
-    areaId: string | null;
-    projectId: string | null;
-    bugs: JournalBug[];
-  }
-
-  const bugQuestGroups: BugQuestGroup[] = React.useMemo(() => {
-    return [
-      ...areas.map((area, index) => ({
-        key: `area-${area.id}`,
-        name: area.name,
-        areaId: area.id,
-        projectId: null as string | null,
-        bugs: (bugAreaQueries[index]?.data ?? []) as JournalBug[],
-      })),
-      ...projects.map((project, index) => ({
-        key: `project-${project.id}`,
-        name: project.name,
-        areaId: null as string | null,
-        projectId: project.id as string | null,
-        bugs: (bugProjectQueries[index]?.data ?? []) as JournalBug[],
-      })),
-    ];
-  }, [areas, projects, bugAreaQueries, bugProjectQueries]);
-
-  const invalidateBugQuests = () => {
-    areas.forEach((area) => queryClient.invalidateQueries({ queryKey: [`/api/source-bugs/area/${area.id}`] }));
-    projects.forEach((project) => queryClient.invalidateQueries({ queryKey: [`/api/source-bugs/project/${project.id}`] }));
-  };
-
-  const [selectedJournalBugId, setSelectedJournalBugId] = useState<string | null>(null);
-  const [addBugTarget, setAddBugTarget] = useState<{ key: string; name: string; areaId: string | null; projectId: string | null } | null>(null);
-  const [newJournalBugName, setNewJournalBugName] = useState("");
-  const [newJournalBugDesc, setNewJournalBugDesc] = useState("");
-  const journalBugAddLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const createJournalBug = useMutation({
-    mutationFn: async (data: { nombre: string; desc: string; areaId: string | null; projectId: string | null }) => {
-      const res = await fetch("/api/source-bugs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          nombre: data.nombre,
-          desc: data.desc,
-          ...(data.areaId ? { areaId: data.areaId } : {}),
-          ...(data.projectId ? { projectId: data.projectId } : {}),
-        }),
-      });
-      if (!res.ok) throw new Error("Failed to create bug");
-      return res.json();
-    },
-    onSuccess: () => {
-      invalidateBugQuests();
-      setAddBugTarget(null);
-      setNewJournalBugName("");
-      setNewJournalBugDesc("");
-    },
-  });
-
-  const handleCreateJournalBug = () => {
-    const finalName = newJournalBugName.trim();
-    if (!finalName || !addBugTarget || createJournalBug.isPending) return;
-    createJournalBug.mutate({ nombre: finalName, desc: newJournalBugDesc.trim(), areaId: addBugTarget.areaId, projectId: addBugTarget.projectId });
-  };
-
-  const startJournalBugAddLongPress = (group: BugQuestGroup) => (e: React.TouchEvent | React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest("button")) return;
-    e.stopPropagation();
-    journalBugAddLongPressTimer.current = setTimeout(() => {
-      setNewJournalBugName("");
-      setNewJournalBugDesc("");
-      setAddBugTarget({ key: group.key, name: group.name, areaId: group.areaId, projectId: group.projectId });
-    }, 500);
-  };
-
-  const endJournalBugAddLongPress = () => {
-    if (journalBugAddLongPressTimer.current) {
-      clearTimeout(journalBugAddLongPressTimer.current);
-      journalBugAddLongPressTimer.current = null;
-    }
-  };
-
-  const [editingJournalBug, setEditingJournalBug] = useState<JournalBug | null>(null);
-  const [editJournalBugNombre, setEditJournalBugNombre] = useState("");
-  const [editJournalBugDesc, setEditJournalBugDesc] = useState("");
-  const journalBugEditLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const journalBugLongPressCompleted = useRef(false);
-
-  const startJournalBugEditLongPress = (bug: JournalBug) => (e: React.TouchEvent | React.MouseEvent) => {
-    e.stopPropagation();
-    journalBugLongPressCompleted.current = false;
-    journalBugEditLongPressTimer.current = setTimeout(() => {
-      journalBugLongPressCompleted.current = true;
-      setEditingJournalBug(bug);
-      setEditJournalBugNombre(bug.nombre);
-      setEditJournalBugDesc(bug.desc);
-    }, 500);
-  };
-
-  const endJournalBugEditLongPress = () => {
-    if (journalBugEditLongPressTimer.current) {
-      clearTimeout(journalBugEditLongPressTimer.current);
-      journalBugEditLongPressTimer.current = null;
-    }
-  };
-
-  const updateJournalBug = useMutation({
-    mutationFn: async ({ id, nombre, desc }: { id: string; nombre: string; desc: string }) => {
-      const res = await fetch(`/api/source-bugs/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nombre, desc }),
-      });
-      if (!res.ok) throw new Error("Failed to update bug");
-      return res.json();
-    },
-    onSuccess: () => {
-      invalidateBugQuests();
-      setEditingJournalBug(null);
-    },
-  });
-
-  const deleteJournalBug = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await fetch(`/api/source-bugs/${id}`, { method: "DELETE" });
-      if (!res.ok && res.status !== 204) throw new Error("Failed to delete bug");
-    },
-    onSuccess: (_data, id) => {
-      invalidateBugQuests();
-      setEditingJournalBug(null);
-      setSelectedJournalBugId((current) => (current === id ? null : current));
-    },
-  });
-
-  const handleSaveJournalBug = () => {
-    if (!editingJournalBug) return;
-    const finalName = editJournalBugNombre.trim();
-    if (!finalName || updateJournalBug.isPending) return;
-    updateJournalBug.mutate({ id: editingJournalBug.id, nombre: finalName, desc: editJournalBugDesc.trim() });
-  };
-
-  const handleDeleteJournalBug = () => {
-    if (!editingJournalBug || deleteJournalBug.isPending) return;
-    deleteJournalBug.mutate(editingJournalBug.id);
-  };
-
-  // Mismo esqueleto que renderErrorState: "identificado" = pendiente (apagado), "debugueado" =
-  // resuelto (glow verde), "debugueando" = en progreso (verde tenue).
-  const renderBugState = (status: JournalBug["status"]) => {
-    if (status === "identificado") {
-      return {
-        cardClass: "border-white/7 text-[#5a5648]",
-        chipClass: "bg-white/[0.03] border-white/10",
-        iconColorClass: "text-[#5a5648]",
-        showPending: true,
-        showGlow: false,
-        backgroundClass: "bg-[#0f0b07]",
-      };
-    }
-    const done = status === "debugueado";
-    return {
-      cardClass: done ? "border-[#10B981] text-[#6EE7B7]" : "border-[#10B981]/40 text-[#6EE7B7]/80",
-      chipClass: done ? "bg-gradient-to-b from-[#6EE7B7] to-[#10B981] border-transparent" : "bg-[#10B981]/10 border-[#10B981]/30",
-      iconColorClass: done ? "text-[#052e21]" : "text-[#10B981]",
-      showPending: false,
-      showGlow: done,
-      backgroundClass: done ? "bg-[#04231a]" : "bg-[#0a1f18]",
-    };
-  };
-
   const createCharacter = useMutation({
     mutationFn: async (data: { name: string; action: string; description: string }) => {
       const res = await fetch("/api/journal/characters", {
@@ -8403,9 +8276,6 @@ function QuestDiary() {
               </TabsTrigger>
               <TabsTrigger value="errores" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-errores" title="Bugs">
                 <Bug className="h-5 w-5" />
-              </TabsTrigger>
-              <TabsTrigger value="debugueados" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-debugueados" title="Debugueados">
-                <BugOff className="h-5 w-5" />
               </TabsTrigger>
               <TabsTrigger value="body" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-body" title="Fuerza">
                 <BicepsFlexed className="h-5 w-5" />
@@ -8603,223 +8473,26 @@ function QuestDiary() {
               </TabsContent>
 
               <TabsContent value="errores" className="flex-1 min-h-0 min-w-0 mt-0">
-                <div className="flex h-full flex-col gap-4">
-                  <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
-                    <p className="text-sm text-muted-foreground">
-                      Acá aparecen todos los bugs de tus áreas y proyectos (incluidos los que nacen de un error de nodo al confirmarlo). Mantené presionado el fondo de un quest para agregar uno directo a esa área/proyecto.
-                    </p>
-                  </div>
+                <Tabs defaultValue="activos" className="flex h-full flex-col">
+                  <TabsList className="w-fit mb-3">
+                    <TabsTrigger value="activos" className="text-xs" data-testid="bugs-subtab-activos">
+                      <Bug className="h-3.5 w-3.5 mr-1" />
+                      Bugs
+                    </TabsTrigger>
+                    <TabsTrigger value="debugueados" className="text-xs" data-testid="bugs-subtab-debugueados">
+                      <BugOff className="h-3.5 w-3.5 mr-1" />
+                      Debugueados
+                    </TabsTrigger>
+                  </TabsList>
 
-                  {bugQuestGroups.length === 0 ? (
-                    <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-border/70 bg-muted/10 p-6 text-center text-sm text-muted-foreground">
-                      Todavía no tienes áreas o proyectos.
-                    </div>
-                  ) : (
-                    <div className="flex-1 space-y-4 overflow-y-auto pr-1">
-                      <Accordion type="multiple" className="space-y-2" defaultValue={bugQuestGroups.map((group) => group.key)}>
-                        {bugQuestGroups.map((group) => {
-                          const isAddingHere = addBugTarget?.key === group.key;
-                          const canAddHere = !!(group.areaId || group.projectId);
+                  <TabsContent value="activos" className="flex-1 min-h-0 mt-0 overflow-y-auto pr-1">
+                    <AllAreaBugsModalWrapper open={isDiaryOpen} embedded />
+                  </TabsContent>
 
-                          return (
-                            <AccordionItem key={group.key} value={group.key} className="rounded-lg border border-border/50 bg-background/70">
-                              <AccordionTrigger className="px-3 py-2 text-left hover:no-underline">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-medium">{group.name}</span>
-                                  <span className="text-xs text-muted-foreground">({group.bugs.length})</span>
-                                </div>
-                              </AccordionTrigger>
-                              <AccordionContent className="px-3 pb-3">
-                                {isAddingHere ? (
-                                  <div className="space-y-2">
-                                    <Label className="text-[11px] text-muted-foreground uppercase tracking-wide block">Nuevo bug en {group.name}</Label>
-                                    <Input
-                                      placeholder="NOMBRE"
-                                      value={newJournalBugName}
-                                      onChange={(e) => setNewJournalBugName(e.target.value.toUpperCase())}
-                                      className="uppercase"
-                                      autoFocus
-                                      data-testid="journal-input-new-bug-name"
-                                    />
-                                    <div className="space-y-1.5">
-                                      <Label className="text-[11px] text-muted-foreground uppercase tracking-wide block">Descripción</Label>
-                                      <Textarea
-                                        placeholder="¿Qué patrón/comportamiento es este bug?"
-                                        value={newJournalBugDesc}
-                                        onChange={(e) => setNewJournalBugDesc(e.target.value)}
-                                        rows={2}
-                                        className="resize-none"
-                                        data-testid="journal-input-new-bug-desc"
-                                      />
-                                    </div>
-                                    <div className="flex justify-end items-center gap-2">
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => setAddBugTarget(null)}
-                                        data-testid="journal-button-cancel-new-bug"
-                                      >
-                                        Cancelar
-                                      </Button>
-                                      <Button
-                                        type="button"
-                                        size="sm"
-                                        onClick={handleCreateJournalBug}
-                                        disabled={!newJournalBugName.trim() || createJournalBug.isPending}
-                                        data-testid="journal-button-create-bug"
-                                      >
-                                        <Plus className="h-3 w-3 mr-1" />
-                                        Crear bug
-                                      </Button>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div
-                                    className="min-h-[52px]"
-                                    onTouchStart={canAddHere ? startJournalBugAddLongPress(group) : undefined}
-                                    onTouchEnd={canAddHere ? endJournalBugAddLongPress : undefined}
-                                    onTouchCancel={canAddHere ? endJournalBugAddLongPress : undefined}
-                                    onMouseDown={canAddHere ? startJournalBugAddLongPress(group) : undefined}
-                                    onMouseUp={canAddHere ? endJournalBugAddLongPress : undefined}
-                                    onMouseLeave={canAddHere ? endJournalBugAddLongPress : undefined}
-                                  >
-                                    {group.bugs.length === 0 ? (
-                                      <p className="text-xs text-muted-foreground">
-                                        {canAddHere ? "Sin bugs todavía. Mantené presionado acá para agregar uno." : "Sin bugs."}
-                                      </p>
-                                    ) : (
-                                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                        {group.bugs.map((bug) => {
-                                          const state = renderBugState(bug.status);
-                                          const BugIcon = getErrorIcon(bug.id);
-                                          const isSelected = selectedJournalBugId === bug.id;
-                                          const count = bug.status === "debugueado" ? 5 : Math.min(bug.victoryCount || 0, 5);
-
-                                          return (
-                                            <button
-                                              key={bug.id}
-                                              type="button"
-                                              onClick={() => {
-                                                if (journalBugLongPressCompleted.current) {
-                                                  journalBugLongPressCompleted.current = false;
-                                                  return;
-                                                }
-                                                setSelectedJournalBugId((current) => current === bug.id ? null : bug.id);
-                                              }}
-                                              onTouchStart={startJournalBugEditLongPress(bug)}
-                                              onTouchEnd={endJournalBugEditLongPress}
-                                              onTouchCancel={endJournalBugEditLongPress}
-                                              onMouseDown={startJournalBugEditLongPress(bug)}
-                                              onMouseUp={endJournalBugEditLongPress}
-                                              onMouseLeave={endJournalBugEditLongPress}
-                                              className={`relative flex min-h-[60px] w-full items-start gap-2 overflow-hidden rounded-lg border p-2 text-left text-xs font-medium transition-all ${state.cardClass} ${state.backgroundClass}`}
-                                            >
-                                              <span className={`relative flex h-8 w-8 flex-none items-center justify-center rounded-md border ${state.chipClass}`}>
-                                                <BugIcon className={`h-4 w-4 ${state.iconColorClass}`} />
-                                                {state.showPending && (
-                                                  <span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full border border-white/15 bg-[#1D1911]">
-                                                    <CircleAlert className="h-2 w-2 text-[#7A7161]" />
-                                                  </span>
-                                                )}
-                                              </span>
-                                              <div className="min-w-0 flex-1">
-                                                <p className="truncate">{bug.nombre}</p>
-                                                {isSelected && (
-                                                  <>
-                                                    <p className="mt-1 text-[11px] leading-snug text-muted-foreground break-words">
-                                                      {bug.status === "identificado" ? "Identificado" : bug.status === "debugueado" ? "Debugueado" : "Debugueando"} · {count} / 5
-                                                    </p>
-                                                    <div className="mt-1.5 w-full h-2 flex gap-0.5">
-                                                      {Array.from({ length: 5 }).map((_, index) => (
-                                                        <div
-                                                          key={index}
-                                                          className={`flex-1 h-full rounded-sm ${index < count ? "bg-emerald-500" : "bg-white/10"}`}
-                                                        />
-                                                      ))}
-                                                    </div>
-                                                  </>
-                                                )}
-                                              </div>
-                                              {state.showGlow && (
-                                                <div className="pointer-events-none absolute inset-0 rounded-lg bg-[linear-gradient(135deg,rgba(16,185,129,0.2)_0%,rgba(5,150,105,0.06)_100%)]" />
-                                              )}
-                                            </button>
-                                          );
-                                        })}
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                              </AccordionContent>
-                            </AccordionItem>
-                          );
-                        })}
-                      </Accordion>
-                    </div>
-                  )}
-                </div>
-              </TabsContent>
-
-              <TabsContent value="debugueados" className="flex-1 min-h-0 min-w-0 mt-0">
-                <div className="flex h-full flex-col gap-4">
-                  <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
-                    <p className="text-sm text-muted-foreground">
-                      Bugs ya debugueados (barra de victorias en 5/5).
-                    </p>
-                  </div>
-
-                  {(() => {
-                    const doneGroups = bugQuestGroups
-                      .map((group) => ({ ...group, bugs: group.bugs.filter((bug) => bug.status === "debugueado") }))
-                      .filter((group) => group.bugs.length > 0);
-
-                    if (doneGroups.length === 0) {
-                      return (
-                        <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-border/70 bg-muted/10 p-6 text-center text-sm text-muted-foreground">
-                          Todavía no debugueaste ningún bug.
-                        </div>
-                      );
-                    }
-
-                    return (
-                      <div className="flex-1 space-y-4 overflow-y-auto pr-1">
-                        <Accordion type="multiple" className="space-y-2" defaultValue={doneGroups.map((group) => group.key)}>
-                          {doneGroups.map((group) => (
-                            <AccordionItem key={group.key} value={group.key} className="rounded-lg border border-border/50 bg-background/70">
-                              <AccordionTrigger className="px-3 py-2 text-left hover:no-underline">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-medium">{group.name}</span>
-                                  <span className="text-xs text-muted-foreground">({group.bugs.length})</span>
-                                </div>
-                              </AccordionTrigger>
-                              <AccordionContent className="px-3 pb-3">
-                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                  {group.bugs.map((bug) => {
-                                    const state = renderBugState("debugueado");
-                                    const BugIcon = getErrorIcon(bug.id);
-                                    return (
-                                      <div
-                                        key={bug.id}
-                                        className={`relative flex min-h-[52px] w-full items-center gap-2 overflow-hidden rounded-lg border p-2 text-left text-xs font-medium ${state.cardClass} ${state.backgroundClass}`}
-                                      >
-                                        <span className={`relative flex h-8 w-8 flex-none items-center justify-center rounded-md border ${state.chipClass}`}>
-                                          <BugIcon className={`h-4 w-4 ${state.iconColorClass}`} />
-                                        </span>
-                                        <p className="min-w-0 flex-1 truncate">{bug.nombre}</p>
-                                        <div className="pointer-events-none absolute inset-0 rounded-lg bg-[linear-gradient(135deg,rgba(16,185,129,0.2)_0%,rgba(5,150,105,0.06)_100%)]" />
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </AccordionContent>
-                            </AccordionItem>
-                          ))}
-                        </Accordion>
-                      </div>
-                    );
-                  })()}
-                </div>
+                  <TabsContent value="debugueados" className="flex-1 min-h-0 mt-0 overflow-y-auto pr-1">
+                    <AllAreaBugsModalWrapper open={isDiaryOpen} embedded onlyResolved />
+                  </TabsContent>
+                </Tabs>
               </TabsContent>
 
               <TabsContent value="profile" className="flex-1 min-h-0 min-w-0 mt-0">
@@ -8835,60 +8508,6 @@ function QuestDiary() {
       </DialogContent>
     </Dialog>
 
-    {/* Mantener presionada una tarjeta de bug (tab "Bugs") abre esto: editar nombre/descripción
-        o borrarlo directamente. */}
-    <Dialog open={!!editingJournalBug} onOpenChange={(open) => { if (!open) setEditingJournalBug(null); }}>
-      <DialogContent className="sm:max-w-[400px] border-0 shadow-2xl">
-        <DialogHeader>
-          <DialogTitle className="text-lg font-medium">Editar bug</DialogTitle>
-          <DialogDescription className="text-xs text-muted-foreground">
-            Cambiá el nombre/descripción o borralo del todo.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div>
-            <Label className="text-xs text-muted-foreground uppercase tracking-wide block mb-1">Nombre</Label>
-            <Input
-              value={editJournalBugNombre}
-              onChange={(e) => setEditJournalBugNombre(e.target.value.toUpperCase())}
-              className="uppercase border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
-              data-testid="input-edit-journal-bug-name"
-              autoFocus
-            />
-          </div>
-          <div>
-            <Label className="text-xs text-muted-foreground uppercase tracking-wide block mb-1">Descripción</Label>
-            <Textarea
-              placeholder="¿Qué patrón/comportamiento es este bug?"
-              value={editJournalBugDesc}
-              onChange={(e) => setEditJournalBugDesc(e.target.value)}
-              rows={2}
-              className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
-              data-testid="input-edit-journal-bug-desc"
-            />
-          </div>
-        </div>
-        <DialogFooter className="flex gap-2 pt-2 sm:justify-between">
-          <Button
-            variant="destructive"
-            onClick={handleDeleteJournalBug}
-            disabled={deleteJournalBug.isPending}
-            data-testid="button-delete-journal-bug"
-          >
-            <Trash2 className="h-3.5 w-3.5 mr-1" />
-            Borrar
-          </Button>
-          <Button
-            onClick={handleSaveJournalBug}
-            disabled={!editJournalBugNombre.trim() || updateJournalBug.isPending}
-            className="border-0"
-            data-testid="button-save-journal-bug"
-          >
-            Guardar
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
     </>
   );
 }

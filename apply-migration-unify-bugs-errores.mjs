@@ -26,16 +26,22 @@ async function applyMigration() {
 
     console.log("✓ Schema migration completed successfully");
 
-    // Best-effort data migration: node errors cargados directo a un área/proyecto (sin nodo y
-    // sin bug vinculado todavía) pasan a ser bugs de esa área/proyecto. No aborta si falla.
+    // Data migration: TODO node error que todavía no tenga bug vinculado pasa a ser un bug (los
+    // "bugs" que se veían en la tab del Journal antes eran estos node errors). Para los de un
+    // nodo puntual, el área/proyecto se toma del skill. Reejecutable (WHERE bug_id IS NULL).
     try {
       const { rows } = await client.query(
-        `SELECT id, user_id, area_id, project_id, nombre, como_si, points, disparadores, estrategias
-           FROM node_errors
-          WHERE skill_id IS NULL AND bug_id IS NULL AND (area_id IS NOT NULL OR project_id IS NOT NULL)`
+        `SELECT ne.id, ne.user_id, ne.nombre, ne.como_si, ne.points, ne.disparadores, ne.estrategias,
+                COALESCE(ne.area_id, s.area_id)       AS area_id,
+                COALESCE(ne.project_id, s.project_id) AS project_id
+           FROM node_errors ne
+           LEFT JOIN skills s ON s.id = ne.skill_id
+          WHERE ne.bug_id IS NULL`
       );
       let migrated = 0;
+      let skipped = 0;
       for (const err of rows) {
+        if (!err.area_id && !err.project_id) { skipped++; continue; }
         const bugId = randomUUID();
         const points = Number(err.points) || 0;
         const steps = Math.round(Math.abs(points) / 10);
@@ -72,7 +78,7 @@ async function applyMigration() {
         await client.query(`UPDATE node_errors SET bug_id = $1 WHERE id = $2`, [bugId, err.id]);
         migrated++;
       }
-      console.log(`✓ Data migration: ${migrated} node error(s) de área/proyecto convertidos en bugs`);
+      console.log(`✓ Data migration: ${migrated} node error(s) convertidos en bugs${skipped ? ` (${skipped} sin área/proyecto, omitidos)` : ""}`);
     } catch (dataError) {
       console.warn("⚠ Data migration skipped:", dataError.message);
     }
