@@ -240,9 +240,14 @@ export const sourceBugRecords = pgTable("source_bug_records", {
   bodyLinks: jsonb("body_links").notNull().$type<BodyLink[]>().default([]),
   fecha: varchar("fecha").notNull(),
   situacion: text("situacion").notNull(),
-  senal: text("senal").notNull(),
-  estrategia: text("estrategia").notNull(),
+  // Antes "senal" -- unificado con la nomenclatura de los errores del nodo. Puede venir vacío
+  // cuando el registro nace de un +10 del nodo (ahí solo hay estrategia), y viceversa.
+  disparador: text("disparador").notNull().default(""),
+  estrategia: text("estrategia").notNull().default(""),
   resultado: text("resultado").$type<"victoria" | "empate" | "derrota">().notNull().default("empate"),
+  // Si el registro se generó desde un +10/-10 de un error de nodo, guarda el id de ese
+  // node_error_records para no volver a insertarlo si el confirm se reintenta.
+  nodeErrorRecordId: varchar("node_error_record_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -270,6 +275,10 @@ export const nodeErrors = pgTable("node_errors", {
   estrategias: jsonb("estrategias").notNull().$type<string[]>().default([]),
   // Espejo de estrategias, pero para cuando se restan xp: qué disparó ese retroceso.
   disparadores: jsonb("disparadores").notNull().$type<string[]>().default([]),
+  // Link al source_bug de área/proyecto que representa este error una vez confirmado. Bugs y
+  // errores son lo mismo: al confirmar el error se crea (1:1) el bug y sus +10/-10 se vuelcan
+  // como registros de ese bug.
+  bugId: varchar("bug_id"),
   // Skills/componentes corporales EXTRA que este error puede linkear (opcional, más allá de la
   // flexibilidad mental que crece siempre para todo error) -- solo suman/crecen con un +10, ver
   // POST /api/node-errors/:id/records y su manejo client-side en SkillNode.tsx.
@@ -458,6 +467,9 @@ export const rewiringTrackers = pgTable("rewiring_trackers", {
   // Null/absent = classic mode (unlimited actions/day, 3 actions per level). A number >= 1 =
   // "veces por día" mode: that many reps required each day, 1 level gained per full day.
   timesPerDay: integer("times_per_day"),
+  // Minutos estimados que dura cada rewiring/repetición. Puramente informativo: se muestra en
+  // el tracker y su detalle, no altera el progreso ni dispara timers. Null = sin estimación.
+  minutesPerRep: integer("minutes_per_rep"),
   areaId: varchar("area_id").references(() => areas.id, { onDelete: "set null" }),
   projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
   skillId: varchar("skill_id").references(() => globalSkills.id, { onDelete: "set null" }),
@@ -671,6 +683,9 @@ export const insertSourceBugRecordSchema = createInsertSchema(sourceBugRecords)
   .extend({
     resultado: z.enum(["victoria", "empate", "derrota"]).optional(),
     skillIds: z.array(z.string()).optional().default([]),
+    disparador: z.string().optional().default(""),
+    estrategia: z.string().optional().default(""),
+    nodeErrorRecordId: z.string().optional().nullable(),
   });
 export type InsertSourceDescription = z.infer<typeof insertSourceDescriptionSchema>;
 export type SourceDescription = typeof sourceDescriptions.$inferSelect;
@@ -699,6 +714,7 @@ export const insertNodeErrorSchema = createInsertSchema(nodeErrors)
     disparadores: z.array(z.string()).optional().default([]),
     comoSi: z.string().optional().default(""),
     skillIds: z.array(z.string()).optional().default([]),
+    bugId: z.string().optional().nullable(),
   });
 export const insertNodeErrorRecordSchema = createInsertSchema(nodeErrorRecords)
   .omit({ id: true, createdAt: true })

@@ -32,12 +32,16 @@ const PALETTES: Record<BodyDimension, [string, string, string]> = {
   flex: ["#1B4FA8", "#3B9BFF", "#A8DCFF"],
 };
 
-function blockGradient(dimension: BodyDimension, index: number, total: number) {
-  const [c1, c2, c3] = PALETTES[dimension];
-  const t = total > 1 ? index / (total - 1) : 0;
-  const topMix = Math.round(t * 70);
-  const bottomMix = Math.round(t * 80);
-  return `linear-gradient(180deg, color-mix(in srgb, ${c3} ${topMix}%, ${c2}), color-mix(in srgb, ${c2} ${bottomMix}%, ${c1}))`;
+// Mismos bloques que el pop up de skills (ExperienceGainPopup): un color plano y sólido
+// para toda la barra, que se va oscureciendo por nivel. La única diferencia es que acá el
+// tono sigue el matiz de la dimensión (verde fuerza / azul flexibilidad) en vez del verde
+// fijo de skills.
+function blockColor(dimension: BodyDimension, level: number) {
+  const [dark, mid, light] = PALETTES[dimension];
+  if (level >= 4) return light;
+  if (level === 3) return mid;
+  if (level === 2) return `color-mix(in srgb, ${mid} 50%, ${dark})`;
+  return dark;
 }
 
 export function BodyGainPopup({ snapshot, onClose }: BodyGainPopupProps) {
@@ -207,7 +211,7 @@ export function BodyGainPopup({ snapshot, onClose }: BodyGainPopupProps) {
                     <div key={index} className="flex-1 h-full overflow-hidden rounded-sm" style={{ backgroundColor: palette.blockEmpty }}>
                       {isFilledBefore && (
                         <div
-                          style={{ width: "100%", height: "100%", background: blockGradient(dimension, index, BODY_BLOCKS) }}
+                          style={{ width: "100%", height: "100%", backgroundColor: blockColor(dimension, after.lvl) }}
                         />
                       )}
 
@@ -221,7 +225,7 @@ export function BodyGainPopup({ snapshot, onClose }: BodyGainPopupProps) {
                               ease: [0.4, 0, 0.2, 1],
                               delay: (index - before.val) * 0.12,
                             }}
-                            style={{ height: "100%", background: blockGradient(dimension, index, BODY_BLOCKS) }}
+                            style={{ height: "100%", backgroundColor: blockColor(dimension, after.lvl) }}
                           />
                         </div>
                       )}

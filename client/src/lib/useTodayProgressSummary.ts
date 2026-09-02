@@ -4,6 +4,7 @@ import { useHabits } from "@/lib/useHabits";
 import { useManualTasks } from "@/lib/useManualTasks";
 import { useTodayTaskSlots } from "@/lib/useTodayTaskSlots";
 import { calculateStatus, calculateStatusL2, type SpaceRepetitionPractice } from "@/components/SpaceRepetitionModal";
+import { rewiringDayTask } from "@/lib/rewiringTasks";
 import type { HabitRecord } from "@shared/schema";
 
 function getDateStr(date: Date): string {
@@ -18,18 +19,8 @@ function dateStrToDayOfWeek(dateStr: string): number {
 interface RewiringTrackerSummary {
   archivedAt?: string | null;
   timesPerDay?: number | null;
+  habitId?: string | null;
   history?: { timestamp: string; date?: string }[];
-}
-
-// A rewiring counts as "done today" once its daily quota is met — classic trackers (no
-// timesPerDay) only need one action today; "veces por día" trackers need all of them. Mirrors
-// the same rule RewiringTracker.tsx uses for its own "+Acción" button/ring.
-function isRewiringDoneToday(tracker: RewiringTrackerSummary, todayStr: string): boolean {
-  if (tracker.archivedAt) return false;
-  const reps = (tracker.history || []).filter(
-    (h) => (h.date ?? getDateStr(new Date(h.timestamp))) === todayStr
-  ).length;
-  return reps >= (tracker.timesPerDay || 1);
 }
 
 // Espejo simplificado (sin la "foto" de ocultos al abrir el modal, que solo tiene sentido
@@ -99,7 +90,12 @@ export function useTodayProgressSummary() {
     },
   });
   const { data: rewiringData } = rewiringQuery;
-  const extraRewiringsDoneToday = (rewiringData || []).filter((t) => isRewiringDoneToday(t, todayStr));
+  // Espejo de TodayProgressModal: una fila de rewiring por cada tracker con al menos una
+  // repetición hoy. Los "veces por día" linkeados a un hábito que ya cerró su cuota no cuentan
+  // acá (su hábito ya suma por la vía de los habit-records). Ver rewiringDayTask().
+  const extraRewiringsDoneToday = (rewiringData || [])
+    .map((t) => rewiringDayTask(t, todayStr))
+    .filter((task) => task.kind === "rewiring");
 
   const practicesQuery = useQuery({
     queryKey: ["space-repetition"],

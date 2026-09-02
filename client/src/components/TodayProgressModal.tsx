@@ -13,6 +13,7 @@ import { useHabits } from "@/lib/useHabits";
 import { useTodayTaskSlots, useSetTodayTaskSlot, useClearTodayTaskSlot, useReorderTodayTaskSlot, getCurrentTimeSlotKey, getTimeSlotKeyForDate, type TaskSlotKey, type TaskType } from "@/lib/useTodayTaskSlots";
 import { useManualTasks, useCreateManualTask, useUpdateManualTask, useDeleteManualTask } from "@/lib/useManualTasks";
 import { calculateStatus, calculateStatusL2, type SpaceRepetitionPractice } from "@/components/SpaceRepetitionModal";
+import { rewiringDayTask } from "@/lib/rewiringTasks";
 import type { Habit, HabitRecord, TodayTaskSlot } from "@shared/schema";
 
 const LONG_PRESS_MS = 1500;
@@ -75,6 +76,18 @@ function MinutesSuffix({ minutes }: { minutes?: number | null }) {
   return <span className="text-muted-foreground"> · {minutes}min</span>;
 }
 
+// Contador "hechas/total" que se muestra arriba del nombre de una tarea que se completa varias
+// veces por día: un rewiring "veces por día" (1/3, 2/3…) o el hábito que lo reemplaza al
+// cerrarse la cuota (3/3). Se omite cuando el total es 1 — ahí no aporta nada.
+function TaskCountBadge({ done, total }: { done: number; total: number }) {
+  if (!total || total <= 1) return null;
+  return (
+    <sup className="ml-0.5 text-[10px] font-semibold text-muted-foreground">
+      {done}/{total}
+    </sup>
+  );
+}
+
 function getFirstDayOfMonth(date: Date) {
   const firstDow = new Date(date.getFullYear(), date.getMonth(), 1).getDay();
   return firstDow === 0 ? 6 : firstDow - 1;
@@ -135,12 +148,42 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     })),
   });
 
+  // Rewirings (RewiringTracker.tsx). Se carga acá arriba porque el contador N/N de un rewiring
+  // "veces por día" linkeado a un hábito se pinta sobre la fila de ese hábito (ver más abajo),
+  // que se arma antes que la sección de actividad extra.
+  const { data: rewiringTrackersData } = useQuery({
+    queryKey: ["rewiring-trackers"],
+    queryFn: async () => {
+      const res = await fetch("/api/rewiring-trackers");
+      if (!res.ok) throw new Error("Failed to fetch rewiring trackers");
+      return res.json() as Promise<{ id: string; name: string; archivedAt?: string | null; timesPerDay?: number | null; habitId?: string | null; history?: { timestamp: string; date?: string }[] }[]>;
+    },
+    enabled: open,
+  });
+
+  const rewiringDayTasks = (rewiringTrackersData || []).map((t) => ({
+    tracker: t,
+    task: rewiringDayTask(t, effectiveDate),
+  }));
+
+  // Hábito linkeado a un rewiring "veces por día" cuya cuota del día ya se cerró: su fila
+  // (venga de habitItems o de extraHabits) lleva el contador N/N encima del nombre.
+  const rewiringHabitBadgeById = new Map<string, { done: number; total: number }>();
+  rewiringDayTasks.forEach(({ task }) => {
+    if (task.kind === "habit" && task.habitId) {
+      rewiringHabitBadgeById.set(task.habitId, { done: task.reps, total: task.timesPerDay });
+    }
+  });
+
   const habitItems = habitsScheduledForView.map((h, i) => ({
     id: h.id,
     label: (
       <>
         {h.emoji} {h.name}
         <MinutesSuffix minutes={h.minMinutes} />
+        {rewiringHabitBadgeById.has(h.id) && (
+          <TaskCountBadge {...rewiringHabitBadgeById.get(h.id)!} />
+        )}
       </>
     ),
     done: !!(viewRecordQueries[i]?.data as HabitRecord[] | undefined)?.some(
@@ -228,6 +271,9 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         <>
           {h.emoji} {h.name}
           <MinutesSuffix minutes={h.minMinutes} />
+          {rewiringHabitBadgeById.has(h.id) && (
+            <TaskCountBadge {...rewiringHabitBadgeById.get(h.id)!} />
+          )}
         </>
       ),
       done: !!(otherHabitRecordQueries[i]?.data as HabitRecord[] | undefined)?.some(
@@ -236,36 +282,20 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     }))
     .filter((h) => h.done);
 
-  // Rewirings (RewiringTracker.tsx): actividad extra igual que los hábitos de arriba, pero sin
-  // concepto de "programado para hoy" — un rewiring cuenta como hecho el día que se le
-  // registraron todas sus repeticiones diarias (o, sin "veces por día", cualquier acción de ese
-  // día). Mismo criterio que usa el propio RewiringTracker para su botón "+ Acción".
-  const { data: rewiringTrackersData } = useQuery({
-    queryKey: ["rewiring-trackers"],
-    queryFn: async () => {
-      const res = await fetch("/api/rewiring-trackers");
-      if (!res.ok) throw new Error("Failed to fetch rewiring trackers");
-      return res.json() as Promise<{ id: string; name: string; archivedAt?: string | null; timesPerDay?: number | null; habitId?: string | null; history?: { timestamp: string; date?: string }[] }[]>;
-    },
-    enabled: open,
-  });
-
-  const extraRewirings = (rewiringTrackersData || [])
-    .filter((t) => !t.archivedAt)
-    // Si el rewiring está linkeado a un hábito, al completarse ya confirma ese hábito, que
-    // aparece en las tareas del día por sí mismo. Mostrar también el rewiring sería duplicar
-    // la misma actividad, así que en ese caso queda solo el hábito.
-    .filter((t) => !t.habitId)
-    .map((t) => {
-      const repsOnDay = (t.history || []).filter(
-        (h) => (h.date ?? getDateStr(new Date(h.timestamp))) === effectiveDate
-      );
-      const lastRepAt = repsOnDay.length > 0
-        ? repsOnDay.reduce((latest, h) => (new Date(h.timestamp) > new Date(latest) ? h.timestamp : latest), repsOnDay[0].timestamp)
-        : undefined;
-      return { id: t.id, name: t.name, done: repsOnDay.length >= (t.timesPerDay || 1), lastRepAt };
-    })
-    .filter((t) => t.done);
+  // Rewirings (RewiringTracker.tsx): actividad extra sin concepto de "programado para hoy". Se
+  // muestra una fila por cada rewiring que registró al menos una repetición el día que se está
+  // viendo, con un contador "hechas/N" para los "veces por día". Los "veces por día" linkeados
+  // a un hábito que ya cerraron su cuota NO aparecen acá: en su lugar aparece el hábito (con su
+  // contador N/N — ver rewiringHabitBadgeById). Ver rewiringDayTask() para el detalle.
+  const extraRewirings = rewiringDayTasks
+    .filter(({ task }) => task.kind === "rewiring")
+    .map(({ tracker, task }) => ({
+      id: tracker.id,
+      name: tracker.name,
+      reps: task.reps,
+      timesPerDay: task.timesPerDay,
+      lastRepAt: task.lastRepAt,
+    }));
 
   // Nodos sin fecha planeada (columna "When exactly?" vacía) que se confirmaron dentro del
   // rango [startDate, endDate]. Se usa tanto para "Más" (rango = solo hoy) como para el
@@ -321,7 +351,12 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       key: `rewiring:${r.id}`,
       type: "rewiring" as const,
       id: r.id,
-      label: <>🔄 {r.name}</>,
+      label: (
+        <>
+          🔄 {r.name}
+          <TaskCountBadge done={r.reps} total={r.timesPerDay} />
+        </>
+      ),
       done: true,
       defaultSlot: r.lastRepAt ? getTimeSlotKeyForDate(new Date(r.lastRepAt)) : undefined,
     })),

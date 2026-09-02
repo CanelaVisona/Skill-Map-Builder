@@ -187,6 +187,11 @@ export interface IStorage {
   updateNodeError(id: string, entry: Partial<InsertNodeError>): Promise<NodeError | undefined>;
   deleteNodeError(id: string): Promise<void>;
   createNodeErrorRecord(errorId: string, delta: 10 | -10, userId?: string | null, estrategia?: string | null, disparador?: string | null): Promise<{ record: NodeErrorRecord; pointsBefore: number; pointsAfter: number }>;
+  // Bugs y errores son lo mismo: al confirmar un error se crea (1:1) el bug de su área/proyecto.
+  ensureNodeErrorBug(nodeErrorId: string): Promise<string | null>;
+  // Agrega valores a source_bugs.disparadores / .estrategias sin duplicar (para poblar los
+  // desplegables del formulario de registro del bug con lo cargado desde el nodo).
+  appendSourceBugListItems(bugId: string, field: "disparadores" | "estrategias", items: string[]): Promise<void>;
 
   // Profile - About Entries
   getProfileAboutEntries(userId: string): Promise<ProfileAboutEntry[]>;
@@ -1723,7 +1728,7 @@ export class DbStorage implements IStorage {
             userId: sourceBugRecords.userId,
             fecha: sourceBugRecords.fecha,
             situacion: sourceBugRecords.situacion,
-            senal: sourceBugRecords.senal,
+            disparador: sourceBugRecords.disparador,
             estrategia: sourceBugRecords.estrategia,
             resultado: sourceBugRecords.resultado,
             createdAt: sourceBugRecords.createdAt,
@@ -1805,6 +1810,15 @@ export class DbStorage implements IStorage {
       .set(updateData)
       .where(eq(sourceBugs.id, id))
       .returning();
+
+    // Cambio manual de status/victoryCount (menú de status del bug): espejar la barra a los
+    // errores de nodo vinculados, que comparten esta misma barra.
+    if (result[0] && (entry.status !== undefined || entry.victoryCount !== undefined)) {
+      const bug = result[0];
+      const mirroredPoints = bug.status === "debugueado" ? 50 : Math.max(-50, Math.min(50, (bug.victoryCount || 0) * 10));
+      await db.update(nodeErrors).set({ points: mirroredPoints, updatedAt: new Date() }).where(eq(nodeErrors.bugId, id));
+    }
+
     return result[0];
   }
 
@@ -1812,41 +1826,38 @@ export class DbStorage implements IStorage {
     await db.delete(sourceBugs).where(eq(sourceBugs.id, id));
   }
 
-  private async recalculateSourceBugProgress(bugId: string): Promise<void> {
+  private async recalculateSourceBugProgress(bugId: string): Promise<{ points: number; victoryCount: number; status: "identificado" | "debugueando" | "debugueado" }> {
     const records = await db
       .select()
       .from(sourceBugRecords)
       .where(eq(sourceBugRecords.bugId, bugId))
       .orderBy(asc(sourceBugRecords.fecha), asc(sourceBugRecords.createdAt));
 
-    let nextStatus: "identificado" | "debugueando" | "debugueado" = "identificado";
-    let nextVictoryCount = 0;
-
+    // Barra unificada con la del error del nodo: una victoria vale +10 y una derrota -10,
+    // igual que el +10/-10 del Step 3 "Bugs" del nodo -- son la MISMA acción sobre la MISMA
+    // barra (-50 a 50, empate no la mueve).
+    let points = 0;
     for (const record of records) {
-      if (nextStatus === "identificado") {
-        // First historical record moves the bug into debugging, regardless of its result.
-        nextStatus = "debugueando";
-      }
-
-      if (record.resultado === "victoria") {
-        nextVictoryCount = Math.min(nextVictoryCount + 1, 5);
-      } else if (record.resultado === "derrota") {
-        nextVictoryCount = Math.max(nextVictoryCount - 1, 0);
-      }
-
-      // Status tracks the bar: reaching 5/5 marks it fixed, and a later defeat
-      // that drags the bar back down reopens it for debugging.
-      nextStatus = nextVictoryCount >= 5 ? "debugueado" : "debugueando";
+      if (record.resultado === "victoria") points = Math.min(50, points + 10);
+      else if (record.resultado === "derrota") points = Math.max(-50, points - 10);
     }
+
+    const victoryCount = Math.max(0, Math.round(points / 10));
+    const status: "identificado" | "debugueando" | "debugueado" =
+      points >= 50 ? "debugueado" : records.length > 0 ? "debugueando" : "identificado";
 
     await db
       .update(sourceBugs)
-      .set({
-        status: nextStatus,
-        victoryCount: nextVictoryCount,
-        updatedAt: new Date(),
-      })
+      .set({ status, victoryCount, updatedAt: new Date() })
       .where(eq(sourceBugs.id, bugId));
+
+    // Espejo a los errores de nodo vinculados: su barra -50..50 ES esta.
+    await db
+      .update(nodeErrors)
+      .set({ points, updatedAt: new Date() })
+      .where(eq(nodeErrors.bugId, bugId));
+
+    return { points, victoryCount, status };
   }
 
   async createSourceBugRecord(entry: InsertSourceBugRecord): Promise<SourceBugRecord> {
@@ -1956,6 +1967,75 @@ export class DbStorage implements IStorage {
       .where(eq(nodeErrors.id, errorId));
 
     return { record, pointsBefore, pointsAfter };
+  }
+
+  // Crea (si todavía no existe) el source_bug 1:1 de este error y devuelve su id. Idempotente.
+  async ensureNodeErrorBug(nodeErrorId: string): Promise<string | null> {
+    const err = await this.getNodeError(nodeErrorId);
+    if (!err) return null;
+    if (err.bugId) return err.bugId;
+    if (!err.areaId && !err.projectId && !err.skillId) return null;
+
+    let areaId = err.areaId ?? null;
+    let projectId = err.projectId ?? null;
+    if (!areaId && !projectId && err.skillId) {
+      const skill = await this.getSkill(err.skillId);
+      areaId = skill?.areaId ?? null;
+      projectId = skill?.projectId ?? null;
+    }
+    if (!areaId && !projectId) return null;
+
+    const bug = await this.createSourceBug({
+      userId: err.userId ?? null,
+      areaId,
+      projectId,
+      nombre: err.nombre,
+      status: "identificado",
+      victoryCount: 0,
+      desc: err.comoSi ?? "",
+      aparece: [],
+      disparadores: Array.isArray(err.disparadores) ? err.disparadores : [],
+      estrategias: Array.isArray(err.estrategias) ? err.estrategias : [],
+    } as InsertSourceBug);
+
+    await db.update(nodeErrors).set({ bugId: bug.id, updatedAt: new Date() }).where(eq(nodeErrors.id, nodeErrorId));
+
+    // Si el error ya tenía puntos (barra avanzada antes de existir el bug), se siembran los
+    // registros equivalentes para que la barra compartida arranque en el mismo valor.
+    const existingPoints = err.points ?? 0;
+    const steps = Math.round(Math.abs(existingPoints) / 10);
+    if (steps > 0) {
+      const resultado = existingPoints > 0 ? "victoria" : "derrota";
+      const estrategia = existingPoints > 0 ? (Array.isArray(err.estrategias) && err.estrategias[0]) || "" : "";
+      const disparador = existingPoints < 0 ? (Array.isArray(err.disparadores) && err.disparadores[0]) || "" : "";
+      const fecha = new Date().toISOString().slice(0, 10);
+      for (let i = 0; i < steps; i++) {
+        await db.insert(sourceBugRecords).values({
+          id: randomUUID(),
+          bugId: bug.id,
+          userId: err.userId ?? null,
+          fecha,
+          situacion: err.comoSi || err.nombre,
+          disparador,
+          estrategia,
+          resultado,
+        } as any);
+      }
+      await this.recalculateSourceBugProgress(bug.id);
+    }
+
+    return bug.id;
+  }
+
+  async appendSourceBugListItems(bugId: string, field: "disparadores" | "estrategias", items: string[]): Promise<void> {
+    const clean = items.map((s) => s.trim()).filter(Boolean);
+    if (clean.length === 0) return;
+    const bug = await this.getSourceBug(bugId);
+    if (!bug) return;
+    const current = Array.isArray((bug as any)[field]) ? ((bug as any)[field] as string[]) : [];
+    const merged = Array.from(new Set([...current, ...clean]));
+    if (merged.length === current.length) return;
+    await db.update(sourceBugs).set({ [field]: merged, updatedAt: new Date() } as any).where(eq(sourceBugs.id, bugId));
   }
 
   // Profile - Missions
@@ -2606,6 +2686,7 @@ export class DbStorage implements IStorage {
       count: initialCount,
       targetLevel: tracker.targetLevel ?? null,
       timesPerDay: tracker.timesPerDay ?? null,
+      minutesPerRep: tracker.minutesPerRep ?? null,
       areaId: tracker.areaId ?? null,
       projectId: tracker.projectId ?? null,
       skillId: tracker.skillId ?? null,

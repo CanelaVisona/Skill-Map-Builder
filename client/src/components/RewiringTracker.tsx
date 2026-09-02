@@ -12,6 +12,7 @@ import { useBodyProgress } from "@/lib/body-progress-context";
 import { useBodyGainPopup } from "@/lib/body-gain-popup-context";
 import { BodyLinkPicker, type BodyLink } from "@/components/BodyLinkPicker";
 import { SkillLinkPicker } from "@/components/SkillLinkPicker";
+import { playGrowingProgressBarSound } from "@/lib/sound";
 
 interface Level {
   label: string;
@@ -25,6 +26,12 @@ interface Level {
 // Target level = how many numbered levels ("Nivel 1", "Nivel 2"...) the tracker wants to
 // reach, not a raw action count. No explicit choice = 3 levels.
 const DEFAULT_TARGET_LEVEL = 3;
+
+// How long the progress ring takes to visually climb after a "+ Acción" (matches the
+// framer-motion `transition.duration` on the ring, in ms). The arcade meter-fill sound
+// (same one NecesidadesCasa uses) is scheduled with this duration so its pitch-climb lines
+// up with the ring filling.
+const RING_FILL_MS = 450;
 
 // Classic rewirings: 3 actions per level, no daily cap. "Veces por día" rewirings: 1 level
 // per fully-completed day (that day's quota of reps), regardless of the quota's size.
@@ -102,6 +109,8 @@ interface TrackerData {
   bodyLinks?: BodyLink[];
   targetLevel?: number | null;
   timesPerDay?: number | null;
+  // Minutos estimados por rewiring/repetición. Solo informativo.
+  minutesPerRep?: number | null;
   // Solo "veces por día": hábito que se confirma al completar la cuota diaria.
   habitId?: string | null;
 }
@@ -113,6 +122,7 @@ interface ArchivedTracker {
   startDate?: string;
   totalActions: number;
   timesPerDay?: number | null;
+  minutesPerRep?: number | null;
 }
 
 interface RewiringTrackerProps {
@@ -357,6 +367,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
   const [editingTrackerBodyLinks, setEditingTrackerBodyLinks] = useState<BodyLink[]>([]);
   const [editingTrackerTargetLevel, setEditingTrackerTargetLevel] = useState(String(DEFAULT_TARGET_LEVEL));
   const [editingTrackerTimesPerDay, setEditingTrackerTimesPerDay] = useState("");
+  const [editingTrackerMinutesPerRep, setEditingTrackerMinutesPerRep] = useState("");
   const [editingTrackerHabitId, setEditingTrackerHabitId] = useState<string | null>(null);
   const [editingSkillsForArea, setEditingSkillsForArea] = useState<any[]>([]);
   const [xpPopupSnapshot, setXpPopupSnapshot] = useState<ExperienceGainSnapshot | null>(null);
@@ -369,6 +380,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
   const [newTrackerBodyLinks, setNewTrackerBodyLinks] = useState<BodyLink[]>([]);
   const [newTrackerTargetLevel, setNewTrackerTargetLevel] = useState(String(DEFAULT_TARGET_LEVEL));
   const [newTrackerTimesPerDay, setNewTrackerTimesPerDay] = useState("");
+  const [newTrackerMinutesPerRep, setNewTrackerMinutesPerRep] = useState("");
   const [newTrackerHabitId, setNewTrackerHabitId] = useState<string | null>(null);
 
   // Muestra el pop-up de crecimiento corporal; si en la misma confirmación ya se mostró el de
@@ -505,6 +517,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
             bodyLinks: Array.isArray(tracker.bodyLinks) ? tracker.bodyLinks : [],
             targetLevel: tracker.targetLevel,
             timesPerDay: tracker.timesPerDay,
+            minutesPerRep: tracker.minutesPerRep ?? null,
             habitId: tracker.habitId ?? null,
           };
         }
@@ -519,6 +532,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           startDate: tracker.startDate,
           totalActions: tracker.count || 0,
           timesPerDay: tracker.timesPerDay,
+          minutesPerRep: tracker.minutesPerRep ?? null,
         }));
         setArchivedTrackers(archivedList);
 
@@ -843,6 +857,10 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
     const timesPerDay = Number.isFinite(parsedTimesPerDay) && parsedTimesPerDay >= 1
       ? Math.round(parsedTimesPerDay)
       : null;
+    const parsedMinutesPerRep = Number(newTrackerMinutesPerRep);
+    const minutesPerRep = Number.isFinite(parsedMinutesPerRep) && parsedMinutesPerRep >= 1
+      ? Math.round(parsedMinutesPerRep)
+      : null;
     // El hábito linkeado solo aplica en modo "veces por día".
     const habitId = timesPerDay ? newTrackerHabitId : null;
     try {
@@ -863,6 +881,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
             bodyLinks: newTrackerBodyLinks,
             targetLevel,
             timesPerDay,
+            minutesPerRep,
             habitId,
           }),
         });
@@ -891,6 +910,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           bodyLinks: newTrackerBodyLinks,
           targetLevel,
           timesPerDay,
+          minutesPerRep,
           habitId,
         };
         console.log("[Rewiring] Created local tracker:", newTracker);
@@ -911,6 +931,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
         bodyLinks: Array.isArray(newTracker.bodyLinks) ? newTracker.bodyLinks : [],
         targetLevel: newTracker.targetLevel,
         timesPerDay: newTracker.timesPerDay,
+        minutesPerRep: newTracker.minutesPerRep ?? null,
         habitId: newTracker.habitId ?? null,
       };
       console.log("[Rewiring] New tracker data:", newTrackerData);
@@ -941,6 +962,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
       setNewTrackerBodyLinks([]);
       setNewTrackerTargetLevel(String(DEFAULT_TARGET_LEVEL));
       setNewTrackerTimesPerDay("");
+      setNewTrackerMinutesPerRep("");
       setNewTrackerHabitId(null);
       setSelectedTrackerId(newTracker.id);
 
@@ -994,7 +1016,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
     }
   };
 
-  const handleUpdateTracker = async (trackerId: string, updates: { name: string; areaId: string | null; projectId: string | null; skillIds: string[]; bodyLinks?: BodyLink[]; targetLevel: number; timesPerDay: number | null; habitId?: string | null }) => {
+  const handleUpdateTracker = async (trackerId: string, updates: { name: string; areaId: string | null; projectId: string | null; skillIds: string[]; bodyLinks?: BodyLink[]; targetLevel: number; timesPerDay: number | null; minutesPerRep: number | null; habitId?: string | null }) => {
     if (!updates.name.trim()) return;
 
     // El hábito linkeado solo aplica en modo "veces por día".
@@ -1015,6 +1037,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
             bodyLinks: updates.bodyLinks ?? [],
             targetLevel: updates.targetLevel,
             timesPerDay: updates.timesPerDay,
+            minutesPerRep: updates.minutesPerRep,
             habitId,
           }),
         });
@@ -1042,6 +1065,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           bodyLinks: updates.bodyLinks ?? [],
           targetLevel: updates.targetLevel,
           timesPerDay: updates.timesPerDay,
+          minutesPerRep: updates.minutesPerRep,
           habitId,
         };
       }
@@ -1056,6 +1080,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
       setEditingTrackerSkillIds([]);
       setEditingTrackerBodyLinks([]);
       setEditingTrackerTimesPerDay("");
+      setEditingTrackerMinutesPerRep("");
       setEditingTrackerHabitId(null);
 
       // Save to localStorage
@@ -1121,13 +1146,17 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
         confirmLinkedHabit(data.habitId, rewiringPopups * 1800);
       }
 
+      // Arcade "meter filling" sound as the progress ring climbs — same one NecesidadesCasa
+      // plays for its task bars, scheduled to the ring's fill duration.
+      playGrowingProgressBarSound(RING_FILL_MS);
+
       // Always update tracker data (whether complete or not)
       const updatedData = {
         ...data,
         count: newCount,
         history: newHistory,
       };
-      
+
       setTrackerData({
         ...trackerData,
         [trackerId]: updatedData,
@@ -1249,6 +1278,8 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           onNewTrackerTargetLevel={setNewTrackerTargetLevel}
           newTrackerTimesPerDay={newTrackerTimesPerDay}
           onNewTrackerTimesPerDay={setNewTrackerTimesPerDay}
+          newTrackerMinutesPerRep={newTrackerMinutesPerRep}
+          onNewTrackerMinutesPerRep={setNewTrackerMinutesPerRep}
           newTrackerHabitId={newTrackerHabitId}
           onNewTrackerHabitId={setNewTrackerHabitId}
           areas={areas}
@@ -1276,6 +1307,8 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           onEditingTrackerTargetLevel={setEditingTrackerTargetLevel}
           editingTrackerTimesPerDay={editingTrackerTimesPerDay}
           onEditingTrackerTimesPerDay={setEditingTrackerTimesPerDay}
+          editingTrackerMinutesPerRep={editingTrackerMinutesPerRep}
+          onEditingTrackerMinutesPerRep={setEditingTrackerMinutesPerRep}
           editingTrackerHabitId={editingTrackerHabitId}
           onEditingTrackerHabitId={setEditingTrackerHabitId}
           editingSkillsForArea={editingSkillsForArea}
@@ -1363,6 +1396,8 @@ function TrackerCard({
   onEditingTrackerTargetLevel,
   editingTrackerTimesPerDay,
   onEditingTrackerTimesPerDay,
+  editingTrackerMinutesPerRep,
+  onEditingTrackerMinutesPerRep,
   editingTrackerHabitId,
   onEditingTrackerHabitId,
   editingSkillsForArea,
@@ -1378,7 +1413,7 @@ function TrackerCard({
   onContextMenuTrackerId: (id: string | null) => void;
   onEditingTrackerName: (name: string) => void;
   onSetEditingTrackerId: (id: string | null) => void;
-  onUpdateTracker: (id: string, updates: { name: string; areaId: string | null; projectId: string | null; skillIds: string[]; bodyLinks?: BodyLink[]; targetLevel: number; timesPerDay: number | null; habitId?: string | null }) => void;
+  onUpdateTracker: (id: string, updates: { name: string; areaId: string | null; projectId: string | null; skillIds: string[]; bodyLinks?: BodyLink[]; targetLevel: number; timesPerDay: number | null; minutesPerRep: number | null; habitId?: string | null }) => void;
   onDeleteTracker: (id: string) => void;
   onRegisterAction: (id: string) => void;
   onSelectTracker: (id: string) => void;
@@ -1398,6 +1433,8 @@ function TrackerCard({
   onEditingTrackerTargetLevel: (level: string) => void;
   editingTrackerTimesPerDay: string;
   onEditingTrackerTimesPerDay: (value: string) => void;
+  editingTrackerMinutesPerRep: string;
+  onEditingTrackerMinutesPerRep: (value: string) => void;
   editingTrackerHabitId: string | null;
   onEditingTrackerHabitId: (id: string | null) => void;
   editingSkillsForArea: any[];
@@ -1549,6 +1586,21 @@ function TrackerCard({
             />
           </div>
 
+          {/* Minutes Per Rep */}
+          <div>
+            <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
+              Minutos por rewiring (opcional)
+            </label>
+            <Input
+              type="number"
+              min={1}
+              value={editingTrackerMinutesPerRep}
+              onChange={(e) => onEditingTrackerMinutesPerRep(e.target.value)}
+              placeholder="Sin estimación"
+              className="mt-1 text-sm"
+            />
+          </div>
+
           {/* Habit to confirm — solo para rewirings "veces por día" */}
           {(() => {
             const parsedTpd = Number(editingTrackerTimesPerDay);
@@ -1613,6 +1665,7 @@ function TrackerCard({
                 onEditingTrackerBodyLinksChange([]);
                 onEditingTrackerTargetLevel(String(DEFAULT_TARGET_LEVEL));
                 onEditingTrackerTimesPerDay("");
+                onEditingTrackerMinutesPerRep("");
                 onEditingTrackerHabitId(null);
                 onEditingSkillsForArea([]);
               }}
@@ -1633,6 +1686,10 @@ function TrackerCard({
                   const timesPerDay = Number.isFinite(parsedTpd) && parsedTpd >= 1
                     ? Math.round(parsedTpd)
                     : null;
+                  const parsedMpr = Number(editingTrackerMinutesPerRep);
+                  const minutesPerRep = Number.isFinite(parsedMpr) && parsedMpr >= 1
+                    ? Math.round(parsedMpr)
+                    : null;
                   onUpdateTracker(tracker.id, {
                     name: editingTrackerName,
                     areaId: editingTrackerAreaId,
@@ -1641,6 +1698,7 @@ function TrackerCard({
                     bodyLinks: editingTrackerBodyLinks,
                     targetLevel,
                     timesPerDay,
+                    minutesPerRep,
                     habitId: timesPerDay ? editingTrackerHabitId : null,
                   });
                 }
@@ -1746,6 +1804,7 @@ function TrackerCard({
                 onEditingTrackerBodyLinksChange(Array.isArray(data.bodyLinks) ? data.bodyLinks : []);
                 onEditingTrackerTargetLevel(String(data.targetLevel ?? DEFAULT_TARGET_LEVEL));
                 onEditingTrackerTimesPerDay(data.timesPerDay ? String(data.timesPerDay) : "");
+                onEditingTrackerMinutesPerRep(data.minutesPerRep ? String(data.minutesPerRep) : "");
                 onEditingTrackerHabitId(data.habitId ?? null);
                 onSetEditingTrackerId(tracker.id);
                 onContextMenuTrackerId(null);
@@ -1816,6 +1875,8 @@ function MainPanel({
   onNewTrackerTargetLevel,
   newTrackerTimesPerDay,
   onNewTrackerTimesPerDay,
+  newTrackerMinutesPerRep,
+  onNewTrackerMinutesPerRep,
   newTrackerHabitId,
   onNewTrackerHabitId,
   areas,
@@ -1843,6 +1904,8 @@ function MainPanel({
   onEditingTrackerTargetLevel,
   editingTrackerTimesPerDay,
   onEditingTrackerTimesPerDay,
+  editingTrackerMinutesPerRep,
+  onEditingTrackerMinutesPerRep,
   editingTrackerHabitId,
   onEditingTrackerHabitId,
   editingSkillsForArea,
@@ -1872,6 +1935,8 @@ function MainPanel({
   onNewTrackerTargetLevel: (level: string) => void;
   newTrackerTimesPerDay: string;
   onNewTrackerTimesPerDay: (value: string) => void;
+  newTrackerMinutesPerRep: string;
+  onNewTrackerMinutesPerRep: (value: string) => void;
   newTrackerHabitId: string | null;
   onNewTrackerHabitId: (id: string | null) => void;
   areas: any[];
@@ -1885,7 +1950,7 @@ function MainPanel({
   editingTrackerId: string | null;
   editingTrackerName: string | null;
   onEditingTrackerName: (name: string) => void;
-  onUpdateTracker: (id: string, updates: { name: string; areaId: string | null; projectId: string | null; skillIds: string[]; bodyLinks?: BodyLink[]; targetLevel: number; timesPerDay: number | null; habitId?: string | null }) => void;
+  onUpdateTracker: (id: string, updates: { name: string; areaId: string | null; projectId: string | null; skillIds: string[]; bodyLinks?: BodyLink[]; targetLevel: number; timesPerDay: number | null; minutesPerRep: number | null; habitId?: string | null }) => void;
   onSetEditingTrackerId: (id: string | null) => void;
   editingTrackerAreaId: string | null;
   onEditingTrackerAreaId: (id: string | null) => void;
@@ -1899,6 +1964,8 @@ function MainPanel({
   onEditingTrackerTargetLevel: (level: string) => void;
   editingTrackerTimesPerDay: string;
   onEditingTrackerTimesPerDay: (value: string) => void;
+  editingTrackerMinutesPerRep: string;
+  onEditingTrackerMinutesPerRep: (value: string) => void;
   editingTrackerHabitId: string | null;
   onEditingTrackerHabitId: (id: string | null) => void;
   editingSkillsForArea: any[];
@@ -1975,6 +2042,8 @@ function MainPanel({
                 onEditingTrackerTargetLevel={onEditingTrackerTargetLevel}
                 editingTrackerTimesPerDay={editingTrackerTimesPerDay}
                 onEditingTrackerTimesPerDay={onEditingTrackerTimesPerDay}
+                editingTrackerMinutesPerRep={editingTrackerMinutesPerRep}
+                onEditingTrackerMinutesPerRep={onEditingTrackerMinutesPerRep}
                 editingTrackerHabitId={editingTrackerHabitId}
                 onEditingTrackerHabitId={onEditingTrackerHabitId}
                 editingSkillsForArea={editingSkillsForArea}
@@ -2099,6 +2168,24 @@ function MainPanel({
                   </p>
                 </div>
 
+                {/* Minutes Per Rep */}
+                <div className="mb-4">
+                  <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
+                    Minutos por rewiring (opcional)
+                  </label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={newTrackerMinutesPerRep}
+                    onChange={(e) => onNewTrackerMinutesPerRep(e.target.value)}
+                    placeholder="Sin estimación"
+                    className="mt-2"
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Opcional: cuánto dura cada rewiring. Solo informativo, no cambia el progreso
+                  </p>
+                </div>
+
                 {/* Habit to confirm — solo para rewirings "veces por día" */}
                 {(() => {
                   const parsedTpd = Number(newTrackerTimesPerDay);
@@ -2165,6 +2252,7 @@ function MainPanel({
                       onNewTrackerBodyLinksChange([]);
                       onNewTrackerTargetLevel(String(DEFAULT_TARGET_LEVEL));
                       onNewTrackerTimesPerDay("");
+                      onNewTrackerMinutesPerRep("");
                       onNewTrackerHabitId(null);
                     }}
                     className="flex-1"
@@ -2315,6 +2403,13 @@ function DetailPanel({
         <div className="text-center text-sm text-muted-foreground">
           {progress.remainingText}
         </div>
+
+        {/* Minutos por rewiring — informativo */}
+        {data.minutesPerRep ? (
+          <div className="text-center text-xs text-muted-foreground">
+            ⏱ {data.minutesPerRep} min por rewiring
+          </div>
+        ) : null}
 
         {/* Register action button */}
         <motion.button

@@ -205,9 +205,10 @@ interface SourceBugRecord {
   bodyLinks?: BodyLink[];
   fecha: string;
   situacion: string;
-  senal: string;
+  disparador: string;
   estrategia: string;
   resultado: "victoria" | "empate" | "derrota";
+  nodeErrorRecordId?: string | null;
 }
 
 interface LinkedGlobalSkill {
@@ -368,13 +369,15 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
   const [bugStatus, setBugStatus] = useState<"identificado" | "debugueando" | "debugueado">("identificado");
   const [bugDesc, setBugDesc] = useState("");
   const [bugAparece, setBugAparece] = useState("");
-  const [bugDisparadores, setBugDisparadores] = useState("");
-  const [bugEstrategias, setBugEstrategias] = useState("");
   const [isBugRecordFormOpen, setIsBugRecordFormOpen] = useState(false);
   const [recordFecha, setRecordFecha] = useState(new Date().toISOString().slice(0, 10));
   const [recordSituacion, setRecordSituacion] = useState("");
-  const [recordSenal, setRecordSenal] = useState("");
+  const [recordDisparador, setRecordDisparador] = useState("");
   const [recordEstrategia, setRecordEstrategia] = useState("");
+  // "select" = elegir de la lista del bug; "new" = tipear uno nuevo (que se agrega a la lista
+  // del bug al guardar el registro). Nuevas estrategias/disparadores solo se cargan desde acá.
+  const [recordDisparadorMode, setRecordDisparadorMode] = useState<"select" | "new">("select");
+  const [recordEstrategiaMode, setRecordEstrategiaMode] = useState<"select" | "new">("select");
   const [recordSkillId, setRecordSkillId] = useState("");
   const [recordResultado, setRecordResultado] = useState<"victoria" | "empate" | "derrota">("victoria");
   const [editingBugRecord, setEditingBugRecord] = useState<SourceBugRecord | null>(null);
@@ -924,8 +927,8 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       status: "identificado" | "debugueando" | "debugueado";
       desc: string;
       aparece: string[];
-      disparadores: string[];
-      estrategias: string[];
+      disparadores?: string[];
+      estrategias?: string[];
       areaId?: string | null;
       projectId?: string | null;
     }) => {
@@ -947,8 +950,6 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       setBugStatus("identificado");
       setBugDesc("");
       setBugAparece("");
-      setBugDisparadores("");
-      setBugEstrategias("");
     },
   });
 
@@ -1014,7 +1015,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       data: {
         fecha: string;
         situacion: string;
-        senal: string;
+        disparador: string;
         estrategia: string;
         skillId?: string | null;
         resultado: "victoria" | "empate" | "derrota";
@@ -1062,7 +1063,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       setRecordContextMenuId(null);
       setRecordFecha(new Date().toISOString().slice(0, 10));
       setRecordSituacion("");
-      setRecordSenal("");
+      setRecordDisparador("");
       setRecordEstrategia("");
       setRecordSkillId("");
       setRecordResultado("victoria");
@@ -1078,7 +1079,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       data: {
         fecha?: string;
         situacion?: string;
-        senal?: string;
+        disparador?: string;
         estrategia?: string;
         skillId?: string | null;
         resultado?: "victoria" | "empate" | "derrota";
@@ -1124,7 +1125,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       setRecordContextMenuId(null);
       setRecordFecha(new Date().toISOString().slice(0, 10));
       setRecordSituacion("");
-      setRecordSenal("");
+      setRecordDisparador("");
       setRecordEstrategia("");
       setRecordSkillId("");
       setRecordResultado("victoria");
@@ -1371,8 +1372,6 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     setBugStatus("identificado");
     setBugDesc("");
     setBugAparece("");
-    setBugDisparadores("");
-    setBugEstrategias("");
     setIsBugFormOpen(true);
     setBugContextMenuId(null);
   };
@@ -1383,8 +1382,6 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     setBugStatus(bug.status);
     setBugDesc(bug.desc);
     setBugAparece(bug.aparece.join(", "));
-    setBugDisparadores(bug.disparadores.join(", "));
-    setBugEstrategias(bug.estrategias.join(", "));
     setIsBugFormOpen(true);
     setBugContextMenuId(null);
   };
@@ -1398,8 +1395,6 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       status: bugStatus,
       desc: bugDesc.trim(),
       aparece: parseBugList(bugAparece),
-      disparadores: parseBugList(bugDisparadores),
-      estrategias: parseBugList(bugEstrategias),
       areaId: sourceType === "area" ? sourceId : null,
       projectId: sourceType === "project" ? sourceId : null,
     };
@@ -1412,8 +1407,6 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
           status: payload.status,
           desc: payload.desc,
           aparece: payload.aparece,
-          disparadores: payload.disparadores,
-          estrategias: payload.estrategias,
         },
       });
       return;
@@ -1424,7 +1417,23 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
 
   const handleSaveBugRecord = () => {
     if (!selectedBugId) return;
-    if (!recordSituacion.trim() || !recordSenal.trim() || !recordEstrategia.trim()) return;
+    if (!recordSituacion.trim() || (!recordDisparador.trim() && !recordEstrategia.trim())) return;
+
+    // Un disparador/estrategia nuevo (tipeado, no elegido de la lista) se suma a la lista del
+    // bug para que quede disponible en el próximo registro.
+    const newDisparador = recordDisparadorMode === "new" && recordDisparador.trim() && selectedBug && !selectedBug.disparadores.includes(recordDisparador.trim())
+      ? recordDisparador.trim() : null;
+    const newEstrategia = recordEstrategiaMode === "new" && recordEstrategia.trim() && selectedBug && !selectedBug.estrategias.includes(recordEstrategia.trim())
+      ? recordEstrategia.trim() : null;
+    if ((newDisparador || newEstrategia) && selectedBug) {
+      updateBug.mutate({
+        id: selectedBug.id,
+        data: {
+          ...(newDisparador ? { disparadores: [...selectedBug.disparadores, newDisparador] } : {}),
+          ...(newEstrategia ? { estrategias: [...selectedBug.estrategias, newEstrategia] } : {}),
+        },
+      });
+    }
 
     if (editingBugRecord) {
       updateBugRecord.mutate({
@@ -1432,7 +1441,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
         data: {
           fecha: recordFecha,
           situacion: recordSituacion.trim(),
-          senal: recordSenal.trim(),
+          disparador: recordDisparador.trim(),
           estrategia: recordEstrategia.trim(),
           skillId: recordSkillId || null,
           resultado: recordResultado,
@@ -1446,7 +1455,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       data: {
         fecha: recordFecha,
         situacion: recordSituacion.trim(),
-        senal: recordSenal.trim(),
+        disparador: recordDisparador.trim(),
         estrategia: recordEstrategia.trim(),
         skillId: recordSkillId || null,
         resultado: recordResultado,
@@ -1507,7 +1516,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       setEditingBugRecord(null);
       setRecordFecha(new Date().toISOString().slice(0, 10));
       setRecordSituacion("");
-      setRecordSenal("");
+      setRecordDisparador("");
       setRecordEstrategia("");
       setRecordSkillId("");
       setRecordResultado("victoria");
@@ -1542,8 +1551,10 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
     setEditingBugRecord(record);
     setRecordFecha(record.fecha);
     setRecordSituacion(record.situacion);
-    setRecordSenal(record.senal);
+    setRecordDisparador(record.disparador ?? "");
     setRecordEstrategia(record.estrategia);
+    setRecordDisparadorMode(record.disparador && !(selectedBug?.disparadores ?? []).includes(record.disparador) ? "new" : "select");
+    setRecordEstrategiaMode(record.estrategia && !(selectedBug?.estrategias ?? []).includes(record.estrategia) ? "new" : "select");
     setRecordSkillId(record.skillId || "");
     setRecordResultado(record.resultado);
     setIsBugRecordFormOpen(true);
@@ -2300,8 +2311,10 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                             setEditingBugRecord(null);
                             setRecordFecha(new Date().toISOString().slice(0, 10));
                             setRecordSituacion("");
-                            setRecordSenal("");
+                            setRecordDisparador("");
                             setRecordEstrategia("");
+                            setRecordDisparadorMode("select");
+                            setRecordEstrategiaMode("select");
                             setRecordSkillId("");
                             setRecordResultado("victoria");
                             setIsBugRecordFormOpen(true);
@@ -2367,8 +2380,12 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                                 <p className="text-[11px] text-blue-500 mt-0.5">Skill: {registro.skillName}</p>
                               )}
                               <p className="text-xs mt-1"><span className="text-muted-foreground">Situación:</span> {registro.situacion}</p>
-                              <p className="text-xs"><span className="text-muted-foreground">Señal:</span> {registro.senal}</p>
-                              <p className="text-xs"><span className="text-muted-foreground">Estrategia:</span> {registro.estrategia}</p>
+                              {registro.disparador && (
+                                <p className="text-xs"><span className="text-muted-foreground">Disparador:</span> {registro.disparador}</p>
+                              )}
+                              {registro.estrategia && (
+                                <p className="text-xs"><span className="text-muted-foreground">Estrategia:</span> {registro.estrategia}</p>
+                              )}
                             </div>
                           ))
                         )}
@@ -2561,23 +2578,9 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
               />
             </div>
 
-            <div>
-              <Label htmlFor="bug-disparadores" className="text-sm font-medium mb-2 block">Disparadores (comas)</Label>
-              <Input
-                id="bug-disparadores"
-                value={bugDisparadores}
-                onChange={(e) => setBugDisparadores(e.target.value)}
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="bug-estrategias" className="text-sm font-medium mb-2 block">Estrategias (comas)</Label>
-              <Input
-                id="bug-estrategias"
-                value={bugEstrategias}
-                onChange={(e) => setBugEstrategias(e.target.value)}
-              />
-            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Los disparadores y estrategias se cargan desde los registros del bug.
+            </p>
 
             <div className="flex justify-end gap-2 pt-1">
               <Button variant="outline" onClick={() => setIsBugFormOpen(false)}>Cancelar</Button>
@@ -2595,8 +2598,10 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
             setEditingBugRecord(null);
             setRecordFecha(new Date().toISOString().slice(0, 10));
             setRecordSituacion("");
-            setRecordSenal("");
+            setRecordDisparador("");
             setRecordEstrategia("");
+            setRecordDisparadorMode("select");
+            setRecordEstrategiaMode("select");
             setRecordSkillId("");
             setRecordResultado("victoria");
           }
@@ -2628,21 +2633,68 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
             </div>
 
             <div>
-              <Label htmlFor="bug-record-senal" className="text-sm font-medium mb-2 block">Señal</Label>
-              <Input
-                id="bug-record-senal"
-                value={recordSenal}
-                onChange={(e) => setRecordSenal(e.target.value)}
-              />
+              <Label htmlFor="bug-record-disparador" className="text-sm font-medium mb-2 block">Disparador</Label>
+              <select
+                id="bug-record-disparador"
+                value={recordDisparadorMode === "new" ? "__new__" : recordDisparador}
+                onChange={(e) => {
+                  if (e.target.value === "__new__") {
+                    setRecordDisparadorMode("new");
+                    setRecordDisparador("");
+                  } else {
+                    setRecordDisparadorMode("select");
+                    setRecordDisparador(e.target.value);
+                  }
+                }}
+                className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="">Sin disparador</option>
+                {(selectedBug?.disparadores ?? []).map((item) => (
+                  <option key={item} value={item}>{item}</option>
+                ))}
+                <option value="__new__">＋ nuevo disparador</option>
+              </select>
+              {recordDisparadorMode === "new" && (
+                <Input
+                  className="mt-2"
+                  placeholder="Nuevo disparador"
+                  value={recordDisparador}
+                  onChange={(e) => setRecordDisparador(e.target.value)}
+                  autoFocus
+                />
+              )}
             </div>
 
             <div>
               <Label htmlFor="bug-record-estrategia" className="text-sm font-medium mb-2 block">Estrategia usada</Label>
-              <Input
+              <select
                 id="bug-record-estrategia"
-                value={recordEstrategia}
-                onChange={(e) => setRecordEstrategia(e.target.value)}
-              />
+                value={recordEstrategiaMode === "new" ? "__new__" : recordEstrategia}
+                onChange={(e) => {
+                  if (e.target.value === "__new__") {
+                    setRecordEstrategiaMode("new");
+                    setRecordEstrategia("");
+                  } else {
+                    setRecordEstrategiaMode("select");
+                    setRecordEstrategia(e.target.value);
+                  }
+                }}
+                className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="">Sin estrategia</option>
+                {(selectedBug?.estrategias ?? []).map((item) => (
+                  <option key={item} value={item}>{item}</option>
+                ))}
+                <option value="__new__">＋ nueva estrategia</option>
+              </select>
+              {recordEstrategiaMode === "new" && (
+                <Input
+                  className="mt-2"
+                  placeholder="Nueva estrategia"
+                  value={recordEstrategia}
+                  onChange={(e) => setRecordEstrategia(e.target.value)}
+                />
+              )}
             </div>
 
             <div>
@@ -2678,7 +2730,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
               <Button variant="outline" onClick={() => setIsBugRecordFormOpen(false)}>Cancelar</Button>
               <Button
                 onClick={handleSaveBugRecord}
-                disabled={!recordSituacion.trim() || !recordSenal.trim() || !recordEstrategia.trim()}
+                disabled={!recordSituacion.trim() || (!recordDisparador.trim() && !recordEstrategia.trim())}
               >
                 {editingBugRecord ? "Guardar cambios" : "Guardar registro"}
               </Button>

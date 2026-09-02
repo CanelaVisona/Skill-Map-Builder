@@ -68,6 +68,59 @@ async function verifySkillOwnership(skillOrId: string | { areaId: string | null;
   return false;
 }
 
+// A node still shows its generated name when its title is blank or "Nodo N".
+function isDefaultPlaceholderTitle(title: string | null | undefined): boolean {
+  const t = (title ?? "").trim();
+  return t === "" || /^Nodo \d+$/.test(t);
+}
+
+// When a node is moved into another level it should take the slot of one still-default
+// placeholder there instead of being appended on top of the full set, so the target
+// level keeps its node count (e.g. moved node + 5 defaults, not 7). Removes the last
+// (highest levelPosition) locked, default-named, non-skeleton node of the target level,
+// rewiring anything that depended on it onto its own dependencies (mirrors deleteSkill).
+// Returns a refreshed skill list when it removed one, otherwise the list as given.
+async function removeOneDefaultPlaceholder(
+  allSkills: any[],
+  targetLevel: number,
+  movedSkillId: string,
+  parentType: "area" | "project",
+  parentId: string,
+): Promise<any[]> {
+  const removable = allSkills
+    .filter(s =>
+      s.level === targetLevel &&
+      s.id !== movedSkillId &&
+      s.status === "locked" &&
+      s.isAutoComplete !== 1 &&
+      (s.levelPosition ?? 0) > 1 &&
+      isDefaultPlaceholderTitle(s.title)
+    )
+    .sort((a, b) => (b.levelPosition ?? 0) - (a.levelPosition ?? 0))[0];
+
+  if (!removable) return allSkills;
+
+  const inheritedDeps: string[] = Array.isArray(removable.dependencies) ? removable.dependencies : [];
+  const dependents = allSkills.filter(s =>
+    s.id !== removable.id &&
+    Array.isArray(s.dependencies) &&
+    s.dependencies.includes(removable.id)
+  );
+  for (const dep of dependents) {
+    const rewired = Array.from(new Set([
+      ...dep.dependencies.filter((d: string) => d !== removable.id),
+      ...inheritedDeps,
+    ]));
+    await storage.updateSkill(dep.id, { dependencies: rewired });
+  }
+
+  await storage.deleteSkill(removable.id);
+
+  return parentType === "area"
+    ? await storage.getSkills(parentId)
+    : await storage.getProjectSkills(parentId);
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -1246,12 +1299,19 @@ export async function registerRoutes(
         }
       }
 
-      // Move the skill to target level (don't delete any placeholders - append instead)
-      // This keeps all 6 placeholders + adds the moved skill = 7 total nodes
+      // Move the skill to target level.
       const movedSkill = await storage.updateSkill(req.params.id, {
         level: targetLevel,
         status: "locked"
       });
+
+      // Keep the target level's node count stable: the moved node takes the slot of
+      // one still-default placeholder ("" / "Nodo N", locked, not the level's skeleton)
+      // instead of being appended on top of all 6. E.g. moving a node into a level that
+      // still has its 6 default nodes leaves it with the moved node + 5 defaults, not 7.
+      // If the target level has no default placeholders left, nothing is removed and the
+      // level simply grows, same as before.
+      allSkills = await removeOneDefaultPlaceholder(allSkills, targetLevel, req.params.id, parentType, parentId);
 
       // Reposition remaining skills in ORIGINAL level with proportional spacing
       const originalLevelSkills = allSkills.filter(s => s.level === currentLevel);
@@ -1499,6 +1559,12 @@ export async function registerRoutes(
       // Move the skill itself: new level + carried-over status. levelPosition/y
       // get finalized below once we know where it lands in the target level.
       await storage.updateSkill(req.params.id, { level: targetLevel, status: newStatus });
+
+      // Keep the target level's node count stable: the moved node takes the slot of one
+      // still-default placeholder ("" / "Nodo N", locked, not the skeleton) instead of
+      // being appended on top of the existing set. Nothing is removed if the target
+      // level has no default placeholders left.
+      allSkills = await removeOneDefaultPlaceholder(allSkills, targetLevel, req.params.id, parentType, parentId);
 
       // Close the gap left in the source level. Y coordinates are recalculated
       // globally further down (recalculateYCoordinates) - here we only need
@@ -4397,7 +4463,24 @@ export async function registerRoutes(
         res.status(404).json({ message: "Error not found" });
         return;
       }
-      res.json(updated);
+
+      // Bugs y errores son lo mismo: al confirmar el error se crea (1:1) su bug de área/proyecto.
+      let bugId = updated.bugId ?? null;
+      if (req.body?.confirmed === 1 && !bugId) {
+        bugId = await storage.ensureNodeErrorBug(req.params.id);
+      }
+      // Estrategias/disparadores cargados desde el nodo se reflejan en el bug para poblar los
+      // desplegables del formulario de registro.
+      if (bugId) {
+        if (Array.isArray(req.body?.estrategias)) {
+          await storage.appendSourceBugListItems(bugId, "estrategias", req.body.estrategias);
+        }
+        if (Array.isArray(req.body?.disparadores)) {
+          await storage.appendSourceBugListItems(bugId, "disparadores", req.body.disparadores);
+        }
+      }
+
+      res.json(bugId && bugId !== updated.bugId ? { ...updated, bugId } : updated);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -4446,7 +4529,51 @@ export async function registerRoutes(
       const estrategia = delta === 10 ? rawEstrategia : null;
       const disparador = delta === -10 ? rawDisparador : null;
 
-      const { record, pointsBefore, pointsAfter } = await storage.createNodeErrorRecord(req.params.id, delta, req.userId, estrategia, disparador);
+      // Bugs y errores son lo mismo, y comparten UNA barra. Si el error ya tiene bug vinculado
+      // (siempre, una vez confirmado), el +10/-10 se guarda como registro (victoria/derrota) de
+      // ese bug y la barra sale de recalcular el bug -- exactamente igual que cargar la victoria/
+      // derrota a mano desde el bug. No se crea un node_error_record aparte (sería doble conteo).
+      let bugId = errorBefore.bugId ?? null;
+      if (!bugId && errorBefore.confirmed === 1) {
+        bugId = await storage.ensureNodeErrorBug(req.params.id);
+      }
+
+      let record: any;
+      let pointsBefore: number;
+      let pointsAfter: number;
+
+      if (bugId) {
+        // Fecha = la registrada en el nodo (skill.plannedDate); en su defecto, hoy.
+        let fecha = "";
+        if (errorBefore.skillId) {
+          const skill = await storage.getSkill(errorBefore.skillId);
+          fecha = skill?.plannedDate || "";
+        }
+        if (!fecha) fecha = new Date().toISOString().slice(0, 10);
+
+        pointsBefore = errorBefore.points ?? 0;
+        record = await storage.createSourceBugRecord({
+          bugId,
+          userId: req.userId ?? null,
+          fecha,
+          situacion: errorBefore.comoSi || errorBefore.nombre,
+          disparador: disparador ?? "",
+          estrategia: estrategia ?? "",
+          resultado: delta === 10 ? "victoria" : "derrota",
+        } as any);
+
+        if (estrategia) await storage.appendSourceBugListItems(bugId, "estrategias", [estrategia]);
+        if (disparador) await storage.appendSourceBugListItems(bugId, "disparadores", [disparador]);
+
+        // createSourceBugRecord ya recalculó el bug y espejó los puntos al node_error.
+        const errorAfter = await storage.getNodeError(req.params.id);
+        pointsAfter = errorAfter?.points ?? pointsBefore;
+      } else {
+        const res2 = await storage.createNodeErrorRecord(req.params.id, delta, req.userId, estrategia, disparador);
+        record = res2.record;
+        pointsBefore = res2.pointsBefore;
+        pointsAfter = res2.pointsAfter;
+      }
 
       // "Vencido": la barra llega a 50 cruzando desde abajo. Si ya estaba en 50 y se vuelve a
       // tocar 50 (p.ej. -10 y +10 seguidos) no se repite el pop-up.
@@ -4787,6 +4914,7 @@ export async function registerRoutes(
         habitId: req.body.habitId ?? null,
         ...(req.body.targetLevel !== undefined ? { targetLevel: req.body.targetLevel } : {}),
         ...(req.body.timesPerDay !== undefined ? { timesPerDay: req.body.timesPerDay } : {}),
+        ...(req.body.minutesPerRep !== undefined ? { minutesPerRep: req.body.minutesPerRep } : {}),
       };
 
       const updated = await storage.updateRewiringTracker(req.params.id, updateData as any);

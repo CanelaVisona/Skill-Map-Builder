@@ -93,7 +93,7 @@ function formatLocalDate(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-// Hoy, Mañana, then the 6 remaining weekday names in chronological order (starting the day
+// Ayer, Hoy, Mañana, then the 6 remaining weekday names in chronological order (starting the day
 // after tomorrow, wrapping around through next week up to — and including — today's own
 // weekday). The day that falls on "Mañana" is skipped since it would just repeat that
 // shortcut. E.g. if today is Tuesday: Hoy, Mañana, Jueves, Viernes, Sábado, Domingo, Lunes,
@@ -112,7 +112,12 @@ function getPlannedDateLabel(plannedDate: string | null | undefined): string | n
 function getQuickDateOptions(): QuickDateOption[] {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
   const options: QuickDateOption[] = [
+    { id: "ayer", label: "Ayer", value: formatLocalDate(yesterday) },
     { id: "hoy", label: "Hoy", value: formatLocalDate(today) },
   ];
 
@@ -739,7 +744,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [learningTitle, setLearningTitle] = useState("");
   const [learningSentence, setLearningSentence] = useState("");
   const [selectedPowerId, setSelectedPowerId] = useState<string | null>(null);
-  const [selectedBugId, setSelectedBugId] = useState<string | null>(null);
   
   const [hasIncompleteSubtasks, setHasIncompleteSubtasks] = useState(false);
   // Whether this node has a sub-skill tree at all (as opposed to hasIncompleteSubtasks being
@@ -1025,30 +1029,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     enabled: !!sourceType && !!sourceId,
   });
 
-  useEffect(() => {
-    if (sourceBugs.length === 0) {
-      setSelectedBugId(null);
-      return;
-    }
-
-    if (!selectedBugId || !sourceBugs.some((bug) => bug.id === selectedBugId)) {
-      setSelectedBugId(sourceBugs[0].id);
-    }
-  }, [sourceBugs, selectedBugId]);
-
-  const selectedBug = sourceBugs.find((bug) => bug.id === selectedBugId) || null;
-  const bugProgressCount = selectedBug?.status === "debugueado" ? 5 : Math.min(selectedBug?.victoryCount || 0, 5);
-
   const bugStatusLabel: Record<SkillNodeSourceBug["status"], string> = {
     identificado: "Identificado",
     debugueando: "Debugueando",
     debugueado: "Debugueado",
-  };
-
-  const bugStatusColor: Record<SkillNodeSourceBug["status"], string> = {
-    identificado: "bg-red-400",
-    debugueando: "bg-amber-400",
-    debugueado: "bg-emerald-400",
   };
 
   // ============ NODE ERRORS ("Errores" tab) ============
@@ -1061,6 +1045,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     comoSi: string;
     points: number;
     confirmed: 0 | 1;
+    bugId: string | null;
     estrategias: string[];
     disparadores: string[];
     // Skills/componentes EXTRA linkeados a este error (opcional) -- solo suman/crecen con un
@@ -1138,6 +1123,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
   const selectedNodeError = nodeErrorsList.find((error) => error.id === selectedErrorId) || null;
   const errorBar = selectedNodeError ? getErrorBarBlocks(selectedNodeError.points) : { color: "empty" as const, count: 0 };
+  // Bug de área/proyecto vinculado a este error (se crea al confirmarlo). Muestra su barra de
+  // victorias /5 + status debajo de la barra -50→50 del error.
+  const linkedBug = selectedNodeError?.bugId ? sourceBugs.find((bug) => bug.id === selectedNodeError.bugId) ?? null : null;
   // Acciones ya encoladas para el error seleccionado (Step 3, staged) -- solo se usan para
   // mostrar qué está "pendiente de registrar" (texto), NUNCA para mover la barra: esa sección
   // es solo de registro, la barra real no cambia hasta que el nodo se confirma (ver
@@ -1152,7 +1140,17 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       const res = await fetch("/api/node-errors", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ skillId: skill.id, nombre: data.nombre, comoSi: data.comoSi, estrategias: data.estrategias, disparadores: data.disparadores, skillIds: data.skillIds, bodyLinks: data.bodyLinks }),
+        body: JSON.stringify({
+          skillId: skill.id,
+          ...(sourceType === "area" && sourceId ? { areaId: sourceId } : {}),
+          ...(sourceType === "project" && sourceId ? { projectId: sourceId } : {}),
+          nombre: data.nombre,
+          comoSi: data.comoSi,
+          estrategias: data.estrategias,
+          disparadores: data.disparadores,
+          skillIds: data.skillIds,
+          bodyLinks: data.bodyLinks,
+        }),
       });
       if (!res.ok) {
         const error = await res.json();
@@ -1198,6 +1196,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     },
     onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: [`/api/node-errors/${skill.id}`] });
+      // El confirm crea el bug de área/proyecto vinculado -- refrescar su lista.
+      queryClient.invalidateQueries({ queryKey: [`/api/source-bugs/${sourceType}/${sourceId}`] });
       // runPopupQueue (no una llamada directa) para que respete si hay otro pop-up (de
       // cualquier familia) todavía en pantalla, en vez de solaparse con él.
       runPopupQueue([() => showErrorCelebration({ name: updated.nombre, kind: "detected" })]);
@@ -1234,6 +1234,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     // cualquier familia) que ya esté en pantalla.
     onSuccess: async (result, variables) => {
       queryClient.invalidateQueries({ queryKey: [`/api/node-errors/${skill.id}`] });
+      // Cada +10/-10 se vuelca como registro del bug vinculado -- refrescar su barra /5.
+      queryClient.invalidateQueries({ queryKey: [`/api/source-bugs/${sourceType}/${sourceId}`] });
 
       const targetError = nodeErrorsList.find((e) => e.id === variables.id);
 
@@ -3262,11 +3264,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 <TabsTrigger value="powers" className="shrink-0 text-xs" data-testid="feedback-tab-powers">
                   Poderes
                 </TabsTrigger>
-                <TabsTrigger value="bugs" className="shrink-0 text-xs" data-testid="feedback-tab-bugs">
-                  Bugs
-                </TabsTrigger>
                 <TabsTrigger value="errores" className="shrink-0 text-xs" data-testid="feedback-tab-errores">
-                  Errores
+                  Bugs
                 </TabsTrigger>
                 <TabsTrigger value="tools" className="shrink-0 text-xs" data-testid="feedback-tab-tools">
                   Tools
@@ -3525,67 +3524,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 </div>
               </TabsContent>
 
-              <TabsContent value="bugs" className="mt-4 space-y-3 flex flex-col flex-1">
-                <div className="flex-1 space-y-3">
-                  {sourceBugs.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No hay bugs registrados para este contexto todavía.</p>
-                  ) : (
-                    <>
-                      <div className="space-y-2">
-                        {sourceBugs.map((bug) => {
-                          const isSelected = selectedBugId === bug.id;
-                          return (
-                            <button
-                              key={bug.id}
-                              type="button"
-                              onClick={() => setSelectedBugId(bug.id)}
-                              className={cn(
-                                "w-full rounded-lg border p-3 text-left transition-colors",
-                                isSelected ? "border-primary/50 bg-primary/10" : "border-border/60 bg-muted/40 hover:bg-muted/60"
-                              )}
-                            >
-                              <div className="flex items-center justify-between gap-2">
-                                <p className="text-sm font-medium truncate">{bug.nombre}</p>
-                                <span className={`h-2 w-2 shrink-0 rounded-full ${bugStatusColor[bug.status]}`} />
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      {selectedBug && (
-                        <div className="rounded-lg border border-border/60 bg-muted/30 p-3 space-y-2">
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="text-sm font-medium">{selectedBug.nombre}</p>
-                            <span className="text-[11px] px-2 py-0.5 rounded border uppercase tracking-wide text-muted-foreground">
-                              {bugStatusLabel[selectedBug.status]}
-                            </span>
-                          </div>
-                          {selectedBug.desc && (
-                            <p className="text-sm text-muted-foreground">{selectedBug.desc}</p>
-                          )}
-                          <div>
-                            <div className="flex items-center justify-end mb-1">
-                              <p className="text-[11px] text-muted-foreground">{bugProgressCount} / 5</p>
-                            </div>
-                            <div className="w-full h-2.5 flex gap-0.5">
-                              {Array.from({ length: 5 }).map((_, index) => (
-                                <div
-                                  key={index}
-                                  className={`flex-1 h-full rounded-sm transition-colors duration-300 ${
-                                    index < bugProgressCount ? "bg-emerald-500" : "bg-muted"
-                                  }`}
-                                />
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              </TabsContent>
-
               <TabsContent value="errores" className="mt-4 space-y-3 flex flex-col flex-1">
                 {isAddingNodeError ? (
                   <div className="flex-1 space-y-3 overflow-y-auto">
@@ -3786,6 +3724,15 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                                     +10p
                                   </Button>
                                 </div>
+
+                                {linkedBug && (
+                                  <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-2 mt-1">
+                                    <span className="text-[11px] uppercase tracking-wide text-muted-foreground">Bug</span>
+                                    <span className="text-[11px] px-2 py-0.5 rounded border uppercase tracking-wide text-muted-foreground">
+                                      {bugStatusLabel[linkedBug.status]}
+                                    </span>
+                                  </div>
+                                )}
                               </>
                             )}
                           </div>
@@ -4357,7 +4304,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                     </TabsTrigger>
                     <TabsTrigger value="errores" className="text-xs" data-testid="step3-tab-errores">
                       <OctagonAlert className="h-3 w-3 mr-1" />
-                      Errores
+                      Bugs
                     </TabsTrigger>
                   </TabsList>
 
@@ -4467,10 +4414,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                       <div className="flex-1 space-y-3">
                         <Label className="text-[11px] text-muted-foreground uppercase tracking-wide block">Nuevo poder</Label>
                         <Input
-                          placeholder="TITLE"
+                          placeholder="Título"
                           value={newPowerName}
-                          onChange={(e) => setNewPowerName(e.target.value.toUpperCase())}
-                          className="uppercase border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
+                          onChange={(e) => setNewPowerName(e.target.value)}
+                          className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
                           data-testid="step3-input-new-power-name"
                           autoFocus
                         />

@@ -2,8 +2,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import type { PointerEvent as ReactPointerEvent, CSSProperties } from "react";
 import { useTheme } from "next-themes";
 import { Check, ShoppingCart, Lock } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
 import { playProgressAdvanceSound } from "@/lib/sound";
+import { HouseCelebration, HOUSE_CELEBRATION_MS, type HouseCelebrationState } from "./HouseCelebration";
 
 export const HOUSE_STORAGE_KEY = "skill-map-house-inventory-v1";
 
@@ -1036,7 +1036,6 @@ export default function HouseInventory({
   const { theme, resolvedTheme } = useTheme();
   const isDark = (resolvedTheme || theme) === "dark";
   const colors = getHouseColors(isDark);
-  const { toast } = useToast();
 
   const [groupFilter, setGroupFilter] = useState<"Todas" | HouseGroup>("Todas");
   const [isAddFormOpen, setIsAddFormOpen] = useState(false);
@@ -1045,10 +1044,13 @@ export default function HouseInventory({
   const [editForm, setEditForm] = useState<ItemFormState>(EMPTY_FORM);
   const [celebratingId, setCelebratingId] = useState<number | null>(null);
   const celebrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [celebration, setCelebration] = useState<HouseCelebrationState | null>(null);
+  const houseCelebrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     return () => {
       if (celebrationTimerRef.current) clearTimeout(celebrationTimerRef.current);
+      if (houseCelebrationTimerRef.current) clearTimeout(houseCelebrationTimerRef.current);
     };
   }, []);
 
@@ -1138,12 +1140,14 @@ export default function HouseInventory({
 
     if (boughtItem) {
       playProgressAdvanceSound();
-      toast({ title: `¡Sumaste ${boughtItem.name}! 🎉`, description: "Ya es parte de tu casa." });
+      setCelebration({ kind: "compra", name: boughtItem.name });
+      if (houseCelebrationTimerRef.current) clearTimeout(houseCelebrationTimerRef.current);
+      houseCelebrationTimerRef.current = setTimeout(() => setCelebration(null), HOUSE_CELEBRATION_MS);
       setCelebratingId(id);
       if (celebrationTimerRef.current) clearTimeout(celebrationTimerRef.current);
       celebrationTimerRef.current = setTimeout(() => setCelebratingId(null), 900);
     }
-  }, [items, setItems, toast]);
+  }, [items, setItems]);
 
   const editingItem = editingId !== null ? items.find((i) => i.id === editingId) ?? null : null;
   const visibleGroups = groupFilter === "Todas" ? groupsPresent : groupsPresent.filter((g) => g === groupFilter);
@@ -1157,6 +1161,8 @@ export default function HouseInventory({
 
   return (
     <>
+      <HouseCelebration celebration={celebration} />
+
       <style>{`
         .house-card { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: manipulation; transition: transform 0.15s ease, box-shadow 0.15s ease; }
         .house-card:hover { transform: translateY(-1px); }

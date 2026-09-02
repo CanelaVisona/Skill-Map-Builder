@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useTheme } from "next-themes";
 import { Check, ChevronUp, ChevronDown, ChevronsDown, ChevronsUp, Lock, Trash2, Wrench } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
 import { playProgressAdvanceSound } from "@/lib/sound";
 import { getHouseColors, useLongPress } from "./HouseInventory";
 import HouseEditPopup, { houseEditInputStyle } from "./HouseEditPopup";
+import { HouseCelebration, HOUSE_CELEBRATION_MS, type HouseCelebrationState } from "./HouseCelebration";
 
 const REPAIRS_STORAGE_KEY = "skill-map-house-repairs-v1";
 
@@ -249,13 +249,133 @@ function RepairRow({
   );
 }
 
+// Fila de un arreglo ya resuelto. El tacho de basura no se muestra siempre: aparece
+// solo tras un long press sobre la fila (y se vuelve a esconder solo a los 3s), para
+// que la lista de "Arreglados" no quede llena de botones de borrar a la vista.
+function DoneRepairRow({
+  repair,
+  colors,
+  isDark,
+  onReopen,
+  onDelete,
+}: {
+  repair: HouseRepair;
+  colors: Record<string, string>;
+  isDark: boolean;
+  onReopen: (id: number) => void;
+  onDelete: (id: number) => void;
+}) {
+  const [showDelete, setShowDelete] = useState(false);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    };
+  }, []);
+
+  const revealDelete = useCallback(() => {
+    setShowDelete(true);
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    hideTimerRef.current = setTimeout(() => setShowDelete(false), 3000);
+  }, []);
+
+  const longPress = useLongPress<HTMLDivElement>(revealDelete, { delay: 500 });
+
+  return (
+    <div
+      onPointerDown={longPress.onPointerDown}
+      onPointerMove={longPress.onPointerMove}
+      onPointerUp={longPress.onPointerUp}
+      onPointerCancel={longPress.onPointerCancel}
+      onPointerLeave={longPress.onPointerLeave}
+      onContextMenu={(e) => e.preventDefault()}
+      title="Mantené apretado para eliminar"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "10px",
+        padding: "8px 12px",
+        borderRadius: "10px",
+        border: isDark ? "1px solid #1e2d1e" : "1px solid #e2e8f0",
+        opacity: 0.6,
+        userSelect: "none",
+        WebkitUserSelect: "none",
+        touchAction: "manipulation",
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => onReopen(repair.id)}
+        onPointerDown={(e) => e.stopPropagation()}
+        aria-label="Marcar como pendiente"
+        title="Toca para reabrir"
+        style={{
+          width: "20px",
+          height: "20px",
+          borderRadius: "50%",
+          border: "none",
+          background: "linear-gradient(135deg, #16a34a, #22c55e)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: "pointer",
+          flexShrink: 0,
+          padding: 0,
+        }}
+      >
+        <Check size={11} color="#052e16" strokeWidth={3} />
+      </button>
+      <span
+        style={{
+          flex: 1,
+          minWidth: 0,
+          fontSize: "12px",
+          fontWeight: 600,
+          color: colors.subtitle,
+          textDecoration: "line-through",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {repair.text}
+      </span>
+      {showDelete && (
+        <button
+          type="button"
+          onClick={() => onDelete(repair.id)}
+          onPointerDown={(e) => e.stopPropagation()}
+          aria-label="Eliminar arreglo"
+          style={{
+            width: "22px",
+            height: "22px",
+            borderRadius: "6px",
+            border: "none",
+            background: "transparent",
+            color: isDark ? "#7f1d1d" : "#b91c1c",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+          }}
+        >
+          <Trash2 size={12} />
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function HouseRepairsList() {
   const { theme, resolvedTheme } = useTheme();
   const isDark = (resolvedTheme || theme) === "dark";
   const colors = getHouseColors(isDark);
-  const { toast } = useToast();
 
   const [repairs, setRepairs] = useState<HouseRepair[]>(() => loadStoredRepairs());
+  const [celebration, setCelebration] = useState<HouseCelebrationState | null>(null);
+  const celebrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [remoteLoaded, setRemoteLoaded] = useState(false);
   const [remoteSyncEnabled, setRemoteSyncEnabled] = useState(true);
   const [expanded, setExpanded] = useState(false);
@@ -310,6 +430,12 @@ export default function HouseRepairsList() {
   }, [repairs]);
 
   useEffect(() => {
+    return () => {
+      if (celebrationTimerRef.current) clearTimeout(celebrationTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!remoteLoaded || !remoteSyncEnabled) return;
 
     if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
@@ -358,8 +484,10 @@ export default function HouseRepairsList() {
 
     setRepairs((prev) => prev.map((r) => (r.id === id ? { ...r, done: true } : r)));
     playProgressAdvanceSound();
-    toast({ title: `¡Arreglaste "${target.text}"! 🎉`, description: "Un problema menos en tu casa." });
-  }, [repairs, toast]);
+    setCelebration({ kind: "arreglo", name: target.text });
+    if (celebrationTimerRef.current) clearTimeout(celebrationTimerRef.current);
+    celebrationTimerRef.current = setTimeout(() => setCelebration(null), HOUSE_CELEBRATION_MS);
+  }, [repairs]);
 
   const reopenRepair = useCallback((id: number) => {
     setRepairs((prev) => prev.map((r) => (r.id === id ? { ...r, done: false } : r)));
@@ -413,6 +541,8 @@ export default function HouseRepairsList() {
       onPointerLeave={backgroundLongPress.onPointerLeave}
       onContextMenu={(e) => e.preventDefault()}
     >
+      <HouseCelebration celebration={celebration} />
+
       <p style={{ color: colors.subtitle, fontSize: "11px", marginBottom: "12px" }}>
         Solo el primer arreglo esta desbloqueado. Usa las flechas para cambiar el orden de prioridad -- al marcarlo arreglado, el siguiente se desbloquea. Long press en el fondo para anotar un arreglo nuevo, o sobre un arreglo para editarlo o eliminarlo.
       </p>
@@ -581,75 +711,14 @@ export default function HouseRepairsList() {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
             {done.map((repair) => (
-              <div
+              <DoneRepairRow
                 key={repair.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "10px",
-                  padding: "8px 12px",
-                  borderRadius: "10px",
-                  border: isDark ? "1px solid #1e2d1e" : "1px solid #e2e8f0",
-                  opacity: 0.6,
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => reopenRepair(repair.id)}
-                  aria-label="Marcar como pendiente"
-                  title="Toca para reabrir"
-                  style={{
-                    width: "20px",
-                    height: "20px",
-                    borderRadius: "50%",
-                    border: "none",
-                    background: "linear-gradient(135deg, #16a34a, #22c55e)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    cursor: "pointer",
-                    flexShrink: 0,
-                    padding: 0,
-                  }}
-                >
-                  <Check size={11} color="#052e16" strokeWidth={3} />
-                </button>
-                <span
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    fontSize: "12px",
-                    fontWeight: 600,
-                    color: colors.subtitle,
-                    textDecoration: "line-through",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {repair.text}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => deleteRepair(repair.id)}
-                  aria-label="Eliminar arreglo"
-                  style={{
-                    width: "22px",
-                    height: "22px",
-                    borderRadius: "6px",
-                    border: "none",
-                    background: "transparent",
-                    color: isDark ? "#7f1d1d" : "#b91c1c",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexShrink: 0,
-                  }}
-                >
-                  <Trash2 size={12} />
-                </button>
-              </div>
+                repair={repair}
+                colors={colors}
+                isDark={isDark}
+                onReopen={reopenRepair}
+                onDelete={deleteRepair}
+              />
             ))}
           </div>
         </div>

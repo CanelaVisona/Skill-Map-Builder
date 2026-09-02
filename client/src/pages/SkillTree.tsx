@@ -26,7 +26,7 @@ import HouseInventory, { useHouseInventoryItems } from "../components/HouseInven
 import HousePriorityList from "../components/HousePriorityList";
 import HouseRepairsList from "../components/HouseRepairsList";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Utensils, Swords, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt, OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation } from "lucide-react";
+import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Utensils, Swords, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt, OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation, Bug, BugOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -38,7 +38,8 @@ import { BodyGainPopupProvider, useBodyGainPopup } from "@/lib/body-gain-popup-c
 import { BugProgressPopupProvider, useBugProgressPopup } from "@/lib/bug-progress-popup-context";
 import { ErrorProgressPopupProvider } from "@/lib/error-progress-popup-context";
 import { ErrorCelebrationProvider } from "@/lib/error-celebration-context";
-import type { BugProgressSnapshot } from "@/components/BugProgressPopup";
+import { BUG_POPUP_VISIBLE_MS, type BugProgressSnapshot } from "@/components/BugProgressPopup";
+import { POPUP_VISIBLE_MS } from "@/lib/popup-coordinator";
 import { LevelUpCelebrationProvider } from "@/lib/level-up-celebration-context";
 import { PowerCelebrationProvider } from "@/lib/power-celebration-context";
 import { TodayProgressPopupProvider } from "@/lib/today-progress-popup-context";
@@ -371,7 +372,7 @@ interface SourceBugRecord {
   bodyLinks?: BodyLink[];
   fecha: string;
   situacion: string;
-  senal: string;
+  disparador: string;
   estrategia: string;
   resultado: "victoria" | "empate" | "derrota";
 }
@@ -6811,13 +6812,31 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
   const recordItemLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [recordFecha, setRecordFecha] = useState(new Date().toISOString().slice(0, 10));
   const [recordSituacion, setRecordSituacion] = useState("");
-  const [recordSenal, setRecordSenal] = useState("");
+  const [recordDisparador, setRecordDisparador] = useState("");
   const [recordEstrategia, setRecordEstrategia] = useState("");
+  // "select" = elegir de la lista del bug; "new" = tipear uno nuevo (se agrega a la lista del bug).
+  const [recordDisparadorMode, setRecordDisparadorMode] = useState<"select" | "new">("select");
+  const [recordEstrategiaMode, setRecordEstrategiaMode] = useState<"select" | "new">("select");
   const [recordSkillIds, setRecordSkillIds] = useState<string[]>([]);
   const [recordBodyLinks, setRecordBodyLinks] = useState<BodyLink[]>([]);
   const [recordResultado, setRecordResultado] = useState<"victoria" | "empate" | "derrota">("victoria");
   const [expandedAreaId, setExpandedAreaId] = useState<string | null>(null);
   const [recordFormError, setRecordFormError] = useState<string | null>(null);
+
+  // Bugs y errores son lo mismo: todo registro de bug hace crecer SIEMPRE la flexibilidad
+  // mental (mente/flex), igual que un +10/-10 de un error de nodo. Ese pop-up va PRIMERO; recién
+  // cuando termina aparece el de progreso del bug, y después se corre `afterBug` (XP de skills,
+  // cuerpo linkeado, etc.).
+  const growMentalFlexThenBug = (snapshot: BugProgressSnapshot, afterBug: () => void) => {
+    const { before, after } = addBodyBlock("mente", "flex");
+    hideXpPopup();
+    showBodyGainPopup({ zone: "mente", dimension: "flex", before, after });
+    window.setTimeout(() => {
+      hideBodyGainPopup();
+      showBugProgressPopup(snapshot);
+      window.setTimeout(afterBug, BUG_POPUP_VISIBLE_MS);
+    }, POPUP_VISIBLE_MS + 250);
+  };
 
   const growLinkedBody = (links: BodyLink[], xpPopupsShown: number) => {
     links.forEach((link, index) => {
@@ -6924,7 +6943,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
       data: {
         fecha: string;
         situacion: string;
-        senal: string;
+        disparador: string;
         estrategia: string;
         skillId?: string | null;
         skillIds?: string[];
@@ -6947,17 +6966,19 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
       await queryClient.invalidateQueries({ queryKey: ["all-area-bugs"] });
       await queryClient.invalidateQueries({ predicate: (query) => (query.queryKey[0] as string)?.startsWith?.("/api/global-skills/") });
 
-      // El pop-up de progreso del bug va primero en la cola, así que los que ya
-      // existían (XP de skills, crecimiento de cuerpo) arrancan después en vez de
-      // solaparse con él.
+      // Orden de los pop-ups: (1) flexibilidad mental, (2) progreso del bug, (3) lo que ya
+      // existía (XP de skills, crecimiento de cuerpo linkeado). Cada uno espera a que el
+      // anterior termine en vez de solaparse.
       const runXpAndBodyPopups = () => {
         const xpPopupsShown = showBugRecordXpAwards(createdRecord?.xpAwards, true);
         growLinkedBody(Array.isArray(createdRecord?.bodyLinks) ? createdRecord.bodyLinks : [], xpPopupsShown);
       };
 
       if (createdRecord?.bugProgress) {
-        showBugProgressPopup({ ...createdRecord.bugProgress, resultado: variables.data.resultado });
-        window.setTimeout(runXpAndBodyPopups, 1800);
+        growMentalFlexThenBug(
+          { ...createdRecord.bugProgress, resultado: variables.data.resultado },
+          runXpAndBodyPopups,
+        );
       } else {
         runXpAndBodyPopups();
       }
@@ -6966,7 +6987,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
       setIsRecordFormOpen(false);
       setRecordFecha(new Date().toISOString().slice(0, 10));
       setRecordSituacion("");
-      setRecordSenal("");
+      setRecordDisparador("");
       setRecordEstrategia("");
       setRecordSkillIds([]);
       setRecordBodyLinks([]);
@@ -6986,7 +7007,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
       data: {
         fecha?: string;
         situacion?: string;
-        senal?: string;
+        disparador?: string;
         estrategia?: string;
         skillId?: string | null;
         skillIds?: string[];
@@ -7010,8 +7031,10 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
       await queryClient.invalidateQueries({ predicate: (query) => (query.queryKey[0] as string)?.startsWith?.("/api/global-skills/") });
 
       if (updatedRecord?.bugProgress && variables.data.resultado) {
-        showBugProgressPopup({ ...updatedRecord.bugProgress, resultado: variables.data.resultado });
-        window.setTimeout(() => showBugRecordXpAwards(updatedRecord?.xpAwards, false), 1800);
+        growMentalFlexThenBug(
+          { ...updatedRecord.bugProgress, resultado: variables.data.resultado },
+          () => showBugRecordXpAwards(updatedRecord?.xpAwards, false),
+        );
       } else {
         showBugRecordXpAwards(updatedRecord?.xpAwards, false);
       }
@@ -7021,7 +7044,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
       setIsRecordFormOpen(false);
       setRecordFecha(new Date().toISOString().slice(0, 10));
       setRecordSituacion("");
-      setRecordSenal("");
+      setRecordDisparador("");
       setRecordEstrategia("");
       setRecordSkillIds([]);
       setRecordResultado("victoria");
@@ -7051,7 +7074,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
         setEditingRecordId(null);
         setRecordFecha(new Date().toISOString().slice(0, 10));
         setRecordSituacion("");
-        setRecordSenal("");
+        setRecordDisparador("");
         setRecordEstrategia("");
         setRecordSkillIds([]);
         setRecordResultado("victoria");
@@ -7068,7 +7091,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
       setExpandedAreaId(null);
       setRecordFecha(new Date().toISOString().slice(0, 10));
       setRecordSituacion("");
-      setRecordSenal("");
+      setRecordDisparador("");
       setRecordEstrategia("");
       setRecordResultado("victoria");
       setRecordFormError(null);
@@ -7108,11 +7131,27 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
 
   const handleCreateRecord = () => {
     if (!selectedBug) return;
-    if (!recordFecha.trim() || !recordSituacion.trim() || !recordSenal.trim() || !recordEstrategia.trim()) {
-      setRecordFormError("Completá fecha, situación, señal y estrategia para poder guardar el registro.");
+    if (!recordFecha.trim() || !recordSituacion.trim() || (!recordDisparador.trim() && !recordEstrategia.trim())) {
+      setRecordFormError("Completá fecha, situación y al menos un disparador o estrategia.");
       return;
     }
     setRecordFormError(null);
+
+    // Un disparador/estrategia nuevo (tipeado) se agrega a la lista del bug para el próximo registro.
+    const newDisparador = recordDisparadorMode === "new" && recordDisparador.trim() && !selectedBug.disparadores.includes(recordDisparador.trim())
+      ? recordDisparador.trim() : null;
+    const newEstrategia = recordEstrategiaMode === "new" && recordEstrategia.trim() && !selectedBug.estrategias.includes(recordEstrategia.trim())
+      ? recordEstrategia.trim() : null;
+    if (newDisparador || newEstrategia) {
+      fetch(`/api/source-bugs/${selectedBug.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(newDisparador ? { disparadores: [...selectedBug.disparadores, newDisparador] } : {}),
+          ...(newEstrategia ? { estrategias: [...selectedBug.estrategias, newEstrategia] } : {}),
+        }),
+      }).then(() => queryClient.invalidateQueries({ queryKey: ["all-area-bugs"] })).catch(() => {});
+    }
 
     if (editingRecordId) {
       updateBugRecord.mutate({
@@ -7120,7 +7159,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
         data: {
           fecha: recordFecha,
           situacion: recordSituacion.trim(),
-          senal: recordSenal.trim(),
+          disparador: recordDisparador.trim(),
           estrategia: recordEstrategia.trim(),
           skillId: recordSkillIds[0] ?? null,
           skillIds: recordSkillIds,
@@ -7136,7 +7175,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
       data: {
         fecha: recordFecha,
         situacion: recordSituacion.trim(),
-        senal: recordSenal.trim(),
+        disparador: recordDisparador.trim(),
         estrategia: recordEstrategia.trim(),
         skillId: recordSkillIds[0] ?? null,
         skillIds: recordSkillIds,
@@ -7153,8 +7192,10 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
     setIsRecordFormOpen(true);
     setRecordFecha(record.fecha);
     setRecordSituacion(record.situacion);
-    setRecordSenal(record.senal);
+    setRecordDisparador(record.disparador ?? "");
     setRecordEstrategia(record.estrategia);
+    setRecordDisparadorMode(record.disparador && !(selectedBug?.disparadores ?? []).includes(record.disparador) ? "new" : "select");
+    setRecordEstrategiaMode(record.estrategia && !(selectedBug?.estrategias ?? []).includes(record.estrategia) ? "new" : "select");
     setRecordSkillIds(record.skillIds?.length ? record.skillIds : record.skillId ? [record.skillId] : []);
     setRecordBodyLinks(Array.isArray(record.bodyLinks) ? record.bodyLinks : []);
     setRecordResultado(record.resultado);
@@ -7166,8 +7207,10 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
     setIsRecordFormOpen(false);
     setRecordFecha(new Date().toISOString().slice(0, 10));
     setRecordSituacion("");
-    setRecordSenal("");
+    setRecordDisparador("");
     setRecordEstrategia("");
+    setRecordDisparadorMode("select");
+    setRecordEstrategiaMode("select");
     setRecordSkillIds([]);
     setRecordBodyLinks([]);
     setRecordResultado("victoria");
@@ -7180,7 +7223,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
     setIsRecordFormOpen(true);
     setRecordFecha(new Date().toISOString().slice(0, 10));
     setRecordSituacion("");
-    setRecordSenal("");
+    setRecordDisparador("");
     setRecordEstrategia("");
     setRecordSkillIds([]);
     setRecordBodyLinks([]);
@@ -7369,8 +7412,12 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
                                 Skills: {(registro.skillNames?.length ? registro.skillNames : [registro.skillName]).join(", ")}
                               </p>
                             )}
-                            <p className="text-xs break-words"><span className="text-muted-foreground">Senal:</span> {registro.senal}</p>
-                            <p className="text-xs break-words"><span className="text-muted-foreground">Estrategia:</span> {registro.estrategia}</p>
+                            {registro.disparador && (
+                              <p className="text-xs break-words"><span className="text-muted-foreground">Disparador:</span> {registro.disparador}</p>
+                            )}
+                            {registro.estrategia && (
+                              <p className="text-xs break-words"><span className="text-muted-foreground">Estrategia:</span> {registro.estrategia}</p>
+                            )}
                           </article>
                         ))
                       )}
@@ -7435,13 +7482,36 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
                       />
                     </div>
                     <div>
-                      <Label htmlFor="global-record-senal" className="text-xs text-muted-foreground">Senal</Label>
-                      <Textarea
-                        id="global-record-senal"
-                        rows={2}
-                        value={recordSenal}
-                        onChange={(e) => setRecordSenal(e.target.value)}
-                      />
+                      <Label htmlFor="global-record-disparador" className="text-xs text-muted-foreground">Disparador</Label>
+                      <select
+                        id="global-record-disparador"
+                        value={recordDisparadorMode === "new" ? "__new__" : recordDisparador}
+                        onChange={(e) => {
+                          if (e.target.value === "__new__") {
+                            setRecordDisparadorMode("new");
+                            setRecordDisparador("");
+                          } else {
+                            setRecordDisparadorMode("select");
+                            setRecordDisparador(e.target.value);
+                          }
+                        }}
+                        className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                      >
+                        <option value="">Sin disparador</option>
+                        {(selectedBug?.disparadores ?? []).map((item) => (
+                          <option key={item} value={item}>{item}</option>
+                        ))}
+                        <option value="__new__">＋ nuevo disparador</option>
+                      </select>
+                      {recordDisparadorMode === "new" && (
+                        <Textarea
+                          className="mt-2"
+                          rows={2}
+                          placeholder="Nuevo disparador"
+                          value={recordDisparador}
+                          onChange={(e) => setRecordDisparador(e.target.value)}
+                        />
+                      )}
                     </div>
                     <div>
                       <Label htmlFor="global-record-skill" className="text-xs text-muted-foreground">Skills linkeados</Label>
@@ -7458,12 +7528,35 @@ function AllAreaBugsModalWrapper({ open, onOpenChange }: { open: boolean; onOpen
 
                     <div>
                       <Label htmlFor="global-record-estrategia" className="text-xs text-muted-foreground">Estrategia</Label>
-                      <Textarea
+                      <select
                         id="global-record-estrategia"
-                        rows={2}
-                        value={recordEstrategia}
-                        onChange={(e) => setRecordEstrategia(e.target.value)}
-                      />
+                        value={recordEstrategiaMode === "new" ? "__new__" : recordEstrategia}
+                        onChange={(e) => {
+                          if (e.target.value === "__new__") {
+                            setRecordEstrategiaMode("new");
+                            setRecordEstrategia("");
+                          } else {
+                            setRecordEstrategiaMode("select");
+                            setRecordEstrategia(e.target.value);
+                          }
+                        }}
+                        className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                      >
+                        <option value="">Sin estrategia</option>
+                        {(selectedBug?.estrategias ?? []).map((item) => (
+                          <option key={item} value={item}>{item}</option>
+                        ))}
+                        <option value="__new__">＋ nueva estrategia</option>
+                      </select>
+                      {recordEstrategiaMode === "new" && (
+                        <Textarea
+                          className="mt-2"
+                          rows={2}
+                          placeholder="Nueva estrategia"
+                          value={recordEstrategia}
+                          onChange={(e) => setRecordEstrategia(e.target.value)}
+                        />
+                      )}
                     </div>
 
                     {recordFormError && (
@@ -7928,6 +8021,216 @@ function QuestDiary() {
     };
   };
 
+  // ============ BUGS (icon-tabs "Bugs" y "Debugueados") ============
+  // Bugs y errores son lo mismo: la fuente unificada es source_bugs (por área/proyecto). Cada
+  // error de nodo, al confirmarse, crea su bug acá. La tab "Bugs" lista todos; "Debugueados",
+  // solo los de status "debugueado".
+  interface JournalBug {
+    id: string;
+    areaId: string | null;
+    projectId: string | null;
+    nombre: string;
+    desc: string;
+    status: "identificado" | "debugueando" | "debugueado";
+    victoryCount: number;
+  }
+
+  const bugAreaQueries = useQueries({
+    queries: areas.map((area) => ({
+      queryKey: [`/api/source-bugs/area/${area.id}`],
+      queryFn: async () => {
+        const res = await fetch(`/api/source-bugs/area/${area.id}`);
+        if (!res.ok) throw new Error("Failed to fetch bugs");
+        return res.json() as Promise<JournalBug[]>;
+      },
+      enabled: isDiaryOpen,
+    })),
+  });
+
+  const bugProjectQueries = useQueries({
+    queries: projects.map((project) => ({
+      queryKey: [`/api/source-bugs/project/${project.id}`],
+      queryFn: async () => {
+        const res = await fetch(`/api/source-bugs/project/${project.id}`);
+        if (!res.ok) throw new Error("Failed to fetch bugs");
+        return res.json() as Promise<JournalBug[]>;
+      },
+      enabled: isDiaryOpen,
+    })),
+  });
+
+  interface BugQuestGroup {
+    key: string;
+    name: string;
+    areaId: string | null;
+    projectId: string | null;
+    bugs: JournalBug[];
+  }
+
+  const bugQuestGroups: BugQuestGroup[] = React.useMemo(() => {
+    return [
+      ...areas.map((area, index) => ({
+        key: `area-${area.id}`,
+        name: area.name,
+        areaId: area.id,
+        projectId: null as string | null,
+        bugs: (bugAreaQueries[index]?.data ?? []) as JournalBug[],
+      })),
+      ...projects.map((project, index) => ({
+        key: `project-${project.id}`,
+        name: project.name,
+        areaId: null as string | null,
+        projectId: project.id as string | null,
+        bugs: (bugProjectQueries[index]?.data ?? []) as JournalBug[],
+      })),
+    ];
+  }, [areas, projects, bugAreaQueries, bugProjectQueries]);
+
+  const invalidateBugQuests = () => {
+    areas.forEach((area) => queryClient.invalidateQueries({ queryKey: [`/api/source-bugs/area/${area.id}`] }));
+    projects.forEach((project) => queryClient.invalidateQueries({ queryKey: [`/api/source-bugs/project/${project.id}`] }));
+  };
+
+  const [selectedJournalBugId, setSelectedJournalBugId] = useState<string | null>(null);
+  const [addBugTarget, setAddBugTarget] = useState<{ key: string; name: string; areaId: string | null; projectId: string | null } | null>(null);
+  const [newJournalBugName, setNewJournalBugName] = useState("");
+  const [newJournalBugDesc, setNewJournalBugDesc] = useState("");
+  const journalBugAddLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const createJournalBug = useMutation({
+    mutationFn: async (data: { nombre: string; desc: string; areaId: string | null; projectId: string | null }) => {
+      const res = await fetch("/api/source-bugs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nombre: data.nombre,
+          desc: data.desc,
+          ...(data.areaId ? { areaId: data.areaId } : {}),
+          ...(data.projectId ? { projectId: data.projectId } : {}),
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to create bug");
+      return res.json();
+    },
+    onSuccess: () => {
+      invalidateBugQuests();
+      setAddBugTarget(null);
+      setNewJournalBugName("");
+      setNewJournalBugDesc("");
+    },
+  });
+
+  const handleCreateJournalBug = () => {
+    const finalName = newJournalBugName.trim();
+    if (!finalName || !addBugTarget || createJournalBug.isPending) return;
+    createJournalBug.mutate({ nombre: finalName, desc: newJournalBugDesc.trim(), areaId: addBugTarget.areaId, projectId: addBugTarget.projectId });
+  };
+
+  const startJournalBugAddLongPress = (group: BugQuestGroup) => (e: React.TouchEvent | React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("button")) return;
+    e.stopPropagation();
+    journalBugAddLongPressTimer.current = setTimeout(() => {
+      setNewJournalBugName("");
+      setNewJournalBugDesc("");
+      setAddBugTarget({ key: group.key, name: group.name, areaId: group.areaId, projectId: group.projectId });
+    }, 500);
+  };
+
+  const endJournalBugAddLongPress = () => {
+    if (journalBugAddLongPressTimer.current) {
+      clearTimeout(journalBugAddLongPressTimer.current);
+      journalBugAddLongPressTimer.current = null;
+    }
+  };
+
+  const [editingJournalBug, setEditingJournalBug] = useState<JournalBug | null>(null);
+  const [editJournalBugNombre, setEditJournalBugNombre] = useState("");
+  const [editJournalBugDesc, setEditJournalBugDesc] = useState("");
+  const journalBugEditLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const journalBugLongPressCompleted = useRef(false);
+
+  const startJournalBugEditLongPress = (bug: JournalBug) => (e: React.TouchEvent | React.MouseEvent) => {
+    e.stopPropagation();
+    journalBugLongPressCompleted.current = false;
+    journalBugEditLongPressTimer.current = setTimeout(() => {
+      journalBugLongPressCompleted.current = true;
+      setEditingJournalBug(bug);
+      setEditJournalBugNombre(bug.nombre);
+      setEditJournalBugDesc(bug.desc);
+    }, 500);
+  };
+
+  const endJournalBugEditLongPress = () => {
+    if (journalBugEditLongPressTimer.current) {
+      clearTimeout(journalBugEditLongPressTimer.current);
+      journalBugEditLongPressTimer.current = null;
+    }
+  };
+
+  const updateJournalBug = useMutation({
+    mutationFn: async ({ id, nombre, desc }: { id: string; nombre: string; desc: string }) => {
+      const res = await fetch(`/api/source-bugs/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nombre, desc }),
+      });
+      if (!res.ok) throw new Error("Failed to update bug");
+      return res.json();
+    },
+    onSuccess: () => {
+      invalidateBugQuests();
+      setEditingJournalBug(null);
+    },
+  });
+
+  const deleteJournalBug = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/source-bugs/${id}`, { method: "DELETE" });
+      if (!res.ok && res.status !== 204) throw new Error("Failed to delete bug");
+    },
+    onSuccess: (_data, id) => {
+      invalidateBugQuests();
+      setEditingJournalBug(null);
+      setSelectedJournalBugId((current) => (current === id ? null : current));
+    },
+  });
+
+  const handleSaveJournalBug = () => {
+    if (!editingJournalBug) return;
+    const finalName = editJournalBugNombre.trim();
+    if (!finalName || updateJournalBug.isPending) return;
+    updateJournalBug.mutate({ id: editingJournalBug.id, nombre: finalName, desc: editJournalBugDesc.trim() });
+  };
+
+  const handleDeleteJournalBug = () => {
+    if (!editingJournalBug || deleteJournalBug.isPending) return;
+    deleteJournalBug.mutate(editingJournalBug.id);
+  };
+
+  // Mismo esqueleto que renderErrorState: "identificado" = pendiente (apagado), "debugueado" =
+  // resuelto (glow verde), "debugueando" = en progreso (verde tenue).
+  const renderBugState = (status: JournalBug["status"]) => {
+    if (status === "identificado") {
+      return {
+        cardClass: "border-white/7 text-[#5a5648]",
+        chipClass: "bg-white/[0.03] border-white/10",
+        iconColorClass: "text-[#5a5648]",
+        showPending: true,
+        showGlow: false,
+        backgroundClass: "bg-[#0f0b07]",
+      };
+    }
+    const done = status === "debugueado";
+    return {
+      cardClass: done ? "border-[#10B981] text-[#6EE7B7]" : "border-[#10B981]/40 text-[#6EE7B7]/80",
+      chipClass: done ? "bg-gradient-to-b from-[#6EE7B7] to-[#10B981] border-transparent" : "bg-[#10B981]/10 border-[#10B981]/30",
+      iconColorClass: done ? "text-[#052e21]" : "text-[#10B981]",
+      showPending: false,
+      showGlow: done,
+      backgroundClass: done ? "bg-[#04231a]" : "bg-[#0a1f18]",
+    };
+  };
+
   const createCharacter = useMutation({
     mutationFn: async (data: { name: string; action: string; description: string }) => {
       const res = await fetch("/api/journal/characters", {
@@ -8098,8 +8401,11 @@ function QuestDiary() {
               <TabsTrigger value="powers" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-powers" title="Poderes">
                 <Swords className="h-5 w-5" />
               </TabsTrigger>
-              <TabsTrigger value="errores" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-errores" title="Errores">
-                <OctagonAlert className="h-5 w-5" />
+              <TabsTrigger value="errores" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-errores" title="Bugs">
+                <Bug className="h-5 w-5" />
+              </TabsTrigger>
+              <TabsTrigger value="debugueados" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-debugueados" title="Debugueados">
+                <BugOff className="h-5 w-5" />
               </TabsTrigger>
               <TabsTrigger value="body" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-body" title="Fuerza">
                 <BicepsFlexed className="h-5 w-5" />
@@ -8300,19 +8606,19 @@ function QuestDiary() {
                 <div className="flex h-full flex-col gap-4">
                   <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
                     <p className="text-sm text-muted-foreground">
-                      Aquí aparecen todos los errores de tus nodos, áreas y proyectos. Mantené presionado el fondo de un quest para agregar uno directo a esa área/proyecto.
+                      Acá aparecen todos los bugs de tus áreas y proyectos (incluidos los que nacen de un error de nodo al confirmarlo). Mantené presionado el fondo de un quest para agregar uno directo a esa área/proyecto.
                     </p>
                   </div>
 
-                  {errorQuestGroups.length === 0 ? (
+                  {bugQuestGroups.length === 0 ? (
                     <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-border/70 bg-muted/10 p-6 text-center text-sm text-muted-foreground">
                       Todavía no tienes áreas o proyectos.
                     </div>
                   ) : (
                     <div className="flex-1 space-y-4 overflow-y-auto pr-1">
-                      <Accordion type="multiple" className="space-y-2" defaultValue={errorQuestGroups.map((group) => group.key)}>
-                        {errorQuestGroups.map((group) => {
-                          const isAddingHere = addErrorTarget?.key === group.key;
+                      <Accordion type="multiple" className="space-y-2" defaultValue={bugQuestGroups.map((group) => group.key)}>
+                        {bugQuestGroups.map((group) => {
+                          const isAddingHere = addBugTarget?.key === group.key;
                           const canAddHere = !!(group.areaId || group.projectId);
 
                           return (
@@ -8320,30 +8626,30 @@ function QuestDiary() {
                               <AccordionTrigger className="px-3 py-2 text-left hover:no-underline">
                                 <div className="flex items-center gap-2">
                                   <span className="font-medium">{group.name}</span>
-                                  <span className="text-xs text-muted-foreground">({group.errors.length})</span>
+                                  <span className="text-xs text-muted-foreground">({group.bugs.length})</span>
                                 </div>
                               </AccordionTrigger>
                               <AccordionContent className="px-3 pb-3">
                                 {isAddingHere ? (
                                   <div className="space-y-2">
-                                    <Label className="text-[11px] text-muted-foreground uppercase tracking-wide block">Nuevo error en {group.name}</Label>
+                                    <Label className="text-[11px] text-muted-foreground uppercase tracking-wide block">Nuevo bug en {group.name}</Label>
                                     <Input
                                       placeholder="NOMBRE"
-                                      value={newJournalErrorName}
-                                      onChange={(e) => setNewJournalErrorName(e.target.value.toUpperCase())}
+                                      value={newJournalBugName}
+                                      onChange={(e) => setNewJournalBugName(e.target.value.toUpperCase())}
                                       className="uppercase"
                                       autoFocus
-                                      data-testid="journal-input-new-error-name"
+                                      data-testid="journal-input-new-bug-name"
                                     />
                                     <div className="space-y-1.5">
-                                      <Label className="text-[11px] text-muted-foreground uppercase tracking-wide block">¿Cómo sí?</Label>
+                                      <Label className="text-[11px] text-muted-foreground uppercase tracking-wide block">Descripción</Label>
                                       <Textarea
-                                        placeholder="En vez del error, ¿cómo sería la situación que sí querés?"
-                                        value={newJournalErrorComoSi}
-                                        onChange={(e) => setNewJournalErrorComoSi(e.target.value)}
+                                        placeholder="¿Qué patrón/comportamiento es este bug?"
+                                        value={newJournalBugDesc}
+                                        onChange={(e) => setNewJournalBugDesc(e.target.value)}
                                         rows={2}
                                         className="resize-none"
-                                        data-testid="journal-input-new-error-como-si"
+                                        data-testid="journal-input-new-bug-desc"
                                       />
                                     </div>
                                     <div className="flex justify-end items-center gap-2">
@@ -8351,67 +8657,66 @@ function QuestDiary() {
                                         type="button"
                                         variant="ghost"
                                         size="sm"
-                                        onClick={() => setAddErrorTarget(null)}
-                                        data-testid="journal-button-cancel-new-error"
+                                        onClick={() => setAddBugTarget(null)}
+                                        data-testid="journal-button-cancel-new-bug"
                                       >
                                         Cancelar
                                       </Button>
                                       <Button
                                         type="button"
                                         size="sm"
-                                        onClick={handleCreateJournalError}
-                                        disabled={!newJournalErrorName.trim() || createJournalNodeError.isPending}
-                                        data-testid="journal-button-create-error"
+                                        onClick={handleCreateJournalBug}
+                                        disabled={!newJournalBugName.trim() || createJournalBug.isPending}
+                                        data-testid="journal-button-create-bug"
                                       >
                                         <Plus className="h-3 w-3 mr-1" />
-                                        Crear error
+                                        Crear bug
                                       </Button>
                                     </div>
                                   </div>
                                 ) : (
                                   <div
                                     className="min-h-[52px]"
-                                    onTouchStart={canAddHere ? startJournalErrorAddLongPress(group) : undefined}
-                                    onTouchEnd={canAddHere ? endJournalErrorAddLongPress : undefined}
-                                    onTouchCancel={canAddHere ? endJournalErrorAddLongPress : undefined}
-                                    onMouseDown={canAddHere ? startJournalErrorAddLongPress(group) : undefined}
-                                    onMouseUp={canAddHere ? endJournalErrorAddLongPress : undefined}
-                                    onMouseLeave={canAddHere ? endJournalErrorAddLongPress : undefined}
+                                    onTouchStart={canAddHere ? startJournalBugAddLongPress(group) : undefined}
+                                    onTouchEnd={canAddHere ? endJournalBugAddLongPress : undefined}
+                                    onTouchCancel={canAddHere ? endJournalBugAddLongPress : undefined}
+                                    onMouseDown={canAddHere ? startJournalBugAddLongPress(group) : undefined}
+                                    onMouseUp={canAddHere ? endJournalBugAddLongPress : undefined}
+                                    onMouseLeave={canAddHere ? endJournalBugAddLongPress : undefined}
                                   >
-                                    {group.errors.length === 0 ? (
+                                    {group.bugs.length === 0 ? (
                                       <p className="text-xs text-muted-foreground">
-                                        {canAddHere ? "Sin errores todavía. Mantené presionado acá para agregar uno." : "Sin errores."}
+                                        {canAddHere ? "Sin bugs todavía. Mantené presionado acá para agregar uno." : "Sin bugs."}
                                       </p>
                                     ) : (
                                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                        {group.errors.map((error) => {
-                                          const state = renderErrorState(error);
-                                          const ErrorIcon = getErrorIcon(error.id);
-                                          const isSelected = selectedJournalErrorId === error.id;
-                                          const vencido = error.confirmed === 1 && error.points >= 50;
-                                          const bar = getErrorBarBlocks(error.points);
+                                        {group.bugs.map((bug) => {
+                                          const state = renderBugState(bug.status);
+                                          const BugIcon = getErrorIcon(bug.id);
+                                          const isSelected = selectedJournalBugId === bug.id;
+                                          const count = bug.status === "debugueado" ? 5 : Math.min(bug.victoryCount || 0, 5);
 
                                           return (
                                             <button
-                                              key={error.id}
+                                              key={bug.id}
                                               type="button"
                                               onClick={() => {
-                                                if (journalErrorLongPressCompleted.current) {
-                                                  journalErrorLongPressCompleted.current = false;
+                                                if (journalBugLongPressCompleted.current) {
+                                                  journalBugLongPressCompleted.current = false;
                                                   return;
                                                 }
-                                                setSelectedJournalErrorId((current) => current === error.id ? null : error.id);
+                                                setSelectedJournalBugId((current) => current === bug.id ? null : bug.id);
                                               }}
-                                              onTouchStart={startJournalErrorEditLongPress(error)}
-                                              onTouchEnd={endJournalErrorEditLongPress}
-                                              onTouchCancel={endJournalErrorEditLongPress}
-                                              onMouseDown={startJournalErrorEditLongPress(error)}
-                                              onMouseUp={endJournalErrorEditLongPress}
-                                              onMouseLeave={endJournalErrorEditLongPress}
+                                              onTouchStart={startJournalBugEditLongPress(bug)}
+                                              onTouchEnd={endJournalBugEditLongPress}
+                                              onTouchCancel={endJournalBugEditLongPress}
+                                              onMouseDown={startJournalBugEditLongPress(bug)}
+                                              onMouseUp={endJournalBugEditLongPress}
+                                              onMouseLeave={endJournalBugEditLongPress}
                                               className={`relative flex min-h-[60px] w-full items-start gap-2 overflow-hidden rounded-lg border p-2 text-left text-xs font-medium transition-all ${state.cardClass} ${state.backgroundClass}`}
                                             >
                                               <span className={`relative flex h-8 w-8 flex-none items-center justify-center rounded-md border ${state.chipClass}`}>
-                                                <ErrorIcon className={`h-4 w-4 ${state.iconColorClass}`} />
+                                                <BugIcon className={`h-4 w-4 ${state.iconColorClass}`} />
                                                 {state.showPending && (
                                                   <span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full border border-white/15 bg-[#1D1911]">
                                                     <CircleAlert className="h-2 w-2 text-[#7A7161]" />
@@ -8419,29 +8724,25 @@ function QuestDiary() {
                                                 )}
                                               </span>
                                               <div className="min-w-0 flex-1">
-                                                <p className="truncate">{error.nombre}</p>
+                                                <p className="truncate">{bug.nombre}</p>
                                                 {isSelected && (
                                                   <>
                                                     <p className="mt-1 text-[11px] leading-snug text-muted-foreground break-words">
-                                                      {error.confirmed === 0 ? "Pendiente de confirmar" : `${Math.abs(error.points)} / 50${error.points < 0 ? " (en contra)" : ""}${vencido ? " · Vencido" : ""}`}
+                                                      {bug.status === "identificado" ? "Identificado" : bug.status === "debugueado" ? "Debugueado" : "Debugueando"} · {count} / 5
                                                     </p>
-                                                    {error.confirmed === 1 && (
-                                                      <div className="mt-1.5 w-full h-2 flex gap-0.5">
-                                                        {Array.from({ length: 5 }).map((_, index) => (
-                                                          <div
-                                                            key={index}
-                                                            className={`flex-1 h-full rounded-sm ${
-                                                              index < bar.count ? (bar.color === "red" ? "bg-red-500" : "bg-emerald-500") : "bg-white/10"
-                                                            }`}
-                                                          />
-                                                        ))}
-                                                      </div>
-                                                    )}
+                                                    <div className="mt-1.5 w-full h-2 flex gap-0.5">
+                                                      {Array.from({ length: 5 }).map((_, index) => (
+                                                        <div
+                                                          key={index}
+                                                          className={`flex-1 h-full rounded-sm ${index < count ? "bg-emerald-500" : "bg-white/10"}`}
+                                                        />
+                                                      ))}
+                                                    </div>
                                                   </>
                                                 )}
                                               </div>
                                               {state.showGlow && (
-                                                <div className="pointer-events-none absolute inset-0 rounded-lg bg-[linear-gradient(135deg,rgba(249,115,22,0.2)_0%,rgba(194,65,12,0.06)_100%)]" />
+                                                <div className="pointer-events-none absolute inset-0 rounded-lg bg-[linear-gradient(135deg,rgba(16,185,129,0.2)_0%,rgba(5,150,105,0.06)_100%)]" />
                                               )}
                                             </button>
                                           );
@@ -8460,6 +8761,67 @@ function QuestDiary() {
                 </div>
               </TabsContent>
 
+              <TabsContent value="debugueados" className="flex-1 min-h-0 min-w-0 mt-0">
+                <div className="flex h-full flex-col gap-4">
+                  <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
+                    <p className="text-sm text-muted-foreground">
+                      Bugs ya debugueados (barra de victorias en 5/5).
+                    </p>
+                  </div>
+
+                  {(() => {
+                    const doneGroups = bugQuestGroups
+                      .map((group) => ({ ...group, bugs: group.bugs.filter((bug) => bug.status === "debugueado") }))
+                      .filter((group) => group.bugs.length > 0);
+
+                    if (doneGroups.length === 0) {
+                      return (
+                        <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-border/70 bg-muted/10 p-6 text-center text-sm text-muted-foreground">
+                          Todavía no debugueaste ningún bug.
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="flex-1 space-y-4 overflow-y-auto pr-1">
+                        <Accordion type="multiple" className="space-y-2" defaultValue={doneGroups.map((group) => group.key)}>
+                          {doneGroups.map((group) => (
+                            <AccordionItem key={group.key} value={group.key} className="rounded-lg border border-border/50 bg-background/70">
+                              <AccordionTrigger className="px-3 py-2 text-left hover:no-underline">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium">{group.name}</span>
+                                  <span className="text-xs text-muted-foreground">({group.bugs.length})</span>
+                                </div>
+                              </AccordionTrigger>
+                              <AccordionContent className="px-3 pb-3">
+                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                  {group.bugs.map((bug) => {
+                                    const state = renderBugState("debugueado");
+                                    const BugIcon = getErrorIcon(bug.id);
+                                    return (
+                                      <div
+                                        key={bug.id}
+                                        className={`relative flex min-h-[52px] w-full items-center gap-2 overflow-hidden rounded-lg border p-2 text-left text-xs font-medium ${state.cardClass} ${state.backgroundClass}`}
+                                      >
+                                        <span className={`relative flex h-8 w-8 flex-none items-center justify-center rounded-md border ${state.chipClass}`}>
+                                          <BugIcon className={`h-4 w-4 ${state.iconColorClass}`} />
+                                        </span>
+                                        <p className="min-w-0 flex-1 truncate">{bug.nombre}</p>
+                                        <div className="pointer-events-none absolute inset-0 rounded-lg bg-[linear-gradient(135deg,rgba(16,185,129,0.2)_0%,rgba(5,150,105,0.06)_100%)]" />
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </AccordionContent>
+                            </AccordionItem>
+                          ))}
+                        </Accordion>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </TabsContent>
+
               <TabsContent value="profile" className="flex-1 min-h-0 min-w-0 mt-0">
                 <ProfileSection />
               </TabsContent>
@@ -8473,54 +8835,54 @@ function QuestDiary() {
       </DialogContent>
     </Dialog>
 
-    {/* Mantener presionada una tarjeta de error (tab "Errores") abre esto: editar el nombre o
-        borrarlo directamente. */}
-    <Dialog open={!!editingJournalError} onOpenChange={(open) => { if (!open) setEditingJournalError(null); }}>
+    {/* Mantener presionada una tarjeta de bug (tab "Bugs") abre esto: editar nombre/descripción
+        o borrarlo directamente. */}
+    <Dialog open={!!editingJournalBug} onOpenChange={(open) => { if (!open) setEditingJournalBug(null); }}>
       <DialogContent className="sm:max-w-[400px] border-0 shadow-2xl">
         <DialogHeader>
-          <DialogTitle className="text-lg font-medium">Editar error</DialogTitle>
+          <DialogTitle className="text-lg font-medium">Editar bug</DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            Cambiá el nombre o borralo del todo.
+            Cambiá el nombre/descripción o borralo del todo.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div>
             <Label className="text-xs text-muted-foreground uppercase tracking-wide block mb-1">Nombre</Label>
             <Input
-              value={editJournalErrorNombre}
-              onChange={(e) => setEditJournalErrorNombre(e.target.value.toUpperCase())}
+              value={editJournalBugNombre}
+              onChange={(e) => setEditJournalBugNombre(e.target.value.toUpperCase())}
               className="uppercase border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
-              data-testid="input-edit-journal-error-name"
+              data-testid="input-edit-journal-bug-name"
               autoFocus
             />
           </div>
           <div>
-            <Label className="text-xs text-muted-foreground uppercase tracking-wide block mb-1">¿Cómo sí?</Label>
+            <Label className="text-xs text-muted-foreground uppercase tracking-wide block mb-1">Descripción</Label>
             <Textarea
-              placeholder="En vez del error, ¿cómo sería la situación que sí querés?"
-              value={editJournalErrorComoSi}
-              onChange={(e) => setEditJournalErrorComoSi(e.target.value)}
+              placeholder="¿Qué patrón/comportamiento es este bug?"
+              value={editJournalBugDesc}
+              onChange={(e) => setEditJournalBugDesc(e.target.value)}
               rows={2}
               className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
-              data-testid="input-edit-journal-error-como-si"
+              data-testid="input-edit-journal-bug-desc"
             />
           </div>
         </div>
         <DialogFooter className="flex gap-2 pt-2 sm:justify-between">
           <Button
             variant="destructive"
-            onClick={handleDeleteJournalError}
-            disabled={deleteJournalNodeError.isPending}
-            data-testid="button-delete-journal-error"
+            onClick={handleDeleteJournalBug}
+            disabled={deleteJournalBug.isPending}
+            data-testid="button-delete-journal-bug"
           >
             <Trash2 className="h-3.5 w-3.5 mr-1" />
             Borrar
           </Button>
           <Button
-            onClick={handleSaveJournalError}
-            disabled={!editJournalErrorNombre.trim() || updateJournalNodeError.isPending}
+            onClick={handleSaveJournalBug}
+            disabled={!editJournalBugNombre.trim() || updateJournalBug.isPending}
             className="border-0"
-            data-testid="button-save-journal-error"
+            data-testid="button-save-journal-bug"
           >
             Guardar
           </Button>

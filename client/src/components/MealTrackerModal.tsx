@@ -24,10 +24,6 @@ interface Dish {
   name: string;
   components: DishComponent[];
 }
-// Categorías que un plato puede combinar. Se intersecan con las categorías reales de cada
-// comida: en las principales da proteína/vegetales/carbo, en las livianas proteína/carbo.
-const DISH_CAT_KEYS = ["proteina", "vegetales", "carbos"];
-
 interface CatDef {
   key: string;
   label: string;
@@ -258,10 +254,14 @@ export function MealTrackerModal({ open, onOpenChange }: MealTrackerModalProps) 
   const [addValue, setAddValue] = useState("");
   const [notification, setNotification] = useState<string | null>(null);
   const today = useMemo(() => getLocalDateString(), []);
+  // Día que se está viendo/editando. Por defecto hoy; se puede retroceder para corregir días
+  // anteriores (las flechas del encabezado o "Editar este día" desde el calendario).
+  const [selectedDate, setSelectedDate] = useState(today);
+  const isToday = selectedDate === today;
 
   const { data: day } = useQuery<DayData>({
-    queryKey: ["/api/meal-tracker/today", today],
-    queryFn: () => fetchJson(`/api/meal-tracker/today?date=${today}`),
+    queryKey: ["/api/meal-tracker/today", selectedDate],
+    queryFn: () => fetchJson(`/api/meal-tracker/today?date=${selectedDate}`),
     enabled: open,
   });
 
@@ -283,8 +283,9 @@ export function MealTrackerModal({ open, onOpenChange }: MealTrackerModalProps) 
       setActiveMealId(null);
       setAddCatKey(null);
       setAddValue("");
+      setSelectedDate(today);
     }
-  }, [open]);
+  }, [open, today]);
 
   useEffect(() => {
     if (notification) {
@@ -295,14 +296,15 @@ export function MealTrackerModal({ open, onOpenChange }: MealTrackerModalProps) 
 
   const meals: MealsState = day?.meals || {};
   const activeMeal = MEALS.find((m) => m.id === activeMealId) || null;
-  const curIdx = currentMealIndex();
+  // En días anteriores no hay comidas "bloqueadas": se pueden editar las cuatro.
+  const curIdx = isToday ? currentMealIndex() : MEALS.length - 1;
 
   const toggleItem = async (meal: MealDef, catKey: string, item: string) => {
     const updated = await fetchJson("/api/meal-tracker/toggle", {
       method: "POST",
-      body: JSON.stringify({ date: today, mealId: meal.id, categoryKey: catKey, item }),
+      body: JSON.stringify({ date: selectedDate, mealId: meal.id, categoryKey: catKey, item }),
     });
-    queryClient.setQueryData(["/api/meal-tracker/today", today], (prev: DayData | undefined) => ({
+    queryClient.setQueryData(["/api/meal-tracker/today", selectedDate], (prev: DayData | undefined) => ({
       ...(prev as DayData),
       meals: updated.meals,
     }));
@@ -313,9 +315,9 @@ export function MealTrackerModal({ open, onOpenChange }: MealTrackerModalProps) 
     if (!name || !activeMeal || !addCatKey) return;
     const result = await fetchJson("/api/meal-tracker/custom-option", {
       method: "POST",
-      body: JSON.stringify({ date: today, mealId: activeMeal.id, mealKind: activeMeal.kind, categoryKey: addCatKey, name }),
+      body: JSON.stringify({ date: selectedDate, mealId: activeMeal.id, mealKind: activeMeal.kind, categoryKey: addCatKey, name }),
     });
-    queryClient.setQueryData(["/api/meal-tracker/today", today], (prev: DayData | undefined) => ({
+    queryClient.setQueryData(["/api/meal-tracker/today", selectedDate], (prev: DayData | undefined) => ({
       ...(prev as DayData),
       meals: result.day.meals,
     }));
@@ -329,9 +331,9 @@ export function MealTrackerModal({ open, onOpenChange }: MealTrackerModalProps) 
   const applyDish = async (meal: MealDef, dish: Dish, active: boolean) => {
     const updated = await fetchJson("/api/meal-tracker/apply-dish", {
       method: "POST",
-      body: JSON.stringify({ date: today, mealId: meal.id, components: dish.components, active }),
+      body: JSON.stringify({ date: selectedDate, mealId: meal.id, components: dish.components, active }),
     });
-    queryClient.setQueryData(["/api/meal-tracker/today", today], (prev: DayData | undefined) => ({
+    queryClient.setQueryData(["/api/meal-tracker/today", selectedDate], (prev: DayData | undefined) => ({
       ...(prev as DayData),
       meals: updated.meals,
     }));
@@ -366,18 +368,20 @@ export function MealTrackerModal({ open, onOpenChange }: MealTrackerModalProps) 
     if (nowRegistered && !day.regCelebrated?.[activeMeal.id]) {
       await fetchJson("/api/meal-tracker/mark-registered", {
         method: "POST",
-        body: JSON.stringify({ date: today, mealId: activeMeal.id }),
+        body: JSON.stringify({ date: selectedDate, mealId: activeMeal.id }),
       });
       setNotification(`¡Registraste tu ${activeMeal.label.toLowerCase()}! 🌱`);
     }
-    if (coreComplete(meals) && !day.celebrated) {
+    // La celebración de "día completo" (y su racha) solo corre para hoy: completar un día
+    // anterior no debe reescribir la racha actual. Los tildes igual quedan guardados.
+    if (isToday && coreComplete(meals) && !day.celebrated) {
       const result = await fetchJson("/api/meal-tracker/complete-day", {
         method: "POST",
-        body: JSON.stringify({ date: today }),
+        body: JSON.stringify({ date: selectedDate }),
       });
       if (result.celebrated) {
         setNotification(`¡Día completo! 🎉 Racha: ${result.streak} días`);
-        queryClient.setQueryData(["/api/meal-tracker/today", today], (prev: DayData | undefined) => ({
+        queryClient.setQueryData(["/api/meal-tracker/today", selectedDate], (prev: DayData | undefined) => ({
           ...(prev as DayData),
           celebrated: true,
           streak: result.streak,
@@ -392,9 +396,9 @@ export function MealTrackerModal({ open, onOpenChange }: MealTrackerModalProps) 
     if (!activeMeal) return;
     const result = await fetchJson("/api/meal-tracker/custom-option", {
       method: "DELETE",
-      body: JSON.stringify({ date: today, mealKind: activeMeal.kind, categoryKey: catKey, name: item }),
+      body: JSON.stringify({ date: selectedDate, mealKind: activeMeal.kind, categoryKey: catKey, name: item }),
     });
-    queryClient.setQueryData(["/api/meal-tracker/today", today], (prev: DayData | undefined) => ({
+    queryClient.setQueryData(["/api/meal-tracker/today", selectedDate], (prev: DayData | undefined) => ({
       ...(prev as DayData),
       meals: result.day ? result.day.meals : (prev as DayData)?.meals,
     }));
@@ -403,9 +407,12 @@ export function MealTrackerModal({ open, onOpenChange }: MealTrackerModalProps) 
   };
 
   const resetDay = async () => {
-    if (!confirm("¿Reiniciar el día? Se destildan todas las comidas de hoy. Tus opciones agregadas se conservan.")) return;
-    const updated = await fetchJson("/api/meal-tracker/reset-day", { method: "POST", body: JSON.stringify({ date: today }) });
-    queryClient.setQueryData(["/api/meal-tracker/today", today], (prev: DayData | undefined) => ({
+    const msg = isToday
+      ? "¿Reiniciar el día? Se destildan todas las comidas de hoy. Tus opciones agregadas se conservan."
+      : "¿Reiniciar este día? Se destildan todas las comidas de esa fecha. Tus opciones agregadas se conservan.";
+    if (!confirm(msg)) return;
+    const updated = await fetchJson("/api/meal-tracker/reset-day", { method: "POST", body: JSON.stringify({ date: selectedDate }) });
+    queryClient.setQueryData(["/api/meal-tracker/today", selectedDate], (prev: DayData | undefined) => ({
       ...(prev as DayData),
       meals: updated.meals,
       regCelebrated: updated.regCelebrated,
@@ -443,6 +450,10 @@ export function MealTrackerModal({ open, onOpenChange }: MealTrackerModalProps) 
               meals={meals}
               needs={needs}
               curIdx={curIdx}
+              selectedDate={selectedDate}
+              isToday={isToday}
+              onSelectDate={setSelectedDate}
+              today={today}
               onOpenMeal={(id) => {
                 setActiveMealId(id);
                 setPanel("meal");
@@ -454,7 +465,14 @@ export function MealTrackerModal({ open, onOpenChange }: MealTrackerModalProps) 
           )}
 
           {panel === "calendar" && (
-            <CalendarPanel today={today} onBack={() => setPanel("day")} />
+            <CalendarPanel
+              today={today}
+              onBack={() => setPanel("day")}
+              onEditDay={(d) => {
+                setSelectedDate(d);
+                setPanel("day");
+              }}
+            />
           )}
 
           {panel === "meal" && activeMeal && (
@@ -510,6 +528,10 @@ function DayPanel({
   meals,
   needs,
   curIdx,
+  selectedDate,
+  isToday,
+  onSelectDate,
+  today,
   onOpenMeal,
   onSummary,
   onCalendar,
@@ -519,19 +541,57 @@ function DayPanel({
   meals: MealsState;
   needs: Record<string, boolean>;
   curIdx: number;
+  selectedDate: string;
+  isToday: boolean;
+  onSelectDate: (date: string) => void;
+  today: string;
   onOpenMeal: (id: string) => void;
   onSummary: () => void;
   onCalendar: () => void;
   onReset: () => void;
 }) {
-  const todayStr = new Date().toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" });
+  const dateLabel = new Date(selectedDate + "T12:00:00").toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" });
+
+  // Mueve el día visible; nunca deja pasar de hoy.
+  const shiftDay = (delta: number) => {
+    const d = new Date(selectedDate + "T12:00:00");
+    d.setDate(d.getDate() + delta);
+    const next = getLocalDateString(d);
+    if (next > today) return;
+    onSelectDate(next);
+  };
 
   return (
     <div className="w-full">
       <div className="border-b border-border/30 px-6 py-5 flex items-start justify-between">
         <div>
           <h2 className="font-black text-xl text-foreground">Comida</h2>
-          <p className="mt-1 text-sm text-muted-foreground capitalize">{todayStr}</p>
+          <div className="mt-1 flex items-center gap-1.5">
+            <button
+              onClick={() => shiftDay(-1)}
+              className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border border-border/30 bg-muted hover:bg-muted/80 active:bg-muted/60 transition-colors"
+              title="Día anterior"
+            >
+              <ChevronLeft className="h-3.5 w-3.5 text-muted-foreground" />
+            </button>
+            <p className="text-sm text-muted-foreground capitalize min-w-0">{dateLabel}</p>
+            <button
+              onClick={() => shiftDay(1)}
+              disabled={isToday}
+              className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border border-border/30 bg-muted hover:bg-muted/80 active:bg-muted/60 transition-colors disabled:opacity-30 disabled:cursor-default"
+              title="Día siguiente"
+            >
+              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+            </button>
+          </div>
+          {!isToday && (
+            <button
+              onClick={() => onSelectDate(today)}
+              className="mt-1.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400 hover:underline"
+            >
+              Editando un día anterior · Volver a hoy
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {(day?.streak ?? 0) > 0 && (
@@ -556,7 +616,7 @@ function DayPanel({
           {MEALS.map((meal, i) => {
             const locked = i > curIdx;
             const done = mealDone(meals, meal);
-            const isNow = i === curIdx;
+            const isNow = isToday && i === curIdx;
             return (
               <button
                 key={meal.id}
@@ -889,8 +949,8 @@ function DishChip({
   );
 }
 
-// Armador de plato: nombre + selección de ítems ya existentes de proteína y carbohidrato.
-// Para un ingrediente nuevo, primero se agrega por el flujo normal de la categoría.
+// Armador de plato: nombre + selección de ítems ya existentes de cualquiera de las categorías
+// de la comida. Para un ingrediente nuevo, primero se agrega por el flujo normal de la categoría.
 function AddDishPanel({
   meal,
   customOptions,
@@ -905,7 +965,7 @@ function AddDishPanel({
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<DishComponent[]>([]);
 
-  const dishCats = meal.cats.filter((c) => DISH_CAT_KEYS.includes(c.key));
+  const dishCats = meal.cats;
 
   const isSelected = (catKey: string, item: string) =>
     selected.some((c) => c.categoryKey === catKey && c.item === item);
@@ -949,6 +1009,7 @@ function AddDishPanel({
               <div className="flex items-center gap-1.5 mb-2">
                 <cat.icon className="h-3.5 w-3.5 text-muted-foreground" />
                 <span className="text-xs font-bold uppercase tracking-wide text-foreground">{cat.label}</span>
+                {cat.optional && <span className="text-[10px] font-medium text-muted-foreground">(opcional)</span>}
               </div>
               <div className="flex flex-wrap gap-2">
                 {items.map((item) => {
@@ -1274,7 +1335,7 @@ function SummaryPanel({
 // Calendario mensual de comidas — mismo patrón visual que el "Calendario de actividades" de
 // Tareas del día: grilla de 7 columnas, un mes por vez, cada día con puntitos por comida
 // registrada y ✓✓ si el día quedó completo (los 4 grupos). Tocar un día muestra el detalle.
-function CalendarPanel({ today, onBack }: { today: string; onBack: () => void }) {
+function CalendarPanel({ today, onBack, onEditDay }: { today: string; onBack: () => void; onEditDay: (date: string) => void }) {
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
@@ -1301,6 +1362,12 @@ function CalendarPanel({ today, onBack }: { today: string; onBack: () => void })
 
   const selectedMeals: MealsState = selectedDay ? dayByDate.get(selectedDay)?.meals || {} : {};
   const selectedRegistered = MEALS.filter((m) => mealRegistered(selectedMeals, m));
+  const selectedIsFuture = (() => {
+    if (!selectedDay) return false;
+    const d = new Date(selectedDay + "T12:00:00");
+    d.setHours(0, 0, 0, 0);
+    return d > todayObj;
+  })();
 
   return (
     <div className="w-full">
@@ -1393,6 +1460,14 @@ function CalendarPanel({ today, onBack }: { today: string; onBack: () => void })
               <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
                 {new Date(selectedDay + "T12:00:00").toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" })}
               </p>
+              {!selectedIsFuture && (
+                <button
+                  onClick={() => onEditDay(selectedDay)}
+                  className="w-full rounded-lg bg-foreground text-background text-xs font-bold py-2 hover:opacity-90 active:opacity-80 transition-opacity"
+                >
+                  {selectedDay === today ? "Editar hoy" : "Editar este día"}
+                </button>
+              )}
               {selectedRegistered.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Nada registrado ese día.</p>
               ) : (

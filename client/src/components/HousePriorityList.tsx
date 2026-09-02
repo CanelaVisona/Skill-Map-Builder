@@ -1,10 +1,11 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { Check, ChevronUp, ChevronDown, ChevronsDown, ChevronsUp, Lock, ShoppingCart, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { playProgressAdvanceSound } from "@/lib/sound";
 import { getHouseColors, useLongPress, HOUSE_GROUP_EMOJI, type HouseItem } from "./HouseInventory";
 import HouseEditPopup, { houseEditInputStyle } from "./HouseEditPopup";
+import { HouseCelebration, HOUSE_CELEBRATION_MS, type HouseCelebrationState } from "./HouseCelebration";
 
 // Moves the item with `id` one slot up/down among the "missing" items only, by
 // swapping its position with the neighboring missing item inside the full array
@@ -210,6 +211,126 @@ function PriorityRow({
   );
 }
 
+// Fila de un objeto ya conseguido. El tacho de basura no se muestra siempre: aparece
+// solo tras un long press sobre la fila (y se vuelve a esconder solo a los 3s), para
+// que la lista de "Conseguidos" no quede llena de botones de borrar a la vista.
+function BoughtItemRow({
+  item,
+  colors,
+  isDark,
+  onUndo,
+  onRemove,
+}: {
+  item: HouseItem;
+  colors: Record<string, string>;
+  isDark: boolean;
+  onUndo: (id: number) => void;
+  onRemove: (id: number) => void;
+}) {
+  const [showDelete, setShowDelete] = useState(false);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    };
+  }, []);
+
+  const revealDelete = useCallback(() => {
+    setShowDelete(true);
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    hideTimerRef.current = setTimeout(() => setShowDelete(false), 3000);
+  }, []);
+
+  const longPress = useLongPress<HTMLDivElement>(revealDelete, { delay: 500 });
+
+  return (
+    <div
+      onPointerDown={longPress.onPointerDown}
+      onPointerMove={longPress.onPointerMove}
+      onPointerUp={longPress.onPointerUp}
+      onPointerCancel={longPress.onPointerCancel}
+      onPointerLeave={longPress.onPointerLeave}
+      onContextMenu={(e) => e.preventDefault()}
+      title="Mantené apretado para eliminar"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "10px",
+        padding: "8px 12px",
+        borderRadius: "10px",
+        border: isDark ? "1px solid #1e2d1e" : "1px solid #e2e8f0",
+        opacity: 0.6,
+        userSelect: "none",
+        WebkitUserSelect: "none",
+        touchAction: "manipulation",
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => onUndo(item.id)}
+        onPointerDown={(e) => e.stopPropagation()}
+        aria-label="Deshacer compra"
+        title="Toca para volver a pendientes"
+        style={{
+          width: "20px",
+          height: "20px",
+          borderRadius: "50%",
+          border: "none",
+          background: "linear-gradient(135deg, #16a34a, #22c55e)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: "pointer",
+          flexShrink: 0,
+          padding: 0,
+        }}
+      >
+        <Check size={11} color="#052e16" strokeWidth={3} />
+      </button>
+      <span style={{ fontSize: "14px", flexShrink: 0 }}>{item.emoji}</span>
+      <span
+        style={{
+          flex: 1,
+          minWidth: 0,
+          fontSize: "12px",
+          fontWeight: 600,
+          color: colors.subtitle,
+          textDecoration: "line-through",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {item.name}
+      </span>
+      {showDelete && (
+        <button
+          type="button"
+          onClick={() => onRemove(item.id)}
+          onPointerDown={(e) => e.stopPropagation()}
+          aria-label="Eliminar objeto"
+          style={{
+            width: "22px",
+            height: "22px",
+            borderRadius: "6px",
+            border: "none",
+            background: "transparent",
+            color: isDark ? "#7f1d1d" : "#b91c1c",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+          }}
+        >
+          <Trash2 size={12} />
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function HousePriorityList({
   items,
   setItems,
@@ -238,6 +359,14 @@ export default function HousePriorityList({
   const [editEmoji, setEditEmoji] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const [addName, setAddName] = useState("");
+  const [celebration, setCelebration] = useState<HouseCelebrationState | null>(null);
+  const celebrationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (celebrationTimerRef.current) clearTimeout(celebrationTimerRef.current);
+    };
+  }, []);
 
   const move = (id: number, direction: "up" | "down") => {
     setItems((prev) => moveMissingItem(prev, id, direction));
@@ -318,7 +447,9 @@ export default function HousePriorityList({
 
     if (boughtItem) {
       playProgressAdvanceSound();
-      toast({ title: `¡Sumaste ${boughtItem.name}! 🎉`, description: "Ya es parte de tu casa." });
+      setCelebration({ kind: "compra", name: boughtItem.name });
+      if (celebrationTimerRef.current) clearTimeout(celebrationTimerRef.current);
+      celebrationTimerRef.current = setTimeout(() => setCelebration(null), HOUSE_CELEBRATION_MS);
     }
   };
 
@@ -344,6 +475,8 @@ export default function HousePriorityList({
       onPointerLeave={backgroundLongPress.onPointerLeave}
       onContextMenu={(e) => e.preventDefault()}
     >
+      <HouseCelebration celebration={celebration} />
+
       <p style={{ color: colors.subtitle, fontSize: "11px", marginBottom: "14px" }}>
         Solo el primer objeto esta desbloqueado para comprar. Usa las flechas para cambiar el orden de prioridad -- al comprar el primero, el siguiente se desbloquea. Long press en el fondo para agregar un objeto nuevo, o sobre un objeto para editarlo o eliminarlo.
       </p>
@@ -497,76 +630,14 @@ export default function HousePriorityList({
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
             {bought.map((item) => (
-              <div
+              <BoughtItemRow
                 key={item.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "10px",
-                  padding: "8px 12px",
-                  borderRadius: "10px",
-                  border: isDark ? "1px solid #1e2d1e" : "1px solid #e2e8f0",
-                  opacity: 0.6,
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => undoPurchase(item.id)}
-                  aria-label="Deshacer compra"
-                  title="Toca para volver a pendientes"
-                  style={{
-                    width: "20px",
-                    height: "20px",
-                    borderRadius: "50%",
-                    border: "none",
-                    background: "linear-gradient(135deg, #16a34a, #22c55e)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    cursor: "pointer",
-                    flexShrink: 0,
-                    padding: 0,
-                  }}
-                >
-                  <Check size={11} color="#052e16" strokeWidth={3} />
-                </button>
-                <span style={{ fontSize: "14px", flexShrink: 0 }}>{item.emoji}</span>
-                <span
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    fontSize: "12px",
-                    fontWeight: 600,
-                    color: colors.subtitle,
-                    textDecoration: "line-through",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {item.name}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => removeItem(item.id)}
-                  aria-label="Eliminar objeto"
-                  style={{
-                    width: "22px",
-                    height: "22px",
-                    borderRadius: "6px",
-                    border: "none",
-                    background: "transparent",
-                    color: isDark ? "#7f1d1d" : "#b91c1c",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexShrink: 0,
-                  }}
-                >
-                  <Trash2 size={12} />
-                </button>
-              </div>
+                item={item}
+                colors={colors}
+                isDark={isDark}
+                onUndo={undoPurchase}
+                onRemove={removeItem}
+              />
             ))}
           </div>
         </div>
