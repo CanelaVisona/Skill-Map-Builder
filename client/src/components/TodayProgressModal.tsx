@@ -13,7 +13,7 @@ import { useHabits } from "@/lib/useHabits";
 import { useTodayTaskSlots, useSetTodayTaskSlot, useClearTodayTaskSlot, useReorderTodayTaskSlot, getCurrentTimeSlotKey, getTimeSlotKeyForDate, type TaskSlotKey, type TaskType } from "@/lib/useTodayTaskSlots";
 import { useManualTasks, useCreateManualTask, useUpdateManualTask, useDeleteManualTask } from "@/lib/useManualTasks";
 import { calculateStatus, calculateStatusL2, type SpaceRepetitionPractice } from "@/components/SpaceRepetitionModal";
-import { rewiringDayTask } from "@/lib/rewiringTasks";
+import { rewiringDayRows } from "@/lib/rewiringTasks";
 import type { Habit, HabitRecord, TodayTaskSlot } from "@shared/schema";
 
 const LONG_PRESS_MS = 1500;
@@ -161,17 +161,21 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     enabled: open,
   });
 
-  const rewiringDayTasks = (rewiringTrackersData || []).map((t) => ({
+  const rewiringDayResults = (rewiringTrackersData || []).map((t) => ({
     tracker: t,
-    task: rewiringDayTask(t, effectiveDate),
+    result: rewiringDayRows(t, effectiveDate),
   }));
 
   // Hábito linkeado a un rewiring "veces por día" cuya cuota del día ya se cerró: su fila
-  // (venga de habitItems o de extraHabits) lleva el contador N/N encima del nombre.
+  // (venga de habitItems o de extraHabits) lleva el contador N/N encima del nombre — ocupa el
+  // lugar de la última repetición, que por eso no se muestra como fila de rewiring.
   const rewiringHabitBadgeById = new Map<string, { done: number; total: number }>();
-  rewiringDayTasks.forEach(({ task }) => {
-    if (task.kind === "habit" && task.habitId) {
-      rewiringHabitBadgeById.set(task.habitId, { done: task.reps, total: task.timesPerDay });
+  rewiringDayResults.forEach(({ result }) => {
+    if (result.habitBadge) {
+      rewiringHabitBadgeById.set(result.habitBadge.habitId, {
+        done: result.habitBadge.done,
+        total: result.habitBadge.total,
+      });
     }
   });
 

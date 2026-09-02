@@ -199,7 +199,10 @@ export function BodyGainPopup({ snapshot, onClose }: BodyGainPopupProps) {
               {before.val} → {after.val}
             </div>
 
-            <div className="mt-3">
+            {/* El bar tiene BODY_BLOCKS (10) cubitos vs los 15 del pop up de skills. Para que
+                cada cubito quede del mismo tamaño en pantalla, la barra se limita a 10/15 del
+                ancho y se centra; así el flex-1 reparte el mismo px por cubito que en skills. */}
+            <div className="mt-3 mx-auto w-[66.6%]">
               <div className="w-full h-4 flex gap-0.5 rounded-sm">
                 {Array.from({ length: BODY_BLOCKS }).map((_, index) => {
                   const isFilledBefore = !useResetAnimation && index < before.val;

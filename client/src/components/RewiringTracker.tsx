@@ -1107,7 +1107,16 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
         body: JSON.stringify({ date: todayStr }),
       });
 
-      let newCount = data.count + 1;
+      const newHistory = [...data.history, { timestamp: new Date().toISOString(), date: todayStr }];
+
+      // Fallback offline: mismo criterio que el server (storage.recordRewiringTrackerAction) —
+      // en modo clásico cada acción sube el count; en "veces por día" el count solo sube en la
+      // repetición que cierra la cuota del día.
+      const repsTodayAfter = newHistory.filter((h) => (h.date ?? "") === todayStr).length;
+      let newCount =
+        data.timesPerDay && data.timesPerDay >= 1
+          ? data.count + (repsTodayAfter === data.timesPerDay ? 1 : 0)
+          : data.count + 1;
 
       if (!res.ok) {
         console.warn("API error, using local increment");
@@ -1117,13 +1126,13 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
         newCount = updatedTracker.count;
       }
 
-      const newHistory = [...data.history, { timestamp: new Date().toISOString(), date: todayStr }];
-
-      // Trigger level completion animation whenever a numbered level is crossed, scaled to
-      // this tracker's own target level (and, for "veces por día" trackers, only actually
-      // moves when newCount comes back bumped from the server).
+      // Trigger level completion animation only when this action actually pushed the count onto
+      // a numbered level's boundary. The `newCount > data.count` guard matters for "veces por
+      // día" trackers: there the count only moves on the rep that closes the day's quota, so
+      // without it every earlier rep (count still sitting on the previous level's boundary)
+      // would re-fire the animation and fill the whole ring instead of just its daily fraction.
       const levels = getLevels(data.targetLevel, data.timesPerDay);
-      if (levels.some((lvl) => lvl.to === newCount)) {
+      if (newCount > data.count && levels.some((lvl) => lvl.to === newCount)) {
         setLevelCompletingTrackerId(trackerId);
       }
 
