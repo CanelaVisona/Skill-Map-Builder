@@ -2976,10 +2976,11 @@ export class DbStorage implements IStorage {
     return result[0];
   }
 
-  async updateManualTodayTask(id: string, updates: Partial<Pick<InsertManualTodayTask, "title" | "done">>): Promise<ManualTodayTask | undefined> {
+  async updateManualTodayTask(id: string, updates: Partial<Pick<InsertManualTodayTask, "title" | "done" | "date">>): Promise<ManualTodayTask | undefined> {
     const updateData: Record<string, unknown> = {};
     if (updates.title !== undefined) updateData.title = updates.title;
     if (updates.done !== undefined) updateData.done = updates.done;
+    if (updates.date !== undefined) updateData.date = updates.date;
     const result = await db.update(manualTodayTasks).set(updateData).where(eq(manualTodayTasks.id, id)).returning();
     return result[0];
   }

@@ -41,7 +41,10 @@ export function useUpdateManualTask() {
     }: {
       id: string;
       date: string;
-      updates: { title?: string; done?: 0 | 1 };
+      // `updates.date` es el día NUEVO al que se mueve la tarea (mantener presionada una tarea
+      // y elegir "Cambiar de día"); `date` arriba es el día ACTUAL bajo el que se la está
+      // viendo, se usa solo para invalidar esa lista.
+      updates: { title?: string; done?: 0 | 1; date?: string };
     }) => {
       const res = await fetch(`/api/manual-today-tasks/${id}`, {
         method: "PATCH",
@@ -53,6 +56,12 @@ export function useUpdateManualTask() {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["manual-today-tasks", variables.date] });
+      if (variables.updates.date && variables.updates.date !== variables.date) {
+        // Se movió de día: la lista del día nuevo también tiene que refrescarse, y la franja
+        // horaria de la tarea (el server la borra del día viejo al moverla) también cambió.
+        queryClient.invalidateQueries({ queryKey: ["manual-today-tasks", variables.updates.date] });
+        queryClient.invalidateQueries({ queryKey: ["today-task-slots"] });
+      }
     },
   });
 }

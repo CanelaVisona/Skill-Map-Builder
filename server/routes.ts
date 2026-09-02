@@ -5327,14 +5327,24 @@ export async function registerRoutes(
       if (!existing || existing.userId !== req.userId) {
         return res.status(404).json({ message: "Tarea no encontrada" });
       }
-      const { title, done } = req.body;
+      const { title, done, date } = req.body;
       if (done !== undefined && done !== 0 && done !== 1) {
         return res.status(400).json({ message: "done debe ser 0 o 1" });
+      }
+      if (date !== undefined && (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date))) {
+        return res.status(400).json({ message: "date debe tener formato YYYY-MM-DD" });
       }
       const updated = await storage.updateManualTodayTask(req.params.id, {
         ...(title !== undefined ? { title: String(title).trim() } : {}),
         ...(done !== undefined ? { done } : {}),
+        ...(date !== undefined ? { date } : {}),
       });
+      // Si se movió de día, la franja horaria asignada quedó atada a la fecha vieja: no tiene
+      // sentido dejarla huérfana ahí (el día viejo ya no la va a mostrar, pero queda basura en
+      // la tabla). Se limpia; en el día nuevo arranca "Sin asignar" como cualquier tarea movida.
+      if (date !== undefined && existing.date !== date) {
+        await storage.deleteTodayTaskSlot(req.userId!, existing.date, "manual", existing.id);
+      }
       res.json(updated);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -5755,10 +5765,13 @@ export async function registerRoutes(
   });
 
   // Confirmar/des-confirmar un plato: tilda (o destilda) de una todos sus componentes en la
-  // comida indicada. active=true al confirmar, active=false al des-confirmar.
+  // comida indicada. active=true al confirmar, active=false al des-confirmar. Además guarda el
+  // estado de confirmación del plato en meals._dishState[mealId][dishId], independiente de sus
+  // componentes: el plato sigue confirmado aunque después se destilde a mano un componente, y
+  // solo se limpia al des-confirmarlo.
   app.post("/api/meal-tracker/apply-dish", requireAuth, async (req, res) => {
     try {
-      const { date, mealId, components, active } = req.body;
+      const { date, mealId, dishId, components, active } = req.body;
       if (!date || !mealId || !Array.isArray(components)) {
         return res.status(400).json({ message: "date, mealId y components son requeridos" });
       }
@@ -5769,6 +5782,12 @@ export async function registerRoutes(
         if (!c || typeof c.categoryKey !== "string" || typeof c.item !== "string") continue;
         if (!meals[mealId][c.categoryKey]) meals[mealId][c.categoryKey] = {};
         meals[mealId][c.categoryKey][c.item] = !!active;
+      }
+      if (typeof dishId === "string" && dishId) {
+        if (!meals._dishState) meals._dishState = {};
+        if (!meals._dishState[mealId]) meals._dishState[mealId] = {};
+        if (active) meals._dishState[mealId][dishId] = true;
+        else delete meals._dishState[mealId][dishId];
       }
       const updated = await storage.upsertMealTrackerDay(req.userId!, date, { meals });
       res.json(updated);

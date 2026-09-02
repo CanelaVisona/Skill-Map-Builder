@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useQuery, useQueries, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueries, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -9,7 +9,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Input } from "@/components/ui/input";
 import { Eye, ArrowLeft, ChevronLeft, ChevronRight, Pencil } from "lucide-react";
 import { useSkillTree, type Area, type Project, type Skill } from "@/lib/skill-context";
-import { useHabits } from "@/lib/useHabits";
+import { useHabits, useUpdateHabitRecord } from "@/lib/useHabits";
 import { useTodayTaskSlots, useSetTodayTaskSlot, useClearTodayTaskSlot, useReorderTodayTaskSlot, getCurrentTimeSlotKey, getTimeSlotKeyForDate, type TaskSlotKey, type TaskType } from "@/lib/useTodayTaskSlots";
 import { useManualTasks, useCreateManualTask, useUpdateManualTask, useDeleteManualTask } from "@/lib/useManualTasks";
 import { calculateStatus, calculateStatusL2, type SpaceRepetitionPractice } from "@/components/SpaceRepetitionModal";
@@ -66,6 +66,10 @@ interface PlannedNode {
   completedAt?: string;
   // Minutos que se cargaron en el nodo (plannedDuration), para mostrarlos junto a la tarea.
   plannedDuration?: number | null;
+  // Solo presentes en nodos con fecha planeada (no en los "extra"): de dónde viene, para poder
+  // llamar a updateSkill/updateProjectSkill al cambiar su día desde "Tareas de hoy".
+  parentId?: string;
+  kind?: "area" | "project";
 }
 
 // Sufijo "· Xmin" que se agrega al lado del título de una tarea cuando tiene una duración
@@ -95,7 +99,7 @@ function getFirstDayOfMonth(date: Date) {
 
 export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const queryClient = useQueryClient();
-  const { areas, projects } = useSkillTree();
+  const { areas, projects, updateSkill, updateProjectSkill } = useSkillTree();
   const { data: habitsData } = useHabits();
   const [viewMode, setViewMode] = useState<"progress" | "calendar">("progress");
   const [calendarDate, setCalendarDate] = useState(new Date());
@@ -195,7 +199,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     ),
   }));
 
-  const collectPlannedNodes = (list: (Area | Project)[]): PlannedNode[] => {
+  const collectPlannedNodes = (list: (Area | Project)[], kind: "area" | "project"): PlannedNode[] => {
     const result: PlannedNode[] = [];
     list.forEach((parent) => {
       (parent.skills || []).forEach((skill: Skill) => {
@@ -207,6 +211,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
             plannedDate: skill.plannedDate,
             done: skill.status === "mastered",
             plannedDuration: skill.plannedDuration,
+            parentId: parent.id,
+            kind,
           });
         }
       });
@@ -215,8 +221,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   };
 
   const allPlannedNodes = [
-    ...collectPlannedNodes(Array.isArray(areas) ? areas : []),
-    ...collectPlannedNodes(Array.isArray(projects) ? projects : []),
+    ...collectPlannedNodes(Array.isArray(areas) ? areas : [], "area"),
+    ...collectPlannedNodes(Array.isArray(projects) ? projects : [], "project"),
   ];
 
   const plannedNodesForView = allPlannedNodes.filter((n) => n.plannedDate === effectiveDate);
@@ -287,19 +293,21 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     .filter((h) => h.done);
 
   // Rewirings (RewiringTracker.tsx): actividad extra sin concepto de "programado para hoy". Se
-  // muestra una fila por cada rewiring que registró al menos una repetición el día que se está
-  // viendo, con un contador "hechas/N" para los "veces por día". Los "veces por día" linkeados
-  // a un hábito que ya cerraron su cuota NO aparecen acá: en su lugar aparece el hábito (con su
-  // contador N/N — ver rewiringHabitBadgeById). Ver rewiringDayTask() para el detalle.
-  const extraRewirings = rewiringDayTasks
-    .filter(({ task }) => task.kind === "rewiring")
-    .map(({ tracker, task }) => ({
-      id: tracker.id,
+  // muestra UNA fila por cada repetición registrada el día que se está viendo, todas con el
+  // mismo nombre y un contador "índice/N" (1/N, 2/N, …). Cada fila cae en la franja horaria del
+  // momento de esa repetición. Los "veces por día" linkeados a un hábito muestran solo las
+  // primeras N-1 repeticiones acá: la última la ocupa el hábito (ver rewiringHabitBadgeById).
+  // Ver rewiringDayRows() para el detalle.
+  const extraRewirings = rewiringDayResults.flatMap(({ tracker, result }) =>
+    result.rows.map((row) => ({
+      // id/key propios por repetición: así cada fila se puede mover de franja por separado.
+      rowId: `${tracker.id}#${row.repIndex}`,
       name: tracker.name,
-      reps: task.reps,
-      timesPerDay: task.timesPerDay,
-      lastRepAt: task.lastRepAt,
-    }));
+      repIndex: row.repIndex,
+      timesPerDay: row.timesPerDay,
+      at: row.at,
+    }))
+  );
 
   // Nodos sin fecha planeada (columna "When exactly?" vacía) que se confirmaron dentro del
   // rango [startDate, endDate]. Se usa tanto para "Más" (rango = solo hoy) como para el
@@ -335,6 +343,9 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     ...collectExtraCompletedNodes(Array.isArray(areas) ? areas : [], effectiveDate, effectiveDate),
     ...collectExtraCompletedNodes(Array.isArray(projects) ? projects : [], effectiveDate, effectiveDate),
   ];
+  // Nodos "extra" (sin fecha planeada): no tienen un campo de fecha editable (su día sale de
+  // completedAt, que no se puede reasignar a mano), así que quedan afuera de "Cambiar de día".
+  const extraNodeIds = new Set(extraNodes.map((n) => n.id));
 
   const extraItems: TodayItem[] = [
     ...extraHabits.map((h) => ({ key: `habit:${h.id}`, type: "habit" as const, id: h.id, label: h.label, done: true })),
@@ -352,17 +363,17 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       defaultSlot: n.completedAt ? getTimeSlotKeyForDate(new Date(n.completedAt)) : undefined,
     })),
     ...extraRewirings.map((r) => ({
-      key: `rewiring:${r.id}`,
+      key: `rewiring:${r.rowId}`,
       type: "rewiring" as const,
-      id: r.id,
+      id: r.rowId,
       label: (
         <>
           🔄 {r.name}
-          <TaskCountBadge done={r.reps} total={r.timesPerDay} />
+          <TaskCountBadge done={r.repIndex} total={r.timesPerDay} />
         </>
       ),
       done: true,
-      defaultSlot: r.lastRepAt ? getTimeSlotKeyForDate(new Date(r.lastRepAt)) : undefined,
+      defaultSlot: getTimeSlotKeyForDate(new Date(r.at)),
     })),
   ];
 
@@ -619,6 +630,89 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   };
 
   const canDuplicate = (item: TodayItem) => item.type === "manual" || item.type === "habit";
+
+  // --- Cambiar de día: mover la "realización" de una tarea a otra fecha, mantenendo
+  // presionada la fila (ver TodayTaskRow). Qué significa "mover" depende del tipo:
+  // - manual: se reasigna la fila entera (tenga o no tenga hecha) a la fecha nueva.
+  // - nodo planeado (con plannedDate, no uno "extra" de Más): se reagenda su plannedDate,
+  //   tenga o no tenga hecha — es lo mismo que ya se puede hacer desde el nodo en el árbol.
+  // - hábito: solo si ya está confirmado ese día (si no, no hay ningún registro que mover —
+  //   un hábito pendiente no tiene una fecha propia, es recurrente). Se descuenta el día viejo
+  //   y se confirma en el nuevo.
+  // - práctica de repetición espaciada: solo si ya está confirmada ese día. Se reescribe
+  //   lastConfirmedAt con la fecha elegida (mismo horario del día), para que el próximo
+  //   intervalo cuente efectivamente desde esa fecha, no desde el momento en que se tocó el
+  //   botón — así lo pidió el usuario explícitamente.
+  const updateHabitRecordMutation = useUpdateHabitRecord();
+
+  const updatePracticeDateMutation = useMutation({
+    mutationFn: async ({ id, lastConfirmedAt }: { id: string; lastConfirmedAt: string }) => {
+      const res = await fetch(`/api/space-repetition/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lastConfirmedAt }),
+      });
+      if (!res.ok) throw new Error("Failed to move practice");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["space-repetition"] });
+    },
+  });
+
+  const [changeDayItem, setChangeDayItem] = useState<TodayItem | null>(null);
+  const [changeDayValue, setChangeDayValue] = useState("");
+
+  const canChangeDay = (item: TodayItem): boolean => {
+    if (item.type === "manual") return true;
+    if (item.type === "node") return !extraNodeIds.has(item.id);
+    if (item.type === "habit") return item.done;
+    if (item.type === "practice") return item.done;
+    // "rewiring": cada fila es una repetición puntual dentro del historial de un tracker, no
+    // algo con una fecha propia editable desde acá.
+    return false;
+  };
+
+  const openChangeDayDialog = (item: TodayItem) => {
+    setChangeDayItem(item);
+    setChangeDayValue(effectiveDate);
+  };
+
+  const submitChangeDay = () => {
+    const item = changeDayItem;
+    const newDate = changeDayValue;
+    setChangeDayItem(null);
+    if (!item || !newDate || newDate === effectiveDate) return;
+
+    if (item.type === "manual") {
+      updateManualTask.mutate({ id: item.id, date: effectiveDate, updates: { date: newDate } });
+      return;
+    }
+    if (item.type === "habit") {
+      updateHabitRecordMutation.mutate({ habitId: item.id, date: effectiveDate, completed: 0 });
+      updateHabitRecordMutation.mutate({ habitId: item.id, date: newDate, completed: 1 });
+      clearTaskSlot.mutate({ date: effectiveDate, taskType: "habit", taskId: item.id });
+      return;
+    }
+    if (item.type === "node") {
+      const node = allPlannedNodes.find((n) => n.id === item.id);
+      if (node?.parentId && node.kind) {
+        if (node.kind === "project") updateProjectSkill(node.parentId, item.id, { plannedDate: newDate });
+        else updateSkill(node.parentId, item.id, { plannedDate: newDate });
+      }
+      clearTaskSlot.mutate({ date: effectiveDate, taskType: "node", taskId: item.id });
+      return;
+    }
+    if (item.type === "practice") {
+      const practice = (practicesData || []).find((p) => p.id === item.id);
+      const origConfirmedAt = practice?.lastConfirmedAt || practice?.updatedAt;
+      const moved = origConfirmedAt ? new Date(origConfirmedAt) : new Date();
+      const [y, m, d] = newDate.split("-").map(Number);
+      moved.setFullYear(y, m - 1, d);
+      updatePracticeDateMutation.mutate({ id: item.id, lastConfirmedAt: moved.toISOString() });
+      clearTaskSlot.mutate({ date: effectiveDate, taskType: "practice", taskId: item.id });
+    }
+  };
 
   // Mantener presionado el fondo (fuera de una tarea puntual) abre el diálogo para agregar
   // una tarea manual al día que se está viendo (hoy, o el día previsualizado), sin franja.
@@ -918,6 +1012,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                     onDelete={item.type === "manual" ? () => deleteManualItem(item) : undefined}
                                     onDuplicate={canDuplicate(item) ? () => duplicateItem(item) : undefined}
                                     onToggleDone={item.type === "manual" ? () => toggleManualDone(item) : undefined}
+                                    onChangeDay={canChangeDay(item) ? () => openChangeDayDialog(item) : undefined}
                                   />
                                 ))}
                               </div>
@@ -970,6 +1065,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                         onDelete={item.type === "manual" ? () => deleteManualItem(item) : undefined}
                                         onDuplicate={canDuplicate(item) ? () => duplicateItem(item) : undefined}
                                         onToggleDone={item.type === "manual" ? () => toggleManualDone(item) : undefined}
+                                        onChangeDay={canChangeDay(item) ? () => openChangeDayDialog(item) : undefined}
                                         onMoveUp={idx > 0 ? () => moveItemOrder(s.key, itemBuckets[s.key], idx, "up") : undefined}
                                         onMoveDown={idx < itemBuckets[s.key].length - 1 ? () => moveItemOrder(s.key, itemBuckets[s.key], idx, "down") : undefined}
                                       />
@@ -999,6 +1095,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                   item={item}
                                   onMove={(slot) => moveItemToSlot(item, slot)}
                                   onDuplicate={canDuplicate(item) ? () => duplicateItem(item) : undefined}
+                                  onChangeDay={canChangeDay(item) ? () => openChangeDayDialog(item) : undefined}
                                 />
                               ))}
                             </div>
@@ -1201,6 +1298,36 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         </div>
       </DialogContent>
     </Dialog>
+
+    <Dialog open={!!changeDayItem} onOpenChange={(o) => !o && setChangeDayItem(null)}>
+      <DialogContent className="max-w-sm rounded-2xl">
+        <DialogTitle>Cambiar de día</DialogTitle>
+        <p className="text-sm text-muted-foreground">
+          Se va a mover: <span className="font-medium text-foreground">{changeDayItem?.label}</span>
+        </p>
+        <Input
+          type="date"
+          autoFocus
+          value={changeDayValue}
+          onChange={(e) => setChangeDayValue(e.target.value)}
+        />
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            onClick={() => setChangeDayItem(null)}
+            className="px-3 py-1.5 text-sm rounded-md hover:bg-muted transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={submitChangeDay}
+            disabled={!changeDayValue || changeDayValue === effectiveDate}
+            className="px-3 py-1.5 text-sm rounded-md bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            Mover
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
     </>
   );
 }
@@ -1214,6 +1341,7 @@ function TodayTaskRow({
   onDelete,
   onDuplicate,
   onToggleDone,
+  onChangeDay,
   onMoveUp,
   onMoveDown,
 }: {
@@ -1228,6 +1356,9 @@ function TodayTaskRow({
   onDelete?: () => void;
   onDuplicate?: () => void;
   onToggleDone?: () => void;
+  // Abre el diálogo para mover esta tarea a otro día. undefined cuando el tipo/estado de la
+  // tarea no tiene "de qué día" moverse (ver canChangeDay en el padre).
+  onChangeDay?: () => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
 }) {
@@ -1237,10 +1368,10 @@ function TodayTaskRow({
   const longPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPress = React.useRef(false);
 
-  // Mantener presionada una tarea no hecha ofrece sacarla de tareas de hoy (item.done ya
-  // completado no necesita esto). Mismo timing (1500ms) que el long-press de SkillNode.
-  // "Sacar de hoy" también está disponible en el menú (mismo diálogo de confirmación).
-  const canLongPress = !item.done && !!onHide;
+  // Mantener presionada la tarea abre el diálogo para cambiar su día (mover a otra fecha),
+  // cuando aplica. Mismo timing (1500ms) que el long-press de SkillNode. "Sacar de
+  // hoy"/"Eliminar" quedan en el menú de un click, no en el long-press.
+  const canLongPress = !!onChangeDay;
 
   const startLongPress = (e: React.MouseEvent | React.TouchEvent) => {
     // No debe burbujear al fondo (que tiene su propio long-press para agregar una tarea).
@@ -1249,7 +1380,7 @@ function TodayTaskRow({
     isLongPress.current = false;
     longPressTimer.current = setTimeout(() => {
       isLongPress.current = true;
-      setHideConfirmOpen(true);
+      onChangeDay?.();
     }, LONG_PRESS_MS);
   };
 
@@ -1314,6 +1445,12 @@ function TodayTaskRow({
                 <DropdownMenuItem onClick={onDuplicate}>Duplicar</DropdownMenuItem>
               </>
             )}
+            {onChangeDay && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={onChangeDay}>Cambiar de día</DropdownMenuItem>
+              </>
+            )}
             {(onHide || onDelete) && <DropdownMenuSeparator />}
             {onHide && (
               <DropdownMenuItem onClick={() => setHideConfirmOpen(true)} className="text-destructive focus:text-destructive">
@@ -1329,7 +1466,7 @@ function TodayTaskRow({
         </DropdownMenu>
       </div>
 
-      {canLongPress && (
+      {onHide && (
         <AlertDialog open={hideConfirmOpen} onOpenChange={setHideConfirmOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>

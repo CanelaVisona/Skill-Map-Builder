@@ -4,7 +4,7 @@ import { useHabits } from "@/lib/useHabits";
 import { useManualTasks } from "@/lib/useManualTasks";
 import { useTodayTaskSlots } from "@/lib/useTodayTaskSlots";
 import { calculateStatus, calculateStatusL2, type SpaceRepetitionPractice } from "@/components/SpaceRepetitionModal";
-import { rewiringDayTask } from "@/lib/rewiringTasks";
+import { rewiringDayRows } from "@/lib/rewiringTasks";
 import type { HabitRecord } from "@shared/schema";
 
 function getDateStr(date: Date): string {
@@ -90,12 +90,10 @@ export function useTodayProgressSummary() {
     },
   });
   const { data: rewiringData } = rewiringQuery;
-  // Espejo de TodayProgressModal: una fila de rewiring por cada tracker con al menos una
-  // repetición hoy. Los "veces por día" linkeados a un hábito que ya cerró su cuota no cuentan
-  // acá (su hábito ya suma por la vía de los habit-records). Ver rewiringDayTask().
-  const extraRewiringsDoneToday = (rewiringData || [])
-    .map((t) => rewiringDayTask(t, todayStr))
-    .filter((task) => task.kind === "rewiring");
+  // Espejo de TodayProgressModal: una fila por cada repetición de rewiring registrada hoy. En
+  // los "veces por día" linkeados a un hábito, la última repetición no cuenta acá (la ocupa el
+  // hábito, que ya suma por la vía de los habit-records). Ver rewiringDayRows().
+  const extraRewiringRowsToday = (rewiringData || []).flatMap((t) => rewiringDayRows(t, todayStr).rows);
 
   const practicesQuery = useQuery({
     queryKey: ["space-repetition"],
@@ -175,7 +173,7 @@ export function useTodayProgressSummary() {
     manualTasks.length +
     extraHabitsDoneToday.length +
     extraNodesToday.length +
-    extraRewiringsDoneToday.length;
+    extraRewiringRowsToday.length;
 
   const completed =
     visibleHabits.filter((h) => h.done).length +
@@ -184,7 +182,7 @@ export function useTodayProgressSummary() {
     manualTasks.filter((t) => t.done === 1).length +
     extraHabitsDoneToday.length +
     extraNodesToday.length +
-    extraRewiringsDoneToday.length;
+    extraRewiringRowsToday.length;
 
   // Igual que "completed", pero sin los nodos dominados sin fecha planeada: completar un nodo
   // que no estaba registrado para hoy no debe disparar el pop-up de "Hoy" (aunque sí sume a la
@@ -196,7 +194,7 @@ export function useTodayProgressSummary() {
     visiblePractices.filter((p) => p.done).length +
     manualTasks.filter((t) => t.done === 1).length +
     extraHabitsDoneToday.length +
-    extraRewiringsDoneToday.length;
+    extraRewiringRowsToday.length;
 
   // Solo se puede confiar en total/completed una vez que TODAS las consultas involucradas
   // resolvieron al menos una vez (incluidas las de registros por hábito, que se crean recién

@@ -327,11 +327,12 @@ export function MealTrackerModal({ open, onOpenChange }: MealTrackerModalProps) 
     setNotification(`Agregado: ${name}`);
   };
 
-  // Confirmar/des-confirmar un plato: tilda o destilda de una todos sus componentes linkeados.
+  // Confirmar/des-confirmar un plato: tilda o destilda de una todos sus componentes linkeados y
+  // guarda el estado de confirmación del plato (independiente de sus componentes).
   const applyDish = async (meal: MealDef, dish: Dish, active: boolean) => {
     const updated = await fetchJson("/api/meal-tracker/apply-dish", {
       method: "POST",
-      body: JSON.stringify({ date: selectedDate, mealId: meal.id, components: dish.components, active }),
+      body: JSON.stringify({ date: selectedDate, mealId: meal.id, dishId: dish.id, components: dish.components, active }),
     });
     queryClient.setQueryData(["/api/meal-tracker/today", selectedDate], (prev: DayData | undefined) => ({
       ...(prev as DayData),
@@ -779,11 +780,11 @@ function MealPanel({
   );
 }
 
-// Un plato está "confirmado" cuando todos sus componentes linkeados están tildados en esta
-// comida. Tocarlo confirma (tilda todo) o des-confirma (destilda todo) de una.
-function dishActive(meals: MealsState, mealId: string, dish: Dish): boolean {
-  if (dish.components.length === 0) return false;
-  return dish.components.every((c) => !!meals?.[mealId]?.[c.categoryKey]?.[c.item]);
+// Un plato queda "confirmado" al tocarlo (además de tildar sus componentes de una). Se mantiene
+// confirmado aunque después destildes a mano alguno de sus componentes: solo se des-confirma si
+// volvés a tocar el plato. El estado vive en meals._dishState[mealId][dishId].
+function dishConfirmed(meals: MealsState, mealId: string, dishId: string): boolean {
+  return !!meals?._dishState?.[mealId]?.[dishId];
 }
 
 // Sección "Comidas" — arriba de las categorías en las cuatro comidas. Lista los platos
@@ -858,8 +859,8 @@ function DishSection({
             <DishChip
               key={dish.id}
               dish={dish}
-              active={dishActive(meals, meal.id, dish)}
-              onToggle={() => onApplyDish(meal, dish, !dishActive(meals, meal.id, dish))}
+              active={dishConfirmed(meals, meal.id, dish.id)}
+              onToggle={() => onApplyDish(meal, dish, !dishConfirmed(meals, meal.id, dish.id))}
               onDelete={() => onDeleteDish(dish)}
             />
           ))}

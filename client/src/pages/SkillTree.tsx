@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { SkillTreeProvider, useSkillTree, type Skill, type GlobalSkill, type Area, type Project } from "@/lib/skill-context";
 import { MenuProvider, useMenu } from "@/lib/menu-context";
 import { AreaMenu } from "@/components/AreaMenu";
@@ -6912,16 +6913,17 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
     },
   });
 
-  // Grupos visibles: en el Journal (embedded) se muestran todas las áreas para poder agregar
-  // bugs; en el modal, solo las que ya tienen alguno. "Debugueados" filtra a status resuelto.
+  // Grupos visibles. "onlyResolved" (tab Debugueados del Journal) = solo bugs debugueados.
+  // El resto (modal desde el menú y tab "Bugs" del Journal) = solo bugs NO debugueados. En el
+  // modal se ocultan además las áreas sin bugs; en el Journal (embedded) se listan todas para
+  // poder agregar uno nuevo.
   const visibleGroups = React.useMemo(() => {
-    let groups = areaBugs;
-    if (onlyResolved) {
-      groups = groups
-        .map((g) => ({ ...g, bugs: g.bugs.filter((b) => b.status === "debugueado") }))
-        .filter((g) => g.bugs.length > 0);
-    } else if (!embedded) {
-      groups = groups.filter((g) => g.bugs.length > 0);
+    const groups = areaBugs.map((g) => ({
+      ...g,
+      bugs: g.bugs.filter((b) => (onlyResolved ? b.status === "debugueado" : b.status !== "debugueado")),
+    }));
+    if (onlyResolved || !embedded) {
+      return groups.filter((g) => g.bugs.length > 0);
     }
     return groups;
   }, [areaBugs, onlyResolved, embedded]);
@@ -7425,28 +7427,32 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                     </div>
                     <button
                       type="button"
-                      className="mt-1 flex w-full items-center justify-center rounded-md border border-dashed border-border/60 bg-background/50 py-2 cursor-pointer select-none hover:bg-muted/40 transition-colors"
+                      className="mt-1 flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-border/60 bg-background/50 py-2 text-xs text-muted-foreground cursor-pointer select-none hover:bg-muted/40 transition-colors"
                       onClick={openNewRecordForm}
                       title="Agregar registro"
+                      data-testid="all-bugs-add-record"
                     >
-                      <Plus className="h-4 w-4 text-muted-foreground/80" />
+                      <Plus className="h-4 w-4" />
+                      Nuevo registro
                     </button>
                   </section>
 
-                  {isRecordFormOpen && (
-                    <section className="rounded-xl border border-border/50 bg-muted/10 p-4 space-y-3 min-w-0">
+                  {isRecordFormOpen && createPortal(
+                    <div
+                      className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-black/70 p-4 py-10"
+                      onClick={resetRecordForm}
+                    >
+                    <div
+                      className="w-full max-w-lg rounded-xl border border-border/60 bg-background p-5 space-y-3 shadow-2xl"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                     <div className="flex items-center justify-between gap-2">
-                      <h5 className="text-xs font-semibold uppercase tracking-wide text-foreground">
+                      <h5 className="text-sm font-semibold uppercase tracking-wide text-foreground">
                         {editingRecordId ? "Editar registro" : "Nuevo registro"}
                       </h5>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-7 px-2 text-xs"
-                        onClick={resetRecordForm}
-                      >
-                        Cancelar
-                      </Button>
+                      <button type="button" onClick={resetRecordForm} className="text-muted-foreground hover:text-foreground" aria-label="Cerrar">
+                        <X className="h-4 w-4" />
+                      </button>
                     </div>
                     <div className="grid gap-3 md:grid-cols-2">
                       <div>
@@ -7564,7 +7570,10 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                       <p className="text-xs text-red-500">{recordFormError}</p>
                     )}
 
-                    <div className="flex justify-end">
+                    <div className="flex justify-end gap-2">
+                      <Button type="button" variant="outline" onClick={resetRecordForm}>
+                        Cancelar
+                      </Button>
                       <Button
                         type="button"
                         onClick={handleCreateRecord}
@@ -7577,7 +7586,9 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                             : "Agregar registro"}
                       </Button>
                     </div>
-                    </section>
+                    </div>
+                    </div>,
+                    document.body
                   )}
                 </div>
               ) : (
