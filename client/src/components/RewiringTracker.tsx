@@ -33,6 +33,11 @@ const DEFAULT_TARGET_LEVEL = 3;
 // up with the ring filling.
 const RING_FILL_MS = 450;
 
+// Al registrar una acción, primero se llena el círculo (RING_FILL_MS) con su sonido y recién
+// después aparece el pop-up de XP/skill completado, para que la animación del anillo y el
+// pop-up no se solapen. Este es el retraso base de todos los pop-ups que dispara una acción.
+const POPUP_AFTER_RING_MS = RING_FILL_MS + 150;
+
 // Classic rewirings: 3 actions per level, no daily cap. "Veces por día" rewirings: 1 level
 // per fully-completed day (that day's quota of reps), regardless of the quota's size.
 function getActionsPerLevel(timesPerDay: number | null | undefined): number {
@@ -374,6 +379,15 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
   const { addBodyBlock } = useBodyProgress();
   const { showBodyGainPopup } = useBodyGainPopup();
   const queryClient = useQueryClient();
+
+  // "Tareas de hoy" (TodayProgressModal / useTodayProgressSummary) lee los rewirings desde la
+  // query ["rewiring-trackers"], que este componente NO usa (maneja su propio estado local).
+  // Cada vez que registramos/creamos/borramos/reiniciamos un tracker hay que invalidarla para
+  // que esas vistas se actualicen sin recargar la página.
+  const invalidateTodayViews = () => {
+    queryClient.invalidateQueries({ queryKey: ["rewiring-trackers"] });
+  };
+
   const [newTrackerAreaId, setNewTrackerAreaId] = useState<string | null>(null);
   const [newTrackerProjectId, setNewTrackerProjectId] = useState<string | null>(null);
   const [newTrackerSkillIds, setNewTrackerSkillIds] = useState<string[]>([]);
@@ -385,14 +399,14 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
 
   // Muestra el pop-up de crecimiento corporal; si en la misma confirmación ya se mostró el de
   // XP (que acá es local, no el contexto compartido), espera a que termine de leerse.
-  const growLinkedBody = (links: BodyLink[], xpPopupsShown: number) => {
+  const growLinkedBody = (links: BodyLink[], xpPopupsShown: number, startDelayMs = 0) => {
     links.forEach((link, index) => {
       const run = () => {
         const { before, after } = addBodyBlock(link.zone, link.dimension);
         setXpPopupSnapshot(null);
         showBodyGainPopup({ zone: link.zone, dimension: link.dimension, before, after });
       };
-      const delay = xpPopupsShown * 1800 + index * 1800;
+      const delay = startDelayMs + xpPopupsShown * 1800 + index * 1800;
       if (delay === 0) {
         run();
       } else {
@@ -741,15 +755,19 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
   };
 
   // Awards XP to every skill linked to a tracker, showing one popup per skill in sequence
-  // (1800ms apart, same cadence as growLinkedBody) so they don't overlap. Returns how many
-  // popups were shown, so callers can offset a following growLinkedBody call.
-  const awardSkillsXP = async (skillIds: string[]): Promise<number> => {
+  // (1800ms apart, same cadence as growLinkedBody) so they don't overlap. `startDelayMs` holds
+  // the first popup until the progress ring finished filling (compensated for however long the
+  // add-xp requests took, so it lands right after the ring, not later). Returns how many popups
+  // were shown, so callers can offset a following growLinkedBody call.
+  const awardSkillsXP = async (skillIds: string[], startDelayMs = 0): Promise<number> => {
+    const startedAt = performance.now();
     const snapshots = (await Promise.all(skillIds.map((skillId) => awardSkillXP(skillId)))).filter(
       (snapshot): snapshot is ExperienceGainSnapshot => !!snapshot
     );
 
+    const baseDelay = Math.max(0, startDelayMs - (performance.now() - startedAt));
     snapshots.forEach((snapshot, index) => {
-      const delay = index * 1800;
+      const delay = baseDelay + index * 1800;
       if (delay === 0) {
         setXpPopupSnapshot(snapshot);
       } else {
@@ -965,6 +983,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
       setNewTrackerMinutesPerRep("");
       setNewTrackerHabitId(null);
       setSelectedTrackerId(newTracker.id);
+      invalidateTodayViews();
 
       console.log("[Rewiring] Tracker created and saved:", newTracker.id, newTrackerData);
     } catch (error) {
@@ -1001,6 +1020,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
         // Update localStorage
         storage.setItem("rewiring_tracker_list", JSON.stringify(trackerList));
         storage.removeItem(`rewiring_tracker_${trackerId}`);
+        invalidateTodayViews();
 
         // Switch to first available tracker or go back to main panel
         if (trackerList.length > 0 && trackerId === selectedTrackerId) {
@@ -1088,6 +1108,7 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
       if (updatedData[trackerId]) {
         storage.setItem(`rewiring_tracker_${trackerId}`, JSON.stringify(updatedData[trackerId]));
       }
+      invalidateTodayViews();
     } catch (error) {
       console.error("Error updating tracker:", error);
     }
@@ -1132,34 +1153,16 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
       // without it every earlier rep (count still sitting on the previous level's boundary)
       // would re-fire the animation and fill the whole ring instead of just its daily fraction.
       const levels = getLevels(data.targetLevel, data.timesPerDay);
-      if (newCount > data.count && levels.some((lvl) => lvl.to === newCount)) {
+      const crossedLevel = newCount > data.count && levels.some((lvl) => lvl.to === newCount);
+
+      // 1) Primero: se llena el círculo con su sonido arcade. La actualización del estado (que
+      //    dispara la animación del anillo) va acá, sincrónica, para que el relleno arranque ni
+      //    bien se toca "+ Acción" — sin esperar a las requests de XP.
+      playGrowingProgressBarSound(RING_FILL_MS);
+      if (crossedLevel) {
         setLevelCompletingTrackerId(trackerId);
       }
 
-      // Award XP if linked to skills
-      const trackerSkillIds = Array.isArray(data.skillIds) && data.skillIds.length > 0
-        ? data.skillIds
-        : data.skillId ? [data.skillId] : [];
-      const xpPopupsShown = await awardSkillsXP(trackerSkillIds);
-
-      // Grow linked body component (fuerza/flexibilidad), if any
-      growLinkedBody(Array.isArray(data.bodyLinks) ? data.bodyLinks : [], xpPopupsShown);
-
-      // "Veces por día" con hábito linkeado: si esta repetición completó la cuota del día,
-      // confirmar el hábito hoy y correr su flujo normal. El `=== timesPerDay` exacto hace que
-      // dispare una sola vez (repeticiones extra dan repsToday > timesPerDay). Los pop-ups del
-      // hábito arrancan después de los del propio rewiring, sin solaparse.
-      const repsToday = newHistory.filter((h) => (h.date ?? "") === todayStr).length;
-      if (data.timesPerDay && data.timesPerDay >= 1 && repsToday === data.timesPerDay && data.habitId) {
-        const rewiringPopups = xpPopupsShown + (Array.isArray(data.bodyLinks) ? data.bodyLinks.length : 0);
-        confirmLinkedHabit(data.habitId, rewiringPopups * 1800);
-      }
-
-      // Arcade "meter filling" sound as the progress ring climbs — same one NecesidadesCasa
-      // plays for its task bars, scheduled to the ring's fill duration.
-      playGrowingProgressBarSound(RING_FILL_MS);
-
-      // Always update tracker data (whether complete or not)
       const updatedData = {
         ...data,
         count: newCount,
@@ -1170,10 +1173,34 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
         ...trackerData,
         [trackerId]: updatedData,
       });
-      
+
       // Save to localStorage for persistence
       storage.setItem(`rewiring_tracker_${trackerId}`, JSON.stringify(updatedData));
       console.log(`[Rewiring] Tracker ${trackerId} incremented, new count: ${newCount}`);
+
+      // 2) Cuando el relleno terminó (POPUP_AFTER_RING_MS): recién ahí aparece el pop-up de XP
+      //    del skill completado, luego el crecimiento corporal y, en modo "veces por día", el
+      //    hábito linkeado. Todos parten del mismo retraso base para no solaparse con el anillo.
+      const trackerSkillIds = Array.isArray(data.skillIds) && data.skillIds.length > 0
+        ? data.skillIds
+        : data.skillId ? [data.skillId] : [];
+      const xpPopupsShown = await awardSkillsXP(trackerSkillIds, POPUP_AFTER_RING_MS);
+
+      // Grow linked body component (fuerza/flexibilidad), if any
+      growLinkedBody(Array.isArray(data.bodyLinks) ? data.bodyLinks : [], xpPopupsShown, POPUP_AFTER_RING_MS);
+
+      // "Veces por día" con hábito linkeado: si esta repetición completó la cuota del día,
+      // confirmar el hábito hoy y correr su flujo normal. El `=== timesPerDay` exacto hace que
+      // dispare una sola vez (repeticiones extra dan repsToday > timesPerDay). Los pop-ups del
+      // hábito arrancan después del relleno y de los del propio rewiring, sin solaparse.
+      const repsToday = newHistory.filter((h) => (h.date ?? "") === todayStr).length;
+      if (data.timesPerDay && data.timesPerDay >= 1 && repsToday === data.timesPerDay && data.habitId) {
+        const rewiringPopups = xpPopupsShown + (Array.isArray(data.bodyLinks) ? data.bodyLinks.length : 0);
+        confirmLinkedHabit(data.habitId, POPUP_AFTER_RING_MS + rewiringPopups * 1800);
+      }
+
+      // Reflejar la repetición recién registrada en "Tareas de hoy" sin recargar la página.
+      invalidateTodayViews();
     } catch (error) {
       console.error("Error incrementing tracker:", error);
     }
@@ -1230,6 +1257,10 @@ function RewiringTracker({ onBack }: RewiringTrackerProps) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
         });
+      }
+
+      if (completedTrackerIds.length > 0) {
+        invalidateTodayViews();
       }
 
       // Clear animation state
