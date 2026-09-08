@@ -9,6 +9,9 @@ export default {
       fontFamily: {
         'display': 'var(--font-display)',
         'body': 'var(--font-body)',
+        'level': 'var(--font-level)',
+        'quest': 'var(--font-quest)',
+        'description': 'var(--font-description)',
       },
       colors: {
         background: 'hsl(var(--background))',

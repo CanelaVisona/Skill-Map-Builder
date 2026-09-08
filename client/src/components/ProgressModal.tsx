@@ -4,7 +4,12 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useSkillTree, type Area, type Project } from "@/lib/skill-context";
-import { calculateLevelProgressPercentage, countMasteredSkillsInLevel, countSkillsInLevel } from "@/lib/area-progress";
+import {
+  calculateLevelProgressPercentage,
+  countMasteredSkillsInLevel,
+  countSkillsInLevel,
+  getUnlockedNode,
+} from "@/lib/area-progress";
 
 interface ProgressItem {
   id: string;
@@ -12,6 +17,10 @@ interface ProgressItem {
   type: "area" | "project";
   level: number;
   subtitle?: string;
+  // undefined: no hay ningún nodo "available" ahora mismo. "": hay un nodo desbloqueado
+  // pero todavía no tiene nombre cargado.
+  nodeTitle?: string;
+  hasUnlockedNode: boolean;
   masteredInLevel: number;
   totalInLevel: number;
 }
@@ -35,37 +44,87 @@ function sortBySubtitleFirst(items: ProgressItem[]): ProgressItem[] {
   return [...items.filter((item) => item.subtitle), ...items.filter((item) => !item.subtitle)];
 }
 
-function ProgressItemRow({ item, onGoToItem }: { item: ProgressItem; onGoToItem: (item: ProgressItem) => void }) {
+type ProgressViewMode = "classic" | "node";
+
+function ProgressItemRow({
+  item,
+  onGoToItem,
+  viewMode,
+}: {
+  item: ProgressItem;
+  onGoToItem: (item: ProgressItem) => void;
+  viewMode: ProgressViewMode;
+}) {
   const totalBlocks = Math.max(item.totalInLevel, 1);
   const progress = calculateLevelProgressPercentage(item.masteredInLevel, item.totalInLevel);
 
+  // Tres casos para la vista "Nodo": no hay ningún nodo "available" todavía; hay uno pero
+  // no tiene nombre cargado (se invita a definirlo); o hay uno con nombre, que es el caso normal.
+  const nodeLabel = !item.hasUnlockedNode
+    ? "Sin nodo desbloqueado"
+    : item.nodeTitle || "Definí un paso";
+  const nodeLabelIsPlaceholder = !item.hasUnlockedNode;
+
   return (
     <div className="space-y-1 pb-3 border-b border-border/40 last:border-none">
-      {/* Nombre del área/quest: referencia chica, no es lo protagonista */}
-      <span className="block text-xs font-medium uppercase tracking-wide text-muted-foreground truncate">
-        {item.name}
-      </span>
+      {viewMode === "node" ? (
+        /* Vista "Nodo": el título del nodo puntual desbloqueado (status "available") a la
+           izquierda es lo protagonista de la fila -- no el subtítulo del nivel entero.
+           Área/proyecto a la derecha, como referencia chica, junto con el nivel. Si no hay
+           ningún nodo "available" ahora mismo (nivel recién mastered/en transición), se avisa
+           chico y en itálica en vez de simular uno. Si hay nodo pero sin nombre, se invita a
+           definirlo en vez de mostrar un espacio en blanco. */
+        <div className="flex items-start justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => onGoToItem(item)}
+            title={`Ir al skill tree de ${item.name}`}
+            className={`truncate min-w-0 text-left hover:opacity-70 active:opacity-60 transition-opacity ${
+              nodeLabelIsPlaceholder
+                ? "text-xs italic text-muted-foreground/70"
+                : "font-quest font-semibold text-base sm:text-xl text-foreground"
+            }`}
+          >
+            {nodeLabel}
+          </button>
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground truncate max-w-[120px]">
+              {item.name}
+            </span>
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${getLevelColor(item.level)} text-gray-900 dark:text-black`}>
+              Lvl {item.level}
+            </span>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Nombre del área/quest: referencia chica, no es lo protagonista */}
+          <span className="block text-xs font-medium uppercase tracking-wide text-muted-foreground truncate">
+            {item.name}
+          </span>
 
-      {/* Subtítulo del nivel actual: lo más visible, indica de qué es la barra de abajo.
-          Clickeable: lleva directo al skill tree de esa área/quest.
-          Si no hay subtítulo cargado, se avisa chico y en itálica en vez de simular uno. */}
-      <div className="flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={() => onGoToItem(item)}
-          title={`Ir al skill tree de ${item.name}`}
-          className={`truncate min-w-0 text-left hover:opacity-70 active:opacity-60 transition-opacity ${
-            item.subtitle
-              ? "text-sm sm:text-lg font-semibold text-foreground"
-              : "text-xs italic text-muted-foreground/70"
-          }`}
-        >
-          {item.subtitle || "Sin subtítulo"}
-        </button>
-        <span className={`shrink-0 text-xs font-bold px-2 py-0.5 rounded-full ${getLevelColor(item.level)} text-gray-900 dark:text-black`}>
-          Lvl {item.level}
-        </span>
-      </div>
+          {/* Subtítulo del nivel actual: lo más visible, indica de qué es la barra de abajo.
+              Clickeable: lleva directo al skill tree de esa área/quest.
+              Si no hay subtítulo cargado, se avisa chico y en itálica en vez de simular uno. */}
+          <div className="flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={() => onGoToItem(item)}
+              title={`Ir al skill tree de ${item.name}`}
+              className={`truncate min-w-0 text-left hover:opacity-70 active:opacity-60 transition-opacity ${
+                item.subtitle
+                  ? "font-level font-bold text-sm sm:text-lg text-foreground"
+                  : "text-xs italic text-muted-foreground/70"
+              }`}
+            >
+              {item.subtitle || "Sin subtítulo"}
+            </button>
+            <span className={`shrink-0 text-xs font-bold px-2 py-0.5 rounded-full ${getLevelColor(item.level)} text-gray-900 dark:text-black`}>
+              Lvl {item.level}
+            </span>
+          </div>
+        </>
+      )}
 
       {/* Barra de progreso del subtítulo/nivel actual, en bloques (uno por nodo del nivel) */}
       <div className="flex items-center gap-1 mt-1" title={`${progress.toFixed(0)}%`}>
@@ -94,10 +153,12 @@ function ProgressSection({
   title,
   items,
   onGoToItem,
+  viewMode,
 }: {
   title: string;
   items: ProgressItem[];
   onGoToItem: (item: ProgressItem) => void;
+  viewMode: ProgressViewMode;
 }) {
   const [isOpen, setIsOpen] = useState(true);
 
@@ -113,7 +174,7 @@ function ProgressSection({
       </CollapsibleTrigger>
       <CollapsibleContent className="space-y-3 pt-2">
         {items.map((item) => (
-          <ProgressItemRow key={`${item.type}-${item.id}`} item={item} onGoToItem={onGoToItem} />
+          <ProgressItemRow key={`${item.type}-${item.id}`} item={item} onGoToItem={onGoToItem} viewMode={viewMode} />
         ))}
       </CollapsibleContent>
     </Collapsible>
@@ -122,16 +183,20 @@ function ProgressSection({
 
 export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { areas, projects, setActiveAreaId, setActiveProjectId } = useSkillTree();
+  const [viewMode, setViewMode] = useState<ProgressViewMode>("classic");
 
   const buildProgressItem = (item: Area | Project, type: "area" | "project"): ProgressItem => {
     const level = item.unlockedLevel;
     const skills = item.skills || [];
+    const unlockedNode = getUnlockedNode(skills, level);
     return {
       id: item.id,
       name: item.name,
       type,
       level,
       subtitle: item.levelSubtitles?.[level.toString()],
+      nodeTitle: unlockedNode?.title,
+      hasUnlockedNode: unlockedNode !== undefined,
       masteredInLevel: countMasteredSkillsInLevel(skills, level),
       totalInLevel: countSkillsInLevel(skills, level),
     };
@@ -169,13 +234,37 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
         <VisuallyHidden>
           <DialogTitle>Progress Tracker</DialogTitle>
         </VisuallyHidden>
-        <h2 className="shrink-0 text-lg sm:text-2xl font-bold">Progress Tracker</h2>
+        <div className="flex shrink-0 items-center justify-between gap-2">
+          <h2 className="text-lg sm:text-2xl font-bold">Progress Tracker</h2>
+          {/* Toggle entre la vista clásica (área/quest arriba, subtítulo abajo) y la vista
+              "Nodo" (nodo desbloqueado destacado a la izquierda, área/quest a la derecha) */}
+          <div className="flex items-center gap-1 rounded-full bg-muted p-0.5 text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => setViewMode("classic")}
+              className={`rounded-full px-2.5 py-1 transition-colors ${
+                viewMode === "classic" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
+              }`}
+            >
+              Clásica
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("node")}
+              className={`rounded-full px-2.5 py-1 transition-colors ${
+                viewMode === "node" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
+              }`}
+            >
+              Nodo
+            </button>
+          </div>
+        </div>
         {/* Único contenedor con scroll: vertical nada más, con scrollbar fina y su propio
             colchón a la derecha (pr-2 -mr-2) para que la barra no le coma ancho al contenido. */}
         <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden minimal-scrollbar pr-2 -mr-2 space-y-4">
-          <ProgressSection title="Áreas" items={areaItems} onGoToItem={goToItem} />
-          <ProgressSection title="Main Quest" items={mainQuestItems} onGoToItem={goToItem} />
-          <ProgressSection title="Side Quest" items={sideQuestItems} onGoToItem={goToItem} />
+          <ProgressSection title="Áreas" items={areaItems} onGoToItem={goToItem} viewMode={viewMode} />
+          <ProgressSection title="Main Quest" items={mainQuestItems} onGoToItem={goToItem} viewMode={viewMode} />
+          <ProgressSection title="Side Quest" items={sideQuestItems} onGoToItem={goToItem} viewMode={viewMode} />
 
           {!hasAnyItems && (
             <div className="text-center py-8 text-muted-foreground">

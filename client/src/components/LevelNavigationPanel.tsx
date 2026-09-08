@@ -84,7 +84,7 @@ export function LevelNavigationPanel({
                   <div
                     className={[
                       "pointer-events-none absolute top-1/2 -translate-y-1/2 rounded-md px-2 py-1",
-                      "max-w-[220px] truncate whitespace-nowrap text-[11px]",
+                      "max-w-[220px] truncate whitespace-nowrap text-[11px] font-level font-bold",
                       "bg-zinc-800/95 text-zinc-100 shadow-[0_8px_22px_rgba(0,0,0,0.35)]",
                       "transition-all duration-150",
                       labelOffsetClass,

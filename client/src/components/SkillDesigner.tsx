@@ -381,7 +381,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                     }
                                   }}
                                 >
-                                  Nivel {level}{subtitle && `: ${subtitle}`}
+                                  <span className="font-level font-bold">Nivel {level}{subtitle && `: ${subtitle}`}</span>
                                   {isBlocked && " (Bloqueado)"}
                                   {isNotYetVisibleInSkillTree && !isBlocked && <Lock className="inline-block ml-1.5 w-3.5 h-3.5" />}
                                 </span>
@@ -582,7 +582,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                         }
                                       }}
                                     >
-                                      Nivel {level}{subtitle && `: ${subtitle}`}
+                                      <span className="font-level font-bold">Nivel {level}{subtitle && `: ${subtitle}`}</span>
                                       {isBlocked && " (Bloqueado)"}
                                       {isNotYetVisibleInSkillTree && !isBlocked && <Lock className="inline-block ml-1.5 w-3.5 h-3.5" />}
                                   </span>
@@ -781,7 +781,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                       }
                                     }}
                                   >
-                                    Nivel {level}{subtitle && `: ${subtitle}`}
+                                    <span className="font-level font-bold">Nivel {level}{subtitle && `: ${subtitle}`}</span>
                                     {isBlocked && " (Bloqueado)"}
                                     {isNotYetVisibleInSkillTree && !isBlocked && <Lock className="inline-block ml-1.5 w-3.5 h-3.5" />}
                                   </span>
@@ -977,7 +977,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                       }
                                     }}
                                   >
-                                    Nivel {level}{subtitle && `: ${subtitle}`}
+                                    <span className="font-level font-bold">Nivel {level}{subtitle && `: ${subtitle}`}</span>
                                     {isBlocked && " (Bloqueado)"}
                                     {isNotYetVisibleInSkillTree && !isBlocked && <Lock className="inline-block ml-1.5 w-3.5 h-3.5" />}
                                   </span>

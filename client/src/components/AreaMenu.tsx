@@ -2835,7 +2835,7 @@ function AreaItem({ area, isActive, isMenuOpen, onSelect, onDelete, onArchive, o
             <Icon size={18} className={cn("shrink-0", isActive ? "text-primary" : "group-hover:text-foreground")} />
             
             {isMenuOpen && (
-              <motion.span 
+              <motion.span
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 className="font-medium text-sm truncate"
@@ -3110,7 +3110,7 @@ function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete, onArch
             <Icon size={18} className={cn("shrink-0", isActive ? "text-primary" : "group-hover:text-foreground")} />
             
             {isMenuOpen && (
-              <motion.span 
+              <motion.span
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 className="font-medium text-sm truncate"

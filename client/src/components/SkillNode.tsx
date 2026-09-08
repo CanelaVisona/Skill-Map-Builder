@@ -2906,12 +2906,19 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
           {/* Label */}
           <div className={cn(
-            "absolute left-14 top-1/2 -translate-y-1/2 font-medium transition-colors text-sm flex items-start gap-2",
+            "font-quest font-semibold absolute left-14 top-1/2 -translate-y-1/2 transition-colors text-sm leading-none",
             isLocked ? "text-muted-foreground" : "text-foreground",
             isMastered && "text-foreground",
             (skill.title.startsWith("Nodo ") || skill.title === "Next challenge" || skill.title === "Next objetive quest" || skill.title === "Objective quest") && "text-muted-foreground/60"
           )}>
-            <div className="flex flex-col relative">
+            {/* Title row: the only in-flow content here, so its own line height is what the
+                outer -translate-y-1/2 above centers against the node circle. Everything that
+                can grow the label taller (planned date/duration, pending rewards preview,
+                subskill badge) is pulled out below via position:absolute so it hangs under
+                the title without ever affecting this row's height -- otherwise the whole
+                block's centroid shifts and the title stops lining up with the circle
+                whenever any of that extra info is showing. */}
+            <div className="relative flex items-center gap-2">
               <motion.span
                 onClick={handleTitleClick}
                 onTouchStart={handleTitleLongPressStart}
@@ -2936,74 +2943,83 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               >
                 {skill.isAutoComplete === 1 || skill.levelPosition === 1 ? "" : skill.title}
               </motion.span>
-              {/* Small day/time tags under the title when this node has a plannedDate and/or
-                  plannedDuration assigned, shown side by side when both are set. Hidden once
-                  the node is confirmed/mastered — they were only relevant as a reminder while
-                  the node was still pending. */}
-              {skill.isAutoComplete !== 1 && skill.levelPosition !== 1 && !isInicioNode && !isMastered && (plannedDateLabel || plannedDurationLabel) && (
-                <div className="flex items-center gap-1 font-normal italic tracking-wide text-muted-foreground/70 text-[10px] leading-tight">
-                  {plannedDateLabel && <span className="whitespace-nowrap">{plannedDateLabel}</span>}
-                  {plannedDateLabel && plannedDurationLabel && <span>·</span>}
-                  {plannedDurationLabel && <span className="whitespace-nowrap">{plannedDurationLabel}</span>}
+              {/* Don't show the "ready to confirm" mark alongside the incomplete-subtasks
+                  lock icon (hasUnlockedWithIncompleteSubtasks above) — the two signals
+                  contradict each other visually. */}
+              {!isLocked && !isMastered && !hasIncompleteSubtasks && (
+                <span className="text-2xl font-bold text-amber-400 leading-none">!</span>
+              )}
+              {/* XP subtitle - only show when not mastered and has XP > 0 */}
+              {!isMastered && typeof skill.experiencePoints === 'number' && skill.experiencePoints > 0 && (
+                <div className="text-muted-foreground/70 text-center text-[0.8em]">
+                  +{skill.experiencePoints}xp
                 </div>
               )}
-              {/* Preview of whatever was staged for this node -- a learning/tools from the
-                  Journal (long-press the node), or xp/fuerza/poder/aprendizaje from Step 3 of
-                  the title-long-press edit dialog. Shown the same way the planned date/time is,
-                  above -- none of it is granted/saved until this node is actually confirmed
-                  (see runConfirmSequence), in the same order as it's listed here. */}
-              {skill.isAutoComplete !== 1 && skill.levelPosition !== 1 && !isInicioNode && !isMastered && hasPendingRewards && (
-                <div className="flex items-center gap-1 flex-wrap font-normal italic tracking-wide text-muted-foreground/70 text-[10px] leading-tight">
-                  {pendingLearning && (
-                    <span className="whitespace-nowrap">+Aprendizaje: {pendingLearning.title}</span>
+
+              {(
+                (skill.isAutoComplete !== 1 && skill.levelPosition !== 1 && !isInicioNode && !isMastered && (plannedDateLabel || plannedDurationLabel)) ||
+                (skill.isAutoComplete !== 1 && skill.levelPosition !== 1 && !isInicioNode && !isMastered && hasPendingRewards) ||
+                (!isInicioNode && !isLocked && hasCompletedSubskillTree)
+              ) && (
+                <div className="absolute left-0 top-full mt-1 flex flex-col gap-1">
+                  {/* Small day/time tags under the title when this node has a plannedDate and/or
+                      plannedDuration assigned, shown side by side when both are set. Hidden once
+                      the node is confirmed/mastered — they were only relevant as a reminder while
+                      the node was still pending. */}
+                  {skill.isAutoComplete !== 1 && skill.levelPosition !== 1 && !isInicioNode && !isMastered && (plannedDateLabel || plannedDurationLabel) && (
+                    <div className="flex items-center gap-1 font-normal italic tracking-wide text-muted-foreground/70 text-[10px] leading-tight">
+                      {plannedDateLabel && <span className="whitespace-nowrap">{plannedDateLabel}</span>}
+                      {plannedDateLabel && plannedDurationLabel && <span>·</span>}
+                      {plannedDurationLabel && <span className="whitespace-nowrap">{plannedDurationLabel}</span>}
+                    </div>
                   )}
-                  {pendingTools.length > 0 && (
-                    <span className="whitespace-nowrap">+{pendingTools.length} tool{pendingTools.length > 1 ? "s" : ""}</span>
+                  {/* Preview of whatever was staged for this node -- a learning/tools from the
+                      Journal (long-press the node), or xp/fuerza/poder/aprendizaje from Step 3 of
+                      the title-long-press edit dialog. Shown the same way the planned date/time is,
+                      above -- none of it is granted/saved until this node is actually confirmed
+                      (see runConfirmSequence), in the same order as it's listed here. */}
+                  {skill.isAutoComplete !== 1 && skill.levelPosition !== 1 && !isInicioNode && !isMastered && hasPendingRewards && (
+                    <div className="flex items-center gap-1 flex-wrap font-normal italic tracking-wide text-muted-foreground/70 text-[10px] leading-tight">
+                      {pendingLearning && (
+                        <span className="whitespace-nowrap">+Aprendizaje: {pendingLearning.title}</span>
+                      )}
+                      {pendingTools.length > 0 && (
+                        <span className="whitespace-nowrap">+{pendingTools.length} tool{pendingTools.length > 1 ? "s" : ""}</span>
+                      )}
+                      {pendingXpSkillNames.map((name, i) => (
+                        <span key={pendingXpSkillIds[i]} className="whitespace-nowrap">+{FIXED_XP_AMOUNT}xp {name}</span>
+                      ))}
+                      {pendingBodyZones.length > 0 && (
+                        <span className="whitespace-nowrap">
+                          +{pendingBodyDimension === "fuerza" ? "Fuerza" : "Flexibilidad"}
+                        </span>
+                      )}
+                      {pendingPowerId && (
+                        <span className="whitespace-nowrap">+{pendingPowerName || "Poder"}</span>
+                      )}
+                      {pendingErrorActions.map((action, i) => (
+                        <span key={i} className="whitespace-nowrap">
+                          {action.type === "confirm"
+                            ? `+Error detectado: ${action.errorName}`
+                            : `${action.delta! > 0 ? "+" : ""}${action.delta}p ${action.errorName}${(action.estrategia || action.disparador) ? ` (${action.estrategia || action.disparador})` : ""}`}
+                        </span>
+                      ))}
+                    </div>
                   )}
-                  {pendingXpSkillNames.map((name, i) => (
-                    <span key={pendingXpSkillIds[i]} className="whitespace-nowrap">+{FIXED_XP_AMOUNT}xp {name}</span>
-                  ))}
-                  {pendingBodyZones.length > 0 && (
-                    <span className="whitespace-nowrap">
-                      +{pendingBodyDimension === "fuerza" ? "Fuerza" : "Flexibilidad"}
-                    </span>
+                  {/* Sub-skill tree completion badge: this node's own sub-skill tree is fully
+                      mastered. Shown even once this node itself gets confirmed later, since it
+                      stays true -- the small circle mirrors the mastered-node circle above. */}
+                  {!isInicioNode && !isLocked && hasCompletedSubskillTree && (
+                    <div className="flex items-center gap-1.5 font-normal text-muted-foreground/70 text-[10px] leading-tight">
+                      <span className="w-3.5 h-3.5 rounded-full bg-foreground text-background flex items-center justify-center shrink-0">
+                        <Check size={8} strokeWidth={3} />
+                      </span>
+                      <span>Árbol de subskills completado</span>
+                    </div>
                   )}
-                  {pendingPowerId && (
-                    <span className="whitespace-nowrap">+{pendingPowerName || "Poder"}</span>
-                  )}
-                  {pendingErrorActions.map((action, i) => (
-                    <span key={i} className="whitespace-nowrap">
-                      {action.type === "confirm"
-                        ? `+Error detectado: ${action.errorName}`
-                        : `${action.delta! > 0 ? "+" : ""}${action.delta}p ${action.errorName}${(action.estrategia || action.disparador) ? ` (${action.estrategia || action.disparador})` : ""}`}
-                    </span>
-                  ))}
-                </div>
-              )}
-              {/* Sub-skill tree completion badge: this node's own sub-skill tree is fully
-                  mastered. Shown even once this node itself gets confirmed later, since it
-                  stays true -- the small circle mirrors the mastered-node circle above. */}
-              {!isInicioNode && !isLocked && hasCompletedSubskillTree && (
-                <div className="flex items-center gap-1.5 font-normal text-muted-foreground/70 text-[10px] leading-tight">
-                  <span className="w-3.5 h-3.5 rounded-full bg-foreground text-background flex items-center justify-center shrink-0">
-                    <Check size={8} strokeWidth={3} />
-                  </span>
-                  <span>Árbol de subskills completado</span>
                 </div>
               )}
             </div>
-            {/* Don't show the "ready to confirm" mark alongside the incomplete-subtasks
-                lock icon (hasUnlockedWithIncompleteSubtasks above) — the two signals
-                contradict each other visually. */}
-            {!isLocked && !isMastered && !hasIncompleteSubtasks && (
-              <span className="text-2xl font-bold text-amber-400">!</span>
-            )}
-            {/* XP subtitle - only show when not mastered and has XP > 0 */}
-            {!isMastered && typeof skill.experiencePoints === 'number' && skill.experiencePoints > 0 && (
-              <div className="text-muted-foreground/70 text-center text-[0.8em]">
-                +{skill.experiencePoints}xp
-              </div>
-            )}
           </div>
 
         </div>
@@ -3097,9 +3113,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               )}
             </div>
             <div className="max-h-[200px] overflow-y-auto custom-scrollbar">
-              <h4 className="font-semibold leading-none mb-1.5">{skill.title}</h4>
+              <h4 className="font-quest font-semibold leading-none mb-1.5">{skill.title}</h4>
               {skill.description && (
-                <p className="text-sm text-muted-foreground leading-relaxed break-words">
+                <p className="font-description text-sm text-muted-foreground leading-relaxed break-words">
                   {skill.description}
                 </p>
               )}
@@ -5007,7 +5023,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     <Dialog open={isSubtitleDialogOpen} onOpenChange={setIsSubtitleDialogOpen}>
       <DialogContent className="sm:max-w-[400px] border-0 shadow-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="text-lg font-medium">Subtítulo del Nivel {skill.level}</DialogTitle>
+          <DialogTitle className="font-level font-bold text-lg">Subtítulo del Nivel {skill.level}</DialogTitle>
           <DialogDescription className="sr-only">Edit level subtitle</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">

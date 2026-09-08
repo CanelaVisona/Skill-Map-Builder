@@ -9423,7 +9423,7 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
                       {questText.replace(":", "")}
                     </div>
                     <div
-                      className={`font-bold mt-1 break-words ${isNewOrUpdatedQuest ? 'text-amber-300' : 'text-muted-foreground'} ${subtitleDescription ? 'cursor-pointer hover:underline' : ''}`}
+                      className={`font-level font-bold mt-1 break-words ${isNewOrUpdatedQuest ? 'text-amber-300' : 'text-muted-foreground'} ${subtitleDescription ? 'cursor-pointer hover:underline' : ''}`}
                       style={{
                         ...(isNewOrUpdatedQuest && {
                           textShadow: "0 0 15px rgba(251, 191, 36, 0.6), 0 0 30px rgba(251, 191, 36, 0.3)",
@@ -9482,9 +9482,9 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
       <Dialog open={!!viewingLevelSubtitle} onOpenChange={(open) => !open && setViewingLevelSubtitle(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{viewingLevelSubtitle?.subtitle}</DialogTitle>
+            <DialogTitle className="font-level font-bold">{viewingLevelSubtitle?.subtitle}</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+          <p className="font-description text-sm text-muted-foreground whitespace-pre-wrap">
             {viewingLevelSubtitle?.description}
           </p>
         </DialogContent>

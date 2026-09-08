@@ -26,6 +26,15 @@ export function countMasteredSkillsInLevel(skills: Skill[], level: number): numb
   return skills.filter((skill) => skill.level === level && isRealLevelSkill(skill) && skill.status === "mastered").length;
 }
 
+// Nodo actualmente desbloqueado (status "available") dentro de un nivel -- es el nodo puntual
+// que el usuario tiene que completar ahora, distinto del subtítulo/título del nivel entero
+// (levelSubtitles), que es más bien el nombre del "capítulo".
+export function getUnlockedNode(skills: Skill[], level: number): Skill | undefined {
+  return skills.find(
+    (skill) => skill.level === level && isRealLevelSkill(skill) && skill.status === "available"
+  );
+}
+
 export function calculateLevelProgressPercentage(masteredInLevel: number, totalInLevel: number): number {
   if (totalInLevel <= 0) return 0;
   return clampProgressPercentage((masteredInLevel / totalInLevel) * 100);

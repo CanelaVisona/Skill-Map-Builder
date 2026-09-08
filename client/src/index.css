@@ -26,7 +26,14 @@
   
   --font-display: 'Inter', sans-serif;
   --font-body: 'Inter', sans-serif;
-  
+
+  /* Tipografía del skill tree: NIVEL en Cinzel Bold, QUEST/Área en Rajdhani SemiBold,
+     Descripción en Inter Regular. Ver también font-level/font-quest/font-description
+     en tailwind.config.js. */
+  --font-level: 'Cinzel', serif;
+  --font-quest: 'Rajdhani', sans-serif;
+  --font-description: 'Inter', sans-serif;
+
   --radius: 0.5rem;
 }
 
