@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { ChevronDown } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { ChevronDown, ChevronUp, Eye, EyeOff, SlidersHorizontal } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -10,6 +10,13 @@ import {
   countSkillsInLevel,
   getUnlockedNode,
 } from "@/lib/area-progress";
+import {
+  applyManualOrder,
+  fixSectionOrder,
+  loadProgressTrackerPrefs,
+  saveProgressTrackerPrefs,
+  type ProgressTrackerPrefs,
+} from "@/lib/progress-tracker-settings";
 
 interface ProgressItem {
   id: string;
@@ -51,16 +58,31 @@ function sortBySubtitleFirst(items: ProgressItem[]): ProgressItem[] {
   return [...items.filter((item) => item.subtitle), ...items.filter((item) => !item.subtitle)];
 }
 
+// Clave estable de cada fila, usada para orden manual y para la lista de ocultos.
+const getItemKey = (item: Pick<ProgressItem, "type" | "id">) => `${item.type}-${item.id}`;
+
 type ProgressViewMode = "classic" | "node";
 
 function ProgressItemRow({
   item,
   onGoToItem,
   viewMode,
+  editMode = false,
+  canMoveUp = false,
+  canMoveDown = false,
+  onMoveUp,
+  onMoveDown,
+  onHide,
 }: {
   item: ProgressItem;
   onGoToItem: (item: ProgressItem) => void;
   viewMode: ProgressViewMode;
+  editMode?: boolean;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  onHide?: () => void;
 }) {
   const totalBlocks = Math.max(item.totalInLevel, 1);
   const progress = calculateLevelProgressPercentage(item.masteredInLevel, item.totalInLevel);
@@ -133,26 +155,101 @@ function ProgressItemRow({
         </>
       )}
 
-      {/* Barra de progreso del subtítulo/nivel actual, en bloques (uno por nodo del nivel) */}
-      <div className="flex items-center gap-1 mt-1" title={`${progress.toFixed(0)}%`}>
-        {Array.from({ length: totalBlocks }).map((_, idx) => {
-          const filled = item.totalInLevel > 0 && idx < item.masteredInLevel;
-          return (
-            <div
-              key={idx}
-              className={`h-2.5 flex-1 rounded-sm transition-colors duration-500 ${
-                filled ? getLevelColor(item.level) : "bg-muted"
-              }`}
-            />
-          );
-        })}
-      </div>
+      {/* Barra de progreso del subtítulo/nivel actual, en bloques (uno por nodo del nivel).
+          En modo edición se esconde para que la lista quede compacta al reordenar. */}
+      {!editMode && (
+        <div className="flex items-center gap-1 mt-1" title={`${progress.toFixed(0)}%`}>
+          {Array.from({ length: totalBlocks }).map((_, idx) => {
+            const filled = item.totalInLevel > 0 && idx < item.masteredInLevel;
+            return (
+              <div
+                key={idx}
+                className={`h-2.5 flex-1 rounded-sm transition-colors duration-500 ${
+                  filled ? getLevelColor(item.level) : "bg-muted"
+                }`}
+              />
+            );
+          })}
+        </div>
+      )}
 
-      {/* Completados / total del nivel actual */}
-      <span className="block text-right text-xs font-semibold text-muted-foreground">
-        {item.masteredInLevel}/{item.totalInLevel}
-      </span>
+      {/* Completados / total del nivel actual + controles de orden/ocultar (solo en modo edición) */}
+      <div className="flex items-center justify-between">
+        {editMode ? (
+          <div className="flex items-center gap-0.5">
+            <button
+              type="button"
+              onClick={onMoveUp}
+              disabled={!canMoveUp}
+              title="Subir"
+              className="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+            >
+              <ChevronUp className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={onMoveDown}
+              disabled={!canMoveDown}
+              title="Bajar"
+              className="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+            >
+              <ChevronDown className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={onHide}
+              title="Ocultar"
+              className="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            >
+              <EyeOff className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : (
+          <span />
+        )}
+        <span className="text-right text-xs font-semibold text-muted-foreground">
+          {item.masteredInLevel}/{item.totalInLevel}
+        </span>
+      </div>
     </div>
+  );
+}
+
+// Fila compacta para la lista de ocultos: solo el nombre y el botón para volver a mostrarla.
+function HiddenItemRow({ item, onShow }: { item: ProgressItem; onShow: () => void }) {
+  return (
+    <div className="flex items-center justify-between gap-2 py-1">
+      <span className="truncate text-xs text-muted-foreground">{item.name}</span>
+      <button
+        type="button"
+        onClick={onShow}
+        title="Mostrar"
+        className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+      >
+        <Eye className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
+// Lista de ocultos: colapsada por defecto para no sumar ruido a la vista principal.
+function HiddenSection({ items, onShow }: { items: ProgressItem[]; onShow: (key: string) => void }) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <Collapsible open={isOpen} onOpenChange={setIsOpen} className="border-t border-border/40 pt-2">
+      <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-1 group">
+        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Ocultos <span className="font-normal">({items.length})</span>
+        </span>
+        <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 ${isOpen ? "" : "-rotate-90"}`} />
+      </CollapsibleTrigger>
+      <CollapsibleContent className="pt-1">
+        {items.map((item) => (
+          <HiddenItemRow key={getItemKey(item)} item={item} onShow={() => onShow(getItemKey(item))} />
+        ))}
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -161,11 +258,17 @@ function ProgressSection({
   items,
   onGoToItem,
   viewMode,
+  editMode = false,
+  onMove,
+  onHide,
 }: {
   title: string;
   items: ProgressItem[];
   onGoToItem: (item: ProgressItem) => void;
   viewMode: ProgressViewMode;
+  editMode?: boolean;
+  onMove?: (key: string, direction: -1 | 1) => void;
+  onHide?: (key: string) => void;
 }) {
   const [isOpen, setIsOpen] = useState(true);
 
@@ -180,9 +283,23 @@ function ProgressSection({
         <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 ${isOpen ? "" : "-rotate-90"}`} />
       </CollapsibleTrigger>
       <CollapsibleContent className="space-y-3 pt-2">
-        {items.map((item) => (
-          <ProgressItemRow key={`${item.type}-${item.id}`} item={item} onGoToItem={onGoToItem} viewMode={viewMode} />
-        ))}
+        {items.map((item, idx) => {
+          const key = getItemKey(item);
+          return (
+            <ProgressItemRow
+              key={key}
+              item={item}
+              onGoToItem={onGoToItem}
+              viewMode={viewMode}
+              editMode={editMode}
+              canMoveUp={idx > 0}
+              canMoveDown={idx < items.length - 1}
+              onMoveUp={() => onMove?.(key, -1)}
+              onMoveDown={() => onMove?.(key, 1)}
+              onHide={() => onHide?.(key)}
+            />
+          );
+        })}
       </CollapsibleContent>
     </Collapsible>
   );
@@ -191,6 +308,43 @@ function ProgressSection({
 export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { areas, projects, setActiveAreaId, setActiveProjectId } = useSkillTree();
   const [viewMode, setViewMode] = useState<ProgressViewMode>("classic");
+  const [editMode, setEditMode] = useState(false);
+  const [prefs, setPrefs] = useState<ProgressTrackerPrefs>(loadProgressTrackerPrefs);
+
+  // Al abrir el tracker se relee la preferencia (por si cambió en otra pestaña) y se
+  // arranca siempre en modo lectura.
+  useEffect(() => {
+    if (open) {
+      setPrefs(loadProgressTrackerPrefs());
+      setEditMode(false);
+    }
+  }, [open]);
+
+  const updatePrefs = (next: ProgressTrackerPrefs) => {
+    setPrefs(next);
+    saveProgressTrackerPrefs(next);
+  };
+
+  const hiddenSet = new Set(prefs.hidden);
+
+  // Ocultar / mostrar una fila. Ocultarla la saca de su sección y la manda a "Ocultos".
+  const setHidden = (key: string, hidden: boolean) => {
+    const nextHidden = hidden
+      ? [...prefs.hidden.filter((k) => k !== key), key]
+      : prefs.hidden.filter((k) => k !== key);
+    updatePrefs({ ...prefs, hidden: nextHidden });
+  };
+
+  // Mover una fila dentro de su sección. `sectionKeys` es el orden visible actual de esa
+  // sección; se intercambia con el vecino y se fija el nuevo orden.
+  const moveWithin = (sectionKeys: string[], key: string, direction: -1 | 1) => {
+    const from = sectionKeys.indexOf(key);
+    const to = from + direction;
+    if (from < 0 || to < 0 || to >= sectionKeys.length) return;
+    const reordered = [...sectionKeys];
+    [reordered[from], reordered[to]] = [reordered[to], reordered[from]];
+    updatePrefs({ ...prefs, order: fixSectionOrder(prefs.order, reordered) });
+  };
 
   const buildProgressItem = (item: Area | Project, type: "area" | "project"): ProgressItem => {
     const level = item.unlockedLevel;
@@ -209,18 +363,31 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
     };
   };
 
-  const areaItems = sortBySubtitleFirst(Array.isArray(areas) ? areas.map((area) => buildProgressItem(area, "area")) : []);
+  const allAreaItems = sortBySubtitleFirst(Array.isArray(areas) ? areas.map((area) => buildProgressItem(area, "area")) : []);
 
   const projectList = Array.isArray(projects) ? projects : [];
-  const mainQuestItems = sortBySubtitleFirst(
+  const allMainQuestItems = sortBySubtitleFirst(
     projectList.filter((p) => !p.questType || p.questType === "main").map((project) => buildProgressItem(project, "project"))
   );
   // Side, emergent y experience quests se agrupan juntos como "Side Quests"
-  const sideQuestItems = sortBySubtitleFirst(
+  const allSideQuestItems = sortBySubtitleFirst(
     projectList.filter((p) => p.questType && p.questType !== "main").map((project) => buildProgressItem(project, "project"))
   );
 
-  const hasAnyItems = areaItems.length > 0 || mainQuestItems.length > 0 || sideQuestItems.length > 0;
+  // Cada sección: primero se saca lo oculto, después se aplica el orden manual elegido.
+  const visibleOf = (items: ProgressItem[]) =>
+    applyManualOrder(items.filter((item) => !hiddenSet.has(getItemKey(item))), getItemKey, prefs.order);
+  const areaItems = visibleOf(allAreaItems);
+  const mainQuestItems = visibleOf(allMainQuestItems);
+  const sideQuestItems = visibleOf(allSideQuestItems);
+
+  // Lista única de ocultos, en el orden en que se fueron ocultando.
+  const allItems = [...allAreaItems, ...allMainQuestItems, ...allSideQuestItems];
+  const hiddenItems = prefs.hidden
+    .map((key) => allItems.find((item) => getItemKey(item) === key))
+    .filter((item): item is ProgressItem => item !== undefined);
+
+  const hasAnyItems = allItems.length > 0;
 
   // Ir hasta el skill tree del área/quest correspondiente y cerrar el tracker
   const goToItem = (item: ProgressItem) => {
@@ -243,36 +410,79 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
         </VisuallyHidden>
         <div className="flex shrink-0 items-center justify-between gap-2">
           <h2 className="text-lg sm:text-2xl font-bold">Progress Tracker</h2>
-          {/* Toggle entre la vista clásica (área/quest arriba, subtítulo abajo) y la vista
-              "Nodo" (nodo desbloqueado destacado a la izquierda, área/quest a la derecha).
-              mr-7 deja lugar a la X de cierre del DialogContent. */}
-          <div className="mr-7 flex items-center gap-1 rounded-full bg-muted p-0.5 text-xs font-semibold">
+          {/* mr-7 deja lugar a la X de cierre del DialogContent. */}
+          <div className="mr-7 flex items-center gap-1.5">
+            {/* Toggle entre la vista clásica (área/quest arriba, subtítulo abajo) y la vista
+                "Nodo" (nodo desbloqueado destacado a la izquierda, área/quest a la derecha). */}
+            <div className="flex items-center gap-1 rounded-full bg-muted p-0.5 text-xs font-semibold">
+              <button
+                type="button"
+                onClick={() => setViewMode("classic")}
+                className={`rounded-full px-2.5 py-1 transition-colors ${
+                  viewMode === "classic" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
+                }`}
+              >
+                Clásica
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("node")}
+                className={`rounded-full px-2.5 py-1 transition-colors ${
+                  viewMode === "node" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
+                }`}
+              >
+                Nodo
+              </button>
+            </div>
+            {/* Modo edición: muestra los controles de orden/ocultar en cada fila. Apagado
+                por defecto para que la vista quede limpia. */}
             <button
               type="button"
-              onClick={() => setViewMode("classic")}
-              className={`rounded-full px-2.5 py-1 transition-colors ${
-                viewMode === "classic" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
+              onClick={() => setEditMode((v) => !v)}
+              title={editMode ? "Listo" : "Ordenar y ocultar"}
+              className={`rounded-full p-1.5 transition-colors ${
+                editMode ? "bg-foreground text-background" : "bg-muted text-muted-foreground hover:text-foreground"
               }`}
             >
-              Clásica
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("node")}
-              className={`rounded-full px-2.5 py-1 transition-colors ${
-                viewMode === "node" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"
-              }`}
-            >
-              Nodo
+              <SlidersHorizontal className="h-3.5 w-3.5" />
             </button>
           </div>
         </div>
         {/* Único contenedor con scroll: vertical nada más, con scrollbar fina y su propio
-            colchón a la derecha (pr-2 -mr-2) para que la barra no le coma ancho al contenido. */}
-        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden minimal-scrollbar pr-2 -mr-2 space-y-4">
-          <ProgressSection title="Áreas" items={areaItems} onGoToItem={goToItem} viewMode={viewMode} />
-          <ProgressSection title="Main Quest" items={mainQuestItems} onGoToItem={goToItem} viewMode={viewMode} />
-          <ProgressSection title="Side Quest" items={sideQuestItems} onGoToItem={goToItem} viewMode={viewMode} />
+            colchón a la derecha (pr-2 -mr-2) para que la barra no le coma ancho al contenido.
+            pt-2 separa el título "Progress Tracker" de los títulos de sección (Áreas / Quests). */}
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden minimal-scrollbar pr-2 -mr-2 pt-2 space-y-4">
+          <ProgressSection
+            title="Áreas"
+            items={areaItems}
+            onGoToItem={goToItem}
+            viewMode={viewMode}
+            editMode={editMode}
+            onMove={(key, dir) => moveWithin(areaItems.map(getItemKey), key, dir)}
+            onHide={(key) => setHidden(key, true)}
+          />
+          <ProgressSection
+            title="Main Quest"
+            items={mainQuestItems}
+            onGoToItem={goToItem}
+            viewMode={viewMode}
+            editMode={editMode}
+            onMove={(key, dir) => moveWithin(mainQuestItems.map(getItemKey), key, dir)}
+            onHide={(key) => setHidden(key, true)}
+          />
+          <ProgressSection
+            title="Side Quest"
+            items={sideQuestItems}
+            onGoToItem={goToItem}
+            viewMode={viewMode}
+            editMode={editMode}
+            onMove={(key, dir) => moveWithin(sideQuestItems.map(getItemKey), key, dir)}
+            onHide={(key) => setHidden(key, true)}
+          />
+
+          {hiddenItems.length > 0 && (
+            <HiddenSection items={hiddenItems} onShow={(key) => setHidden(key, false)} />
+          )}
 
           {!hasAnyItems && (
             <div className="text-center py-8 text-muted-foreground">
