@@ -69,6 +69,9 @@ export interface Area {
   endOfAreaLevel?: number;
   currentXp: number;
   skills: Skill[];
+  // "Próximos": queued for later, hidden from the menu until activated.
+  upcoming?: 0 | 1 | null;
+  scheduledUnlockAt?: string | null;
 }
 
 export interface Project {
@@ -84,6 +87,9 @@ export interface Project {
   currentXp: number;
   skills: Skill[];
   questType?: "main" | "side" | "emergent" | "experience";
+  // "Próximos": queued for later, hidden from the menu until activated.
+  upcoming?: 0 | 1 | null;
+  scheduledUnlockAt?: string | null;
 }
 
 export interface GlobalSkill {
@@ -195,6 +201,9 @@ interface SkillTreeContextType {
   hideQuestUpdatedPopup: () => void;
   updateAreaDetails: (areaId: string, updates: { name?: string; description?: string; icon?: string }) => Promise<void>;
   updateProjectDetails: (projectId: string, updates: { name?: string; description?: string; icon?: string }) => Promise<void>;
+  // "Próximos": move a quest in/out of the queued-for-later list, optionally scheduling
+  // an auto-activation moment (ISO string). Passing upcoming=false activates it now.
+  setQuestUpcoming: (kind: "area" | "project", id: string, upcoming: boolean, scheduledUnlockAt?: string | null) => Promise<void>;
   sideQuests: Project[];
   archivedSideQuests: Project[];
   createSideQuest: (name: string, description: string, icon: string) => Promise<void>;
@@ -2967,6 +2976,57 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
+  const setQuestUpcoming = async (
+    kind: "area" | "project",
+    id: string,
+    upcoming: boolean,
+    scheduledUnlockAt: string | null = null,
+  ) => {
+    const patch = {
+      upcoming: upcoming ? 1 : 0,
+      scheduledUnlockAt: upcoming ? scheduledUnlockAt : null,
+    } as const;
+    try {
+      const response = await fetch(`/api/${kind === "area" ? "areas" : "projects"}/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (!response.ok) {
+        throw new Error("Failed to update quest schedule");
+      }
+      if (kind === "area") {
+        setAreas(prev => prev.map(a => (a.id === id ? { ...a, ...patch } : a)));
+      } else {
+        setProjects(prev => prev.map(p => (p.id === id ? { ...p, ...patch } : p)));
+      }
+    } catch (error) {
+      console.error("Error updating quest schedule:", error);
+    }
+  };
+
+  // Auto-activate any "Próximos" quest whose scheduled unlock moment has passed
+  // while the app stays open (the server also sweeps this on every load).
+  useEffect(() => {
+    const releaseDue = () => {
+      const now = Date.now();
+      areas.forEach(a => {
+        if (a.upcoming === 1 && a.scheduledUnlockAt && new Date(a.scheduledUnlockAt).getTime() <= now) {
+          setQuestUpcoming("area", a.id, false);
+        }
+      });
+      projects.forEach(p => {
+        if (p.upcoming === 1 && p.scheduledUnlockAt && new Date(p.scheduledUnlockAt).getTime() <= now) {
+          setQuestUpcoming("project", p.id, false);
+        }
+      });
+    };
+    releaseDue();
+    const interval = window.setInterval(releaseDue, 30000);
+    return () => window.clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [areas, projects]);
+
   const loadArchivedAreas = async () => {
     try {
       const response = await fetch("/api/areas/archived");
@@ -5114,6 +5174,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       archiveProject,
       unarchiveProject,
       updateProjectDetails,
+      setQuestUpcoming,
       archivedProjects,
       archivedMainQuests,
       loadArchivedProjects,

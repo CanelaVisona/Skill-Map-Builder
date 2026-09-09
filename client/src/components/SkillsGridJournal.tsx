@@ -5,6 +5,7 @@ import { SkillDiamond } from "./SkillDiamond";
 import { SkillGridDetail } from "./SkillGridDetail";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useSkillTree } from "@/lib/skill-context";
+import { usePopupPalette } from "@/lib/popup-theme";
 
 // Area colors (from HTML design)
 const AREA_COLORS: Record<string, string> = {
@@ -84,6 +85,7 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
   const longPressTimerRef = React.useRef<NodeJS.Timeout | null>(null);
   const [longPressStart, setLongPressStart] = useState<{ x: number; y: number } | null>(null);
   const isMobile = useIsMobile();
+  const palette = usePopupPalette();
   const longPressTimer = React.useRef<NodeJS.Timeout | null>(null);
   const areaLongPressTimer = React.useRef<NodeJS.Timeout | null>(null);
   const plusButtonRef = React.useRef<HTMLButtonElement | null>(null);
@@ -991,25 +993,26 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
           <div
             className="fixed inset-0 flex items-center justify-center p-4"
             style={{ zIndex: 9999, pointerEvents: "auto" }}
+            onClick={() => setShowNewSkillForm(false)}
           >
             <div
               className="rounded-lg p-6 max-w-md w-full"
               style={{
-                backgroundColor: "#0e0c0a",
-                border: "1px solid #3a2a14",
+                backgroundColor: palette.bg,
+                border: `1px solid ${palette.border}`,
                 pointerEvents: "auto",
               }}
               onClick={(e) => e.stopPropagation()}
               onPointerDownCapture={(e) => e.stopPropagation()}
             >
               {/* Title */}
-              <h2 className="text-lg font-semibold mb-4" style={{ color: "#c8a96e" }}>
+              <h2 className="text-lg font-semibold mb-4" style={{ color: palette.text }}>
                 Nuevo skill
               </h2>
 
               {/* Error message */}
               {newSkillError && (
-                <div className="mb-4 p-2 rounded text-xs" style={{ backgroundColor: "#c85a2a", color: "#0e0c0a" }}>
+                <div className="mb-4 p-2 rounded text-xs" style={{ backgroundColor: areaColor, color: "#0e0c0a" }}>
                   {newSkillError}
                 </div>
               )}
@@ -1028,19 +1031,19 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
                 placeholder="Nombre del skill"
                 className="w-full px-3 py-2 mb-4 rounded text-xs focus:outline-none transition-colors"
                 style={{
-                  backgroundColor: "#130f09",
-                  border: "1px solid #3a2a14",
-                  color: "#c8a96e",
+                  backgroundColor: palette.surfaceInset,
+                  border: `1px solid ${palette.border}`,
+                  color: palette.text,
                   pointerEvents: "auto",
                 }}
-                onFocus={(e) => (e.currentTarget.style.borderColor = "#c8a96e")}
-                onBlur={(e) => (e.currentTarget.style.borderColor = "#3a2a14")}
+                onFocus={(e) => (e.currentTarget.style.borderColor = palette.text)}
+                onBlur={(e) => (e.currentTarget.style.borderColor = palette.border)}
               />
 
               {/* Level goal section */}
               <div className="mb-4">
                 <div className="flex items-center gap-2 mb-2">
-                  <label className="text-xs" style={{ color: "#c8a96e" }}>
+                  <label className="text-xs" style={{ color: palette.text }}>
                     Meta de nivel
                   </label>
                   <input
@@ -1048,9 +1051,9 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
                     checked={newSkillUnlimited}
                     onChange={(e) => setNewSkillUnlimited(e.target.checked)}
                     onPointerDown={(e) => e.stopPropagation()}
-                    style={{ pointerEvents: "auto" }}
+                    style={{ pointerEvents: "auto", accentColor: areaColor }}
                   />
-                  <label className="text-xs" style={{ color: "#c8a96e" }}>
+                  <label className="text-xs" style={{ color: palette.text }}>
                     Sin límite
                   </label>
                 </div>
@@ -1066,20 +1069,20 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
                     placeholder="ej: 5"
                     className="w-full px-3 py-2 rounded text-xs focus:outline-none transition-colors"
                     style={{
-                      backgroundColor: "#130f09",
-                      border: "1px solid #3a2a14",
-                      color: "#c8a96e",
+                      backgroundColor: palette.surfaceInset,
+                      border: `1px solid ${palette.border}`,
+                      color: palette.text,
                       pointerEvents: "auto",
                     }}
-                    onFocus={(e) => (e.currentTarget.style.borderColor = "#c8a96e")}
-                    onBlur={(e) => (e.currentTarget.style.borderColor = "#3a2a14")}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = palette.text)}
+                    onBlur={(e) => (e.currentTarget.style.borderColor = palette.border)}
                   />
                 )}
               </div>
 
               {/* Link Type Selector */}
               <div className="mb-4">
-                <label className="text-xs block mb-2" style={{ color: "#c8a96e" }}>
+                <label className="text-xs block mb-2" style={{ color: palette.text }}>
                   Linkeado a
                 </label>
                 <div className="flex gap-2">
@@ -1090,9 +1093,9 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
                     }}
                     className="flex-1 px-3 py-2 rounded text-xs transition-colors"
                     style={{
-                      backgroundColor: newSkillLinkType === "area" ? "#c85a2a" : "#130f09",
-                      border: newSkillLinkType === "area" ? "2px solid #c8a96e" : "1px solid #3a2a14",
-                      color: newSkillLinkType === "area" ? "#0e0c0a" : "#c8a96e",
+                      backgroundColor: newSkillLinkType === "area" ? areaColor : palette.surfaceInset,
+                      border: newSkillLinkType === "area" ? `2px solid ${palette.text}` : `1px solid ${palette.border}`,
+                      color: newSkillLinkType === "area" ? "#0e0c0a" : palette.text,
                     }}
                   >
                     Área
@@ -1104,9 +1107,9 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
                     }}
                     className="flex-1 px-3 py-2 rounded text-xs transition-colors"
                     style={{
-                      backgroundColor: newSkillLinkType === "project" ? "#c85a2a" : "#130f09",
-                      border: newSkillLinkType === "project" ? "2px solid #c8a96e" : "1px solid #3a2a14",
-                      color: newSkillLinkType === "project" ? "#0e0c0a" : "#c8a96e",
+                      backgroundColor: newSkillLinkType === "project" ? areaColor : palette.surfaceInset,
+                      border: newSkillLinkType === "project" ? `2px solid ${palette.text}` : `1px solid ${palette.border}`,
+                      color: newSkillLinkType === "project" ? "#0e0c0a" : palette.text,
                     }}
                   >
                     Proyecto
@@ -1116,7 +1119,7 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
 
               {/* Area/Project Selector */}
               <div className="mb-4">
-                <label className="text-xs block mb-2" style={{ color: "#c8a96e" }}>
+                <label className="text-xs block mb-2" style={{ color: palette.text }}>
                   {newSkillLinkType === "area" ? "Selecciona un área" : "Selecciona un proyecto"}
                 </label>
                 <select
@@ -1125,13 +1128,13 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
                   onPointerDown={(e) => e.stopPropagation()}
                   className="w-full px-3 py-2 rounded text-xs focus:outline-none transition-colors"
                   style={{
-                    backgroundColor: "#130f09",
-                    border: "1px solid #3a2a14",
-                    color: "#c8a96e",
+                    backgroundColor: palette.surfaceInset,
+                    border: `1px solid ${palette.border}`,
+                    color: palette.text,
                     pointerEvents: "auto",
                   }}
-                  onFocus={(e) => (e.currentTarget.style.borderColor = "#c8a96e")}
-                  onBlur={(e) => (e.currentTarget.style.borderColor = "#3a2a14")}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = palette.text)}
+                  onBlur={(e) => (e.currentTarget.style.borderColor = palette.border)}
                 >
                   <option value="">
                     {newSkillLinkType === "area" ? "-- Selecciona un área --" : "-- Selecciona un proyecto --"}
@@ -1157,8 +1160,8 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
                   className="px-3 py-2 rounded text-xs transition-colors"
                   style={{
                     backgroundColor: "transparent",
-                    border: "1px solid #5a4a2a",
-                    color: "#5a4a2a",
+                    border: `1px solid ${palette.border}`,
+                    color: palette.textDim,
                   }}
                 >
                   Cancelar
@@ -1167,7 +1170,7 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
                   onClick={handleCreateNewSkill}
                   className="px-3 py-2 rounded text-xs font-semibold transition-colors"
                   style={{
-                    backgroundColor: "#c85a2a",
+                    backgroundColor: areaColor,
                     color: "#0e0c0a",
                   }}
                 >

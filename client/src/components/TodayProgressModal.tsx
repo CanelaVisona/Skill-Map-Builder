@@ -99,7 +99,7 @@ function getFirstDayOfMonth(date: Date) {
 
 export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const queryClient = useQueryClient();
-  const { areas, projects, updateSkill, updateProjectSkill } = useSkillTree();
+  const { areas, projects, updateSkill, updateProjectSkill, globalSkills } = useSkillTree();
   const { data: habitsData } = useHabits();
   const [viewMode, setViewMode] = useState<"progress" | "calendar">("progress");
   const [calendarDate, setCalendarDate] = useState(new Date());
@@ -160,7 +160,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     queryFn: async () => {
       const res = await fetch("/api/rewiring-trackers");
       if (!res.ok) throw new Error("Failed to fetch rewiring trackers");
-      return res.json() as Promise<{ id: string; name: string; archivedAt?: string | null; timesPerDay?: number | null; habitId?: string | null; history?: { timestamp: string; date?: string }[] }[]>;
+      return res.json() as Promise<{ id: string; name: string; archivedAt?: string | null; timesPerDay?: number | null; habitId?: string | null; skillId?: string | null; skillIds?: string[]; history?: { timestamp: string; date?: string }[] }[]>;
     },
     enabled: open,
   });
@@ -298,16 +298,24 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // momento de esa repetición. Los "veces por día" linkeados a un hábito muestran solo las
   // primeras N-1 repeticiones acá: la última la ocupa el hábito (ver rewiringHabitBadgeById).
   // Ver rewiringDayRows() para el detalle.
-  const extraRewirings = rewiringDayResults.flatMap(({ tracker, result }) =>
-    result.rows.map((row) => ({
+  const extraRewirings = rewiringDayResults.flatMap(({ tracker, result }) => {
+    // Si el rewiring tiene un skill linkeado, la fila se muestra con el emoji y el nombre de
+    // ese skill (más el contador índice/N) en vez del icono 🔄 y el nombre del rewiring.
+    const linkedSkillId = tracker.skillId ?? tracker.skillIds?.[0] ?? null;
+    const linkedSkill = linkedSkillId
+      ? (globalSkills || []).find((s) => s.id === linkedSkillId)
+      : undefined;
+    return result.rows.map((row) => ({
       // id/key propios por repetición: así cada fila se puede mover de franja por separado.
       rowId: `${tracker.id}#${row.repIndex}`,
       name: tracker.name,
+      skillName: linkedSkill?.name ?? null,
+      skillIcon: linkedSkill?.icon ?? null,
       repIndex: row.repIndex,
       timesPerDay: row.timesPerDay,
       at: row.at,
-    }))
-  );
+    }));
+  });
 
   // Nodos sin fecha planeada (columna "When exactly?" vacía) que se confirmaron dentro del
   // rango [startDate, endDate]. Se usa tanto para "Más" (rango = solo hoy) como para el
@@ -368,7 +376,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       id: r.rowId,
       label: (
         <>
-          🔄 {r.name}
+          {r.skillName ? `${r.skillIcon || "🔄"} ${r.skillName}` : `🔄 ${r.name}`}
           <TaskCountBadge done={r.repIndex} total={r.timesPerDay} />
         </>
       ),

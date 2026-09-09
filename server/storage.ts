@@ -34,6 +34,7 @@ export interface IStorage {
   updateArea(id: string, area: Partial<InsertArea>): Promise<Area | undefined>;
   addAreaXp(areaId: string, delta: number): Promise<Area | undefined>;
   initializeAreaXpFromMastered(): Promise<void>;
+  activateDueUpcomingAreas(userId: string): Promise<void>;
   deleteArea(id: string): Promise<void>;
   archiveArea(id: string): Promise<Area | undefined>;
   unarchiveArea(id: string): Promise<Area | undefined>;
@@ -71,6 +72,7 @@ export interface IStorage {
   createProject(project: InsertProject): Promise<Project>;
   updateProject(id: string, project: Partial<InsertProject>): Promise<Project | undefined>;
   addProjectXp(projectId: string, delta: number): Promise<Project | undefined>;
+  activateDueUpcomingProjects(userId: string): Promise<void>;
   deleteProject(id: string): Promise<void>;
   archiveProject(id: string): Promise<Project | undefined>;
   unarchiveProject(id: string): Promise<Project | undefined>;
@@ -395,6 +397,8 @@ export class DbStorage implements IStorage {
       levelSubtitleDescriptions: area.levelSubtitleDescriptions as Record<string, string>,
       archived: (area.archived ?? 0) as 0 | 1,
       currentXp: area.currentXp ?? 0,
+      upcoming: (area.upcoming ?? 0) as 0 | 1,
+      scheduledUnlockAt: area.scheduledUnlockAt ? new Date(area.scheduledUnlockAt as any) : null,
     };
     const result = await db.insert(areas).values(insertData).returning();
     return result[0];
@@ -413,9 +417,21 @@ export class DbStorage implements IStorage {
     if (area.archived !== undefined) updateData.archived = area.archived as 0 | 1;
     if (area.endOfAreaLevel !== undefined) updateData.endOfAreaLevel = area.endOfAreaLevel;
     if (area.currentXp !== undefined) updateData.currentXp = area.currentXp;
-    
+    if (area.upcoming !== undefined) updateData.upcoming = area.upcoming as 0 | 1;
+    if (area.scheduledUnlockAt !== undefined) {
+      updateData.scheduledUnlockAt = area.scheduledUnlockAt ? new Date(area.scheduledUnlockAt as any) : null;
+    }
+
     const result = await db.update(areas).set(updateData).where(eq(areas.id, id)).returning();
     return result[0];
+  }
+
+  // Activate any "Próximos" areas whose scheduled unlock moment has passed.
+  async activateDueUpcomingAreas(userId: string): Promise<void> {
+    await db
+      .update(areas)
+      .set({ upcoming: 0 as 0 | 1, scheduledUnlockAt: null })
+      .where(and(eq(areas.userId, userId), eq(areas.upcoming, 1), lte(areas.scheduledUnlockAt, new Date())));
   }
 
   async addAreaXp(areaId: string, delta: number): Promise<Area | undefined> {
@@ -973,10 +989,10 @@ export class DbStorage implements IStorage {
           nodeTitle = "";
           nodeStatus = "mastered";
         } else if (isSecondNode) {
-          nodeTitle = `Nodo ${position}`;
+          nodeTitle = "Asigná un paso";
           nodeStatus = "available";
         } else {
-          nodeTitle = `Nodo ${position}`;
+          nodeTitle = "Asigná un paso";
           nodeStatus = "locked";
         }
         
@@ -1057,10 +1073,10 @@ export class DbStorage implements IStorage {
           nodeTitle = "";
           nodeStatus = "mastered";
         } else if (isSecondNode) {
-          nodeTitle = `Nodo ${position}`;
+          nodeTitle = "Asigná un paso";
           nodeStatus = "available";
         } else {
-          nodeTitle = `Nodo ${position}`;
+          nodeTitle = "Asigná un paso";
           nodeStatus = "locked";
         }
         
@@ -1124,6 +1140,8 @@ export class DbStorage implements IStorage {
       archived: (project.archived ?? 0) as 0 | 1,
       questType: (project.questType ?? "main") as "main" | "side" | "emergent" | "experience",
       currentXp: project.currentXp ?? 0,
+      upcoming: (project.upcoming ?? 0) as 0 | 1,
+      scheduledUnlockAt: project.scheduledUnlockAt ? new Date(project.scheduledUnlockAt as any) : null,
     };
     const result = await db.insert(projects).values(insertData).returning();
     return result[0];
@@ -1141,9 +1159,21 @@ export class DbStorage implements IStorage {
     if (project.archived !== undefined) updateData.archived = project.archived as 0 | 1;
     if (project.endOfAreaLevel !== undefined) updateData.endOfAreaLevel = project.endOfAreaLevel;
     if (project.currentXp !== undefined) updateData.currentXp = project.currentXp;
-    
+    if (project.upcoming !== undefined) updateData.upcoming = project.upcoming as 0 | 1;
+    if (project.scheduledUnlockAt !== undefined) {
+      updateData.scheduledUnlockAt = project.scheduledUnlockAt ? new Date(project.scheduledUnlockAt as any) : null;
+    }
+
     const result = await db.update(projects).set(updateData).where(eq(projects.id, id)).returning();
     return result[0];
+  }
+
+  // Activate any "Próximos" projects whose scheduled unlock moment has passed.
+  async activateDueUpcomingProjects(userId: string): Promise<void> {
+    await db
+      .update(projects)
+      .set({ upcoming: 0 as 0 | 1, scheduledUnlockAt: null })
+      .where(and(eq(projects.userId, userId), eq(projects.upcoming, 1), lte(projects.scheduledUnlockAt, new Date())));
   }
 
   async addProjectXp(projectId: string, delta: number): Promise<Project | undefined> {
@@ -1219,7 +1249,7 @@ export class DbStorage implements IStorage {
           nodeStatus = "mastered";
         } else {
           // Nodes 2-6: use Spanish default names
-          nodeTitle = `Nodo ${position}`;
+          nodeTitle = "Asigná un paso";
           nodeStatus = "locked";
         }
         

@@ -588,7 +588,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   }
 
   // Detect if node has default name (generated Nodo X format)
-  const hasDefaultName = skill.title.startsWith("Nodo ") || skill.title === "Next challenge" || skill.title === "Next objetive quest" || skill.title === "Objective quest";
+  const hasDefaultName = skill.title === "Asigná un paso" || skill.title === "Next challenge" || skill.title === "Next objetive quest" || skill.title === "Objective quest";
 
   const plannedDateLabel = getPlannedDateLabel(skill.plannedDate);
   const plannedDurationLabel = getPlannedDurationLabel(skill.plannedDuration);
@@ -2835,7 +2835,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               // Locked nodes: border/text saturation stays constant: distance from the
               // active node (via lockedNodeOpacity above) is the single source of truth
               // for how faded a locked node looks, so it can't be overridden by whether
-              // the node still has its default "Nodo X" name.
+              // the node still has its default "Asigná un paso" name.
               isLocked && !isLastNodeOfLevel && "bg-muted border-muted-foreground/70 text-muted-foreground/90",
               isLocked && isLastNodeOfLevel && "bg-muted border-amber-400 text-muted-foreground/90",
               // Available nodes (not locked, not mastered)
@@ -2909,7 +2909,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             "font-quest font-semibold absolute left-14 top-1/2 -translate-y-1/2 transition-colors text-sm leading-none",
             isLocked ? "text-muted-foreground" : "text-foreground",
             isMastered && "text-foreground",
-            (skill.title.startsWith("Nodo ") || skill.title === "Next challenge" || skill.title === "Next objetive quest" || skill.title === "Objective quest") && "text-muted-foreground/60"
+            (skill.title === "Asigná un paso" || skill.title === "Next challenge" || skill.title === "Next objetive quest" || skill.title === "Objective quest") && "text-muted-foreground/60"
           )}>
             {/* Title row: the only in-flow content here, so its own line height is what the
                 outer -translate-y-1/2 above centers against the node circle. Everything that

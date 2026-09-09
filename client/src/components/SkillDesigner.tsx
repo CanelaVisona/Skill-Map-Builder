@@ -441,7 +441,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                               setEditingTargetLevel(null);
                                             }}
                                           >
-                                            <div className={cn("text-sm font-medium", displayStatus === "available" && "text-amber-400")}>{!skill.title ? `Nodo ${skill.levelPosition}` : skill.title}</div>
+                                            <div className={cn("text-sm font-medium", displayStatus === "available" && "text-amber-400")}>{!skill.title ? "Asigná un paso" : skill.title}</div>
                                             {displayStatus === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
                                           </div>
                                           <div className="flex flex-row gap-1">
@@ -500,7 +500,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                               <Button
                                                 size="sm"
                                                 variant="ghost"
-                                                onClick={() => setSkillPendingDelete({ skillId: skill.id, areaId: area.id, projectId: null, title: skill.title || `Nodo ${skill.levelPosition}` })}
+                                                onClick={() => setSkillPendingDelete({ skillId: skill.id, areaId: area.id, projectId: null, title: skill.title || "Asigná un paso" })}
                                                 className="h-8 w-8"
                                                 title="Eliminar nodo"
                                               >
@@ -521,13 +521,13 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                   <div
                                     key={`locked-${level}-${i}`}
                                     className="p-2 rounded border border-border bg-card/50 cursor-pointer hover:bg-card/70 transition-colors opacity-60"
-                                    onMouseDown={() => handleNodeLongPressStart(`locked_${area.id}_${level}_${i}`, `Nodo ${i + 1}`, area.id, null, level, true)}
+                                    onMouseDown={() => handleNodeLongPressStart(`locked_${area.id}_${level}_${i}`, "Asigná un paso", area.id, null, level, true)}
                                     onMouseUp={handleNodeLongPressEnd}
                                     onMouseLeave={handleNodeLongPressEnd}
-                                    onTouchStart={() => handleNodeLongPressStart(`locked_${area.id}_${level}_${i}`, `Nodo ${i + 1}`, area.id, null, level, true)}
+                                    onTouchStart={() => handleNodeLongPressStart(`locked_${area.id}_${level}_${i}`, "Asigná un paso", area.id, null, level, true)}
                                     onTouchEnd={handleNodeLongPressEnd}
                                   >
-                                    <div className="text-sm font-medium">Nodo {i + 1}</div>
+                                    <div className="text-sm font-medium">Asigná un paso</div>
                                     <div className="text-xs text-muted-foreground">Bloqueado</div>
                                   </div>
                                 ))
@@ -642,7 +642,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                 setEditingTargetLevel(null);
                                               }}
                                             >
-                                              <div className={cn("text-sm font-medium", displayStatus === "available" && "text-amber-400")}>{!skill.title ? `Nodo ${skill.levelPosition}` : skill.title}</div>
+                                              <div className={cn("text-sm font-medium", displayStatus === "available" && "text-amber-400")}>{!skill.title ? "Asigná un paso" : skill.title}</div>
                                               {displayStatus === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
                                             </div>
                                             <div className="flex flex-row gap-1">
@@ -701,7 +701,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                 <Button
                                                   size="sm"
                                                   variant="ghost"
-                                                  onClick={() => setSkillPendingDelete({ skillId: skill.id, areaId: null, projectId: project.id, title: skill.title || `Nodo ${skill.levelPosition}` })}
+                                                  onClick={() => setSkillPendingDelete({ skillId: skill.id, areaId: null, projectId: project.id, title: skill.title || "Asigná un paso" })}
                                                   className="h-8 w-8"
                                                   title="Eliminar nodo"
                                                 >
@@ -722,13 +722,13 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                     <div
                                       key={`locked-${level}-${i}`}
                                       className="p-2 rounded border border-border bg-card/50 cursor-pointer hover:bg-card/70 transition-colors opacity-60"
-                                      onMouseDown={() => handleNodeLongPressStart(`locked_${project.id}_${level}_${i}`, `Nodo ${i + 1}`, null, project.id, level, true)}
+                                      onMouseDown={() => handleNodeLongPressStart(`locked_${project.id}_${level}_${i}`, "Asigná un paso", null, project.id, level, true)}
                                       onMouseUp={handleNodeLongPressEnd}
                                       onMouseLeave={handleNodeLongPressEnd}
-                                      onTouchStart={() => handleNodeLongPressStart(`locked_${project.id}_${level}_${i}`, `Nodo ${i + 1}`, null, project.id, level, true)}
+                                      onTouchStart={() => handleNodeLongPressStart(`locked_${project.id}_${level}_${i}`, "Asigná un paso", null, project.id, level, true)}
                                       onTouchEnd={handleNodeLongPressEnd}
                                     >
-                                      <div className="text-sm font-medium">Nodo {i + 1}</div>
+                                      <div className="text-sm font-medium">Asigná un paso</div>
                                       <div className="text-xs text-muted-foreground">Bloqueado</div>
                                     </div>
                                   ))
@@ -838,7 +838,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                 setEditingTargetLevel(null);
                                               }}
                                             >
-                                              <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{skill.isAutoComplete === 1 || skill.levelPosition === 1 ? "" : (!skill.title ? `Nodo ${skill.levelPosition}` : skill.title)}</div>
+                                              <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{skill.isAutoComplete === 1 || skill.levelPosition === 1 ? "" : (!skill.title ? "Asigná un paso" : skill.title)}</div>
                                               {skill.status === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
                                             </div>
                                             <div className="flex items-center gap-1">
@@ -896,7 +896,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                               <Button
                                                 size="sm"
                                                 variant="ghost"
-                                                onClick={() => setSkillPendingDelete({ skillId: skill.id, areaId: null, projectId: project.id, title: skill.title || `Nodo ${skill.levelPosition}` })}
+                                                onClick={() => setSkillPendingDelete({ skillId: skill.id, areaId: null, projectId: project.id, title: skill.title || "Asigná un paso" })}
                                                 className="h-8 w-8"
                                                 title="Eliminar nodo"
                                               >
@@ -916,13 +916,13 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                     <div
                                       key={`locked-${level}-${i}`}
                                       className="p-2 rounded border border-border bg-card/50 cursor-pointer hover:bg-card/70 transition-colors opacity-60"
-                                      onMouseDown={() => handleNodeLongPressStart(`locked_${project.id}_${level}_${i}`, `Nodo ${i + 1}`, null, project.id, level, true)}
+                                      onMouseDown={() => handleNodeLongPressStart(`locked_${project.id}_${level}_${i}`, "Asigná un paso", null, project.id, level, true)}
                                       onMouseUp={handleNodeLongPressEnd}
                                       onMouseLeave={handleNodeLongPressEnd}
-                                      onTouchStart={() => handleNodeLongPressStart(`locked_${project.id}_${level}_${i}`, `Nodo ${i + 1}`, null, project.id, level, true)}
+                                      onTouchStart={() => handleNodeLongPressStart(`locked_${project.id}_${level}_${i}`, "Asigná un paso", null, project.id, level, true)}
                                       onTouchEnd={handleNodeLongPressEnd}
                                     >
-                                      <div className="text-sm font-medium">Nodo {i + 1}</div>
+                                      <div className="text-sm font-medium">Asigná un paso</div>
                                       <div className="text-xs text-muted-foreground">Bloqueado</div>
                                     </div>
                                   ))
@@ -1029,7 +1029,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                               setEditingTargetLevel(null);
                                             }}
                                           >
-                                            <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{skill.isAutoComplete === 1 || skill.levelPosition === 1 ? "" : (!skill.title ? `Nodo ${skill.levelPosition}` : skill.title)}</div>
+                                            <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{skill.isAutoComplete === 1 || skill.levelPosition === 1 ? "" : (!skill.title ? "Asigná un paso" : skill.title)}</div>
                                             {skill.status === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
                                           </div>
                                           <div className="flex flex-row gap-1"> 
@@ -1088,7 +1088,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                             <Button
                                               size="sm"
                                               variant="ghost"
-                                              onClick={() => setSkillPendingDelete({ skillId: skill.id, areaId: null, projectId: project.id, title: skill.title || `Nodo ${skill.levelPosition}` })}
+                                              onClick={() => setSkillPendingDelete({ skillId: skill.id, areaId: null, projectId: project.id, title: skill.title || "Asigná un paso" })}
                                               className="h-8 w-8"
                                               title="Eliminar nodo"
                                             >
@@ -1109,13 +1109,13 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                       <div
                                         key={`locked-${level}-${i}`}
                                         className="p-2 rounded border border-border bg-card/50 cursor-pointer hover:bg-card/70 transition-colors opacity-60"
-                                        onMouseDown={() => handleNodeLongPressStart(`locked_${project.id}_${level}_${i}`, `Nodo ${i + 1}`, null, project.id, level, true)}
+                                        onMouseDown={() => handleNodeLongPressStart(`locked_${project.id}_${level}_${i}`, "Asigná un paso", null, project.id, level, true)}
                                         onMouseUp={handleNodeLongPressEnd}
                                         onMouseLeave={handleNodeLongPressEnd}
-                                        onTouchStart={() => handleNodeLongPressStart(`locked_${project.id}_${level}_${i}`, `Nodo ${i + 1}`, null, project.id, level, true)}
+                                        onTouchStart={() => handleNodeLongPressStart(`locked_${project.id}_${level}_${i}`, "Asigná un paso", null, project.id, level, true)}
                                         onTouchEnd={handleNodeLongPressEnd}
                                       >
-                                        <div className="text-sm font-medium">Nodo {i + 1}</div>
+                                        <div className="text-sm font-medium">Asigná un paso</div>
                                         <div className="text-xs text-muted-foreground">Bloqueado</div>
                                       </div>
                                     ))}

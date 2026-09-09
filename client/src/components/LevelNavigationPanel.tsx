@@ -60,9 +60,10 @@ export function LevelNavigationPanel({
           ].join(" ")}
         >
           <ul className="flex flex-col gap-2 py-2">
-            {levels.map((level) => {
+            {levels.map((level, index) => {
               const isActive = level.id === activeLevelId;
               const showLabel = isRailHovered;
+              const displayTitle = `Lvl ${index + 1} › ${level.title}`;
 
               return (
                 <li key={level.id} className="relative h-6">
@@ -70,8 +71,8 @@ export function LevelNavigationPanel({
                     type="button"
                     onClick={() => onSelect(level.id)}
                     className="group relative block h-full w-full cursor-pointer"
-                    aria-label={level.title}
-                    title={level.title}
+                    aria-label={displayTitle}
+                    title={displayTitle}
                   >
                     <span
                       className={[
@@ -91,7 +92,7 @@ export function LevelNavigationPanel({
                       showLabel ? "opacity-100 translate-x-0" : "opacity-0 translate-x-1",
                     ].join(" ")}
                   >
-                    {level.title}
+                    {displayTitle}
                   </div>
                 </li>
               );

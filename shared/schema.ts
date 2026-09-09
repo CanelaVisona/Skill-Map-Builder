@@ -41,6 +41,10 @@ export const areas = pgTable("areas", {
   archived: integer("archived").$type<0 | 1>().default(0),
   endOfAreaLevel: integer("end_of_area_level"),
   currentXp: integer("current_xp").notNull().default(0),
+  // "Próximos": quest queued for later, hidden from the menu until activated.
+  upcoming: integer("upcoming").$type<0 | 1>().default(0),
+  // When set, the quest auto-activates (leaves Próximos) once this moment passes.
+  scheduledUnlockAt: timestamp("scheduled_unlock_at"),
 });
 
 export const skills = pgTable("skills", {
@@ -82,6 +86,10 @@ export const projects = pgTable("projects", {
   questType: text("quest_type").$type<"main" | "side" | "emergent" | "experience">().default("main"),
   endOfAreaLevel: integer("end_of_area_level"),
   currentXp: integer("current_xp").notNull().default(0),
+  // "Próximos": quest queued for later, hidden from the menu until activated.
+  upcoming: integer("upcoming").$type<0 | 1>().default(0),
+  // When set, the quest auto-activates (leaves Próximos) once this moment passes.
+  scheduledUnlockAt: timestamp("scheduled_unlock_at"),
 });
 
 export const journalCharacters = pgTable("journal_characters", {

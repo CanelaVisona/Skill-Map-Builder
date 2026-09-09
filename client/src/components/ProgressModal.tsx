@@ -25,6 +25,9 @@ interface ProgressItem {
   totalInLevel: number;
 }
 
+// Intensidad por nivel en verde (mismo tono en dark y light, para que la barra se
+// lea siempre como progreso "completo" sin importar el tema). Se usa para rellenar
+// los bloques de la barra (sin texto encima).
 const getLevelColor = (level: number): string => {
   const colors: { [key: number]: string } = {
     1: "bg-green-100 dark:bg-green-100",
@@ -38,6 +41,10 @@ const getLevelColor = (level: number): string => {
   };
   return colors[level] || "bg-green-500 dark:bg-green-500";
 };
+
+// Chip "Lvl X": mismo tratamiento que los campos del formulario del skill
+// (bg-muted, sin borde), legible en dark y light.
+const levelBadgeClass = "bg-muted text-foreground";
 
 // Áreas/quests con subtítulo cargado primero, para que lo relevante quede arriba
 function sortBySubtitleFirst(items: ProgressItem[]): ProgressItem[] {
@@ -91,7 +98,7 @@ function ProgressItemRow({
             <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground truncate max-w-[120px]">
               {item.name}
             </span>
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${getLevelColor(item.level)} text-gray-900 dark:text-black`}>
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${levelBadgeClass}`}>
               Lvl {item.level}
             </span>
           </div>
@@ -117,9 +124,9 @@ function ProgressItemRow({
                   : "text-xs italic text-muted-foreground/70"
               }`}
             >
-              {item.subtitle || "Sin subtítulo"}
+              {item.subtitle || "Título no asignado"}
             </button>
-            <span className={`shrink-0 text-xs font-bold px-2 py-0.5 rounded-full ${getLevelColor(item.level)} text-gray-900 dark:text-black`}>
+            <span className={`shrink-0 text-xs font-bold px-2 py-0.5 rounded-full ${levelBadgeClass}`}>
               Lvl {item.level}
             </span>
           </div>
@@ -227,18 +234,19 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        showCloseButton={false}
-        className="max-w-xl w-[calc(100vw-1.5rem)] sm:w-[min(92vw,36rem)] max-h-[75dvh] overflow-hidden flex flex-col gap-3 rounded-2xl border-none p-4 sm:p-6"
-      >
+      {/* Mismo molde que el formulario del skill: DialogContent estándar (fondo, borde
+          y cierre por Radix -- se va al tocar el fondo o con la X), border-0 + shadow-2xl,
+          y todo sobre tokens del tema para que acompañe dark/light solo. */}
+      <DialogContent className="sm:max-w-[440px] border-0 shadow-2xl max-h-[85dvh] overflow-hidden flex flex-col gap-3 p-4 sm:p-6">
         <VisuallyHidden>
           <DialogTitle>Progress Tracker</DialogTitle>
         </VisuallyHidden>
         <div className="flex shrink-0 items-center justify-between gap-2">
           <h2 className="text-lg sm:text-2xl font-bold">Progress Tracker</h2>
           {/* Toggle entre la vista clásica (área/quest arriba, subtítulo abajo) y la vista
-              "Nodo" (nodo desbloqueado destacado a la izquierda, área/quest a la derecha) */}
-          <div className="flex items-center gap-1 rounded-full bg-muted p-0.5 text-xs font-semibold">
+              "Nodo" (nodo desbloqueado destacado a la izquierda, área/quest a la derecha).
+              mr-7 deja lugar a la X de cierre del DialogContent. */}
+          <div className="mr-7 flex items-center gap-1 rounded-full bg-muted p-0.5 text-xs font-semibold">
             <button
               type="button"
               onClick={() => setViewMode("classic")}

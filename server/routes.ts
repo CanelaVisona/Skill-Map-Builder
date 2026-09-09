@@ -395,7 +395,10 @@ export async function registerRoutes(
       res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
       res.set('Pragma', 'no-cache');
       res.set('Expires', '0');
-      
+
+      // Release any "Próximos" areas whose scheduled unlock moment has passed.
+      await storage.activateDueUpcomingAreas(req.userId!);
+
       const areas = await storage.getAreas(req.userId!);
       const areasWithSkills = await Promise.all(
         areas.map(async (area) => {
@@ -833,11 +836,10 @@ export async function registerRoutes(
           enforcedTitle = "";
         } else {
           enforcedStatus = "locked";
-          // Set default title to 'Nodo X' where X is the position of the node it was inserted after
-          const titlePosition = levelPosition - 1;
-          enforcedTitle = validatedSkill.title && validatedSkill.title.trim() !== '' 
-            ? validatedSkill.title 
-            : `Nodo ${titlePosition}`;
+          // Standby name shown until the user names this step
+          enforcedTitle = validatedSkill.title && validatedSkill.title.trim() !== ''
+            ? validatedSkill.title
+            : "Asigná un paso";
         }
         
         const enforcedManualLock = levelPosition > 1 ? 0 : (validatedSkill.manualLock || 0);
@@ -873,8 +875,7 @@ export async function registerRoutes(
         // Manual insertion - use client-provided values but enforce first node rules
         let finalTitle = validatedSkill.title;
         let finalStatus = validatedSkill.status;
-        const newLevelPosition = validatedSkill.levelPosition || 1;
-        
+
         // If this is the first node in the level AND not a locked node, make it mastered with empty title
         // Locked nodes should preserve their status and title from user input
         if (validatedSkill.levelPosition === 1 && validatedSkill.status !== "locked") {
@@ -901,11 +902,10 @@ export async function registerRoutes(
           }
         }
         
-        // Set default title to 'Nodo X' where X is the position of the node it was inserted after
-        const titlePosition = newLevelPosition - 1;
+        // Standby name shown until the user names this step
         const finalTitleWithDefault = finalTitle && finalTitle.trim() !== ''
           ? finalTitle
-          : `Nodo ${titlePosition}`;
+          : "Asigná un paso";
 
         const skillWithLevel = {
           ...validatedSkill,
@@ -1259,7 +1259,7 @@ export async function registerRoutes(
             id,
             areaId: parentType === "area" ? parentId : null,
             projectId: parentType === "project" ? parentId : null,
-            title: position === 1 ? "" : "Nodo " + position,
+            title: position === 1 ? "" : "Asigná un paso",
             description: "",
             x: 50,
             y: startY + (position - 1) * 150,
@@ -1525,7 +1525,7 @@ export async function registerRoutes(
             id,
             areaId: parentType === "area" ? parentId : null,
             projectId: parentType === "project" ? parentId : null,
-            title: position === 1 ? "" : "Nodo " + position,
+            title: position === 1 ? "" : "Asigná un paso",
             description: "",
             x: 50,
             y: startY + (position - 1) * 150,
@@ -1904,7 +1904,10 @@ export async function registerRoutes(
       res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
       res.set('Pragma', 'no-cache');
       res.set('Expires', '0');
-      
+
+      // Release any "Próximos" quests whose scheduled unlock moment has passed.
+      await storage.activateDueUpcomingProjects(req.userId!);
+
       const projectsList = await storage.getProjects(req.userId!);
       const projectsWithSkills = await Promise.all(
         projectsList.map(async (project) => {

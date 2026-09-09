@@ -47,6 +47,7 @@ import { TodayProgressPopupProvider } from "@/lib/today-progress-popup-context";
 import { PendingRewardsProvider } from "@/lib/pending-rewards-context";
 import { BodyLinkPicker, type BodyLink } from "@/components/BodyLinkPicker";
 import { SkillLinkPicker } from "@/components/SkillLinkPicker";
+import { EntryLinkPicker } from "@/components/EntryLinkPicker";
 import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -2125,7 +2126,7 @@ function ToolsSection({
                 {filteredEntries.map((entry, index) => (
                   <div key={entry.id}>
                     <button
-                      onClick={(e) => { e.stopPropagation(); setViewingEntry(entry); }}
+                      onClick={(e) => { e.stopPropagation(); setViewingEntry(entry); setIsEditMode(false); }}
                       onTouchStart={() => handleLeftLongPressStart(entry)}
                       onTouchEnd={handleLeftLongPressEnd}
                       onTouchCancel={handleLeftLongPressEnd}
@@ -2151,26 +2152,79 @@ function ToolsSection({
           </ScrollArea>
         </div>
         
-        <div 
-          className="w-full sm:w-1/2 h-full flex flex-col bg-secondary/20 rounded border border-border/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)] dark:shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
-          onTouchStart={handleRightLongPressStart}
-          onTouchEnd={handleRightLongPressEnd}
-          onTouchCancel={handleRightLongPressEnd}
-          onMouseDown={handleRightLongPressStart}
-          onMouseUp={handleRightLongPressEnd}
-          onMouseLeave={handleRightLongPressEnd}
+        <div
+          className="w-full sm:w-1/2 h-full flex flex-col bg-secondary/20 rounded border border-border/50 p-4 select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)] dark:shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
         >
           {viewingEntry ? (
             <>
-              <div className="border-b border-border/50 pb-2 mb-4 flex-shrink-0">
-                <h3 className="font-medium text-foreground uppercase tracking-wide">{viewingEntry.title}</h3>
-                <div className="h-px w-12 bg-gradient-to-r from-muted-foreground to-transparent mt-2" />
+              <div className="border-b border-border/50 pb-2 mb-4 flex-shrink-0 flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <h3 className="font-medium text-foreground uppercase tracking-wide break-words">{viewingEntry.title}</h3>
+                  <div className="h-px w-12 bg-gradient-to-r from-muted-foreground to-transparent mt-2" />
+                </div>
+                <div className="flex gap-1 flex-shrink-0">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setEditTitle(viewingEntry.title);
+                      setEditSentence(viewingEntry.sentence || "");
+                      setIsEditMode((v) => !v);
+                    }}
+                    className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
-              <div className="flex-1 min-h-0 overflow-y-auto minimal-scrollbar">
-                {viewingEntry.sentence && (
-                  <p className="text-sm text-muted-foreground whitespace-pre-line leading-relaxed">{viewingEntry.sentence}</p>
-                )}
-              </div>
+              {isEditMode ? (
+                <div className="space-y-3">
+                  <Input
+                    placeholder="Title"
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    className="bg-secondary border-border text-foreground"
+                  />
+                  <Textarea
+                    placeholder="Description"
+                    value={editSentence}
+                    onChange={(e) => setEditSentence(e.target.value)}
+                    rows={3}
+                    className="bg-secondary border-border text-foreground resize-none"
+                  />
+                  <div className="flex gap-2 pt-2">
+                    <Button
+                      size="sm"
+                      onClick={handleSaveEdit}
+                      className="bg-primary text-primary-foreground hover:bg-primary/90"
+                    >
+                      Save
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setIsEditMode(false)}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex-1 min-h-0 overflow-y-auto minimal-scrollbar">
+                  {viewingEntry.sentence && (
+                    <p className="text-sm text-muted-foreground whitespace-pre-line leading-relaxed">{viewingEntry.sentence}</p>
+                  )}
+                </div>
+              )}
             </>
           ) : (
             <div className="h-full flex items-center justify-center text-muted-foreground/50 text-sm">
@@ -2206,84 +2260,6 @@ function ToolsSection({
         </div>
       )}
 
-      {/* View/Edit Dialog */}
-      {viewingEntry && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-background border border-border rounded-lg p-4 max-w-md w-full">
-            <div className="flex items-center justify-between border-b border-border/50 pb-2 mb-4">
-              <h3 className="font-medium text-foreground uppercase">{viewingEntry.title}</h3>
-              <div className="flex gap-1">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setIsEditMode(!isEditMode)}
-                  className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
-                >
-                  <Pencil className="h-4 w-4" />
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setShowDeleteConfirm(true)}
-                  className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-
-            {!isEditMode && viewingEntry.sentence && (
-              <p className="text-sm text-muted-foreground whitespace-pre-line leading-relaxed mb-4">{viewingEntry.sentence}</p>
-            )}
-
-            {isEditMode ? (
-              <div className="space-y-3">
-                <Input
-                  placeholder="Title"
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                  className="bg-secondary border-border text-foreground"
-                />
-                <Textarea
-                  placeholder="Description"
-                  value={editSentence}
-                  onChange={(e) => setEditSentence(e.target.value)}
-                  rows={3}
-                  className="bg-secondary border-border text-foreground resize-none"
-                />
-                <div className="flex gap-2 pt-2">
-                  <Button 
-                    size="sm" 
-                    onClick={handleSaveEdit}
-                    className="bg-primary text-primary-foreground hover:bg-primary/90"
-                  >
-                    Save
-                  </Button>
-                  <Button 
-                    size="sm" 
-                    variant="ghost" 
-                    onClick={() => setIsEditMode(false)}
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex gap-2">
-                <Button 
-                  size="sm" 
-                  variant="ghost" 
-                  onClick={() => setViewingEntry(null)}
-                  className="text-muted-foreground hover:text-foreground w-full"
-                >
-                  Close
-                </Button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -2400,7 +2376,7 @@ function LearningsSection({
                 {filteredEntries.map((entry, index) => (
                   <div key={entry.id}>
                     <button
-                      onClick={(e) => { e.stopPropagation(); setViewingEntry(entry); }}
+                      onClick={(e) => { e.stopPropagation(); setViewingEntry(entry); setIsEditMode(false); }}
                       onTouchStart={() => handleLeftLongPressStart(entry)}
                       onTouchEnd={handleLeftLongPressEnd}
                       onTouchCancel={handleLeftLongPressEnd}
@@ -2427,25 +2403,78 @@ function LearningsSection({
         </div>
 
         <div
-          className="w-full sm:w-1/2 h-full flex flex-col bg-secondary/20 rounded border border-border/50 p-4 cursor-pointer select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)] dark:shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
-          onTouchStart={handleRightLongPressStart}
-          onTouchEnd={handleRightLongPressEnd}
-          onTouchCancel={handleRightLongPressEnd}
-          onMouseDown={handleRightLongPressStart}
-          onMouseUp={handleRightLongPressEnd}
-          onMouseLeave={handleRightLongPressEnd}
+          className="w-full sm:w-1/2 h-full flex flex-col bg-secondary/20 rounded border border-border/50 p-4 select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)] dark:shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
         >
           {viewingEntry ? (
             <>
-              <div className="border-b border-border/50 pb-2 mb-4 flex-shrink-0">
-                <h3 className="font-medium text-foreground uppercase tracking-wide">{viewingEntry.title}</h3>
-                <div className="h-px w-12 bg-gradient-to-r from-muted-foreground to-transparent mt-2" />
+              <div className="border-b border-border/50 pb-2 mb-4 flex-shrink-0 flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <h3 className="font-medium text-foreground uppercase tracking-wide break-words">{viewingEntry.title}</h3>
+                  <div className="h-px w-12 bg-gradient-to-r from-muted-foreground to-transparent mt-2" />
+                </div>
+                <div className="flex gap-1 flex-shrink-0">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setEditTitle(viewingEntry.title);
+                      setEditSentence(viewingEntry.sentence || "");
+                      setIsEditMode((v) => !v);
+                    }}
+                    className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
-              <div className="flex-1 min-h-0 overflow-y-auto minimal-scrollbar">
-                {viewingEntry.sentence && (
-                  <p className="text-sm text-muted-foreground whitespace-pre-line leading-relaxed">{viewingEntry.sentence}</p>
-                )}
-              </div>
+              {isEditMode ? (
+                <div className="space-y-3">
+                  <Input
+                    placeholder="Title"
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    className="bg-secondary border-border text-foreground"
+                  />
+                  <Textarea
+                    placeholder="Description"
+                    value={editSentence}
+                    onChange={(e) => setEditSentence(e.target.value)}
+                    rows={3}
+                    className="bg-secondary border-border text-foreground resize-none"
+                  />
+                  <div className="flex gap-2 pt-2">
+                    <Button
+                      size="sm"
+                      onClick={handleSaveEdit}
+                      className="bg-primary text-primary-foreground hover:bg-primary/90"
+                    >
+                      Save
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setIsEditMode(false)}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex-1 min-h-0 overflow-y-auto minimal-scrollbar">
+                  {viewingEntry.sentence && (
+                    <p className="text-sm text-muted-foreground whitespace-pre-line leading-relaxed">{viewingEntry.sentence}</p>
+                  )}
+                </div>
+              )}
             </>
           ) : (
             <div className="h-full flex items-center justify-center text-muted-foreground/50 text-sm">
@@ -2481,84 +2510,6 @@ function LearningsSection({
         </div>
       )}
 
-      {/* View/Edit Dialog */}
-      {viewingEntry && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-background border border-border rounded-lg p-4 max-w-md w-full">
-            <div className="flex items-center justify-between border-b border-border/50 pb-2 mb-4">
-              <h3 className="font-medium text-foreground uppercase">{viewingEntry.title}</h3>
-              <div className="flex gap-1">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setIsEditMode(!isEditMode)}
-                  className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
-                >
-                  <Pencil className="h-4 w-4" />
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setShowDeleteConfirm(true)}
-                  className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-
-            {!isEditMode && viewingEntry.sentence && (
-              <p className="text-sm text-muted-foreground whitespace-pre-line leading-relaxed mb-4">{viewingEntry.sentence}</p>
-            )}
-
-            {isEditMode ? (
-              <div className="space-y-3">
-                <Input
-                  placeholder="Title"
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                  className="bg-secondary border-border text-foreground"
-                />
-                <Textarea
-                  placeholder="Description"
-                  value={editSentence}
-                  onChange={(e) => setEditSentence(e.target.value)}
-                  rows={3}
-                  className="bg-secondary border-border text-foreground resize-none"
-                />
-                <div className="flex gap-2 pt-2">
-                  <Button 
-                    size="sm" 
-                    onClick={handleSaveEdit}
-                    className="bg-primary text-primary-foreground hover:bg-primary/90"
-                  >
-                    Save
-                  </Button>
-                  <Button 
-                    size="sm" 
-                    variant="ghost" 
-                    onClick={() => setIsEditMode(false)}
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex gap-2">
-                <Button 
-                  size="sm" 
-                  variant="ghost" 
-                  onClick={() => setViewingEntry(null)}
-                  className="text-muted-foreground hover:text-foreground w-full"
-                >
-                  Close
-                </Button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -2567,6 +2518,7 @@ interface ProfileEntry {
   id: string;
   name: string;
   description: string;
+  experienceIds?: string[];
 }
 
 function ProfileSection() {
@@ -2592,6 +2544,11 @@ function ProfileSection() {
   // For area/project selection in experiences and contributions
   const [selectedSourceType, setSelectedSourceType] = useState<"area" | "project" | null>(null);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
+  // Vínculo directo experiencia <-> contribución (lo guarda la contribución en experienceIds).
+  // `linkExperienceIds`: experiencias elegidas al editar una contribución.
+  // `linkContributionIds`: contribuciones elegidas al editar una experiencia.
+  const [linkExperienceIds, setLinkExperienceIds] = useState<string[]>([]);
+  const [linkContributionIds, setLinkContributionIds] = useState<string[]>([]);
   
   const longPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -2920,7 +2877,7 @@ function ProfileSection() {
   });
 
   const createContribution = useMutation({
-    mutationFn: async (data: { name: string; description: string; areaId?: string | null; projectId?: string | null }) => {
+    mutationFn: async (data: { name: string; description: string; areaId?: string | null; projectId?: string | null; experienceIds?: string[] }) => {
       const res = await fetch("/api/profile/contributions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -2943,7 +2900,7 @@ function ProfileSection() {
   });
 
   const updateContribution = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: { name?: string; description?: string; areaId?: string | null; projectId?: string | null } }) => {
+    mutationFn: async ({ id, data }: { id: string; data: { name?: string; description?: string; areaId?: string | null; projectId?: string | null; experienceIds?: string[] } }) => {
       const res = await fetch(`/api/profile/contributions/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -2994,7 +2951,35 @@ function ProfileSection() {
                         activeTab === "experiences" ? profileExperiences :
                         profileContributions;
 
-  const handleAddNew = () => {
+  // Sincroniza el vínculo experiencia<->contribución desde el formulario de experiencia.
+  // La contribución guarda el array `experienceIds`, así que actualizamos cada contribución afectada.
+  const syncContributionExperienceLinks = async (experienceId: string, nextContributionIds: string[]) => {
+    const changed = profileContributions.filter((c) => {
+      const linked = (c.experienceIds || []).includes(experienceId);
+      const shouldBeLinked = nextContributionIds.includes(c.id);
+      return linked !== shouldBeLinked;
+    });
+    if (changed.length === 0) return;
+    await Promise.all(
+      changed.map((c) => {
+        const current = c.experienceIds || [];
+        const next = nextContributionIds.includes(c.id)
+          ? [...current, experienceId]
+          : current.filter((id) => id !== experienceId);
+        return fetch(`/api/profile/contributions/${c.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ experienceIds: next }),
+        });
+      })
+    );
+    queryClient.invalidateQueries({ queryKey: ["/api/profile/contributions"] });
+    queryClient.invalidateQueries({ predicate: (query) =>
+      (query.queryKey[0] as string)?.startsWith?.("/api/profile/contributions/by-source")
+    });
+  };
+
+  const handleAddNew = async () => {
     if (!name.trim()) return;
     if (activeTab === "values") {
       createValue.mutate({ name: name.trim(), description: description.trim() });
@@ -3005,18 +2990,20 @@ function ProfileSection() {
     } else if (activeTab === "about") {
       createAboutEntry.mutate({ name: name.trim(), description: description.trim() });
     } else if (activeTab === "experiences") {
-      createExperience.mutate({ 
-        name: name.trim(), 
+      const created = await createExperience.mutateAsync({
+        name: name.trim(),
         description: description.trim(),
         areaId: selectedSourceType === "area" ? selectedSourceId : null,
         projectId: selectedSourceType === "project" ? selectedSourceId : null,
       });
+      if (created?.id) await syncContributionExperienceLinks(created.id, linkContributionIds);
     } else if (activeTab === "contributions") {
-      createContribution.mutate({ 
-        name: name.trim(), 
+      createContribution.mutate({
+        name: name.trim(),
         description: description.trim(),
         areaId: selectedSourceType === "area" ? selectedSourceId : null,
         projectId: selectedSourceType === "project" ? selectedSourceId : null,
+        experienceIds: linkExperienceIds,
       });
     }
   };
@@ -3032,18 +3019,21 @@ function ProfileSection() {
     } else if (activeTab === "about") {
       updateAboutEntry.mutate({ id: selectedEntry.id, data: { name: name.trim(), description: description.trim() } });
     } else if (activeTab === "experiences") {
-      updateExperience.mutate({ id: selectedEntry.id, data: { 
-        name: name.trim(), 
+      const experienceId = selectedEntry.id;
+      updateExperience.mutate({ id: experienceId, data: {
+        name: name.trim(),
         description: description.trim(),
         areaId: selectedSourceType === "area" ? selectedSourceId : null,
         projectId: selectedSourceType === "project" ? selectedSourceId : null,
       } });
+      void syncContributionExperienceLinks(experienceId, linkContributionIds);
     } else if (activeTab === "contributions") {
-      updateContribution.mutate({ id: selectedEntry.id, data: { 
-        name: name.trim(), 
+      updateContribution.mutate({ id: selectedEntry.id, data: {
+        name: name.trim(),
         description: description.trim(),
         areaId: selectedSourceType === "area" ? selectedSourceId : null,
         projectId: selectedSourceType === "project" ? selectedSourceId : null,
+        experienceIds: linkExperienceIds,
       } });
     }
   };
@@ -3100,6 +3090,8 @@ function ProfileSection() {
     setExtraInfo("");
     setSelectedSourceType(null);
     setSelectedSourceId(null);
+    setLinkExperienceIds([]);
+    setLinkContributionIds([]);
   };
 
   const handleTextLongPressStart = () => {
@@ -3118,6 +3110,8 @@ function ProfileSection() {
     longPressTimer.current = setTimeout(() => {
       setName("");
       setDescription("");
+      setLinkExperienceIds([]);
+      setLinkContributionIds([]);
       setIsAdding(true);
     }, 500);
   };
@@ -3146,6 +3140,16 @@ function ProfileSection() {
       } else {
         setSelectedSourceType(null);
         setSelectedSourceId(null);
+      }
+      // Initialize experience <-> contribution links
+      if (activeTab === "contributions") {
+        setLinkExperienceIds(entry.experienceIds || []);
+      } else if (activeTab === "experiences") {
+        setLinkContributionIds(
+          profileContributions
+            .filter((c) => (c.experienceIds || []).includes(entry.id))
+            .map((c) => c.id)
+        );
       }
     }, 500);
   };
@@ -3259,6 +3263,24 @@ function ProfileSection() {
                 </Select>
               </div>
             )}
+            {activeTab === "contributions" && (
+              <EntryLinkPicker
+                label="Experiencias vinculadas"
+                options={profileExperiences}
+                value={linkExperienceIds}
+                onChange={setLinkExperienceIds}
+                emptyLabel="No hay experiencias todavía"
+              />
+            )}
+            {activeTab === "experiences" && (
+              <EntryLinkPicker
+                label="Contribuciones vinculadas"
+                options={profileContributions}
+                value={linkContributionIds}
+                onChange={setLinkContributionIds}
+                emptyLabel="No hay contribuciones todavía"
+              />
+            )}
             <div className="flex gap-2 pt-2">
               <Button size="sm" onClick={handleAddNew} className="bg-secondary hover:bg-secondary/80 text-foreground">
                 Agregar
@@ -3369,6 +3391,24 @@ function ProfileSection() {
                       </SelectContent>
                     </Select>
                   </div>
+                )}
+                {activeTab === "contributions" && (
+                  <EntryLinkPicker
+                    label="Experiencias vinculadas"
+                    options={profileExperiences}
+                    value={linkExperienceIds}
+                    onChange={setLinkExperienceIds}
+                    emptyLabel="No hay experiencias todavía"
+                  />
+                )}
+                {activeTab === "experiences" && (
+                  <EntryLinkPicker
+                    label="Contribuciones vinculadas"
+                    options={profileContributions}
+                    value={linkContributionIds}
+                    onChange={setLinkContributionIds}
+                    emptyLabel="No hay contribuciones todavía"
+                  />
                 )}
                 <div className="flex gap-2">
                   <Button size="sm" onClick={handleSaveEdit} className="bg-secondary hover:bg-secondary/80 text-foreground">
@@ -3483,6 +3523,40 @@ function ProfileSection() {
                 {viewingEntry.description && (
                   <p className="text-sm text-muted-foreground whitespace-pre-line leading-relaxed">{viewingEntry.description}</p>
                 )}
+                {activeTab === "contributions" && (() => {
+                  const linked = profileExperiences.filter((e) => (viewingEntry.experienceIds || []).includes(e.id));
+                  return (
+                    <div className="pt-1">
+                      <p className="text-xs font-medium text-muted-foreground mb-1">Experiencias vinculadas</p>
+                      {linked.length === 0 ? (
+                        <p className="text-xs text-muted-foreground/70">Ninguna</p>
+                      ) : (
+                        <ul className="space-y-0.5">
+                          {linked.map((e) => (
+                            <li key={e.id} className="text-sm text-foreground">• {e.name}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  );
+                })()}
+                {activeTab === "experiences" && (() => {
+                  const linked = profileContributions.filter((c) => (c.experienceIds || []).includes(viewingEntry.id));
+                  return (
+                    <div className="pt-1">
+                      <p className="text-xs font-medium text-muted-foreground mb-1">Contribuciones vinculadas</p>
+                      {linked.length === 0 ? (
+                        <p className="text-xs text-muted-foreground/70">Ninguna</p>
+                      ) : (
+                        <ul className="space-y-0.5">
+                          {linked.map((c) => (
+                            <li key={c.id} className="text-sm text-foreground">• {c.name}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             ) : (
               <div className="h-full flex items-center justify-center text-muted-foreground text-sm">

@@ -9,7 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ProgressBar } from "@/components/ProgressBar";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut, Archive, ArchiveRestore, Pencil, Zap, ChevronDown, ChevronRight, Mountain, Compass, Scroll, Eye, Swords, Lock, Target, Shield, Star, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Brain, GraduationCap, Wallet, TrendingUp, PiggyBank, Users, MessageCircle, Plane, Globe, MapPin, Leaf, Sun, Moon, Coffee, Bike, Wrench, Hammer, Lightbulb, Puzzle, Flag, PawPrint, Smile, Flame, Droplet } from "lucide-react";
+import { Plus, CalendarClock, Clock, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut, Archive, ArchiveRestore, Pencil, Zap, ChevronDown, ChevronRight, Mountain, Compass, Scroll, Eye, Swords, Lock, Target, Shield, Star, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Brain, GraduationCap, Wallet, TrendingUp, PiggyBank, Users, MessageCircle, Plane, Globe, MapPin, Leaf, Sun, Moon, Coffee, Bike, Wrench, Hammer, Lightbulb, Puzzle, Flag, PawPrint, Smile, Flame, Droplet } from "lucide-react";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "./ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "./ui/alert-dialog";
@@ -2751,9 +2751,10 @@ interface AreaItemProps {
   onDelete: () => void;
   onArchive: () => void;
   onEdit: (updates: { name: string; description: string; icon: string }) => void;
+  onMoveToUpcoming: () => void;
 }
 
-function AreaItem({ area, isActive, isMenuOpen, onSelect, onDelete, onArchive, onEdit }: AreaItemProps) {
+function AreaItem({ area, isActive, isMenuOpen, onSelect, onDelete, onArchive, onEdit, onMoveToUpcoming }: AreaItemProps) {
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
@@ -2968,6 +2969,17 @@ function AreaItem({ area, isActive, isMenuOpen, onSelect, onDelete, onArchive, o
           <button
             className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-foreground/80 hover:text-foreground hover:bg-muted/60 transition-colors"
             onClick={() => {
+              onMoveToUpcoming();
+              setIsPopoverOpen(false);
+            }}
+            data-testid={`button-upcoming-area-${area.id}`}
+          >
+            <CalendarClock className="h-4 w-4 text-muted-foreground" />
+            Mover a Próximos
+          </button>
+          <button
+            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-foreground/80 hover:text-foreground hover:bg-muted/60 transition-colors"
+            onClick={() => {
               onArchive();
               setIsPopoverOpen(false);
             }}
@@ -3029,9 +3041,10 @@ interface ProjectItemProps {
   onDelete: () => void;
   onArchive: () => void;
   onEdit: (updates: { name: string; description: string; icon: string }) => void;
+  onMoveToUpcoming: () => void;
 }
 
-function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete, onArchive, onEdit }: ProjectItemProps) {
+function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete, onArchive, onEdit, onMoveToUpcoming }: ProjectItemProps) {
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
@@ -3243,6 +3256,17 @@ function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete, onArch
           <button
             className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-foreground/80 hover:text-foreground hover:bg-muted/60 transition-colors"
             onClick={() => {
+              onMoveToUpcoming();
+              setIsPopoverOpen(false);
+            }}
+            data-testid={`button-upcoming-project-${project.id}`}
+          >
+            <CalendarClock className="h-4 w-4 text-muted-foreground" />
+            Mover a Próximos
+          </button>
+          <button
+            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-foreground/80 hover:text-foreground hover:bg-muted/60 transition-colors"
+            onClick={() => {
               onArchive();
               setIsPopoverOpen(false);
             }}
@@ -3296,15 +3320,220 @@ function ProjectItem({ project, isActive, isMenuOpen, onSelect, onDelete, onArch
   );
 }
 
+type UpcomingKind = "area" | "project";
+
+interface UpcomingEntry {
+  kind: UpcomingKind;
+  id: string;
+  name: string;
+  icon: string;
+  typeLabel: string;
+  scheduledUnlockAt: string | null;
+}
+
+// ISO string -> value accepted by <input type="datetime-local"> (local time, no seconds).
+function toLocalInputValue(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function formatSchedule(iso: string | null): string {
+  if (!iso) return "Sin fecha";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "Sin fecha";
+  return d.toLocaleString(undefined, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+interface UpcomingItemProps {
+  entry: UpcomingEntry;
+  onActivate: (kind: UpcomingKind, id: string) => void;
+  onSchedule: (kind: UpcomingKind, id: string, iso: string) => void;
+}
+
+function UpcomingItem({ entry, onActivate, onSchedule }: UpcomingItemProps) {
+  const [value, setValue] = useState(() => toLocalInputValue(entry.scheduledUnlockAt));
+  const Icon = extendedIconMap[entry.icon] || FolderKanban;
+
+  useEffect(() => {
+    setValue(toLocalInputValue(entry.scheduledUnlockAt));
+  }, [entry.scheduledUnlockAt]);
+
+  return (
+    <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2.5" data-testid={`upcoming-item-${entry.id}`}>
+      <div className="flex items-center gap-2">
+        <Icon size={16} className="shrink-0 text-muted-foreground" />
+        <span className="flex-1 min-w-0">
+          <span className="block text-sm font-medium text-foreground truncate">{entry.name}</span>
+          <span className="block text-xs text-muted-foreground truncate">
+            {entry.typeLabel} · {formatSchedule(entry.scheduledUnlockAt)}
+          </span>
+        </span>
+        {entry.scheduledUnlockAt && <CalendarClock size={14} className="shrink-0 text-primary" />}
+      </div>
+      <div className="mt-2.5 space-y-2">
+        <input
+          type="datetime-local"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+          data-testid={`upcoming-schedule-${entry.id}`}
+        />
+        <div className="flex gap-2">
+          <button
+            type="button"
+            disabled={!value}
+            onClick={() => {
+              const parsed = new Date(value);
+              if (Number.isNaN(parsed.getTime())) return;
+              onSchedule(entry.kind, entry.id, parsed.toISOString());
+            }}
+            className="flex-1 flex items-center justify-center gap-1.5 rounded-md bg-primary/10 text-primary px-2 py-1.5 text-xs font-medium disabled:opacity-40 hover:bg-primary/20 transition-colors"
+          >
+            <Clock size={13} /> Programar
+          </button>
+          <button
+            type="button"
+            onClick={() => onActivate(entry.kind, entry.id)}
+            className="flex-1 flex items-center justify-center gap-1.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 px-2 py-1.5 text-xs font-medium hover:bg-emerald-500/25 transition-colors"
+            data-testid={`upcoming-activate-${entry.id}`}
+          >
+            <Rocket size={13} /> Activar ahora
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface UpcomingSectionProps {
+  items: UpcomingEntry[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  isMenuOpen: boolean;
+  onActivate: (kind: UpcomingKind, id: string) => void;
+  onSchedule: (kind: UpcomingKind, id: string, iso: string) => void;
+}
+
+// Bottom-of-menu button (styled like "Conquistados") that opens a modal listing
+// every quest currently held in "Próximos".
+function UpcomingSection({ items, open, onOpenChange, isMenuOpen, onActivate, onSchedule }: UpcomingSectionProps) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          className="group flex items-center gap-2 px-3 py-2 text-muted-foreground hover:text-foreground transition-all duration-200 rounded-md hover:bg-muted/50"
+          data-testid="button-upcoming"
+        >
+          <CalendarClock size={18} className="shrink-0" />
+          <span className={cn(
+            "text-sm font-medium overflow-hidden transition-all duration-200 whitespace-nowrap",
+            isMenuOpen ? "max-w-[140px] opacity-100" : "max-w-0 opacity-0 group-hover:max-w-[140px] group-hover:opacity-100"
+          )}>
+            Próximos{items.length > 0 ? ` (${items.length})` : ""}
+          </span>
+        </button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[460px]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <CalendarClock size={18} className="text-primary" />
+            Próximos
+          </DialogTitle>
+          <DialogDescription>
+            Quests en cola. Programá cuándo se desbloquean y vuelven al menú, o activalos ahora.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="mt-2 space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+          {items.length === 0 ? (
+            <div className="text-center text-muted-foreground py-8">
+              <CalendarClock className="mx-auto h-10 w-10 mb-3 opacity-30" />
+              <p className="text-sm font-medium">No hay quests en Próximos</p>
+              <p className="text-xs mt-1 opacity-70">
+                Mantené apretada una quest en el menú y elegí “Mover a Próximos”.
+              </p>
+            </div>
+          ) : (
+            items.map((entry) => (
+              <UpcomingItem
+                key={`${entry.kind}-${entry.id}`}
+                entry={entry}
+                onActivate={onActivate}
+                onSchedule={onSchedule}
+              />
+            ))
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface SectionHeaderProps {
+  label: string;
+  onLongPress: () => void;
+  dataOnboarding?: string;
+}
+
+// Section title in the menu. A long press opens the "add quest" dialog for that
+// category (the old "Agregar +" button was removed in favour of this gesture).
+function SectionHeader({ label, onLongPress, dataOnboarding }: SectionHeaderProps) {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fired = useRef(false);
+
+  const start = () => {
+    fired.current = false;
+    timer.current = setTimeout(() => {
+      fired.current = true;
+      onLongPress();
+    }, 600);
+  };
+  const cancel = () => {
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
+  };
+
+  return (
+    <div className="px-3 py-1" data-onboarding={dataOnboarding}>
+      <button
+        type="button"
+        onMouseDown={start}
+        onMouseUp={cancel}
+        onMouseLeave={cancel}
+        onTouchStart={start}
+        onTouchEnd={cancel}
+        onTouchCancel={cancel}
+        onContextMenu={(e) => e.preventDefault()}
+        onClick={(e) => {
+          if (fired.current) {
+            e.preventDefault();
+            fired.current = false;
+          }
+        }}
+        className="text-xs font-semibold text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors select-none cursor-default"
+        title={`Mantené apretado para agregar ${label}`}
+      >
+        {label}
+      </button>
+    </div>
+  );
+}
+
 export function AreaMenu() {
   const { 
     areas, activeAreaId, setActiveAreaId, createArea, deleteArea, archiveArea, unarchiveArea, archivedAreas, loadArchivedAreas,
     mainQuests, sideQuests, emergentQuests, experienceQuests, activeProjectId, setActiveProjectId, createProject, createSideQuest, createEmergentQuest, createExperienceQuest, deleteProject, archiveProject, unarchiveProject, archivedMainQuests, archivedSideQuests, archivedEmergentQuests, archivedExperienceQuests, loadArchivedProjects,
-    updateAreaDetails, updateProjectDetails
+    updateAreaDetails, updateProjectDetails, setQuestUpcoming
   } = useSkillTree();
   const { user, logout } = useAuth();
   const { isMenuOpen: isOpen, setIsMenuOpen: setIsOpen } = useMenu();
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [upcomingOpen, setUpcomingOpen] = useState(false);
   const [dialogStep, setDialogStep] = useState<DialogStep>("choose");
   const [itemName, setItemName] = useState("");
   const [itemDescription, setItemDescription] = useState("");
@@ -3325,6 +3554,47 @@ export function AreaMenu() {
   const [emergentObjective, setEmergentObjective] = useState("");
   const [emergentAction, setEmergentAction] = useState("");
   const [emergentNodeTitle, setEmergentNodeTitle] = useState("");
+
+  // "Próximos": quests marked upcoming are hidden from their normal section and
+  // listed together in the collapsible at the bottom of the menu instead.
+  const isUpcoming = (q: { upcoming?: 0 | 1 | null }) => q.upcoming === 1;
+  const visibleAreas = areas.filter((a) => !isUpcoming(a));
+  const visibleMainQuests = mainQuests.filter((p) => !isUpcoming(p));
+  const visibleSideQuests = sideQuests.filter((p) => !isUpcoming(p));
+  const visibleEmergentQuests = emergentQuests.filter((p) => !isUpcoming(p));
+  const visibleExperienceQuests = experienceQuests.filter((p) => !isUpcoming(p));
+
+  const upcomingList: UpcomingEntry[] = [
+    ...areas.filter(isUpcoming).map((a) => ({
+      kind: "area" as const, id: a.id, name: a.name, icon: a.icon,
+      typeLabel: "Área", scheduledUnlockAt: a.scheduledUnlockAt ?? null,
+    })),
+    ...mainQuests.filter(isUpcoming).map((p) => ({
+      kind: "project" as const, id: p.id, name: p.name, icon: p.icon,
+      typeLabel: "Main Quest", scheduledUnlockAt: p.scheduledUnlockAt ?? null,
+    })),
+    ...sideQuests.filter(isUpcoming).map((p) => ({
+      kind: "project" as const, id: p.id, name: p.name, icon: p.icon,
+      typeLabel: "Side Quest", scheduledUnlockAt: p.scheduledUnlockAt ?? null,
+    })),
+    ...emergentQuests.filter(isUpcoming).map((p) => ({
+      kind: "project" as const, id: p.id, name: p.name, icon: p.icon,
+      typeLabel: "Emergent", scheduledUnlockAt: p.scheduledUnlockAt ?? null,
+    })),
+    ...experienceQuests.filter(isUpcoming).map((p) => ({
+      kind: "project" as const, id: p.id, name: p.name, icon: p.icon,
+      typeLabel: "Experience", scheduledUnlockAt: p.scheduledUnlockAt ?? null,
+    })),
+  ];
+
+  const openAddDialog = (step: DialogStep) => {
+    setItemName("");
+    setItemDescription("");
+    setSelectedIcon("Home");
+    setManualIconSelected(false);
+    setDialogStep(step);
+    setIsAddOpen(true);
+  };
 
   useEffect(() => {
     if (isArchivedDialogOpen) {
@@ -3593,18 +3863,18 @@ export function AreaMenu() {
           </div>
 
           <div className="flex-1 overflow-y-auto overflow-x-hidden py-2 space-y-1 px-2 scrollbar-hide overscroll-contain">
-            <div className="px-3 py-1">
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Áreas
-              </span>
-            </div>
+            <SectionHeader
+              label="Áreas"
+              onLongPress={() => openAddDialog("new-area")}
+              dataOnboarding="add-button"
+            />
 
-            {areas.length === 0 ? (
+            {visibleAreas.length === 0 ? (
               <div className="text-xs text-muted-foreground px-3 py-2 italic">
                 Sin áreas aún
               </div>
             ) : (
-              areas.map((area) => (
+              visibleAreas.map((area) => (
                 <AreaItem
                   key={area.id}
                   area={area}
@@ -3614,6 +3884,7 @@ export function AreaMenu() {
                   onDelete={() => deleteArea(area.id)}
                   onArchive={() => archiveArea(area.id)}
                   onEdit={(updates) => updateAreaDetails(area.id, updates)}
+                  onMoveToUpcoming={() => setQuestUpcoming("area", area.id, true)}
                 />
               ))
             )}
@@ -3621,19 +3892,19 @@ export function AreaMenu() {
         <div className="my-3 border-t border-border" />
 
         {isOpen && (
-          <div className="px-3 py-1" data-onboarding="main-quests">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              Main Quest
-            </span>
-          </div>
+          <SectionHeader
+            label="Main Quest"
+            onLongPress={() => openAddDialog("new-project")}
+            dataOnboarding="main-quests"
+          />
         )}
 
-        {mainQuests.length === 0 ? (
+        {visibleMainQuests.length === 0 ? (
           <div className="text-xs text-muted-foreground px-3 py-2 italic" data-onboarding="main-quests">
             {isOpen ? "Sin main quests aún" : "—"}
           </div>
         ) : (
-          mainQuests.map((project, index) => (
+          visibleMainQuests.map((project) => (
             <ProjectItem
               key={project.id}
               project={project}
@@ -3643,6 +3914,7 @@ export function AreaMenu() {
               onDelete={() => deleteProject(project.id)}
               onArchive={() => archiveProject(project.id)}
               onEdit={(updates) => updateProjectDetails(project.id, updates)}
+              onMoveToUpcoming={() => setQuestUpcoming("project", project.id, true)}
             />
           ))
         )}
@@ -3650,19 +3922,19 @@ export function AreaMenu() {
         <div className="my-3 border-t border-border" />
 
         {isOpen && (
-          <div className="px-3 py-1" data-onboarding="side-quests">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              Side Quest
-            </span>
-          </div>
+          <SectionHeader
+            label="Side Quest"
+            onLongPress={() => openAddDialog("new-sidequest")}
+            dataOnboarding="side-quests"
+          />
         )}
 
-        {sideQuests.length === 0 ? (
+        {visibleSideQuests.length === 0 ? (
           <div className="text-xs text-muted-foreground px-3 py-2 italic" data-onboarding="side-quests">
             {isOpen ? "Sin side quests aún" : "—"}
           </div>
         ) : (
-          sideQuests.map((project, index) => (
+          visibleSideQuests.map((project) => (
             <ProjectItem
               key={project.id}
               project={project}
@@ -3672,11 +3944,12 @@ export function AreaMenu() {
               onDelete={() => deleteProject(project.id)}
               onArchive={() => archiveProject(project.id)}
               onEdit={(updates) => updateProjectDetails(project.id, updates)}
+              onMoveToUpcoming={() => setQuestUpcoming("project", project.id, true)}
             />
           ))
         )}
 
-        {emergentQuests.length > 0 && (
+        {visibleEmergentQuests.length > 0 && (
           <div className="mt-2 ml-2">
             {isOpen && (
               <button
@@ -3687,10 +3960,10 @@ export function AreaMenu() {
                 {emergentExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                 <Zap size={12} />
                 <span className="font-medium">Emergent</span>
-                <span className="text-muted-foreground">({emergentQuests.length})</span>
+                <span className="text-muted-foreground">({visibleEmergentQuests.length})</span>
               </button>
             )}
-            {emergentExpanded && emergentQuests.map((project) => (
+            {emergentExpanded && visibleEmergentQuests.map((project) => (
               <ProjectItem
                 key={project.id}
                 project={project}
@@ -3700,12 +3973,13 @@ export function AreaMenu() {
                 onDelete={() => deleteProject(project.id)}
                 onArchive={() => archiveProject(project.id)}
                 onEdit={(updates) => updateProjectDetails(project.id, updates)}
+                onMoveToUpcoming={() => setQuestUpcoming("project", project.id, true)}
               />
             ))}
           </div>
         )}
 
-        {experienceQuests.length > 0 && (
+        {visibleExperienceQuests.length > 0 && (
           <div className="mt-2 ml-2">
             {isOpen && (
               <button
@@ -3716,10 +3990,10 @@ export function AreaMenu() {
                 {experienceExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                 <Mountain size={12} />
                 <span className="font-medium">Experience</span>
-                <span className="text-muted-foreground">({experienceQuests.length})</span>
+                <span className="text-muted-foreground">({visibleExperienceQuests.length})</span>
               </button>
             )}
-            {experienceExpanded && experienceQuests.map((project) => (
+            {experienceExpanded && visibleExperienceQuests.map((project) => (
               <ProjectItem
                 key={project.id}
                 project={project}
@@ -3729,6 +4003,7 @@ export function AreaMenu() {
                 onDelete={() => deleteProject(project.id)}
                 onArchive={() => archiveProject(project.id)}
                 onEdit={(updates) => updateProjectDetails(project.id, updates)}
+                onMoveToUpcoming={() => setQuestUpcoming("project", project.id, true)}
               />
             ))}
           </div>
@@ -3736,22 +4011,15 @@ export function AreaMenu() {
           </div>
 
         <div className={cn("p-2 flex flex-col gap-1", isOpen ? "items-start" : "items-center")}>
+          <UpcomingSection
+            items={upcomingList}
+            open={upcomingOpen}
+            onOpenChange={setUpcomingOpen}
+            isMenuOpen={isOpen}
+            onActivate={(kind, id) => setQuestUpcoming(kind, id, false)}
+            onSchedule={(kind, id, iso) => setQuestUpcoming(kind, id, true, iso)}
+          />
           <Dialog open={isAddOpen} onOpenChange={handleDialogClose}>
-            <DialogTrigger asChild>
-              <button
-                className="group flex items-center gap-2 px-3 py-2 text-muted-foreground hover:text-foreground transition-all duration-200 rounded-md hover:bg-muted/50"
-                data-testid="button-add"
-                data-onboarding="add-button"
-              >
-                <Plus size={18} className="shrink-0" />
-                <span className={cn(
-                  "text-sm font-medium overflow-hidden transition-all duration-200",
-                  isOpen ? "max-w-[100px] opacity-100" : "max-w-0 opacity-0 group-hover:max-w-[100px] group-hover:opacity-100"
-                )}>
-                  Agregar
-                    </span>
-                  </button>
-                </DialogTrigger>
                 <DialogContent className="sm:max-w-[425px]">
                   {dialogStep === "choose" && (
                     <>
