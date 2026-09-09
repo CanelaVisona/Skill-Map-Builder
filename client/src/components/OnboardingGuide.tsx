@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, ChevronRight, ChevronLeft, HelpCircle, Sparkles, BookOpen, Target, CheckCircle2 } from "lucide-react";
+import { ChevronRight, ChevronLeft, HelpCircle, Sparkles, BookOpen, Target, CheckCircle2 } from "lucide-react";
 import { Button } from "./ui/button";
 
 const ONBOARDING_KEY_PREFIX = "skilltree-onboarding-complete-";
@@ -140,17 +140,11 @@ export function OnboardingGuide({ onComplete, isOpen }: OnboardingGuideProps) {
           className="relative bg-card border border-border rounded-xl shadow-2xl w-80 max-w-[calc(100vw-32px)] z-10"
         >
           <div className="p-5">
-            <div className="flex items-start justify-between mb-3">
+            <div className="flex items-start mb-3">
               <div className="flex items-center gap-3">
                 {step.icon}
                 <h3 className="font-bold text-lg">{step.title}</h3>
               </div>
-              <button
-                onClick={handleSkip}
-                className="text-muted-foreground hover:text-foreground transition-colors -mt-1 -mr-1"
-              >
-                <X className="h-5 w-5" />
-              </button>
             </div>
             
             <p className="text-muted-foreground text-sm leading-relaxed mb-5">

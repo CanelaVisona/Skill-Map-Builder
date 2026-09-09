@@ -52,11 +52,7 @@ export function LevelNavigationPanel({
         <nav
           className={[
             "max-h-[62vh] overflow-y-auto overflow-x-hidden",
-            "[scrollbar-width:thin] [scrollbar-color:rgba(161,161,170,0.25)_transparent]",
-            "[&::-webkit-scrollbar]:w-[3px]",
-            "[&::-webkit-scrollbar-track]:bg-transparent",
-            "[&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-zinc-400/25",
-            "hover:[&::-webkit-scrollbar-thumb]:bg-zinc-400/40",
+            "minimal-scrollbar",
           ].join(" ")}
         >
           <ul className="flex flex-col gap-2 py-2">

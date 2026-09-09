@@ -9,7 +9,7 @@ type ClothingStatus = "have" | "missing";
 
 type ClothingStyle = "deporte" | "casual" | "salida" | "entrecasa";
 
-const STYLE_META: Record<ClothingStyle, { label: string; emoji: string; color: string }> = {
+export const STYLE_META: Record<ClothingStyle, { label: string; emoji: string; color: string }> = {
   deporte: { label: "Deporte", emoji: "🏃", color: "#2563eb" },
   casual: { label: "Casual", emoji: "😎", color: "#d97706" },
   salida: { label: "Salida", emoji: "✨", color: "#7c3aed" },
@@ -23,7 +23,7 @@ function isValidStyle(value: unknown): value is ClothingStyle {
 
 type GarmentGroup = "Superior" | "Inferior" | "Calzado" | "Accesorios" | "Otros";
 
-type GarmentType =
+export type GarmentType =
   | "remera"
   | "mangalarga"
   | "polera"
@@ -57,7 +57,7 @@ type GarmentType =
   | "anillo"
   | "otro";
 
-const GARMENT_META: Record<GarmentType, { label: string; group: GarmentGroup }> = {
+export const GARMENT_META: Record<GarmentType, { label: string; group: GarmentGroup }> = {
   remera: { label: "Remera", group: "Superior" },
   mangalarga: { label: "Remera manga larga", group: "Superior" },
   polera: { label: "Polera", group: "Superior" },
@@ -106,7 +106,7 @@ function isGarmentType(value: unknown): value is GarmentType {
   return typeof value === "string" && value in GARMENT_META;
 }
 
-type ClothingItem = {
+export type ClothingItem = {
   id: number;
   name: string;
   type: GarmentType;
@@ -193,6 +193,95 @@ function loadStoredItems(): ClothingItem[] {
   }
 }
 
+// Loads from the server on mount (falling back to whatever's cached locally), then
+// keeps localStorage and the server in sync as `items` changes — same pattern as
+// useHouseInventoryItems, so the "Inventario" y "Lista de prioridades" tabs share
+// one source of truth and a compra o un reorden en una se ve al toque en la otra.
+export function useClothingInventoryItems() {
+  const [items, setItems] = useState<ClothingItem[]>(() => loadStoredItems());
+  const [remoteLoaded, setRemoteLoaded] = useState(false);
+  const [remoteSyncEnabled, setRemoteSyncEnabled] = useState(true);
+  const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadRemoteItems = async () => {
+      try {
+        const response = await fetch("/api/clothing-inventory/items");
+
+        if (response.status === 401) {
+          if (!cancelled) {
+            setRemoteSyncEnabled(false);
+            setRemoteLoaded(true);
+          }
+          return;
+        }
+
+        if (!response.ok) {
+          if (!cancelled) setRemoteLoaded(true);
+          return;
+        }
+
+        const data = (await response.json()) as unknown;
+        const safeItems = sanitizeItems(data);
+        if (safeItems && safeItems.length > 0 && !cancelled) {
+          setItems(safeItems);
+        }
+
+        if (!cancelled) setRemoteLoaded(true);
+      } catch {
+        if (!cancelled) setRemoteLoaded(true);
+      }
+    };
+
+    void loadRemoteItems();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(CLOTHING_STORAGE_KEY, JSON.stringify(items));
+  }, [items]);
+
+  useEffect(() => {
+    if (!remoteLoaded || !remoteSyncEnabled) return;
+
+    if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
+
+    saveDebounceRef.current = setTimeout(() => {
+      void fetch("/api/clothing-inventory/items", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items }),
+      });
+    }, 400);
+
+    return () => {
+      if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
+    };
+  }, [remoteLoaded, remoteSyncEnabled, items]);
+
+  return { items, setItems } as const;
+}
+
+export function getClothingColors(isDark: boolean) {
+  return {
+    pageBg: isDark ? "#0d1117" : "#f5f7fb",
+    shellBorder: isDark ? "1px solid #1e2d1e" : "1px solid #d7dce6",
+    shellShadow: isDark ? "0 0 40px rgba(74,222,128,0.07)" : "0 8px 30px rgba(17,24,39,0.08)",
+    title: isDark ? "#f0fdf4" : "#0f172a",
+    subtitle: isDark ? "#6b7280" : "#64748b",
+    cardBg: isDark ? "#0f1a0f" : "#ffffff",
+    cardBorder: isDark ? "1px solid #1e3a1e" : "1px solid #d7dce6",
+    chipBg: isDark ? "#112011" : "#f0fdf4",
+    chipBorder: isDark ? "1px solid #2d4a2d" : "1px solid #86efac",
+  };
+}
+
 function hexToRgbObj(hex: string) {
   const clean = hex.replace("#", "");
   const full = clean.length === 3 ? clean.split("").map((c) => c + c).join("") : clean;
@@ -235,7 +324,7 @@ function getDetailStroke(hex: string) {
 // own color through a light-to-shadow gradient (instead of a flat fill) plus a soft
 // highlight/shadow sheen clipped to its shape — giving it some volume without
 // needing per-item hand-painted art, and still working for any color the user picks.
-function GarmentGlyph({ type, color, size = 32 }: { type: GarmentType; color: string; size?: number }) {
+export function GarmentGlyph({ type, color, size = 32 }: { type: GarmentType; color: string; size?: number }) {
   const rawId = useId();
   const uid = rawId.replace(/[^a-zA-Z0-9]/g, "");
   const gradId = `cg-${uid}`;
@@ -699,7 +788,7 @@ function GarmentGlyph({ type, color, size = 32 }: { type: GarmentType; color: st
   );
 }
 
-function useLongPress<T extends HTMLElement>(onLongPress: () => void, { delay = 600, moveTolerance = 10 } = {}) {
+export function useLongPress<T extends HTMLElement>(onLongPress: () => void, { delay = 600, moveTolerance = 10 } = {}) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pointerIdRef = useRef<number | null>(null);
   const startPointRef = useRef<{ x: number; y: number } | null>(null);
@@ -748,7 +837,7 @@ function useLongPress<T extends HTMLElement>(onLongPress: () => void, { delay = 
   return { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onPointerUp, onPointerLeave: onPointerUp, consumeClick };
 }
 
-type ItemFormState = {
+export type ItemFormState = {
   name: string;
   type: GarmentType;
   color: string;
@@ -759,7 +848,7 @@ type ItemFormState = {
   styleScore: number;
 };
 
-const EMPTY_FORM: ItemFormState = {
+export const EMPTY_FORM: ItemFormState = {
   name: "",
   type: "remera",
   color: "#4ade80",
@@ -1161,7 +1250,7 @@ function GarmentPreview({
 
 // Rendered as a fixed, centered popup (not inline in the page flow) so adding or
 // editing a prenda always shows up as a dedicated dialog with a live preview.
-function ItemPopup({
+export function ItemPopup({
   heading,
   form,
   onChange,
@@ -1580,94 +1669,24 @@ function GroupSection({
   );
 }
 
-export default function ClothingInventory() {
+export default function ClothingInventory({
+  items,
+  setItems,
+}: {
+  items: ClothingItem[];
+  setItems: (updater: ClothingItem[] | ((prev: ClothingItem[]) => ClothingItem[])) => void;
+}) {
   const { theme, resolvedTheme } = useTheme();
   const isDark = (resolvedTheme || theme) === "dark";
 
-  const colors = {
-    pageBg: isDark ? "#0d1117" : "#f5f7fb",
-    shellBorder: isDark ? "1px solid #1e2d1e" : "1px solid #d7dce6",
-    shellShadow: isDark ? "0 0 40px rgba(74,222,128,0.07)" : "0 8px 30px rgba(17,24,39,0.08)",
-    title: isDark ? "#f0fdf4" : "#0f172a",
-    subtitle: isDark ? "#6b7280" : "#64748b",
-    cardBg: isDark ? "#0f1a0f" : "#ffffff",
-    cardBorder: isDark ? "1px solid #1e3a1e" : "1px solid #d7dce6",
-    chipBg: isDark ? "#112011" : "#f0fdf4",
-    chipBorder: isDark ? "1px solid #2d4a2d" : "1px solid #86efac",
-  };
+  const colors = getClothingColors(isDark);
 
-  const [items, setItems] = useState<ClothingItem[]>(() => loadStoredItems());
   const [groupFilter, setGroupFilter] = useState<"Todas" | GarmentGroup>("Todas");
   const [styleFilter, setStyleFilter] = useState<"Todas" | ClothingStyle>("Todas");
-  const [remoteLoaded, setRemoteLoaded] = useState(false);
-  const [remoteSyncEnabled, setRemoteSyncEnabled] = useState(true);
   const [isAddFormOpen, setIsAddFormOpen] = useState(false);
   const [addForm, setAddForm] = useState<ItemFormState>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<ItemFormState>(EMPTY_FORM);
-  const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadRemoteItems = async () => {
-      try {
-        const response = await fetch("/api/clothing-inventory/items");
-
-        if (response.status === 401) {
-          if (!cancelled) {
-            setRemoteSyncEnabled(false);
-            setRemoteLoaded(true);
-          }
-          return;
-        }
-
-        if (!response.ok) {
-          if (!cancelled) setRemoteLoaded(true);
-          return;
-        }
-
-        const data = (await response.json()) as unknown;
-        const safeItems = sanitizeItems(data);
-        if (safeItems && safeItems.length > 0 && !cancelled) {
-          setItems(safeItems);
-        }
-
-        if (!cancelled) setRemoteLoaded(true);
-      } catch {
-        if (!cancelled) setRemoteLoaded(true);
-      }
-    };
-
-    void loadRemoteItems();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(CLOTHING_STORAGE_KEY, JSON.stringify(items));
-  }, [items]);
-
-  useEffect(() => {
-    if (!remoteLoaded || !remoteSyncEnabled) return;
-
-    if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
-
-    saveDebounceRef.current = setTimeout(() => {
-      void fetch("/api/clothing-inventory/items", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items }),
-      });
-    }, 400);
-
-    return () => {
-      if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
-    };
-  }, [remoteLoaded, remoteSyncEnabled, items]);
 
   // "Categoría" (deporte/casual/salida) filters the visible set on top of the
   // group filter — it's a separate axis, not a replacement for Superior/Inferior/etc.

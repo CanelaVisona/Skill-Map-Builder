@@ -822,14 +822,19 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
         )}
       </div>
 
-      {/* Mobile Detail Modal */}
+      {/* Mobile Detail Modal — cerrar tocando el fondo */}
       {isMobile && selectedSkill && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-end md:hidden">
-          <div className="w-full bg-background border-t border-gray-700 rounded-t-lg p-4 max-h-96">
+        <div
+          className="fixed inset-0 z-50 bg-black/50 flex items-end md:hidden"
+          onClick={() => setSelectedSkillId(null)}
+        >
+          <div
+            className="w-full bg-background border-t border-gray-700 rounded-t-lg p-4 max-h-96"
+            onClick={(e) => e.stopPropagation()}
+          >
             <SkillGridDetail
               skill={selectedSkill}
               areaColor={areaColor}
-              onClose={() => setSelectedSkillId(null)}
             />
           </div>
         </div>
@@ -930,18 +935,19 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
           <div
             className="fixed inset-0 flex items-center justify-center p-4"
             style={{ zIndex: 9999, pointerEvents: "auto" }}
+            onClick={() => setShowGridLongPressOptions(false)}
           >
             <div
               className="rounded-lg p-6 max-w-sm w-full"
               style={{
-                backgroundColor: "#0e0c0a",
-                border: "1px solid #3a2a14",
+                backgroundColor: palette.bg,
+                border: `1px solid ${palette.border}`,
                 pointerEvents: "auto",
               }}
               onClick={(e) => e.stopPropagation()}
               onPointerDownCapture={(e) => e.stopPropagation()}
             >
-              <h2 className="text-lg font-semibold mb-4" style={{ color: "#c8a96e" }}>
+              <h2 className="text-lg font-semibold mb-4" style={{ color: palette.text }}>
                 ¿Qué quieres crear?
               </h2>
               <div className="flex flex-col gap-3">
@@ -956,7 +962,7 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
                   }}
                   className="px-4 py-3 rounded text-sm font-semibold transition-colors"
                   style={{
-                    backgroundColor: "#c85a2a",
+                    backgroundColor: areaColor,
                     color: "#0e0c0a",
                   }}
                 >
@@ -969,7 +975,7 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
                   }}
                   className="px-4 py-3 rounded text-sm font-semibold transition-colors"
                   style={{
-                    backgroundColor: "#c85a2a",
+                    backgroundColor: areaColor,
                     color: "#0e0c0a",
                   }}
                 >

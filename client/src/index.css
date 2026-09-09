@@ -107,31 +107,45 @@ h1, h2, h3, h4, h5, h6 {
   @apply font-display tracking-tight;
 }
 
-.minimal-scrollbar {
+/* ============================================================
+   Scrollbars — one unified minimalist style across the app.
+   Thin, translucent, rounded, no arrows, transparent track.
+   ============================================================ */
+.minimal-scrollbar,
+.custom-scrollbar,
+.scrollbar-thin-on-scroll {
   scrollbar-width: thin;
-  scrollbar-color: rgba(113, 113, 122, 0.3) transparent;
+  scrollbar-color: rgba(113, 113, 122, 0.28) transparent;
 }
 
-.minimal-scrollbar::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+.minimal-scrollbar::-webkit-scrollbar,
+.custom-scrollbar::-webkit-scrollbar,
+.scrollbar-thin-on-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
 
-.minimal-scrollbar::-webkit-scrollbar-track {
+.minimal-scrollbar::-webkit-scrollbar-track,
+.custom-scrollbar::-webkit-scrollbar-track,
+.scrollbar-thin-on-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.minimal-scrollbar::-webkit-scrollbar-thumb {
-  background-color: rgba(113, 113, 122, 0.3);
-  border-radius: 2px;
+.minimal-scrollbar::-webkit-scrollbar-thumb,
+.custom-scrollbar::-webkit-scrollbar-thumb,
+.scrollbar-thin-on-scroll::-webkit-scrollbar-thumb {
+  background-color: rgba(113, 113, 122, 0.28);
+  border-radius: 9999px;
+  border: none;
 }
 
-.minimal-scrollbar::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(113, 113, 122, 0.5);
-}
-
-.minimal-scrollbar::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(113, 113, 122, 0.9);
+.minimal-scrollbar::-webkit-scrollbar-thumb:hover,
+.custom-scrollbar::-webkit-scrollbar-thumb:hover,
+.scrollbar-thin-on-scroll::-webkit-scrollbar-thumb:hover,
+.minimal-scrollbar::-webkit-scrollbar-thumb:active,
+.custom-scrollbar::-webkit-scrollbar-thumb:active,
+.scrollbar-thin-on-scroll::-webkit-scrollbar-thumb:active {
+  background-color: rgba(113, 113, 122, 0.45);
 }
 
 .scrollbar-hide::-webkit-scrollbar {
@@ -143,65 +157,15 @@ h1, h2, h3, h4, h5, h6 {
   scrollbar-width: none;
 }
 
-.scrollbar-thin-on-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(113, 113, 122, 0.15) transparent;
-}
-
-.scrollbar-thin-on-scroll::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
-
-.scrollbar-thin-on-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.scrollbar-thin-on-scroll::-webkit-scrollbar-thumb {
-  background-color: rgba(113, 113, 122, 0.15);
-  border-radius: 2px;
-}
-
-.scrollbar-thin-on-scroll:hover::-webkit-scrollbar-thumb {
-  background-color: rgba(113, 113, 122, 0.5);
-}
-
-.scrollbar-thin-on-scroll::-webkit-scrollbar-thumb:active {
-  background-color: rgba(113, 113, 122, 0.7);
-}
-
-.custom-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(113, 113, 122, 0.2) transparent;
-}
-
-.custom-scrollbar::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
-
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background-color: rgba(113, 113, 122, 0.2);
-  border-radius: 2px;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(113, 113, 122, 0.45);
-}
-
 @keyframes glow-pulse {
   0%, 100% { opacity: 0.45; }
   50% { opacity: 0.8; }
 }
 
-/* Global scrollbar styles - more subtle */
+/* Global fallback — every scrollbar on the page gets the same minimal treatment */
 *::-webkit-scrollbar {
-  width: 3px;
-  height: 3px;
+  width: 6px;
+  height: 6px;
 }
 
 *::-webkit-scrollbar-track {
@@ -209,18 +173,24 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 *::-webkit-scrollbar-thumb {
-  background-color: rgba(113, 113, 122, 0.08);
-  border-radius: 2px;
+  background-color: rgba(113, 113, 122, 0.25);
+  border-radius: 9999px;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(113, 113, 122, 0.2);
+  background-color: rgba(113, 113, 122, 0.45);
+}
+
+*::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 /* Firefox scrollbar */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(113, 113, 122, 0.08) transparent;
+  scrollbar-color: rgba(113, 113, 122, 0.25) transparent;
 }
 
 /* Page Flip 3D Effect */

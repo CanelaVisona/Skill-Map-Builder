@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from "react";
-import { X } from "lucide-react";
 import { SkillDiamond } from "./SkillDiamond";
 import { usePopupPalette } from "@/lib/popup-theme";
 
@@ -24,7 +23,7 @@ interface SkillGridDetailProps {
   onClose?: () => void;
 }
 
-export function SkillGridDetail({ skill, areaColor, onClose }: SkillGridDetailProps) {
+export function SkillGridDetail({ skill, areaColor }: SkillGridDetailProps) {
   const [progressPercent, setProgressPercent] = useState(0);
   const palette = usePopupPalette();
 
@@ -80,19 +79,7 @@ export function SkillGridDetail({ skill, areaColor, onClose }: SkillGridDetailPr
   const nextLevelLabel = `Lv${currentLevel + 1}`;
 
   return (
-    <div className="flex flex-col h-full gap-3 overflow-y-auto">
-      {/* Close button (mobile) */}
-      <div className="flex justify-end md:hidden">
-        {onClose && (
-          <button
-            onClick={onClose}
-            className="p-1 hover:bg-muted rounded"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        )}
-      </div>
-
+    <div className="flex flex-col h-full gap-3 overflow-y-auto minimal-scrollbar">
       {/* Diamond */}
       <div className="flex justify-center">
         <SkillDiamond

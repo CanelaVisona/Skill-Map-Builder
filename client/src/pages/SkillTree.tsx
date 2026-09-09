@@ -22,12 +22,13 @@ import { ProgressBar } from "@/components/ProgressBar";
 import { BookTracker } from "@/components/BookTracker";
 import RewiringTracker from "@/components/RewiringTracker";
 import NecesidadesCasa from "../components/NecesidadesCasa";
-import ClothingInventory from "../components/ClothingInventory";
+import ClothingInventory, { useClothingInventoryItems } from "../components/ClothingInventory";
+import ClothingPriorityList from "../components/ClothingPriorityList";
 import HouseInventory, { useHouseInventoryItems } from "../components/HouseInventory";
 import HousePriorityList from "../components/HousePriorityList";
 import HouseRepairsList from "../components/HouseRepairsList";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, X, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Utensils, Swords, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt, OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation, Bug, BugOff } from "lucide-react";
+import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, User, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Utensils, Swords, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt, OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation, Bug, BugOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -1406,19 +1407,20 @@ function BestiarySection({
           transform-origin: right center;
           animation: bestiaryFlipSheetPrev 0.7s cubic-bezier(0.45, 0.05, 0.55, 0.95) forwards;
         }
-        /* Minimal scrollbar styling */
+        /* Minimal scrollbar styling — matches the app-wide unified style */
         .bestiary-description::-webkit-scrollbar {
-          width: 3px;
+          width: 6px;
+          height: 6px;
         }
         .bestiary-description::-webkit-scrollbar-track {
           background: transparent;
         }
         .bestiary-description::-webkit-scrollbar-thumb {
-          background: rgba(120, 113, 108, 0.2);
-          border-radius: 2px;
+          background: rgba(113, 113, 122, 0.28);
+          border-radius: 9999px;
         }
         .bestiary-description::-webkit-scrollbar-thumb:hover {
-          background: rgba(120, 113, 108, 0.5);
+          background: rgba(113, 113, 122, 0.45);
         }
       `}</style>
 
@@ -6805,14 +6807,6 @@ function HomeNeedsModalWrapper({ open, onOpenChange }: { open: boolean; onOpenCh
                   </button>
                 ))}
               </div>
-              <button
-                type="button"
-                onClick={() => onOpenChange(false)}
-                className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-                aria-label="Cerrar modal de casa"
-              >
-                <X className="h-4 w-4" />
-              </button>
             </div>
             <div className="max-h-[calc(90dvh-64px)] overflow-y-auto overflow-x-hidden p-3 sm:p-4">
               {activeTab === "necesidades" && <NecesidadesCasa />}
@@ -6827,7 +6821,19 @@ function HomeNeedsModalWrapper({ open, onOpenChange }: { open: boolean; onOpenCh
   );
 }
 
+const CLOTHING_TABS = [
+  { key: "inventario", label: "Inventario" },
+  { key: "prioridades", label: "Lista de prioridades" },
+] as const;
+
+type ClothingTabKey = (typeof CLOTHING_TABS)[number]["key"];
+
 function ClothingInventoryModalWrapper({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const [activeTab, setActiveTab] = useState<ClothingTabKey>("inventario");
+  // Shared by the Inventario and Lista de prioridades tabs so a reorder or a
+  // purchase made in one is immediately reflected in the other.
+  const { items: clothingItems, setItems: setClothingItems } = useClothingInventoryItems();
+
   return (
     <AnimatePresence>
       {open && (
@@ -6846,19 +6852,27 @@ function ClothingInventoryModalWrapper({ open, onOpenChange }: { open: boolean; 
             className="overflow-hidden rounded-3xl border border-border/50 bg-background max-w-5xl w-full max-h-[90dvh]"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="px-5 py-4 border-b border-border/50 flex items-center justify-between">
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-foreground">Inventario de Ropa</h3>
-              <button
-                type="button"
-                onClick={() => onOpenChange(false)}
-                className="text-muted-foreground hover:text-foreground transition-colors"
-                aria-label="Cerrar modal de inventario de ropa"
-              >
-                <X className="h-4 w-4" />
-              </button>
+            <div className="px-5 py-3 border-b border-border/50 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-1 overflow-x-auto">
+                {CLOTHING_TABS.map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setActiveTab(tab.key)}
+                    className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-wide transition-colors ${
+                      activeTab === tab.key
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="max-h-[calc(90dvh-70px)] overflow-y-auto overflow-x-hidden p-3 sm:p-4">
-              <ClothingInventory />
+            <div className="max-h-[calc(90dvh-64px)] overflow-y-auto overflow-x-hidden p-3 sm:p-4">
+              {activeTab === "inventario" && <ClothingInventory items={clothingItems} setItems={setClothingItems} />}
+              {activeTab === "prioridades" && <ClothingPriorityList items={clothingItems} setItems={setClothingItems} />}
             </div>
           </motion.div>
         </motion.div>
@@ -7524,9 +7538,6 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                       <h5 className="text-sm font-semibold uppercase tracking-wide text-foreground">
                         {editingRecordId ? "Editar registro" : "Nuevo registro"}
                       </h5>
-                      <button type="button" onClick={resetRecordForm} className="text-muted-foreground hover:text-foreground" aria-label="Cerrar">
-                        <X className="h-4 w-4" />
-                      </button>
                     </div>
                     <div className="grid gap-3 md:grid-cols-2">
                       <div>
@@ -7792,14 +7803,6 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
           >
             <div className="px-5 py-4 border-b border-border/50 flex items-center justify-between">
               <h3 className="text-sm font-semibold uppercase tracking-wide text-foreground">Bugs de todas las areas</h3>
-              <button
-                type="button"
-                onClick={() => onOpenChange?.(false)}
-                className="text-muted-foreground hover:text-foreground transition-colors"
-                aria-label="Cerrar modal de bugs"
-              >
-                <X className="h-4 w-4" />
-              </button>
             </div>
 
             <div className="p-4 sm:p-5 overflow-y-auto overflow-x-hidden max-h-[calc(85dvh-70px)]">
@@ -8331,8 +8334,6 @@ function QuestDiary() {
       <DialogContent
         className="w-[calc(100vw-1.5rem)] max-w-[calc(100vw-1.5rem)] sm:max-w-4xl h-[92dvh] sm:h-[75vh] p-0 overflow-hidden bg-background border-2 border-border shadow-2xl"
         onOpenAutoFocus={(e) => e.preventDefault()}
-        onInteractOutside={(e) => e.preventDefault()}
-        onFocusOutside={(e) => e.preventDefault()}
       >
         <VisuallyHidden>
           <DialogTitle>Journal</DialogTitle>

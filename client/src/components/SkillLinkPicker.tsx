@@ -140,7 +140,7 @@ export function SkillLinkPicker({
             className="text-left px-2 py-1.5 rounded border border-dashed border-border/50 bg-background text-xs text-muted-foreground hover:border-purple-400 hover:text-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             data-testid="button-skill-link-other-area"
           >
-            {pickerOpen ? "✕ Cerrar" : "+ Otra área"}
+            {pickerOpen ? "Cerrar" : "+ Otra área"}
           </button>
 
           {pickerOpen && (
