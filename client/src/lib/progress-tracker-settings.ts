@@ -1,27 +1,46 @@
 // Preferencias personales (solo cliente) del Progress Tracker: en qué orden se ven las
-// áreas/quests dentro de cada sección y cuáles están ocultas. Es preferencia de visualización,
-// no data de la app, así que vive en localStorage y no se sincroniza a ningún lado.
+// áreas/quests dentro de cada sección y cuáles están en "Próximos" (apagadas, con o sin
+// fecha de reaparición). Es preferencia de visualización, no data de la app, así que vive
+// en localStorage y no se sincroniza a ningún lado.
 const STORAGE_KEY = "progressTrackerPrefs";
 
 export interface ProgressTrackerPrefs {
   // Secuencia de claves (`${type}-${id}`) con el orden elegido a mano. Las claves que no
   // figuran acá conservan su orden natural, después de las ordenadas.
   order: string[];
-  // Claves ocultas. Se muestran aparte, en la lista "Ocultos".
-  hidden: string[];
+  // "Próximos": clave -> fecha ISO en la que la quest vuelve sola al tracker. Cadena vacía
+  // = oculta sin fecha, solo reaparece si se la muestra a mano. Unifica lo que antes eran
+  // "Ocultos" (sin fecha) y "Próximos" (con fecha). Es preferencia de visualización local:
+  // NO toca el estado global (`upcoming`) del área/quest.
+  hidden: Record<string, string>;
 }
 
-const EMPTY_PREFS: ProgressTrackerPrefs = { order: [], hidden: [] };
+const EMPTY_PREFS: ProgressTrackerPrefs = { order: [], hidden: {} };
 
 export function loadProgressTrackerPrefs(): ProgressTrackerPrefs {
   if (typeof window === "undefined") return EMPTY_PREFS;
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return EMPTY_PREFS;
-    const parsed = JSON.parse(raw) as Partial<ProgressTrackerPrefs>;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const hidden: Record<string, string> = {};
+    // Formato viejo: `hidden` era un array de claves sin fecha.
+    if (Array.isArray(parsed.hidden)) {
+      for (const key of parsed.hidden) if (typeof key === "string") hidden[key] = "";
+    } else if (parsed.hidden && typeof parsed.hidden === "object") {
+      for (const [key, value] of Object.entries(parsed.hidden as Record<string, unknown>)) {
+        if (typeof value === "string") hidden[key] = value;
+      }
+    }
+    // Formato viejo: `scheduled` era un mapa aparte -> se fusiona en `hidden`.
+    if (parsed.scheduled && typeof parsed.scheduled === "object") {
+      for (const [key, value] of Object.entries(parsed.scheduled as Record<string, unknown>)) {
+        if (typeof value === "string") hidden[key] = value;
+      }
+    }
     return {
-      order: Array.isArray(parsed.order) ? parsed.order.filter((k) => typeof k === "string") : [],
-      hidden: Array.isArray(parsed.hidden) ? parsed.hidden.filter((k) => typeof k === "string") : [],
+      order: Array.isArray(parsed.order) ? (parsed.order as unknown[]).filter((k): k is string => typeof k === "string") : [],
+      hidden,
     };
   } catch {
     return EMPTY_PREFS;

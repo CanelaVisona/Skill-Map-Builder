@@ -813,4 +813,39 @@ export type MealTrackerCustomOption = typeof mealTrackerCustomOptions.$inferSele
 export const insertMealTrackerDishSchema = createInsertSchema(mealTrackerDishes).omit({ id: true, createdAt: true });
 export type InsertMealTrackerDish = z.infer<typeof insertMealTrackerDishSchema>;
 export type MealTrackerDish = typeof mealTrackerDishes.$inferSelect;
+
+// ============ PREGUNTAS (Questions) ============
+// Sección "?" arriba del Book Tracker. Se divide por área. Cada "problema" pertenece a un área
+// y contiene una lista de cadenas pregunta -> respuesta -> acción (una por eslabón). Cuando una
+// cadena queda completa (pregunta + respuesta + acción) aparece el botón "Encontrado⚔️" que
+// archiva el problema entero (foundAt) hacia la vista "Encontrados⚔️".
+export const questionProblems = pgTable("question_problems", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  areaId: varchar("area_id").notNull().references(() => areas.id, { onDelete: "cascade" }),
+  text: text("text").notNull().default(""),
+  // Set cuando se aprieta "Encontrado⚔️": el problema pasa a "Encontrados⚔️". Null = activo.
+  foundAt: timestamp("found_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const questionItems = pgTable("question_items", {
+  id: varchar("id").primaryKey(),
+  problemId: varchar("problem_id").notNull().references(() => questionProblems.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  question: text("question").notNull().default(""),
+  answer: text("answer").notNull().default(""),
+  action: text("action").notNull().default(""),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertQuestionProblemSchema = createInsertSchema(questionProblems).omit({ id: true, createdAt: true, updatedAt: true, userId: true, foundAt: true });
+export const insertQuestionItemSchema = createInsertSchema(questionItems).omit({ id: true, createdAt: true, updatedAt: true, userId: true });
+export type InsertQuestionProblem = z.infer<typeof insertQuestionProblemSchema>;
+export type QuestionProblem = typeof questionProblems.$inferSelect;
+export type InsertQuestionItem = z.infer<typeof insertQuestionItemSchema>;
+export type QuestionItem = typeof questionItems.$inferSelect;
+export type QuestionProblemWithItems = QuestionProblem & { items: QuestionItem[] };
 export type MealTrackerMeta = typeof mealTrackerMeta.$inferSelect;

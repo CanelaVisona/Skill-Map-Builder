@@ -6054,6 +6054,126 @@ export async function registerRoutes(
     }
   });
 
+  // ============ Preguntas (question problems + chained items) ============
+  app.get("/api/question-problems", requireAuth, async (req, res) => {
+    try {
+      const problems = await storage.getQuestionProblems(req.userId!);
+      res.json(problems);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/question-problems", requireAuth, async (req, res) => {
+    try {
+      const areaId = String(req.body.areaId || "").trim();
+      if (!areaId) {
+        return res.status(400).json({ message: "El área es obligatoria" });
+      }
+      const problem = await storage.createQuestionProblem({
+        userId: req.userId!,
+        areaId,
+        text: String(req.body.text || "").trim(),
+      });
+      res.status(201).json({ ...problem, items: [] });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/question-problems/:id", requireAuth, async (req, res) => {
+    try {
+      const problem = await storage.getQuestionProblem(req.params.id);
+      if (!problem) {
+        return res.status(404).json({ message: "Problema no encontrado" });
+      }
+      if (problem.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para modificar este problema" });
+      }
+      const patch: Record<string, any> = {};
+      if (req.body.text !== undefined) patch.text = String(req.body.text).trim();
+      if (req.body.found !== undefined) patch.foundAt = req.body.found ? new Date() : null;
+      const updated = await storage.updateQuestionProblem(req.params.id, patch);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/question-problems/:id", requireAuth, async (req, res) => {
+    try {
+      const problem = await storage.getQuestionProblem(req.params.id);
+      if (!problem) {
+        return res.status(404).json({ message: "Problema no encontrado" });
+      }
+      if (problem.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para eliminar este problema" });
+      }
+      await storage.deleteQuestionProblem(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/question-problems/:id/items", requireAuth, async (req, res) => {
+    try {
+      const problem = await storage.getQuestionProblem(req.params.id);
+      if (!problem) {
+        return res.status(404).json({ message: "Problema no encontrado" });
+      }
+      if (problem.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para modificar este problema" });
+      }
+      const item = await storage.createQuestionItem({
+        userId: req.userId!,
+        problemId: problem.id,
+        question: String(req.body.question || "").trim(),
+        answer: String(req.body.answer || "").trim(),
+        action: String(req.body.action || "").trim(),
+      });
+      res.status(201).json(item);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/question-items/:id", requireAuth, async (req, res) => {
+    try {
+      const item = await storage.getQuestionItem(req.params.id);
+      if (!item) {
+        return res.status(404).json({ message: "Pregunta no encontrada" });
+      }
+      if (item.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para modificar esta pregunta" });
+      }
+      const patch: Record<string, any> = {};
+      if (req.body.question !== undefined) patch.question = String(req.body.question).trim();
+      if (req.body.answer !== undefined) patch.answer = String(req.body.answer).trim();
+      if (req.body.action !== undefined) patch.action = String(req.body.action).trim();
+      const updated = await storage.updateQuestionItem(req.params.id, patch);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/question-items/:id", requireAuth, async (req, res) => {
+    try {
+      const item = await storage.getQuestionItem(req.params.id);
+      if (!item) {
+        return res.status(404).json({ message: "Pregunta no encontrada" });
+      }
+      if (item.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para eliminar esta pregunta" });
+      }
+      await storage.deleteQuestionItem(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Admin: Fix all node statuses consistent with unlockedLevel
   app.post("/api/admin/fix-statuses", async (req, res) => {
     try {

@@ -361,6 +361,8 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                         const subtitle = area.levelSubtitles?.[level] || "";
                         const subtitleDescription = area.levelSubtitleDescriptions?.[level] || "";
                         const isBlocked = level > area.unlockedLevel;
+                        // Subtitle is editable for blocked levels and the currently unlocked level
+                        const canEditLevelSubtitle = level >= area.unlockedLevel;
                         const isNotYetVisibleInSkillTree = level > visibleInSkillTree;
                         
                         const canSwapUp = canSwapLevel(level, "up", area.unlockedLevel, maxLevel);
@@ -373,9 +375,9 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                             <div className="flex-1 min-w-0">
                               <AccordionTrigger className="hover:no-underline justify-start gap-2">
                                 <span
-                                  className={cn(isBlocked && "text-muted-foreground/50 cursor-pointer hover:text-foreground", isNotYetVisibleInSkillTree && "text-amber-600 dark:text-amber-500")}
+                                  className={cn(canEditLevelSubtitle && "cursor-pointer hover:text-foreground", isBlocked && "text-muted-foreground/50", isNotYetVisibleInSkillTree && "text-amber-600 dark:text-amber-500")}
                                   onClick={(e) => {
-                                    if (isBlocked) {
+                                    if (canEditLevelSubtitle) {
                                       e.stopPropagation();
                                       handleEditLevelSubtitle(level, subtitle, subtitleDescription, area.id, null);
                                     }
@@ -563,6 +565,8 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                           const subtitle = project.levelSubtitles?.[level] || "";
                           const subtitleDescription = project.levelSubtitleDescriptions?.[level] || "";
                           const isBlocked = level > project.unlockedLevel;
+                          // Subtitle is editable for blocked levels and the currently unlocked level
+                          const canEditLevelSubtitle = level >= project.unlockedLevel;
                           const isNotYetVisibleInSkillTree = level > visibleInSkillTree;
                           const canSwapUp = canSwapLevel(level, "up", project.unlockedLevel, maxLevel);
                           const canSwapDown = canSwapLevel(level, "down", project.unlockedLevel, maxLevel);
@@ -574,9 +578,9 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                               <div className="flex-1 min-w-0">
                                 <AccordionTrigger className="hover:no-underline justify-start gap-2">
                                   <span
-                                      className={cn(isBlocked && "text-muted-foreground/50 cursor-pointer hover:text-foreground", isNotYetVisibleInSkillTree && "text-amber-600 dark:text-amber-500")}
+                                      className={cn(canEditLevelSubtitle && "cursor-pointer hover:text-foreground", isBlocked && "text-muted-foreground/50", isNotYetVisibleInSkillTree && "text-amber-600 dark:text-amber-500")}
                                       onClick={(e) => {
-                                        if (isBlocked) {
+                                        if (canEditLevelSubtitle) {
                                           e.stopPropagation();
                                           handleEditLevelSubtitle(level, subtitle, subtitleDescription, null, project.id);
                                         }
@@ -762,6 +766,8 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                           const subtitle = project.levelSubtitles?.[level] || "";
                           const subtitleDescription = project.levelSubtitleDescriptions?.[level] || "";
                           const isBlocked = level > project.unlockedLevel;
+                          // Subtitle is editable for blocked levels and the currently unlocked level
+                          const canEditLevelSubtitle = level >= project.unlockedLevel;
                           const isNotYetVisibleInSkillTree = level > visibleInSkillTree;
                           const canSwapUp = canSwapLevel(level, "up", project.unlockedLevel, maxLevel);
                           const canSwapDown = canSwapLevel(level, "down", project.unlockedLevel, maxLevel);
@@ -773,9 +779,9 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                               <div className="flex-1 min-w-0">
                                 <AccordionTrigger className="hover:no-underline justify-start gap-2">
                                   <span
-                                    className={cn(isBlocked && "text-muted-foreground/50 cursor-pointer hover:text-foreground", isNotYetVisibleInSkillTree && "text-amber-600 dark:text-amber-500")}
+                                    className={cn(canEditLevelSubtitle && "cursor-pointer hover:text-foreground", isBlocked && "text-muted-foreground/50", isNotYetVisibleInSkillTree && "text-amber-600 dark:text-amber-500")}
                                     onClick={(e) => {
-                                      if (isBlocked) {
+                                      if (canEditLevelSubtitle) {
                                         e.stopPropagation();
                                         handleEditLevelSubtitle(level, subtitle, subtitleDescription, null, project.id);
                                       }
@@ -958,6 +964,8 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                           const subtitle = project.levelSubtitles?.[level] || "";
                           const subtitleDescription = project.levelSubtitleDescriptions?.[level] || "";
                           const isBlocked = level > project.unlockedLevel;
+                          // Subtitle is editable for blocked levels and the currently unlocked level
+                          const canEditLevelSubtitle = level >= project.unlockedLevel;
                           const isNotYetVisibleInSkillTree = level > visibleInSkillTree;
                           const canSwapUp = canSwapLevel(level, "up", project.unlockedLevel, maxLevel);
                           const canSwapDown = canSwapLevel(level, "down", project.unlockedLevel, maxLevel);
@@ -969,9 +977,9 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                               <div className="flex-1 min-w-0">
                                 <AccordionTrigger className="hover:no-underline justify-start gap-2">
                                   <span
-                                    className={cn(isBlocked && "text-muted-foreground/50 cursor-pointer hover:text-foreground", isNotYetVisibleInSkillTree && "text-amber-600 dark:text-amber-500")}
+                                    className={cn(canEditLevelSubtitle && "cursor-pointer hover:text-foreground", isBlocked && "text-muted-foreground/50", isNotYetVisibleInSkillTree && "text-amber-600 dark:text-amber-500")}
                                     onClick={(e) => {
-                                      if (isBlocked) {
+                                      if (canEditLevelSubtitle) {
                                         e.stopPropagation();
                                         handleEditLevelSubtitle(level, subtitle, subtitleDescription, null, project.id);
                                       }

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ChevronDown, ChevronUp, Eye, EyeOff, SlidersHorizontal } from "lucide-react";
+import { CalendarClock, ChevronDown, ChevronUp, Clock, Eye, EyeOff, SlidersHorizontal } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -30,6 +30,23 @@ interface ProgressItem {
   hasUnlockedNode: boolean;
   masteredInLevel: number;
   totalInLevel: number;
+}
+
+// ISO -> value para <input type="datetime-local"> (hora local, sin segundos).
+function toLocalInputValue(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// Fecha programada en texto corto, o un aviso si todavía no se eligió ninguna.
+function formatSchedule(iso: string | null): string {
+  if (!iso) return "Sin fecha";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "Sin fecha";
+  return d.toLocaleString(undefined, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
 // Intensidad por nivel en verde (mismo tono en dark y light, para que la barra se
@@ -198,7 +215,7 @@ function ProgressItemRow({
             <button
               type="button"
               onClick={onHide}
-              title="Ocultar"
+              title="Ocultar / posponer"
               className="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
             >
               <EyeOff className="h-3.5 w-3.5" />
@@ -215,38 +232,131 @@ function ProgressItemRow({
   );
 }
 
-// Fila compacta para la lista de ocultos: solo el nombre y el botón para volver a mostrarla.
-function HiddenItemRow({ item, onShow }: { item: ProgressItem; onShow: () => void }) {
+// Una fila de "Próximos": el área/quest está apagada en el tracker. Sin fecha queda oculta
+// hasta que se la muestre a mano; con fecha, reaparece sola cuando ese momento pasa. El
+// selector de fecha se despliega recién al tocar el calendario, para no sumar ruido.
+function UpcomingItemRow({
+  item,
+  iso,
+  onSchedule,
+  onShow,
+}: {
+  item: ProgressItem;
+  iso: string;
+  onSchedule: (key: string, iso: string) => void;
+  onShow: (key: string) => void;
+}) {
+  const [editingDate, setEditingDate] = useState(false);
+  const [value, setValue] = useState(() => toLocalInputValue(iso || null));
+  const key = getItemKey(item);
+
+  useEffect(() => {
+    setValue(toLocalInputValue(iso || null));
+  }, [iso]);
+
   return (
-    <div className="flex items-center justify-between gap-2 py-1">
-      <span className="truncate text-xs text-muted-foreground">{item.name}</span>
-      <button
-        type="button"
-        onClick={onShow}
-        title="Mostrar"
-        className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-      >
-        <Eye className="h-3.5 w-3.5" />
-      </button>
+    <div className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2">
+      <div className="flex items-center gap-2">
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-xs font-medium text-foreground">{item.name}</span>
+          <span className="block truncate text-[11px] text-muted-foreground">
+            {iso ? `vuelve ${formatSchedule(iso)}` : "oculto · sin fecha"}
+          </span>
+        </span>
+        <button
+          type="button"
+          onClick={() => setEditingDate((v) => !v)}
+          title={iso ? "Cambiar fecha" : "Poner fecha"}
+          className={`rounded p-1 transition-colors hover:bg-muted ${
+            iso || editingDate ? "text-primary" : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <CalendarClock className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => onShow(key)}
+          title="Mostrar ahora"
+          className="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+        >
+          <Eye className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      {editingDate && (
+        <div className="mt-2 space-y-2">
+          <input
+            type="datetime-local"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+          />
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={!value}
+              onClick={() => {
+                const parsed = new Date(value);
+                if (Number.isNaN(parsed.getTime())) return;
+                onSchedule(key, parsed.toISOString());
+                setEditingDate(false);
+              }}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-md bg-primary/10 px-2 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/20 disabled:opacity-40"
+            >
+              <Clock size={13} /> Programar
+            </button>
+            {iso && (
+              <button
+                type="button"
+                onClick={() => {
+                  onSchedule(key, "");
+                  setEditingDate(false);
+                }}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-md bg-muted px-2 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+              >
+                Quitar fecha
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-// Lista de ocultos: colapsada por defecto para no sumar ruido a la vista principal.
-function HiddenSection({ items, onShow }: { items: ProgressItem[]; onShow: (key: string) => void }) {
+// "Próximos": unifica lo que antes eran "Ocultos" y "Próximos". Toda área/quest apagada en
+// el tracker vive acá -- con fecha (reaparece sola) o sin fecha (hasta mostrarla a mano).
+// Colapsada por defecto para no competirle la atención a lo que sí hay que hacer ahora.
+function UpcomingSection({
+  items,
+  scheduled,
+  onSchedule,
+  onShow,
+}: {
+  items: ProgressItem[];
+  scheduled: Record<string, string>;
+  onSchedule: (key: string, iso: string) => void;
+  onShow: (key: string) => void;
+}) {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen} className="border-t border-border/40 pt-2">
       <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-1 group">
-        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Ocultos <span className="font-normal">({items.length})</span>
+        <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <CalendarClock className="h-3.5 w-3.5" />
+          Próximos <span className="font-normal">({items.length})</span>
         </span>
         <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 ${isOpen ? "" : "-rotate-90"}`} />
       </CollapsibleTrigger>
-      <CollapsibleContent className="pt-1">
+      <CollapsibleContent className="space-y-2 pt-2">
         {items.map((item) => (
-          <HiddenItemRow key={getItemKey(item)} item={item} onShow={() => onShow(getItemKey(item))} />
+          <UpcomingItemRow
+            key={getItemKey(item)}
+            item={item}
+            iso={scheduled[getItemKey(item)] ?? ""}
+            onSchedule={onSchedule}
+            onShow={onShow}
+          />
         ))}
       </CollapsibleContent>
     </Collapsible>
@@ -312,12 +422,29 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
   const [prefs, setPrefs] = useState<ProgressTrackerPrefs>(loadProgressTrackerPrefs);
 
   // Al abrir el tracker se relee la preferencia (por si cambió en otra pestaña) y se
-  // arranca siempre en modo lectura.
+  // arranca siempre en modo lectura. Mientras está abierto, cada tanto se sacan de
+  // "Próximos" las quests con fecha ya vencida: vuelven solas a su sección normal.
   useEffect(() => {
-    if (open) {
-      setPrefs(loadProgressTrackerPrefs());
-      setEditMode(false);
-    }
+    if (!open) return;
+    const dropDueSchedules = () => {
+      setPrefs((prev) => {
+        const now = Date.now();
+        const next: Record<string, string> = {};
+        for (const [key, iso] of Object.entries(prev.hidden)) {
+          // sin fecha: queda oculta hasta mostrarla a mano. con fecha futura: sigue oculta.
+          if (!iso || new Date(iso).getTime() > now) next[key] = iso;
+        }
+        if (Object.keys(next).length === Object.keys(prev.hidden).length) return prev;
+        const updated = { ...prev, hidden: next };
+        saveProgressTrackerPrefs(updated);
+        return updated;
+      });
+    };
+    setPrefs(loadProgressTrackerPrefs());
+    setEditMode(false);
+    dropDueSchedules();
+    const id = window.setInterval(dropDueSchedules, 60000);
+    return () => window.clearInterval(id);
   }, [open]);
 
   const updatePrefs = (next: ProgressTrackerPrefs) => {
@@ -325,14 +452,18 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
     saveProgressTrackerPrefs(next);
   };
 
-  const hiddenSet = new Set(prefs.hidden);
-
-  // Ocultar / mostrar una fila. Ocultarla la saca de su sección y la manda a "Ocultos".
-  const setHidden = (key: string, hidden: boolean) => {
-    const nextHidden = hidden
-      ? [...prefs.hidden.filter((k) => k !== key), key]
-      : prefs.hidden.filter((k) => k !== key);
-    updatePrefs({ ...prefs, hidden: nextHidden });
+  // Ocultar una fila: la manda a "Próximos" sin fecha (vuelve solo al mostrarla a mano).
+  const hideItem = (key: string) => {
+    updatePrefs({ ...prefs, hidden: { ...prefs.hidden, [key]: "" } });
+  };
+  // Mostrarla de nuevo ahora: la saca de "Próximos".
+  const showItem = (key: string) => {
+    const { [key]: _removed, ...rest } = prefs.hidden;
+    updatePrefs({ ...prefs, hidden: rest });
+  };
+  // Ponerle / cambiarle / quitarle (iso "") la fecha en la que reaparece sola.
+  const scheduleItem = (key: string, iso: string) => {
+    updatePrefs({ ...prefs, hidden: { ...prefs.hidden, [key]: iso } });
   };
 
   // Mover una fila dentro de su sección. `sectionKeys` es el orden visible actual de esa
@@ -374,18 +505,29 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
     projectList.filter((p) => p.questType && p.questType !== "main").map((project) => buildProgressItem(project, "project"))
   );
 
-  // Cada sección: primero se saca lo oculto, después se aplica el orden manual elegido.
+  const allItems = [...allAreaItems, ...allMainQuestItems, ...allSideQuestItems];
+
+  // "Próximos" (solo del tracker): la quest tiene una entrada en `prefs.hidden`. Se saca
+  // de su sección normal mientras siga apagada -- sin fecha (hasta mostrarla a mano) o con
+  // fecha futura (reaparece sola al pasar). Una entrada con fecha ya vencida se ignora acá
+  // y la limpia el intervalo. No toca el estado global de la quest.
+  const isUpcoming = (item: ProgressItem) => {
+    const iso = prefs.hidden[getItemKey(item)];
+    if (iso === undefined) return false;
+    return !iso || new Date(iso).getTime() > Date.now();
+  };
+
+  // Cada sección: primero se saca lo que está en "Próximos", después se aplica el orden manual.
   const visibleOf = (items: ProgressItem[]) =>
-    applyManualOrder(items.filter((item) => !hiddenSet.has(getItemKey(item))), getItemKey, prefs.order);
+    applyManualOrder(items.filter((item) => !isUpcoming(item)), getItemKey, prefs.order);
   const areaItems = visibleOf(allAreaItems);
   const mainQuestItems = visibleOf(allMainQuestItems);
   const sideQuestItems = visibleOf(allSideQuestItems);
 
-  // Lista única de ocultos, en el orden en que se fueron ocultando.
-  const allItems = [...allAreaItems, ...allMainQuestItems, ...allSideQuestItems];
-  const hiddenItems = prefs.hidden
+  // Lista única de "Próximos", en el orden en que se fueron mandando ahí.
+  const upcomingItems = Object.keys(prefs.hidden)
     .map((key) => allItems.find((item) => getItemKey(item) === key))
-    .filter((item): item is ProgressItem => item !== undefined);
+    .filter((item): item is ProgressItem => item !== undefined && isUpcoming(item));
 
   const hasAnyItems = allItems.length > 0;
 
@@ -434,12 +576,12 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
                 Nodo
               </button>
             </div>
-            {/* Modo edición: muestra los controles de orden/ocultar en cada fila. Apagado
-                por defecto para que la vista quede limpia. */}
+            {/* Modo edición: muestra los controles de orden/ocultar/agendar en cada fila y
+                la sección "Próximos". Apagado por defecto para que la vista quede limpia. */}
             <button
               type="button"
               onClick={() => setEditMode((v) => !v)}
-              title={editMode ? "Listo" : "Ordenar y ocultar"}
+              title={editMode ? "Listo" : "Ordenar, ocultar y agendar"}
               className={`rounded-full p-1.5 transition-colors ${
                 editMode ? "bg-foreground text-background" : "bg-muted text-muted-foreground hover:text-foreground"
               }`}
@@ -459,7 +601,7 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
             viewMode={viewMode}
             editMode={editMode}
             onMove={(key, dir) => moveWithin(areaItems.map(getItemKey), key, dir)}
-            onHide={(key) => setHidden(key, true)}
+            onHide={hideItem}
           />
           <ProgressSection
             title="Main Quest"
@@ -468,7 +610,7 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
             viewMode={viewMode}
             editMode={editMode}
             onMove={(key, dir) => moveWithin(mainQuestItems.map(getItemKey), key, dir)}
-            onHide={(key) => setHidden(key, true)}
+            onHide={hideItem}
           />
           <ProgressSection
             title="Side Quest"
@@ -477,11 +619,16 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
             viewMode={viewMode}
             editMode={editMode}
             onMove={(key, dir) => moveWithin(sideQuestItems.map(getItemKey), key, dir)}
-            onHide={(key) => setHidden(key, true)}
+            onHide={hideItem}
           />
 
-          {hiddenItems.length > 0 && (
-            <HiddenSection items={hiddenItems} onShow={(key) => setHidden(key, false)} />
+          {upcomingItems.length > 0 && (
+            <UpcomingSection
+              items={upcomingItems}
+              scheduled={prefs.hidden}
+              onSchedule={scheduleItem}
+              onShow={showItem}
+            />
           )}
 
           {!hasAnyItems && (

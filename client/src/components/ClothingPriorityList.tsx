@@ -265,9 +265,9 @@ function BoughtItemRow({
       style={{
         display: "flex",
         alignItems: "center",
-        gap: "10px",
-        padding: "8px 12px",
-        borderRadius: "10px",
+        gap: "8px",
+        padding: "5px 10px",
+        borderRadius: "9px",
         border: isDark ? "1px solid #1e2d1e" : "1px solid #e2e8f0",
         opacity: 0.6,
         userSelect: "none",
@@ -282,8 +282,8 @@ function BoughtItemRow({
         aria-label="Deshacer compra"
         title="Toca para volver a pendientes"
         style={{
-          width: "20px",
-          height: "20px",
+          width: "16px",
+          height: "16px",
           borderRadius: "50%",
           border: "none",
           background: "linear-gradient(135deg, #16a34a, #22c55e)",
@@ -295,16 +295,16 @@ function BoughtItemRow({
           padding: 0,
         }}
       >
-        <Check size={11} color="#052e16" strokeWidth={3} />
+        <Check size={9} color="#052e16" strokeWidth={3} />
       </button>
       <span style={{ flexShrink: 0, display: "flex" }}>
-        <GarmentGlyph type={item.type} color={item.color} size={16} />
+        <GarmentGlyph type={item.type} color={item.color} size={13} />
       </span>
       <span
         style={{
           flex: 1,
           minWidth: 0,
-          fontSize: "12px",
+          fontSize: "11px",
           fontWeight: 600,
           color: colors.subtitle,
           textDecoration: "line-through",
@@ -512,6 +512,14 @@ export default function ClothingPriorityList({
       onPointerLeave={backgroundLongPress.onPointerLeave}
       onContextMenu={(e) => e.preventDefault()}
     >
+      <style>{`
+        .cloth-bought-scroll { scrollbar-width: thin; scrollbar-color: rgba(148,163,184,0.35) transparent; }
+        .cloth-bought-scroll::-webkit-scrollbar { width: 4px; }
+        .cloth-bought-scroll::-webkit-scrollbar-track { background: transparent; }
+        .cloth-bought-scroll::-webkit-scrollbar-thumb { background: rgba(148,163,184,0.35); border-radius: 4px; }
+        .cloth-bought-scroll::-webkit-scrollbar-thumb:hover { background: rgba(148,163,184,0.55); }
+      `}</style>
+
       <p style={{ color: colors.subtitle, fontSize: "11px", marginBottom: "14px" }}>
         Las prendas salen de lo que todavía tenés bloqueado en el inventario. Solo la primera está desbloqueada para comprar. Usa las flechas para cambiar el orden de prioridad -- al comprar la primera, la siguiente se desbloquea. Long press en el fondo para agregar una prenda nueva, o sobre una para editarla o eliminarla.
       </p>
@@ -619,11 +627,21 @@ export default function ClothingPriorityList({
       )}
 
       {bought.length > 0 && (
-        <div style={{ marginTop: "18px" }} onPointerDown={(e) => e.stopPropagation()}>
-          <div style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: colors.subtitle, marginBottom: "8px" }}>
+        <div style={{ marginTop: "12px" }} onPointerDown={(e) => e.stopPropagation()}>
+          <div style={{ fontSize: "9px", fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: colors.subtitle, marginBottom: "5px" }}>
             Conseguidas ({bought.length})
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+          <div
+            className="cloth-bought-scroll"
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "4px",
+              maxHeight: bought.length > 4 ? "124px" : undefined,
+              overflowY: bought.length > 4 ? "auto" : undefined,
+              paddingRight: bought.length > 4 ? "4px" : undefined,
+            }}
+          >
             {bought.map((item) => (
               <BoughtItemRow
                 key={item.id}
