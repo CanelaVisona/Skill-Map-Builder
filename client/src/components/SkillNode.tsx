@@ -981,10 +981,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const handleCreatePendingPower = () => {
     const finalName = newPowerName.trim();
     if (!finalName || createSourcePower.isPending) return;
-    if (finalName.split(/\s+/).filter(Boolean).length > 3) {
-      toast({ title: "Título muy largo", description: "Los poderes usan un máximo de 3 palabras.", variant: "destructive" });
-      return;
-    }
     createSourcePower.mutate({ name: finalName, description: newPowerDescription.trim() });
   };
 

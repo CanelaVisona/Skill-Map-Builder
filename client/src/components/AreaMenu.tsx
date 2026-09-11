@@ -1155,10 +1155,6 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
   const handleAdd = async () => {
     if (!name.trim()) return;
     const finalName = name.trim();
-    if (activeTab === "powers" && finalName.split(/\s+/).filter(Boolean).length > 3) {
-      toast({ title: "Título muy largo", description: "Los poderes usan un máximo de 3 palabras.", variant: "destructive" });
-      return;
-    }
     if (activeTab === "description") {
       createDescription.mutate({ name: finalName, description: description.trim() });
     } else if (activeTab === "objectives") {
@@ -1200,10 +1196,6 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
   const handleSaveEdit = async () => {
     if (!editingEntry || !name.trim()) return;
     const finalName = name.trim();
-    if (activeTab === "powers" && finalName.split(/\s+/).filter(Boolean).length > 3) {
-      toast({ title: "Título muy largo", description: "Los poderes usan un máximo de 3 palabras.", variant: "destructive" });
-      return;
-    }
     if (activeTab === "description") {
       updateDescription.mutate({ id: editingEntry.id, data: { name: finalName, description: description.trim() } });
     } else if (activeTab === "objectives") {
@@ -2424,9 +2416,6 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                 value={name}
                 onChange={(e) => setName(e.target.value)}
               />
-              {activeTab === "powers" && (
-                <p className="text-xs text-muted-foreground mt-1">Máximo 3 palabras</p>
-              )}
             </div>
             <div>
               <Label htmlFor="entry-desc" className="text-sm font-medium mb-2 block">
@@ -3433,7 +3422,7 @@ function UpcomingSection({ items, open, onOpenChange, isMenuOpen, onActivate, on
             "text-sm font-medium overflow-hidden transition-all duration-200 whitespace-nowrap",
             isMenuOpen ? "max-w-[140px] opacity-100" : "max-w-0 opacity-0 group-hover:max-w-[140px] group-hover:opacity-100"
           )}>
-            Próximos{items.length > 0 ? ` (${items.length})` : ""}
+            Próximos
           </span>
         </button>
       </DialogTrigger>

@@ -80,6 +80,46 @@ const getItemKey = (item: Pick<ProgressItem, "type" | "id">) => `${item.type}-${
 
 type ProgressViewMode = "classic" | "node";
 
+// Mantener presionado (mouse o touch) dispara `onLongPress` a los `ms` configurados.
+// Si dispara, se traga el click que sigue (onClickCapture) para que no navegue al
+// skill tree justo al entrar en modo edición.
+function useLongPress(onLongPress: () => void, ms = 500) {
+  const timerRef = React.useRef<number | null>(null);
+  const firedRef = React.useRef(false);
+
+  const clear = () => {
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  const start = () => {
+    firedRef.current = false;
+    clear();
+    timerRef.current = window.setTimeout(() => {
+      firedRef.current = true;
+      onLongPress();
+    }, ms);
+  };
+
+  const onClickCapture = (e: React.MouseEvent) => {
+    if (firedRef.current) {
+      e.preventDefault();
+      e.stopPropagation();
+      firedRef.current = false;
+    }
+  };
+
+  return {
+    onPointerDown: start,
+    onPointerUp: clear,
+    onPointerLeave: clear,
+    onPointerCancel: clear,
+    onClickCapture,
+  };
+}
+
 function ProgressItemRow({
   item,
   onGoToItem,
@@ -90,6 +130,7 @@ function ProgressItemRow({
   onMoveUp,
   onMoveDown,
   onHide,
+  onLongPress,
 }: {
   item: ProgressItem;
   onGoToItem: (item: ProgressItem) => void;
@@ -100,9 +141,11 @@ function ProgressItemRow({
   onMoveUp?: () => void;
   onMoveDown?: () => void;
   onHide?: () => void;
+  onLongPress?: () => void;
 }) {
   const totalBlocks = Math.max(item.totalInLevel, 1);
   const progress = calculateLevelProgressPercentage(item.masteredInLevel, item.totalInLevel);
+  const longPress = useLongPress(() => onLongPress?.());
 
   // Tres casos para la vista "Nodo": no hay ningún nodo "available" todavía; hay uno pero
   // no tiene nombre cargado (se invita a definirlo); o hay uno con nombre, que es el caso normal.
@@ -112,7 +155,10 @@ function ProgressItemRow({
   const nodeLabelIsPlaceholder = !item.hasUnlockedNode;
 
   return (
-    <div className="space-y-1 pb-3 border-b border-border/40 last:border-none">
+    <div
+      className="space-y-1 pb-3 border-b border-border/40 last:border-none select-none"
+      {...longPress}
+    >
       {viewMode === "node" ? (
         /* Vista "Nodo": el título del nodo puntual desbloqueado (status "available") a la
            izquierda es lo protagonista de la fila -- no el subtítulo del nivel entero.
@@ -326,28 +372,47 @@ function UpcomingItemRow({
 // "Próximos": unifica lo que antes eran "Ocultos" y "Próximos". Toda área/quest apagada en
 // el tracker vive acá -- con fecha (reaparece sola) o sin fecha (hasta mostrarla a mano).
 // Colapsada por defecto para no competirle la atención a lo que sí hay que hacer ahora.
+// Siempre montada (aunque no haya nada oculto todavía) porque acá vive el botón
+// minimalista que entra/sale del modo edición -- la otra forma es el long press en
+// cualquier fila de arriba.
 function UpcomingSection({
   items,
   scheduled,
   onSchedule,
   onShow,
+  editMode,
+  onToggleEditMode,
 }: {
   items: ProgressItem[];
   scheduled: Record<string, string>;
   onSchedule: (key: string, iso: string) => void;
   onShow: (key: string) => void;
+  editMode: boolean;
+  onToggleEditMode: () => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen} className="border-t border-border/40 pt-2">
-      <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-1 group">
-        <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          <CalendarClock className="h-3.5 w-3.5" />
-          Próximos <span className="font-normal">({items.length})</span>
-        </span>
-        <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 ${isOpen ? "" : "-rotate-90"}`} />
-      </CollapsibleTrigger>
+      <div className="flex w-full items-center justify-between gap-2 py-1">
+        <CollapsibleTrigger className="flex min-w-0 flex-1 items-center gap-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground group">
+          <CalendarClock className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">Próximos <span className="font-normal">({items.length})</span></span>
+          <ChevronDown className={`h-4 w-4 shrink-0 transition-transform duration-200 ${isOpen ? "" : "-rotate-90"}`} />
+        </CollapsibleTrigger>
+        {/* Botón minimalista: entra/sale del modo edición. La otra forma es mantener
+            presionada cualquier fila de Áreas/Main Quest/Side Quest. */}
+        <button
+          type="button"
+          onClick={onToggleEditMode}
+          title={editMode ? "Listo" : "Ordenar, ocultar y agendar"}
+          className={`shrink-0 rounded-full p-1.5 transition-colors ${
+            editMode ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground hover:bg-muted"
+          }`}
+        >
+          <SlidersHorizontal className="h-3.5 w-3.5" />
+        </button>
+      </div>
       <CollapsibleContent className="space-y-2 pt-2">
         {items.map((item) => (
           <UpcomingItemRow
@@ -371,6 +436,7 @@ function ProgressSection({
   editMode = false,
   onMove,
   onHide,
+  onLongPress,
 }: {
   title: string;
   items: ProgressItem[];
@@ -379,6 +445,7 @@ function ProgressSection({
   editMode?: boolean;
   onMove?: (key: string, direction: -1 | 1) => void;
   onHide?: (key: string) => void;
+  onLongPress?: () => void;
 }) {
   const [isOpen, setIsOpen] = useState(true);
 
@@ -407,6 +474,7 @@ function ProgressSection({
               onMoveUp={() => onMove?.(key, -1)}
               onMoveDown={() => onMove?.(key, 1)}
               onHide={() => onHide?.(key)}
+              onLongPress={onLongPress}
             />
           );
         })}
@@ -451,6 +519,10 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
     setPrefs(next);
     saveProgressTrackerPrefs(next);
   };
+
+  // Entra/sale del modo edición: mantener presionada cualquier fila, o el botón
+  // minimalista de la sección "Próximos", disparan lo mismo.
+  const toggleEditMode = () => setEditMode((v) => !v);
 
   // Ocultar una fila: la manda a "Próximos" sin fecha (vuelve solo al mostrarla a mano).
   const hideItem = (key: string) => {
@@ -555,7 +627,9 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
           {/* mr-7 deja lugar a la X de cierre del DialogContent. */}
           <div className="mr-7 flex items-center gap-1.5">
             {/* Toggle entre la vista clásica (área/quest arriba, subtítulo abajo) y la vista
-                "Nodo" (nodo desbloqueado destacado a la izquierda, área/quest a la derecha). */}
+                "Nodo" (nodo desbloqueado destacado a la izquierda, área/quest a la derecha).
+                El modo edición ya no vive acá: se entra manteniendo presionada cualquier fila,
+                o con el botón minimalista de la sección "Próximos" (donde están los ocultos). */}
             <div className="flex items-center gap-1 rounded-full bg-muted p-0.5 text-xs font-semibold">
               <button
                 type="button"
@@ -576,18 +650,6 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
                 Nodo
               </button>
             </div>
-            {/* Modo edición: muestra los controles de orden/ocultar/agendar en cada fila y
-                la sección "Próximos". Apagado por defecto para que la vista quede limpia. */}
-            <button
-              type="button"
-              onClick={() => setEditMode((v) => !v)}
-              title={editMode ? "Listo" : "Ordenar, ocultar y agendar"}
-              className={`rounded-full p-1.5 transition-colors ${
-                editMode ? "bg-foreground text-background" : "bg-muted text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <SlidersHorizontal className="h-3.5 w-3.5" />
-            </button>
           </div>
         </div>
         {/* Único contenedor con scroll: vertical nada más, con scrollbar fina y su propio
@@ -602,6 +664,7 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
             editMode={editMode}
             onMove={(key, dir) => moveWithin(areaItems.map(getItemKey), key, dir)}
             onHide={hideItem}
+            onLongPress={toggleEditMode}
           />
           <ProgressSection
             title="Main Quest"
@@ -611,6 +674,7 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
             editMode={editMode}
             onMove={(key, dir) => moveWithin(mainQuestItems.map(getItemKey), key, dir)}
             onHide={hideItem}
+            onLongPress={toggleEditMode}
           />
           <ProgressSection
             title="Side Quest"
@@ -620,16 +684,19 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
             editMode={editMode}
             onMove={(key, dir) => moveWithin(sideQuestItems.map(getItemKey), key, dir)}
             onHide={hideItem}
+            onLongPress={toggleEditMode}
           />
 
-          {upcomingItems.length > 0 && (
-            <UpcomingSection
-              items={upcomingItems}
-              scheduled={prefs.hidden}
-              onSchedule={scheduleItem}
-              onShow={showItem}
-            />
-          )}
+          {/* Siempre montada: acá vive el botón minimalista que entra/sale del modo
+              edición, tenga o no la quest tracker algo oculto todavía. */}
+          <UpcomingSection
+            items={upcomingItems}
+            scheduled={prefs.hidden}
+            onSchedule={scheduleItem}
+            onShow={showItem}
+            editMode={editMode}
+            onToggleEditMode={toggleEditMode}
+          />
 
           {!hasAnyItems && (
             <div className="text-center py-8 text-muted-foreground">

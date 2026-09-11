@@ -17,6 +17,17 @@ interface AreaLite {
   archived?: 0 | 1 | null;
 }
 
+interface ProjectLite {
+  id: string;
+  name: string;
+  icon?: string;
+  archived?: 0 | 1 | null;
+}
+
+// Un "scope" es dónde vive un problema: un área o un quest (proyecto) -- ambos son quests en el
+// resto de la app, así que se muestran juntos como pestañas.
+type Scope = { kind: "area" | "project"; id: string };
+
 interface QuestionItem {
   id: string;
   problemId: string;
@@ -27,7 +38,8 @@ interface QuestionItem {
 
 interface QuestionProblem {
   id: string;
-  areaId: string;
+  areaId: string | null;
+  projectId: string | null;
   text: string;
   foundAt: string | null;
   items: QuestionItem[];
@@ -74,6 +86,15 @@ export function QuestionsTracker() {
     },
   });
 
+  const { data: projects = [] } = useQuery<ProjectLite[]>({
+    queryKey: ["/api/projects"],
+    queryFn: async () => {
+      const res = await fetch("/api/projects", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch projects");
+      return res.json();
+    },
+  });
+
   const { data: problems = [], isLoading } = useQuery<QuestionProblem[]>({
     queryKey: ["/api/question-problems"],
     queryFn: async () => {
@@ -86,7 +107,7 @@ export function QuestionsTracker() {
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["/api/question-problems"] });
 
   const createProblem = useMutation({
-    mutationFn: async (body: { areaId: string; text: string }) => {
+    mutationFn: async (body: { areaId?: string; projectId?: string; text: string }) => {
       const res = await fetch("/api/question-problems", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -158,9 +179,10 @@ export function QuestionsTracker() {
   });
 
   const activeAreas = useMemo(() => areas.filter((a) => !a.archived), [areas]);
+  const activeProjects = useMemo(() => projects.filter((p) => !p.archived), [projects]);
 
   const [view, setView] = useState<"active" | "found">("active");
-  const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
+  const [scope, setScope] = useState<Scope | null>(null);
   const [selectedProblemId, setSelectedProblemId] = useState<string | null>(null);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
 
@@ -183,12 +205,14 @@ export function QuestionsTracker() {
   const [editingAnswer, setEditingAnswer] = useState(false);
   const [editingAction, setEditingAction] = useState(false);
 
-  // Default a la primera área disponible.
+  // Default al primer área/quest disponible.
   useEffect(() => {
-    if (!selectedAreaId && activeAreas.length > 0) {
-      setSelectedAreaId(activeAreas[0].id);
+    if (!scope && activeAreas.length > 0) {
+      setScope({ kind: "area", id: activeAreas[0].id });
+    } else if (!scope && activeProjects.length > 0) {
+      setScope({ kind: "project", id: activeProjects[0].id });
     }
-  }, [activeAreas, selectedAreaId]);
+  }, [activeAreas, activeProjects, scope]);
 
   const selectedProblem = useMemo(
     () => problems.find((p) => p.id === selectedProblemId) ?? null,
@@ -220,10 +244,11 @@ export function QuestionsTracker() {
 
   const problemsForArea = useMemo(
     () =>
-      problems.filter(
-        (p) => p.areaId === selectedAreaId && (view === "found" ? !!p.foundAt : !p.foundAt),
-      ),
-    [problems, selectedAreaId, view],
+      problems.filter((p) => {
+        const inScope = scope?.kind === "project" ? p.projectId === scope.id : p.areaId === scope?.id;
+        return inScope && (view === "found" ? !!p.foundAt : !p.foundAt);
+      }),
+    [problems, scope, view],
   );
 
   const showQuestionsCol = !!selectedProblem && !selectedProblem.foundAt;
@@ -241,12 +266,14 @@ export function QuestionsTracker() {
 
   const handleAddProblem = () => {
     const text = newProblemText.trim();
-    if (!text || !selectedAreaId) {
+    if (!text || !scope) {
       setAddingProblem(false);
       setNewProblemText("");
       return;
     }
-    createProblem.mutate({ areaId: selectedAreaId, text });
+    createProblem.mutate(
+      scope.kind === "project" ? { projectId: scope.id, text } : { areaId: scope.id, text },
+    );
     setNewProblemText("");
     setAddingProblem(false);
   };
@@ -286,14 +313,17 @@ export function QuestionsTracker() {
   };
 
   const problemsPress = useBackgroundLongPress(() => {
-    if (!selectedAreaId) return;
+    if (!scope) return;
     setAddingProblem(true);
   });
   const questionsPress = useBackgroundLongPress(() => setAddingQuestion(true));
   const answerPress = useBackgroundLongPress(() => setEditingAnswer(true));
   const actionPress = useBackgroundLongPress(() => setEditingAction(true));
 
-  const selectedArea = activeAreas.find((a) => a.id === selectedAreaId);
+  const selectedScopeName =
+    scope?.kind === "project"
+      ? activeProjects.find((p) => p.id === scope.id)?.name
+      : activeAreas.find((a) => a.id === scope?.id)?.name;
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
@@ -329,19 +359,19 @@ export function QuestionsTracker() {
         ) : null}
       </div>
 
-      {/* Área tabs */}
-      {activeAreas.length > 0 ? (
-        <div className="scrollbar-hide flex flex-nowrap gap-1 overflow-x-auto border-b border-border/30 px-3 py-2">
+      {/* Área / quest tabs */}
+      {activeAreas.length > 0 || activeProjects.length > 0 ? (
+        <div className="scrollbar-hide flex flex-nowrap items-center gap-1 overflow-x-auto border-b border-border/30 px-3 py-2">
           {activeAreas.map((area) => (
             <button
-              key={area.id}
+              key={`area-${area.id}`}
               onClick={() => {
-                setSelectedAreaId(area.id);
+                setScope({ kind: "area", id: area.id });
                 resetSelection();
               }}
               className={cn(
                 "shrink-0 rounded-full px-3 py-1 text-xs font-semibold transition-colors",
-                area.id === selectedAreaId
+                scope?.kind === "area" && scope.id === area.id
                   ? "bg-foreground text-background"
                   : "bg-muted/60 text-muted-foreground hover:text-foreground",
               )}
@@ -349,9 +379,29 @@ export function QuestionsTracker() {
               {area.name}
             </button>
           ))}
+          {activeAreas.length > 0 && activeProjects.length > 0 && (
+            <div className="mx-1 h-4 w-px shrink-0 bg-border/50" />
+          )}
+          {activeProjects.map((project) => (
+            <button
+              key={`project-${project.id}`}
+              onClick={() => {
+                setScope({ kind: "project", id: project.id });
+                resetSelection();
+              }}
+              className={cn(
+                "flex shrink-0 items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold transition-colors",
+                scope?.kind === "project" && scope.id === project.id
+                  ? "bg-foreground text-background"
+                  : "bg-muted/60 text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <Swords size={11} /> {project.name}
+            </button>
+          ))}
         </div>
       ) : (
-        <div className="px-4 py-6 text-sm text-muted-foreground">No hay áreas todavía.</div>
+        <div className="px-4 py-6 text-sm text-muted-foreground">No hay áreas ni quests todavía.</div>
       )}
 
       {/* Body */}
@@ -370,7 +420,7 @@ export function QuestionsTracker() {
             <ScrollArea className={colClass(0)} {...problemsPress}>
               <div className="mb-2 flex items-center justify-between">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Problemas{selectedArea ? ` · ${selectedArea.name}` : ""}
+                  Problemas{selectedScopeName ? ` · ${selectedScopeName}` : ""}
                 </p>
               </div>
               <div className="space-y-1.5 pr-1">

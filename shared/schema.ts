@@ -815,14 +815,16 @@ export type InsertMealTrackerDish = z.infer<typeof insertMealTrackerDishSchema>;
 export type MealTrackerDish = typeof mealTrackerDishes.$inferSelect;
 
 // ============ PREGUNTAS (Questions) ============
-// Sección "?" arriba del Book Tracker. Se divide por área. Cada "problema" pertenece a un área
-// y contiene una lista de cadenas pregunta -> respuesta -> acción (una por eslabón). Cuando una
-// cadena queda completa (pregunta + respuesta + acción) aparece el botón "Encontrado⚔️" que
-// archiva el problema entero (foundAt) hacia la vista "Encontrados⚔️".
+// Sección "?" arriba del Book Tracker. Se divide por área o quest (proyecto). Cada "problema"
+// pertenece a una sola área O a un solo quest (nunca ambos) y contiene una lista de cadenas
+// pregunta -> respuesta -> acción (una por eslabón). Cuando una cadena queda completa (pregunta +
+// respuesta + acción) aparece el botón "Encontrado⚔️" que archiva el problema entero (foundAt)
+// hacia la vista "Encontrados⚔️".
 export const questionProblems = pgTable("question_problems", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  areaId: varchar("area_id").notNull().references(() => areas.id, { onDelete: "cascade" }),
+  areaId: varchar("area_id").references(() => areas.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
   text: text("text").notNull().default(""),
   // Set cuando se aprieta "Encontrado⚔️": el problema pasa a "Encontrados⚔️". Null = activo.
   foundAt: timestamp("found_at"),

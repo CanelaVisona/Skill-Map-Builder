@@ -76,8 +76,8 @@ function isDefaultPlaceholderTitle(title: string | null | undefined): boolean {
 
 // When a node is moved into another level it should take the slot of one still-default
 // placeholder there instead of being appended on top of the full set, so the target
-// level keeps its node count (e.g. moved node + 5 defaults, not 7). Removes the last
-// (highest levelPosition) locked, default-named, non-skeleton node of the target level,
+// level keeps its node count (e.g. moved node + 5 defaults, not 7). Removes the first
+// (lowest levelPosition) locked, default-named, non-skeleton node of the target level,
 // rewiring anything that depended on it onto its own dependencies (mirrors deleteSkill).
 // Returns a refreshed skill list when it removed one, otherwise the list as given.
 async function removeOneDefaultPlaceholder(
@@ -96,7 +96,7 @@ async function removeOneDefaultPlaceholder(
       (s.levelPosition ?? 0) > 1 &&
       isDefaultPlaceholderTitle(s.title)
     )
-    .sort((a, b) => (b.levelPosition ?? 0) - (a.levelPosition ?? 0))[0];
+    .sort((a, b) => (a.levelPosition ?? 0) - (b.levelPosition ?? 0))[0];
 
   if (!removable) return allSkills;
 
@@ -6067,12 +6067,14 @@ export async function registerRoutes(
   app.post("/api/question-problems", requireAuth, async (req, res) => {
     try {
       const areaId = String(req.body.areaId || "").trim();
-      if (!areaId) {
-        return res.status(400).json({ message: "El área es obligatoria" });
+      const projectId = String(req.body.projectId || "").trim();
+      if (!areaId && !projectId) {
+        return res.status(400).json({ message: "El área o el quest son obligatorios" });
       }
       const problem = await storage.createQuestionProblem({
         userId: req.userId!,
-        areaId,
+        areaId: areaId || null,
+        projectId: projectId || null,
         text: String(req.body.text || "").trim(),
       });
       res.status(201).json({ ...problem, items: [] });
