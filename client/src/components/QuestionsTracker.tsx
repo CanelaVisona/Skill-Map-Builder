@@ -42,7 +42,7 @@ const QUESTION_TEMPLATES: Record<
   },
 };
 
-// Frases a detectar en el paso 3 del planteo del problema ("no sé cómo…" / "no sé qué hacer…").
+// Frases a detectar en el paso 2 del planteo del problema ("no sé cómo…" / "no sé qué hacer…").
 const FORBIDDEN_PHRASE_RE = /\bno s[eé] (c[oó]mo|qu[eé] hacer)\b/i;
 
 interface AreaLite {
@@ -77,6 +77,9 @@ interface QuestionProblem {
   areaId: string | null;
   projectId: string | null;
   text: string;
+  // Meta final: qué se busca realmente detrás del problema (experiencias, crecimiento o
+  // contribución). Sección propia entre "Problemas" y "Preguntas".
+  goal: string;
   foundAt: string | null;
   items: QuestionItem[];
 }
@@ -195,7 +198,7 @@ export function QuestionsTracker() {
   });
 
   const updateProblem = useMutation({
-    mutationFn: async ({ id, ...patch }: { id: string; text?: string; found?: boolean }) => {
+    mutationFn: async ({ id, ...patch }: { id: string; text?: string; goal?: string; found?: boolean }) => {
       const res = await fetch(`/api/question-problems/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -260,12 +263,11 @@ export function QuestionsTracker() {
   const [selectedProblemId, setSelectedProblemId] = useState<string | null>(null);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
 
-  // Wizard "Planteo del problema": 3 pasos guiados para cargar un problema nuevo.
+  // Wizard "Planteo del problema": 2 pasos guiados para cargar un problema nuevo.
   const [problemWizardOpen, setProblemWizardOpen] = useState(false);
   const [problemWizardStep, setProblemWizardStep] = useState(0);
   const [pwRaw, setPwRaw] = useState(""); // paso 1: el problema tal como viene a la cabeza
-  const [pwPurpose, setPwPurpose] = useState(""); // paso 2: qué se busca realmente (reflexión, no se guarda)
-  const [pwFinal, setPwFinal] = useState(""); // paso 3: versión final, limpia de "no sé cómo/qué hacer…"
+  const [pwFinal, setPwFinal] = useState(""); // paso 2: versión final, limpia de "no sé cómo/qué hacer…"
 
   // Wizard "Hacer la pregunta": elegir una estructura y completar sus huecos.
   const [questionWizardOpen, setQuestionWizardOpen] = useState(false);
@@ -281,6 +283,10 @@ export function QuestionsTracker() {
   // Tarjeta con la barra "Editar / Borrar" abierta (se abre manteniendo presionada la tarjeta).
   const [problemActionsId, setProblemActionsId] = useState<string | null>(null);
   const [questionActionsId, setQuestionActionsId] = useState<string | null>(null);
+
+  // "Meta final": qué se busca realmente detrás del problema seleccionado (un texto por problema).
+  const [goalDraft, setGoalDraft] = useState("");
+  const [editingGoal, setEditingGoal] = useState(false);
 
   const [answerDraft, setAnswerDraft] = useState("");
   const [actionDraft, setActionDraft] = useState("");
@@ -304,6 +310,12 @@ export function QuestionsTracker() {
     () => selectedProblem?.items.find((it) => it.id === selectedItemId) ?? null,
     [selectedProblem, selectedItemId],
   );
+
+  // Sincroniza el borrador de meta final al cambiar de problema.
+  useEffect(() => {
+    setGoalDraft(selectedProblem?.goal ?? "");
+    setEditingGoal(false);
+  }, [selectedProblemId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sincroniza los borradores de respuesta/acción al cambiar de cadena.
   useEffect(() => {
@@ -331,11 +343,14 @@ export function QuestionsTracker() {
     [problems, scope, view],
   );
 
-  const showQuestionsCol = !!selectedProblem && !selectedProblem.foundAt;
+  // "Meta final" y "Preguntas" aparecen juntas al seleccionar un problema activo (no encontrado).
+  const showMetaCol = !!selectedProblem && !selectedProblem.foundAt;
+  const showQuestionsCol = showMetaCol;
   const showAnswerCol = showQuestionsCol && !!selectedItem;
   const showActionCol = showAnswerCol && answerDraft.trim().length > 0;
 
-  const visibleCols = 1 + (showQuestionsCol ? 1 : 0) + (showAnswerCol ? 1 : 0) + (showActionCol ? 1 : 0);
+  const visibleCols =
+    1 + (showMetaCol ? 1 : 0) + (showQuestionsCol ? 1 : 0) + (showAnswerCol ? 1 : 0) + (showActionCol ? 1 : 0);
   const colClass = (index: number) =>
     cn(
       "h-full pr-2",
@@ -348,7 +363,6 @@ export function QuestionsTracker() {
     setProblemWizardOpen(false);
     setProblemWizardStep(0);
     setPwRaw("");
-    setPwPurpose("");
     setPwFinal("");
   };
 
@@ -390,6 +404,14 @@ export function QuestionsTracker() {
     closeQuestionWizard();
   };
 
+  const commitGoal = () => {
+    setEditingGoal(false);
+    if (!selectedProblem) return;
+    if (goalDraft.trim() !== selectedProblem.goal.trim()) {
+      updateProblem.mutate({ id: selectedProblem.id, goal: goalDraft.trim() });
+    }
+  };
+
   const commitAnswer = () => {
     setEditingAnswer(false);
     if (!selectedItem) return;
@@ -413,6 +435,7 @@ export function QuestionsTracker() {
   };
 
   const problemsPress = useBackgroundLongPress(openProblemWizard);
+  const metaPress = useBackgroundLongPress(() => setEditingGoal(true));
   const questionsPress = useBackgroundLongPress(openQuestionWizard);
   const answerPress = useBackgroundLongPress(() => setEditingAnswer(true));
   const actionPress = useBackgroundLongPress(() => setEditingAction(true));
@@ -481,9 +504,9 @@ export function QuestionsTracker() {
             const count = activeProblemCountByAreaId.get(area.id) ?? 0;
             const isSelected = scope?.kind === "area" && scope.id === area.id;
             return (
-              <div key={`area-${area.id}`} className="relative shrink-0 pt-1.5">
+              <div key={`area-${area.id}`} className="relative shrink-0 pt-2.5">
                 {count > 0 && (
-                  <span className="absolute -top-0.5 left-1/2 z-10 flex h-4 min-w-[16px] -translate-x-1/2 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white ring-2 ring-background">
+                  <span className="absolute -top-0.5 left-1/2 z-10 -translate-x-1/2 text-[9px] font-bold leading-none text-muted-foreground">
                     {count}
                   </span>
                 )}
@@ -511,9 +534,9 @@ export function QuestionsTracker() {
             const count = activeProblemCountByProjectId.get(project.id) ?? 0;
             const isSelected = scope?.kind === "project" && scope.id === project.id;
             return (
-              <div key={`project-${project.id}`} className="relative shrink-0 pt-1.5">
+              <div key={`project-${project.id}`} className="relative shrink-0 pt-2.5">
                 {count > 0 && (
-                  <span className="absolute -top-0.5 left-1/2 z-10 flex h-4 min-w-[16px] -translate-x-1/2 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white ring-2 ring-background">
+                  <span className="absolute -top-0.5 left-1/2 z-10 -translate-x-1/2 text-[9px] font-bold leading-none text-muted-foreground">
                     {count}
                   </span>
                 )}
@@ -599,9 +622,38 @@ export function QuestionsTracker() {
               </div>
             </ScrollArea>
 
-            {/* Col 2 — Preguntas */}
+            {/* Col 2 — Meta final */}
+            {showMetaCol && selectedProblem && (
+              <ScrollArea className={colClass(1)} {...metaPress}>
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Meta final
+                </p>
+                <p className="mb-2 text-xs text-muted-foreground">
+                  ¿Qué es lo que realmente buscás detrás de esta preocupación: experiencias, crecimiento o
+                  contribución?
+                </p>
+                {editingGoal || goalDraft.trim() ? (
+                  <Textarea
+                    data-no-longpress
+                    autoFocus={editingGoal}
+                    value={goalDraft}
+                    onChange={(e) => setGoalDraft(e.target.value)}
+                    onFocus={() => setEditingGoal(true)}
+                    onBlur={commitGoal}
+                    placeholder="Lo que realmente busco es…"
+                    className="min-h-[120px] text-sm"
+                  />
+                ) : (
+                  <p className="rounded-lg border border-dashed border-border/60 p-3 text-xs text-muted-foreground">
+                    Mantené presionado el fondo para definir la meta final.
+                  </p>
+                )}
+              </ScrollArea>
+            )}
+
+            {/* Col 3 — Preguntas */}
             {showQuestionsCol && selectedProblem && (
-              <ScrollArea className={colClass(1)} {...questionsPress}>
+              <ScrollArea className={colClass(2)} {...questionsPress}>
                 <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Preguntas
                 </p>
@@ -646,9 +698,9 @@ export function QuestionsTracker() {
               </ScrollArea>
             )}
 
-            {/* Col 3 — Respuesta */}
+            {/* Col 4 — Respuesta */}
             {showAnswerCol && selectedItem && (
-              <ScrollArea className={colClass(2)} {...answerPress}>
+              <ScrollArea className={colClass(3)} {...answerPress}>
                 <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Respuesta
                 </p>
@@ -674,9 +726,9 @@ export function QuestionsTracker() {
               </ScrollArea>
             )}
 
-            {/* Col 4 — Acción */}
+            {/* Col 5 — Acción */}
             {showActionCol && selectedItem && selectedProblem && (
-              <ScrollArea className={colClass(3)} {...actionPress}>
+              <ScrollArea className={colClass(4)} {...actionPress}>
                 <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Acción
                 </p>
@@ -722,20 +774,14 @@ export function QuestionsTracker() {
         open={problemWizardOpen}
         step={problemWizardStep}
         raw={pwRaw}
-        purpose={pwPurpose}
         final={pwFinal}
         hasForbiddenPhrase={pwHasForbiddenPhrase}
         onRawChange={setPwRaw}
-        onPurposeChange={setPwPurpose}
         onFinalChange={setPwFinal}
-        onEnterPurposeStep={() => {
-          setPwPurpose(pwRaw);
-          setProblemWizardStep(1);
-        }}
         onBack={() => setProblemWizardStep((s) => Math.max(s - 1, 0))}
         onEnterFinalStep={() => {
-          setPwFinal(pwPurpose);
-          setProblemWizardStep(2);
+          setPwFinal(pwRaw);
+          setProblemWizardStep(1);
         }}
         onSubmit={handleSubmitProblem}
         onOpenChange={(open) => {
@@ -936,20 +982,17 @@ function QuestionCard({
   );
 }
 
-// Wizard de 3 pasos para el "Planteo del problema":
-// 1. el problema tal como viene a la cabeza, 2. qué se busca realmente detrás (reflexión),
-// 3. la versión final, limpia de frases "no sé cómo…" / "no sé qué hacer…".
+// Wizard de 2 pasos para el "Planteo del problema":
+// 1. el problema tal como viene a la cabeza, 2. la versión final, limpia de frases
+// "no sé cómo…" / "no sé qué hacer…". (Qué se busca realmente detrás vive en "Meta final".)
 function ProblemWizardDialog({
   open,
   step,
   raw,
-  purpose,
   final,
   hasForbiddenPhrase,
   onRawChange,
-  onPurposeChange,
   onFinalChange,
-  onEnterPurposeStep,
   onBack,
   onEnterFinalStep,
   onSubmit,
@@ -958,13 +1001,10 @@ function ProblemWizardDialog({
   open: boolean;
   step: number;
   raw: string;
-  purpose: string;
   final: string;
   hasForbiddenPhrase: boolean;
   onRawChange: (value: string) => void;
-  onPurposeChange: (value: string) => void;
   onFinalChange: (value: string) => void;
-  onEnterPurposeStep: () => void;
   onBack: () => void;
   onEnterFinalStep: () => void;
   onSubmit: () => void;
@@ -985,7 +1025,7 @@ function ProblemWizardDialog({
                 className="flex-1 flex flex-col"
               >
                 <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
-                  Planteo del problema · 1 de 3
+                  Planteo del problema · 1 de 2
                 </Label>
                 <p className="text-sm font-medium mb-3">Escribí tu problema tal como te viene a la cabeza.</p>
                 <Textarea
@@ -1001,7 +1041,7 @@ function ProblemWizardDialog({
                     variant="ghost"
                     size="icon"
                     disabled={!raw.trim()}
-                    onClick={onEnterPurposeStep}
+                    onClick={onEnterFinalStep}
                     className="h-10 w-10 bg-muted/50 hover:bg-muted"
                   >
                     <ChevronRight className="h-5 w-5" />
@@ -1020,47 +1060,7 @@ function ProblemWizardDialog({
                 className="flex-1 flex flex-col"
               >
                 <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
-                  Planteo del problema · 2 de 3
-                </Label>
-                <p className="text-sm font-medium mb-3">
-                  ¿Qué es lo que realmente buscás detrás de esta preocupación: experiencias, crecimiento o
-                  contribución?
-                </p>
-                <Textarea
-                  autoFocus
-                  value={purpose}
-                  onChange={(e) => onPurposeChange(e.target.value)}
-                  placeholder="Lo que realmente busco es…"
-                  rows={4}
-                  className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
-                />
-                <div className="flex justify-between mt-auto pt-6">
-                  <Button variant="ghost" size="icon" onClick={onBack} className="h-10 w-10 bg-muted/50 hover:bg-muted">
-                    <ChevronLeft className="h-5 w-5" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={onEnterFinalStep}
-                    className="h-10 w-10 bg-muted/50 hover:bg-muted"
-                  >
-                    <ChevronRight className="h-5 w-5" />
-                  </Button>
-                </div>
-              </motion.div>
-            )}
-
-            {step === 2 && (
-              <motion.div
-                key="problem-step-2"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.2 }}
-                className="flex-1 flex flex-col"
-              >
-                <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
-                  Planteo del problema · 3 de 3
+                  Planteo del problema · 2 de 2
                 </Label>
                 <p className="text-sm font-medium mb-3">
                   Tachá o eliminá cualquier frase que empiece con "no sé cómo…" o "no sé qué hacer…".

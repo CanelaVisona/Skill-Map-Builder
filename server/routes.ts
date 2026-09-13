@@ -6094,6 +6094,7 @@ export async function registerRoutes(
       }
       const patch: Record<string, any> = {};
       if (req.body.text !== undefined) patch.text = String(req.body.text).trim();
+      if (req.body.goal !== undefined) patch.goal = String(req.body.goal).trim();
       if (req.body.found !== undefined) patch.foundAt = req.body.found ? new Date() : null;
       const updated = await storage.updateQuestionProblem(req.params.id, patch);
       res.json(updated);

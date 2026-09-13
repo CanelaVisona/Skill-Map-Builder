@@ -291,7 +291,7 @@ export interface IStorage {
   getQuestionProblems(userId: string): Promise<QuestionProblemWithItems[]>;
   getQuestionProblem(id: string): Promise<QuestionProblem | undefined>;
   createQuestionProblem(problem: InsertQuestionProblem & { userId: string }): Promise<QuestionProblem>;
-  updateQuestionProblem(id: string, patch: Partial<Pick<QuestionProblem, "text" | "foundAt">>): Promise<QuestionProblem | undefined>;
+  updateQuestionProblem(id: string, patch: Partial<Pick<QuestionProblem, "text" | "goal" | "foundAt">>): Promise<QuestionProblem | undefined>;
   deleteQuestionProblem(id: string): Promise<void>;
   getQuestionItem(id: string): Promise<QuestionItem | undefined>;
   createQuestionItem(item: InsertQuestionItem & { userId: string }): Promise<QuestionItem>;
@@ -2730,7 +2730,7 @@ export class DbStorage implements IStorage {
     return result[0];
   }
 
-  async updateQuestionProblem(id: string, patch: Partial<Pick<QuestionProblem, "text" | "foundAt">>): Promise<QuestionProblem | undefined> {
+  async updateQuestionProblem(id: string, patch: Partial<Pick<QuestionProblem, "text" | "goal" | "foundAt">>): Promise<QuestionProblem | undefined> {
     const result = await db.update(questionProblems)
       .set({ ...patch, updatedAt: new Date() } as any)
       .where(eq(questionProblems.id, id))
