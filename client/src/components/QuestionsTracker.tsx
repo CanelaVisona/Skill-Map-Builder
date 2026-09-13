@@ -12,36 +12,6 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { ArrowLeft, Trash2, Pencil, ChevronRight, ChevronLeft, Swords, Check, RotateCcw } from "lucide-react";
 
-// Plantillas de la técnica "Hacer la pregunta": frases con huecos para reformular
-// un problema como una pregunta orientada a explorar, crecer o contribuir.
-type QuestionTemplateKey = "A" | "B";
-type QuestionField = { key: "quality" | "what" | "why"; label: string; placeholder: string };
-
-const QUESTION_TEMPLATES: Record<
-  QuestionTemplateKey,
-  { label: string; fields: QuestionField[]; build: (f: Record<string, string>) => string }
-> = {
-  A: {
-    label: "¿De qué maneras [Cualidad] puedo [QUÉ] y así experimentar [POR QUÉ] en mi vida?",
-    fields: [
-      { key: "quality", label: "Cualidad", placeholder: "ej. curiosa, valiente…" },
-      { key: "what", label: "QUÉ", placeholder: "ej. explorar nuevos lenguajes…" },
-      { key: "why", label: "POR QUÉ", placeholder: "ej. más libertad creativa…" },
-    ],
-    build: (f) =>
-      `¿De qué maneras ${(f.quality || "…").trim()} puedo ${(f.what || "…").trim()} y así experimentar ${(f.why || "…").trim()} en mi vida?`,
-  },
-  B: {
-    label: "¿Qué pequeña idea o acción puedo activar hoy para acercarme a [QUÉ] y sentir [POR QUÉ]?",
-    fields: [
-      { key: "what", label: "QUÉ", placeholder: "ej. terminar el proyecto…" },
-      { key: "why", label: "POR QUÉ", placeholder: "ej. orgullo, avance…" },
-    ],
-    build: (f) =>
-      `¿Qué pequeña idea o acción puedo activar hoy para acercarme a ${(f.what || "…").trim()} y sentir ${(f.why || "…").trim()}?`,
-  },
-};
-
 // Frases a detectar en el paso 2 del planteo del problema ("no sé cómo…" / "no sé qué hacer…").
 const FORBIDDEN_PHRASE_RE = /\bno s[eé] (c[oó]mo|qu[eé] hacer)\b/i;
 
@@ -269,11 +239,11 @@ export function QuestionsTracker() {
   const [pwRaw, setPwRaw] = useState(""); // paso 1: el problema tal como viene a la cabeza
   const [pwFinal, setPwFinal] = useState(""); // paso 2: versión final, limpia de "no sé cómo/qué hacer…"
 
-  // Wizard "Hacer la pregunta": elegir una estructura y completar sus huecos.
+  // Wizard "Hacer la pregunta": 2 pasos guiados para cargar una pregunta nueva.
   const [questionWizardOpen, setQuestionWizardOpen] = useState(false);
   const [questionWizardStep, setQuestionWizardStep] = useState(0);
-  const [qwTemplate, setQwTemplate] = useState<QuestionTemplateKey | null>(null);
-  const [qwFields, setQwFields] = useState<Record<string, string>>({});
+  const [qwRaw, setQwRaw] = useState(""); // paso 1: la pregunta como salga
+  const [qwFinal, setQwFinal] = useState(""); // paso 2: reformulada con la estructura guía
 
   const [editingProblemId, setEditingProblemId] = useState<string | null>(null);
   const [editingProblemText, setEditingProblemText] = useState("");
@@ -341,9 +311,10 @@ export function QuestionsTracker() {
     [problems, scope, view],
   );
 
-  // "Meta final" y "Preguntas" aparecen juntas al seleccionar un problema activo (no encontrado).
+  // "Meta final" aparece al seleccionar un problema activo (no encontrado); "Preguntas" recién
+  // se desbloquea una vez que esa meta final quedó definida.
   const showMetaCol = !!selectedProblem && !selectedProblem.foundAt;
-  const showQuestionsCol = showMetaCol;
+  const showQuestionsCol = showMetaCol && !!selectedProblem?.goal.trim();
   const showAnswerCol = showQuestionsCol && !!selectedItem;
   const showActionCol = showAnswerCol && answerDraft.trim().length > 0;
 
@@ -384,8 +355,8 @@ export function QuestionsTracker() {
   const closeQuestionWizard = () => {
     setQuestionWizardOpen(false);
     setQuestionWizardStep(0);
-    setQwTemplate(null);
-    setQwFields({});
+    setQwRaw("");
+    setQwFinal("");
   };
 
   const openQuestionWizard = () => {
@@ -395,8 +366,8 @@ export function QuestionsTracker() {
   };
 
   const handleSubmitQuestion = () => {
-    if (!qwTemplate || !selectedProblem) return;
-    const question = QUESTION_TEMPLATES[qwTemplate].build(qwFields).trim();
+    if (!selectedProblem) return;
+    const question = qwFinal.trim();
     if (!question) return;
     createItem.mutate({ problemId: selectedProblem.id, question });
     closeQuestionWizard();
@@ -653,7 +624,7 @@ export function QuestionsTracker() {
                   </p>
                 ) : (
                   <p className="rounded-lg border border-dashed border-border/60 p-3 text-xs text-muted-foreground">
-                    Mantené presionado el fondo para definir la meta final.
+                    Mantené presionado el fondo para definir la meta final y desbloquear las preguntas.
                   </p>
                 )}
               </ScrollArea>
@@ -831,15 +802,15 @@ export function QuestionsTracker() {
       <QuestionWizardDialog
         open={questionWizardOpen}
         step={questionWizardStep}
-        template={qwTemplate}
-        fields={qwFields}
-        onPickTemplate={(key) => {
-          setQwTemplate(key);
-          setQwFields({});
+        raw={qwRaw}
+        final={qwFinal}
+        onRawChange={setQwRaw}
+        onFinalChange={setQwFinal}
+        onBack={() => setQuestionWizardStep(0)}
+        onEnterFinalStep={() => {
+          setQwFinal(qwRaw);
           setQuestionWizardStep(1);
         }}
-        onFieldChange={(key, value) => setQwFields((prev) => ({ ...prev, [key]: value }))}
-        onBack={() => setQuestionWizardStep(0)}
         onSubmit={handleSubmitQuestion}
         onOpenChange={(open) => {
           if (!open) closeQuestionWizard();
@@ -1346,31 +1317,32 @@ function MetaWizardDialog({
   );
 }
 
-// Wizard de 2 pasos para "Hacer la pregunta": elegir una de las estructuras de ejemplo
-// y completar sus huecos ([Cualidad] / [QUÉ] / [POR QUÉ]) con vista previa en vivo.
+// Wizard de 2 pasos para "Hacer la pregunta":
+// 1. plantear la pregunta como salga, 2. reformularla siguiendo la estructura guía
+// (prefijada con la respuesta del paso 1, lista para reformular).
 function QuestionWizardDialog({
   open,
   step,
-  template,
-  fields,
-  onPickTemplate,
-  onFieldChange,
+  raw,
+  final,
+  onRawChange,
+  onFinalChange,
   onBack,
+  onEnterFinalStep,
   onSubmit,
   onOpenChange,
 }: {
   open: boolean;
   step: number;
-  template: QuestionTemplateKey | null;
-  fields: Record<string, string>;
-  onPickTemplate: (key: QuestionTemplateKey) => void;
-  onFieldChange: (key: string, value: string) => void;
+  raw: string;
+  final: string;
+  onRawChange: (value: string) => void;
+  onFinalChange: (value: string) => void;
   onBack: () => void;
+  onEnterFinalStep: () => void;
   onSubmit: () => void;
   onOpenChange: (open: boolean) => void;
 }) {
-  const activeTemplate = template ? QUESTION_TEMPLATES[template] : null;
-  const canSubmit = !!activeTemplate && activeTemplate.fields.every((f) => (fields[f.key] ?? "").trim());
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[420px] border-0 shadow-2xl">
@@ -1386,23 +1358,32 @@ function QuestionWizardDialog({
                 className="flex-1 flex flex-col"
               >
                 <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
-                  Hacer la pregunta · elegí una estructura
+                  Hacer la pregunta · 1 de 2
                 </Label>
-                <div className="space-y-2">
-                  {(Object.keys(QUESTION_TEMPLATES) as QuestionTemplateKey[]).map((key) => (
-                    <button
-                      key={key}
-                      onClick={() => onPickTemplate(key)}
-                      className="w-full rounded-xl border border-border/50 p-3 text-left text-sm transition-colors hover:bg-muted/50"
-                    >
-                      {QUESTION_TEMPLATES[key].label}
-                    </button>
-                  ))}
+                <p className="text-sm font-medium mb-3">Planteá la pregunta como te salga.</p>
+                <Textarea
+                  autoFocus
+                  value={raw}
+                  onChange={(e) => onRawChange(e.target.value)}
+                  placeholder="Mi pregunta es…"
+                  rows={4}
+                  className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+                />
+                <div className="flex justify-end mt-auto pt-6">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={!raw.trim()}
+                    onClick={onEnterFinalStep}
+                    className="h-10 w-10 bg-muted/50 hover:bg-muted"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </Button>
                 </div>
               </motion.div>
             )}
 
-            {step === 1 && activeTemplate && (
+            {step === 1 && (
               <motion.div
                 key="question-step-1"
                 initial={{ opacity: 0, x: 20 }}
@@ -1412,28 +1393,28 @@ function QuestionWizardDialog({
                 className="flex-1 flex flex-col"
               >
                 <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
-                  Hacer la pregunta · completá los espacios
+                  Hacer la pregunta · 2 de 2
                 </Label>
-                <div className="space-y-2">
-                  {activeTemplate.fields.map((f, i) => (
-                    <Input
-                      key={f.key}
-                      autoFocus={i === 0}
-                      value={fields[f.key] ?? ""}
-                      onChange={(e) => onFieldChange(f.key, e.target.value)}
-                      placeholder={`${f.label} — ${f.placeholder}`}
-                      className="h-9 text-sm"
-                    />
-                  ))}
-                </div>
-                <p className="mt-3 rounded-lg bg-muted/50 p-2 text-xs text-muted-foreground break-words">
-                  {activeTemplate.build(fields)}
+                <p className="text-sm font-medium mb-1">
+                  Reformulá la pregunta siguiendo esta estructura: «¿De qué maneras [Cualidad] puedo [QUÉ] y
+                  así experimentar [POR QUÉ] en mi vida?»
                 </p>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Por ejemplo: «¿Qué pequeña idea o acción puedo hacer hoy para liberar la carga de trabajo
+                  [QUÉ] y sentir alivio ahora [POR QUÉ]?»
+                </p>
+                <Textarea
+                  autoFocus
+                  value={final}
+                  onChange={(e) => onFinalChange(e.target.value)}
+                  rows={4}
+                  className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+                />
                 <div className="flex justify-between mt-auto pt-6">
                   <Button variant="ghost" size="icon" onClick={onBack} className="h-10 w-10 bg-muted/50 hover:bg-muted">
                     <ChevronLeft className="h-5 w-5" />
                   </Button>
-                  <Button onClick={onSubmit} disabled={!canSubmit} className="px-4">
+                  <Button onClick={onSubmit} disabled={!final.trim()} className="px-4">
                     Agregar pregunta
                   </Button>
                 </div>
