@@ -284,9 +284,13 @@ export function QuestionsTracker() {
   const [problemActionsId, setProblemActionsId] = useState<string | null>(null);
   const [questionActionsId, setQuestionActionsId] = useState<string | null>(null);
 
-  // "Meta final": qué se busca realmente detrás del problema seleccionado (un texto por problema).
-  const [goalDraft, setGoalDraft] = useState("");
-  const [editingGoal, setEditingGoal] = useState(false);
+  // Wizard "Meta final": 4 pasos guiados para derivar la meta final de un problema.
+  const [metaWizardOpen, setMetaWizardOpen] = useState(false);
+  const [metaWizardStep, setMetaWizardStep] = useState(0);
+  const [mwStep1, setMwStep1] = useState(""); // qué se busca realmente (experiencias/crecimiento/contribución)
+  const [mwStep2, setMwStep2] = useState(""); // sin la meta intermedia ("de manera que")
+  const [mwStep3, setMwStep3] = useState(""); // meta autoalimentada (depende 100% de uno)
+  const [mwStep4, setMwStep4] = useState(""); // versión final, sin "no sé cómo/qué hacer…"
 
   const [answerDraft, setAnswerDraft] = useState("");
   const [actionDraft, setActionDraft] = useState("");
@@ -310,12 +314,6 @@ export function QuestionsTracker() {
     () => selectedProblem?.items.find((it) => it.id === selectedItemId) ?? null,
     [selectedProblem, selectedItemId],
   );
-
-  // Sincroniza el borrador de meta final al cambiar de problema.
-  useEffect(() => {
-    setGoalDraft(selectedProblem?.goal ?? "");
-    setEditingGoal(false);
-  }, [selectedProblemId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sincroniza los borradores de respuesta/acción al cambiar de cadena.
   useEffect(() => {
@@ -404,12 +402,33 @@ export function QuestionsTracker() {
     closeQuestionWizard();
   };
 
-  const commitGoal = () => {
-    setEditingGoal(false);
+  const closeMetaWizard = () => {
+    setMetaWizardOpen(false);
+    setMetaWizardStep(0);
+    setMwStep1("");
+    setMwStep2("");
+    setMwStep3("");
+    setMwStep4("");
+  };
+
+  const openMetaWizard = () => {
     if (!selectedProblem) return;
-    if (goalDraft.trim() !== selectedProblem.goal.trim()) {
-      updateProblem.mutate({ id: selectedProblem.id, goal: goalDraft.trim() });
-    }
+    setMetaWizardStep(0);
+    setMwStep1(selectedProblem.goal || "");
+    setMwStep2("");
+    setMwStep3("");
+    setMwStep4("");
+    setMetaWizardOpen(true);
+  };
+
+  const mwHasForbiddenPhrase = FORBIDDEN_PHRASE_RE.test(mwStep4);
+
+  const handleSubmitMeta = () => {
+    if (!selectedProblem) return;
+    const text = mwStep4.trim();
+    if (!text || mwHasForbiddenPhrase) return;
+    updateProblem.mutate({ id: selectedProblem.id, goal: text });
+    closeMetaWizard();
   };
 
   const commitAnswer = () => {
@@ -435,7 +454,7 @@ export function QuestionsTracker() {
   };
 
   const problemsPress = useBackgroundLongPress(openProblemWizard);
-  const metaPress = useBackgroundLongPress(() => setEditingGoal(true));
+  const metaPress = useBackgroundLongPress(openMetaWizard);
   const questionsPress = useBackgroundLongPress(openQuestionWizard);
   const answerPress = useBackgroundLongPress(() => setEditingAnswer(true));
   const actionPress = useBackgroundLongPress(() => setEditingAction(true));
@@ -628,21 +647,10 @@ export function QuestionsTracker() {
                 <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Meta final
                 </p>
-                <p className="mb-2 text-xs text-muted-foreground">
-                  ¿Qué es lo que realmente buscás detrás de esta preocupación: experiencias, crecimiento o
-                  contribución?
-                </p>
-                {editingGoal || goalDraft.trim() ? (
-                  <Textarea
-                    data-no-longpress
-                    autoFocus={editingGoal}
-                    value={goalDraft}
-                    onChange={(e) => setGoalDraft(e.target.value)}
-                    onFocus={() => setEditingGoal(true)}
-                    onBlur={commitGoal}
-                    placeholder="Lo que realmente busco es…"
-                    className="min-h-[120px] text-sm"
-                  />
+                {selectedProblem.goal.trim() ? (
+                  <p className="rounded-lg bg-muted/50 p-2 text-xs text-muted-foreground break-words">
+                    {selectedProblem.goal}
+                  </p>
                 ) : (
                   <p className="rounded-lg border border-dashed border-border/60 p-3 text-xs text-muted-foreground">
                     Mantené presionado el fondo para definir la meta final.
@@ -786,6 +794,37 @@ export function QuestionsTracker() {
         onSubmit={handleSubmitProblem}
         onOpenChange={(open) => {
           if (!open) closeProblemWizard();
+        }}
+      />
+
+      <MetaWizardDialog
+        open={metaWizardOpen}
+        step={metaWizardStep}
+        step1={mwStep1}
+        step2={mwStep2}
+        step3={mwStep3}
+        step4={mwStep4}
+        hasForbiddenPhrase={mwHasForbiddenPhrase}
+        onStep1Change={setMwStep1}
+        onStep2Change={setMwStep2}
+        onStep3Change={setMwStep3}
+        onStep4Change={setMwStep4}
+        onBack={() => setMetaWizardStep((s) => Math.max(s - 1, 0))}
+        onEnterStep2={() => {
+          setMwStep2(mwStep1);
+          setMetaWizardStep(1);
+        }}
+        onEnterStep3={() => {
+          setMwStep3(mwStep2);
+          setMetaWizardStep(2);
+        }}
+        onEnterStep4={() => {
+          setMwStep4(mwStep3);
+          setMetaWizardStep(3);
+        }}
+        onSubmit={handleSubmitMeta}
+        onOpenChange={(open) => {
+          if (!open) closeMetaWizard();
         }}
       />
 
@@ -1084,6 +1123,218 @@ function ProblemWizardDialog({
                   </Button>
                   <Button onClick={onSubmit} disabled={!final.trim() || hasForbiddenPhrase} className="px-4">
                     Agregar problema
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Wizard de 4 pasos para "Meta final": qué se busca realmente detrás del problema, en cadena
+// (cada paso arranca con la respuesta ya reformulada del paso anterior).
+// 1. qué se busca realmente (experiencias/crecimiento/contribución).
+// 2. eliminar la meta intermedia ("de manera que") y quedarse con la meta final real.
+// 3. volverla autoalimentada: que dependa 100% de uno, no de la aprobación de otra persona.
+// 4. tachar el "cómo": eliminar frases "no sé cómo…" / "no sé qué hacer…".
+function MetaWizardDialog({
+  open,
+  step,
+  step1,
+  step2,
+  step3,
+  step4,
+  hasForbiddenPhrase,
+  onStep1Change,
+  onStep2Change,
+  onStep3Change,
+  onStep4Change,
+  onBack,
+  onEnterStep2,
+  onEnterStep3,
+  onEnterStep4,
+  onSubmit,
+  onOpenChange,
+}: {
+  open: boolean;
+  step: number;
+  step1: string;
+  step2: string;
+  step3: string;
+  step4: string;
+  hasForbiddenPhrase: boolean;
+  onStep1Change: (value: string) => void;
+  onStep2Change: (value: string) => void;
+  onStep3Change: (value: string) => void;
+  onStep4Change: (value: string) => void;
+  onBack: () => void;
+  onEnterStep2: () => void;
+  onEnterStep3: () => void;
+  onEnterStep4: () => void;
+  onSubmit: () => void;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[420px] border-0 shadow-2xl">
+        <div className="min-h-[220px] flex flex-col">
+          <AnimatePresence mode="wait">
+            {step === 0 && (
+              <motion.div
+                key="meta-step-0"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+                className="flex-1 flex flex-col"
+              >
+                <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
+                  Meta final · 1 de 4
+                </Label>
+                <p className="text-sm font-medium mb-3">
+                  ¿Qué es lo que realmente buscás detrás de esta preocupación: experiencias, crecimiento o
+                  contribución?
+                </p>
+                <Textarea
+                  autoFocus
+                  value={step1}
+                  onChange={(e) => onStep1Change(e.target.value)}
+                  placeholder="Lo que realmente busco es…"
+                  rows={4}
+                  className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+                />
+                <div className="flex justify-end mt-auto pt-6">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={!step1.trim()}
+                    onClick={onEnterStep2}
+                    className="h-10 w-10 bg-muted/50 hover:bg-muted"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+
+            {step === 1 && (
+              <motion.div
+                key="meta-step-1"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+                className="flex-1 flex flex-col"
+              >
+                <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
+                  Meta final · 2 de 4
+                </Label>
+                <p className="text-sm font-medium mb-3">
+                  Eliminá el «De manera que»: si escribiste una meta que requiere otra etapa previa (ej.
+                  "conseguir X trabajo para poder estar tranquilo"), tachá la meta intermedia (el trabajo) y
+                  quedate con la meta final real (la tranquilidad y la realización).
+                </p>
+                <Textarea
+                  autoFocus
+                  value={step2}
+                  onChange={(e) => onStep2Change(e.target.value)}
+                  rows={4}
+                  className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+                />
+                <div className="flex justify-between mt-auto pt-6">
+                  <Button variant="ghost" size="icon" onClick={onBack} className="h-10 w-10 bg-muted/50 hover:bg-muted">
+                    <ChevronLeft className="h-5 w-5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={!step2.trim()}
+                    onClick={onEnterStep3}
+                    className="h-10 w-10 bg-muted/50 hover:bg-muted"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+
+            {step === 2 && (
+              <motion.div
+                key="meta-step-2"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+                className="flex-1 flex flex-col"
+              >
+                <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
+                  Meta final · 3 de 4
+                </Label>
+                <p className="text-sm font-medium mb-3">
+                  Hacé una Meta Autoalimentada: modificala para que el resultado dependa en un 100% de vos y
+                  de tus estados internos, no de la aprobación o decisión de otra persona.
+                </p>
+                <Textarea
+                  autoFocus
+                  value={step3}
+                  onChange={(e) => onStep3Change(e.target.value)}
+                  rows={4}
+                  className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+                />
+                <div className="flex justify-between mt-auto pt-6">
+                  <Button variant="ghost" size="icon" onClick={onBack} className="h-10 w-10 bg-muted/50 hover:bg-muted">
+                    <ChevronLeft className="h-5 w-5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={!step3.trim()}
+                    onClick={onEnterStep4}
+                    className="h-10 w-10 bg-muted/50 hover:bg-muted"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+
+            {step === 3 && (
+              <motion.div
+                key="meta-step-3"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+                className="flex-1 flex flex-col"
+              >
+                <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
+                  Meta final · 4 de 4
+                </Label>
+                <p className="text-sm font-medium mb-3">
+                  Tachá el «CÓMO»: eliminá cualquier frase que diga "no sé cómo…" o "no sé qué hacer…".
+                </p>
+                <Textarea
+                  autoFocus
+                  value={step4}
+                  onChange={(e) => onStep4Change(e.target.value)}
+                  rows={4}
+                  className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+                />
+                {hasForbiddenPhrase && (
+                  <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                    Todavía queda una frase "no sé cómo…" / "no sé qué hacer…". Reformulala o borrala para
+                    continuar.
+                  </p>
+                )}
+                <div className="flex justify-between mt-auto pt-6">
+                  <Button variant="ghost" size="icon" onClick={onBack} className="h-10 w-10 bg-muted/50 hover:bg-muted">
+                    <ChevronLeft className="h-5 w-5" />
+                  </Button>
+                  <Button onClick={onSubmit} disabled={!step4.trim() || hasForbiddenPhrase} className="px-4">
+                    Guardar meta final
                   </Button>
                 </div>
               </motion.div>
