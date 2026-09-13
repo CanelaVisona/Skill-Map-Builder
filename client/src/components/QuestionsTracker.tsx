@@ -481,31 +481,27 @@ export function QuestionsTracker() {
             const count = activeProblemCountByAreaId.get(area.id) ?? 0;
             const isSelected = scope?.kind === "area" && scope.id === area.id;
             return (
-              <button
-                key={`area-${area.id}`}
-                onClick={() => {
-                  setScope({ kind: "area", id: area.id });
-                  resetSelection();
-                }}
-                className={cn(
-                  "flex shrink-0 flex-col items-center rounded-full px-3 py-1 text-xs font-semibold transition-colors",
-                  isSelected
-                    ? "bg-foreground text-background"
-                    : "bg-muted/60 text-muted-foreground hover:text-foreground",
-                )}
-              >
+              <div key={`area-${area.id}`} className="relative shrink-0 pt-1.5">
                 {count > 0 && (
-                  <span
-                    className={cn(
-                      "mb-0.5 flex h-3.5 min-w-[14px] items-center justify-center rounded-full px-1 text-[9px] font-bold leading-none",
-                      isSelected ? "bg-background/25 text-background" : "bg-foreground/15 text-foreground",
-                    )}
-                  >
+                  <span className="absolute -top-0.5 left-1/2 z-10 flex h-4 min-w-[16px] -translate-x-1/2 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white ring-2 ring-background">
                     {count}
                   </span>
                 )}
-                {area.name}
-              </button>
+                <button
+                  onClick={() => {
+                    setScope({ kind: "area", id: area.id });
+                    resetSelection();
+                  }}
+                  className={cn(
+                    "rounded-full px-3 py-1 text-xs font-semibold transition-colors",
+                    isSelected
+                      ? "bg-foreground text-background"
+                      : "bg-muted/60 text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {area.name}
+                </button>
+              </div>
             );
           })}
           {activeAreas.length > 0 && activeProjects.length > 0 && (
@@ -515,33 +511,27 @@ export function QuestionsTracker() {
             const count = activeProblemCountByProjectId.get(project.id) ?? 0;
             const isSelected = scope?.kind === "project" && scope.id === project.id;
             return (
-              <button
-                key={`project-${project.id}`}
-                onClick={() => {
-                  setScope({ kind: "project", id: project.id });
-                  resetSelection();
-                }}
-                className={cn(
-                  "flex shrink-0 flex-col items-center rounded-full px-3 py-1 text-xs font-semibold transition-colors",
-                  isSelected
-                    ? "bg-foreground text-background"
-                    : "bg-muted/60 text-muted-foreground hover:text-foreground",
-                )}
-              >
+              <div key={`project-${project.id}`} className="relative shrink-0 pt-1.5">
                 {count > 0 && (
-                  <span
-                    className={cn(
-                      "mb-0.5 flex h-3.5 min-w-[14px] items-center justify-center rounded-full px-1 text-[9px] font-bold leading-none",
-                      isSelected ? "bg-background/25 text-background" : "bg-foreground/15 text-foreground",
-                    )}
-                  >
+                  <span className="absolute -top-0.5 left-1/2 z-10 flex h-4 min-w-[16px] -translate-x-1/2 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white ring-2 ring-background">
                     {count}
                   </span>
                 )}
-                <span className="flex items-center gap-1">
+                <button
+                  onClick={() => {
+                    setScope({ kind: "project", id: project.id });
+                    resetSelection();
+                  }}
+                  className={cn(
+                    "flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold transition-colors",
+                    isSelected
+                      ? "bg-foreground text-background"
+                      : "bg-muted/60 text-muted-foreground hover:text-foreground",
+                  )}
+                >
                   <Swords size={11} /> {project.name}
-                </span>
-              </button>
+                </button>
+              </div>
             );
           })}
         </div>
@@ -738,10 +728,13 @@ export function QuestionsTracker() {
         onRawChange={setPwRaw}
         onPurposeChange={setPwPurpose}
         onFinalChange={setPwFinal}
-        onNext={() => setProblemWizardStep((s) => Math.min(s + 1, 2))}
+        onEnterPurposeStep={() => {
+          setPwPurpose(pwRaw);
+          setProblemWizardStep(1);
+        }}
         onBack={() => setProblemWizardStep((s) => Math.max(s - 1, 0))}
         onEnterFinalStep={() => {
-          setPwFinal(pwRaw);
+          setPwFinal(pwPurpose);
           setProblemWizardStep(2);
         }}
         onSubmit={handleSubmitProblem}
@@ -956,7 +949,7 @@ function ProblemWizardDialog({
   onRawChange,
   onPurposeChange,
   onFinalChange,
-  onNext,
+  onEnterPurposeStep,
   onBack,
   onEnterFinalStep,
   onSubmit,
@@ -971,7 +964,7 @@ function ProblemWizardDialog({
   onRawChange: (value: string) => void;
   onPurposeChange: (value: string) => void;
   onFinalChange: (value: string) => void;
-  onNext: () => void;
+  onEnterPurposeStep: () => void;
   onBack: () => void;
   onEnterFinalStep: () => void;
   onSubmit: () => void;
@@ -1008,7 +1001,7 @@ function ProblemWizardDialog({
                     variant="ghost"
                     size="icon"
                     disabled={!raw.trim()}
-                    onClick={onNext}
+                    onClick={onEnterPurposeStep}
                     className="h-10 w-10 bg-muted/50 hover:bg-muted"
                   >
                     <ChevronRight className="h-5 w-5" />
