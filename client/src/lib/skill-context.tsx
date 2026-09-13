@@ -3540,20 +3540,18 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       .sort((a, b) => (a.levelPosition || 0) - (b.levelPosition || 0));
 
     const finalNode = sameLevelSkills[sameLevelSkills.length - 1];
-    const isFinalNode = finalNode?.id === clickedSkill.id;
-    const predecessorSkill = sameLevelSkills.find(s => s.levelPosition === (clickedSkill.levelPosition || 0) - 1);
-    const newLevelPosition = isFinalNode
-      ? (clickedSkill.levelPosition || 0)
-      : (clickedSkill.levelPosition || 0) + 1;
-    const newY = isFinalNode ? clickedSkill.y : clickedSkill.y + 150;
-    const newStatus: SkillStatus = isFinalNode
-      ? (predecessorSkill?.status === "mastered" ? "available" : "locked")
-      : (clickedSkill.status === "mastered" ? "available" : "locked");
+    // Always insert immediately below the clicked node -- even when it's currently the
+    // final node of the level. In that case there's nothing after it to shift, so the new
+    // node simply becomes the new final node (by position), and the old final node keeps
+    // its own slot/dependencies untouched instead of being pushed further down.
+    const newLevelPosition = (clickedSkill.levelPosition || 0) + 1;
+    const newY = clickedSkill.y + 150;
+    const newStatus: SkillStatus = clickedSkill.status === "mastered" ? "available" : "locked";
 
     try {
       // Only shift same-level nodes to avoid corrupting levelPositions in other levels
       const nodesToShift = area.skills.filter(s =>
-        s.level === clickedSkill.level && (isFinalNode ? s.y >= clickedSkill.y : s.y > clickedSkill.y)
+        s.level === clickedSkill.level && s.y > clickedSkill.y
       );
       for (const node of nodesToShift) {
         await fetch(`/api/skills/${node.id}`, {
@@ -3570,9 +3568,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         x: clickedSkill.x,
         y: newY,
         status: newStatus,
-        dependencies: isFinalNode
-          ? (predecessorSkill ? [predecessorSkill.id] : [])
-          : [clickedSkill.id],
+        dependencies: [clickedSkill.id],
         level: clickedSkill.level,
         levelPosition: newLevelPosition,
         isFinalNode: 0,
@@ -3588,56 +3584,33 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       });
       const newSkill = await response.json();
 
-      if (isFinalNode) {
-        // Final node should ONLY depend on the new node (the one immediately before it)
-        const finalDeps = [newSkill.id];
+      // If the final node depended directly on the clicked node, reroute that dependency
+      // through the new node now sitting between them (no-op when clicked was itself final).
+      if (finalNode && ensureDependenciesArray(finalNode.dependencies).includes(clickedSkill.id)) {
+        const updatedDeps = ensureDependenciesArray(finalNode.dependencies).map(d => d === clickedSkill.id ? newSkill.id : d);
         await fetch(`/api/skills/${finalNode.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ dependencies: finalDeps }),
+          body: JSON.stringify({ dependencies: updatedDeps }),
         });
-        setAreas(prev => prev.map(a => {
-          if (a.id !== areaId) return a;
-          return {
-            ...a,
-            skills: [
-              ...a.skills.map(s => {
-                let updated = { ...s };
-                if (s.level === clickedSkill.level && (isFinalNode ? s.y >= clickedSkill.y : s.y > clickedSkill.y)) updated = { ...updated, y: s.y + 150, levelPosition: (s.levelPosition || 0) + 1 };
-                if (s.id === finalNode.id) updated = { ...updated, dependencies: finalDeps };
-                return updated;
-              }),
-              newSkill
-            ]
-          };
-        }));
-      } else {
-        if (finalNode && ensureDependenciesArray(finalNode.dependencies).includes(clickedSkill.id)) {
-          const updatedDeps = ensureDependenciesArray(finalNode.dependencies).map(d => d === clickedSkill.id ? newSkill.id : d);
-          await fetch(`/api/skills/${finalNode.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ dependencies: updatedDeps }),
-          });
-        }
-        setAreas(prev => prev.map(a => {
-          if (a.id !== areaId) return a;
-          return {
-            ...a,
-            skills: [
-              ...a.skills.map(s => {
-                let updated = { ...s };
-                if (s.level === clickedSkill.level && (isFinalNode ? s.y >= clickedSkill.y : s.y > clickedSkill.y)) updated = { ...updated, y: s.y + 150, levelPosition: (s.levelPosition || 0) + 1 };
-                if (finalNode && s.id === finalNode.id && ensureDependenciesArray(finalNode.dependencies).includes(clickedSkill.id)) {
-                  updated = { ...updated, dependencies: ensureDependenciesArray(s.dependencies).map(d => d === clickedSkill.id ? newSkill.id : d) };
-                }
-                return updated;
-              }),
-              newSkill
-            ]
-          };
-        }));
       }
+      setAreas(prev => prev.map(a => {
+        if (a.id !== areaId) return a;
+        return {
+          ...a,
+          skills: [
+            ...a.skills.map(s => {
+              let updated = { ...s };
+              if (s.level === clickedSkill.level && s.y > clickedSkill.y) updated = { ...updated, y: s.y + 150, levelPosition: (s.levelPosition || 0) + 1 };
+              if (finalNode && s.id === finalNode.id && ensureDependenciesArray(finalNode.dependencies).includes(clickedSkill.id)) {
+                updated = { ...updated, dependencies: ensureDependenciesArray(s.dependencies).map(d => d === clickedSkill.id ? newSkill.id : d) };
+              }
+              return updated;
+            }),
+            newSkill
+          ]
+        };
+      }));
     } catch (error) {
       console.error("Error adding skill below:", error);
     }
@@ -3655,20 +3628,18 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       .sort((a, b) => (a.levelPosition || 0) - (b.levelPosition || 0));
 
     const finalNode = sameLevelSkills[sameLevelSkills.length - 1];
-    const isFinalNode = finalNode?.id === clickedSkill.id;
-    const predecessorSkill = sameLevelSkills.find(s => s.levelPosition === (clickedSkill.levelPosition || 0) - 1);
-    const newLevelPosition = isFinalNode
-      ? (clickedSkill.levelPosition || 0)
-      : (clickedSkill.levelPosition || 0) + 1;
-    const newY = isFinalNode ? clickedSkill.y : clickedSkill.y + 150;
-    const newStatus: SkillStatus = isFinalNode
-      ? (predecessorSkill?.status === "mastered" ? "available" : "locked")
-      : (clickedSkill.status === "mastered" ? "available" : "locked");
+    // Always insert immediately below the clicked node -- even when it's currently the
+    // final node of the level. In that case there's nothing after it to shift, so the new
+    // node simply becomes the new final node (by position), and the old final node keeps
+    // its own slot/dependencies untouched instead of being pushed further down.
+    const newLevelPosition = (clickedSkill.levelPosition || 0) + 1;
+    const newY = clickedSkill.y + 150;
+    const newStatus: SkillStatus = clickedSkill.status === "mastered" ? "available" : "locked";
 
     try {
       // Only shift same-level nodes to avoid corrupting levelPositions in other levels
       const nodesToShift = project.skills.filter(s =>
-        s.level === clickedSkill.level && (isFinalNode ? s.y >= clickedSkill.y : s.y > clickedSkill.y)
+        s.level === clickedSkill.level && s.y > clickedSkill.y
       );
       for (const node of nodesToShift) {
         await fetch(`/api/skills/${node.id}`, {
@@ -3685,9 +3656,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         x: clickedSkill.x,
         y: newY,
         status: newStatus,
-        dependencies: isFinalNode
-          ? (predecessorSkill ? [predecessorSkill.id] : [])
-          : [clickedSkill.id],
+        dependencies: [clickedSkill.id],
         level: clickedSkill.level,
         levelPosition: newLevelPosition,
         isFinalNode: 0,
@@ -3703,56 +3672,33 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       });
       const newSkill = await response.json();
 
-      if (isFinalNode) {
-        // Final node should ONLY depend on the new node (the one immediately before it)
-        const finalDeps = [newSkill.id];
+      // If the final node depended directly on the clicked node, reroute that dependency
+      // through the new node now sitting between them (no-op when clicked was itself final).
+      if (finalNode && ensureDependenciesArray(finalNode.dependencies).includes(clickedSkill.id)) {
+        const updatedDeps = ensureDependenciesArray(finalNode.dependencies).map(d => d === clickedSkill.id ? newSkill.id : d);
         await fetch(`/api/skills/${finalNode.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ dependencies: finalDeps }),
+          body: JSON.stringify({ dependencies: updatedDeps }),
         });
-        setProjects(prev => prev.map(p => {
-          if (p.id !== projectId) return p;
-          return {
-            ...p,
-            skills: [
-              ...p.skills.map(s => {
-                let updated = { ...s };
-                if (s.level === clickedSkill.level && (isFinalNode ? s.y >= clickedSkill.y : s.y > clickedSkill.y)) updated = { ...updated, y: s.y + 150, levelPosition: (s.levelPosition || 0) + 1 };
-                if (s.id === finalNode.id) updated = { ...updated, dependencies: finalDeps };
-                return updated;
-              }),
-              newSkill
-            ]
-          };
-        }));
-      } else {
-        if (finalNode && ensureDependenciesArray(finalNode.dependencies).includes(clickedSkill.id)) {
-          const updatedDeps = ensureDependenciesArray(finalNode.dependencies).map(d => d === clickedSkill.id ? newSkill.id : d);
-          await fetch(`/api/skills/${finalNode.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ dependencies: updatedDeps }),
-          });
-        }
-        setProjects(prev => prev.map(p => {
-          if (p.id !== projectId) return p;
-          return {
-            ...p,
-            skills: [
-              ...p.skills.map(s => {
-                let updated = { ...s };
-                if (s.level === clickedSkill.level && (isFinalNode ? s.y >= clickedSkill.y : s.y > clickedSkill.y)) updated = { ...updated, y: s.y + 150, levelPosition: (s.levelPosition || 0) + 1 };
-                if (finalNode && s.id === finalNode.id && ensureDependenciesArray(finalNode.dependencies).includes(clickedSkill.id)) {
-                  updated = { ...updated, dependencies: ensureDependenciesArray(s.dependencies).map(d => d === clickedSkill.id ? newSkill.id : d) };
-                }
-                return updated;
-              }),
-              newSkill
-            ]
-          };
-        }));
       }
+      setProjects(prev => prev.map(p => {
+        if (p.id !== projectId) return p;
+        return {
+          ...p,
+          skills: [
+            ...p.skills.map(s => {
+              let updated = { ...s };
+              if (s.level === clickedSkill.level && s.y > clickedSkill.y) updated = { ...updated, y: s.y + 150, levelPosition: (s.levelPosition || 0) + 1 };
+              if (finalNode && s.id === finalNode.id && ensureDependenciesArray(finalNode.dependencies).includes(clickedSkill.id)) {
+                updated = { ...updated, dependencies: ensureDependenciesArray(s.dependencies).map(d => d === clickedSkill.id ? newSkill.id : d) };
+              }
+              return updated;
+            }),
+            newSkill
+          ]
+        };
+      }));
     } catch (error) {
       console.error("Error adding project skill below:", error);
     }
