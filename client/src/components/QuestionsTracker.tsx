@@ -233,11 +233,12 @@ export function QuestionsTracker() {
   const [selectedProblemId, setSelectedProblemId] = useState<string | null>(null);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
 
-  // Wizard "Planteo del problema": 2 pasos guiados para cargar un problema nuevo.
+  // Wizard "Planteo del problema": 3 pasos guiados para cargar un problema nuevo.
   const [problemWizardOpen, setProblemWizardOpen] = useState(false);
   const [problemWizardStep, setProblemWizardStep] = useState(0);
   const [pwRaw, setPwRaw] = useState(""); // paso 1: el problema tal como viene a la cabeza
-  const [pwFinal, setPwFinal] = useState(""); // paso 2: versión final, limpia de "no sé cómo/qué hacer…"
+  const [pwStep2, setPwStep2] = useState(""); // paso 2: qué pasa objetivamente y cómo te sentís con eso
+  const [pwFinal, setPwFinal] = useState(""); // paso 3: versión final, limpia de "no sé cómo/qué hacer…"
 
   // Wizard "Hacer la pregunta": 2 pasos guiados para cargar una pregunta nueva.
   const [questionWizardOpen, setQuestionWizardOpen] = useState(false);
@@ -254,13 +255,14 @@ export function QuestionsTracker() {
   const [problemActionsId, setProblemActionsId] = useState<string | null>(null);
   const [questionActionsId, setQuestionActionsId] = useState<string | null>(null);
 
-  // Wizard "Meta final": 4 pasos guiados para derivar la meta final de un problema.
+  // Wizard "Meta final": 5 pasos guiados para derivar la meta final de un problema.
   const [metaWizardOpen, setMetaWizardOpen] = useState(false);
   const [metaWizardStep, setMetaWizardStep] = useState(0);
   const [mwStep1, setMwStep1] = useState(""); // qué se busca realmente (experiencias/crecimiento/contribución)
-  const [mwStep2, setMwStep2] = useState(""); // sin la meta intermedia ("de manera que")
-  const [mwStep3, setMwStep3] = useState(""); // meta autoalimentada (depende 100% de uno)
-  const [mwStep4, setMwStep4] = useState(""); // versión final, sin "no sé cómo/qué hacer…"
+  const [mwStep2, setMwStep2] = useState(""); // por qué (para qué se lo busca)
+  const [mwStep3, setMwStep3] = useState(""); // sin la meta intermedia ("de manera que")
+  const [mwStep4, setMwStep4] = useState(""); // meta autoalimentada (depende 100% de uno)
+  const [mwStep5, setMwStep5] = useState(""); // versión final, sin "no sé cómo/qué hacer…"
 
   const [answerDraft, setAnswerDraft] = useState("");
   const [actionDraft, setActionDraft] = useState("");
@@ -318,6 +320,13 @@ export function QuestionsTracker() {
   const showAnswerCol = showQuestionsCol && !!selectedItem;
   const showActionCol = showAnswerCol && answerDraft.trim().length > 0;
 
+  // Resalta la última sección completada del problema seleccionado, para guiar la mirada:
+  // "Meta final" se destaca mientras todavía no haya ninguna pregunta cargada; en cuanto aparece
+  // la primera pregunta, el resaltado pasa a "Preguntas".
+  const questionsHaveContent = (selectedProblem?.items.length ?? 0) > 0;
+  const metaIsCurrent = showMetaCol && !!selectedProblem?.goal.trim() && !questionsHaveContent;
+  const questionsAreCurrent = showQuestionsCol && questionsHaveContent;
+
   const visibleCols =
     1 + (showMetaCol ? 1 : 0) + (showQuestionsCol ? 1 : 0) + (showAnswerCol ? 1 : 0) + (showActionCol ? 1 : 0);
   const colClass = (index: number) =>
@@ -332,6 +341,7 @@ export function QuestionsTracker() {
     setProblemWizardOpen(false);
     setProblemWizardStep(0);
     setPwRaw("");
+    setPwStep2("");
     setPwFinal("");
   };
 
@@ -380,6 +390,7 @@ export function QuestionsTracker() {
     setMwStep2("");
     setMwStep3("");
     setMwStep4("");
+    setMwStep5("");
   };
 
   const openMetaWizard = () => {
@@ -389,14 +400,15 @@ export function QuestionsTracker() {
     setMwStep2("");
     setMwStep3("");
     setMwStep4("");
+    setMwStep5("");
     setMetaWizardOpen(true);
   };
 
-  const mwHasForbiddenPhrase = FORBIDDEN_PHRASE_RE.test(mwStep4);
+  const mwHasForbiddenPhrase = FORBIDDEN_PHRASE_RE.test(mwStep5);
 
   const handleSubmitMeta = () => {
     if (!selectedProblem) return;
-    const text = mwStep4.trim();
+    const text = mwStep5.trim();
     if (!text || mwHasForbiddenPhrase) return;
     updateProblem.mutate({ id: selectedProblem.id, goal: text });
     closeMetaWizard();
@@ -425,7 +437,6 @@ export function QuestionsTracker() {
   };
 
   const problemsPress = useBackgroundLongPress(openProblemWizard);
-  const metaPress = useBackgroundLongPress(openMetaWizard);
   const questionsPress = useBackgroundLongPress(openQuestionWizard);
   const answerPress = useBackgroundLongPress(() => setEditingAnswer(true));
   const actionPress = useBackgroundLongPress(() => setEditingAction(true));
@@ -614,26 +625,44 @@ export function QuestionsTracker() {
 
             {/* Col 2 — Meta final */}
             {showMetaCol && selectedProblem && (
-              <ScrollArea className={colClass(1)} {...metaPress}>
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              <ScrollArea className={colClass(1)}>
+                <p
+                  className={cn(
+                    "mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide",
+                    metaIsCurrent ? "text-foreground" : "text-muted-foreground",
+                  )}
+                >
+                  {metaIsCurrent && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-foreground" />}
                   Meta final
                 </p>
-                {selectedProblem.goal.trim() ? (
-                  <p className="rounded-lg bg-muted/50 p-2 text-xs text-muted-foreground break-words">
-                    {selectedProblem.goal}
+                <div
+                  onClick={openMetaWizard}
+                  className={cn(
+                    "cursor-pointer select-none rounded-xl border p-2 text-sm transition-colors hover:bg-muted/40",
+                    !selectedProblem.goal.trim()
+                      ? "border-dashed border-border/60"
+                      : metaIsCurrent
+                        ? "border-foreground/40 bg-muted/60"
+                        : "border-border/50",
+                  )}
+                >
+                  <p className="break-words text-xs text-muted-foreground">
+                    {selectedProblem.goal.trim() || "Tocá para definir la meta final y desbloquear las preguntas."}
                   </p>
-                ) : (
-                  <p className="rounded-lg border border-dashed border-border/60 p-3 text-xs text-muted-foreground">
-                    Mantené presionado el fondo para definir la meta final y desbloquear las preguntas.
-                  </p>
-                )}
+                </div>
               </ScrollArea>
             )}
 
             {/* Col 3 — Preguntas */}
             {showQuestionsCol && selectedProblem && (
               <ScrollArea className={colClass(2)} {...questionsPress}>
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <p
+                  className={cn(
+                    "mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide",
+                    questionsAreCurrent ? "text-foreground" : "text-muted-foreground",
+                  )}
+                >
+                  {questionsAreCurrent && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-foreground" />}
                   Preguntas
                 </p>
                 <div className="space-y-1.5 pr-1">
@@ -753,14 +782,20 @@ export function QuestionsTracker() {
         open={problemWizardOpen}
         step={problemWizardStep}
         raw={pwRaw}
+        step2={pwStep2}
         final={pwFinal}
         hasForbiddenPhrase={pwHasForbiddenPhrase}
         onRawChange={setPwRaw}
+        onStep2Change={setPwStep2}
         onFinalChange={setPwFinal}
         onBack={() => setProblemWizardStep((s) => Math.max(s - 1, 0))}
-        onEnterFinalStep={() => {
-          setPwFinal(pwRaw);
+        onEnterStep2={() => {
+          setPwStep2(pwRaw);
           setProblemWizardStep(1);
+        }}
+        onEnterFinalStep={() => {
+          setPwFinal(pwStep2);
+          setProblemWizardStep(2);
         }}
         onSubmit={handleSubmitProblem}
         onOpenChange={(open) => {
@@ -775,11 +810,13 @@ export function QuestionsTracker() {
         step2={mwStep2}
         step3={mwStep3}
         step4={mwStep4}
+        step5={mwStep5}
         hasForbiddenPhrase={mwHasForbiddenPhrase}
         onStep1Change={setMwStep1}
         onStep2Change={setMwStep2}
         onStep3Change={setMwStep3}
         onStep4Change={setMwStep4}
+        onStep5Change={setMwStep5}
         onBack={() => setMetaWizardStep((s) => Math.max(s - 1, 0))}
         onEnterStep2={() => {
           setMwStep2(mwStep1);
@@ -792,6 +829,10 @@ export function QuestionsTracker() {
         onEnterStep4={() => {
           setMwStep4(mwStep3);
           setMetaWizardStep(3);
+        }}
+        onEnterStep5={() => {
+          setMwStep5(mwStep4);
+          setMetaWizardStep(4);
         }}
         onSubmit={handleSubmitMeta}
         onOpenChange={(open) => {
@@ -992,18 +1033,22 @@ function QuestionCard({
   );
 }
 
-// Wizard de 2 pasos para el "Planteo del problema":
-// 1. el problema tal como viene a la cabeza, 2. la versión final, limpia de frases
-// "no sé cómo…" / "no sé qué hacer…". (Qué se busca realmente detrás vive en "Meta final".)
+// Wizard de 3 pasos para el "Planteo del problema":
+// 1. el problema tal como viene a la cabeza, 2. qué pasa objetivamente y cómo te sentís con eso,
+// 3. la versión final, limpia de frases "no sé cómo…" / "no sé qué hacer…". (Qué se busca
+// realmente detrás vive en "Meta final".)
 function ProblemWizardDialog({
   open,
   step,
   raw,
+  step2,
   final,
   hasForbiddenPhrase,
   onRawChange,
+  onStep2Change,
   onFinalChange,
   onBack,
+  onEnterStep2,
   onEnterFinalStep,
   onSubmit,
   onOpenChange,
@@ -1011,11 +1056,14 @@ function ProblemWizardDialog({
   open: boolean;
   step: number;
   raw: string;
+  step2: string;
   final: string;
   hasForbiddenPhrase: boolean;
   onRawChange: (value: string) => void;
+  onStep2Change: (value: string) => void;
   onFinalChange: (value: string) => void;
   onBack: () => void;
+  onEnterStep2: () => void;
   onEnterFinalStep: () => void;
   onSubmit: () => void;
   onOpenChange: (open: boolean) => void;
@@ -1035,7 +1083,7 @@ function ProblemWizardDialog({
                 className="flex-1 flex flex-col"
               >
                 <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
-                  Planteo del problema · 1 de 2
+                  Planteo del problema · 1 de 3
                 </Label>
                 <p className="text-sm font-medium mb-3">Escribí tu problema tal como te viene a la cabeza.</p>
                 <Textarea
@@ -1051,7 +1099,7 @@ function ProblemWizardDialog({
                     variant="ghost"
                     size="icon"
                     disabled={!raw.trim()}
-                    onClick={onEnterFinalStep}
+                    onClick={onEnterStep2}
                     className="h-10 w-10 bg-muted/50 hover:bg-muted"
                   >
                     <ChevronRight className="h-5 w-5" />
@@ -1070,7 +1118,44 @@ function ProblemWizardDialog({
                 className="flex-1 flex flex-col"
               >
                 <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
-                  Planteo del problema · 2 de 2
+                  Planteo del problema · 2 de 3
+                </Label>
+                <p className="text-sm font-medium mb-3">¿Qué pasa objetivamente y cómo te sentís con eso?</p>
+                <Textarea
+                  autoFocus
+                  value={step2}
+                  onChange={(e) => onStep2Change(e.target.value)}
+                  rows={4}
+                  className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+                />
+                <div className="flex justify-between mt-auto pt-6">
+                  <Button variant="ghost" size="icon" onClick={onBack} className="h-10 w-10 bg-muted/50 hover:bg-muted">
+                    <ChevronLeft className="h-5 w-5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={!step2.trim()}
+                    onClick={onEnterFinalStep}
+                    className="h-10 w-10 bg-muted/50 hover:bg-muted"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+
+            {step === 2 && (
+              <motion.div
+                key="problem-step-2"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+                className="flex-1 flex flex-col"
+              >
+                <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
+                  Planteo del problema · 3 de 3
                 </Label>
                 <p className="text-sm font-medium mb-3">
                   Tachá o eliminá cualquier frase que empiece con "no sé cómo…" o "no sé qué hacer…".
@@ -1105,12 +1190,13 @@ function ProblemWizardDialog({
   );
 }
 
-// Wizard de 4 pasos para "Meta final": qué se busca realmente detrás del problema, en cadena
+// Wizard de 5 pasos para "Meta final": qué se busca realmente detrás del problema, en cadena
 // (cada paso arranca con la respuesta ya reformulada del paso anterior).
 // 1. qué se busca realmente (experiencias/crecimiento/contribución).
-// 2. eliminar la meta intermedia ("de manera que") y quedarse con la meta final real.
-// 3. volverla autoalimentada: que dependa 100% de uno, no de la aprobación de otra persona.
-// 4. tachar el "cómo": eliminar frases "no sé cómo…" / "no sé qué hacer…".
+// 2. por qué (para qué se lo busca).
+// 3. eliminar la meta intermedia ("de manera que") y quedarse con la meta final real.
+// 4. volverla autoalimentada: que dependa 100% de uno, no de la aprobación de otra persona.
+// 5. tachar el "cómo": eliminar frases "no sé cómo…" / "no sé qué hacer…".
 function MetaWizardDialog({
   open,
   step,
@@ -1118,15 +1204,18 @@ function MetaWizardDialog({
   step2,
   step3,
   step4,
+  step5,
   hasForbiddenPhrase,
   onStep1Change,
   onStep2Change,
   onStep3Change,
   onStep4Change,
+  onStep5Change,
   onBack,
   onEnterStep2,
   onEnterStep3,
   onEnterStep4,
+  onEnterStep5,
   onSubmit,
   onOpenChange,
 }: {
@@ -1136,15 +1225,18 @@ function MetaWizardDialog({
   step2: string;
   step3: string;
   step4: string;
+  step5: string;
   hasForbiddenPhrase: boolean;
   onStep1Change: (value: string) => void;
   onStep2Change: (value: string) => void;
   onStep3Change: (value: string) => void;
   onStep4Change: (value: string) => void;
+  onStep5Change: (value: string) => void;
   onBack: () => void;
   onEnterStep2: () => void;
   onEnterStep3: () => void;
   onEnterStep4: () => void;
+  onEnterStep5: () => void;
   onSubmit: () => void;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -1163,7 +1255,7 @@ function MetaWizardDialog({
                 className="flex-1 flex flex-col"
               >
                 <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
-                  Meta final · 1 de 4
+                  Meta final · 1 de 5
                 </Label>
                 <p className="text-sm font-medium mb-3">
                   ¿Qué es lo que realmente buscás detrás de esta preocupación: experiencias, crecimiento o
@@ -1173,7 +1265,7 @@ function MetaWizardDialog({
                   autoFocus
                   value={step1}
                   onChange={(e) => onStep1Change(e.target.value)}
-                  placeholder="Lo que realmente busco es…"
+                  placeholder="Ej.: Ser una presencia constante de apoyo, valor e integridad en la vida de mi hermana"
                   rows={4}
                   className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
                 />
@@ -1201,17 +1293,14 @@ function MetaWizardDialog({
                 className="flex-1 flex flex-col"
               >
                 <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
-                  Meta final · 2 de 4
+                  Meta final · 2 de 5
                 </Label>
-                <p className="text-sm font-medium mb-3">
-                  Eliminá el «De manera que»: si escribiste una meta que requiere otra etapa previa (ej.
-                  "conseguir X trabajo para poder estar tranquilo"), tachá la meta intermedia (el trabajo) y
-                  quedate con la meta final real (la tranquilidad y la realización).
-                </p>
+                <p className="text-sm font-medium mb-3">¿Por qué?</p>
                 <Textarea
                   autoFocus
                   value={step2}
                   onChange={(e) => onStep2Change(e.target.value)}
+                  placeholder="Ej.: para experimentar paz mental, certeza interna, amor incondicional"
                   rows={4}
                   className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
                 />
@@ -1242,11 +1331,12 @@ function MetaWizardDialog({
                 className="flex-1 flex flex-col"
               >
                 <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
-                  Meta final · 3 de 4
+                  Meta final · 3 de 5
                 </Label>
                 <p className="text-sm font-medium mb-3">
-                  Hacé una Meta Autoalimentada: modificala para que el resultado dependa en un 100% de vos y
-                  de tus estados internos, no de la aprobación o decisión de otra persona.
+                  Eliminá el «De manera que»: si escribiste una meta que requiere otra etapa previa (ej.
+                  "conseguir X trabajo para poder estar tranquilo"), tachá la meta intermedia (el trabajo) y
+                  quedate con la meta final real (la tranquilidad y la realización).
                 </p>
                 <Textarea
                   autoFocus
@@ -1282,15 +1372,55 @@ function MetaWizardDialog({
                 className="flex-1 flex flex-col"
               >
                 <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
-                  Meta final · 4 de 4
+                  Meta final · 4 de 5
+                </Label>
+                <p className="text-sm font-medium mb-3">
+                  Hacé una Meta Autoalimentada: modificala para que el resultado dependa en un 100% de vos y
+                  de tus estados internos, no de la aprobación o decisión de otra persona.
+                </p>
+                <Textarea
+                  autoFocus
+                  value={step4}
+                  onChange={(e) => onStep4Change(e.target.value)}
+                  rows={4}
+                  className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+                />
+                <div className="flex justify-between mt-auto pt-6">
+                  <Button variant="ghost" size="icon" onClick={onBack} className="h-10 w-10 bg-muted/50 hover:bg-muted">
+                    <ChevronLeft className="h-5 w-5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={!step4.trim()}
+                    onClick={onEnterStep5}
+                    className="h-10 w-10 bg-muted/50 hover:bg-muted"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+
+            {step === 4 && (
+              <motion.div
+                key="meta-step-4"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+                className="flex-1 flex flex-col"
+              >
+                <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
+                  Meta final · 5 de 5
                 </Label>
                 <p className="text-sm font-medium mb-3">
                   Tachá el «CÓMO»: eliminá cualquier frase que diga "no sé cómo…" o "no sé qué hacer…".
                 </p>
                 <Textarea
                   autoFocus
-                  value={step4}
-                  onChange={(e) => onStep4Change(e.target.value)}
+                  value={step5}
+                  onChange={(e) => onStep5Change(e.target.value)}
                   rows={4}
                   className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
                 />
@@ -1304,7 +1434,7 @@ function MetaWizardDialog({
                   <Button variant="ghost" size="icon" onClick={onBack} className="h-10 w-10 bg-muted/50 hover:bg-muted">
                     <ChevronLeft className="h-5 w-5" />
                   </Button>
-                  <Button onClick={onSubmit} disabled={!step4.trim() || hasForbiddenPhrase} className="px-4">
+                  <Button onClick={onSubmit} disabled={!step5.trim() || hasForbiddenPhrase} className="px-4">
                     Guardar meta final
                   </Button>
                 </div>
