@@ -1889,13 +1889,19 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     const children = area.skills.filter(s => ensureDependenciesArray(s.dependencies).includes(skillId));
     const newDependencies = skillToDelete.dependencies;
 
-    // Check if we're deleting a final node - need to mark the previous one as final
-    const wasIsFinalNode = skillToDelete.isFinalNode === 1;
+    // Check if we're deleting a final node - need to mark the previous one as final.
+    // Computed from actual position (is any other node in this level below it?), not the
+    // stored isFinalNode flag: that flag is only reassigned by the add/move/delete paths and
+    // can go stale (same rationale as isFinalNodeByPosition in toggleSkillStatus) -- a stale
+    // flag here meant deleting the true last node of a level silently skipped the
+    // level-up cascade below (progress bar, "¡Subiste de nivel!" popup, next level unlock).
+    const levelSkills = area.skills.filter(s => s.level === skillToDelete.level);
+    const wasIsFinalNode = !levelSkills.some(s => s.id !== skillId && s.y > skillToDelete.y);
     let newFinalNodeId: string | null = null;
-    
+
     if (wasIsFinalNode) {
-      const sameLevelSkills = area.skills
-        .filter(s => s.level === skillToDelete.level && s.id !== skillId)
+      const sameLevelSkills = levelSkills
+        .filter(s => s.id !== skillId)
         .sort((a, b) => a.y - b.y);
       if (sameLevelSkills.length > 0) {
         newFinalNodeId = sameLevelSkills[sameLevelSkills.length - 1].id;
@@ -2265,12 +2271,15 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     const children = project.skills.filter(s => ensureDependenciesArray(s.dependencies).includes(skillId));
     const newDependencies = skillToDelete.dependencies;
 
-    const wasIsFinalNode = skillToDelete.isFinalNode === 1;
+    // Computed from actual position, not the stored isFinalNode flag -- see matching comment
+    // in deleteSkill for why the flag goes stale and silently skips the level-up cascade.
+    const levelSkills = project.skills.filter(s => s.level === skillToDelete.level);
+    const wasIsFinalNode = !levelSkills.some(s => s.id !== skillId && s.y > skillToDelete.y);
     let newFinalNodeId: string | null = null;
-    
+
     if (wasIsFinalNode) {
-      const sameLevelSkills = project.skills
-        .filter(s => s.level === skillToDelete.level && s.id !== skillId)
+      const sameLevelSkills = levelSkills
+        .filter(s => s.id !== skillId)
         .sort((a, b) => a.y - b.y);
       if (sameLevelSkills.length > 0) {
         newFinalNodeId = sameLevelSkills[sameLevelSkills.length - 1].id;
@@ -3228,12 +3237,15 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     const children = subSkills.filter(s => ensureDependenciesArray(s.dependencies).includes(skillId));
     const newDependencies = skillToDelete.dependencies;
 
-    const wasIsFinalNode = skillToDelete.isFinalNode === 1;
+    // Computed from actual position, not the stored isFinalNode flag -- see matching comment
+    // in deleteSkill for why the flag goes stale and silently skips the completion cascade.
+    const levelSkills = subSkills.filter(s => s.level === skillToDelete.level);
+    const wasIsFinalNode = !levelSkills.some(s => s.id !== skillId && s.y > skillToDelete.y);
     let newFinalNodeId: string | null = null;
-    
+
     if (wasIsFinalNode) {
-      const sameLevelSkills = subSkills
-        .filter(s => s.level === skillToDelete.level && s.id !== skillId)
+      const sameLevelSkills = levelSkills
+        .filter(s => s.id !== skillId)
         .sort((a, b) => a.y - b.y);
       if (sameLevelSkills.length > 0) {
         newFinalNodeId = sameLevelSkills[sameLevelSkills.length - 1].id;
