@@ -15,6 +15,13 @@ import { ArrowLeft, Trash2, Pencil, ChevronRight, ChevronLeft, Swords, Check, Ro
 // Frases a detectar en el paso 2 del planteo del problema ("no sé cómo…" / "no sé qué hacer…").
 const FORBIDDEN_PHRASE_RE = /\bno s[eé] (c[oó]mo|qu[eé] hacer)\b/i;
 
+// Estilo de la sección "más destacada" de la cadena Problema → Meta final → Preguntas: letra
+// blanca sobre fondo oscuro con borde brillante. Las secciones ya superadas se atenúan en cambio
+// con SUPERSEDED_STAGE_CLASS.
+const CURRENT_STAGE_CLASS =
+  "border-2 border-white/90 bg-zinc-900 text-white shadow-[0_0_14px_3px_rgba(255,255,255,0.45)]";
+const SUPERSEDED_STAGE_CLASS = "border-border/30 text-muted-foreground/60";
+
 interface AreaLite {
   id: string;
   name: string;
@@ -320,11 +327,14 @@ export function QuestionsTracker() {
   const showAnswerCol = showQuestionsCol && !!selectedItem;
   const showActionCol = showAnswerCol && answerDraft.trim().length > 0;
 
-  // Resalta la última sección completada del problema seleccionado, para guiar la mirada:
-  // "Meta final" se destaca mientras todavía no haya ninguna pregunta cargada; en cuanto aparece
-  // la primera pregunta, el resaltado pasa a "Preguntas".
+  // Cadena Problema → Meta final → Preguntas: la última sección completada es siempre la más
+  // destacada (letra blanca, borde brillante) y las anteriores se atenúan a medida que el
+  // problema avanza, para guiar la mirada hacia dónde seguir trabajando.
+  const metaHasContent = !!selectedProblem?.goal.trim();
   const questionsHaveContent = (selectedProblem?.items.length ?? 0) > 0;
-  const metaIsCurrent = showMetaCol && !!selectedProblem?.goal.trim() && !questionsHaveContent;
+  const problemIsSuperseded = !!selectedProblem && metaHasContent;
+  const metaIsCurrent = showMetaCol && metaHasContent && !questionsHaveContent;
+  const metaIsSuperseded = showMetaCol && metaHasContent && questionsHaveContent;
   const questionsAreCurrent = showQuestionsCol && questionsHaveContent;
 
   const visibleCols =
@@ -592,7 +602,9 @@ export function QuestionsTracker() {
                   <ProblemCard
                     key={p.id}
                     problem={p}
-                    isSelected={p.id === selectedProblemId}
+                    emphasis={
+                      p.id !== selectedProblemId ? "none" : problemIsSuperseded ? "superseded" : "current"
+                    }
                     isEditing={editingProblemId === p.id}
                     showActions={problemActionsId === p.id}
                     editingText={editingProblemText}
@@ -638,15 +650,22 @@ export function QuestionsTracker() {
                 <div
                   onClick={openMetaWizard}
                   className={cn(
-                    "cursor-pointer select-none rounded-xl border p-2 text-sm transition-colors hover:bg-muted/40",
+                    "cursor-pointer select-none rounded-xl border p-2 text-sm transition-colors",
                     !selectedProblem.goal.trim()
-                      ? "border-dashed border-border/60"
+                      ? "border-dashed border-border/60 hover:bg-muted/40"
                       : metaIsCurrent
-                        ? "border-foreground/40 bg-muted/60"
-                        : "border-border/50",
+                        ? CURRENT_STAGE_CLASS
+                        : metaIsSuperseded
+                          ? SUPERSEDED_STAGE_CLASS
+                          : "border-border/50 hover:bg-muted/40",
                   )}
                 >
-                  <p className="break-words text-xs text-muted-foreground">
+                  <p
+                    className={cn(
+                      "break-words text-xs",
+                      metaIsCurrent ? "text-white" : "text-muted-foreground",
+                    )}
+                  >
                     {selectedProblem.goal.trim() || "Tocá para definir la meta final y desbloquear las preguntas."}
                   </p>
                 </div>
@@ -676,6 +695,7 @@ export function QuestionsTracker() {
                       key={it.id}
                       item={it}
                       isSelected={it.id === selectedItemId}
+                      highlighted={questionsAreCurrent}
                       isEditing={editingQuestionId === it.id}
                       showActions={questionActionsId === it.id}
                       editingText={editingQuestionText}
@@ -863,7 +883,7 @@ export function QuestionsTracker() {
 
 function ProblemCard({
   problem,
-  isSelected,
+  emphasis,
   isEditing,
   showActions,
   editingText,
@@ -876,7 +896,10 @@ function ProblemCard({
   onDelete,
 }: {
   problem: QuestionProblem;
-  isSelected: boolean;
+  // "current": es el problema seleccionado y todavía no tiene meta final (destacado).
+  // "superseded": es el seleccionado pero ya avanzó a meta/preguntas (atenuado).
+  // "none": no es el problema seleccionado (estilo normal).
+  emphasis: "current" | "superseded" | "none";
   isEditing: boolean;
   showActions: boolean;
   editingText: string;
@@ -898,7 +921,11 @@ function ProblemCard({
       onPointerLeave={press.onPointerLeave}
       className={cn(
         "select-none rounded-xl border p-2 text-sm transition-colors",
-        isSelected ? "border-foreground/40 bg-muted/60" : "border-border/50 hover:bg-muted/40",
+        emphasis === "current"
+          ? CURRENT_STAGE_CLASS
+          : emphasis === "superseded"
+            ? SUPERSEDED_STAGE_CLASS
+            : "border-border/50 hover:bg-muted/40",
       )}
     >
       {isEditing ? (
@@ -950,6 +977,7 @@ function ProblemCard({
 function QuestionCard({
   item,
   isSelected,
+  highlighted,
   isEditing,
   showActions,
   editingText,
@@ -963,6 +991,8 @@ function QuestionCard({
 }: {
   item: QuestionItem;
   isSelected: boolean;
+  // true cuando "Preguntas" es la sección más destacada de la cadena (letra blanca, borde brillante).
+  highlighted: boolean;
   isEditing: boolean;
   showActions: boolean;
   editingText: string;
@@ -984,7 +1014,11 @@ function QuestionCard({
       onPointerLeave={press.onPointerLeave}
       className={cn(
         "select-none rounded-xl border p-2 text-sm transition-colors",
-        isSelected ? "border-foreground/40 bg-muted/60" : "border-border/50 hover:bg-muted/40",
+        isSelected
+          ? "border-foreground/40 bg-muted/60"
+          : highlighted
+            ? CURRENT_STAGE_CLASS
+            : "border-border/50 hover:bg-muted/40",
       )}
     >
       {isEditing ? (
@@ -1006,7 +1040,9 @@ function QuestionCard({
       ) : (
         <>
           <div className="flex items-start gap-1" onClick={press.onClick}>
-            <span className="flex-1 break-words">{item.question || "(sin texto)"}</span>
+            <span className={cn("flex-1 break-words", highlighted && !isSelected && "text-white")}>
+              {item.question || "(sin texto)"}
+            </span>
             {chainComplete(item) && (
               <ChevronRight size={14} className="mt-0.5 flex-shrink-0 text-muted-foreground" />
             )}
@@ -1265,7 +1301,7 @@ function MetaWizardDialog({
                   autoFocus
                   value={step1}
                   onChange={(e) => onStep1Change(e.target.value)}
-                  placeholder="Ej.: Ser una presencia constante de apoyo, valor e integridad en la vida de mi hermana"
+                  placeholder="Ej.: Ser una presencia constante de apoyo, valor e integridad"
                   rows={4}
                   className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
                 />
