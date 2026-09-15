@@ -599,17 +599,20 @@ export type InsertTodayTaskSlot = z.infer<typeof insertTodayTaskSlotSchema>;
 export type TodayTaskSlot = typeof todayTaskSlots.$inferSelect;
 
 // Tarea manual agregada a mano en "Tareas de hoy" (mantener presionado el fondo). Vive fuera
-// del árbol de habilidades/hábitos/repetición espaciada — por eso no aparece en el calendario
-// de actividades, que solo refleja esas 3 fuentes. Se puede tildar directamente acá.
+// del árbol de habilidades/hábitos/repetición espaciada. Puede ser "task" o "event" (elegido al
+// crearla) y, a diferencia de antes, sí se muestra en el calendario de actividades — incluida
+// la previsualización de días futuros. Se puede tildar directamente acá.
 export const manualTodayTasks = pgTable("manual_today_tasks", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   date: varchar("date").notNull(), // YYYY-MM-DD format
   title: text("title").notNull(),
+  kind: text("kind").$type<"task" | "event">().notNull().default("task"),
   done: integer("done").$type<0 | 1>().notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export const insertManualTodayTaskSchema = createInsertSchema(manualTodayTasks).omit({ id: true, createdAt: true }).extend({
+  kind: z.enum(["task", "event"]).optional().default("task"),
   done: z.union([z.literal(0), z.literal(1)]).optional().default(0),
 });
 export type InsertManualTodayTask = z.infer<typeof insertManualTodayTaskSchema>;

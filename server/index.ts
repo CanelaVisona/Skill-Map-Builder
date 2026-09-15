@@ -29,10 +29,16 @@ app.use(
 
 app.use(express.urlencoded({ limit: "5mb", extended: false }));
 
-// Serve static files EARLY, before any other middleware
-const publicPath = path.join(process.cwd(), "dist/public");
-console.log("[server] Serving static files from:", publicPath);
-app.use(express.static(publicPath));
+// Serve static files EARLY, before any other middleware — solo en producción. En development
+// esto shadowaba el middleware de Vite (registrado más abajo) para CUALQUIER ruta que matcheara
+// un archivo en dist/public, empezando por "/" (index.html): el navegador terminaba cargando el
+// build viejo en vez del código fuente en vivo, así que ningún cambio de cliente se veía reflejado
+// sin correr "npm run build" a mano antes de cada prueba.
+if (process.env.NODE_ENV === "production") {
+  const publicPath = path.join(process.cwd(), "dist/public");
+  console.log("[server] Serving static files from:", publicPath);
+  app.use(express.static(publicPath));
+}
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {

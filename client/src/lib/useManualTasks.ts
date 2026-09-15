@@ -13,20 +13,35 @@ export function useManualTasks(date: string, enabled = true) {
   });
 }
 
+// Tareas/eventos manuales de todo un rango de fechas (el mes mostrado en el calendario de
+// actividades), para poder previsualizar ahí lo agendado en días futuros.
+export function useManualTasksRange(startDate: string, endDate: string, enabled = true) {
+  return useQuery({
+    queryKey: ["manual-today-tasks-range", startDate, endDate],
+    queryFn: async () => {
+      const res = await fetch(`/api/manual-today-tasks?date=${startDate}&endDate=${endDate}`);
+      if (!res.ok) throw new Error("Failed to fetch manual tasks range");
+      return res.json() as Promise<ManualTodayTask[]>;
+    },
+    enabled,
+  });
+}
+
 export function useCreateManualTask() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ date, title }: { date: string; title: string }) => {
+    mutationFn: async ({ date, title, kind }: { date: string; title: string; kind?: "task" | "event" }) => {
       const res = await fetch("/api/manual-today-tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, title }),
+        body: JSON.stringify({ date, title, kind }),
       });
       if (!res.ok) throw new Error("Failed to create manual task");
       return res.json() as Promise<ManualTodayTask>;
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["manual-today-tasks", variables.date] });
+      queryClient.invalidateQueries({ queryKey: ["manual-today-tasks-range"] });
     },
   });
 }
@@ -56,6 +71,7 @@ export function useUpdateManualTask() {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["manual-today-tasks", variables.date] });
+      queryClient.invalidateQueries({ queryKey: ["manual-today-tasks-range"] });
       if (variables.updates.date && variables.updates.date !== variables.date) {
         // Se movió de día: la lista del día nuevo también tiene que refrescarse, y la franja
         // horaria de la tarea (el server la borra del día viejo al moverla) también cambió.
@@ -75,6 +91,7 @@ export function useDeleteManualTask() {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["manual-today-tasks", variables.date] });
+      queryClient.invalidateQueries({ queryKey: ["manual-today-tasks-range"] });
       queryClient.invalidateQueries({ queryKey: ["today-task-slots"] });
     },
   });

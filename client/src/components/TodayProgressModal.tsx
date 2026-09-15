@@ -7,13 +7,14 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
-import { Eye, ArrowLeft, ChevronLeft, ChevronRight, Pencil } from "lucide-react";
+import { Calendar, ArrowLeft, ChevronLeft, ChevronRight, Pencil } from "lucide-react";
 import { useSkillTree, type Area, type Project, type Skill } from "@/lib/skill-context";
 import { useHabits, useUpdateHabitRecord } from "@/lib/useHabits";
 import { useTodayTaskSlots, useSetTodayTaskSlot, useClearTodayTaskSlot, useReorderTodayTaskSlot, getCurrentTimeSlotKey, getTimeSlotKeyForDate, type TaskSlotKey, type TaskType } from "@/lib/useTodayTaskSlots";
-import { useManualTasks, useCreateManualTask, useUpdateManualTask, useDeleteManualTask } from "@/lib/useManualTasks";
+import { useManualTasks, useManualTasksRange, useCreateManualTask, useUpdateManualTask, useDeleteManualTask } from "@/lib/useManualTasks";
 import { calculateStatus, calculateStatusL2, type SpaceRepetitionPractice } from "@/components/SpaceRepetitionModal";
 import { rewiringDayRows } from "@/lib/rewiringTasks";
+import { useConfirmHabit, useConfirmPractice } from "@/lib/useConfirmActions";
 import type { Habit, HabitRecord, TodayTaskSlot } from "@shared/schema";
 
 const LONG_PRESS_MS = 1500;
@@ -31,6 +32,14 @@ interface TodayItem {
   id: string;
   label: React.ReactNode;
   done: boolean;
+  // Mismo color que su puntito en el calendario de actividades (NODE_COLOR/TASK_COLOR/
+  // EVENT_COLOR) — solo se completa para nodos y tareas/eventos manuales, que son los que se
+  // previsualizan ahí en días futuros. Se pinta en la fila para que "Vista previa" se vea
+  // consistente con lo que ya se mostró en el calendario.
+  dotColor?: string;
+  // Emoji al principio del título (ver extractLeadingEmoji): si está presente, TaskDot lo
+  // muestra en vez de dotColor, igual que en el calendario.
+  dotEmoji?: string | null;
   // Franja horaria "de fábrica" para actividad extra sin franja asignada a mano: la
   // correspondiente al momento en el que se confirmó (en vez de caer en "Más").
   defaultSlot?: TaskSlotKey;
@@ -44,6 +53,8 @@ const DAY_LBLS = ["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"];
 const HABIT_COLORS = ["#534AB7", "#1D9E75", "#D85A30", "#185FA5"];
 const NODE_COLOR = "#f59e0b";
 const PRACTICE_COLOR = "#e11d48";
+const TASK_COLOR = "#0284c7";
+const EVENT_COLOR = "#9333ea";
 
 function getDateStr(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -92,6 +103,41 @@ function TaskCountBadge({ done, total }: { done: number; total: number }) {
   );
 }
 
+// Emoji (con variation selector y secuencias ZWJ básicas, p.ej. "🧑‍💻") al principio de un
+// texto — título de un nodo o de una tarea/evento manual, que no tienen un campo de emoji
+// propio como sí tienen hábitos y prácticas. Si el usuario ya lo escribió ahí, se reusa en vez
+// de mostrar el puntito de color genérico.
+const LEADING_EMOJI_RE = /^(\p{Extended_Pictographic}(?:️)?(?:‍\p{Extended_Pictographic}(?:️)?)*)\s*/u;
+function extractLeadingEmoji(text: string): string | null {
+  return text.match(LEADING_EMOJI_RE)?.[1] ?? null;
+}
+
+// Título sin el emoji inicial (si lo tiene) — se usa junto al punto/TaskDot que ya lo muestra,
+// para no repetirlo dos veces seguidas ("🎉 🎉 Fiesta"). No-op si el título no empieza con uno.
+function stripLeadingEmoji(text: string): string {
+  return text.replace(LEADING_EMOJI_RE, "");
+}
+
+// Puntito que identifica a una tarea en el calendario de actividades y en la lista de "Hoy"/
+// "Vista previa": si la tarea tiene un emoji (hábitos y prácticas siempre lo tienen; nodos y
+// tareas/eventos manuales, solo si el usuario lo escribió al principio del título), se muestra
+// ese emoji en vez del punto de color genérico del tipo.
+function TaskDot({ emoji, color, size = "sm" }: { emoji?: string | null; color: string; size?: "sm" | "md" }) {
+  if (emoji) {
+    return (
+      <span className={size === "md" ? "text-xs leading-none" : "text-[10px] leading-none"}>
+        {emoji}
+      </span>
+    );
+  }
+  return (
+    <div
+      className={`${size === "md" ? "h-2 w-2" : "h-1.5 w-1.5"} rounded-full flex-shrink-0`}
+      style={{ background: color }}
+    />
+  );
+}
+
 function getFirstDayOfMonth(date: Date) {
   const firstDow = new Date(date.getFullYear(), date.getMonth(), 1).getDay();
   return firstDow === 0 ? 6 : firstDow - 1;
@@ -99,8 +145,13 @@ function getFirstDayOfMonth(date: Date) {
 
 export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const queryClient = useQueryClient();
-  const { areas, projects, updateSkill, updateProjectSkill, globalSkills } = useSkillTree();
+  const { areas, projects, updateSkill, updateProjectSkill, globalSkills, toggleSkillStatus, toggleProjectSkillStatus } = useSkillTree();
   const { data: habitsData } = useHabits();
+  // Confirmar un hábito/práctica desde acá tiene que otorgar exactamente lo mismo (XP, pop-ups)
+  // que confirmarlo desde su pantalla de origen — ver useConfirmActions.ts. Los nodos ya usan
+  // toggleSkillStatus/toggleProjectSkillStatus (centralizados en skill-context.tsx) directo.
+  const { confirmHabit, unconfirmHabit } = useConfirmHabit();
+  const { confirmPractice } = useConfirmPractice();
   const [viewMode, setViewMode] = useState<"progress" | "calendar">("progress");
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
@@ -109,6 +160,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const [previewDate, setPreviewDate] = useState<string | null>(null);
   const [addTaskDialogOpen, setAddTaskDialogOpen] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState("");
+  // Elegido con los botones "Tarea"/"Evento" del diálogo de agregar — se manda tal cual al crear.
+  const [newTaskKind, setNewTaskKind] = useState<"task" | "event">("task");
   // Franja a la que se asigna la tarea que se está por crear: null = sin asignar (mantener
   // presionado el fondo). Mantener presionado el título de una franja horaria en vez del fondo
   // apunta la tarea nueva directo a esa franja, para que no caiga en "Sin asignar".
@@ -363,11 +416,13 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       id: n.id,
       label: (
         <>
-          {n.title} <span className="text-muted-foreground">· {n.parentName}</span>
+          {stripLeadingEmoji(n.title)} <span className="text-muted-foreground">· {n.parentName}</span>
           <MinutesSuffix minutes={n.plannedDuration} />
         </>
       ),
       done: true,
+      dotColor: NODE_COLOR,
+      dotEmoji: extractLeadingEmoji(n.title),
       defaultSlot: n.completedAt ? getTimeSlotKeyForDate(new Date(n.completedAt)) : undefined,
     })),
     ...extraRewirings.map((r) => ({
@@ -460,11 +515,13 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       id: n.id,
       label: (
         <>
-          {n.title} <span className="text-muted-foreground">· {n.parentName}</span>
+          {stripLeadingEmoji(n.title)} <span className="text-muted-foreground">· {n.parentName}</span>
           <MinutesSuffix minutes={n.plannedDuration} />
         </>
       ),
       done: n.done,
+      dotColor: NODE_COLOR,
+      dotEmoji: extractLeadingEmoji(n.title),
     })),
     ...visiblePracticesToday.map(({ practice: p, done }) => ({
       key: `practice:${p.id}`,
@@ -482,8 +539,10 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       key: `manual:${t.id}`,
       type: "manual" as const,
       id: t.id,
-      label: t.title,
+      label: t.kind === "event" ? <>📅 {stripLeadingEmoji(t.title)}</> : stripLeadingEmoji(t.title),
       done: t.done === 1,
+      dotColor: t.kind === "event" ? EVENT_COLOR : TASK_COLOR,
+      dotEmoji: extractLeadingEmoji(t.title),
     })),
   ];
 
@@ -563,11 +622,22 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // franja actual abiertas).
   const hasPendingUnassigned = itemBuckets.unassigned.some((item) => !item.done);
 
+  // En un día futuro previsualizado no existe "la hora actual" (getCurrentTimeSlotKey usa la
+  // hora real, que no dice nada de un día que todavía no llegó): ahí se abre de entrada la
+  // primera franja del día que ya tenga algo agendado, para que la tarea asignada aparezca
+  // destacada de una sin tener que ir abriendo franja por franja.
+  const firstNonEmptySlotKey = TIME_SLOTS.find((s) => itemBuckets[s.key].length > 0)?.key;
+
   // Sección de franjas que debe estar abierta: "Sin asignar" tiene prioridad mientras tenga
   // pendientes; si no (vacía, o solo con tareas ya hechas), se cierra siempre y se abre la
-  // franja horaria actual en su lugar. Es excluyente: nunca hay más de una sección abierta a
-  // la vez, así el resto queda visualmente "de fondo" (ver data-[state=closed] en el trigger).
-  const defaultOpenSlotSection: string = hasPendingUnassigned ? "unassigned" : getCurrentTimeSlotKey();
+  // franja horaria actual en su lugar (o, en una previsualización, la primera franja con algo
+  // agendado). Es excluyente: nunca hay más de una sección abierta a la vez, así el resto queda
+  // visualmente "de fondo" (ver data-[state=closed] en el trigger).
+  const defaultOpenSlotSection: string = hasPendingUnassigned
+    ? "unassigned"
+    : isPreview
+    ? firstNonEmptySlotKey ?? getCurrentTimeSlotKey()
+    : getCurrentTimeSlotKey();
   const [manualOpenSlotSection, setManualOpenSlotSection] = useState<string | null>(null);
   // Al cambiar de día (previsualización) se descarta la elección manual y se vuelve a calcular
   // la sección por defecto para ese día — abrir "Sin asignar" en un día no tiene por qué seguir
@@ -604,6 +674,18 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   };
 
   const hideItemFromToday = (item: TodayItem) => {
+    // "Sacar de hoy" en un nodo no es solo taparlo ese día (quedaría agendado igual, solo
+    // oculto): se le borra la fecha planeada directamente, así el nodo vuelve a quedar sin
+    // fecha en el árbol — mismo efecto que limpiar "When exactly?" a mano en el nodo.
+    if (item.type === "node") {
+      const node = allPlannedNodes.find((n) => n.id === item.id);
+      if (node?.parentId && node.kind) {
+        if (node.kind === "project") updateProjectSkill(node.parentId, item.id, { plannedDate: null });
+        else updateSkill(node.parentId, item.id, { plannedDate: null });
+      }
+      clearTaskSlot.mutate({ date: effectiveDate, taskType: "node", taskId: item.id });
+      return;
+    }
     setTaskSlot.mutate({ date: effectiveDate, taskType: item.type, taskId: item.id, slot: "hidden" });
   };
 
@@ -611,6 +693,59 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     const task = manualTasks.find((t) => t.id === item.id);
     if (!task) return;
     updateManualTask.mutate({ id: item.id, date: effectiveDate, updates: { done: task.done === 1 ? 0 : 1 } });
+  };
+
+  // Busca el área/proyecto dueño de un nodo por su id de skill, sin depender de que el ítem
+  // tenga parentId/kind propios (los nodos "extra" de "Más" no los tienen — ver PlannedNode).
+  const findNodeParent = (skillId: string): { parentId: string; kind: "area" | "project" } | null => {
+    const area = (Array.isArray(areas) ? areas : []).find((a) => a.skills?.some((s: Skill) => s.id === skillId));
+    if (area) return { parentId: area.id, kind: "area" };
+    const project = (Array.isArray(projects) ? projects : []).find((p) => p.skills?.some((s: Skill) => s.id === skillId));
+    if (project) return { parentId: project.id, kind: "project" };
+    return null;
+  };
+
+  // Confirmar/desconfirmar un nodo desde acá corre exactamente el mismo camino que tocarlo en
+  // el árbol (toggleSkillStatus/toggleProjectSkillStatus en skill-context.tsx): mismos guards
+  // de progresión de nivel y mismos pop-ups de XP/quest/subida de nivel.
+  const toggleNodeDone = (item: TodayItem) => {
+    const parent = findNodeParent(item.id);
+    if (!parent) return;
+    if (parent.kind === "area") toggleSkillStatus(parent.parentId, item.id);
+    else toggleProjectSkillStatus(parent.parentId, item.id);
+  };
+
+  // Confirmar un hábito/práctica desde acá otorga XP y dispara los mismos pop-ups que
+  // confirmarlo desde HabitStreakModal/SpaceRepetitionModal (ver useConfirmActions.ts). Una
+  // práctica ya confirmada ese día no se puede "desconfirmar" — no existe esa acción en
+  // SpaceRepetitionModal tampoco (avanzar un intervalo es unidireccional).
+  const toggleItemDone = (item: TodayItem) => {
+    if (item.type === "manual") {
+      toggleManualDone(item);
+      return;
+    }
+    if (item.type === "habit") {
+      const habit = (habitsData || []).find((h) => h.id === item.id);
+      if (!habit) return;
+      if (item.done) unconfirmHabit(habit, effectiveDate);
+      else confirmHabit(habit, effectiveDate);
+      return;
+    }
+    if (item.type === "node") {
+      toggleNodeDone(item);
+      return;
+    }
+    if (item.type === "practice") {
+      if (item.done) return;
+      const practice = (practicesData || []).find((p) => p.id === item.id);
+      if (practice) confirmPractice(practice);
+    }
+  };
+
+  const canToggleDone = (item: TodayItem): boolean => {
+    if (item.type === "rewiring") return false;
+    if (item.type === "practice") return !item.done;
+    return true;
   };
 
   const deleteManualItem = (item: TodayItem) => {
@@ -623,7 +758,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const duplicateManualItem = (item: TodayItem) => {
     const task = manualTasks.find((t) => t.id === item.id);
     if (!task) return;
-    createManualTask.mutate({ date: effectiveDate, title: task.title });
+    createManualTask.mutate({ date: effectiveDate, title: task.title, kind: task.kind });
   };
 
   const duplicateHabitItem = (item: TodayItem) => {
@@ -727,6 +862,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const startBackgroundLongPress = () => {
     backgroundLongPressTimer.current = setTimeout(() => {
       setNewTaskTitle("");
+      setNewTaskKind("task");
       setAddTaskTargetSlot(null);
       setAddTaskDialogOpen(true);
     }, LONG_PRESS_MS);
@@ -748,6 +884,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     slotTitleLongPressTimer.current = setTimeout(() => {
       slotTitleLongPressFired.current = true;
       setNewTaskTitle("");
+      setNewTaskKind("task");
       setAddTaskTargetSlot(slot);
       setAddTaskDialogOpen(true);
     }, LONG_PRESS_MS);
@@ -765,7 +902,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     const title = newTaskTitle.trim();
     if (!title) return;
     setAddTaskDialogOpen(false);
-    const created = await createManualTask.mutateAsync({ date: effectiveDate, title });
+    const created = await createManualTask.mutateAsync({ date: effectiveDate, title, kind: newTaskKind });
     // Si el diálogo se abrió apuntado a una franja (long-press en su título), la tarea recién
     // creada se asigna directo ahí — queda última de la fila porque es la de updatedAt más
     // reciente entre las tareas no hechas de esa franja.
@@ -853,6 +990,12 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     })
     .filter((entry): entry is { practice: SpaceRepetitionPractice; dateStr: string } => entry !== null);
 
+  // Tareas/eventos manuales del mes mostrado, incluidos los de días futuros — a diferencia del
+  // resto, no tienen concepto de "programado recurrente": cada uno vive en un día puntual, así
+  // que alcanza con traer el rango entero del mes para poder previsualizarlos en el calendario.
+  const { data: monthManualTasksData } = useManualTasksRange(calMonthStart, calMonthEnd, open && viewMode === "calendar");
+  const manualTasksThisMonth = monthManualTasksData || [];
+
   const offset = getFirstDayOfMonth(calendarDate);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -875,6 +1018,12 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     // El "fast path" reusa las variables en vivo de la pestaña Progreso, que están calculadas
     // para effectiveDate — solo son válidas para la celda de hoy cuando NO se está
     // previsualizando otro día (si no, hoy también tiene que reconstruirse abajo).
+    // Tareas/eventos manuales de ese día puntual: no dependen del "fast path" de hoy (que
+    // reusaría `manualTasks`, cargado para effectiveDate) porque acá se recorre TODO el mes,
+    // incluidos días futuros que effectiveDate nunca cubre salvo que sea el día previsualizado.
+    const manualThatDay = manualTasksThisMonth.filter((t) => t.date === dateStr);
+    const manualDoneThatDay = manualThatDay.filter((t) => t.done === 1);
+
     if (dateStr === todayStr && !isPreview) {
       const todayHabitsDoneIds = new Set([
         ...visibleHabitItems.filter((h) => h.done).map((h) => h.id),
@@ -883,7 +1032,10 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       return {
         habitsDone: activeHabitsThisMonth.filter((h) => todayHabitsDoneIds.has(h.id)),
         nodesDone: [...visiblePlannedNodesForView.filter((n) => n.done), ...extraNodes],
+        nodesScheduled: visiblePlannedNodesForView,
         practicesDone: visiblePracticesToday.filter(({ done }) => done).map(({ practice }) => practice),
+        manualScheduled: manualThatDay,
+        manualDone: manualDoneThatDay,
         totalForDay: total,
         doneForDay: completed,
       };
@@ -908,9 +1060,12 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     return {
       habitsDone: habitsDoneThatDay,
       nodesDone: [...nodesPlannedDoneThatDay, ...extraNodesThatDay],
+      nodesScheduled: nodesPlannedThatDay,
       practicesDone: practicesThatDay,
-      totalForDay: habitsScheduledThatDay.length + extraHabitsDoneThatDay.length + nodesPlannedThatDay.length + extraNodesThatDay.length + practicesThatDay.length,
-      doneForDay: habitsDoneThatDay.length + nodesPlannedDoneThatDay.length + extraNodesThatDay.length + practicesThatDay.length,
+      manualScheduled: manualThatDay,
+      manualDone: manualDoneThatDay,
+      totalForDay: habitsScheduledThatDay.length + extraHabitsDoneThatDay.length + nodesPlannedThatDay.length + extraNodesThatDay.length + practicesThatDay.length + manualThatDay.length,
+      doneForDay: habitsDoneThatDay.length + nodesPlannedDoneThatDay.length + extraNodesThatDay.length + practicesThatDay.length + manualDoneThatDay.length,
     };
   };
 
@@ -949,7 +1104,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                 className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-border/30 bg-muted hover:bg-muted/80 active:bg-muted/60 transition-colors"
                 title="Ver calendario de actividades"
               >
-                <Eye className="h-4 w-4 text-muted-foreground" />
+                <Calendar className="h-4 w-4 text-muted-foreground" />
               </button>
             </div>
 
@@ -1019,7 +1174,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                     onHide={item.type !== "manual" ? () => hideItemFromToday(item) : undefined}
                                     onDelete={item.type === "manual" ? () => deleteManualItem(item) : undefined}
                                     onDuplicate={canDuplicate(item) ? () => duplicateItem(item) : undefined}
-                                    onToggleDone={item.type === "manual" ? () => toggleManualDone(item) : undefined}
+                                    onToggleDone={canToggleDone(item) ? () => toggleItemDone(item) : undefined}
                                     onChangeDay={canChangeDay(item) ? () => openChangeDayDialog(item) : undefined}
                                   />
                                 ))}
@@ -1059,8 +1214,11 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                     // ahora) la primera tarea sin hacer se destaca con opacidad
                                     // normal; las siguientes sin hacer de esa misma franja, y
                                     // TODAS las sin hacer del resto de las franjas (todavía no
-                                    // les toca), quedan más tenues.
-                                    const isActiveSlot = s.key === getCurrentTimeSlotKey();
+                                    // les toca), quedan más tenues. En un día futuro previsualizado
+                                    // no hay "hora real" que valga — ahí toda franja con algo
+                                    // agendado se trata como activa, para que la tarea aparezca
+                                    // destacada en vez de tenue.
+                                    const isActiveSlot = isPreview ? itemBuckets[s.key].length > 0 : s.key === getCurrentTimeSlotKey();
                                     const firstUndoneIdx = isActiveSlot ? itemBuckets[s.key].findIndex((i) => !i.done) : -1;
                                     return itemBuckets[s.key].map((item, idx) => (
                                       <TodayTaskRow
@@ -1072,7 +1230,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                         onHide={item.type !== "manual" ? () => hideItemFromToday(item) : undefined}
                                         onDelete={item.type === "manual" ? () => deleteManualItem(item) : undefined}
                                         onDuplicate={canDuplicate(item) ? () => duplicateItem(item) : undefined}
-                                        onToggleDone={item.type === "manual" ? () => toggleManualDone(item) : undefined}
+                                        onToggleDone={canToggleDone(item) ? () => toggleItemDone(item) : undefined}
                                         onChangeDay={canChangeDay(item) ? () => openChangeDayDialog(item) : undefined}
                                         onMoveUp={idx > 0 ? () => moveItemOrder(s.key, itemBuckets[s.key], idx, "up") : undefined}
                                         onMoveDown={idx < itemBuckets[s.key].length - 1 ? () => moveItemOrder(s.key, itemBuckets[s.key], idx, "down") : undefined}
@@ -1103,6 +1261,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                   item={item}
                                   onMove={(slot) => moveItemToSlot(item, slot)}
                                   onDuplicate={canDuplicate(item) ? () => duplicateItem(item) : undefined}
+                                  onToggleDone={canToggleDone(item) ? () => toggleItemDone(item) : undefined}
                                   onChangeDay={canChangeDay(item) ? () => openChangeDayDialog(item) : undefined}
                                 />
                               ))}
@@ -1165,8 +1324,28 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                 const isFuture = dObj > today;
                 const isToday = dateStr === todayStr;
 
-                const { habitsDone: habitsDoneThatDay, nodesDone: nodesDoneThatDay, practicesDone: practicesDoneThatDay, totalForDay, doneForDay } = getDayStats(dateStr, dObj);
+                const {
+                  habitsDone: habitsDoneThatDay,
+                  nodesDone: nodesDoneThatDay,
+                  nodesScheduled: nodesScheduledThatDay,
+                  practicesDone: practicesDoneThatDay,
+                  manualScheduled: manualScheduledThatDay,
+                  manualDone: manualDoneThatDay,
+                  totalForDay,
+                  doneForDay,
+                } = getDayStats(dateStr, dObj);
                 const allDone = totalForDay > 0 && doneForDay === totalForDay;
+                // Un día futuro no puede tener nada "hecho" todavía: lo que se previsualiza ahí
+                // es lo ya agendado (nodos con fecha planeada, tareas/eventos manuales). Los
+                // hábitos recurrentes quedan afuera de esta cuenta — no son "agendado" para ese
+                // día puntual, son rutina de todos los días.
+                const futureScheduledCount = nodesScheduledThatDay.length + manualScheduledThatDay.length;
+                const hasFutureContent = isFuture && futureScheduledCount > 0;
+
+                let cellBg = "bg-muted/30";
+                if (allDone) cellBg = "bg-emerald-500/20";
+                else if (isFuture) cellBg = hasFutureContent ? "bg-amber-500/10" : "bg-muted/10 opacity-40";
+                else if (isToday) cellBg = "bg-emerald-500/10";
 
                 return (
                   <button
@@ -1183,32 +1362,43 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                         setSelectedDay((prev) => (prev === dateStr ? null : dateStr));
                       }
                     }}
-                    className={`relative aspect-square rounded-lg flex flex-col items-center justify-center text-xs font-medium transition-all cursor-pointer active:scale-95 ${
-                      allDone ? "bg-emerald-500/20" : isFuture ? "opacity-20" : "bg-muted/30"
-                    } ${isToday ? "ring-2 ring-emerald-500" : ""} ${
-                      selectedDay === dateStr ? "ring-2 ring-foreground" : ""
-                    }`}
+                    className={`relative aspect-square rounded-lg flex flex-col items-center justify-center text-xs font-medium transition-all cursor-pointer active:scale-95 ${cellBg} ${
+                      isToday ? "ring-2 ring-emerald-500" : ""
+                    } ${selectedDay === dateStr ? "ring-2 ring-foreground" : ""}`}
                   >
-                    <div className={isToday ? "font-medium text-emerald-600 dark:text-emerald-400" : "font-medium"}>
+                    <div className={isToday ? "font-bold text-emerald-600 dark:text-emerald-400" : "font-medium"}>
                       {day}
                     </div>
                     {allDone && !isFuture && (
                       <div className="text-xs font-bold text-emerald-600 dark:text-emerald-400">✓✓</div>
                     )}
-                    {doneForDay > 0 && !allDone && !isFuture && (
+                    {!isFuture && doneForDay > 0 && !allDone && (
                       <div className="flex gap-1 flex-wrap justify-center max-w-full">
                         {habitsDoneThatDay.map((h) => (
-                          <div
+                          <TaskDot
                             key={h.id}
-                            className="h-1.5 w-1.5 rounded-full"
-                            style={{ background: HABIT_COLORS[activeHabitsThisMonth.indexOf(h) % HABIT_COLORS.length] }}
+                            emoji={h.emoji}
+                            color={HABIT_COLORS[activeHabitsThisMonth.indexOf(h) % HABIT_COLORS.length]}
                           />
                         ))}
                         {nodesDoneThatDay.map((n) => (
-                          <div key={n.id} className="h-1.5 w-1.5 rounded-full" style={{ background: NODE_COLOR }} />
+                          <TaskDot key={n.id} emoji={extractLeadingEmoji(n.title)} color={NODE_COLOR} />
                         ))}
                         {practicesDoneThatDay.map((p) => (
-                          <div key={p.id} className="h-1.5 w-1.5 rounded-full" style={{ background: PRACTICE_COLOR }} />
+                          <TaskDot key={p.id} emoji={p.emoji} color={PRACTICE_COLOR} />
+                        ))}
+                        {manualDoneThatDay.map((t) => (
+                          <TaskDot key={t.id} emoji={extractLeadingEmoji(t.title)} color={t.kind === "event" ? EVENT_COLOR : TASK_COLOR} />
+                        ))}
+                      </div>
+                    )}
+                    {hasFutureContent && (
+                      <div className="flex gap-1 flex-wrap justify-center max-w-full">
+                        {nodesScheduledThatDay.map((n) => (
+                          <TaskDot key={n.id} emoji={extractLeadingEmoji(n.title)} color={NODE_COLOR} />
+                        ))}
+                        {manualScheduledThatDay.map((t) => (
+                          <TaskDot key={t.id} emoji={extractLeadingEmoji(t.title)} color={t.kind === "event" ? EVENT_COLOR : TASK_COLOR} />
                         ))}
                       </div>
                     )}
@@ -1241,24 +1431,30 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                       <Pencil className="h-3 w-3 text-muted-foreground" />
                     </button>
                   </div>
-                  {selectedDayDetails && (selectedDayDetails.habitsDone.length > 0 || selectedDayDetails.nodesDone.length > 0 || selectedDayDetails.practicesDone.length > 0) ? (
+                  {selectedDayDetails && (selectedDayDetails.habitsDone.length > 0 || selectedDayDetails.nodesDone.length > 0 || selectedDayDetails.practicesDone.length > 0 || selectedDayDetails.manualDone.length > 0) ? (
                     <div className="space-y-1">
                       {selectedDayDetails.habitsDone.map((h) => (
                         <div key={h.id} className="flex items-center gap-2 text-sm">
-                          <div className="h-2 w-2 rounded-full flex-shrink-0" style={{ background: HABIT_COLORS[activeHabitsThisMonth.indexOf(h) % HABIT_COLORS.length] }} />
-                          <span>{h.emoji} {h.name}</span>
+                          <TaskDot emoji={h.emoji} color={HABIT_COLORS[activeHabitsThisMonth.indexOf(h) % HABIT_COLORS.length]} size="md" />
+                          <span>{h.name}</span>
                         </div>
                       ))}
                       {selectedDayDetails.nodesDone.map((n) => (
                         <div key={n.id} className="flex items-center gap-2 text-sm">
-                          <div className="h-2 w-2 rounded-full flex-shrink-0" style={{ background: NODE_COLOR }} />
-                          <span>{n.title} <span className="text-muted-foreground">· {n.parentName}</span></span>
+                          <TaskDot emoji={extractLeadingEmoji(n.title)} color={NODE_COLOR} size="md" />
+                          <span>{stripLeadingEmoji(n.title)} <span className="text-muted-foreground">· {n.parentName}</span></span>
                         </div>
                       ))}
                       {selectedDayDetails.practicesDone.map((p) => (
                         <div key={p.id} className="flex items-center gap-2 text-sm">
-                          <div className="h-2 w-2 rounded-full flex-shrink-0" style={{ background: PRACTICE_COLOR }} />
-                          <span>{p.emoji} {p.name}</span>
+                          <TaskDot emoji={p.emoji} color={PRACTICE_COLOR} size="md" />
+                          <span>{p.name}</span>
+                        </div>
+                      ))}
+                      {selectedDayDetails.manualDone.map((t) => (
+                        <div key={t.id} className="flex items-center gap-2 text-sm">
+                          <TaskDot emoji={extractLeadingEmoji(t.title)} color={t.kind === "event" ? EVENT_COLOR : TASK_COLOR} size="md" />
+                          <span>{stripLeadingEmoji(t.title)}</span>
                         </div>
                       ))}
                     </div>
@@ -1280,6 +1476,23 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
             ? `Nueva tarea para ${TIME_SLOTS.find((s) => s.key === addTaskTargetSlot)?.label}`
             : `Nueva tarea para ${isPreview ? "este día" : "hoy"}`}
         </DialogTitle>
+        <div className="flex gap-2">
+          {(["task", "event"] as const).map((k) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setNewTaskKind(k)}
+              className={`flex-1 px-3 py-1.5 text-sm rounded-md border transition-colors ${
+                newTaskKind === k
+                  ? "border-transparent text-white"
+                  : "border-border/30 bg-muted text-muted-foreground hover:bg-muted/80"
+              }`}
+              style={newTaskKind === k ? { background: k === "event" ? EVENT_COLOR : TASK_COLOR } : undefined}
+            >
+              {k === "event" ? "Evento" : "Tarea"}
+            </button>
+          ))}
+        </div>
         <Input
           autoFocus
           value={newTaskTitle}
@@ -1287,7 +1500,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
           onKeyDown={(e) => {
             if (e.key === "Enter") submitNewTask();
           }}
-          placeholder="¿Qué tarea querés agregar?"
+          placeholder={newTaskKind === "event" ? "¿Qué evento querés agregar?" : "¿Qué tarea querés agregar?"}
         />
         <div className="flex justify-end gap-2 pt-2">
           <button
@@ -1419,6 +1632,10 @@ function TodayTaskRow({
             item.done ? "bg-emerald-500 border-emerald-500" : "border-border/50"
           } ${onToggleDone ? "cursor-pointer" : ""}`}
         />
+        {/* Mismo punto que el nodo/tarea/evento tiene en el calendario de actividades — su
+            emoji si tiene uno (NODE_COLOR/TASK_COLOR/EVENT_COLOR si no) — para que la lista de
+            "Hoy" y la "Vista previa" de un día futuro se vean consistentes con lo que ya se ve ahí. */}
+        {item.dotColor && <TaskDot emoji={item.dotEmoji} color={item.dotColor} size="md" />}
         {/* Apretar una vez sobre la tarea abre el menú (franja / mover / quitar), en vez de
             un botón de reloj aparte — menos elementos visuales en la fila. */}
         <DropdownMenu
@@ -1480,7 +1697,9 @@ function TodayTaskRow({
             <AlertDialogHeader>
               <AlertDialogTitle>¿Sacar esta tarea de hoy?</AlertDialogTitle>
               <AlertDialogDescription>
-                Dejará de aparecer en tareas de hoy.
+                {item.type === "node"
+                  ? "Se le va a borrar la fecha planeada: va a quedar sin fecha asignada en el árbol."
+                  : "Dejará de aparecer en tareas de hoy."}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

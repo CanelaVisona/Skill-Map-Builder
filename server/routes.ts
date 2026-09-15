@@ -5295,11 +5295,11 @@ export async function registerRoutes(
   // Manual Today Tasks (tareas agregadas a mano en "Tareas de hoy", con mantener presionado el fondo)
   app.get("/api/manual-today-tasks", requireAuth, async (req, res) => {
     try {
-      const { date } = req.query;
+      const { date, endDate } = req.query;
       if (!date) {
         return res.status(400).json({ message: "date es requerido (formato YYYY-MM-DD)" });
       }
-      const tasks = await storage.getManualTodayTasks(req.userId!, date as string);
+      const tasks = await storage.getManualTodayTasks(req.userId!, date as string, endDate as string | undefined);
       res.json(tasks);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -5308,14 +5308,18 @@ export async function registerRoutes(
 
   app.post("/api/manual-today-tasks", requireAuth, async (req, res) => {
     try {
-      const { date, title } = req.body;
+      const { date, title, kind } = req.body;
       if (!date || !title || typeof title !== "string" || !title.trim()) {
         return res.status(400).json({ message: "date y title son requeridos" });
+      }
+      if (kind !== undefined && kind !== "task" && kind !== "event") {
+        return res.status(400).json({ message: "kind debe ser task o event" });
       }
       const task = await storage.createManualTodayTask({
         userId: req.userId!,
         date,
         title: title.trim(),
+        kind: kind === "event" ? "event" : "task",
         done: 0,
       });
       res.status(201).json(task);

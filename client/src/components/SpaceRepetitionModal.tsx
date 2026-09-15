@@ -49,11 +49,11 @@ interface SpaceRepetitionModalProps {
 }
 
 // Level 1 intervals (6 checkpoints)
-const INTERVALS_L1 = [0, 1, 3, 7, 16, 30];
+export const INTERVALS_L1 = [0, 1, 3, 7, 16, 30];
 const LABELS_L1 = ["D0", "D1", "D3", "D7", "D16", "D30"];
 
 // Level 2 intervals (6 checkpoints) - long term retention
-const INTERVALS_L2 = [45, 60, 90, 120, 180, 270];
+export const INTERVALS_L2 = [45, 60, 90, 120, 180, 270];
 const LABELS_L2 = ["D45", "D60", "D90", "D120", "D180", "D270"];
 
 // Backward compatibility
@@ -212,7 +212,7 @@ export function calculateStatusL2(practice: SpaceRepetitionPractice): PracticeSt
 }
 
 
-function getNextIntervalIndex(practice: SpaceRepetitionPractice): number {
+export function getNextIntervalIndex(practice: SpaceRepetitionPractice): number {
   const level = practice.level || 1;
   const intervals = (level === 2) ? INTERVALS_L2 : INTERVALS_L1;
   const completedIndices = new Set(getCompletedIntervals(practice));

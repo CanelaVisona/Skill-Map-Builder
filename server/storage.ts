@@ -3068,7 +3068,15 @@ export class DbStorage implements IStorage {
   }
 
   // Manual Today Tasks (tareas agregadas a mano en "Tareas de hoy")
-  async getManualTodayTasks(userId: string, date: string): Promise<ManualTodayTask[]> {
+  // Con endDate se trae el rango [date, endDate] (usado para previsualizar el mes en el
+  // calendario, días futuros incluidos); sin él, solo las de ese día puntual.
+  async getManualTodayTasks(userId: string, date: string, endDate?: string): Promise<ManualTodayTask[]> {
+    if (endDate) {
+      const { gte, lte } = await import("drizzle-orm");
+      return await db.select().from(manualTodayTasks).where(
+        and(eq(manualTodayTasks.userId, userId), gte(manualTodayTasks.date, date), lte(manualTodayTasks.date, endDate))
+      );
+    }
     return await db.select().from(manualTodayTasks).where(
       and(eq(manualTodayTasks.userId, userId), eq(manualTodayTasks.date, date))
     );
