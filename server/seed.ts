@@ -55,7 +55,7 @@ const INITIAL_AREAS = [
   },
 ];
 
-const INITIAL_SKILLS = [
+const INITIAL_SKILLS: { id: string; areaId: string; title: string; description: string; status: "mastered" | "available" | "locked"; x: number; y: number; dependencies: string[]; manualLock: 0 | 1 }[] = [
   { id: "g1", areaId: "guitar", title: "Acordes Básicos", description: "Aprender C, D, E, G, A", status: "mastered", x: 50, y: 100, dependencies: [], manualLock: 0 },
   { id: "g2", areaId: "guitar", title: "Ritmo 4/4", description: "Rasgueo básico abajo-arriba", status: "mastered", x: 50, y: 250, dependencies: ["g1"], manualLock: 0 },
   { id: "g3", areaId: "guitar", title: "Escala Pentatónica", description: "Posición 1 en Am", status: "available", x: 50, y: 400, dependencies: ["g2"], manualLock: 0 },
@@ -83,7 +83,7 @@ const DEMO_USER = {
   password: null,
 };
 
-const INITIAL_SHADOWS = [
+const INITIAL_SHADOWS: { id: string; userId: string; name: string; description: string; action: string; imageUrl: null; defeated: 0 | 1 }[] = [
   {
     id: "shadow-1",
     userId: DEMO_USER.id,

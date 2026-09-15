@@ -1158,19 +1158,19 @@ export async function registerRoutes(
       if (deletedStatus === "available") {
         // Find next node (levelPosition + 1 in same level)
         const nextNode = sameLevelSiblings.find(s => s.levelPosition === deletedLevelPosition + 1);
-        
+
         if (nextNode && nextNode.status === "locked") {
           // Unlock the next node
           await storage.updateSkill(nextNode.id, { status: "available" });
-        } else if (!nextNode) {
-          // No next node, find previous node (levelPosition - 1)
-          const previousNode = sameLevelSiblings.find(s => s.levelPosition === deletedLevelPosition - 1);
-          
-          if (previousNode && previousNode.status === "mastered") {
-            // Set previous node back to available
-            await storage.updateSkill(previousNode.id, { status: "available" });
-          }
         }
+        // No "else if (!nextNode)" branch here on purpose: !nextNode means the deleted skill
+        // was the final node of the level, and the previous node inherits that final-node
+        // spot (see recalculateFinalNodes below). If that previous node was already
+        // "mastered" it must STAY mastered -- it was legitimately confirmed earlier and
+        // deleting the still-unconfirmed final node after it must not un-confirm it. This
+        // used to force it back to "available", silently undoing confirmed progress and
+        // skipping the level-up cascade the client runs for an already-mastered new final
+        // node (see deleteSkill/deleteProjectSkill in skill-context.tsx).
       }
       
       // Recalculate final nodes in the affected level after deletion
@@ -6094,6 +6094,7 @@ export async function registerRoutes(
       }
       const patch: Record<string, any> = {};
       if (req.body.text !== undefined) patch.text = String(req.body.text).trim();
+      if (req.body.goal !== undefined) patch.goal = String(req.body.goal).trim();
       if (req.body.found !== undefined) patch.foundAt = req.body.found ? new Date() : null;
       const updated = await storage.updateQuestionProblem(req.params.id, patch);
       res.json(updated);

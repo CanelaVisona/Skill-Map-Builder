@@ -826,6 +826,9 @@ export const questionProblems = pgTable("question_problems", {
   areaId: varchar("area_id").references(() => areas.id, { onDelete: "cascade" }),
   projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
   text: text("text").notNull().default(""),
+  // Meta final: qué se busca realmente detrás del problema (experiencias, crecimiento o
+  // contribución). Sección propia entre "Problemas" y "Preguntas".
+  goal: text("goal").notNull().default(""),
   // Set cuando se aprieta "Encontrado⚔️": el problema pasa a "Encontrados⚔️". Null = activo.
   foundAt: timestamp("found_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),

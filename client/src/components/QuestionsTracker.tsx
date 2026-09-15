@@ -2,12 +2,25 @@
 
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { motion, AnimatePresence } from "framer-motion";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { ArrowLeft, Trash2, Pencil, ChevronRight, Swords, Check, RotateCcw } from "lucide-react";
+import { ArrowLeft, Trash2, Pencil, ChevronRight, ChevronLeft, Swords, Check, RotateCcw } from "lucide-react";
+
+// Frases a detectar en el paso 2 del planteo del problema ("no sé cómo…" / "no sé qué hacer…").
+const FORBIDDEN_PHRASE_RE = /\bno s[eé] (c[oó]mo|qu[eé] hacer)\b/i;
+
+// Estilo de la sección "más destacada" de la cadena Problema → Meta final → Preguntas: letra
+// blanca sobre fondo oscuro con borde brillante. Las secciones ya superadas se atenúan en cambio
+// con SUPERSEDED_STAGE_CLASS.
+const CURRENT_STAGE_CLASS =
+  "border-2 border-white/90 bg-zinc-900 text-white shadow-[0_0_14px_3px_rgba(255,255,255,0.45)]";
+const SUPERSEDED_STAGE_CLASS = "border-border/30 text-muted-foreground/60";
 
 interface AreaLite {
   id: string;
@@ -41,6 +54,9 @@ interface QuestionProblem {
   areaId: string | null;
   projectId: string | null;
   text: string;
+  // Meta final: qué se busca realmente detrás del problema (experiencias, crecimiento o
+  // contribución). Sección propia entre "Problemas" y "Preguntas".
+  goal: string;
   foundAt: string | null;
   items: QuestionItem[];
 }
@@ -71,6 +87,44 @@ function useBackgroundLongPress(onLongPress: () => void) {
     onPointerUp: clear,
     onPointerLeave: clear,
     onPointerCancel: clear,
+  };
+}
+
+// Mantener presionada una tarjeta (problema o pregunta) abre la barra de Editar/Borrar; un toque
+// corto la selecciona/abre. El estado "fue longpress" vive en un ref -- no en una variable local
+// del render -- porque abrir la barra dispara un setState (y por lo tanto un re-render) mientras
+// el dedo sigue apoyado; con una variable local, ese re-render la reiniciaría antes de que llegue
+// el click posterior al soltar, y la tarjeta terminaba seleccionándose (dividiendo la pantalla en
+// Problemas/Preguntas) en vez de mostrar la barra de acciones.
+function useLongPressSelect(onLongPress: () => void, onSelect: () => void) {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressed = useRef(false);
+  const clear = () => {
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
+  };
+  return {
+    onPointerDown: (e: React.PointerEvent) => {
+      if ((e.target as HTMLElement | null)?.closest("[data-no-longpress]")) return;
+      longPressed.current = false;
+      clear();
+      timer.current = setTimeout(() => {
+        longPressed.current = true;
+        onLongPress();
+      }, LONG_PRESS_MS);
+    },
+    onPointerUp: clear,
+    onPointerLeave: clear,
+    onPointerCancel: clear,
+    onClick: () => {
+      if (longPressed.current) {
+        longPressed.current = false;
+        return;
+      }
+      onSelect();
+    },
   };
 }
 
@@ -121,7 +175,7 @@ export function QuestionsTracker() {
   });
 
   const updateProblem = useMutation({
-    mutationFn: async ({ id, ...patch }: { id: string; text?: string; found?: boolean }) => {
+    mutationFn: async ({ id, ...patch }: { id: string; text?: string; goal?: string; found?: boolean }) => {
       const res = await fetch(`/api/question-problems/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -186,10 +240,18 @@ export function QuestionsTracker() {
   const [selectedProblemId, setSelectedProblemId] = useState<string | null>(null);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
 
-  const [addingProblem, setAddingProblem] = useState(false);
-  const [addingQuestion, setAddingQuestion] = useState(false);
-  const [newProblemText, setNewProblemText] = useState("");
-  const [newQuestionText, setNewQuestionText] = useState("");
+  // Wizard "Planteo del problema": 3 pasos guiados para cargar un problema nuevo.
+  const [problemWizardOpen, setProblemWizardOpen] = useState(false);
+  const [problemWizardStep, setProblemWizardStep] = useState(0);
+  const [pwRaw, setPwRaw] = useState(""); // paso 1: el problema tal como viene a la cabeza
+  const [pwStep2, setPwStep2] = useState(""); // paso 2: qué pasa objetivamente y cómo te sentís con eso
+  const [pwFinal, setPwFinal] = useState(""); // paso 3: versión final, limpia de "no sé cómo/qué hacer…"
+
+  // Wizard "Hacer la pregunta": 2 pasos guiados para cargar una pregunta nueva.
+  const [questionWizardOpen, setQuestionWizardOpen] = useState(false);
+  const [questionWizardStep, setQuestionWizardStep] = useState(0);
+  const [qwRaw, setQwRaw] = useState(""); // paso 1: la pregunta como salga
+  const [qwFinal, setQwFinal] = useState(""); // paso 2: reformulada con la estructura guía
 
   const [editingProblemId, setEditingProblemId] = useState<string | null>(null);
   const [editingProblemText, setEditingProblemText] = useState("");
@@ -199,6 +261,15 @@ export function QuestionsTracker() {
   // Tarjeta con la barra "Editar / Borrar" abierta (se abre manteniendo presionada la tarjeta).
   const [problemActionsId, setProblemActionsId] = useState<string | null>(null);
   const [questionActionsId, setQuestionActionsId] = useState<string | null>(null);
+
+  // Wizard "Meta final": 5 pasos guiados para derivar la meta final de un problema.
+  const [metaWizardOpen, setMetaWizardOpen] = useState(false);
+  const [metaWizardStep, setMetaWizardStep] = useState(0);
+  const [mwStep1, setMwStep1] = useState(""); // qué se busca realmente (experiencias/crecimiento/contribución)
+  const [mwStep2, setMwStep2] = useState(""); // por qué (para qué se lo busca)
+  const [mwStep3, setMwStep3] = useState(""); // sin la meta intermedia ("de manera que")
+  const [mwStep4, setMwStep4] = useState(""); // meta autoalimentada (depende 100% de uno)
+  const [mwStep5, setMwStep5] = useState(""); // versión final, sin "no sé cómo/qué hacer…"
 
   const [answerDraft, setAnswerDraft] = useState("");
   const [actionDraft, setActionDraft] = useState("");
@@ -236,8 +307,6 @@ export function QuestionsTracker() {
     setSelectedItemId(null);
     setEditingProblemId(null);
     setEditingQuestionId(null);
-    setAddingProblem(false);
-    setAddingQuestion(false);
     setProblemActionsId(null);
     setQuestionActionsId(null);
   };
@@ -251,11 +320,25 @@ export function QuestionsTracker() {
     [problems, scope, view],
   );
 
-  const showQuestionsCol = !!selectedProblem && !selectedProblem.foundAt;
+  // "Meta final" aparece al seleccionar un problema activo (no encontrado); "Preguntas" recién
+  // se desbloquea una vez que esa meta final quedó definida.
+  const showMetaCol = !!selectedProblem && !selectedProblem.foundAt;
+  const showQuestionsCol = showMetaCol && !!selectedProblem?.goal.trim();
   const showAnswerCol = showQuestionsCol && !!selectedItem;
   const showActionCol = showAnswerCol && answerDraft.trim().length > 0;
 
-  const visibleCols = 1 + (showQuestionsCol ? 1 : 0) + (showAnswerCol ? 1 : 0) + (showActionCol ? 1 : 0);
+  // Cadena Problema → Meta final → Preguntas: la última sección completada es siempre la más
+  // destacada (letra blanca, borde brillante) y las anteriores se atenúan a medida que el
+  // problema avanza, para guiar la mirada hacia dónde seguir trabajando.
+  const metaHasContent = !!selectedProblem?.goal.trim();
+  const questionsHaveContent = (selectedProblem?.items.length ?? 0) > 0;
+  const problemIsSuperseded = !!selectedProblem && metaHasContent;
+  const metaIsCurrent = showMetaCol && metaHasContent && !questionsHaveContent;
+  const metaIsSuperseded = showMetaCol && metaHasContent && questionsHaveContent;
+  const questionsAreCurrent = showQuestionsCol && questionsHaveContent;
+
+  const visibleCols =
+    1 + (showMetaCol ? 1 : 0) + (showQuestionsCol ? 1 : 0) + (showAnswerCol ? 1 : 0) + (showActionCol ? 1 : 0);
   const colClass = (index: number) =>
     cn(
       "h-full pr-2",
@@ -264,30 +347,81 @@ export function QuestionsTracker() {
         : "w-[52%] sm:w-[210px] shrink-0 border-r border-border/40",
     );
 
-  const handleAddProblem = () => {
-    const text = newProblemText.trim();
-    if (!text || !scope) {
-      setAddingProblem(false);
-      setNewProblemText("");
-      return;
-    }
+  const closeProblemWizard = () => {
+    setProblemWizardOpen(false);
+    setProblemWizardStep(0);
+    setPwRaw("");
+    setPwStep2("");
+    setPwFinal("");
+  };
+
+  const openProblemWizard = () => {
+    if (!scope) return;
+    closeProblemWizard();
+    setProblemWizardOpen(true);
+  };
+
+  const pwHasForbiddenPhrase = FORBIDDEN_PHRASE_RE.test(pwFinal);
+
+  const handleSubmitProblem = () => {
+    const text = pwFinal.trim();
+    if (!text || !scope || pwHasForbiddenPhrase) return;
     createProblem.mutate(
       scope.kind === "project" ? { projectId: scope.id, text } : { areaId: scope.id, text },
     );
-    setNewProblemText("");
-    setAddingProblem(false);
+    closeProblemWizard();
   };
 
-  const handleAddQuestion = () => {
-    const question = newQuestionText.trim();
-    if (!question || !selectedProblem) {
-      setAddingQuestion(false);
-      setNewQuestionText("");
-      return;
-    }
+  const closeQuestionWizard = () => {
+    setQuestionWizardOpen(false);
+    setQuestionWizardStep(0);
+    setQwRaw("");
+    setQwFinal("");
+  };
+
+  const openQuestionWizard = () => {
+    if (!selectedProblem) return;
+    closeQuestionWizard();
+    setQuestionWizardOpen(true);
+  };
+
+  const handleSubmitQuestion = () => {
+    if (!selectedProblem) return;
+    const question = qwFinal.trim();
+    if (!question) return;
     createItem.mutate({ problemId: selectedProblem.id, question });
-    setNewQuestionText("");
-    setAddingQuestion(false);
+    closeQuestionWizard();
+  };
+
+  const closeMetaWizard = () => {
+    setMetaWizardOpen(false);
+    setMetaWizardStep(0);
+    setMwStep1("");
+    setMwStep2("");
+    setMwStep3("");
+    setMwStep4("");
+    setMwStep5("");
+  };
+
+  const openMetaWizard = () => {
+    if (!selectedProblem) return;
+    setMetaWizardStep(0);
+    setMwStep1(selectedProblem.goal || "");
+    setMwStep2("");
+    setMwStep3("");
+    setMwStep4("");
+    setMwStep5("");
+    setMetaWizardOpen(true);
+  };
+
+  const mwHasForbiddenPhrase = FORBIDDEN_PHRASE_RE.test(mwStep5);
+
+  const handleSubmitMeta = () => {
+    if (!selectedProblem) return;
+    const text = mwStep5.trim();
+    if (!text || mwHasForbiddenPhrase) return;
+    updateProblem.mutate({ id: selectedProblem.id, goal: text });
+    closeMetaWizard();
   };
 
   const commitAnswer = () => {
@@ -312,11 +446,8 @@ export function QuestionsTracker() {
     resetSelection();
   };
 
-  const problemsPress = useBackgroundLongPress(() => {
-    if (!scope) return;
-    setAddingProblem(true);
-  });
-  const questionsPress = useBackgroundLongPress(() => setAddingQuestion(true));
+  const problemsPress = useBackgroundLongPress(openProblemWizard);
+  const questionsPress = useBackgroundLongPress(openQuestionWizard);
   const answerPress = useBackgroundLongPress(() => setEditingAnswer(true));
   const actionPress = useBackgroundLongPress(() => setEditingAction(true));
 
@@ -324,6 +455,24 @@ export function QuestionsTracker() {
     scope?.kind === "project"
       ? activeProjects.find((p) => p.id === scope.id)?.name
       : activeAreas.find((a) => a.id === scope?.id)?.name;
+
+  // Cantidad de problemas activos (no encontrados) por área/quest, para el númerito de las pestañas.
+  const activeProblemCountByAreaId = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const p of problems) {
+      if (p.foundAt || !p.areaId) continue;
+      counts.set(p.areaId, (counts.get(p.areaId) ?? 0) + 1);
+    }
+    return counts;
+  }, [problems]);
+  const activeProblemCountByProjectId = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const p of problems) {
+      if (p.foundAt || !p.projectId) continue;
+      counts.set(p.projectId, (counts.get(p.projectId) ?? 0) + 1);
+    }
+    return counts;
+  }, [problems]);
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
@@ -362,43 +511,63 @@ export function QuestionsTracker() {
       {/* Área / quest tabs */}
       {activeAreas.length > 0 || activeProjects.length > 0 ? (
         <div className="scrollbar-hide flex flex-nowrap items-center gap-1 overflow-x-auto border-b border-border/30 px-3 py-2">
-          {activeAreas.map((area) => (
-            <button
-              key={`area-${area.id}`}
-              onClick={() => {
-                setScope({ kind: "area", id: area.id });
-                resetSelection();
-              }}
-              className={cn(
-                "shrink-0 rounded-full px-3 py-1 text-xs font-semibold transition-colors",
-                scope?.kind === "area" && scope.id === area.id
-                  ? "bg-foreground text-background"
-                  : "bg-muted/60 text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {area.name}
-            </button>
-          ))}
+          {activeAreas.map((area) => {
+            const count = activeProblemCountByAreaId.get(area.id) ?? 0;
+            const isSelected = scope?.kind === "area" && scope.id === area.id;
+            return (
+              <div key={`area-${area.id}`} className="relative shrink-0 pt-2.5">
+                {count > 0 && (
+                  <span className="absolute -top-0.5 left-1/2 z-10 -translate-x-1/2 text-[9px] font-bold leading-none text-muted-foreground">
+                    {count}
+                  </span>
+                )}
+                <button
+                  onClick={() => {
+                    setScope({ kind: "area", id: area.id });
+                    resetSelection();
+                  }}
+                  className={cn(
+                    "rounded-full px-3 py-1 text-xs font-semibold transition-colors",
+                    isSelected
+                      ? "bg-foreground text-background"
+                      : "bg-muted/60 text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {area.name}
+                </button>
+              </div>
+            );
+          })}
           {activeAreas.length > 0 && activeProjects.length > 0 && (
             <div className="mx-1 h-4 w-px shrink-0 bg-border/50" />
           )}
-          {activeProjects.map((project) => (
-            <button
-              key={`project-${project.id}`}
-              onClick={() => {
-                setScope({ kind: "project", id: project.id });
-                resetSelection();
-              }}
-              className={cn(
-                "flex shrink-0 items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold transition-colors",
-                scope?.kind === "project" && scope.id === project.id
-                  ? "bg-foreground text-background"
-                  : "bg-muted/60 text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <Swords size={11} /> {project.name}
-            </button>
-          ))}
+          {activeProjects.map((project) => {
+            const count = activeProblemCountByProjectId.get(project.id) ?? 0;
+            const isSelected = scope?.kind === "project" && scope.id === project.id;
+            return (
+              <div key={`project-${project.id}`} className="relative shrink-0 pt-2.5">
+                {count > 0 && (
+                  <span className="absolute -top-0.5 left-1/2 z-10 -translate-x-1/2 text-[9px] font-bold leading-none text-muted-foreground">
+                    {count}
+                  </span>
+                )}
+                <button
+                  onClick={() => {
+                    setScope({ kind: "project", id: project.id });
+                    resetSelection();
+                  }}
+                  className={cn(
+                    "flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold transition-colors",
+                    isSelected
+                      ? "bg-foreground text-background"
+                      : "bg-muted/60 text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <Swords size={11} /> {project.name}
+                </button>
+              </div>
+            );
+          })}
         </div>
       ) : (
         <div className="px-4 py-6 text-sm text-muted-foreground">No hay áreas ni quests todavía.</div>
@@ -424,288 +593,142 @@ export function QuestionsTracker() {
                 </p>
               </div>
               <div className="space-y-1.5 pr-1">
-                {addingProblem && (
-                  <div className="flex items-center gap-1" data-no-longpress>
-                    <Input
-                      autoFocus
-                      value={newProblemText}
-                      onChange={(e) => setNewProblemText(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") handleAddProblem();
-                        if (e.key === "Escape") {
-                          setAddingProblem(false);
-                          setNewProblemText("");
-                        }
-                      }}
-                      onBlur={handleAddProblem}
-                      placeholder="Nuevo problema…"
-                      className="h-8 text-xs"
-                    />
-                  </div>
-                )}
-                {problemsForArea.length === 0 && !addingProblem && (
+                {problemsForArea.length === 0 && (
                   <p className="text-xs text-muted-foreground">
                     Mantené presionado el fondo para agregar un problema.
                   </p>
                 )}
-                {problemsForArea.map((p) => {
-                  const isEditing = editingProblemId === p.id;
-                  const showActions = problemActionsId === p.id;
-                  let pressTimer: ReturnType<typeof setTimeout> | null = null;
-                  let longPressed = false;
-                  const startPress = (e: React.PointerEvent) => {
-                    if ((e.target as HTMLElement | null)?.closest("[data-no-longpress]")) return;
-                    longPressed = false;
-                    if (pressTimer) clearTimeout(pressTimer);
-                    pressTimer = setTimeout(() => {
-                      longPressed = true;
-                      setProblemActionsId(p.id);
-                    }, LONG_PRESS_MS);
-                  };
-                  const cancelPress = () => {
-                    if (pressTimer) {
-                      clearTimeout(pressTimer);
-                      pressTimer = null;
+                {problemsForArea.map((p) => (
+                  <ProblemCard
+                    key={p.id}
+                    problem={p}
+                    emphasis={
+                      p.id !== selectedProblemId ? "none" : problemIsSuperseded ? "superseded" : "current"
                     }
-                  };
-                  const openProblem = () => {
-                    if (longPressed) {
-                      longPressed = false;
-                      return;
-                    }
-                    setProblemActionsId(null);
-                    setSelectedProblemId(p.id);
-                    setSelectedItemId(null);
-                  };
-                  return (
-                    <div
-                      key={p.id}
-                      data-entry-card
-                      onPointerDown={startPress}
-                      onPointerUp={cancelPress}
-                      onPointerCancel={cancelPress}
-                      onPointerLeave={cancelPress}
-                      className={cn(
-                        "select-none rounded-xl border p-2 text-sm transition-colors",
-                        p.id === selectedProblemId
-                          ? "border-foreground/40 bg-muted/60"
-                          : "border-border/50 hover:bg-muted/40",
-                      )}
-                    >
-                      {isEditing ? (
-                        <div className="flex items-center gap-1" data-no-longpress>
-                          <Input
-                            autoFocus
-                            value={editingProblemText}
-                            onChange={(e) => setEditingProblemText(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                updateProblem.mutate({ id: p.id, text: editingProblemText.trim() });
-                                setEditingProblemId(null);
-                              }
-                              if (e.key === "Escape") setEditingProblemId(null);
-                            }}
-                            className="h-7 text-xs"
-                          />
-                          <button
-                            onClick={() => {
-                              updateProblem.mutate({ id: p.id, text: editingProblemText.trim() });
-                              setEditingProblemId(null);
-                            }}
-                            className="text-muted-foreground hover:text-foreground"
-                          >
-                            <Check size={14} />
-                          </button>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="flex items-start gap-1" onClick={openProblem}>
-                            <span className="flex-1 break-words">{p.text || "(sin texto)"}</span>
-                            {problemHasFoundChain(p) && (
-                              <ChevronRight size={14} className="mt-0.5 flex-shrink-0 text-muted-foreground" />
-                            )}
-                          </div>
-                          {showActions && (
-                            <div
-                              className="mt-2 flex items-center gap-3 border-t border-border/40 pt-2"
-                              data-no-longpress
-                            >
-                              <button
-                                onClick={() => {
-                                  setEditingProblemId(p.id);
-                                  setEditingProblemText(p.text);
-                                  setProblemActionsId(null);
-                                }}
-                                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                              >
-                                <Pencil size={12} /> Editar
-                              </button>
-                              <button
-                                onClick={() => {
-                                  if (selectedProblemId === p.id) resetSelection();
-                                  deleteProblem.mutate(p.id);
-                                  setProblemActionsId(null);
-                                }}
-                                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-red-500"
-                              >
-                                <Trash2 size={12} /> Borrar
-                              </button>
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  );
-                })}
+                    isEditing={editingProblemId === p.id}
+                    showActions={problemActionsId === p.id}
+                    editingText={editingProblemText}
+                    onEditingTextChange={setEditingProblemText}
+                    onCommitEdit={() => {
+                      updateProblem.mutate({ id: p.id, text: editingProblemText.trim() });
+                      setEditingProblemId(null);
+                    }}
+                    onCancelEdit={() => setEditingProblemId(null)}
+                    onOpen={() => {
+                      setProblemActionsId(null);
+                      setSelectedProblemId(p.id);
+                      setSelectedItemId(null);
+                    }}
+                    onLongPress={() => setProblemActionsId(p.id)}
+                    onStartEdit={() => {
+                      setEditingProblemId(p.id);
+                      setEditingProblemText(p.text);
+                      setProblemActionsId(null);
+                    }}
+                    onDelete={() => {
+                      if (selectedProblemId === p.id) resetSelection();
+                      deleteProblem.mutate(p.id);
+                      setProblemActionsId(null);
+                    }}
+                  />
+                ))}
               </div>
             </ScrollArea>
 
-            {/* Col 2 — Preguntas */}
-            {showQuestionsCol && selectedProblem && (
-              <ScrollArea className={colClass(1)} {...questionsPress}>
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Preguntas
+            {/* Col 2 — Meta final */}
+            {showMetaCol && selectedProblem && (
+              <ScrollArea className={colClass(1)}>
+                <p
+                  className={cn(
+                    "mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide",
+                    metaIsCurrent ? "text-foreground" : "text-muted-foreground",
+                  )}
+                >
+                  {metaIsCurrent && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-foreground" />}
+                  Meta final
                 </p>
-                <div className="space-y-1.5 pr-1">
-                  {addingQuestion && (
-                    <div className="flex items-center gap-1" data-no-longpress>
-                      <Input
-                        autoFocus
-                        value={newQuestionText}
-                        onChange={(e) => setNewQuestionText(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") handleAddQuestion();
-                          if (e.key === "Escape") {
-                            setAddingQuestion(false);
-                            setNewQuestionText("");
-                          }
-                        }}
-                        onBlur={handleAddQuestion}
-                        placeholder="Nueva pregunta…"
-                        className="h-8 text-xs"
-                      />
-                    </div>
+                <div
+                  onClick={openMetaWizard}
+                  className={cn(
+                    "cursor-pointer select-none rounded-xl border p-2 text-sm transition-colors",
+                    !selectedProblem.goal.trim()
+                      ? "border-dashed border-border/60 hover:bg-muted/40"
+                      : metaIsCurrent
+                        ? CURRENT_STAGE_CLASS
+                        : metaIsSuperseded
+                          ? SUPERSEDED_STAGE_CLASS
+                          : "border-border/50 hover:bg-muted/40",
                   )}
-                  {selectedProblem.items.length === 0 && !addingQuestion && (
-                    <p className="text-xs text-muted-foreground">
-                      Mantené presionado el fondo para agregar una pregunta.
-                    </p>
-                  )}
-                  {selectedProblem.items.map((it) => {
-                    const isEditing = editingQuestionId === it.id;
-                    const showActions = questionActionsId === it.id;
-                    let pressTimer: ReturnType<typeof setTimeout> | null = null;
-                    let longPressed = false;
-                    const startPress = (e: React.PointerEvent) => {
-                      if ((e.target as HTMLElement | null)?.closest("[data-no-longpress]")) return;
-                      longPressed = false;
-                      if (pressTimer) clearTimeout(pressTimer);
-                      pressTimer = setTimeout(() => {
-                        longPressed = true;
-                        setQuestionActionsId(it.id);
-                      }, LONG_PRESS_MS);
-                    };
-                    const cancelPress = () => {
-                      if (pressTimer) {
-                        clearTimeout(pressTimer);
-                        pressTimer = null;
-                      }
-                    };
-                    const openItem = () => {
-                      if (longPressed) {
-                        longPressed = false;
-                        return;
-                      }
-                      setQuestionActionsId(null);
-                      setSelectedItemId(it.id);
-                    };
-                    return (
-                      <div
-                        key={it.id}
-                        data-entry-card
-                        onPointerDown={startPress}
-                        onPointerUp={cancelPress}
-                        onPointerCancel={cancelPress}
-                        onPointerLeave={cancelPress}
-                        className={cn(
-                          "select-none rounded-xl border p-2 text-sm transition-colors",
-                          it.id === selectedItemId
-                            ? "border-foreground/40 bg-muted/60"
-                            : "border-border/50 hover:bg-muted/40",
-                        )}
-                      >
-                        {isEditing ? (
-                          <div className="flex items-center gap-1" data-no-longpress>
-                            <Input
-                              autoFocus
-                              value={editingQuestionText}
-                              onChange={(e) => setEditingQuestionText(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                  updateItem.mutate({ id: it.id, question: editingQuestionText.trim() });
-                                  setEditingQuestionId(null);
-                                }
-                                if (e.key === "Escape") setEditingQuestionId(null);
-                              }}
-                              className="h-7 text-xs"
-                            />
-                            <button
-                              onClick={() => {
-                                updateItem.mutate({ id: it.id, question: editingQuestionText.trim() });
-                                setEditingQuestionId(null);
-                              }}
-                              className="text-muted-foreground hover:text-foreground"
-                            >
-                              <Check size={14} />
-                            </button>
-                          </div>
-                        ) : (
-                          <>
-                            <div className="flex items-start gap-1" onClick={openItem}>
-                              <span className="flex-1 break-words">{it.question || "(sin texto)"}</span>
-                              {chainComplete(it) && (
-                                <ChevronRight size={14} className="mt-0.5 flex-shrink-0 text-muted-foreground" />
-                              )}
-                            </div>
-                            {showActions && (
-                              <div
-                                className="mt-2 flex items-center gap-3 border-t border-border/40 pt-2"
-                                data-no-longpress
-                              >
-                                <button
-                                  onClick={() => {
-                                    setEditingQuestionId(it.id);
-                                    setEditingQuestionText(it.question);
-                                    setQuestionActionsId(null);
-                                  }}
-                                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                                >
-                                  <Pencil size={12} /> Editar
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    if (selectedItemId === it.id) setSelectedItemId(null);
-                                    deleteItem.mutate(it.id);
-                                    setQuestionActionsId(null);
-                                  }}
-                                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-red-500"
-                                >
-                                  <Trash2 size={12} /> Borrar
-                                </button>
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    );
-                  })}
+                >
+                  <p
+                    className={cn(
+                      "break-words text-xs",
+                      metaIsCurrent ? "text-white" : "text-muted-foreground",
+                    )}
+                  >
+                    {selectedProblem.goal.trim() || "Tocá para definir la meta final y desbloquear las preguntas."}
+                  </p>
                 </div>
               </ScrollArea>
             )}
 
-            {/* Col 3 — Respuesta */}
+            {/* Col 3 — Preguntas */}
+            {showQuestionsCol && selectedProblem && (
+              <ScrollArea className={colClass(2)} {...questionsPress}>
+                <p
+                  className={cn(
+                    "mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide",
+                    questionsAreCurrent ? "text-foreground" : "text-muted-foreground",
+                  )}
+                >
+                  {questionsAreCurrent && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-foreground" />}
+                  Preguntas
+                </p>
+                <div className="space-y-1.5 pr-1">
+                  {selectedProblem.items.length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Mantené presionado el fondo para agregar una pregunta.
+                    </p>
+                  )}
+                  {selectedProblem.items.map((it) => (
+                    <QuestionCard
+                      key={it.id}
+                      item={it}
+                      isSelected={it.id === selectedItemId}
+                      highlighted={questionsAreCurrent}
+                      isEditing={editingQuestionId === it.id}
+                      showActions={questionActionsId === it.id}
+                      editingText={editingQuestionText}
+                      onEditingTextChange={setEditingQuestionText}
+                      onCommitEdit={() => {
+                        updateItem.mutate({ id: it.id, question: editingQuestionText.trim() });
+                        setEditingQuestionId(null);
+                      }}
+                      onCancelEdit={() => setEditingQuestionId(null)}
+                      onOpen={() => {
+                        setQuestionActionsId(null);
+                        setSelectedItemId(it.id);
+                      }}
+                      onLongPress={() => setQuestionActionsId(it.id)}
+                      onStartEdit={() => {
+                        setEditingQuestionId(it.id);
+                        setEditingQuestionText(it.question);
+                        setQuestionActionsId(null);
+                      }}
+                      onDelete={() => {
+                        if (selectedItemId === it.id) setSelectedItemId(null);
+                        deleteItem.mutate(it.id);
+                        setQuestionActionsId(null);
+                      }}
+                    />
+                  ))}
+                </div>
+              </ScrollArea>
+            )}
+
+            {/* Col 4 — Respuesta */}
             {showAnswerCol && selectedItem && (
-              <ScrollArea className={colClass(2)} {...answerPress}>
+              <ScrollArea className={colClass(3)} {...answerPress}>
                 <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Respuesta
                 </p>
@@ -731,9 +754,9 @@ export function QuestionsTracker() {
               </ScrollArea>
             )}
 
-            {/* Col 4 — Acción */}
+            {/* Col 5 — Acción */}
             {showActionCol && selectedItem && selectedProblem && (
-              <ScrollArea className={colClass(3)} {...actionPress}>
+              <ScrollArea className={colClass(4)} {...actionPress}>
                 <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Acción
                 </p>
@@ -774,7 +797,799 @@ export function QuestionsTracker() {
           </div>
         )}
       </div>
+
+      <ProblemWizardDialog
+        open={problemWizardOpen}
+        step={problemWizardStep}
+        raw={pwRaw}
+        step2={pwStep2}
+        final={pwFinal}
+        hasForbiddenPhrase={pwHasForbiddenPhrase}
+        onRawChange={setPwRaw}
+        onStep2Change={setPwStep2}
+        onFinalChange={setPwFinal}
+        onBack={() => setProblemWizardStep((s) => Math.max(s - 1, 0))}
+        onEnterStep2={() => {
+          setPwStep2(pwRaw);
+          setProblemWizardStep(1);
+        }}
+        onEnterFinalStep={() => {
+          setPwFinal(pwStep2);
+          setProblemWizardStep(2);
+        }}
+        onSubmit={handleSubmitProblem}
+        onOpenChange={(open) => {
+          if (!open) closeProblemWizard();
+        }}
+      />
+
+      <MetaWizardDialog
+        open={metaWizardOpen}
+        step={metaWizardStep}
+        step1={mwStep1}
+        step2={mwStep2}
+        step3={mwStep3}
+        step4={mwStep4}
+        step5={mwStep5}
+        hasForbiddenPhrase={mwHasForbiddenPhrase}
+        onStep1Change={setMwStep1}
+        onStep2Change={setMwStep2}
+        onStep3Change={setMwStep3}
+        onStep4Change={setMwStep4}
+        onStep5Change={setMwStep5}
+        onBack={() => setMetaWizardStep((s) => Math.max(s - 1, 0))}
+        onEnterStep2={() => {
+          setMwStep2(mwStep1);
+          setMetaWizardStep(1);
+        }}
+        onEnterStep3={() => {
+          setMwStep3(mwStep2);
+          setMetaWizardStep(2);
+        }}
+        onEnterStep4={() => {
+          setMwStep4(mwStep3);
+          setMetaWizardStep(3);
+        }}
+        onEnterStep5={() => {
+          setMwStep5(mwStep4);
+          setMetaWizardStep(4);
+        }}
+        onSubmit={handleSubmitMeta}
+        onOpenChange={(open) => {
+          if (!open) closeMetaWizard();
+        }}
+      />
+
+      <QuestionWizardDialog
+        open={questionWizardOpen}
+        step={questionWizardStep}
+        raw={qwRaw}
+        final={qwFinal}
+        onRawChange={setQwRaw}
+        onFinalChange={setQwFinal}
+        onBack={() => setQuestionWizardStep(0)}
+        onEnterFinalStep={() => {
+          setQwFinal(qwRaw);
+          setQuestionWizardStep(1);
+        }}
+        onSubmit={handleSubmitQuestion}
+        onOpenChange={(open) => {
+          if (!open) closeQuestionWizard();
+        }}
+      />
     </div>
+  );
+}
+
+function ProblemCard({
+  problem,
+  emphasis,
+  isEditing,
+  showActions,
+  editingText,
+  onEditingTextChange,
+  onCommitEdit,
+  onCancelEdit,
+  onOpen,
+  onLongPress,
+  onStartEdit,
+  onDelete,
+}: {
+  problem: QuestionProblem;
+  // "current": es el problema seleccionado y todavía no tiene meta final (destacado).
+  // "superseded": es el seleccionado pero ya avanzó a meta/preguntas (atenuado).
+  // "none": no es el problema seleccionado (estilo normal).
+  emphasis: "current" | "superseded" | "none";
+  isEditing: boolean;
+  showActions: boolean;
+  editingText: string;
+  onEditingTextChange: (value: string) => void;
+  onCommitEdit: () => void;
+  onCancelEdit: () => void;
+  onOpen: () => void;
+  onLongPress: () => void;
+  onStartEdit: () => void;
+  onDelete: () => void;
+}) {
+  const press = useLongPressSelect(onLongPress, onOpen);
+  return (
+    <div
+      data-entry-card
+      onPointerDown={press.onPointerDown}
+      onPointerUp={press.onPointerUp}
+      onPointerCancel={press.onPointerCancel}
+      onPointerLeave={press.onPointerLeave}
+      className={cn(
+        "select-none rounded-xl border p-2 text-sm transition-colors",
+        emphasis === "current"
+          ? CURRENT_STAGE_CLASS
+          : emphasis === "superseded"
+            ? SUPERSEDED_STAGE_CLASS
+            : "border-border/50 hover:bg-muted/40",
+      )}
+    >
+      {isEditing ? (
+        <div className="flex items-center gap-1" data-no-longpress>
+          <Input
+            autoFocus
+            value={editingText}
+            onChange={(e) => onEditingTextChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") onCommitEdit();
+              if (e.key === "Escape") onCancelEdit();
+            }}
+            className="h-7 text-xs"
+          />
+          <button onClick={onCommitEdit} className="text-muted-foreground hover:text-foreground">
+            <Check size={14} />
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="flex items-start gap-1" onClick={press.onClick}>
+            <span className="flex-1 break-words">{problem.text || "(sin texto)"}</span>
+            {problemHasFoundChain(problem) && (
+              <ChevronRight size={14} className="mt-0.5 flex-shrink-0 text-muted-foreground" />
+            )}
+          </div>
+          {showActions && (
+            <div className="mt-2 flex items-center gap-3 border-t border-border/40 pt-2" data-no-longpress>
+              <button
+                onClick={onStartEdit}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              >
+                <Pencil size={12} /> Editar
+              </button>
+              <button
+                onClick={onDelete}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-red-500"
+              >
+                <Trash2 size={12} /> Borrar
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function QuestionCard({
+  item,
+  isSelected,
+  highlighted,
+  isEditing,
+  showActions,
+  editingText,
+  onEditingTextChange,
+  onCommitEdit,
+  onCancelEdit,
+  onOpen,
+  onLongPress,
+  onStartEdit,
+  onDelete,
+}: {
+  item: QuestionItem;
+  isSelected: boolean;
+  // true cuando "Preguntas" es la sección más destacada de la cadena (letra blanca, borde brillante).
+  highlighted: boolean;
+  isEditing: boolean;
+  showActions: boolean;
+  editingText: string;
+  onEditingTextChange: (value: string) => void;
+  onCommitEdit: () => void;
+  onCancelEdit: () => void;
+  onOpen: () => void;
+  onLongPress: () => void;
+  onStartEdit: () => void;
+  onDelete: () => void;
+}) {
+  const press = useLongPressSelect(onLongPress, onOpen);
+  return (
+    <div
+      data-entry-card
+      onPointerDown={press.onPointerDown}
+      onPointerUp={press.onPointerUp}
+      onPointerCancel={press.onPointerCancel}
+      onPointerLeave={press.onPointerLeave}
+      className={cn(
+        "select-none rounded-xl border p-2 text-sm transition-colors",
+        isSelected
+          ? "border-foreground/40 bg-muted/60"
+          : highlighted
+            ? CURRENT_STAGE_CLASS
+            : "border-border/50 hover:bg-muted/40",
+      )}
+    >
+      {isEditing ? (
+        <div className="flex items-center gap-1" data-no-longpress>
+          <Input
+            autoFocus
+            value={editingText}
+            onChange={(e) => onEditingTextChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") onCommitEdit();
+              if (e.key === "Escape") onCancelEdit();
+            }}
+            className="h-7 text-xs"
+          />
+          <button onClick={onCommitEdit} className="text-muted-foreground hover:text-foreground">
+            <Check size={14} />
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="flex items-start gap-1" onClick={press.onClick}>
+            <span className={cn("flex-1 break-words", highlighted && !isSelected && "text-white")}>
+              {item.question || "(sin texto)"}
+            </span>
+            {chainComplete(item) && (
+              <ChevronRight size={14} className="mt-0.5 flex-shrink-0 text-muted-foreground" />
+            )}
+          </div>
+          {showActions && (
+            <div className="mt-2 flex items-center gap-3 border-t border-border/40 pt-2" data-no-longpress>
+              <button
+                onClick={onStartEdit}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              >
+                <Pencil size={12} /> Editar
+              </button>
+              <button
+                onClick={onDelete}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-red-500"
+              >
+                <Trash2 size={12} /> Borrar
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// Wizard de 3 pasos para el "Planteo del problema":
+// 1. el problema tal como viene a la cabeza, 2. qué pasa objetivamente y cómo te sentís con eso,
+// 3. la versión final, limpia de frases "no sé cómo…" / "no sé qué hacer…". (Qué se busca
+// realmente detrás vive en "Meta final".)
+function ProblemWizardDialog({
+  open,
+  step,
+  raw,
+  step2,
+  final,
+  hasForbiddenPhrase,
+  onRawChange,
+  onStep2Change,
+  onFinalChange,
+  onBack,
+  onEnterStep2,
+  onEnterFinalStep,
+  onSubmit,
+  onOpenChange,
+}: {
+  open: boolean;
+  step: number;
+  raw: string;
+  step2: string;
+  final: string;
+  hasForbiddenPhrase: boolean;
+  onRawChange: (value: string) => void;
+  onStep2Change: (value: string) => void;
+  onFinalChange: (value: string) => void;
+  onBack: () => void;
+  onEnterStep2: () => void;
+  onEnterFinalStep: () => void;
+  onSubmit: () => void;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[420px] border-0 shadow-2xl">
+        <div className="min-h-[220px] flex flex-col">
+          <AnimatePresence mode="wait">
+            {step === 0 && (
+              <motion.div
+                key="problem-step-0"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+                className="flex-1 flex flex-col"
+              >
+                <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
+                  Planteo del problema · 1 de 3
+                </Label>
+                <p className="text-sm font-medium mb-3">Escribí tu problema tal como te viene a la cabeza.</p>
+                <Textarea
+                  autoFocus
+                  value={raw}
+                  onChange={(e) => onRawChange(e.target.value)}
+                  placeholder="Mi problema es que…"
+                  rows={4}
+                  className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+                />
+                <div className="flex justify-end mt-auto pt-6">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={!raw.trim()}
+                    onClick={onEnterStep2}
+                    className="h-10 w-10 bg-muted/50 hover:bg-muted"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+
+            {step === 1 && (
+              <motion.div
+                key="problem-step-1"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+                className="flex-1 flex flex-col"
+              >
+                <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
+                  Planteo del problema · 2 de 3
+                </Label>
+                <p className="text-sm font-medium mb-3">¿Qué pasa objetivamente y cómo te sentís con eso?</p>
+                <Textarea
+                  autoFocus
+                  value={step2}
+                  onChange={(e) => onStep2Change(e.target.value)}
+                  rows={4}
+                  className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+                />
+                <div className="flex justify-between mt-auto pt-6">
+                  <Button variant="ghost" size="icon" onClick={onBack} className="h-10 w-10 bg-muted/50 hover:bg-muted">
+                    <ChevronLeft className="h-5 w-5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={!step2.trim()}
+                    onClick={onEnterFinalStep}
+                    className="h-10 w-10 bg-muted/50 hover:bg-muted"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+
+            {step === 2 && (
+              <motion.div
+                key="problem-step-2"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+                className="flex-1 flex flex-col"
+              >
+                <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
+                  Planteo del problema · 3 de 3
+                </Label>
+                <p className="text-sm font-medium mb-3">
+                  Tachá o eliminá cualquier frase que empiece con "no sé cómo…" o "no sé qué hacer…".
+                </p>
+                <Textarea
+                  autoFocus
+                  value={final}
+                  onChange={(e) => onFinalChange(e.target.value)}
+                  rows={4}
+                  className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+                />
+                {hasForbiddenPhrase && (
+                  <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                    Todavía queda una frase "no sé cómo…" / "no sé qué hacer…". Reformulala o borrala para
+                    continuar.
+                  </p>
+                )}
+                <div className="flex justify-between mt-auto pt-6">
+                  <Button variant="ghost" size="icon" onClick={onBack} className="h-10 w-10 bg-muted/50 hover:bg-muted">
+                    <ChevronLeft className="h-5 w-5" />
+                  </Button>
+                  <Button onClick={onSubmit} disabled={!final.trim() || hasForbiddenPhrase} className="px-4">
+                    Agregar problema
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Wizard de 5 pasos para "Meta final": qué se busca realmente detrás del problema, en cadena
+// (cada paso arranca con la respuesta ya reformulada del paso anterior).
+// 1. qué se busca realmente (experiencias/crecimiento/contribución).
+// 2. por qué (para qué se lo busca).
+// 3. eliminar la meta intermedia ("de manera que") y quedarse con la meta final real.
+// 4. volverla autoalimentada: que dependa 100% de uno, no de la aprobación de otra persona.
+// 5. tachar el "cómo": eliminar frases "no sé cómo…" / "no sé qué hacer…".
+function MetaWizardDialog({
+  open,
+  step,
+  step1,
+  step2,
+  step3,
+  step4,
+  step5,
+  hasForbiddenPhrase,
+  onStep1Change,
+  onStep2Change,
+  onStep3Change,
+  onStep4Change,
+  onStep5Change,
+  onBack,
+  onEnterStep2,
+  onEnterStep3,
+  onEnterStep4,
+  onEnterStep5,
+  onSubmit,
+  onOpenChange,
+}: {
+  open: boolean;
+  step: number;
+  step1: string;
+  step2: string;
+  step3: string;
+  step4: string;
+  step5: string;
+  hasForbiddenPhrase: boolean;
+  onStep1Change: (value: string) => void;
+  onStep2Change: (value: string) => void;
+  onStep3Change: (value: string) => void;
+  onStep4Change: (value: string) => void;
+  onStep5Change: (value: string) => void;
+  onBack: () => void;
+  onEnterStep2: () => void;
+  onEnterStep3: () => void;
+  onEnterStep4: () => void;
+  onEnterStep5: () => void;
+  onSubmit: () => void;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[420px] border-0 shadow-2xl">
+        <div className="min-h-[220px] flex flex-col">
+          <AnimatePresence mode="wait">
+            {step === 0 && (
+              <motion.div
+                key="meta-step-0"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+                className="flex-1 flex flex-col"
+              >
+                <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
+                  Meta final · 1 de 5
+                </Label>
+                <p className="text-sm font-medium mb-3">
+                  ¿Qué es lo que realmente buscás detrás de esta preocupación: experiencias, crecimiento o
+                  contribución?
+                </p>
+                <Textarea
+                  autoFocus
+                  value={step1}
+                  onChange={(e) => onStep1Change(e.target.value)}
+                  placeholder="Ej.: Ser una presencia constante de apoyo, valor e integridad"
+                  rows={4}
+                  className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+                />
+                <div className="flex justify-end mt-auto pt-6">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={!step1.trim()}
+                    onClick={onEnterStep2}
+                    className="h-10 w-10 bg-muted/50 hover:bg-muted"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+
+            {step === 1 && (
+              <motion.div
+                key="meta-step-1"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+                className="flex-1 flex flex-col"
+              >
+                <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
+                  Meta final · 2 de 5
+                </Label>
+                <p className="text-sm font-medium mb-3">¿Por qué?</p>
+                <Textarea
+                  autoFocus
+                  value={step2}
+                  onChange={(e) => onStep2Change(e.target.value)}
+                  placeholder="Ej.: para experimentar paz mental, certeza interna, amor incondicional"
+                  rows={4}
+                  className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+                />
+                <div className="flex justify-between mt-auto pt-6">
+                  <Button variant="ghost" size="icon" onClick={onBack} className="h-10 w-10 bg-muted/50 hover:bg-muted">
+                    <ChevronLeft className="h-5 w-5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={!step2.trim()}
+                    onClick={onEnterStep3}
+                    className="h-10 w-10 bg-muted/50 hover:bg-muted"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+
+            {step === 2 && (
+              <motion.div
+                key="meta-step-2"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+                className="flex-1 flex flex-col"
+              >
+                <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
+                  Meta final · 3 de 5
+                </Label>
+                <p className="text-sm font-medium mb-3">
+                  Eliminá el «De manera que»: si escribiste una meta que requiere otra etapa previa (ej.
+                  "conseguir X trabajo para poder estar tranquilo"), tachá la meta intermedia (el trabajo) y
+                  quedate con la meta final real (la tranquilidad y la realización).
+                </p>
+                <Textarea
+                  autoFocus
+                  value={step3}
+                  onChange={(e) => onStep3Change(e.target.value)}
+                  rows={4}
+                  className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+                />
+                <div className="flex justify-between mt-auto pt-6">
+                  <Button variant="ghost" size="icon" onClick={onBack} className="h-10 w-10 bg-muted/50 hover:bg-muted">
+                    <ChevronLeft className="h-5 w-5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={!step3.trim()}
+                    onClick={onEnterStep4}
+                    className="h-10 w-10 bg-muted/50 hover:bg-muted"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+
+            {step === 3 && (
+              <motion.div
+                key="meta-step-3"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+                className="flex-1 flex flex-col"
+              >
+                <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
+                  Meta final · 4 de 5
+                </Label>
+                <p className="text-sm font-medium mb-3">
+                  Hacé una Meta Autoalimentada: modificala para que el resultado dependa en un 100% de vos y
+                  de tus estados internos, no de la aprobación o decisión de otra persona.
+                </p>
+                <Textarea
+                  autoFocus
+                  value={step4}
+                  onChange={(e) => onStep4Change(e.target.value)}
+                  rows={4}
+                  className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+                />
+                <div className="flex justify-between mt-auto pt-6">
+                  <Button variant="ghost" size="icon" onClick={onBack} className="h-10 w-10 bg-muted/50 hover:bg-muted">
+                    <ChevronLeft className="h-5 w-5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={!step4.trim()}
+                    onClick={onEnterStep5}
+                    className="h-10 w-10 bg-muted/50 hover:bg-muted"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+
+            {step === 4 && (
+              <motion.div
+                key="meta-step-4"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+                className="flex-1 flex flex-col"
+              >
+                <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
+                  Meta final · 5 de 5
+                </Label>
+                <p className="text-sm font-medium mb-3">
+                  Tachá el «CÓMO»: eliminá cualquier frase que diga "no sé cómo…" o "no sé qué hacer…".
+                </p>
+                <Textarea
+                  autoFocus
+                  value={step5}
+                  onChange={(e) => onStep5Change(e.target.value)}
+                  rows={4}
+                  className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+                />
+                {hasForbiddenPhrase && (
+                  <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                    Todavía queda una frase "no sé cómo…" / "no sé qué hacer…". Reformulala o borrala para
+                    continuar.
+                  </p>
+                )}
+                <div className="flex justify-between mt-auto pt-6">
+                  <Button variant="ghost" size="icon" onClick={onBack} className="h-10 w-10 bg-muted/50 hover:bg-muted">
+                    <ChevronLeft className="h-5 w-5" />
+                  </Button>
+                  <Button onClick={onSubmit} disabled={!step5.trim() || hasForbiddenPhrase} className="px-4">
+                    Guardar meta final
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Wizard de 2 pasos para "Hacer la pregunta":
+// 1. plantear la pregunta como salga, 2. reformularla siguiendo la estructura guía
+// (prefijada con la respuesta del paso 1, lista para reformular).
+function QuestionWizardDialog({
+  open,
+  step,
+  raw,
+  final,
+  onRawChange,
+  onFinalChange,
+  onBack,
+  onEnterFinalStep,
+  onSubmit,
+  onOpenChange,
+}: {
+  open: boolean;
+  step: number;
+  raw: string;
+  final: string;
+  onRawChange: (value: string) => void;
+  onFinalChange: (value: string) => void;
+  onBack: () => void;
+  onEnterFinalStep: () => void;
+  onSubmit: () => void;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[420px] border-0 shadow-2xl">
+        <div className="min-h-[220px] flex flex-col">
+          <AnimatePresence mode="wait">
+            {step === 0 && (
+              <motion.div
+                key="question-step-0"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+                className="flex-1 flex flex-col"
+              >
+                <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
+                  Hacer la pregunta · 1 de 2
+                </Label>
+                <p className="text-sm font-medium mb-3">Planteá la pregunta como te salga.</p>
+                <Textarea
+                  autoFocus
+                  value={raw}
+                  onChange={(e) => onRawChange(e.target.value)}
+                  placeholder="Mi pregunta es…"
+                  rows={4}
+                  className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+                />
+                <div className="flex justify-end mt-auto pt-6">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={!raw.trim()}
+                    onClick={onEnterFinalStep}
+                    className="h-10 w-10 bg-muted/50 hover:bg-muted"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+
+            {step === 1 && (
+              <motion.div
+                key="question-step-1"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+                className="flex-1 flex flex-col"
+              >
+                <Label className="text-xs text-muted-foreground uppercase tracking-wide mb-3">
+                  Hacer la pregunta · 2 de 2
+                </Label>
+                <p className="text-sm font-medium mb-1">
+                  Reformulá la pregunta siguiendo esta estructura: «¿De qué maneras [Cualidad] puedo [QUÉ] y
+                  así experimentar [POR QUÉ] en mi vida?»
+                </p>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Por ejemplo: «¿Qué pequeña idea o acción puedo hacer hoy para liberar la carga de trabajo
+                  [QUÉ] y sentir alivio ahora [POR QUÉ]?»
+                </p>
+                <Textarea
+                  autoFocus
+                  value={final}
+                  onChange={(e) => onFinalChange(e.target.value)}
+                  rows={4}
+                  className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+                />
+                <div className="flex justify-between mt-auto pt-6">
+                  <Button variant="ghost" size="icon" onClick={onBack} className="h-10 w-10 bg-muted/50 hover:bg-muted">
+                    <ChevronLeft className="h-5 w-5" />
+                  </Button>
+                  <Button onClick={onSubmit} disabled={!final.trim()} className="px-4">
+                    Agregar pregunta
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

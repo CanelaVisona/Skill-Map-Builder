@@ -1411,7 +1411,6 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
 
   const handleSaveBugRecord = () => {
     if (!selectedBugId) return;
-    if (!recordSituacion.trim() || (!recordDisparador.trim() && !recordEstrategia.trim())) return;
 
     // Un disparador/estrategia nuevo (tipeado, no elegido de la lista) se suma a la lista del
     // bug para que quede disponible en el próximo registro.
@@ -2719,10 +2718,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
 
             <div className="flex justify-end gap-2 pt-1">
               <Button variant="outline" onClick={() => setIsBugRecordFormOpen(false)}>Cancelar</Button>
-              <Button
-                onClick={handleSaveBugRecord}
-                disabled={!recordSituacion.trim() || (!recordDisparador.trim() && !recordEstrategia.trim())}
-              >
+              <Button onClick={handleSaveBugRecord}>
                 {editingBugRecord ? "Guardar cambios" : "Guardar registro"}
               </Button>
             </div>
