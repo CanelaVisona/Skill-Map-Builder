@@ -3,6 +3,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useMenu } from "@/lib/menu-context";
 import { useXpPopup } from "@/lib/xp-popup-context";
 import { useBugProgressPopup } from "@/lib/bug-progress-popup-context";
+import { BUG_POPUP_VISIBLE_MS } from "@/components/BugProgressPopup";
 import { useBodyProgress } from "@/lib/body-progress-context";
 import type { BodyLink } from "@/components/BodyLinkPicker";
 import { useToast } from "@/hooks/use-toast";
@@ -1050,10 +1051,11 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       };
 
       // El pop-up de progreso del bug va primero en la cola; el de XP arranca
-      // después en vez de solaparse con él.
+      // después en vez de solaparse con él. El delay debe cubrir todo el tiempo
+      // visible del pop-up de bug, o el de nivel (pantalla completa) lo pisa.
       if (createdRecord?.bugProgress) {
         showBugProgressPopup({ ...createdRecord.bugProgress, resultado: variables.data.resultado });
-        window.setTimeout(showXpAward, 1800);
+        window.setTimeout(showXpAward, BUG_POPUP_VISIBLE_MS);
       } else {
         showXpAward();
       }
@@ -1115,7 +1117,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
 
       if (updatedRecord?.bugProgress && variables.data.resultado) {
         showBugProgressPopup({ ...updatedRecord.bugProgress, resultado: variables.data.resultado });
-        window.setTimeout(showXpAward, 1800);
+        window.setTimeout(showXpAward, BUG_POPUP_VISIBLE_MS);
       } else {
         showXpAward();
       }
@@ -3607,14 +3609,10 @@ export function AreaMenu() {
       setItemDescription("");
       setSelectedIcon("Home");
       setManualIconSelected(false);
-      // Reset emergent form state
-      setEmergentStep(1);
-      setEmergentWhatHappened("");
-      setEmergentConsequences("");
-      setEmergentWhyMatters("");
-      setEmergentObjective("");
-      setEmergentAction("");
-      setEmergentNodeTitle("");
+      // Don't reset the Emergent Quest wizard fields here: closing the dialog
+      // (e.g. clicking outside or pressing Escape) shouldn't discard progress
+      // made on an in-progress "problema". Those fields are only cleared once
+      // the quest is actually created (see handleCreateEmergentQuest).
     }
   };
 

@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/compone
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
-import { ArrowLeft, Plus, Check, RotateCcw, Trash2, Coffee, UtensilsCrossed, Cookie, Moon, Beef, Carrot, Wheat, Apple, GlassWater, CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, Plus, Check, RotateCcw, Trash2, Coffee, UtensilsCrossed, Cookie, Moon, Beef, Carrot, Wheat, Apple, GlassWater, CalendarDays, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface MealTrackerModalProps {
@@ -810,6 +810,7 @@ function DishSection({
   const armRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startPos = useRef<{ x: number; y: number } | null>(null);
   const [holding, setHolding] = useState(false);
+  const [expanded, setExpanded] = useState(true);
 
   const cancel = () => {
     setHolding(false);
@@ -820,6 +821,7 @@ function DishSection({
 
   const start = (e: React.PointerEvent) => {
     // El mantener-apretado de un chip lo maneja el propio chip (eliminar plato), no el fondo.
+    // El botón de colapsar tampoco dispara el gesto de armar un plato nuevo.
     if ((e.target as HTMLElement).closest("button")) return;
     startPos.current = { x: e.clientX, y: e.clientY };
     armRef.current = setTimeout(() => setHolding(true), ARM_AFTER_MS);
@@ -844,28 +846,50 @@ function DishSection({
       onContextMenu={(e) => e.preventDefault()}
       className={`-mx-2 rounded-2xl px-2 py-1.5 transition-colors touch-pan-y ${holding ? "bg-muted/50" : ""}`}
     >
-      <div className="flex items-center gap-1.5 mb-2">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-center gap-1.5 mb-2 text-left"
+      >
         <UtensilsCrossed className="h-3.5 w-3.5 text-muted-foreground" />
         <span className="text-xs font-bold uppercase tracking-wide text-foreground">Comidas</span>
+        {dishes.length > 0 && (
+          <span className="text-[10px] font-semibold text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded-full">
+            {dishes.length}
+          </span>
+        )}
         <span className="text-[10px] font-medium text-muted-foreground">(mantené apretado para armar un plato)</span>
-      </div>
-      {dishes.length === 0 ? (
-        <p className="text-[11px] text-muted-foreground">
-          Todavía no tenés platos. Mantené apretado acá para armar uno: al confirmarlo se tildan sus componentes de una.
-        </p>
-      ) : (
-        <div className="flex flex-wrap gap-2">
-          {dishes.map((dish) => (
-            <DishChip
-              key={dish.id}
-              dish={dish}
-              active={dishConfirmed(meals, meal.id, dish.id)}
-              onToggle={() => onApplyDish(meal, dish, !dishConfirmed(meals, meal.id, dish.id))}
-              onDelete={() => onDeleteDish(dish)}
-            />
-          ))}
-        </div>
-      )}
+        <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground ml-auto transition-transform ${expanded ? "" : "-rotate-90"}`} />
+      </button>
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            {dishes.length === 0 ? (
+              <p className="text-[11px] text-muted-foreground pb-1">
+                Todavía no tenés platos. Mantené apretado acá para armar uno: al confirmarlo se tildan sus componentes de una.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-2 pb-1">
+                {dishes.map((dish) => (
+                  <DishChip
+                    key={dish.id}
+                    dish={dish}
+                    active={dishConfirmed(meals, meal.id, dish.id)}
+                    onToggle={() => onApplyDish(meal, dish, !dishConfirmed(meals, meal.id, dish.id))}
+                    onDelete={() => onDeleteDish(dish)}
+                  />
+                ))}
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
