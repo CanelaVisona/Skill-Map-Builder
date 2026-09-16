@@ -6058,6 +6058,73 @@ export async function registerRoutes(
     }
   });
 
+  // ============ Metas Financieras ============
+  app.get("/api/financial-goals", requireAuth, async (req, res) => {
+    try {
+      const goals = await storage.getFinancialGoals(req.userId!);
+      res.json(goals);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/financial-goals", requireAuth, async (req, res) => {
+    try {
+      const data = { ...req.body, userId: req.userId };
+      const goal = await storage.createFinancialGoal(data);
+      res.status(201).json(goal);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/financial-goals/:id", requireAuth, async (req, res) => {
+    try {
+      const goal = await storage.getFinancialGoal(req.params.id);
+      if (!goal) {
+        return res.status(404).json({ message: "Meta no encontrada" });
+      }
+      if (goal.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para acceder a esta meta" });
+      }
+      res.json(goal);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/financial-goals/:id", requireAuth, async (req, res) => {
+    try {
+      const goal = await storage.getFinancialGoal(req.params.id);
+      if (!goal) {
+        return res.status(404).json({ message: "Meta no encontrada" });
+      }
+      if (goal.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para modificar esta meta" });
+      }
+      const updated = await storage.updateFinancialGoal(req.params.id, req.body);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/financial-goals/:id", requireAuth, async (req, res) => {
+    try {
+      const goal = await storage.getFinancialGoal(req.params.id);
+      if (!goal) {
+        return res.status(404).json({ message: "Meta no encontrada" });
+      }
+      if (goal.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para eliminar esta meta" });
+      }
+      await storage.deleteFinancialGoal(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // ============ Preguntas (question problems + chained items) ============
   app.get("/api/question-problems", requireAuth, async (req, res) => {
     try {

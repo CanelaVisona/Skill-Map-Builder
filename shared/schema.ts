@@ -461,6 +461,49 @@ export const bookWishlist = pgTable("book_wishlist", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+// ============ FINANCIAL GOALS TRACKER TABLES ============
+
+// Un instrumento/broker donde está puesto el ahorro de una meta (ej: "Plazo fijo" en "IOL").
+export interface FinancialGoalHolding {
+  id: string;
+  instrument: string;
+  broker: string;
+  amount: number;
+}
+
+// Un ingreso registrado hacia un instrumento de la meta.
+export interface FinancialGoalHistoryEntry {
+  id: string;
+  amount: number;
+  date: number; // epoch ms
+  note?: string;
+  inst?: string;
+  holdingId?: string;
+}
+
+// Aporte periódico configurable: cuándo se habilita volver a registrar un ingreso de flujo.
+export interface FinancialGoalFlow {
+  amount: number;
+  unit: "mes" | "semana" | "dia" | "rango";
+  every: number;
+  rangeTo: number;
+  anchor: number | null; // epoch ms del último aporte de flujo
+}
+
+export const financialGoals = pgTable("financial_goals", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  emoji: text("emoji").notNull().default("🎯"),
+  color: text("color").notNull().default("#158a63"),
+  target: integer("target").notNull().default(0),
+  holdings: jsonb("holdings").notNull().$type<FinancialGoalHolding[]>().default([]),
+  history: jsonb("history").notNull().$type<FinancialGoalHistoryEntry[]>().default([]),
+  flow: jsonb("flow").notNull().$type<FinancialGoalFlow>().default({ amount: 0, unit: "mes", every: 1, rangeTo: 25, anchor: null }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 // ============ REWIRING TRACKER TABLES ============
 
 export const rewiringTrackers = pgTable("rewiring_trackers", {
@@ -797,6 +840,32 @@ export type InsertBookReadingSession = z.infer<typeof insertBookReadingSessionSc
 export type BookReadingSession = typeof bookReadingSessions.$inferSelect;
 export type InsertBookWishlistItem = z.infer<typeof insertBookWishlistSchema>;
 export type BookWishlistItem = typeof bookWishlist.$inferSelect;
+
+export const insertFinancialGoalSchema = createInsertSchema(financialGoals).omit({ id: true, createdAt: true, updatedAt: true, userId: true }).extend({
+  holdings: z.array(z.object({
+    id: z.string(),
+    instrument: z.string(),
+    broker: z.string(),
+    amount: z.number(),
+  })).optional().default([]),
+  history: z.array(z.object({
+    id: z.string(),
+    amount: z.number(),
+    date: z.number(),
+    note: z.string().optional(),
+    inst: z.string().optional(),
+    holdingId: z.string().optional(),
+  })).optional().default([]),
+  flow: z.object({
+    amount: z.number(),
+    unit: z.enum(["mes", "semana", "dia", "rango"]),
+    every: z.number(),
+    rangeTo: z.number(),
+    anchor: z.number().nullable(),
+  }).optional().default({ amount: 0, unit: "mes", every: 1, rangeTo: 25, anchor: null }),
+});
+export type InsertFinancialGoal = z.infer<typeof insertFinancialGoalSchema>;
+export type FinancialGoal = typeof financialGoals.$inferSelect;
 
 export const insertRewiringTrackerSchema = createInsertSchema(rewiringTrackers).omit({ id: true, createdAt: true, updatedAt: true, userId: true }).extend({
   skillIds: z.array(z.string()).optional().default([]),
