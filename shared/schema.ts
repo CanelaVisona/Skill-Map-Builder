@@ -504,6 +504,26 @@ export const financialGoals = pgTable("financial_goals", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+// Un mes cargado dentro de una carga de presupuesto trimestral: cuánto se gastó en cada
+// categoría ese mes puntual.
+export interface BudgetMonthEntry {
+  year: number;
+  month: number; // 0-11
+  fixed: number;
+  variable: number;
+  savings: number;
+}
+
+// Cada carga de presupuesto cubre los últimos 3 meses al momento de guardarla; el calendario
+// anual usa `months` para saber a qué meses del año corresponde esta misma carga.
+export const budgetQuarters = pgTable("budget_quarters", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  months: jsonb("months").notNull().$type<BudgetMonthEntry[]>().default([]),
+  totalBudget: integer("total_budget").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 // ============ REWIRING TRACKER TABLES ============
 
 export const rewiringTrackers = pgTable("rewiring_trackers", {
@@ -866,6 +886,18 @@ export const insertFinancialGoalSchema = createInsertSchema(financialGoals).omit
 });
 export type InsertFinancialGoal = z.infer<typeof insertFinancialGoalSchema>;
 export type FinancialGoal = typeof financialGoals.$inferSelect;
+
+export const insertBudgetQuarterSchema = createInsertSchema(budgetQuarters).omit({ id: true, createdAt: true, userId: true }).extend({
+  months: z.array(z.object({
+    year: z.number(),
+    month: z.number(),
+    fixed: z.number(),
+    variable: z.number(),
+    savings: z.number(),
+  })).length(3),
+});
+export type InsertBudgetQuarter = z.infer<typeof insertBudgetQuarterSchema>;
+export type BudgetQuarter = typeof budgetQuarters.$inferSelect;
 
 export const insertRewiringTrackerSchema = createInsertSchema(rewiringTrackers).omit({ id: true, createdAt: true, updatedAt: true, userId: true }).extend({
   skillIds: z.array(z.string()).optional().default([]),

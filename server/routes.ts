@@ -6125,6 +6125,42 @@ export async function registerRoutes(
     }
   });
 
+  // ============ Presupuesto (budget quarters) ============
+  app.get("/api/budget-quarters", requireAuth, async (req, res) => {
+    try {
+      const quarters = await storage.getBudgetQuarters(req.userId!);
+      res.json(quarters);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/budget-quarters", requireAuth, async (req, res) => {
+    try {
+      const data = { ...req.body, userId: req.userId };
+      const quarter = await storage.createBudgetQuarter(data);
+      res.status(201).json(quarter);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/budget-quarters/:id", requireAuth, async (req, res) => {
+    try {
+      const quarter = await storage.getBudgetQuarter(req.params.id);
+      if (!quarter) {
+        return res.status(404).json({ message: "Carga de presupuesto no encontrada" });
+      }
+      if (quarter.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para eliminar esta carga de presupuesto" });
+      }
+      await storage.deleteBudgetQuarter(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // ============ Preguntas (question problems + chained items) ============
   app.get("/api/question-problems", requireAuth, async (req, res) => {
     try {

@@ -108,8 +108,13 @@ function calculateVisibleLevels(skills: Skill[], endOfAreaLevel?: number): Set<n
     
     const previousLevelSkills = levelMap.get(previousLevel);
     if (previousLevelSkills && previousLevelSkills.length > 0) {
-      const starredNode = previousLevelSkills.find(s => s.isFinalNode === 1);
-      const gatingNode = starredNode || previousLevelSkills.reduce(
+      // Gating node must be the current last node by levelPosition, not the stored
+      // isFinalNode flag: that flag only gets reassigned by the add/move/delete code
+      // paths, so it goes stale when a node is added below the old final node (it keeps
+      // isFinalNode=1 while no longer being last) -- confirming that stale node would
+      // wrongly open the next level while the real new final node sits unconfirmed.
+      const maxLevelPosition = Math.max(...previousLevelSkills.map(s => s.levelPosition ?? 0));
+      const gatingNode = previousLevelSkills.find(s => s.levelPosition === maxLevelPosition) || previousLevelSkills.reduce(
         (max, s) => s.y > max.y ? s : max,
         previousLevelSkills[0]
       );

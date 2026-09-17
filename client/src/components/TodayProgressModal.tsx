@@ -1225,6 +1225,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                         key={item.key}
                                         item={item}
                                         dimmed={!item.done && idx !== firstUndoneIdx}
+                                        current={!item.done && idx === firstUndoneIdx}
                                         onMove={(slot) => moveItemToSlot(item, slot)}
                                         onClear={() => unassignItem(item)}
                                         onHide={item.type !== "manual" ? () => hideItemFromToday(item) : undefined}
@@ -1556,6 +1557,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
 function TodayTaskRow({
   item,
   dimmed,
+  current,
   onMove,
   onClear,
   onHide,
@@ -1571,6 +1573,9 @@ function TodayTaskRow({
   // actual): se muestra más tenue. Incluye tanto a las pendientes de más abajo en la franja
   // activa como a todas las pendientes de las demás franjas, que todavía no les toca.
   dimmed?: boolean;
+  // La tarea "desbloqueada" ahora mismo: la primera pendiente de la franja horaria actual.
+  // Se marca con un "!" dorado al lado para que se distinga de un vistazo del resto.
+  current?: boolean;
   onMove: (slot: TaskSlotKey) => void;
   onClear?: () => void;
   onHide?: () => void;
@@ -1629,13 +1634,18 @@ function TodayTaskRow({
         <span
           onClick={onToggleDone}
           className={`h-4 w-4 flex-shrink-0 rounded-full border-2 ${
-            item.done ? "bg-emerald-500 border-emerald-500" : "border-border/50"
+            item.done ? "bg-amber-500 border-amber-500" : "border-border/50"
           } ${onToggleDone ? "cursor-pointer" : ""}`}
         />
         {/* Mismo punto que el nodo/tarea/evento tiene en el calendario de actividades — su
             emoji si tiene uno (NODE_COLOR/TASK_COLOR/EVENT_COLOR si no) — para que la lista de
             "Hoy" y la "Vista previa" de un día futuro se vean consistentes con lo que ya se ve ahí. */}
         {item.dotColor && <TaskDot emoji={item.dotEmoji} color={item.dotColor} size="md" />}
+        {current && (
+          <span className="text-amber-500 font-bold flex-shrink-0" aria-hidden="true">
+            !
+          </span>
+        )}
         {/* Apretar una vez sobre la tarea abre el menú (franja / mover / quitar), en vez de
             un botón de reloj aparte — menos elementos visuales en la fila. */}
         <DropdownMenu
@@ -1647,7 +1657,7 @@ function TodayTaskRow({
         >
           <DropdownMenuTrigger asChild>
             <span
-              className={`flex-1 cursor-pointer ${item.done ? "line-through text-muted-foreground" : ""}`}
+              className={`flex-1 cursor-pointer ${item.done ? "text-amber-500 font-medium" : ""}`}
             >
               {item.label}
             </span>

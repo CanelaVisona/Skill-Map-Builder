@@ -12,6 +12,7 @@ import {
   Unlock,
   ArrowLeft,
   CalendarDays,
+  CalendarRange,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +29,8 @@ import type {
   FinancialGoalHolding as Holding,
   FinancialGoalHistoryEntry as HistoryEntry,
   FinancialGoalFlow as Flow,
+  BudgetQuarter,
+  BudgetMonthEntry,
 } from "@shared/schema";
 
 const PALETTE = ["#158a63", "#2f9e8f", "#c8952b", "#d1654f", "#7c6cd1", "#3d8bd4", "#c65f9a", "#6aa33a"];
@@ -35,6 +38,13 @@ const EMOJIS = ["🎯", "🏠", "🚗", "✈️", "🎓", "💍", "🏖️", "�
 const INSTRUMENTS = ["Plazo fijo", "Caja de ahorro", "Cuenta remunerada", "Fondo común de inversión", "Acciones", "CEDEARs", "Bonos", "Obligaciones negociables", "Dólar MEP", "Dólar billete", "Criptomonedas", "Efectivo"];
 const DEFAULT_FLOW: Flow = { amount: 0, unit: "mes", every: 1, rangeTo: 25, anchor: null };
 const GOLD = "#b5822a";
+
+const BUDGET_CATEGORIES: { key: "fixed" | "variable" | "savings"; label: string; color: string }[] = [
+  { key: "fixed", label: "Gastos fijos", color: "#3d8bd4" },
+  { key: "variable", label: "Gastos variables", color: "#c8952b" },
+  { key: "savings", label: "Ahorro", color: "#158a63" },
+];
+const MONTH_NAMES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
 // ---------- helpers ----------
 
@@ -97,6 +107,29 @@ function flowFreqPhrase(flow: Flow): string {
 }
 function tint(color: string, pct = 18): string {
   return `color-mix(in srgb, ${color} ${pct}%, hsl(var(--muted)))`;
+}
+function lastThreeMonths(): { year: number; month: number; label: string }[] {
+  const now = new Date();
+  const out: { year: number; month: number; label: string }[] = [];
+  for (let i = 2; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    out.push({ year: d.getFullYear(), month: d.getMonth(), label: d.toLocaleDateString("es-AR", { month: "long" }) });
+  }
+  return out;
+}
+function budgetAvg(q: BudgetQuarter, key: "fixed" | "variable" | "savings"): number {
+  if (!q.months.length) return 0;
+  return q.months.reduce((s, m) => s + (Number(m[key]) || 0), 0) / q.months.length;
+}
+function latestBudgetQuarter(quarters: BudgetQuarter[]): BudgetQuarter | null {
+  if (!quarters.length) return null;
+  return quarters.reduce((a, b) => (new Date(a.createdAt).getTime() > new Date(b.createdAt).getTime() ? a : b));
+}
+function monthQuarterMap(quarters: BudgetQuarter[]): Map<string, BudgetQuarter> {
+  const sorted = [...quarters].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  const map = new Map<string, BudgetQuarter>();
+  sorted.forEach((q) => q.months.forEach((m) => map.set(`${m.year}-${m.month}`, q)));
+  return map;
 }
 
 // ---------- long press (tap vs. hold) ----------
@@ -353,6 +386,257 @@ function MovementsCard({ goals }: { goals: FinancialGoal[] }) {
         </div>
       )}
     </div>
+  );
+}
+
+// ---------- dashboard side: budget ----------
+
+function BudgetCard({ quarters, onLongPress, onOpenCalendar }: { quarters: BudgetQuarter[]; onLongPress: () => void; onOpenCalendar: () => void }) {
+  const longPress = useLongPress(onLongPress, () => {});
+  const latest = latestBudgetQuarter(quarters);
+
+  const data = latest
+    ? BUDGET_CATEGORIES.map((cat) => ({ name: cat.label, value: budgetAvg(latest, cat.key), color: cat.color })).filter((d) => d.value > 0)
+    : [];
+  const total = data.reduce((a, d) => a + d.value, 0);
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4">
+      <div className="flex items-start justify-between gap-2 mb-3">
+        <div>
+          <div className="font-display font-semibold text-sm">Presupuesto</div>
+          <div className="text-xs text-muted-foreground mt-0.5">Mantené presionado el gráfico para cargarlo</div>
+        </div>
+        {!!latest && (
+          <button onClick={onOpenCalendar} title="Calendario anual" className="h-7 w-7 rounded-lg border border-border text-muted-foreground hover:text-foreground flex items-center justify-center shrink-0">
+            <CalendarRange className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+
+      {!latest ? (
+        <div {...longPress} className="text-sm text-muted-foreground py-8 px-3 text-center cursor-pointer select-none rounded-xl border border-dashed border-border">
+          Todavía no cargaste tu presupuesto. Mantené presionado acá para empezar.
+        </div>
+      ) : (
+        <>
+          <div className="relative h-[190px] cursor-pointer select-none" {...longPress}>
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={data} dataKey="value" innerRadius="66%" outerRadius="100%" paddingAngle={2} stroke="hsl(var(--card))" strokeWidth={3}>
+                  {data.map((d, i) => (
+                    <Cell key={i} fill={d.color} />
+                  ))}
+                </Pie>
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+              <div className="font-display text-base font-medium tabular-nums">{money(total)}</div>
+              <div className="text-[11px] text-muted-foreground">promedio / mes</div>
+            </div>
+          </div>
+          <div className="flex flex-col gap-2 mt-3">
+            {data.map((d, i) => (
+              <div key={i} className="flex items-center gap-2 text-sm">
+                <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: d.color }} />
+                <span className="flex-1 min-w-0 truncate text-muted-foreground">{d.name}</span>
+                <span className="font-semibold tabular-nums">{money(d.value)}</span>
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center justify-between text-sm mt-3 pt-3 border-t border-border">
+            <span className="text-muted-foreground">Presupuesto total</span>
+            <span className="font-semibold tabular-nums">{money(latest.totalBudget)}</span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function BudgetFormDialog({
+  open,
+  onOpenChange,
+  onSubmit,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (data: { months: BudgetMonthEntry[]; totalBudget: number }) => void;
+}) {
+  const months = lastThreeMonths();
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [totalText, setTotalText] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      setValues({});
+      setTotalText("");
+    }
+  }, [open]);
+
+  const getVal = (cat: string, idx: number) => values[`${cat}-${idx}`] || "";
+  const setVal = (cat: string, idx: number, v: string) => setValues((s) => ({ ...s, [`${cat}-${idx}`]: v }));
+
+  const handleSave = () => {
+    const monthEntries: BudgetMonthEntry[] = months.map((m, idx) => ({
+      year: m.year,
+      month: m.month,
+      fixed: parseMoney(getVal("fixed", idx)),
+      variable: parseMoney(getVal("variable", idx)),
+      savings: parseMoney(getVal("savings", idx)),
+    }));
+    onSubmit({ months: monthEntries, totalBudget: parseMoney(totalText) });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Presupuesto</DialogTitle>
+          <DialogDescription>Cargá cuánto gastaste en cada categoría en los últimos 3 meses. El gráfico va a mostrar el promedio.</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {BUDGET_CATEGORIES.map((cat) => (
+            <div key={cat.key}>
+              <label className="text-sm font-medium mb-1.5 flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: cat.color }} />
+                {cat.label}
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {months.map((m, idx) => (
+                  <div key={idx}>
+                    <span className="text-[11px] text-muted-foreground mb-1 block capitalize truncate">{m.label}</span>
+                    <div className="relative">
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">$</span>
+                      <Input value={getVal(cat.key, idx)} onChange={(e) => setVal(cat.key, idx, e.target.value)} placeholder="0" inputMode="decimal" className="h-9 text-xs pl-4" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+
+          <div>
+            <label className="text-sm font-medium mb-1.5 block" htmlFor="bg-total">
+              Presupuesto total <span className="text-muted-foreground font-normal">— el promedio de tus gastos de estos 3 meses</span>
+            </label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+              <Input id="bg-total" className="pl-6" inputMode="decimal" value={totalText} onChange={(e) => setTotalText(e.target.value)} placeholder="0" />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 pt-2">
+          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button type="button" onClick={handleSave}>
+            Guardar presupuesto
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function BudgetCalendarDialog({ quarters, open, onOpenChange }: { quarters: BudgetQuarter[]; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const [year, setYear] = useState(() => new Date().getFullYear());
+  const [selMonth, setSelMonth] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setYear(new Date().getFullYear());
+      setSelMonth(null);
+    }
+  }, [open]);
+
+  const map = monthQuarterMap(quarters);
+  const distinctIds = Array.from(new Set(quarters.map((q) => q.id)));
+  const colorForQuarter = (id: string) => PALETTE[distinctIds.indexOf(id) % PALETTE.length];
+
+  const selQuarter = selMonth !== null ? map.get(`${year}-${selMonth}`) : undefined;
+  const selMonthEntry = selQuarter?.months.find((m) => m.year === year && m.month === selMonth);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Calendario de presupuesto</DialogTitle>
+          <DialogDescription>Los meses del mismo color comparten la misma carga de presupuesto</DialogDescription>
+        </DialogHeader>
+
+        <div className="flex items-center justify-between mb-1">
+          <button
+            onClick={() => {
+              setYear((y) => y - 1);
+              setSelMonth(null);
+            }}
+            className="h-8 w-8 rounded-lg border border-border text-muted-foreground hover:text-foreground flex items-center justify-center"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <span className="font-display font-medium text-sm">{year}</span>
+          <button
+            onClick={() => {
+              setYear((y) => y + 1);
+              setSelMonth(null);
+            }}
+            className="h-8 w-8 rounded-lg border border-border text-muted-foreground hover:text-foreground flex items-center justify-center"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          {MONTH_NAMES.map((name, m) => {
+            const q = map.get(`${year}-${m}`);
+            const has = !!q;
+            const color = has ? colorForQuarter(q!.id) : undefined;
+            const isSel = selMonth === m;
+            return (
+              <button
+                key={m}
+                onClick={() => setSelMonth(has ? m : null)}
+                disabled={!has}
+                className="rounded-xl border-[1.5px] py-3 text-sm font-medium flex flex-col items-center gap-1 disabled:cursor-default"
+                style={{
+                  background: has ? tint(color!, 22) : "hsl(var(--muted) / 0.4)",
+                  borderColor: has ? color : "transparent",
+                  outline: isSel ? "2px solid hsl(var(--foreground))" : undefined,
+                  outlineOffset: isSel ? "-2px" : undefined,
+                }}
+              >
+                {name}
+                {has && <span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />}
+              </button>
+            );
+          })}
+        </div>
+
+        {selQuarter && selMonthEntry ? (
+          <div className="mt-3 rounded-xl border border-border bg-muted/40 p-3 space-y-2">
+            <div className="text-sm font-semibold">Mismo presupuesto que: {selQuarter.months.map((m) => MONTH_NAMES[m.month]).join(", ")}</div>
+            {BUDGET_CATEGORIES.map((cat) => (
+              <div key={cat.key} className="flex items-center justify-between text-sm">
+                <span className="flex items-center gap-1.5 text-muted-foreground">
+                  <span className="h-2 w-2 rounded-sm shrink-0" style={{ background: cat.color }} />
+                  {cat.label} ({MONTH_NAMES[selMonthEntry.month]})
+                </span>
+                <span className="font-semibold tabular-nums">{money(selMonthEntry[cat.key])}</span>
+              </div>
+            ))}
+            <div className="flex items-center justify-between text-sm pt-2 border-t border-border">
+              <span className="text-muted-foreground">Presupuesto total</span>
+              <span className="font-semibold tabular-nums">{money(selQuarter.totalBudget)}</span>
+            </div>
+          </div>
+        ) : (
+          <div className="text-sm text-muted-foreground text-center mt-3">Tocá un mes con datos para ver el detalle.</div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1051,6 +1335,8 @@ export default function FinancialGoals() {
   const [formGoal, setFormGoal] = useState<FinancialGoal | null>(null);
   const [detailGoalId, setDetailGoalId] = useState<string | null>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [budgetFormOpen, setBudgetFormOpen] = useState(false);
+  const [budgetCalendarOpen, setBudgetCalendarOpen] = useState(false);
 
   const { data: goals = [], isLoading } = useQuery<FinancialGoal[]>({
     queryKey: ["/api/financial-goals"],
@@ -1058,6 +1344,27 @@ export default function FinancialGoals() {
       const res = await fetch("/api/financial-goals");
       if (!res.ok) throw new Error("Failed to fetch financial goals");
       return res.json();
+    },
+  });
+
+  const { data: budgetQuarters = [] } = useQuery<BudgetQuarter[]>({
+    queryKey: ["/api/budget-quarters"],
+    queryFn: async () => {
+      const res = await fetch("/api/budget-quarters");
+      if (!res.ok) throw new Error("Failed to fetch budget quarters");
+      return res.json();
+    },
+  });
+
+  const createBudgetQuarter = useMutation({
+    mutationFn: async (data: { months: BudgetMonthEntry[]; totalBudget: number }) => {
+      const res = await fetch("/api/budget-quarters", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      if (!res.ok) throw new Error("Failed to create budget quarter");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/budget-quarters"] });
+      setBudgetFormOpen(false);
     },
   });
 
@@ -1151,19 +1458,21 @@ export default function FinancialGoals() {
     toast({ title: `+${money(mf)} en ${holding.instrument}` });
   };
 
+  const titleLongPress = useLongPress(
+    openCreate,
+    () => toast({ title: "Mantené presionado el título para crear una meta" })
+  );
+
   return (
     <div className="flex-1 min-h-0 flex flex-col">
-      <div className="flex items-center justify-between gap-3 px-5 pt-4 pb-3 border-b border-border/60">
-        <div>
-          <h2 className="font-display font-semibold text-lg">Metas financieras</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">Tocá una meta para ver el detalle · mantené presionada para editar</p>
-        </div>
-        <Button size="icon" className="rounded-full shrink-0" onClick={openCreate} title="Nueva meta" data-testid="button-new-financial-goal">
-          <Plus className="h-4 w-4" />
-        </Button>
+      <div className="px-5 pt-4 pb-3 border-b border-border/60">
+        <h2 className="font-display font-semibold text-lg cursor-pointer select-none inline-block" {...titleLongPress}>
+          Metas financieras
+        </h2>
+        <p className="text-xs text-muted-foreground mt-0.5">Mantené presionado el título para crear una meta</p>
       </div>
 
-      <div className="px-5 pt-3">
+      <div className="px-5 pt-3 flex items-center justify-between gap-3">
         <div className="inline-flex bg-muted rounded-xl p-1 gap-1">
           <button onClick={() => setView("preview")} className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${view === "preview" ? "bg-card shadow-sm text-foreground" : "text-muted-foreground"}`}>
             Objetivos
@@ -1172,6 +1481,7 @@ export default function FinancialGoals() {
             Panel
           </button>
         </div>
+        <p className="text-xs text-muted-foreground hidden sm:block">Tocá una meta para ver el detalle · mantené presionada para editar</p>
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto minimal-scrollbar px-5 py-4">
@@ -1218,6 +1528,7 @@ export default function FinancialGoals() {
                 ))}
               </div>
               <div className="space-y-4">
+                <BudgetCard quarters={budgetQuarters} onLongPress={() => setBudgetFormOpen(true)} onOpenCalendar={() => setBudgetCalendarOpen(true)} />
                 <DistributionCard goals={goals} />
                 <MovementsCard goals={goals} />
               </div>
@@ -1250,6 +1561,8 @@ export default function FinancialGoals() {
         }}
         onBack={() => setCalendarOpen(false)}
       />
+      <BudgetFormDialog open={budgetFormOpen} onOpenChange={setBudgetFormOpen} onSubmit={(data) => createBudgetQuarter.mutate(data)} />
+      <BudgetCalendarDialog quarters={budgetQuarters} open={budgetCalendarOpen} onOpenChange={setBudgetCalendarOpen} />
     </div>
   );
 }
