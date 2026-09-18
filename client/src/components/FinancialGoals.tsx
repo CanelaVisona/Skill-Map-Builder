@@ -69,10 +69,12 @@ function dollarRateFor(rates: DollarRate[], year?: number, month?: number): numb
   const latest = rates.reduce((a, b) => (a.year * 12 + a.month > b.year * 12 + b.month ? a : b));
   return latest.rate;
 }
-function moneyPairText(ars: number, rates: DollarRate[], year?: number, month?: number): string {
+// Todos los montos se anotan en dólares; este texto plano (para atributos title, toasts, etc.
+// donde no se puede usar JSX apilado) muestra el dólar primero y el peso entre paréntesis.
+function moneyPairText(usd: number, rates: DollarRate[], year?: number, month?: number): string {
   const rate = dollarRateFor(rates, year, month);
-  if (!rate) return money(ars);
-  return `${money(ars)} · ${moneyUsd(ars / rate)}`;
+  if (!rate) return moneyUsd(usd);
+  return `${moneyUsd(usd)} (${money(usd * rate)})`;
 }
 
 const DollarRatesContext = createContext<DollarRate[]>([]);
@@ -80,16 +82,16 @@ function useDollarRates(): DollarRate[] {
   return useContext(DollarRatesContext);
 }
 
-// Muestra un monto en pesos con su equivalente en dólares al lado (según la cotización del mes
-// indicado, o la última cargada si no se pasa mes). Si todavía no hay ninguna cotización
-// cargada, muestra solo el monto en pesos.
-function Money({ ars, year, month, className }: { ars: number; year?: number; month?: number; className?: string }) {
+// Muestra un monto en dólares (la unidad en la que se anota todo) con su equivalente en pesos
+// chiquito debajo, según la cotización del mes indicado, o la última cargada si no se pasa mes.
+// Si todavía no hay ninguna cotización cargada, muestra solo el monto en dólares.
+function Money({ usd, year, month, className }: { usd: number; year?: number; month?: number; className?: string }) {
   const rates = useDollarRates();
   const rate = dollarRateFor(rates, year, month);
   return (
-    <span className={`tabular-nums ${className || ""}`}>
-      {money(ars)}
-      {rate !== null && <span className="text-muted-foreground font-normal text-[0.82em]"> · {moneyUsd(ars / rate)}</span>}
+    <span className={`inline-flex flex-col items-start leading-tight align-middle ${className || ""}`}>
+      <span className="tabular-nums">{moneyUsd(usd)}</span>
+      {rate !== null && <span className="text-muted-foreground font-normal text-[0.72em] tabular-nums">{money(usd * rate)}</span>}
     </span>
   );
 }
@@ -244,7 +246,7 @@ function PieSliceTooltip({ active, payload }: { active?: boolean; payload?: any[
   return (
     <div className="rounded-lg border border-border bg-card px-2.5 py-1.5 shadow-md text-xs max-w-[180px]">
       <div className="font-medium text-foreground truncate">{p.name}</div>
-      <div className="text-muted-foreground"><Money ars={p.value} /></div>
+      <div className="text-muted-foreground"><Money usd={p.value} /></div>
     </div>
   );
 }
@@ -292,9 +294,9 @@ function GoalPreviewCard({ goal, onTap, onLongPress }: { goal: FinancialGoal; on
           </div>
         </div>
       </div>
-      <div className="flex items-baseline gap-2 mb-2">
-        <span className="font-display text-xl font-medium"><Money ars={saved} /></span>
-        {has && <span className="text-sm text-muted-foreground">/ <Money ars={goal.target} /></span>}
+      <div className="flex items-start gap-2 mb-2">
+        <span className="font-display text-xl font-medium"><Money usd={saved} /></span>
+        {has && <span className="text-sm text-muted-foreground">/ <Money usd={goal.target} /></span>}
       </div>
       {has ? (
         <div className="h-2 rounded-full bg-muted overflow-hidden mb-3">
@@ -306,7 +308,7 @@ function GoalPreviewCard({ goal, onTap, onLongPress }: { goal: FinancialGoal; on
       <HoldingChips holdings={goal.holdings} />
       {goal.flow.amount > 0 && (
         <div className="mt-2.5 text-xs font-medium" style={{ color: GOLD }}>
-          💵 <Money ars={goal.flow.amount} /> {flowCycleLabel(goal.flow)}
+          💵 <Money usd={goal.flow.amount} /> {flowCycleLabel(goal.flow)}
         </div>
       )}
     </motion.div>
@@ -340,9 +342,9 @@ function GoalDashboardRow({ goal, onTap, onLongPress }: { goal: FinancialGoal; o
           </div>
         </div>
       </div>
-      <div className="flex items-baseline gap-2 mt-3">
-        <span className="font-display text-lg font-medium"><Money ars={saved} /></span>
-        {has && <span className="text-sm text-muted-foreground">/ <Money ars={goal.target} /></span>}
+      <div className="flex items-start gap-2 mt-3">
+        <span className="font-display text-lg font-medium"><Money usd={saved} /></span>
+        {has && <span className="text-sm text-muted-foreground">/ <Money usd={goal.target} /></span>}
         {has ? (
           done ? (
             <span className="ml-auto text-xs font-semibold" style={{ color: goal.color }}>
@@ -396,7 +398,7 @@ function DistributionCard({ goals }: { goals: FinancialGoal[] }) {
               </PieChart>
             </ResponsiveContainer>
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-              <div className="font-display text-base font-medium"><Money ars={total} /></div>
+              <div className="font-display text-base font-medium"><Money usd={total} /></div>
               <div className="text-[11px] text-muted-foreground">invertido</div>
             </div>
           </div>
@@ -405,7 +407,7 @@ function DistributionCard({ goals }: { goals: FinancialGoal[] }) {
               <div key={i} className="flex items-center gap-2 text-sm flex-wrap">
                 <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: d.color }} />
                 <span className="flex-1 min-w-0 truncate text-muted-foreground">{d.name}</span>
-                <span className="font-semibold"><Money ars={d.value} /></span>
+                <span className="font-semibold"><Money usd={d.value} /></span>
                 <span className="text-xs text-muted-foreground w-9 text-right">{Math.round((d.value / (total || 1)) * 100)}%</span>
               </div>
             ))}
@@ -447,7 +449,7 @@ function MovementsCard({ goals }: { goals: FinancialGoal[] }) {
                   </div>
                 </div>
                 <div className="text-sm font-semibold text-right shrink-0" style={{ color: m.color }}>
-                  +<Money ars={m.amount} year={new Date(m.date).getFullYear()} month={new Date(m.date).getMonth()} />
+                  +<Money usd={m.amount} year={new Date(m.date).getFullYear()} month={new Date(m.date).getMonth()} />
                 </div>
               </div>
             );
@@ -510,7 +512,7 @@ function BudgetPieSlide({
               </PieChart>
             </ResponsiveContainer>
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-              <div className="font-display text-base font-medium"><Money ars={total} /></div>
+              <div className="font-display text-base font-medium"><Money usd={total} /></div>
               <div className="text-[11px] text-muted-foreground">{totalLabel}</div>
             </div>
           </div>
@@ -519,7 +521,7 @@ function BudgetPieSlide({
               <div key={i} className="flex items-center gap-2 text-sm">
                 <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: d.color }} />
                 <span className="flex-1 min-w-0 truncate text-muted-foreground">{d.name}</span>
-                <span className="font-semibold"><Money ars={d.value} /></span>
+                <span className="font-semibold"><Money usd={d.value} /></span>
               </div>
             ))}
           </div>
@@ -621,12 +623,12 @@ function BudgetCategoryRow({ category, color, onRename }: { category: BudgetCate
       <div className="flex items-center gap-2 text-sm cursor-pointer" {...rowLongPress}>
         <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: color }} />
         <span className="flex-1 min-w-0 truncate text-muted-foreground">{category.name}</span>
-        <span className="font-semibold"><Money ars={avg} /></span>
+        <span className="font-semibold"><Money usd={avg} /></span>
       </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1.5 pl-[18px] text-[11px] text-muted-foreground">
         {category.months.map((m, i) => (
           <span key={i} className="capitalize">
-            {monthLabel(m.year, m.month).slice(0, 3)}: <Money ars={m.amount} year={m.year} month={m.month} />
+            {monthLabel(m.year, m.month).slice(0, 3)}: <Money usd={m.amount} year={m.year} month={m.month} />
           </span>
         ))}
       </div>
@@ -738,7 +740,7 @@ function BudgetCategoriesDetailDialog({
           <>
             <div className="flex items-center justify-between text-sm pb-2 border-b border-border">
               <span className="text-muted-foreground">Promedio total</span>
-              <span className="font-semibold"><Money ars={total} /></span>
+              <span className="font-semibold"><Money usd={total} /></span>
             </div>
             <div className="flex flex-col gap-2">
               {categories.map((c, i) => (
@@ -817,8 +819,8 @@ function BudgetFormDialog({
                   <div key={idx}>
                     <span className="text-[11px] text-muted-foreground mb-1 block capitalize truncate">{m.label}</span>
                     <div className="relative">
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">$</span>
-                      <Input value={getVal(cat.key, idx)} onChange={(e) => setVal(cat.key, idx, e.target.value)} placeholder="0" inputMode="decimal" className="h-9 text-xs pl-4" />
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">US$</span>
+                      <Input value={getVal(cat.key, idx)} onChange={(e) => setVal(cat.key, idx, e.target.value)} placeholder="0" inputMode="decimal" className="h-9 text-xs pl-8" />
                     </div>
                   </div>
                 ))}
@@ -903,13 +905,13 @@ function BudgetCategoryFormDialog({
                 <div key={idx}>
                   <span className="text-[11px] text-muted-foreground mb-1 block capitalize truncate">{m.label}</span>
                   <div className="relative">
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">$</span>
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">US$</span>
                     <Input
                       value={values[idx]}
                       onChange={(e) => setValues((v) => v.map((x, i) => (i === idx ? e.target.value : x)))}
                       placeholder="0"
                       inputMode="decimal"
-                      className="h-9 text-xs pl-4"
+                      className="h-9 text-xs pl-8"
                     />
                   </div>
                 </div>
@@ -1027,12 +1029,12 @@ function BudgetCalendarDialog({
                     <span className="h-2 w-2 rounded-sm shrink-0" style={{ background: cat.color }} />
                     {cat.label} ({MONTH_NAMES[selMonthEntry.month]})
                   </span>
-                  <span className="font-semibold"><Money ars={selMonthEntry[cat.key]} year={selMonthEntry.year} month={selMonthEntry.month} /></span>
+                  <span className="font-semibold"><Money usd={selMonthEntry[cat.key]} year={selMonthEntry.year} month={selMonthEntry.month} /></span>
                 </div>
               ))}
               <div className="flex items-center justify-between text-sm pt-2 border-t border-border">
                 <span className="text-muted-foreground">Presupuesto total</span>
-                <span className="font-semibold"><Money ars={quarterTotalAvg(selQuarter)} /></span>
+                <span className="font-semibold"><Money usd={quarterTotalAvg(selQuarter)} /></span>
               </div>
               <Button type="button" size="sm" variant="outline" className="w-full mt-1" onClick={() => onEditQuarter(selQuarter)}>
                 <Pencil className="h-3.5 w-3.5" /> Editar
@@ -1174,7 +1176,7 @@ function BudgetCategoriesCalendarDialog({
                 <div className="text-xs text-muted-foreground">Mismo presupuesto que: {e.category.months.map((m) => MONTH_NAMES[m.month]).join(", ")}</div>
                 <div className="flex items-center justify-between text-sm pt-1 border-t border-border/60">
                   <span className="text-muted-foreground">Promedio de 3 meses</span>
-                  <span className="font-semibold"><Money ars={categoryAvg(e.category)} /></span>
+                  <span className="font-semibold"><Money usd={categoryAvg(e.category)} /></span>
                 </div>
                 <Button type="button" size="sm" variant="outline" className="w-full mt-1" onClick={() => onEditCategory(e.category)}>
                   <Pencil className="h-3.5 w-3.5" /> Editar
@@ -1184,7 +1186,7 @@ function BudgetCategoriesCalendarDialog({
             {selEntries.length > 1 && (
               <div className="flex items-center justify-between text-sm px-1">
                 <span className="text-muted-foreground">Total promedio</span>
-                <span className="font-semibold"><Money ars={selTotal} /></span>
+                <span className="font-semibold"><Money usd={selTotal} /></span>
               </div>
             )}
             {selEntries.length === 0 && (
@@ -1307,7 +1309,7 @@ function DollarRateFormDialog({
           <DialogTitle className="capitalize">
             Dólar de {monthLabel(target.year, target.month)} {target.year}
           </DialogTitle>
-          <DialogDescription>Se usa para mostrar el equivalente en USD de los montos en pesos de ese mes.</DialogDescription>
+          <DialogDescription>Se usa para mostrar el equivalente en pesos de los montos en dólares de ese mes.</DialogDescription>
         </DialogHeader>
         <div>
           <label className="text-sm font-medium mb-1.5 block" htmlFor="dr-rate">
@@ -1546,8 +1548,8 @@ function GoalFormDialog({
               Monto necesario <span className="text-muted-foreground font-normal">(opcional)</span>
             </label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
-              <Input id="fg-target" className="pl-6" inputMode="decimal" value={targetText} onChange={(e) => setTargetText(e.target.value)} placeholder="Sin objetivo fijo" />
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">US$</span>
+              <Input id="fg-target" className="pl-10" inputMode="decimal" value={targetText} onChange={(e) => setTargetText(e.target.value)} placeholder="Sin objetivo fijo" />
             </div>
           </div>
 
@@ -1579,13 +1581,13 @@ function GoalFormDialog({
                   )}
                   <Input value={h.broker} onChange={(e) => updateHoldingRow(h.id, { broker: e.target.value })} placeholder="Broker (ej: IOL)" maxLength={40} className="h-9 text-xs" />
                   <div className="relative">
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">$</span>
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">US$</span>
                     <Input
                       value={h.amountText}
                       onChange={(e) => updateHoldingRow(h.id, { amountText: e.target.value })}
                       placeholder="0"
                       inputMode="decimal"
-                      className="h-9 text-xs pl-4"
+                      className="h-9 text-xs pl-8"
                     />
                   </div>
                   <button
@@ -1613,8 +1615,8 @@ function GoalFormDialog({
               <div>
                 <span className="text-xs text-muted-foreground mb-1 block">Monto</span>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
-                  <Input className="pl-6" inputMode="decimal" value={flowAmountText} onChange={(e) => setFlowAmountText(e.target.value)} placeholder="0" />
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">US$</span>
+                  <Input className="pl-10" inputMode="decimal" value={flowAmountText} onChange={(e) => setFlowAmountText(e.target.value)} placeholder="0" />
                 </div>
               </div>
               <div>
@@ -1786,11 +1788,11 @@ function GoalDetailDialog({
               <DialogDescription>
                 {has ? (
                   <>
-                    <Money ars={saved} /> de <Money ars={target} /> · {pct}% alcanzado
+                    <Money usd={saved} /> de <Money usd={target} /> · {pct}% alcanzado
                   </>
                 ) : (
                   <>
-                    <Money ars={saved} /> · sin objetivo definido
+                    <Money usd={saved} /> · sin objetivo definido
                   </>
                 )}
               </DialogDescription>
@@ -1812,7 +1814,7 @@ function GoalDetailDialog({
               <span className="h-2 w-2 rounded-sm" style={{ background: goal.color }} />
               Tenés
             </div>
-            <div className="font-display text-xl font-medium mt-1"><Money ars={saved} /></div>
+            <div className="font-display text-xl font-medium mt-1"><Money usd={saved} /></div>
             <div className="text-xs text-muted-foreground mt-0.5">{has ? `${Math.min(100, pct)}% del objetivo` : "ahorro acumulado"}</div>
           </div>
           <div className="rounded-xl bg-muted/50 border border-border p-3">
@@ -1820,7 +1822,7 @@ function GoalDetailDialog({
               <span className="h-2 w-2 rounded-sm bg-muted-foreground/30" />
               Falta
             </div>
-            <div className="font-display text-xl font-medium mt-1">{has ? <Money ars={miss} /> : "—"}</div>
+            <div className="font-display text-xl font-medium mt-1">{has ? <Money usd={miss} /> : "—"}</div>
             <div className="text-xs text-muted-foreground mt-0.5">{has ? `${Math.max(0, 100 - Math.min(100, pct))}% del objetivo` : "sin meta fija"}</div>
           </div>
         </div>
@@ -1848,7 +1850,7 @@ function GoalDetailDialog({
                 <div key={i} className="flex items-center gap-2 text-sm">
                   <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: s.color }} />
                   <span className="flex-1 min-w-0 truncate text-muted-foreground">{s.name}</span>
-                  <span className="font-semibold"><Money ars={s.value} /></span>
+                  <span className="font-semibold"><Money usd={s.value} /></span>
                   <span className="text-xs text-muted-foreground w-9 text-right">{Math.round((s.value / sliceTotal) * 100)}%</span>
                 </div>
               ))}
@@ -1865,7 +1867,7 @@ function GoalDetailDialog({
           ) : (
             <>
               <div className="text-sm mt-1.5 flex items-center gap-2 flex-wrap">
-                <span className="font-display text-base font-medium"><Money ars={mf} /></span>
+                <span className="font-display text-base font-medium"><Money usd={mf} /></span>
                 <span className="text-xs bg-muted border border-border rounded-full px-2 py-0.5 text-muted-foreground">{flowFreqPhrase(goal.flow)}</span>
               </div>
               {goal.holdings.length > 1 && (
@@ -1893,7 +1895,7 @@ function GoalDetailDialog({
                   className="w-full py-2.5 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   style={{ background: flowReady ? GOLD : "transparent", color: flowReady ? "#fff" : "hsl(var(--muted-foreground))" }}
                 >
-                  Agregar <Money ars={mf} />
+                  Agregar <Money usd={mf} />
                 </button>
               </div>
             </>
@@ -2052,7 +2054,7 @@ function GoalCalendarDialog({
         <div className="text-sm text-muted-foreground text-center bg-muted/50 border border-border rounded-lg p-2.5 mt-3">
           {daysWith ? (
             <>
-              Aportaste <b className="text-foreground font-semibold"><Money ars={monthTotal} year={year} month={month} /></b> en {daysWith} {daysWith === 1 ? "día" : "días"} este mes.
+              Aportaste <b className="text-foreground font-semibold"><Money usd={monthTotal} year={year} month={month} /></b> en {daysWith} {daysWith === 1 ? "día" : "días"} este mes.
             </>
           ) : (
             "Sin aportes en este mes."
@@ -2078,7 +2080,7 @@ function GoalCalendarDialog({
                       <div className="text-xs text-muted-foreground">{new Date(h.date).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}</div>
                     </div>
                     <div className="text-sm font-semibold text-right shrink-0" style={{ color: goal.color }}>
-                      +<Money ars={h.amount} year={new Date(h.date).getFullYear()} month={new Date(h.date).getMonth()} />
+                      +<Money usd={h.amount} year={new Date(h.date).getFullYear()} month={new Date(h.date).getMonth()} />
                     </div>
                   </div>
                 ))}
@@ -2452,8 +2454,8 @@ export default function FinancialGoals() {
           <div className="space-y-5">
             <div className="rounded-2xl border border-border bg-card p-4">
               <div className="text-xs text-muted-foreground">Total ahorrado</div>
-              <div className="font-display text-3xl font-medium mt-1"><Money ars={totalSaved} /></div>
-              <div className="text-sm text-muted-foreground mt-1">de <Money ars={totalTarget} /> en objetivos</div>
+              <div className="font-display text-3xl font-medium mt-1"><Money usd={totalSaved} /></div>
+              <div className="text-sm text-muted-foreground mt-1">de <Money usd={totalTarget} /> en objetivos</div>
               <div className="h-2 rounded-full bg-muted overflow-hidden mt-3">
                 <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.min(100, overallPct)}%` }} />
               </div>
