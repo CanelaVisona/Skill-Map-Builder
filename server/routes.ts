@@ -6161,6 +6161,94 @@ export async function registerRoutes(
     }
   });
 
+  // ============ Presupuesto por categorías ============
+  app.get("/api/budget-categories", requireAuth, async (req, res) => {
+    try {
+      const categories = await storage.getBudgetCategories(req.userId!);
+      res.json(categories);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/budget-categories", requireAuth, async (req, res) => {
+    try {
+      const data = { ...req.body, userId: req.userId };
+      const category = await storage.createBudgetCategory(data);
+      res.status(201).json(category);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/budget-categories/:id", requireAuth, async (req, res) => {
+    try {
+      const category = await storage.getBudgetCategory(req.params.id);
+      if (!category) {
+        return res.status(404).json({ message: "Categoría no encontrada" });
+      }
+      if (category.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para modificar esta categoría" });
+      }
+      const updated = await storage.updateBudgetCategory(req.params.id, req.body);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/budget-categories/:id", requireAuth, async (req, res) => {
+    try {
+      const category = await storage.getBudgetCategory(req.params.id);
+      if (!category) {
+        return res.status(404).json({ message: "Categoría no encontrada" });
+      }
+      if (category.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para eliminar esta categoría" });
+      }
+      await storage.deleteBudgetCategory(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ============ Cotización del dólar ============
+  app.get("/api/dollar-rates", requireAuth, async (req, res) => {
+    try {
+      const rates = await storage.getDollarRates(req.userId!);
+      res.json(rates);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/dollar-rates", requireAuth, async (req, res) => {
+    try {
+      const data = { ...req.body, userId: req.userId };
+      const rate = await storage.createDollarRate(data);
+      res.status(201).json(rate);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/dollar-rates/:id", requireAuth, async (req, res) => {
+    try {
+      const rate = await storage.getDollarRate(req.params.id);
+      if (!rate) {
+        return res.status(404).json({ message: "Cotización no encontrada" });
+      }
+      if (rate.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para modificar esta cotización" });
+      }
+      const updated = await storage.updateDollarRate(req.params.id, req.body);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // ============ Preguntas (question problems + chained items) ============
   app.get("/api/question-problems", requireAuth, async (req, res) => {
     try {

@@ -30,28 +30,18 @@ export async function setupVite(server: Server, app: Express) {
     appType: "custom",
   });
 
-  // Only protect API routes from Vite - let express.static() handle static files
+  // Only protect API routes from Vite - everything else (including .css/.mjs/assets)
+  // must go through vite.middlewares so it can transform/serve them correctly.
   app.use((req: Request, res: Response, next: NextFunction) => {
     if (req.path.startsWith("/api")) {
       return next();
     }
-    // Skip static files with extensions (let express.static handle them)
-    if (req.path.includes(".") && !req.path.endsWith(".tsx") && !req.path.endsWith(".jsx") && !req.path.endsWith(".ts") && !req.path.endsWith(".js")) {
-      return next();
-    }
-    // For non-API, non-static routes, continue to Vite
     vite.middlewares(req, res, next);
   });
 
   app.use("*", async (req, res, next) => {
-    // Don't handle API routes or static files - let Express find them
+    // Don't handle API routes - let Express find them
     if (req.originalUrl.startsWith("/api") || req.path.startsWith("/api")) {
-      return next();
-    }
-    
-    // Don't handle static files (images, assets with extensions)
-    // This prevents Vite from serving them as HTML
-    if (req.path.includes(".") && !req.path.endsWith(".tsx") && !req.path.endsWith(".jsx") && !req.path.endsWith(".ts") && !req.path.endsWith(".js")) {
       return next();
     }
 

@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import {
   Plus,
   Pencil,
@@ -31,6 +31,9 @@ import type {
   FinancialGoalFlow as Flow,
   BudgetQuarter,
   BudgetMonthEntry,
+  BudgetCategory,
+  BudgetCategoryMonthEntry,
+  DollarRate,
 } from "@shared/schema";
 
 const PALETTE = ["#158a63", "#2f9e8f", "#c8952b", "#d1654f", "#7c6cd1", "#3d8bd4", "#c65f9a", "#6aa33a"];
@@ -51,6 +54,44 @@ const MONTH_NAMES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Se
 const moneyFormatter = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 });
 function money(n: number): string {
   return "$" + moneyFormatter.format(Math.round(n || 0));
+}
+function moneyUsd(n: number): string {
+  return "US$" + moneyFormatter.format(Math.round(n || 0));
+}
+// Cotización a usar para un monto: la del mes puntual si se pasa año/mes y existe, si no la
+// última cargada (mayor año/mes registrado) como aproximación del valor actual.
+function dollarRateFor(rates: DollarRate[], year?: number, month?: number): number | null {
+  if (year !== undefined && month !== undefined) {
+    const exact = rates.find((r) => r.year === year && r.month === month);
+    if (exact) return exact.rate;
+  }
+  if (!rates.length) return null;
+  const latest = rates.reduce((a, b) => (a.year * 12 + a.month > b.year * 12 + b.month ? a : b));
+  return latest.rate;
+}
+function moneyPairText(ars: number, rates: DollarRate[], year?: number, month?: number): string {
+  const rate = dollarRateFor(rates, year, month);
+  if (!rate) return money(ars);
+  return `${money(ars)} · ${moneyUsd(ars / rate)}`;
+}
+
+const DollarRatesContext = createContext<DollarRate[]>([]);
+function useDollarRates(): DollarRate[] {
+  return useContext(DollarRatesContext);
+}
+
+// Muestra un monto en pesos con su equivalente en dólares al lado (según la cotización del mes
+// indicado, o la última cargada si no se pasa mes). Si todavía no hay ninguna cotización
+// cargada, muestra solo el monto en pesos.
+function Money({ ars, year, month, className }: { ars: number; year?: number; month?: number; className?: string }) {
+  const rates = useDollarRates();
+  const rate = dollarRateFor(rates, year, month);
+  return (
+    <span className={`tabular-nums ${className || ""}`}>
+      {money(ars)}
+      {rate !== null && <span className="text-muted-foreground font-normal text-[0.82em]"> · {moneyUsd(ars / rate)}</span>}
+    </span>
+  );
 }
 function parseMoney(v: string): number {
   if (!v) return 0;
@@ -108,14 +149,20 @@ function flowFreqPhrase(flow: Flow): string {
 function tint(color: string, pct = 18): string {
   return `color-mix(in srgb, ${color} ${pct}%, hsl(var(--muted)))`;
 }
+// Los últimos 3 meses CERRADOS, sin contar el mes en curso (todavía está en proceso). Se
+// recalcula solo con el paso del tiempo: en septiembre da Jun/Jul/Ago, en octubre pasa a
+// Jul/Ago/Sep, etc.
 function lastThreeMonths(): { year: number; month: number; label: string }[] {
   const now = new Date();
   const out: { year: number; month: number; label: string }[] = [];
-  for (let i = 2; i >= 0; i--) {
+  for (let i = 3; i >= 1; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     out.push({ year: d.getFullYear(), month: d.getMonth(), label: d.toLocaleDateString("es-AR", { month: "long" }) });
   }
   return out;
+}
+function monthLabel(year: number, month: number): string {
+  return new Date(year, month, 1).toLocaleDateString("es-AR", { month: "long" });
 }
 function budgetAvg(q: BudgetQuarter, key: "fixed" | "variable" | "savings"): number {
   if (!q.months.length) return 0;
@@ -181,6 +228,17 @@ function useLongPress(onLongPress: () => void, onTap?: () => void, duration = 48
 
 // ---------- small shared bits ----------
 
+function PieSliceTooltip({ active, payload }: { active?: boolean; payload?: any[] }) {
+  if (!active || !payload || !payload.length) return null;
+  const p = payload[0];
+  return (
+    <div className="rounded-lg border border-border bg-card px-2.5 py-1.5 shadow-md text-xs max-w-[180px]">
+      <div className="font-medium text-foreground truncate">{p.name}</div>
+      <div className="text-muted-foreground"><Money ars={p.value} /></div>
+    </div>
+  );
+}
+
 function HoldingChips({ holdings }: { holdings: Holding[] }) {
   if (!holdings.length) return null;
   return (
@@ -225,8 +283,8 @@ function GoalPreviewCard({ goal, onTap, onLongPress }: { goal: FinancialGoal; on
         </div>
       </div>
       <div className="flex items-baseline gap-2 mb-2">
-        <span className="font-display text-xl font-medium tabular-nums">{money(saved)}</span>
-        {has && <span className="text-sm text-muted-foreground tabular-nums">/ {money(goal.target)}</span>}
+        <span className="font-display text-xl font-medium"><Money ars={saved} /></span>
+        {has && <span className="text-sm text-muted-foreground">/ <Money ars={goal.target} /></span>}
       </div>
       {has ? (
         <div className="h-2 rounded-full bg-muted overflow-hidden mb-3">
@@ -238,7 +296,7 @@ function GoalPreviewCard({ goal, onTap, onLongPress }: { goal: FinancialGoal; on
       <HoldingChips holdings={goal.holdings} />
       {goal.flow.amount > 0 && (
         <div className="mt-2.5 text-xs font-medium" style={{ color: GOLD }}>
-          💵 {money(goal.flow.amount)} {flowCycleLabel(goal.flow)}
+          💵 <Money ars={goal.flow.amount} /> {flowCycleLabel(goal.flow)}
         </div>
       )}
     </motion.div>
@@ -273,8 +331,8 @@ function GoalDashboardRow({ goal, onTap, onLongPress }: { goal: FinancialGoal; o
         </div>
       </div>
       <div className="flex items-baseline gap-2 mt-3">
-        <span className="font-display text-lg font-medium tabular-nums">{money(saved)}</span>
-        {has && <span className="text-sm text-muted-foreground tabular-nums">/ {money(goal.target)}</span>}
+        <span className="font-display text-lg font-medium"><Money ars={saved} /></span>
+        {has && <span className="text-sm text-muted-foreground">/ <Money ars={goal.target} /></span>}
         {has ? (
           done ? (
             <span className="ml-auto text-xs font-semibold" style={{ color: goal.color }}>
@@ -324,19 +382,20 @@ function DistributionCard({ goals }: { goals: FinancialGoal[] }) {
                     <Cell key={i} fill={d.color} />
                   ))}
                 </Pie>
+                <Tooltip content={<PieSliceTooltip />} />
               </PieChart>
             </ResponsiveContainer>
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-              <div className="font-display text-base font-medium tabular-nums">{money(total)}</div>
+              <div className="font-display text-base font-medium"><Money ars={total} /></div>
               <div className="text-[11px] text-muted-foreground">invertido</div>
             </div>
           </div>
           <div className="flex flex-col gap-2 mt-3">
             {data.map((d, i) => (
-              <div key={i} className="flex items-center gap-2 text-sm">
+              <div key={i} className="flex items-center gap-2 text-sm flex-wrap">
                 <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: d.color }} />
                 <span className="flex-1 min-w-0 truncate text-muted-foreground">{d.name}</span>
-                <span className="font-semibold tabular-nums">{money(d.value)}</span>
+                <span className="font-semibold"><Money ars={d.value} /></span>
                 <span className="text-xs text-muted-foreground w-9 text-right">{Math.round((d.value / (total || 1)) * 100)}%</span>
               </div>
             ))}
@@ -377,8 +436,8 @@ function MovementsCard({ goals }: { goals: FinancialGoal[] }) {
                     {fmtDateTime(m.date)}
                   </div>
                 </div>
-                <div className="text-sm font-semibold tabular-nums" style={{ color: m.color }}>
-                  +{money(m.amount)}
+                <div className="text-sm font-semibold text-right shrink-0" style={{ color: m.color }}>
+                  +<Money ars={m.amount} year={new Date(m.date).getFullYear()} month={new Date(m.date).getMonth()} />
                 </div>
               </div>
             );
@@ -391,36 +450,45 @@ function MovementsCard({ goals }: { goals: FinancialGoal[] }) {
 
 // ---------- dashboard side: budget ----------
 
-function BudgetCard({ quarters, onLongPress, onOpenCalendar }: { quarters: BudgetQuarter[]; onLongPress: () => void; onOpenCalendar: () => void }) {
-  const longPress = useLongPress(onLongPress, () => {});
-  const latest = latestBudgetQuarter(quarters);
+function quarterTotalAvg(q: BudgetQuarter): number {
+  return budgetAvg(q, "fixed") + budgetAvg(q, "variable") + budgetAvg(q, "savings");
+}
+function categoryAvg(c: BudgetCategory): number {
+  if (!c.months.length) return 0;
+  return c.months.reduce((s, m) => s + (Number(m.amount) || 0), 0) / c.months.length;
+}
 
-  const data = latest
-    ? BUDGET_CATEGORIES.map((cat) => ({ name: cat.label, value: budgetAvg(latest, cat.key), color: cat.color })).filter((d) => d.value > 0)
-    : [];
-  const total = data.reduce((a, d) => a + d.value, 0);
-
+function BudgetPieSlide({
+  title,
+  hint,
+  data,
+  total,
+  totalLabel,
+  emptyText,
+  chartLongPress,
+}: {
+  title: string;
+  hint: string;
+  data: { name: string; value: number; color: string }[];
+  total: number;
+  totalLabel: string;
+  emptyText: string;
+  chartLongPress: ReturnType<typeof useLongPress>;
+}) {
   return (
-    <div className="rounded-2xl border border-border bg-card p-4">
-      <div className="flex items-start justify-between gap-2 mb-3">
-        <div>
-          <div className="font-display font-semibold text-sm">Presupuesto</div>
-          <div className="text-xs text-muted-foreground mt-0.5">Mantené presionado el gráfico para cargarlo</div>
-        </div>
-        {!!latest && (
-          <button onClick={onOpenCalendar} title="Calendario anual" className="h-7 w-7 rounded-lg border border-border text-muted-foreground hover:text-foreground flex items-center justify-center shrink-0">
-            <CalendarRange className="h-3.5 w-3.5" />
-          </button>
-        )}
+    <div className="w-full shrink-0">
+      <div className="pr-9">
+        <div className="font-display font-semibold text-sm">{title}</div>
+        <div className="text-xs text-muted-foreground mt-0.5">{hint}</div>
       </div>
 
-      {!latest ? (
-        <div {...longPress} className="text-sm text-muted-foreground py-8 px-3 text-center cursor-pointer select-none rounded-xl border border-dashed border-border">
-          Todavía no cargaste tu presupuesto. Mantené presionado acá para empezar.
+      {data.length === 0 ? (
+        <div {...chartLongPress} className="text-sm text-muted-foreground py-8 px-3 text-center mt-3 rounded-xl border border-dashed border-border cursor-pointer select-none">
+          {emptyText}
         </div>
       ) : (
         <>
-          <div className="relative h-[190px] cursor-pointer select-none" {...longPress}>
+          <div className="relative h-[190px] mt-1 cursor-pointer select-none" {...chartLongPress}>
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie data={data} dataKey="value" innerRadius="66%" outerRadius="100%" paddingAngle={2} stroke="hsl(var(--card))" strokeWidth={3}>
@@ -428,11 +496,12 @@ function BudgetCard({ quarters, onLongPress, onOpenCalendar }: { quarters: Budge
                     <Cell key={i} fill={d.color} />
                   ))}
                 </Pie>
+                <Tooltip content={<PieSliceTooltip />} />
               </PieChart>
             </ResponsiveContainer>
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-              <div className="font-display text-base font-medium tabular-nums">{money(total)}</div>
-              <div className="text-[11px] text-muted-foreground">promedio / mes</div>
+              <div className="font-display text-base font-medium"><Money ars={total} /></div>
+              <div className="text-[11px] text-muted-foreground">{totalLabel}</div>
             </div>
           </div>
           <div className="flex flex-col gap-2 mt-3">
@@ -440,17 +509,236 @@ function BudgetCard({ quarters, onLongPress, onOpenCalendar }: { quarters: Budge
               <div key={i} className="flex items-center gap-2 text-sm">
                 <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: d.color }} />
                 <span className="flex-1 min-w-0 truncate text-muted-foreground">{d.name}</span>
-                <span className="font-semibold tabular-nums">{money(d.value)}</span>
+                <span className="font-semibold"><Money ars={d.value} /></span>
               </div>
             ))}
-          </div>
-          <div className="flex items-center justify-between text-sm mt-3 pt-3 border-t border-border">
-            <span className="text-muted-foreground">Presupuesto total</span>
-            <span className="font-semibold tabular-nums">{money(latest.totalBudget)}</span>
           </div>
         </>
       )}
     </div>
+  );
+}
+
+function BudgetCard({
+  quarters,
+  categories,
+  onLongPressQuarter,
+  onOpenCategoriesDetail,
+  onOpenQuarterCalendar,
+  onOpenCategoriesCalendar,
+}: {
+  quarters: BudgetQuarter[];
+  categories: BudgetCategory[];
+  onLongPressQuarter: () => void;
+  onOpenCategoriesDetail: () => void;
+  onOpenQuarterCalendar: () => void;
+  onOpenCategoriesCalendar: () => void;
+}) {
+  const [slide, setSlide] = useState<0 | 1>(0);
+  const quarterChartPress = useLongPress(onLongPressQuarter, () => {});
+  const categoryChartPress = useLongPress(onOpenCategoriesDetail, () => {});
+
+  const latest = latestBudgetQuarter(quarters);
+  const quarterData = latest
+    ? BUDGET_CATEGORIES.map((cat) => ({ name: cat.label, value: budgetAvg(latest, cat.key), color: cat.color })).filter((d) => d.value > 0)
+    : [];
+  const quarterTotal = latest ? quarterTotalAvg(latest) : 0;
+
+  const categoryData = categories
+    .map((c, i) => ({ name: c.name, value: categoryAvg(c), color: PALETTE[i % PALETTE.length] }))
+    .filter((d) => d.value > 0);
+  const categoryTotal = categoryData.reduce((a, d) => a + d.value, 0);
+
+  const showCalendarBtn = slide === 0 ? !!latest : categories.length > 0;
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4 relative">
+      {showCalendarBtn && (
+        <button
+          onClick={() => (slide === 0 ? onOpenQuarterCalendar() : onOpenCategoriesCalendar())}
+          title="Calendario anual"
+          className="absolute top-4 right-4 h-7 w-7 rounded-lg border border-border text-muted-foreground hover:text-foreground flex items-center justify-center z-10"
+        >
+          <CalendarRange className="h-3.5 w-3.5" />
+        </button>
+      )}
+
+      <div className="overflow-hidden">
+        <motion.div className="flex" animate={{ x: `-${slide * 100}%` }} transition={{ type: "tween", duration: 0.25 }}>
+          <BudgetPieSlide
+            title="Presupuesto"
+            hint="Mantené presionado el gráfico para cargarlo"
+            data={quarterData}
+            total={quarterTotal}
+            totalLabel="presupuesto total / mes"
+            emptyText="Todavía no cargaste tu presupuesto. Mantené presionado acá para empezar."
+            chartLongPress={quarterChartPress}
+          />
+          <BudgetPieSlide
+            title="Presupuesto por categorías"
+            hint="Mantené presionado el gráfico para ver el detalle"
+            data={categoryData}
+            total={categoryTotal}
+            totalLabel="promedio / mes"
+            emptyText="Todavía no agregaste categorías. Mantené presionado acá para ver el detalle."
+            chartLongPress={categoryChartPress}
+          />
+        </motion.div>
+      </div>
+
+      <div className="flex justify-center gap-1.5 mt-3">
+        {[0, 1].map((i) => (
+          <button
+            key={i}
+            onClick={() => setSlide(i as 0 | 1)}
+            aria-label={`Ver gráfico ${i + 1}`}
+            className="h-1.5 rounded-full transition-all"
+            style={{ width: slide === i ? "18px" : "6px", background: slide === i ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground) / 0.35)" }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BudgetCategoryRow({ category, color, onRename }: { category: BudgetCategory; color: string; onRename: () => void }) {
+  const [showActions, setShowActions] = useState(false);
+  const rowLongPress = useLongPress(() => setShowActions((v) => !v), () => {});
+  const avg = categoryAvg(category);
+
+  return (
+    <div className="rounded-xl border border-border/60 bg-muted/30 px-3 py-2.5 select-none">
+      <div className="flex items-center gap-2 text-sm cursor-pointer" {...rowLongPress}>
+        <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: color }} />
+        <span className="flex-1 min-w-0 truncate text-muted-foreground">{category.name}</span>
+        <span className="font-semibold"><Money ars={avg} /></span>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1.5 pl-[18px] text-[11px] text-muted-foreground">
+        {category.months.map((m, i) => (
+          <span key={i} className="capitalize">
+            {monthLabel(m.year, m.month).slice(0, 3)}: <Money ars={m.amount} year={m.year} month={m.month} />
+          </span>
+        ))}
+      </div>
+      {showActions && (
+        <div className="flex mt-2 pt-2 border-t border-border/60">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setShowActions(false);
+              onRename();
+            }}
+          >
+            <Pencil className="h-3.5 w-3.5" /> Editar nombre
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BudgetCategoryRenameDialog({
+  category,
+  open,
+  onOpenChange,
+  onSubmit,
+}: {
+  category: BudgetCategory | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (name: string) => void;
+}) {
+  const [name, setName] = useState("");
+  const [err, setErr] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setName(category?.name || "");
+      setErr(false);
+    }
+  }, [open, category]);
+
+  const handleSave = () => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setErr(true);
+      return;
+    }
+    onSubmit(trimmed);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Editar nombre</DialogTitle>
+          <DialogDescription>Los montos cargados para esta categoría no se modifican.</DialogDescription>
+        </DialogHeader>
+        <div>
+          <label className="text-sm font-medium mb-1.5 block" htmlFor="bcat-rename">
+            Nombre de la categoría
+          </label>
+          <Input id="bcat-rename" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej: Comida, Transporte" maxLength={40} autoFocus />
+          {err && <p className="text-xs text-destructive mt-1">Poné un nombre para la categoría.</p>}
+        </div>
+        <div className="flex items-center gap-2 pt-2">
+          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button type="button" onClick={handleSave}>
+            Guardar
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function BudgetCategoriesDetailDialog({
+  categories,
+  open,
+  onOpenChange,
+  onAddCategory,
+  onRenameCategory,
+}: {
+  categories: BudgetCategory[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onAddCategory: () => void;
+  onRenameCategory: (category: BudgetCategory) => void;
+}) {
+  const titleLongPress = useLongPress(onAddCategory, () => {});
+  const total = categories.reduce((a, c) => a + categoryAvg(c), 0);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="cursor-pointer select-none inline-block" {...titleLongPress}>
+            Presupuesto por categorías
+          </DialogTitle>
+          <DialogDescription>Mantené presionado el título para agregar una categoría nueva · mantené presionada una categoría para editar su nombre</DialogDescription>
+        </DialogHeader>
+
+        {categories.length === 0 ? (
+          <div className="text-sm text-muted-foreground text-center py-8">Todavía no agregaste categorías.</div>
+        ) : (
+          <>
+            <div className="flex items-center justify-between text-sm pb-2 border-b border-border">
+              <span className="text-muted-foreground">Promedio total</span>
+              <span className="font-semibold"><Money ars={total} /></span>
+            </div>
+            <div className="flex flex-col gap-2">
+              {categories.map((c, i) => (
+                <BudgetCategoryRow key={c.id} category={c} color={PALETTE[i % PALETTE.length]} onRename={() => onRenameCategory(c)} />
+              ))}
+            </div>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -461,17 +749,13 @@ function BudgetFormDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (data: { months: BudgetMonthEntry[]; totalBudget: number }) => void;
+  onSubmit: (data: { months: BudgetMonthEntry[] }) => void;
 }) {
   const months = lastThreeMonths();
   const [values, setValues] = useState<Record<string, string>>({});
-  const [totalText, setTotalText] = useState("");
 
   useEffect(() => {
-    if (open) {
-      setValues({});
-      setTotalText("");
-    }
+    if (open) setValues({});
   }, [open]);
 
   const getVal = (cat: string, idx: number) => values[`${cat}-${idx}`] || "";
@@ -485,7 +769,7 @@ function BudgetFormDialog({
       variable: parseMoney(getVal("variable", idx)),
       savings: parseMoney(getVal("savings", idx)),
     }));
-    onSubmit({ months: monthEntries, totalBudget: parseMoney(totalText) });
+    onSubmit({ months: monthEntries });
   };
 
   return (
@@ -493,7 +777,7 @@ function BudgetFormDialog({
       <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Presupuesto</DialogTitle>
-          <DialogDescription>Cargá cuánto gastaste en cada categoría en los últimos 3 meses. El gráfico va a mostrar el promedio.</DialogDescription>
+          <DialogDescription>Cargá cuánto gastaste en cada categoría en los últimos 3 meses. El presupuesto total se calcula solo, como el promedio de fijos + variables + ahorro.</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -516,14 +800,87 @@ function BudgetFormDialog({
               </div>
             </div>
           ))}
+        </div>
 
+        <div className="flex items-center gap-2 pt-2">
+          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button type="button" onClick={handleSave}>
+            Guardar presupuesto
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function BudgetCategoryFormDialog({
+  open,
+  onOpenChange,
+  onSubmit,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (data: { name: string; months: BudgetCategoryMonthEntry[] }) => void;
+}) {
+  const months = lastThreeMonths();
+  const [name, setName] = useState("");
+  const [values, setValues] = useState<string[]>(["", "", ""]);
+  const [nameErr, setNameErr] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setName("");
+      setValues(["", "", ""]);
+      setNameErr(false);
+    }
+  }, [open]);
+
+  const handleSave = () => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setNameErr(true);
+      return;
+    }
+    const monthEntries: BudgetCategoryMonthEntry[] = months.map((m, idx) => ({ year: m.year, month: m.month, amount: parseMoney(values[idx] || "") }));
+    onSubmit({ name: trimmed, months: monthEntries });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Nueva categoría</DialogTitle>
+          <DialogDescription>Cargá cuánto gastaste en esta categoría en los últimos 3 meses. El gráfico va a mostrar el promedio.</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
           <div>
-            <label className="text-sm font-medium mb-1.5 block" htmlFor="bg-total">
-              Presupuesto total <span className="text-muted-foreground font-normal">— el promedio de tus gastos de estos 3 meses</span>
+            <label className="text-sm font-medium mb-1.5 block" htmlFor="bcat-name">
+              Nombre de la categoría
             </label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
-              <Input id="bg-total" className="pl-6" inputMode="decimal" value={totalText} onChange={(e) => setTotalText(e.target.value)} placeholder="0" />
+            <Input id="bcat-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej: Comida, Transporte" maxLength={40} />
+            {nameErr && <p className="text-xs text-destructive mt-1">Poné un nombre para la categoría.</p>}
+          </div>
+          <div>
+            <span className="text-sm font-medium mb-1.5 block">Gasto por mes</span>
+            <div className="grid grid-cols-3 gap-2">
+              {months.map((m, idx) => (
+                <div key={idx}>
+                  <span className="text-[11px] text-muted-foreground mb-1 block capitalize truncate">{m.label}</span>
+                  <div className="relative">
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">$</span>
+                    <Input
+                      value={values[idx]}
+                      onChange={(e) => setValues((v) => v.map((x, i) => (i === idx ? e.target.value : x)))}
+                      placeholder="0"
+                      inputMode="decimal"
+                      className="h-9 text-xs pl-4"
+                    />
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -533,7 +890,7 @@ function BudgetFormDialog({
             Cancelar
           </Button>
           <Button type="button" onClick={handleSave}>
-            Guardar presupuesto
+            Guardar categoría
           </Button>
         </div>
       </DialogContent>
@@ -594,7 +951,7 @@ function BudgetCalendarDialog({ quarters, open, onOpenChange }: { quarters: Budg
             const q = map.get(`${year}-${m}`);
             const has = !!q;
             const color = has ? colorForQuarter(q!.id) : undefined;
-            const isSel = selMonth === m;
+            const inSelectedGroup = !!selQuarter && q?.id === selQuarter.id;
             return (
               <button
                 key={m}
@@ -602,10 +959,10 @@ function BudgetCalendarDialog({ quarters, open, onOpenChange }: { quarters: Budg
                 disabled={!has}
                 className="rounded-xl border-[1.5px] py-3 text-sm font-medium flex flex-col items-center gap-1 disabled:cursor-default"
                 style={{
-                  background: has ? tint(color!, 22) : "hsl(var(--muted) / 0.4)",
+                  background: has ? tint(color!, inSelectedGroup ? 34 : 22) : "hsl(var(--muted) / 0.4)",
                   borderColor: has ? color : "transparent",
-                  outline: isSel ? "2px solid hsl(var(--foreground))" : undefined,
-                  outlineOffset: isSel ? "-2px" : undefined,
+                  outline: inSelectedGroup ? `2px solid ${color}` : undefined,
+                  outlineOffset: inSelectedGroup ? "-2px" : undefined,
                 }}
               >
                 {name}
@@ -624,17 +981,338 @@ function BudgetCalendarDialog({ quarters, open, onOpenChange }: { quarters: Budg
                   <span className="h-2 w-2 rounded-sm shrink-0" style={{ background: cat.color }} />
                   {cat.label} ({MONTH_NAMES[selMonthEntry.month]})
                 </span>
-                <span className="font-semibold tabular-nums">{money(selMonthEntry[cat.key])}</span>
+                <span className="font-semibold"><Money ars={selMonthEntry[cat.key]} year={selMonthEntry.year} month={selMonthEntry.month} /></span>
               </div>
             ))}
             <div className="flex items-center justify-between text-sm pt-2 border-t border-border">
               <span className="text-muted-foreground">Presupuesto total</span>
-              <span className="font-semibold tabular-nums">{money(selQuarter.totalBudget)}</span>
+              <span className="font-semibold"><Money ars={quarterTotalAvg(selQuarter)} /></span>
             </div>
           </div>
         ) : (
           <div className="text-sm text-muted-foreground text-center mt-3">Tocá un mes con datos para ver el detalle.</div>
         )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface BudgetCategoryMonthHit {
+  category: BudgetCategory;
+  color: string;
+  amount: number;
+}
+
+function BudgetCategoriesCalendarDialog({ categories, open, onOpenChange }: { categories: BudgetCategory[]; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const [year, setYear] = useState(() => new Date().getFullYear());
+  const [selMonth, setSelMonth] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setYear(new Date().getFullYear());
+      setSelMonth(null);
+    }
+  }, [open]);
+
+  const monthMap = new Map<string, BudgetCategoryMonthHit[]>();
+  categories.forEach((c, i) => {
+    const color = PALETTE[i % PALETTE.length];
+    c.months.forEach((m) => {
+      if (!m.amount) return;
+      const key = `${m.year}-${m.month}`;
+      const arr = monthMap.get(key) || [];
+      arr.push({ category: c, color, amount: m.amount });
+      monthMap.set(key, arr);
+    });
+  });
+
+  const selEntries = selMonth !== null ? monthMap.get(`${year}-${selMonth}`) || [] : [];
+  const selTotal = selEntries.reduce((a, e) => a + categoryAvg(e.category), 0);
+  const selCategoryIds = new Set(selEntries.map((e) => e.category.id));
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Calendario de categorías</DialogTitle>
+          <DialogDescription>Meses con gasto cargado por categoría</DialogDescription>
+        </DialogHeader>
+
+        <div className="flex items-center justify-between mb-1">
+          <button
+            onClick={() => {
+              setYear((y) => y - 1);
+              setSelMonth(null);
+            }}
+            className="h-8 w-8 rounded-lg border border-border text-muted-foreground hover:text-foreground flex items-center justify-center"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <span className="font-display font-medium text-sm">{year}</span>
+          <button
+            onClick={() => {
+              setYear((y) => y + 1);
+              setSelMonth(null);
+            }}
+            className="h-8 w-8 rounded-lg border border-border text-muted-foreground hover:text-foreground flex items-center justify-center"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          {MONTH_NAMES.map((name, m) => {
+            const entries = monthMap.get(`${year}-${m}`) || [];
+            const has = entries.length > 0;
+            const singleColor = entries.length === 1 ? entries[0].color : undefined;
+            const matching = entries.filter((e) => selCategoryIds.has(e.category.id));
+            const inSelectedGroup = matching.length > 0;
+            const highlightColor = matching.length === 1 ? matching[0].color : undefined;
+            return (
+              <button
+                key={m}
+                onClick={() => setSelMonth(has ? m : null)}
+                disabled={!has}
+                className="rounded-xl border-[1.5px] py-3 text-sm font-medium flex flex-col items-center gap-1.5 disabled:cursor-default"
+                style={{
+                  background: singleColor ? tint(singleColor, inSelectedGroup ? 34 : 22) : has ? "hsl(var(--muted) / 0.6)" : "hsl(var(--muted) / 0.4)",
+                  borderColor: singleColor || "transparent",
+                  outline: inSelectedGroup ? `2px solid ${highlightColor || "hsl(var(--foreground))"}` : undefined,
+                  outlineOffset: inSelectedGroup ? "-2px" : undefined,
+                }}
+              >
+                {name}
+                {has && (
+                  <span className="flex items-center gap-0.5">
+                    {entries.slice(0, 4).map((e, i) => (
+                      <span key={i} className="h-1.5 w-1.5 rounded-full" style={{ background: e.color }} />
+                    ))}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {selMonth !== null && selEntries.length > 0 ? (
+          <div className="mt-3 space-y-2">
+            {selEntries.map((e, i) => (
+              <div key={i} className="rounded-xl border border-border bg-muted/40 p-3 space-y-1.5">
+                <div className="flex items-center gap-1.5 text-sm font-semibold">
+                  <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: e.color }} />
+                  {e.category.name}
+                </div>
+                <div className="text-xs text-muted-foreground">Mismo presupuesto que: {e.category.months.map((m) => MONTH_NAMES[m.month]).join(", ")}</div>
+                <div className="flex items-center justify-between text-sm pt-1 border-t border-border/60">
+                  <span className="text-muted-foreground">Promedio de 3 meses</span>
+                  <span className="font-semibold"><Money ars={categoryAvg(e.category)} /></span>
+                </div>
+              </div>
+            ))}
+            {selEntries.length > 1 && (
+              <div className="flex items-center justify-between text-sm px-1">
+                <span className="text-muted-foreground">Total promedio</span>
+                <span className="font-semibold"><Money ars={selTotal} /></span>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="text-sm text-muted-foreground text-center mt-3">Tocá un mes con datos para ver el detalle.</div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------- dollar rate ----------
+
+function latestDollarRate(rates: DollarRate[]): DollarRate | null {
+  if (!rates.length) return null;
+  return rates.reduce((a, b) => (a.year * 12 + a.month > b.year * 12 + b.month ? a : b));
+}
+
+function DollarSubtitle({ rates, onLongPress }: { rates: DollarRate[]; onLongPress: () => void }) {
+  const longPress = useLongPress(onLongPress, () => {});
+  const latest = latestDollarRate(rates);
+
+  return (
+    <p className="text-xs text-muted-foreground mt-0.5 cursor-pointer select-none inline-block" {...longPress}>
+      {latest ? (
+        <>
+          Dólar: <span className="font-medium text-foreground">{money(latest.rate)}</span> · {monthLabel(latest.year, latest.month)} {latest.year}
+        </>
+      ) : (
+        "Mantené presionado para cargar la cotización del dólar"
+      )}
+    </p>
+  );
+}
+
+function DollarActionSheet({
+  open,
+  onOpenChange,
+  onEdit,
+  onOpenCalendar,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onEdit: () => void;
+  onOpenCalendar: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-[280px] p-2">
+        <DialogTitle className="sr-only">Cotización del dólar</DialogTitle>
+        <DialogDescription className="sr-only">Editar la cotización del dólar o abrir su calendario</DialogDescription>
+        <div className="flex flex-col gap-1">
+          <button
+            onClick={() => {
+              onOpenChange(false);
+              onEdit();
+            }}
+            className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium hover:bg-muted text-left"
+          >
+            <Pencil className="h-4 w-4" /> Editar cotización
+          </button>
+          <button
+            onClick={() => {
+              onOpenChange(false);
+              onOpenCalendar();
+            }}
+            className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium hover:bg-muted text-left"
+          >
+            <CalendarRange className="h-4 w-4" /> Abrir calendario
+          </button>
+          <button onClick={() => onOpenChange(false)} className="px-3 py-2.5 rounded-lg text-sm text-muted-foreground text-center hover:bg-muted">
+            Cancelar
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DollarRateFormDialog({
+  open,
+  onOpenChange,
+  target,
+  rates,
+  onSubmit,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  target: { year: number; month: number };
+  rates: DollarRate[];
+  onSubmit: (data: { year: number; month: number; rate: number }) => void;
+}) {
+  const [text, setText] = useState("");
+  const [err, setErr] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const existing = rates.find((r) => r.year === target.year && r.month === target.month);
+    setText(existing ? moneyFormatter.format(existing.rate) : "");
+    setErr(false);
+  }, [open, target.year, target.month]);
+
+  const handleSave = () => {
+    const n = parseMoney(text);
+    if (n <= 0) {
+      setErr(true);
+      return;
+    }
+    onSubmit({ year: target.year, month: target.month, rate: n });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-xs">
+        <DialogHeader>
+          <DialogTitle className="capitalize">
+            Dólar de {monthLabel(target.year, target.month)} {target.year}
+          </DialogTitle>
+          <DialogDescription>Se usa para mostrar el equivalente en USD de los montos en pesos de ese mes.</DialogDescription>
+        </DialogHeader>
+        <div>
+          <label className="text-sm font-medium mb-1.5 block" htmlFor="dr-rate">
+            Precio del dólar (ARS)
+          </label>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+            <Input id="dr-rate" className="pl-6" inputMode="decimal" value={text} onChange={(e) => setText(e.target.value)} placeholder="0" autoFocus />
+          </div>
+          {err && <p className="text-xs text-destructive mt-1">Ingresá un valor mayor a 0.</p>}
+        </div>
+        <div className="flex items-center gap-2 pt-2">
+          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button type="button" onClick={handleSave}>
+            Guardar
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DollarCalendarDialog({
+  rates,
+  open,
+  onOpenChange,
+  onEditMonth,
+}: {
+  rates: DollarRate[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onEditMonth: (year: number, month: number) => void;
+}) {
+  const [year, setYear] = useState(() => new Date().getFullYear());
+
+  useEffect(() => {
+    if (open) setYear(new Date().getFullYear());
+  }, [open]);
+
+  const map = new Map<string, number>();
+  rates.forEach((r) => map.set(`${r.year}-${r.month}`, r.rate));
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Calendario del dólar</DialogTitle>
+          <DialogDescription>Tocá un mes para cargar o editar su cotización</DialogDescription>
+        </DialogHeader>
+
+        <div className="flex items-center justify-between mb-1">
+          <button onClick={() => setYear((y) => y - 1)} className="h-8 w-8 rounded-lg border border-border text-muted-foreground hover:text-foreground flex items-center justify-center">
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <span className="font-display font-medium text-sm">{year}</span>
+          <button onClick={() => setYear((y) => y + 1)} className="h-8 w-8 rounded-lg border border-border text-muted-foreground hover:text-foreground flex items-center justify-center">
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          {MONTH_NAMES.map((name, m) => {
+            const rate = map.get(`${year}-${m}`);
+            return (
+              <button
+                key={m}
+                onClick={() => onEditMonth(year, m)}
+                className="rounded-xl border-[1.5px] py-3 text-sm font-medium flex flex-col items-center gap-1"
+                style={{
+                  background: rate ? tint(PALETTE[0], 22) : "hsl(var(--muted) / 0.4)",
+                  borderColor: rate ? PALETTE[0] : "transparent",
+                }}
+              >
+                {name}
+                {rate ? <span className="text-[11px] font-semibold tabular-nums">{money(rate)}</span> : <span className="text-[11px] text-muted-foreground">—</span>}
+              </button>
+            );
+          })}
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -1029,7 +1707,17 @@ function GoalDetailDialog({
                 <span className="text-xl">{goal.emoji}</span>
                 <span className="truncate">{goal.name}</span>
               </DialogTitle>
-              <DialogDescription>{has ? `${money(saved)} de ${money(target)} · ${pct}% alcanzado` : `${money(saved)} · sin objetivo definido`}</DialogDescription>
+              <DialogDescription>
+                {has ? (
+                  <>
+                    <Money ars={saved} /> de <Money ars={target} /> · {pct}% alcanzado
+                  </>
+                ) : (
+                  <>
+                    <Money ars={saved} /> · sin objetivo definido
+                  </>
+                )}
+              </DialogDescription>
             </div>
             <div className="flex items-center gap-1 shrink-0">
               <button onClick={onOpenCalendar} title="Ver calendario de aportes" className="h-8 w-8 rounded-lg border border-border text-muted-foreground hover:text-foreground flex items-center justify-center">
@@ -1048,7 +1736,7 @@ function GoalDetailDialog({
               <span className="h-2 w-2 rounded-sm" style={{ background: goal.color }} />
               Tenés
             </div>
-            <div className="font-display text-xl font-medium mt-1 tabular-nums">{money(saved)}</div>
+            <div className="font-display text-xl font-medium mt-1"><Money ars={saved} /></div>
             <div className="text-xs text-muted-foreground mt-0.5">{has ? `${Math.min(100, pct)}% del objetivo` : "ahorro acumulado"}</div>
           </div>
           <div className="rounded-xl bg-muted/50 border border-border p-3">
@@ -1056,7 +1744,7 @@ function GoalDetailDialog({
               <span className="h-2 w-2 rounded-sm bg-muted-foreground/30" />
               Falta
             </div>
-            <div className="font-display text-xl font-medium mt-1 tabular-nums">{has ? money(miss) : "—"}</div>
+            <div className="font-display text-xl font-medium mt-1">{has ? <Money ars={miss} /> : "—"}</div>
             <div className="text-xs text-muted-foreground mt-0.5">{has ? `${Math.max(0, 100 - Math.min(100, pct))}% del objetivo` : "sin meta fija"}</div>
           </div>
         </div>
@@ -1071,6 +1759,7 @@ function GoalDetailDialog({
                       <Cell key={i} fill={s.color} />
                     ))}
                   </Pie>
+                  <Tooltip content={<PieSliceTooltip />} />
                 </PieChart>
               </ResponsiveContainer>
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
@@ -1083,7 +1772,7 @@ function GoalDetailDialog({
                 <div key={i} className="flex items-center gap-2 text-sm">
                   <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: s.color }} />
                   <span className="flex-1 min-w-0 truncate text-muted-foreground">{s.name}</span>
-                  <span className="font-semibold tabular-nums">{money(s.value)}</span>
+                  <span className="font-semibold"><Money ars={s.value} /></span>
                   <span className="text-xs text-muted-foreground w-9 text-right">{Math.round((s.value / sliceTotal) * 100)}%</span>
                 </div>
               ))}
@@ -1100,7 +1789,7 @@ function GoalDetailDialog({
           ) : (
             <>
               <div className="text-sm mt-1.5 flex items-center gap-2 flex-wrap">
-                <span className="font-display text-base font-medium">{money(mf)}</span>
+                <span className="font-display text-base font-medium"><Money ars={mf} /></span>
                 <span className="text-xs bg-muted border border-border rounded-full px-2 py-0.5 text-muted-foreground">{flowFreqPhrase(goal.flow)}</span>
               </div>
               {goal.holdings.length > 1 && (
@@ -1128,7 +1817,7 @@ function GoalDetailDialog({
                   className="w-full py-2.5 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   style={{ background: flowReady ? GOLD : "transparent", color: flowReady ? "#fff" : "hsl(var(--muted-foreground))" }}
                 >
-                  Agregar {money(mf)}
+                  Agregar <Money ars={mf} />
                 </button>
               </div>
             </>
@@ -1155,6 +1844,7 @@ function GoalCalendarDialog({
   const [year, setYear] = useState(() => new Date().getFullYear());
   const [month, setMonth] = useState(() => new Date().getMonth());
   const [selDay, setSelDay] = useState<number | null>(null);
+  const rates = useDollarRates();
 
   useEffect(() => {
     if (open) {
@@ -1206,7 +1896,7 @@ function GoalCalendarDialog({
           outline: isToday ? `2px solid ${goal.color}` : selDay === d ? "2px solid hsl(var(--foreground))" : undefined,
           outlineOffset: isToday || selDay === d ? "-2px" : undefined,
         }}
-        title={has ? money(amt) : undefined}
+        title={has ? moneyPairText(amt, rates, year, month) : undefined}
       >
         {d}
         {has && <span className="absolute bottom-1 h-1 w-1 rounded-full" style={{ background: goal.color }} />}
@@ -1286,7 +1976,7 @@ function GoalCalendarDialog({
         <div className="text-sm text-muted-foreground text-center bg-muted/50 border border-border rounded-lg p-2.5 mt-3">
           {daysWith ? (
             <>
-              Aportaste <b className="text-foreground font-semibold">{money(monthTotal)}</b> en {daysWith} {daysWith === 1 ? "día" : "días"} este mes.
+              Aportaste <b className="text-foreground font-semibold"><Money ars={monthTotal} year={year} month={month} /></b> en {daysWith} {daysWith === 1 ? "día" : "días"} este mes.
             </>
           ) : (
             "Sin aportes en este mes."
@@ -1311,8 +2001,8 @@ function GoalCalendarDialog({
                       <div className="text-sm truncate">{[h.inst, h.note].filter(Boolean).join(" · ") || "Aporte"}</div>
                       <div className="text-xs text-muted-foreground">{new Date(h.date).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })}</div>
                     </div>
-                    <div className="text-sm font-semibold tabular-nums" style={{ color: goal.color }}>
-                      +{money(h.amount)}
+                    <div className="text-sm font-semibold text-right shrink-0" style={{ color: goal.color }}>
+                      +<Money ars={h.amount} year={new Date(h.date).getFullYear()} month={new Date(h.date).getMonth()} />
                     </div>
                   </div>
                 ))}
@@ -1336,7 +2026,67 @@ export default function FinancialGoals() {
   const [detailGoalId, setDetailGoalId] = useState<string | null>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [budgetFormOpen, setBudgetFormOpen] = useState(false);
+  const [budgetCategoriesDetailOpen, setBudgetCategoriesDetailOpen] = useState(false);
+  const [budgetCategoryFormOpen, setBudgetCategoryFormOpen] = useState(false);
+  const [budgetRenameOpen, setBudgetRenameOpen] = useState(false);
+  const [renamingBudgetCategory, setRenamingBudgetCategory] = useState<BudgetCategory | null>(null);
   const [budgetCalendarOpen, setBudgetCalendarOpen] = useState(false);
+  const [budgetCategoriesCalendarOpen, setBudgetCategoriesCalendarOpen] = useState(false);
+  const [dollarActionSheetOpen, setDollarActionSheetOpen] = useState(false);
+  const [dollarFormOpen, setDollarFormOpen] = useState(false);
+  const [dollarCalendarOpen, setDollarCalendarOpen] = useState(false);
+  const [dollarTarget, setDollarTarget] = useState(() => {
+    const d = new Date();
+    return { year: d.getFullYear(), month: d.getMonth() };
+  });
+
+  const { data: dollarRates = [] } = useQuery<DollarRate[]>({
+    queryKey: ["/api/dollar-rates"],
+    queryFn: async () => {
+      const res = await fetch("/api/dollar-rates");
+      if (!res.ok) throw new Error("Failed to fetch dollar rates");
+      return res.json();
+    },
+  });
+
+  const createDollarRate = useMutation({
+    mutationFn: async (data: { year: number; month: number; rate: number }) => {
+      const res = await fetch("/api/dollar-rates", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      if (!res.ok) throw new Error("Failed to create dollar rate");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/dollar-rates"] });
+      setDollarFormOpen(false);
+    },
+  });
+
+  const updateDollarRate = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { rate: number } }) => {
+      const res = await fetch(`/api/dollar-rates/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      if (!res.ok) throw new Error("Failed to update dollar rate");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/dollar-rates"] });
+      setDollarFormOpen(false);
+    },
+  });
+
+  const openDollarEdit = (year: number, month: number) => {
+    setDollarTarget({ year, month });
+    setDollarCalendarOpen(false);
+    setDollarFormOpen(true);
+  };
+
+  const handleDollarSubmit = (data: { year: number; month: number; rate: number }) => {
+    const existing = dollarRates.find((r) => r.year === data.year && r.month === data.month);
+    if (existing) {
+      updateDollarRate.mutate({ id: existing.id, data: { rate: data.rate } });
+    } else {
+      createDollarRate.mutate(data);
+    }
+  };
 
   const { data: goals = [], isLoading } = useQuery<FinancialGoal[]>({
     queryKey: ["/api/financial-goals"],
@@ -1357,7 +2107,7 @@ export default function FinancialGoals() {
   });
 
   const createBudgetQuarter = useMutation({
-    mutationFn: async (data: { months: BudgetMonthEntry[]; totalBudget: number }) => {
+    mutationFn: async (data: { months: BudgetMonthEntry[] }) => {
       const res = await fetch("/api/budget-quarters", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
       if (!res.ok) throw new Error("Failed to create budget quarter");
       return res.json();
@@ -1367,6 +2117,65 @@ export default function FinancialGoals() {
       setBudgetFormOpen(false);
     },
   });
+
+  const { data: budgetCategories = [] } = useQuery<BudgetCategory[]>({
+    queryKey: ["/api/budget-categories"],
+    queryFn: async () => {
+      const res = await fetch("/api/budget-categories");
+      if (!res.ok) throw new Error("Failed to fetch budget categories");
+      return res.json();
+    },
+  });
+
+  const createBudgetCategory = useMutation({
+    mutationFn: async (data: { name: string; months: BudgetCategoryMonthEntry[] }) => {
+      const res = await fetch("/api/budget-categories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      if (!res.ok) throw new Error("Failed to create budget category");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/budget-categories"] });
+      setBudgetCategoryFormOpen(false);
+    },
+  });
+
+  const updateBudgetCategory = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { name?: string; months?: BudgetCategoryMonthEntry[] } }) => {
+      const res = await fetch(`/api/budget-categories/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      if (!res.ok) throw new Error("Failed to update budget category");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/budget-categories"] });
+      setBudgetCategoryFormOpen(false);
+      setBudgetRenameOpen(false);
+      setRenamingBudgetCategory(null);
+    },
+  });
+
+  const openBudgetCategoryCreate = () => {
+    setBudgetCategoriesDetailOpen(false);
+    setBudgetCategoryFormOpen(true);
+  };
+  const openBudgetCategoryRename = (category: BudgetCategory) => {
+    setRenamingBudgetCategory(category);
+    setBudgetCategoriesDetailOpen(false);
+    setBudgetRenameOpen(true);
+  };
+
+  const handleBudgetCategorySubmit = (data: { name: string; months: BudgetCategoryMonthEntry[] }) => {
+    const existing = budgetCategories.find((c) => c.name.trim().toLowerCase() === data.name.trim().toLowerCase());
+    if (existing) {
+      updateBudgetCategory.mutate({ id: existing.id, data: { months: data.months } });
+    } else {
+      createBudgetCategory.mutate(data);
+    }
+  };
+
+  const handleBudgetCategoryRename = (name: string) => {
+    if (!renamingBudgetCategory) return;
+    updateBudgetCategory.mutate({ id: renamingBudgetCategory.id, data: { name } });
+  };
 
   const createGoal = useMutation({
     mutationFn: async (data: any) => {
@@ -1455,7 +2264,7 @@ export default function FinancialGoals() {
     const history = [...(detailGoal.history || []), { id: genId(), amount: mf, date: Date.now(), note: "Flujo", inst: holding.instrument, holdingId: holding.id }];
     const flow = { ...detailGoal.flow, anchor: Date.now() };
     updateGoal.mutate({ id: detailGoal.id, data: { holdings, history, flow } });
-    toast({ title: `+${money(mf)} en ${holding.instrument}` });
+    toast({ title: `+${moneyPairText(mf, dollarRates)} en ${holding.instrument}` });
   };
 
   const titleLongPress = useLongPress(
@@ -1464,12 +2273,14 @@ export default function FinancialGoals() {
   );
 
   return (
+    <DollarRatesContext.Provider value={dollarRates}>
     <div className="flex-1 min-h-0 flex flex-col">
       <div className="px-5 pt-4 pb-3 border-b border-border/60">
         <h2 className="font-display font-semibold text-lg cursor-pointer select-none inline-block" {...titleLongPress}>
           Metas financieras
         </h2>
         <p className="text-xs text-muted-foreground mt-0.5">Mantené presionado el título para crear una meta</p>
+        <DollarSubtitle rates={dollarRates} onLongPress={() => setDollarActionSheetOpen(true)} />
       </div>
 
       <div className="px-5 pt-3 flex items-center justify-between gap-3">
@@ -1506,8 +2317,8 @@ export default function FinancialGoals() {
           <div className="space-y-5">
             <div className="rounded-2xl border border-border bg-card p-4">
               <div className="text-xs text-muted-foreground">Total ahorrado</div>
-              <div className="font-display text-3xl font-medium tabular-nums mt-1">{money(totalSaved)}</div>
-              <div className="text-sm text-muted-foreground mt-1">de {money(totalTarget)} en objetivos</div>
+              <div className="font-display text-3xl font-medium mt-1"><Money ars={totalSaved} /></div>
+              <div className="text-sm text-muted-foreground mt-1">de <Money ars={totalTarget} /> en objetivos</div>
               <div className="h-2 rounded-full bg-muted overflow-hidden mt-3">
                 <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.min(100, overallPct)}%` }} />
               </div>
@@ -1528,7 +2339,14 @@ export default function FinancialGoals() {
                 ))}
               </div>
               <div className="space-y-4">
-                <BudgetCard quarters={budgetQuarters} onLongPress={() => setBudgetFormOpen(true)} onOpenCalendar={() => setBudgetCalendarOpen(true)} />
+                <BudgetCard
+                  quarters={budgetQuarters}
+                  categories={budgetCategories}
+                  onLongPressQuarter={() => setBudgetFormOpen(true)}
+                  onOpenCategoriesDetail={() => setBudgetCategoriesDetailOpen(true)}
+                  onOpenQuarterCalendar={() => setBudgetCalendarOpen(true)}
+                  onOpenCategoriesCalendar={() => setBudgetCategoriesCalendarOpen(true)}
+                />
                 <DistributionCard goals={goals} />
                 <MovementsCard goals={goals} />
               </div>
@@ -1562,7 +2380,38 @@ export default function FinancialGoals() {
         onBack={() => setCalendarOpen(false)}
       />
       <BudgetFormDialog open={budgetFormOpen} onOpenChange={setBudgetFormOpen} onSubmit={(data) => createBudgetQuarter.mutate(data)} />
+      <BudgetCategoriesDetailDialog
+        categories={budgetCategories}
+        open={budgetCategoriesDetailOpen}
+        onOpenChange={setBudgetCategoriesDetailOpen}
+        onAddCategory={openBudgetCategoryCreate}
+        onRenameCategory={openBudgetCategoryRename}
+      />
+      <BudgetCategoryFormDialog open={budgetCategoryFormOpen} onOpenChange={setBudgetCategoryFormOpen} onSubmit={handleBudgetCategorySubmit} />
+      <BudgetCategoryRenameDialog
+        category={renamingBudgetCategory}
+        open={budgetRenameOpen}
+        onOpenChange={(v) => {
+          setBudgetRenameOpen(v);
+          if (!v) setRenamingBudgetCategory(null);
+        }}
+        onSubmit={handleBudgetCategoryRename}
+      />
       <BudgetCalendarDialog quarters={budgetQuarters} open={budgetCalendarOpen} onOpenChange={setBudgetCalendarOpen} />
+      <BudgetCategoriesCalendarDialog categories={budgetCategories} open={budgetCategoriesCalendarOpen} onOpenChange={setBudgetCategoriesCalendarOpen} />
+      <DollarActionSheet
+        open={dollarActionSheetOpen}
+        onOpenChange={setDollarActionSheetOpen}
+        onEdit={() => {
+          const d = new Date();
+          setDollarTarget({ year: d.getFullYear(), month: d.getMonth() });
+          setDollarFormOpen(true);
+        }}
+        onOpenCalendar={() => setDollarCalendarOpen(true)}
+      />
+      <DollarRateFormDialog open={dollarFormOpen} onOpenChange={setDollarFormOpen} target={dollarTarget} rates={dollarRates} onSubmit={handleDollarSubmit} />
+      <DollarCalendarDialog rates={dollarRates} open={dollarCalendarOpen} onOpenChange={setDollarCalendarOpen} onEditMonth={openDollarEdit} />
     </div>
+    </DollarRatesContext.Provider>
   );
 }

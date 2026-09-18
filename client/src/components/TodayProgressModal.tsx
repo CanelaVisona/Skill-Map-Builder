@@ -7,7 +7,7 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
-import { Calendar, ArrowLeft, ChevronLeft, ChevronRight, Pencil } from "lucide-react";
+import { Calendar, ArrowLeft, Check, ChevronLeft, ChevronRight, Pencil } from "lucide-react";
 import { useSkillTree, type Area, type Project, type Skill } from "@/lib/skill-context";
 import { useHabits, useUpdateHabitRecord } from "@/lib/useHabits";
 import { useTodayTaskSlots, useSetTodayTaskSlot, useClearTodayTaskSlot, useReorderTodayTaskSlot, getCurrentTimeSlotKey, getTimeSlotKeyForDate, type TaskSlotKey, type TaskType } from "@/lib/useTodayTaskSlots";
@@ -1170,6 +1170,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                   <TodayTaskRow
                                     key={item.key}
                                     item={item}
+                                    pastDay={effectiveDate < todayStr}
                                     onMove={(slot) => moveItemToSlot(item, slot)}
                                     onHide={item.type !== "manual" ? () => hideItemFromToday(item) : undefined}
                                     onDelete={item.type === "manual" ? () => deleteManualItem(item) : undefined}
@@ -1226,6 +1227,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                         item={item}
                                         dimmed={!item.done && idx !== firstUndoneIdx}
                                         current={!item.done && idx === firstUndoneIdx}
+                                        pastDay={effectiveDate < todayStr}
                                         onMove={(slot) => moveItemToSlot(item, slot)}
                                         onClear={() => unassignItem(item)}
                                         onHide={item.type !== "manual" ? () => hideItemFromToday(item) : undefined}
@@ -1260,6 +1262,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                 <TodayTaskRow
                                   key={item.key}
                                   item={item}
+                                  pastDay={effectiveDate < todayStr}
                                   onMove={(slot) => moveItemToSlot(item, slot)}
                                   onDuplicate={canDuplicate(item) ? () => duplicateItem(item) : undefined}
                                   onToggleDone={canToggleDone(item) ? () => toggleItemDone(item) : undefined}
@@ -1558,6 +1561,7 @@ function TodayTaskRow({
   item,
   dimmed,
   current,
+  pastDay,
   onMove,
   onClear,
   onHide,
@@ -1576,6 +1580,9 @@ function TodayTaskRow({
   // La tarea "desbloqueada" ahora mismo: la primera pendiente de la franja horaria actual.
   // Se marca con un "!" dorado al lado para que se distinga de un vistazo del resto.
   current?: boolean;
+  // Se está viendo un día ya pasado (no hoy, no una previsualización futura): ahí una tarea
+  // hecha se pinta en dorado pleno en vez de atenuado, porque no compite con nada pendiente.
+  pastDay?: boolean;
   onMove: (slot: TaskSlotKey) => void;
   onClear?: () => void;
   onHide?: () => void;
@@ -1633,18 +1640,19 @@ function TodayTaskRow({
       >
         <span
           onClick={onToggleDone}
-          className={`h-4 w-4 flex-shrink-0 rounded-full border-2 ${
-            item.done ? "bg-amber-500 border-amber-500" : "border-border/50"
+          className={`flex flex-shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
+            item.done ? "h-3.5 w-3.5 bg-yellow-600/70 border-yellow-600/70" : "h-4 w-4 border-border/50"
           } ${onToggleDone ? "cursor-pointer" : ""}`}
-        />
+        >
+          {item.done && <Check className="h-2.5 w-2.5 text-yellow-900" strokeWidth={3} />}
+        </span>
         {/* Mismo punto que el nodo/tarea/evento tiene en el calendario de actividades — su
             emoji si tiene uno (NODE_COLOR/TASK_COLOR/EVENT_COLOR si no) — para que la lista de
-            "Hoy" y la "Vista previa" de un día futuro se vean consistentes con lo que ya se ve ahí. */}
-        {item.dotColor && <TaskDot emoji={item.dotEmoji} color={item.dotColor} size="md" />}
-        {current && (
-          <span className="text-amber-500 font-bold flex-shrink-0" aria-hidden="true">
-            !
-          </span>
+            "Hoy" y la "Vista previa" de un día futuro se vean consistentes con lo que ya se ve ahí.
+            Sin emoji, un nodo ya no muestra el punto de color de respaldo (quedaba redundante
+            con el círculo de "hecho", que también es dorado) — tarea/evento sí lo conservan. */}
+        {item.dotColor && (item.dotEmoji || item.dotColor !== NODE_COLOR) && (
+          <TaskDot emoji={item.dotEmoji} color={item.dotColor} size="md" />
         )}
         {/* Apretar una vez sobre la tarea abre el menú (franja / mover / quitar), en vez de
             un botón de reloj aparte — menos elementos visuales en la fila. */}
@@ -1657,9 +1665,14 @@ function TodayTaskRow({
         >
           <DropdownMenuTrigger asChild>
             <span
-              className={`flex-1 cursor-pointer ${item.done ? "text-amber-500 font-medium" : ""}`}
+              className={`flex-1 cursor-pointer ${item.done ? (pastDay ? "text-yellow-600 font-medium" : "text-yellow-600/60") : ""}`}
             >
               {item.label}
+              {current && (
+                <span className="text-amber-500 font-bold" aria-hidden="true">
+                  {" "}!
+                </span>
+              )}
             </span>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">

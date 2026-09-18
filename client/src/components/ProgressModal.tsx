@@ -167,18 +167,28 @@ function ProgressItemRow({
            chico y en itálica en vez de simular uno. Si hay nodo pero sin nombre, se invita a
            definirlo en vez de mostrar un espacio en blanco. */
         <div className="flex items-start justify-between gap-2">
-          <button
-            type="button"
-            onClick={() => onGoToItem(item)}
-            title={`Ir al skill tree de ${item.name}`}
-            className={`truncate min-w-0 text-left hover:opacity-70 active:opacity-60 transition-opacity ${
-              nodeLabelIsPlaceholder
-                ? "text-xs italic text-muted-foreground/70"
-                : "font-quest font-semibold text-base sm:text-xl text-foreground"
-            }`}
-          >
-            {nodeLabel}
-          </button>
+          <div className="min-w-0">
+            <button
+              type="button"
+              onClick={() => onGoToItem(item)}
+              title={`Ir al skill tree de ${item.name}`}
+              className={`block truncate max-w-full text-left hover:opacity-70 active:opacity-60 transition-opacity ${
+                nodeLabelIsPlaceholder
+                  ? "text-xs italic text-muted-foreground/70"
+                  : "font-quest font-semibold text-base sm:text-xl text-foreground"
+              }`}
+            >
+              {nodeLabel}
+            </button>
+            {/* Subtítulo del nivel actual, como referencia chica debajo del nodo -- en esta
+                vista el protagonista es el nodo, no el nivel, así que va discreto y no se
+                invita a completarlo si falta (a diferencia de la vista Clásica). */}
+            {item.subtitle && (
+              <span className="block truncate max-w-full text-[11px] text-muted-foreground">
+                {item.subtitle}
+              </span>
+            )}
+          </div>
           <div className="flex shrink-0 flex-col items-end gap-1">
             <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground truncate max-w-[120px]">
               {item.name}
@@ -284,11 +294,13 @@ function ProgressItemRow({
 function UpcomingItemRow({
   item,
   iso,
+  viewMode,
   onSchedule,
   onShow,
 }: {
   item: ProgressItem;
   iso: string;
+  viewMode: ProgressViewMode;
   onSchedule: (key: string, iso: string) => void;
   onShow: (key: string) => void;
 }) {
@@ -300,11 +312,25 @@ function UpcomingItemRow({
     setValue(toLocalInputValue(iso || null));
   }, [iso]);
 
+  // En vista "Nodo" el protagonista es el nodo desbloqueado (mismo criterio que
+  // ProgressItemRow), con el área/quest como referencia chica al lado. En vista clásica
+  // se muestra solo el nombre del área/quest, como antes.
+  const nodeLabel = !item.hasUnlockedNode ? "Sin nodo desbloqueado" : item.nodeTitle || "Definí un paso";
+
   return (
     <div className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2">
       <div className="flex items-center gap-2">
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-xs font-medium text-foreground">{item.name}</span>
+          {viewMode === "node" ? (
+            <span className="flex items-baseline gap-1.5 min-w-0">
+              <span className="truncate text-xs font-medium text-foreground">{nodeLabel}</span>
+              <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
+                {item.name}
+              </span>
+            </span>
+          ) : (
+            <span className="block truncate text-xs font-medium text-foreground">{item.name}</span>
+          )}
           <span className="block truncate text-[11px] text-muted-foreground">
             {iso ? `vuelve ${formatSchedule(iso)}` : "oculto · sin fecha"}
           </span>
@@ -378,6 +404,7 @@ function UpcomingItemRow({
 function UpcomingSection({
   items,
   scheduled,
+  viewMode,
   onSchedule,
   onShow,
   editMode,
@@ -385,6 +412,7 @@ function UpcomingSection({
 }: {
   items: ProgressItem[];
   scheduled: Record<string, string>;
+  viewMode: ProgressViewMode;
   onSchedule: (key: string, iso: string) => void;
   onShow: (key: string) => void;
   editMode: boolean;
@@ -419,6 +447,7 @@ function UpcomingSection({
             key={getItemKey(item)}
             item={item}
             iso={scheduled[getItemKey(item)] ?? ""}
+            viewMode={viewMode}
             onSchedule={onSchedule}
             onShow={onShow}
           />
@@ -692,6 +721,7 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
           <UpcomingSection
             items={upcomingItems}
             scheduled={prefs.hidden}
+            viewMode={viewMode}
             onSchedule={scheduleItem}
             onShow={showItem}
             editMode={editMode}

@@ -515,13 +515,44 @@ export interface BudgetMonthEntry {
 }
 
 // Cada carga de presupuesto cubre los últimos 3 meses al momento de guardarla; el calendario
-// anual usa `months` para saber a qué meses del año corresponde esta misma carga.
+// anual usa `months` para saber a qué meses del año corresponde esta misma carga. El presupuesto
+// total no se guarda: se calcula siempre como el promedio de fijos + variables + ahorro.
 export const budgetQuarters = pgTable("budget_quarters", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   months: jsonb("months").notNull().$type<BudgetMonthEntry[]>().default([]),
-  totalBudget: integer("total_budget").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Un mes cargado dentro de una categoría de presupuesto libre (segundo gráfico: "Presupuesto
+// por categorías"). A diferencia de budgetQuarters, cada categoría es su propio registro con
+// nombre propio, para poder agregarlas de a una vía long-press en el título del gráfico.
+export interface BudgetCategoryMonthEntry {
+  year: number;
+  month: number; // 0-11
+  amount: number;
+}
+
+export const budgetCategories = pgTable("budget_categories", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  months: jsonb("months").notNull().$type<BudgetCategoryMonthEntry[]>().default([]),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Cotización del dólar registrada mes a mes, usada para mostrar el equivalente en USD de
+// cualquier monto en pesos dentro de Metas financieras. Un registro por (usuario, año, mes);
+// el cliente hace upsert (PATCH si ya existe ese mes, POST si no).
+export const dollarRates = pgTable("dollar_rates", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  year: integer("year").notNull(),
+  month: integer("month").notNull(), // 0-11
+  rate: integer("rate").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
 // ============ REWIRING TRACKER TABLES ============
@@ -898,6 +929,20 @@ export const insertBudgetQuarterSchema = createInsertSchema(budgetQuarters).omit
 });
 export type InsertBudgetQuarter = z.infer<typeof insertBudgetQuarterSchema>;
 export type BudgetQuarter = typeof budgetQuarters.$inferSelect;
+
+export const insertBudgetCategorySchema = createInsertSchema(budgetCategories).omit({ id: true, createdAt: true, updatedAt: true, userId: true }).extend({
+  months: z.array(z.object({
+    year: z.number(),
+    month: z.number(),
+    amount: z.number(),
+  })).length(3),
+});
+export type InsertBudgetCategory = z.infer<typeof insertBudgetCategorySchema>;
+export type BudgetCategory = typeof budgetCategories.$inferSelect;
+
+export const insertDollarRateSchema = createInsertSchema(dollarRates).omit({ id: true, createdAt: true, updatedAt: true, userId: true });
+export type InsertDollarRate = z.infer<typeof insertDollarRateSchema>;
+export type DollarRate = typeof dollarRates.$inferSelect;
 
 export const insertRewiringTrackerSchema = createInsertSchema(rewiringTrackers).omit({ id: true, createdAt: true, updatedAt: true, userId: true }).extend({
   skillIds: z.array(z.string()).optional().default([]),

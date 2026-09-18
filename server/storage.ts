@@ -1,7 +1,7 @@
 import { eq, and, or, asc, sql, inArray, gte, lte } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db, pool } from "./db";
-import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type JournalShadowPage, type InsertJournalShadowPage, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourceObjective, type InsertSourceObjective, type SourceBelief, type InsertSourceBelief, type SourceVision, type InsertSourceVision, type SourcePowers, type InsertSourcePowers, type SourceBug, type InsertSourceBug, type SourceBugRecord, type InsertSourceBugRecord, type NodeError, type InsertNodeError, type NodeErrorRecord, type InsertNodeErrorRecord, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type BookWishlistItem, type InsertBookWishlistItem, type FinancialGoal, type InsertFinancialGoal, type BudgetQuarter, type InsertBudgetQuarter, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, type BodyProgressRow, type InsertBodyProgress, type TodayTaskSlot, type InsertTodayTaskSlot, type ManualTodayTask, type InsertManualTodayTask, type MealTrackerDay, type InsertMealTrackerDay, type MealTrackerCustomOption, type InsertMealTrackerCustomOption, type MealTrackerDish, type InsertMealTrackerDish, type MealTrackerMeta, type QuestionProblem, type InsertQuestionProblem, type QuestionItem, type InsertQuestionItem, type QuestionProblemWithItems, questionProblems, questionItems, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, journalShadowPages, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourceObjectives, sourceBeliefs, sourceVision, sourcePowers, sourceBugs, sourceBugRecords, nodeErrors, nodeErrorRecords, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, bookWishlist, financialGoals, budgetQuarters, rewiringTrackers, rewiringTrackerRecords, bodyProgress, todayTaskSlots, manualTodayTasks, mealTrackerDays, mealTrackerCustomOptions, mealTrackerDishes, mealTrackerMeta } from "@shared/schema";
+import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type JournalShadowPage, type InsertJournalShadowPage, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourceObjective, type InsertSourceObjective, type SourceBelief, type InsertSourceBelief, type SourceVision, type InsertSourceVision, type SourcePowers, type InsertSourcePowers, type SourceBug, type InsertSourceBug, type SourceBugRecord, type InsertSourceBugRecord, type NodeError, type InsertNodeError, type NodeErrorRecord, type InsertNodeErrorRecord, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type BookWishlistItem, type InsertBookWishlistItem, type FinancialGoal, type InsertFinancialGoal, type BudgetQuarter, type InsertBudgetQuarter, type BudgetCategory, type InsertBudgetCategory, type DollarRate, type InsertDollarRate, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, type BodyProgressRow, type InsertBodyProgress, type TodayTaskSlot, type InsertTodayTaskSlot, type ManualTodayTask, type InsertManualTodayTask, type MealTrackerDay, type InsertMealTrackerDay, type MealTrackerCustomOption, type InsertMealTrackerCustomOption, type MealTrackerDish, type InsertMealTrackerDish, type MealTrackerMeta, type QuestionProblem, type InsertQuestionProblem, type QuestionItem, type InsertQuestionItem, type QuestionProblemWithItems, questionProblems, questionItems, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, journalShadowPages, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourceObjectives, sourceBeliefs, sourceVision, sourcePowers, sourceBugs, sourceBugRecords, nodeErrors, nodeErrorRecords, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, bookWishlist, financialGoals, budgetQuarters, budgetCategories, dollarRates, rewiringTrackers, rewiringTrackerRecords, bodyProgress, todayTaskSlots, manualTodayTasks, mealTrackerDays, mealTrackerCustomOptions, mealTrackerDishes, mealTrackerMeta } from "@shared/schema";
 
 const normalizeSourceBugStatus = (status: string): "identificado" | "debugueando" | "debugueado" => {
   if (status === "activo") return "identificado";
@@ -299,6 +299,19 @@ export interface IStorage {
   getBudgetQuarter(id: string): Promise<BudgetQuarter | undefined>;
   createBudgetQuarter(quarter: InsertBudgetQuarter & { userId: string }): Promise<BudgetQuarter>;
   deleteBudgetQuarter(id: string): Promise<void>;
+
+  // Budget Categories (Presupuesto por categorías)
+  getBudgetCategories(userId: string): Promise<BudgetCategory[]>;
+  getBudgetCategory(id: string): Promise<BudgetCategory | undefined>;
+  createBudgetCategory(category: InsertBudgetCategory & { userId: string }): Promise<BudgetCategory>;
+  updateBudgetCategory(id: string, category: Partial<InsertBudgetCategory>): Promise<BudgetCategory | undefined>;
+  deleteBudgetCategory(id: string): Promise<void>;
+
+  // Dollar Rates (cotización del dólar por mes)
+  getDollarRates(userId: string): Promise<DollarRate[]>;
+  getDollarRate(id: string): Promise<DollarRate | undefined>;
+  createDollarRate(rate: InsertDollarRate & { userId: string }): Promise<DollarRate>;
+  updateDollarRate(id: string, rate: Partial<InsertDollarRate>): Promise<DollarRate | undefined>;
 
   // Preguntas (question problems + chained items)
   getQuestionProblems(userId: string): Promise<QuestionProblemWithItems[]>;
@@ -2766,6 +2779,66 @@ export class DbStorage implements IStorage {
 
   async deleteBudgetQuarter(id: string): Promise<void> {
     await db.delete(budgetQuarters).where(eq(budgetQuarters.id, id));
+  }
+
+  // Budget Categories (Presupuesto por categorías)
+  async getBudgetCategories(userId: string): Promise<BudgetCategory[]> {
+    return await db.select().from(budgetCategories)
+      .where(eq(budgetCategories.userId, userId));
+  }
+
+  async getBudgetCategory(id: string): Promise<BudgetCategory | undefined> {
+    const result = await db.select().from(budgetCategories)
+      .where(eq(budgetCategories.id, id));
+    return result[0];
+  }
+
+  async createBudgetCategory(category: InsertBudgetCategory & { userId: string }): Promise<BudgetCategory> {
+    const id = randomUUID();
+    const result = await db.insert(budgetCategories)
+      .values({ id, ...category } as any)
+      .returning();
+    return result[0];
+  }
+
+  async updateBudgetCategory(id: string, category: Partial<InsertBudgetCategory>): Promise<BudgetCategory | undefined> {
+    const result = await db.update(budgetCategories)
+      .set({ ...category, updatedAt: new Date() } as any)
+      .where(eq(budgetCategories.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteBudgetCategory(id: string): Promise<void> {
+    await db.delete(budgetCategories).where(eq(budgetCategories.id, id));
+  }
+
+  // Dollar Rates (cotización del dólar por mes)
+  async getDollarRates(userId: string): Promise<DollarRate[]> {
+    return await db.select().from(dollarRates)
+      .where(eq(dollarRates.userId, userId));
+  }
+
+  async getDollarRate(id: string): Promise<DollarRate | undefined> {
+    const result = await db.select().from(dollarRates)
+      .where(eq(dollarRates.id, id));
+    return result[0];
+  }
+
+  async createDollarRate(rate: InsertDollarRate & { userId: string }): Promise<DollarRate> {
+    const id = randomUUID();
+    const result = await db.insert(dollarRates)
+      .values({ id, ...rate } as any)
+      .returning();
+    return result[0];
+  }
+
+  async updateDollarRate(id: string, rate: Partial<InsertDollarRate>): Promise<DollarRate | undefined> {
+    const result = await db.update(dollarRates)
+      .set({ ...rate, updatedAt: new Date() } as any)
+      .where(eq(dollarRates.id, id))
+      .returning();
+    return result[0];
   }
 
   // Preguntas (question problems + chained items)
