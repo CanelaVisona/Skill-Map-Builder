@@ -127,7 +127,7 @@ function PriorityRow({
           {item.name}
         </div>
         <div style={{ fontSize: "9.5px", color: colors.subtitle }}>
-          {GARMENT_META[item.type].label} · {STYLE_META[item.style].label}
+          {GARMENT_META[item.type].label} · {item.styles.map((s) => STYLE_META[s].label).join(", ")}
         </div>
       </div>
 
@@ -389,7 +389,7 @@ export default function ClothingPriorityList({
         type: target.type,
         color: target.color,
         status: target.status,
-        style: target.style,
+        styles: target.styles,
         comfort: target.comfort,
         condition: target.condition,
         styleScore: target.styleScore,
@@ -414,7 +414,7 @@ export default function ClothingPriorityList({
               type: editForm.type,
               color: editForm.color,
               status: editForm.status,
-              style: editForm.style,
+              styles: editForm.styles,
               comfort: editForm.comfort,
               condition: editForm.condition,
               styleScore: editForm.styleScore,
@@ -457,7 +457,7 @@ export default function ClothingPriorityList({
       type: addForm.type,
       color: addForm.color,
       status: addForm.status,
-      style: addForm.style,
+      styles: addForm.styles,
       comfort: addForm.comfort,
       condition: addForm.condition,
       styleScore: addForm.styleScore,

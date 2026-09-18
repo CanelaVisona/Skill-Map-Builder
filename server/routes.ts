@@ -6145,6 +6145,22 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/budget-quarters/:id", requireAuth, async (req, res) => {
+    try {
+      const quarter = await storage.getBudgetQuarter(req.params.id);
+      if (!quarter) {
+        return res.status(404).json({ message: "Carga de presupuesto no encontrada" });
+      }
+      if (quarter.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para modificar esta carga de presupuesto" });
+      }
+      const updated = await storage.updateBudgetQuarter(req.params.id, req.body);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.delete("/api/budget-quarters/:id", requireAuth, async (req, res) => {
     try {
       const quarter = await storage.getBudgetQuarter(req.params.id);

@@ -21,10 +21,15 @@ function isValidStyle(value: unknown): value is ClothingStyle {
   return value === "deporte" || value === "casual" || value === "salida" || value === "entrecasa";
 }
 
+function isValidStylesArray(value: unknown): value is ClothingStyle[] {
+  return Array.isArray(value) && value.length > 0 && value.every(isValidStyle);
+}
+
 type GarmentGroup = "Superior" | "Inferior" | "Calzado" | "Accesorios" | "Otros";
 
 export type GarmentType =
   | "remera"
+  | "top"
   | "mangalarga"
   | "polera"
   | "musculosa"
@@ -59,6 +64,7 @@ export type GarmentType =
 
 export const GARMENT_META: Record<GarmentType, { label: string; group: GarmentGroup }> = {
   remera: { label: "Remera", group: "Superior" },
+  top: { label: "Top", group: "Superior" },
   mangalarga: { label: "Remera manga larga", group: "Superior" },
   polera: { label: "Polera", group: "Superior" },
   musculosa: { label: "Musculosa", group: "Superior" },
@@ -112,7 +118,9 @@ export type ClothingItem = {
   type: GarmentType;
   color: string;
   status: ClothingStatus;
-  style: ClothingStyle;
+  // Categoría/s (deporte/casual/salida/entrecasa) — a prenda can belong to more
+  // than one, e.g. a jean that's both "casual" and "salida".
+  styles: ClothingStyle[];
   // 1-5 "bloquecitos" ratings — comfort (how good it feels), condition (how
   // worn/new the piece is) and styleScore (how "estilosa" it is, aka "Estilo").
   // Named "styleScore" (not "style") to avoid clashing with the deporte/casual/salida
@@ -125,15 +133,15 @@ export type ClothingItem = {
 const now = Date.now();
 
 const INITIAL_ITEMS: ClothingItem[] = [
-  { id: now - 9, name: "Remera blanca", type: "remera", color: "#f3f4f6", status: "have", style: "casual", comfort: 4, condition: 4, styleScore: 3 },
-  { id: now - 8, name: "Remera negra", type: "remera", color: "#1f2937", status: "missing", style: "salida", comfort: 3, condition: 3, styleScore: 3 },
-  { id: now - 7, name: "Campera de jean", type: "campera", color: "#3b5b8c", status: "have", style: "casual", comfort: 4, condition: 5, styleScore: 5 },
-  { id: now - 6, name: "Jean azul", type: "jean", color: "#3b5b8c", status: "have", style: "casual", comfort: 5, condition: 4, styleScore: 4 },
-  { id: now - 5, name: "Cargo verde", type: "pantalon", color: "#4d7c0f", status: "missing", style: "deporte", comfort: 3, condition: 3, styleScore: 3 },
-  { id: now - 4, name: "Campera de abrigo", type: "abrigo", color: "#4b5563", status: "missing", style: "salida", comfort: 3, condition: 3, styleScore: 3 },
-  { id: now - 3, name: "Zapatillas", type: "zapatilla", color: "#1f2937", status: "have", style: "deporte", comfort: 5, condition: 3, styleScore: 4 },
-  { id: now - 2, name: "Botas de cuero", type: "bota", color: "#78350f", status: "missing", style: "salida", comfort: 3, condition: 3, styleScore: 3 },
-  { id: now - 1, name: "Cadena plateada", type: "collar", color: "#9ca3af", status: "have", style: "salida", comfort: 5, condition: 5, styleScore: 5 },
+  { id: now - 9, name: "Remera blanca", type: "remera", color: "#f3f4f6", status: "have", styles: ["casual"], comfort: 4, condition: 4, styleScore: 3 },
+  { id: now - 8, name: "Remera negra", type: "remera", color: "#1f2937", status: "missing", styles: ["salida"], comfort: 3, condition: 3, styleScore: 3 },
+  { id: now - 7, name: "Campera de jean", type: "campera", color: "#3b5b8c", status: "have", styles: ["casual"], comfort: 4, condition: 5, styleScore: 5 },
+  { id: now - 6, name: "Jean azul", type: "jean", color: "#3b5b8c", status: "have", styles: ["casual", "salida"], comfort: 5, condition: 4, styleScore: 4 },
+  { id: now - 5, name: "Cargo verde", type: "pantalon", color: "#4d7c0f", status: "missing", styles: ["deporte"], comfort: 3, condition: 3, styleScore: 3 },
+  { id: now - 4, name: "Campera de abrigo", type: "abrigo", color: "#4b5563", status: "missing", styles: ["salida"], comfort: 3, condition: 3, styleScore: 3 },
+  { id: now - 3, name: "Zapatillas", type: "zapatilla", color: "#1f2937", status: "have", styles: ["deporte"], comfort: 5, condition: 3, styleScore: 4 },
+  { id: now - 2, name: "Botas de cuero", type: "bota", color: "#78350f", status: "missing", styles: ["salida"], comfort: 3, condition: 3, styleScore: 3 },
+  { id: now - 1, name: "Cadena plateada", type: "collar", color: "#9ca3af", status: "have", styles: ["salida"], comfort: 5, condition: 5, styleScore: 5 },
 ];
 
 function isValidStatus(value: unknown): value is ClothingStatus {
@@ -159,16 +167,23 @@ function sanitizeItems(input: unknown): ClothingItem[] | null {
       ) {
         return null;
       }
-      // "style", "comfort", "condition" and "styleScore" are additive on top of
+      // "styles", "comfort", "condition" and "styleScore" are additive on top of
       // the original schema — default them instead of dropping the item, so
-      // prendas saved before these fields existed still load.
+      // prendas saved before these fields existed still load. Prendas saved
+      // back when "styles" was a single "style" string still carry that field,
+      // so fall back to wrapping it in a one-item array before defaulting.
+      const legacyStyle = (raw as { style?: unknown }).style;
       return {
         id: raw.id,
         name: raw.name,
         type: raw.type,
         color: raw.color,
         status: raw.status,
-        style: isValidStyle(raw.style) ? raw.style : "casual",
+        styles: isValidStylesArray(raw.styles)
+          ? raw.styles
+          : isValidStyle(legacyStyle)
+            ? [legacyStyle]
+            : ["casual"],
         comfort: isValidRating(raw.comfort) ? raw.comfort : 3,
         condition: isValidRating(raw.condition) ? raw.condition : 3,
         styleScore: isValidRating(raw.styleScore) ? raw.styleScore : 3,
@@ -339,6 +354,9 @@ export function GarmentGlyph({ type, color, size = 32 }: { type: GarmentType; co
   const clipProps = { fill: "#000" };
 
   const shirtBody = "M16 6 L9 10 L6 16 L11 19 L14 16 V41 H34 V16 L37 19 L42 16 L39 10 L32 6 C32 6 30 11 24 11 C18 11 16 6 16 6 Z";
+  // Same crew-neck/shoulders/sleeves as "remera", but the torso is cut off at
+  // half the length (the hem sits midway between the armhole and remera's hem).
+  const topBody = "M16 6 L9 10 L6 16 L11 19 L14 16 V28.5 H34 V16 L37 19 L42 16 L39 10 L32 6 C32 6 30 11 24 11 C18 11 16 6 16 6 Z";
   // Same set-in shoulder as shirtBody, but the sleeve runs all the way down to a
   // wrist cuff instead of stopping short — shared by "mangalarga" and "polera".
   const longSleeveBody =
@@ -375,6 +393,16 @@ export function GarmentGlyph({ type, color, size = 32 }: { type: GarmentType; co
       fillNodes = <path d={shirtBody} {...fillProps} />;
       clipNodes = <path d={shirtBody} {...clipProps} />;
       details = <path d="M18 8 C19 11.5 21 13 24 13 C27 13 29 11.5 30 8" fill="none" stroke={detail} strokeWidth="1.3" />;
+      break;
+    case "top":
+      fillNodes = <path d={topBody} {...fillProps} />;
+      clipNodes = <path d={topBody} {...clipProps} />;
+      details = (
+        <>
+          <path d="M18 8 C19 11.5 21 13 24 13 C27 13 29 11.5 30 8" fill="none" stroke={detail} strokeWidth="1.3" />
+          <line x1="14" y1="28.5" x2="34" y2="28.5" stroke={outline} strokeWidth="1.6" opacity="0.45" />
+        </>
+      );
       break;
     case "mangalarga":
       // Long-sleeve tee: same crew neckline as "remera", sleeves reach the wrist.
@@ -842,7 +870,7 @@ export type ItemFormState = {
   type: GarmentType;
   color: string;
   status: ClothingStatus;
-  style: ClothingStyle;
+  styles: ClothingStyle[];
   comfort: number;
   condition: number;
   styleScore: number;
@@ -853,7 +881,7 @@ export const EMPTY_FORM: ItemFormState = {
   type: "remera",
   color: "#4ade80",
   status: "have",
-  style: "casual",
+  styles: ["casual"],
   comfort: 3,
   condition: 3,
   styleScore: 3,
@@ -1119,16 +1147,24 @@ function ItemForm({
       </div>
 
       <div>
-        <div style={labelStyle}>Categoría</div>
+        <div style={labelStyle}>Categoría (elegí una o más)</div>
         <div style={{ display: "flex", gap: "6px" }}>
           {STYLE_ORDER.map((style) => {
-            const active = form.style === style;
+            const active = form.styles.includes(style);
             const meta = STYLE_META[style];
             return (
               <button
                 key={style}
                 type="button"
-                onClick={() => onChange({ ...form, style })}
+                onClick={() => {
+                  // Toggle in/out, but never leave the prenda with zero categorías.
+                  if (active) {
+                    if (form.styles.length === 1) return;
+                    onChange({ ...form, styles: form.styles.filter((s) => s !== style) });
+                  } else {
+                    onChange({ ...form, styles: [...form.styles, style] });
+                  }
+                }}
                 style={{
                   flex: 1,
                   height: "30px",
@@ -1404,7 +1440,7 @@ function ClothingCard({
       onPointerCancel={longPress.onPointerCancel}
       onPointerLeave={longPress.onPointerLeave}
       onContextMenu={(e) => e.preventDefault()}
-      title={`${item.name} · ${STYLE_META[item.style].label} · Comodidad ${item.comfort}/5 · Estado ${item.condition}/5 · Estilo ${item.styleScore}/5 · long press para editar`}
+      title={`${item.name} · ${item.styles.map((s) => STYLE_META[s].label).join(", ")} · Comodidad ${item.comfort}/5 · Estado ${item.condition}/5 · Estilo ${item.styleScore}/5 · long press para editar`}
       style={{
         position: "relative",
         borderRadius: "10px",
@@ -1419,18 +1455,20 @@ function ClothingCard({
         gap: "6px",
       }}
     >
-      <span
-        style={{
-          position: "absolute",
-          top: "4px",
-          left: "4px",
-          width: "8px",
-          height: "8px",
-          borderRadius: "50%",
-          background: STYLE_META[item.style].color,
-          boxShadow: "0 0 0 2px " + colors.cardBg,
-        }}
-      />
+      <div style={{ position: "absolute", top: "4px", left: "4px", display: "flex", gap: "2px" }}>
+        {item.styles.map((s) => (
+          <span
+            key={s}
+            style={{
+              width: "8px",
+              height: "8px",
+              borderRadius: "50%",
+              background: STYLE_META[s].color,
+              boxShadow: "0 0 0 2px " + colors.cardBg,
+            }}
+          />
+        ))}
+      </div>
 
       {isHave ? (
         <span
@@ -1690,7 +1728,7 @@ export default function ClothingInventory({
 
   // "Categoría" (deporte/casual/salida) filters the visible set on top of the
   // group filter — it's a separate axis, not a replacement for Superior/Inferior/etc.
-  const styleFilteredItems = styleFilter === "Todas" ? items : items.filter((i) => i.style === styleFilter);
+  const styleFilteredItems = styleFilter === "Todas" ? items : items.filter((i) => i.styles.includes(styleFilter));
   const groupsPresent = GROUP_ORDER.filter((g) => styleFilteredItems.some((i) => GARMENT_META[i.type].group === g));
 
   const openAddForm = () => {
@@ -1714,7 +1752,7 @@ export default function ClothingInventory({
       type: addForm.type,
       color: addForm.color,
       status: addForm.status,
-      style: addForm.style,
+      styles: addForm.styles,
       comfort: addForm.comfort,
       condition: addForm.condition,
       styleScore: addForm.styleScore,
@@ -1733,7 +1771,7 @@ export default function ClothingInventory({
       type: item.type,
       color: item.color,
       status: item.status,
-      style: item.style,
+      styles: item.styles,
       comfort: item.comfort,
       condition: item.condition,
       styleScore: item.styleScore,
@@ -1757,7 +1795,7 @@ export default function ClothingInventory({
               type: editForm.type,
               color: editForm.color,
               status: editForm.status,
-              style: editForm.style,
+              styles: editForm.styles,
               comfort: editForm.comfort,
               condition: editForm.condition,
               styleScore: editForm.styleScore,

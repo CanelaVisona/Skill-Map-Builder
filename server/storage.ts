@@ -298,6 +298,7 @@ export interface IStorage {
   getBudgetQuarters(userId: string): Promise<BudgetQuarter[]>;
   getBudgetQuarter(id: string): Promise<BudgetQuarter | undefined>;
   createBudgetQuarter(quarter: InsertBudgetQuarter & { userId: string }): Promise<BudgetQuarter>;
+  updateBudgetQuarter(id: string, quarter: Partial<InsertBudgetQuarter>): Promise<BudgetQuarter | undefined>;
   deleteBudgetQuarter(id: string): Promise<void>;
 
   // Budget Categories (Presupuesto por categorías)
@@ -2773,6 +2774,14 @@ export class DbStorage implements IStorage {
     const id = randomUUID();
     const result = await db.insert(budgetQuarters)
       .values({ id, ...quarter } as any)
+      .returning();
+    return result[0];
+  }
+
+  async updateBudgetQuarter(id: string, quarter: Partial<InsertBudgetQuarter>): Promise<BudgetQuarter | undefined> {
+    const result = await db.update(budgetQuarters)
+      .set({ ...quarter } as any)
+      .where(eq(budgetQuarters.id, id))
       .returning();
     return result[0];
   }
