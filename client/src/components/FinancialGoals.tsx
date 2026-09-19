@@ -82,16 +82,30 @@ function useDollarRates(): DollarRate[] {
   return useContext(DollarRatesContext);
 }
 
-// Muestra un monto en dólares (la unidad en la que se anota todo) con su equivalente en pesos
-// chiquito debajo, según la cotización del mes indicado, o la última cargada si no se pasa mes.
-// Si todavía no hay ninguna cotización cargada, muestra solo el monto en dólares.
+// Muestra un monto en dólares (la unidad en la que se anota todo). Tocando el número aparece,
+// chiquito debajo, su equivalente en pesos según la cotización del mes indicado (o la última
+// cargada si no se pasa mes) — se oculta de nuevo al tocarlo otra vez. Si no hay ninguna
+// cotización cargada, el número no reacciona al toque.
 function Money({ usd, year, month, className }: { usd: number; year?: number; month?: number; className?: string }) {
   const rates = useDollarRates();
   const rate = dollarRateFor(rates, year, month);
+  const [show, setShow] = useState(false);
   return (
     <span className={`inline-flex flex-col items-start leading-tight align-middle ${className || ""}`}>
-      <span className="tabular-nums">{moneyUsd(usd)}</span>
-      {rate !== null && <span className="text-muted-foreground font-normal text-[0.72em] tabular-nums">{money(usd * rate)}</span>}
+      <span
+        className={`tabular-nums ${rate !== null ? "cursor-pointer hover:opacity-70 transition-opacity" : ""}`}
+        onClick={
+          rate !== null
+            ? (e) => {
+                e.stopPropagation();
+                setShow((v) => !v);
+              }
+            : undefined
+        }
+      >
+        {moneyUsd(usd)}
+      </span>
+      {show && rate !== null && <span className="text-muted-foreground font-normal text-[0.72em] tabular-nums">{money(usd * rate)}</span>}
     </span>
   );
 }
