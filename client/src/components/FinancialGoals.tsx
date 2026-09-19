@@ -94,6 +94,9 @@ function Money({ usd, year, month, className }: { usd: number; year?: number; mo
     <span className={`inline-flex flex-col items-start leading-tight align-middle ${className || ""}`}>
       <span
         className={`tabular-nums ${rate !== null ? "cursor-pointer hover:opacity-70 transition-opacity" : ""}`}
+        onPointerDown={rate !== null ? (e) => e.stopPropagation() : undefined}
+        onPointerUp={rate !== null ? (e) => e.stopPropagation() : undefined}
+        onPointerMove={rate !== null ? (e) => e.stopPropagation() : undefined}
         onClick={
           rate !== null
             ? (e) => {
@@ -681,9 +684,9 @@ function BudgetCategoryRow({
     setValues(category.months.map((m) => (m.amount ? moneyFormatter.format(m.amount) : "")));
   }, [category.id, category.months]);
 
-  const dirty = category.months.some((m, idx) => parseMoney(values[idx] || "") !== (m.amount || 0));
-
-  const handleSaveMonths = () => {
+  const handleBlurSave = () => {
+    const changed = category.months.some((m, idx) => parseMoney(values[idx] || "") !== (m.amount || 0));
+    if (!changed) return;
     const monthEntries: BudgetCategoryMonthEntry[] = category.months.map((m, idx) => ({ year: m.year, month: m.month, amount: parseMoney(values[idx] || "") }));
     onUpdateMonths(monthEntries);
   };
@@ -705,6 +708,10 @@ function BudgetCategoryRow({
               <Input
                 value={values[idx]}
                 onChange={(e) => setValues((v) => v.map((x, i) => (i === idx ? e.target.value : x)))}
+                onBlur={handleBlurSave}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                }}
                 placeholder="0"
                 inputMode="decimal"
                 className="h-8 text-xs pl-7"
@@ -713,11 +720,6 @@ function BudgetCategoryRow({
           </div>
         ))}
       </div>
-      {dirty && (
-        <Button type="button" size="sm" className="w-full mt-2" onClick={handleSaveMonths}>
-          Guardar montos
-        </Button>
-      )}
 
       {showActions && (
         <div className="flex gap-2 mt-2 pt-2 border-t border-border/60">
@@ -869,12 +871,14 @@ function BudgetFormDialog({
   open,
   onOpenChange,
   quarter,
+  lastQuarter,
   months: windowMonths,
   onSubmit,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   quarter: BudgetQuarter | null;
+  lastQuarter: BudgetQuarter | null;
   months: { year: number; month: number; label: string }[];
   onSubmit: (data: { months: BudgetMonthEntry[] }) => void;
 }) {
@@ -894,10 +898,21 @@ function BudgetFormDialog({
         v[`savings-${idx}`] = m.savings ? moneyFormatter.format(m.savings) : "";
       });
       setValues(v);
+    } else if (lastQuarter && lastQuarter.months.length) {
+      // Sin una carga previa para estos meses puntuales: se parte del último número
+      // guardado (el mes más reciente de la última carga) como punto de partida editable.
+      const last = lastQuarter.months[lastQuarter.months.length - 1];
+      const v: Record<string, string> = {};
+      windowMonths.forEach((_, idx) => {
+        v[`fixed-${idx}`] = last.fixed ? moneyFormatter.format(last.fixed) : "";
+        v[`variable-${idx}`] = last.variable ? moneyFormatter.format(last.variable) : "";
+        v[`savings-${idx}`] = last.savings ? moneyFormatter.format(last.savings) : "";
+      });
+      setValues(v);
     } else {
       setValues({});
     }
-  }, [open, quarter]);
+  }, [open, quarter, lastQuarter]);
 
   const getVal = (cat: string, idx: number) => values[`${cat}-${idx}`] || "";
   const setVal = (cat: string, idx: number, v: string) => setValues((s) => ({ ...s, [`${cat}-${idx}`]: v }));
@@ -1306,6 +1321,10 @@ function BudgetCategoriesCalendarDialog({
                 </div>
                 <div className="text-xs text-muted-foreground">Mismo presupuesto que: {e.category.months.map((m) => MONTH_NAMES[m.month]).join(", ")}</div>
                 <div className="flex items-center justify-between text-sm pt-1 border-t border-border/60">
+                  <span className="text-muted-foreground">Registrado en {MONTH_NAMES[selMonth]}</span>
+                  <span className="font-semibold"><Money usd={e.amount} year={year} month={selMonth} /></span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Promedio de 3 meses</span>
                   <span className="font-semibold"><Money usd={categoryAvg(e.category)} /></span>
                 </div>
@@ -2684,6 +2703,7 @@ export default function FinancialGoals() {
           if (!v) setBudgetFormTarget(null);
         }}
         quarter={budgetFormTarget}
+        lastQuarter={latestBudgetQuarter(budgetQuarters)}
         months={budgetFormMonths}
         onSubmit={handleBudgetFormSubmit}
       />
