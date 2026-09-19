@@ -109,6 +109,38 @@ function Money({ usd, year, month, className }: { usd: number; year?: number; mo
     </span>
   );
 }
+
+// ---------- entering amounts in ARS instead of USD ----------
+
+type AmountCurrency = "usd" | "ars";
+
+// Convierte lo tecleado a dólares (la unidad en la que se guarda todo). Si el usuario eligió
+// cargar en pesos, usa la cotización del mes indicado (o la última cargada si no hay mes) para
+// hacer la conversión; si no hay ninguna cotización cargada, no hay forma de convertir y se
+// interpreta el número tal cual.
+function parseAmountAs(text: string, currency: AmountCurrency, rates: DollarRate[], year?: number, month?: number): number {
+  const n = parseMoney(text);
+  if (currency === "usd") return n;
+  const rate = dollarRateFor(rates, year, month);
+  return rate ? n / rate : n;
+}
+
+function CurrencyToggle({ currency, onChange, className }: { currency: AmountCurrency; onChange: (c: AmountCurrency) => void; className?: string }) {
+  return (
+    <div className={`inline-flex bg-muted rounded-lg p-0.5 gap-0.5 ${className || ""}`}>
+      {(["usd", "ars"] as AmountCurrency[]).map((c) => (
+        <button
+          key={c}
+          type="button"
+          onClick={() => onChange(c)}
+          className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${currency === c ? "bg-card shadow-sm text-foreground" : "text-muted-foreground"}`}
+        >
+          {c === "usd" ? "USD" : "ARS"}
+        </button>
+      ))}
+    </div>
+  );
+}
 function parseMoney(v: string): number {
   if (!v) return 0;
   const cleaned = v.replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".");
@@ -627,10 +659,34 @@ function BudgetCard({
   );
 }
 
-function BudgetCategoryRow({ category, color, onRename }: { category: BudgetCategory; color: string; onRename: () => void }) {
+function BudgetCategoryRow({
+  category,
+  color,
+  onRename,
+  onDelete,
+  onUpdateMonths,
+}: {
+  category: BudgetCategory;
+  color: string;
+  onRename: () => void;
+  onDelete: () => void;
+  onUpdateMonths: (months: BudgetCategoryMonthEntry[]) => void;
+}) {
   const [showActions, setShowActions] = useState(false);
   const rowLongPress = useLongPress(() => setShowActions((v) => !v), () => {});
   const avg = categoryAvg(category);
+  const [values, setValues] = useState<string[]>(() => category.months.map((m) => (m.amount ? moneyFormatter.format(m.amount) : "")));
+
+  useEffect(() => {
+    setValues(category.months.map((m) => (m.amount ? moneyFormatter.format(m.amount) : "")));
+  }, [category.id, category.months]);
+
+  const dirty = category.months.some((m, idx) => parseMoney(values[idx] || "") !== (m.amount || 0));
+
+  const handleSaveMonths = () => {
+    const monthEntries: BudgetCategoryMonthEntry[] = category.months.map((m, idx) => ({ year: m.year, month: m.month, amount: parseMoney(values[idx] || "") }));
+    onUpdateMonths(monthEntries);
+  };
 
   return (
     <div className="rounded-xl border border-border/60 bg-muted/30 px-3 py-2.5 select-none">
@@ -639,25 +695,55 @@ function BudgetCategoryRow({ category, color, onRename }: { category: BudgetCate
         <span className="flex-1 min-w-0 truncate text-muted-foreground">{category.name}</span>
         <span className="font-semibold"><Money usd={avg} /></span>
       </div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1.5 pl-[18px] text-[11px] text-muted-foreground">
-        {category.months.map((m, i) => (
-          <span key={i} className="capitalize">
-            {monthLabel(m.year, m.month).slice(0, 3)}: <Money usd={m.amount} year={m.year} month={m.month} />
-          </span>
+
+      <div className="grid grid-cols-3 gap-2 mt-2 pl-[18px]">
+        {category.months.map((m, idx) => (
+          <div key={idx}>
+            <span className="text-[10px] text-muted-foreground mb-0.5 block capitalize truncate">{monthLabel(m.year, m.month).slice(0, 3)}</span>
+            <div className="relative">
+              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-[10px]">US$</span>
+              <Input
+                value={values[idx]}
+                onChange={(e) => setValues((v) => v.map((x, i) => (i === idx ? e.target.value : x)))}
+                placeholder="0"
+                inputMode="decimal"
+                className="h-8 text-xs pl-7"
+              />
+            </div>
+          </div>
         ))}
       </div>
+      {dirty && (
+        <Button type="button" size="sm" className="w-full mt-2" onClick={handleSaveMonths}>
+          Guardar montos
+        </Button>
+      )}
+
       {showActions && (
-        <div className="flex mt-2 pt-2 border-t border-border/60">
+        <div className="flex gap-2 mt-2 pt-2 border-t border-border/60">
           <Button
             type="button"
             size="sm"
             variant="outline"
+            className="flex-1"
             onClick={() => {
               setShowActions(false);
               onRename();
             }}
           >
-            <Pencil className="h-3.5 w-3.5" /> Editar nombre
+            <Pencil className="h-3.5 w-3.5" /> Nombre
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="destructive"
+            className="flex-1"
+            onClick={() => {
+              setShowActions(false);
+              onDelete();
+            }}
+          >
+            <Trash2 className="h-3.5 w-3.5" /> Eliminar
           </Button>
         </div>
       )}
@@ -728,12 +814,16 @@ function BudgetCategoriesDetailDialog({
   onOpenChange,
   onAddCategory,
   onRenameCategory,
+  onDeleteCategory,
+  onUpdateCategoryMonths,
 }: {
   categories: BudgetCategory[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onAddCategory: () => void;
   onRenameCategory: (category: BudgetCategory) => void;
+  onDeleteCategory: (category: BudgetCategory) => void;
+  onUpdateCategoryMonths: (category: BudgetCategory, months: BudgetCategoryMonthEntry[]) => void;
 }) {
   const titleLongPress = useLongPress(onAddCategory, () => {});
   const total = categories.reduce((a, c) => a + categoryAvg(c), 0);
@@ -745,7 +835,7 @@ function BudgetCategoriesDetailDialog({
           <DialogTitle className="cursor-pointer select-none inline-block" {...titleLongPress}>
             Presupuesto por categorías
           </DialogTitle>
-          <DialogDescription>Mantené presionado el título para agregar una categoría nueva · mantené presionada una categoría para editar su nombre</DialogDescription>
+          <DialogDescription>Mantené presionado el título para agregar una categoría nueva · mantené presionada una categoría para editar el nombre o eliminarla</DialogDescription>
         </DialogHeader>
 
         {categories.length === 0 ? (
@@ -758,7 +848,14 @@ function BudgetCategoriesDetailDialog({
             </div>
             <div className="flex flex-col gap-2">
               {categories.map((c, i) => (
-                <BudgetCategoryRow key={c.id} category={c} color={PALETTE[i % PALETTE.length]} onRename={() => onRenameCategory(c)} />
+                <BudgetCategoryRow
+                  key={c.id}
+                  category={c}
+                  color={PALETTE[i % PALETTE.length]}
+                  onRename={() => onRenameCategory(c)}
+                  onDelete={() => onDeleteCategory(c)}
+                  onUpdateMonths={(months) => onUpdateCategoryMonths(c, months)}
+                />
               ))}
             </div>
           </>
@@ -783,9 +880,12 @@ function BudgetFormDialog({
 }) {
   const months = quarter ? quarter.months.map((m) => ({ year: m.year, month: m.month, label: monthLabel(m.year, m.month) })) : windowMonths;
   const [values, setValues] = useState<Record<string, string>>({});
+  const [amountCurrency, setAmountCurrency] = useState<AmountCurrency>("usd");
+  const rates = useDollarRates();
 
   useEffect(() => {
     if (!open) return;
+    setAmountCurrency("usd");
     if (quarter) {
       const v: Record<string, string> = {};
       quarter.months.forEach((m, idx) => {
@@ -806,9 +906,9 @@ function BudgetFormDialog({
     const monthEntries: BudgetMonthEntry[] = months.map((m, idx) => ({
       year: m.year,
       month: m.month,
-      fixed: parseMoney(getVal("fixed", idx)),
-      variable: parseMoney(getVal("variable", idx)),
-      savings: parseMoney(getVal("savings", idx)),
+      fixed: parseAmountAs(getVal("fixed", idx), amountCurrency, rates, m.year, m.month),
+      variable: parseAmountAs(getVal("variable", idx), amountCurrency, rates, m.year, m.month),
+      savings: parseAmountAs(getVal("savings", idx), amountCurrency, rates, m.year, m.month),
     }));
     onSubmit({ months: monthEntries });
   };
@@ -820,6 +920,13 @@ function BudgetFormDialog({
           <DialogTitle>{quarter ? "Editar presupuesto" : "Presupuesto"}</DialogTitle>
           <DialogDescription>Cargá cuánto gastaste en cada categoría en esos 3 meses. El presupuesto total se calcula solo, como el promedio de fijos + variables + ahorro.</DialogDescription>
         </DialogHeader>
+
+        {dollarRateFor(rates) !== null && (
+          <div className="flex items-center justify-between gap-2 -mt-1">
+            <span className="text-xs text-muted-foreground">Cargar los montos en</span>
+            <CurrencyToggle currency={amountCurrency} onChange={setAmountCurrency} />
+          </div>
+        )}
 
         <div className="space-y-4">
           {BUDGET_CATEGORIES.map((cat) => (
@@ -833,7 +940,7 @@ function BudgetFormDialog({
                   <div key={idx}>
                     <span className="text-[11px] text-muted-foreground mb-1 block capitalize truncate">{m.label}</span>
                     <div className="relative">
-                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">US$</span>
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">{amountCurrency === "usd" ? "US$" : "$"}</span>
                       <Input value={getVal(cat.key, idx)} onChange={(e) => setVal(cat.key, idx, e.target.value)} placeholder="0" inputMode="decimal" className="h-9 text-xs pl-8" />
                     </div>
                   </div>
@@ -873,9 +980,12 @@ function BudgetCategoryFormDialog({
   const [name, setName] = useState("");
   const [values, setValues] = useState<string[]>(["", "", ""]);
   const [nameErr, setNameErr] = useState(false);
+  const [amountCurrency, setAmountCurrency] = useState<AmountCurrency>("usd");
+  const rates = useDollarRates();
 
   useEffect(() => {
     if (!open) return;
+    setAmountCurrency("usd");
     if (category) {
       setName(category.name);
       setValues(category.months.map((m) => (m.amount ? moneyFormatter.format(m.amount) : "")));
@@ -892,7 +1002,7 @@ function BudgetCategoryFormDialog({
       setNameErr(true);
       return;
     }
-    const monthEntries: BudgetCategoryMonthEntry[] = months.map((m, idx) => ({ year: m.year, month: m.month, amount: parseMoney(values[idx] || "") }));
+    const monthEntries: BudgetCategoryMonthEntry[] = months.map((m, idx) => ({ year: m.year, month: m.month, amount: parseAmountAs(values[idx] || "", amountCurrency, rates, m.year, m.month) }));
     onSubmit({ name: trimmed, months: monthEntries });
   };
 
@@ -903,6 +1013,13 @@ function BudgetCategoryFormDialog({
           <DialogTitle>{category ? "Editar categoría" : "Nueva categoría"}</DialogTitle>
           <DialogDescription>Cargá cuánto gastaste en esta categoría en esos 3 meses. El gráfico va a mostrar el promedio.</DialogDescription>
         </DialogHeader>
+
+        {dollarRateFor(rates) !== null && (
+          <div className="flex items-center justify-between gap-2 -mt-1">
+            <span className="text-xs text-muted-foreground">Cargar los montos en</span>
+            <CurrencyToggle currency={amountCurrency} onChange={setAmountCurrency} />
+          </div>
+        )}
 
         <div className="space-y-4">
           <div>
@@ -919,7 +1036,7 @@ function BudgetCategoryFormDialog({
                 <div key={idx}>
                   <span className="text-[11px] text-muted-foreground mb-1 block capitalize truncate">{m.label}</span>
                   <div className="relative">
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">US$</span>
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">{amountCurrency === "usd" ? "US$" : "$"}</span>
                     <Input
                       value={values[idx]}
                       onChange={(e) => setValues((v) => v.map((x, i) => (i === idx ? e.target.value : x)))}
@@ -1446,9 +1563,12 @@ function GoalFormDialog({
   const [flowAmountText, setFlowAmountText] = useState("");
   const [nameErr, setNameErr] = useState(false);
   const [instErr, setInstErr] = useState(false);
+  const [amountCurrency, setAmountCurrency] = useState<AmountCurrency>("usd");
+  const rates = useDollarRates();
 
   useEffect(() => {
     if (!open) return;
+    setAmountCurrency("usd");
     if (goal) {
       setName(goal.name);
       setTargetText(goal.target ? moneyFormatter.format(goal.target) : "");
@@ -1492,7 +1612,7 @@ function GoalFormDialog({
   const handleSave = () => {
     const trimmedName = name.trim();
     const finalHoldings: Holding[] = holdings
-      .map((h) => ({ id: h.id, instrument: h.instrument.trim(), broker: h.broker.trim(), amount: parseMoney(h.amountText) }))
+      .map((h) => ({ id: h.id, instrument: h.instrument.trim(), broker: h.broker.trim(), amount: parseAmountAs(h.amountText, amountCurrency, rates) }))
       .filter((h) => h.instrument);
 
     let ok = true;
@@ -1506,7 +1626,7 @@ function GoalFormDialog({
     } else setInstErr(false);
     if (!ok) return;
 
-    const flowAmount = parseMoney(flowAmountText);
+    const flowAmount = parseAmountAs(flowAmountText, amountCurrency, rates);
     const hadFlow = (goal?.flow.amount ?? 0) > 0 && !!goal?.flow.anchor;
     const finalFlow: Flow = {
       amount: flowAmount,
@@ -1516,7 +1636,7 @@ function GoalFormDialog({
       anchor: flowAmount > 0 ? (hadFlow ? goal!.flow.anchor : Date.now()) : null,
     };
 
-    onSubmit({ name: trimmedName, emoji, color, target: parseMoney(targetText), holdings: finalHoldings, flow: finalFlow });
+    onSubmit({ name: trimmedName, emoji, color, target: parseAmountAs(targetText, amountCurrency, rates), holdings: finalHoldings, flow: finalFlow });
   };
 
   const selectClass = "flex h-9 w-full rounded-md border border-input bg-transparent px-2 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
@@ -1528,6 +1648,13 @@ function GoalFormDialog({
           <DialogTitle>{goal ? "Editar meta" : "Nueva meta"}</DialogTitle>
           <DialogDescription>Definí con qué la estás juntando. El monto objetivo es opcional.</DialogDescription>
         </DialogHeader>
+
+        {dollarRateFor(rates) !== null && (
+          <div className="flex items-center justify-between gap-2 -mt-1">
+            <span className="text-xs text-muted-foreground">Cargar los montos en</span>
+            <CurrencyToggle currency={amountCurrency} onChange={setAmountCurrency} />
+          </div>
+        )}
 
         <div className="space-y-4">
           <div>
@@ -1562,7 +1689,7 @@ function GoalFormDialog({
               Monto necesario <span className="text-muted-foreground font-normal">(opcional)</span>
             </label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">US$</span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">{amountCurrency === "usd" ? "US$" : "$"}</span>
               <Input id="fg-target" className="pl-10" inputMode="decimal" value={targetText} onChange={(e) => setTargetText(e.target.value)} placeholder="Sin objetivo fijo" />
             </div>
           </div>
@@ -1595,7 +1722,7 @@ function GoalFormDialog({
                   )}
                   <Input value={h.broker} onChange={(e) => updateHoldingRow(h.id, { broker: e.target.value })} placeholder="Broker (ej: IOL)" maxLength={40} className="h-9 text-xs" />
                   <div className="relative">
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">US$</span>
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">{amountCurrency === "usd" ? "US$" : "$"}</span>
                     <Input
                       value={h.amountText}
                       onChange={(e) => updateHoldingRow(h.id, { amountText: e.target.value })}
@@ -1629,7 +1756,7 @@ function GoalFormDialog({
               <div>
                 <span className="text-xs text-muted-foreground mb-1 block">Monto</span>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">US$</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">{amountCurrency === "usd" ? "US$" : "$"}</span>
                   <Input className="pl-10" inputMode="decimal" value={flowAmountText} onChange={(e) => setFlowAmountText(e.target.value)} placeholder="0" />
                 </div>
               </div>
@@ -2328,6 +2455,26 @@ export default function FinancialGoals() {
     updateBudgetCategory.mutate({ id: renamingBudgetCategory.id, data: { name } });
   };
 
+  const deleteBudgetCategory = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/budget-categories/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete budget category");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/budget-categories"] });
+    },
+  });
+
+  const handleBudgetCategoryDelete = (category: BudgetCategory) => {
+    if (window.confirm(`¿Eliminar la categoría "${category.name}"? No se puede deshacer.`)) {
+      deleteBudgetCategory.mutate(category.id);
+    }
+  };
+
+  const handleBudgetCategoryUpdateMonths = (category: BudgetCategory, months: BudgetCategoryMonthEntry[]) => {
+    updateBudgetCategory.mutate({ id: category.id, data: { months } });
+  };
+
   const createGoal = useMutation({
     mutationFn: async (data: any) => {
       const res = await fetch("/api/financial-goals", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
@@ -2546,6 +2693,8 @@ export default function FinancialGoals() {
         onOpenChange={setBudgetCategoriesDetailOpen}
         onAddCategory={openBudgetCategoryCreate}
         onRenameCategory={openBudgetCategoryRename}
+        onDeleteCategory={handleBudgetCategoryDelete}
+        onUpdateCategoryMonths={handleBudgetCategoryUpdateMonths}
       />
       <BudgetCategoryFormDialog
         open={budgetCategoryFormOpen}
