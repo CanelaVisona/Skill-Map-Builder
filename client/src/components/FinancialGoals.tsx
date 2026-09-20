@@ -8,6 +8,7 @@ import {
   Trash2,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Lock,
   Unlock,
   ArrowLeft,
@@ -240,6 +241,105 @@ function monthQuarterMap(quarters: BudgetQuarter[]): Map<string, BudgetQuarter> 
   return map;
 }
 
+// ---------- horizonte de metas (corto / mediano / largo plazo) ----------
+
+type GoalHorizon = "corto" | "mediano" | "largo" | "sinFecha";
+
+const GOAL_HORIZONS: { key: GoalHorizon; title: string; sub: string }[] = [
+  { key: "corto", title: "Objetivos a corto plazo", sub: "0–2 años" },
+  { key: "mediano", title: "Objetivos a mediano plazo", sub: "2–5 años" },
+  { key: "largo", title: "Objetivos a largo plazo", sub: "Más de 5 años" },
+  { key: "sinFecha", title: "Sin fecha asignada", sub: "" },
+];
+
+function goalHorizon(targetDate: string | null | undefined): GoalHorizon {
+  if (!targetDate) return "sinFecha";
+  const target = new Date(targetDate + "T00:00:00");
+  if (isNaN(target.getTime())) return "sinFecha";
+  const years = (target.getTime() - Date.now()) / (365.25 * 86400000);
+  if (years <= 2) return "corto";
+  if (years <= 5) return "mediano";
+  return "largo";
+}
+
+function formatGoalDate(targetDate: string): string {
+  const d = new Date(targetDate + "T00:00:00");
+  return d.toLocaleDateString("es-AR", { day: "numeric", month: "short", year: "numeric" });
+}
+
+// Lista de meses (año, mes) desde el mes de `start` hasta el mes de `end`, inclusive.
+function monthsBetween(start: Date, end: Date): { year: number; month: number }[] {
+  const out: { year: number; month: number }[] = [];
+  let y = start.getFullYear();
+  let m = start.getMonth();
+  const endKey = end.getFullYear() * 12 + end.getMonth();
+  let guard = 0;
+  while (y * 12 + m <= endKey && guard < 1200) {
+    out.push({ year: y, month: m });
+    m++;
+    if (m > 11) {
+      m = 0;
+      y++;
+    }
+    guard++;
+  }
+  return out.length ? out : [{ year: start.getFullYear(), month: start.getMonth() }];
+}
+
+const GOAL_TIMELINE_COLOR = "#f97316";
+
+// Línea de tiempo mensual entre la creación de la meta y su fecha objetivo, con un bloque por
+// mes (etiquetado) resaltando hasta el mes actual, y la fecha objetivo marcada al final.
+function GoalTimelineBar({ createdAt, targetDate }: { createdAt: string; targetDate: string }) {
+  const start = new Date(createdAt);
+  const target = new Date(targetDate + "T00:00:00");
+  const now = new Date();
+  const months = monthsBetween(start, target);
+  const nowKey = now.getFullYear() * 12 + now.getMonth();
+  const targetKey = target.getFullYear() * 12 + target.getMonth();
+
+  return (
+    <div className="mt-3 -mx-1 px-1 overflow-x-auto minimal-scrollbar">
+      <div style={{ width: "max-content", minWidth: "100%" }}>
+        {/* fila de bloques + círculo, todos a la misma altura */}
+        <div className="flex items-center gap-1">
+          {months.map((m, i) => {
+            const key = m.year * 12 + m.month;
+            const isPast = key < nowKey || (nowKey > targetKey && key <= targetKey);
+            const isCurrent = key === nowKey;
+            return (
+              <div
+                key={i}
+                className="h-1.5 rounded-full"
+                style={{
+                  width: 30,
+                  flex: "0 0 auto",
+                  background: isPast || isCurrent ? GOAL_TIMELINE_COLOR : "hsl(var(--muted))",
+                  opacity: isCurrent ? 0.6 : 1,
+                  outline: isCurrent ? `1.5px solid ${GOAL_TIMELINE_COLOR}` : undefined,
+                  outlineOffset: isCurrent ? "1px" : undefined,
+                }}
+              />
+            );
+          })}
+          <div className="h-1.5 w-1.5 rounded-full shrink-0 ml-0.5" style={{ background: GOAL_TIMELINE_COLOR }} />
+          <span className="text-[10px] font-semibold leading-none whitespace-nowrap shrink-0 ml-1" style={{ color: GOAL_TIMELINE_COLOR }}>
+            {formatGoalDate(targetDate)}
+          </span>
+        </div>
+        {/* fila de etiquetas, debajo, alineada columna por columna con la de arriba */}
+        <div className="flex items-start gap-1 mt-1">
+          {months.map((m, i) => (
+            <span key={i} className="text-[9px] text-muted-foreground capitalize leading-none truncate text-center" style={{ width: 30, flex: "0 0 auto" }}>
+              {monthLabel(m.year, m.month).slice(0, 3)}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---------- long press (tap vs. hold) ----------
 
 function useLongPress(onLongPress: () => void, onTap?: () => void, duration = 480) {
@@ -354,7 +454,10 @@ function GoalPreviewCard({ goal, onTap, onLongPress }: { goal: FinancialGoal; on
       ) : (
         <div className="mb-3" />
       )}
-      <HoldingChips holdings={goal.holdings} />
+      {goal.targetDate && <GoalTimelineBar createdAt={goal.createdAt as unknown as string} targetDate={goal.targetDate} />}
+      <div className="mt-3">
+        <HoldingChips holdings={goal.holdings} />
+      </div>
       {goal.flow.amount > 0 && (
         <div className="mt-2.5 text-xs font-medium" style={{ color: GOLD }}>
           💵 <Money usd={goal.flow.amount} /> {flowCycleLabel(goal.flow)}
@@ -1570,11 +1673,12 @@ function GoalFormDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   goal: FinancialGoal | null;
-  onSubmit: (data: { name: string; emoji: string; color: string; target: number; holdings: Holding[]; flow: Flow }) => void;
+  onSubmit: (data: { name: string; emoji: string; color: string; target: number; targetDate: string | null; holdings: Holding[]; flow: Flow }) => void;
   onDelete: () => void;
 }) {
   const [name, setName] = useState("");
   const [targetText, setTargetText] = useState("");
+  const [targetDate, setTargetDate] = useState("");
   const [emoji, setEmoji] = useState(EMOJIS[0]);
   const [color, setColor] = useState(PALETTE[0]);
   const [holdings, setHoldings] = useState<HoldingDraft[]>([]);
@@ -1591,6 +1695,7 @@ function GoalFormDialog({
     if (goal) {
       setName(goal.name);
       setTargetText(goal.target ? moneyFormatter.format(goal.target) : "");
+      setTargetDate(goal.targetDate || "");
       setEmoji(goal.emoji);
       setColor(goal.color);
       setHoldings(
@@ -1609,6 +1714,7 @@ function GoalFormDialog({
     } else {
       setName("");
       setTargetText("");
+      setTargetDate("");
       setEmoji(EMOJIS[Math.floor(Math.random() * 8)]);
       setColor(PALETTE[Math.floor(Math.random() * PALETTE.length)]);
       setHoldings([newHoldingDraft()]);
@@ -1655,7 +1761,7 @@ function GoalFormDialog({
       anchor: flowAmount > 0 ? (hadFlow ? goal!.flow.anchor : Date.now()) : null,
     };
 
-    onSubmit({ name: trimmedName, emoji, color, target: parseAmountAs(targetText, amountCurrency, rates), holdings: finalHoldings, flow: finalFlow });
+    onSubmit({ name: trimmedName, emoji, color, target: parseAmountAs(targetText, amountCurrency, rates), targetDate: targetDate || null, holdings: finalHoldings, flow: finalFlow });
   };
 
   const selectClass = "flex h-9 w-full rounded-md border border-input bg-transparent px-2 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
@@ -1711,6 +1817,18 @@ function GoalFormDialog({
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">{amountCurrency === "usd" ? "US$" : "$"}</span>
               <Input id="fg-target" className="pl-10" inputMode="decimal" value={targetText} onChange={(e) => setTargetText(e.target.value)} placeholder="Sin objetivo fijo" />
             </div>
+          </div>
+
+          <div>
+            <label className="text-sm font-medium mb-1.5 block" htmlFor="fg-date">
+              Fecha objetivo <span className="text-muted-foreground font-normal">(opcional) — define si es de corto, mediano o largo plazo</span>
+            </label>
+            <Input id="fg-date" type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} />
+            {targetDate && !isNaN(new Date(targetDate + "T00:00:00").getTime()) && (
+              <p className="text-xs text-muted-foreground mt-1">
+                {GOAL_HORIZONS.find((h) => h.key === goalHorizon(targetDate))?.title} · {GOAL_HORIZONS.find((h) => h.key === goalHorizon(targetDate))?.sub}
+              </p>
+            )}
           </div>
 
           <div>
@@ -1956,6 +2074,15 @@ function GoalDetailDialog({
                   </>
                 )}
               </DialogDescription>
+              {goal.targetDate && (
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
+                  <CalendarDays className="h-3.5 w-3.5 shrink-0" />
+                  {formatGoalDate(goal.targetDate)}
+                  <span className="bg-muted border border-border rounded-full px-2 py-0.5 text-[11px]">
+                    {GOAL_HORIZONS.find((h) => h.key === goalHorizon(goal.targetDate))?.title}
+                  </span>
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-1 shrink-0">
               <button onClick={onOpenCalendar} title="Ver calendario de aportes" className="h-8 w-8 rounded-lg border border-border text-muted-foreground hover:text-foreground flex items-center justify-center">
@@ -2259,6 +2386,14 @@ export default function FinancialGoals() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [view, setView] = useState<"preview" | "dashboard">("preview");
+  const [collapsedHorizons, setCollapsedHorizons] = useState<Set<GoalHorizon>>(new Set());
+  const toggleHorizon = (key: GoalHorizon) =>
+    setCollapsedHorizons((s) => {
+      const next = new Set(s);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   const [formOpen, setFormOpen] = useState(false);
   const [formGoal, setFormGoal] = useState<FinancialGoal | null>(null);
   const [detailGoalId, setDetailGoalId] = useState<string | null>(null);
@@ -2512,7 +2647,10 @@ export default function FinancialGoals() {
       if (!res.ok) throw new Error("Failed to update goal");
       return res.json();
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/financial-goals"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/financial-goals"] });
+      setFormOpen(false);
+    },
   });
 
   const deleteGoal = useMutation({
@@ -2541,7 +2679,7 @@ export default function FinancialGoals() {
     setFormOpen(true);
   };
 
-  const handleFormSubmit = (data: { name: string; emoji: string; color: string; target: number; holdings: Holding[]; flow: Flow }) => {
+  const handleFormSubmit = (data: { name: string; emoji: string; color: string; target: number; targetDate: string | null; holdings: Holding[]; flow: Flow }) => {
     if (formGoal) {
       updateGoal.mutate({ id: formGoal.id, data });
     } else {
@@ -2625,10 +2763,33 @@ export default function FinancialGoals() {
             </Button>
           </div>
         ) : view === "preview" ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {goals.map((g) => (
-              <GoalPreviewCard key={g.id} goal={g} onTap={() => setDetailGoalId(g.id)} onLongPress={() => openEdit(g)} />
-            ))}
+          <div className="space-y-6">
+            {GOAL_HORIZONS.map((h) => {
+              const goalsInHorizon = goals.filter((g) => goalHorizon(g.targetDate) === h.key);
+              if (!goalsInHorizon.length) return null;
+              const isOpen = !collapsedHorizons.has(h.key);
+              return (
+                <div key={h.key}>
+                  <button
+                    type="button"
+                    onClick={() => toggleHorizon(h.key)}
+                    className="flex items-center gap-2 mb-2.5 px-0.5 w-full text-left"
+                  >
+                    <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform ${isOpen ? "" : "-rotate-90"}`} />
+                    <h3 className="font-display font-semibold text-sm uppercase tracking-wide">{h.title}</h3>
+                    {h.sub && <span className="text-xs text-muted-foreground">{h.sub}</span>}
+                    <span className="text-xs text-muted-foreground ml-auto">{goalsInHorizon.length}</span>
+                  </button>
+                  {isOpen && (
+                    <div className="grid grid-cols-1 gap-3">
+                      {goalsInHorizon.map((g) => (
+                        <GoalPreviewCard key={g.id} goal={g} onTap={() => setDetailGoalId(g.id)} onLongPress={() => openEdit(g)} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         ) : (
           <div className="space-y-5">

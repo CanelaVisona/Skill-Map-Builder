@@ -497,6 +497,9 @@ export const financialGoals = pgTable("financial_goals", {
   emoji: text("emoji").notNull().default("🎯"),
   color: text("color").notNull().default("#158a63"),
   target: integer("target").notNull().default(0),
+  // Fecha objetivo (YYYY-MM-DD), opcional. Determina el horizonte de la meta (corto/mediano/
+  // largo plazo) en la vista de Objetivos.
+  targetDate: varchar("target_date"),
   holdings: jsonb("holdings").notNull().$type<FinancialGoalHolding[]>().default([]),
   history: jsonb("history").notNull().$type<FinancialGoalHistoryEntry[]>().default([]),
   flow: jsonb("flow").notNull().$type<FinancialGoalFlow>().default({ amount: 0, unit: "mes", every: 1, rangeTo: 25, anchor: null }),
