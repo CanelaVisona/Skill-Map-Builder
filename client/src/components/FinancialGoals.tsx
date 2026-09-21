@@ -30,6 +30,7 @@ import type {
   FinancialGoalHolding as Holding,
   FinancialGoalHistoryEntry as HistoryEntry,
   FinancialGoalFlow as Flow,
+  FinancialGoalMonthlyEntry,
   BudgetQuarter,
   BudgetMonthEntry,
   BudgetCategory,
@@ -290,7 +291,7 @@ const GOAL_TIMELINE_COLOR = "#f97316";
 
 // Línea de tiempo mensual entre la creación de la meta y su fecha objetivo, con un bloque por
 // mes (etiquetado) resaltando hasta el mes actual, y la fecha objetivo marcada al final.
-function GoalTimelineBar({ createdAt, targetDate }: { createdAt: string; targetDate: string }) {
+function GoalTimelineBar({ createdAt, targetDate, onOpenDetail }: { createdAt: string; targetDate: string; onOpenDetail?: () => void }) {
   const start = new Date(createdAt);
   const target = new Date(targetDate + "T00:00:00");
   const now = new Date();
@@ -298,8 +299,16 @@ function GoalTimelineBar({ createdAt, targetDate }: { createdAt: string; targetD
   const nowKey = now.getFullYear() * 12 + now.getMonth();
   const targetKey = target.getFullYear() * 12 + target.getMonth();
 
+  const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+
   return (
-    <div className="mt-3 -mx-1 px-1 overflow-x-auto minimal-scrollbar">
+    <div
+      className={`mt-3 -mx-1 px-1 overflow-x-auto minimal-scrollbar ${onOpenDetail ? "cursor-pointer" : ""}`}
+      onPointerDown={onOpenDetail ? stop : undefined}
+      onPointerUp={onOpenDetail ? stop : undefined}
+      onPointerMove={onOpenDetail ? stop : undefined}
+      onClick={onOpenDetail ? (e) => { stop(e); onOpenDetail(); } : undefined}
+    >
       <div style={{ width: "max-content", minWidth: "100%" }}>
         {/* fila de bloques + círculo, todos a la misma altura */}
         <div className="flex items-center gap-1">
@@ -387,6 +396,200 @@ function useLongPress(onLongPress: () => void, onTap?: () => void, duration = 48
   };
 }
 
+// ---------- detalle de la línea de tiempo mensual (ahorro por mes) ----------
+
+function GoalMonthCell({
+  m,
+  amount,
+  isPast,
+  isCurrent,
+  flowAmount,
+  shortfall,
+  repaid,
+  onSave,
+}: {
+  m: { year: number; month: number };
+  amount: number;
+  isPast: boolean;
+  isCurrent: boolean;
+  flowAmount: number;
+  shortfall: number;
+  repaid: boolean;
+  onSave: (amount: number) => void;
+}) {
+  const { toast } = useToast();
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState("");
+  const longPress = useLongPress(
+    () => {
+      setText(amount ? moneyFormatter.format(amount) : "");
+      setEditing(true);
+    },
+    () => {}
+  );
+  const hitFlow = (flowAmount > 0 && amount >= flowAmount) || repaid;
+
+  return (
+    <div className="flex flex-col items-center gap-1 shrink-0" style={{ width: 76 }}>
+      <div
+        className="h-1.5 w-full rounded-full"
+        style={{
+          background: isPast || isCurrent ? GOAL_TIMELINE_COLOR : "hsl(var(--muted))",
+          opacity: isCurrent ? 0.6 : 1,
+          outline: isCurrent ? `1.5px solid ${GOAL_TIMELINE_COLOR}` : undefined,
+          outlineOffset: isCurrent ? "1px" : undefined,
+        }}
+      />
+      <span className="text-[10px] text-muted-foreground capitalize leading-none">{monthLabel(m.year, m.month).slice(0, 3)}</span>
+      {editing ? (
+        <div
+          key="editing"
+          className="w-full rounded-lg border border-border/60 bg-muted/30 px-1 py-1.5 flex flex-col gap-1 min-h-[52px] justify-center"
+        >
+          <Input value={text} onChange={(e) => setText(e.target.value)} className="h-7 text-[10px] px-1.5" inputMode="decimal" placeholder="0" autoFocus />
+          <button
+            type="button"
+            onClick={() => {
+              const parsed = parseMoney(text);
+              setEditing(false);
+              onSave(parsed);
+              toast({ title: `Guardado: ${moneyUsd(parsed)}` });
+            }}
+            className="h-6 text-[10px] px-1 rounded-md bg-primary text-primary-foreground font-medium"
+          >
+            Guardar
+          </button>
+        </div>
+      ) : (
+        <div
+          key="display"
+          {...longPress}
+          className="w-full rounded-lg border border-border/60 bg-muted/30 px-1 py-1.5 flex flex-col items-center gap-0.5 min-h-[52px] justify-center cursor-pointer select-none"
+        >
+          <span className="text-xs font-semibold text-center leading-tight">{amount > 0 ? <Money usd={amount} /> : <span className="text-muted-foreground">—</span>}</span>
+          {hitFlow && <span className="text-sm leading-none">🔥</span>}
+        </div>
+      )}
+      <div className="min-h-[22px] flex items-center justify-center w-full px-0.5">
+        {shortfall > 0 && !editing && (
+          <span className="text-[9px] font-medium leading-tight text-center" style={{ color: GOAL_TIMELINE_COLOR }}>
+            Para reponer: {moneyUsd(shortfall)}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function GoalTimelineDetailDialog({
+  goal,
+  open,
+  onOpenChange,
+  onSaveMonth,
+}: {
+  goal: FinancialGoal | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSaveMonth: (year: number, month: number, amount: number) => void;
+}) {
+  if (!goal || !goal.targetDate) return null;
+
+  const start = new Date(goal.createdAt as unknown as string);
+  const target = new Date(goal.targetDate + "T00:00:00");
+  const now = new Date();
+  const months = monthsBetween(start, target);
+  const nowKey = now.getFullYear() * 12 + now.getMonth();
+  const targetKey = target.getFullYear() * 12 + target.getMonth();
+
+  const monthlyMap = new Map<string, number>();
+  (goal.monthlyProgress || []).forEach((e) => monthlyMap.set(`${e.year}-${e.month}`, e.amount));
+
+  // Deuda de flujo acumulada: si un mes no llega al flujo, lo que falta se
+  // arrastra como pendiente hasta que un mes posterior lo compensa con un
+  // excedente (orden cronológico, se paga primero lo más viejo).
+  const flowAmount = goal.flow.amount || 0;
+  const shortfallByKey = new Map<number, number>();
+  const repaidKeys = new Set<number>();
+  if (flowAmount > 0) {
+    const pending: { key: number; remaining: number }[] = [];
+    for (const m of months) {
+      const key = m.year * 12 + m.month;
+      const isPast = key < nowKey || (nowKey > targetKey && key <= targetKey);
+      const isCurrent = key === nowKey;
+      if (!isPast && !isCurrent) continue;
+      const amount = monthlyMap.get(`${m.year}-${m.month}`) || 0;
+      const diff = amount - flowAmount;
+      if (diff < 0) {
+        pending.push({ key, remaining: -diff });
+      } else if (diff > 0) {
+        let surplus = diff;
+        while (surplus > 0 && pending.length > 0) {
+          const front = pending[0];
+          const consume = Math.min(front.remaining, surplus);
+          front.remaining -= consume;
+          surplus -= consume;
+          if (front.remaining <= 0) {
+            repaidKeys.add(front.key);
+            pending.shift();
+          }
+        }
+      }
+    }
+    for (const p of pending) shortfallByKey.set(p.key, (shortfallByKey.get(p.key) || 0) + p.remaining);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto minimal-scrollbar">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <span className="text-xl">{goal.emoji}</span>
+            <span className="truncate">{goal.name}</span>
+          </DialogTitle>
+          <DialogDescription>
+            Mantené presionado un mes para cargar cuánto ahorraste. {goal.flow.amount > 0 && <>Aparece 🔥 cuando llegás o superás <Money usd={goal.flow.amount} />.</>}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="overflow-x-auto minimal-scrollbar -mx-1 px-1">
+          <div className="flex gap-2 items-end" style={{ width: "max-content", minWidth: "100%" }}>
+            {months.map((m, i) => {
+              const key = m.year * 12 + m.month;
+              const isPast = key < nowKey || (nowKey > targetKey && key <= targetKey);
+              const isCurrent = key === nowKey;
+              const amount = monthlyMap.get(`${m.year}-${m.month}`) || 0;
+              return (
+                <GoalMonthCell
+                  key={i}
+                  m={m}
+                  amount={amount}
+                  isPast={isPast}
+                  isCurrent={isCurrent}
+                  flowAmount={flowAmount}
+                  shortfall={shortfallByKey.get(key) || 0}
+                  repaid={repaidKeys.has(key)}
+                  onSave={(amt) => onSaveMonth(m.year, m.month, amt)}
+                />
+              );
+            })}
+            <div className="flex flex-col items-center gap-1 shrink-0 ml-3 pl-3 border-l border-border/60" style={{ width: 90 }}>
+              <div className="h-1.5 w-full" />
+              <span className="text-[10px] leading-none">&nbsp;</span>
+              <div className="w-full min-h-[52px] flex items-center justify-center gap-1.5">
+                <div className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: GOAL_TIMELINE_COLOR }} />
+                <span className="text-[10px] font-semibold leading-none whitespace-nowrap" style={{ color: GOAL_TIMELINE_COLOR }}>
+                  {formatGoalDate(goal.targetDate)}
+                </span>
+              </div>
+              <div className="min-h-[22px]" />
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ---------- small shared bits ----------
 
 function PieSliceTooltip({ active, payload }: { active?: boolean; payload?: any[] }) {
@@ -416,7 +619,7 @@ function HoldingChips({ holdings }: { holdings: Holding[] }) {
 
 // ---------- preview card (grid view) ----------
 
-function GoalPreviewCard({ goal, onTap, onLongPress }: { goal: FinancialGoal; onTap: () => void; onLongPress: () => void }) {
+function GoalPreviewCard({ goal, onTap, onLongPress, onOpenTimeline }: { goal: FinancialGoal; onTap: () => void; onLongPress: () => void; onOpenTimeline: () => void }) {
   const longPress = useLongPress(onLongPress, onTap);
   const saved = goalSaved(goal);
   const has = (goal.target || 0) > 0;
@@ -454,7 +657,7 @@ function GoalPreviewCard({ goal, onTap, onLongPress }: { goal: FinancialGoal; on
       ) : (
         <div className="mb-3" />
       )}
-      {goal.targetDate && <GoalTimelineBar createdAt={goal.createdAt as unknown as string} targetDate={goal.targetDate} />}
+      {goal.targetDate && <GoalTimelineBar createdAt={goal.createdAt as unknown as string} targetDate={goal.targetDate} onOpenDetail={onOpenTimeline} />}
       <div className="mt-3">
         <HoldingChips holdings={goal.holdings} />
       </div>
@@ -2013,12 +2216,21 @@ function GoalFormDialog({
 
 // ---------- detail dialog ----------
 
+function toDateInputValue(ts: number): string {
+  const d = new Date(ts);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 function GoalDetailDialog({
   goal,
   open,
   onOpenChange,
   onEdit,
   onAddFlow,
+  onSetFlowAnchor,
   onOpenCalendar,
 }: {
   goal: FinancialGoal | null;
@@ -2026,12 +2238,16 @@ function GoalDetailDialog({
   onOpenChange: (open: boolean) => void;
   onEdit: () => void;
   onAddFlow: (holdingId: string) => void;
+  onSetFlowAnchor: (timestamp: number) => void;
   onOpenCalendar: () => void;
 }) {
   const [flowHoldingId, setFlowHoldingId] = useState<string>("");
+  const [editingAnchor, setEditingAnchor] = useState(false);
+  const [anchorText, setAnchorText] = useState("");
 
   useEffect(() => {
     if (goal && goal.holdings.length) setFlowHoldingId(goal.holdings[0].id);
+    setEditingAnchor(false);
   }, [goal?.id]);
 
   if (!goal) return null;
@@ -2174,8 +2390,37 @@ function GoalDetailDialog({
               <div className={`mt-2.5 rounded-xl border overflow-hidden ${flowReady ? "" : "border-border"}`} style={flowReady ? { borderColor: `${GOLD}99` } : undefined}>
                 <div className="flex items-center gap-1.5 text-xs px-3 py-2" style={flowReady ? { color: GOLD, background: `${GOLD}1a` } : { color: "hsl(var(--muted-foreground))", background: "hsl(var(--muted) / 0.5)" }}>
                   {flowReady ? <Unlock className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
-                  {flowReady ? "Habilitado" : `Se habilita el ${dmy(enable)}`}
+                  <span className="flex-1">{flowReady ? "Habilitado" : `Se habilita el ${dmy(enable)}`}</span>
+                  <button
+                    type="button"
+                    title="Editar fecha de referencia del flujo"
+                    onClick={() => {
+                      setAnchorText(toDateInputValue(goal.flow.anchor || Date.now()));
+                      setEditingAnchor((v) => !v);
+                    }}
+                    className="shrink-0 opacity-70 hover:opacity-100"
+                  >
+                    <Pencil className="h-3 w-3" />
+                  </button>
                 </div>
+                {editingAnchor && (
+                  <div className="flex items-center gap-2 px-3 py-2 border-t border-border/60 bg-muted/30">
+                    <Input type="date" value={anchorText} onChange={(e) => setAnchorText(e.target.value)} className="h-8 text-xs flex-1" />
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => {
+                        const ts = new Date(anchorText + "T00:00:00").getTime();
+                        if (!isNaN(ts)) {
+                          onSetFlowAnchor(ts);
+                          setEditingAnchor(false);
+                        }
+                      }}
+                    >
+                      Guardar
+                    </Button>
+                  </div>
+                )}
                 <button
                   onClick={() => onAddFlow(flowHoldingId || goal.holdings[0]?.id)}
                   disabled={!flowReady}
@@ -2397,6 +2642,7 @@ export default function FinancialGoals() {
   const [formOpen, setFormOpen] = useState(false);
   const [formGoal, setFormGoal] = useState<FinancialGoal | null>(null);
   const [detailGoalId, setDetailGoalId] = useState<string | null>(null);
+  const [timelineGoalId, setTimelineGoalId] = useState<string | null>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [budgetFormOpen, setBudgetFormOpen] = useState(false);
   const [budgetFormTarget, setBudgetFormTarget] = useState<BudgetQuarter | null>(null);
@@ -2651,6 +2897,9 @@ export default function FinancialGoals() {
       queryClient.invalidateQueries({ queryKey: ["/api/financial-goals"] });
       setFormOpen(false);
     },
+    onError: () => {
+      toast({ title: "No se pudo guardar. Probá de nuevo." });
+    },
   });
 
   const deleteGoal = useMutation({
@@ -2666,6 +2915,7 @@ export default function FinancialGoals() {
   });
 
   const detailGoal = goals.find((g) => g.id === detailGoalId) || null;
+  const timelineGoal = goals.find((g) => g.id === timelineGoalId) || null;
   const totalSaved = goals.reduce((a, g) => a + goalSaved(g), 0);
   const totalTarget = goals.reduce((a, g) => a + (g.target || 0), 0);
   const overallPct = totalTarget > 0 ? Math.round((totalSaved / totalTarget) * 100) : 0;
@@ -2720,6 +2970,21 @@ export default function FinancialGoals() {
     const flow = { ...detailGoal.flow, anchor: Date.now() };
     updateGoal.mutate({ id: detailGoal.id, data: { holdings, history, flow } });
     toast({ title: `+${moneyPairText(mf, dollarRates)} en ${holding.instrument}` });
+  };
+
+  const handleSetFlowAnchor = (timestamp: number) => {
+    if (!detailGoal) return;
+    updateGoal.mutate({ id: detailGoal.id, data: { flow: { ...detailGoal.flow, anchor: timestamp } } });
+  };
+
+  const handleSaveMonthlyAmount = (year: number, month: number, amount: number) => {
+    if (!timelineGoal) return;
+    const existing = Array.isArray(timelineGoal.monthlyProgress) ? timelineGoal.monthlyProgress : [];
+    const idx = existing.findIndex((e) => e.year === year && e.month === month);
+    const next: FinancialGoalMonthlyEntry[] = [...existing];
+    if (idx >= 0) next[idx] = { year, month, amount };
+    else next.push({ year, month, amount });
+    updateGoal.mutate({ id: timelineGoal.id, data: { monthlyProgress: next } });
   };
 
   const titleLongPress = useLongPress(
@@ -2783,7 +3048,7 @@ export default function FinancialGoals() {
                   {isOpen && (
                     <div className="grid grid-cols-1 gap-3">
                       {goalsInHorizon.map((g) => (
-                        <GoalPreviewCard key={g.id} goal={g} onTap={() => setDetailGoalId(g.id)} onLongPress={() => openEdit(g)} />
+                        <GoalPreviewCard key={g.id} goal={g} onTap={() => setDetailGoalId(g.id)} onLongPress={() => openEdit(g)} onOpenTimeline={() => setTimelineGoalId(g.id)} />
                       ))}
                     </div>
                   )}
@@ -2847,6 +3112,7 @@ export default function FinancialGoals() {
           }
         }}
         onAddFlow={handleAddFlow}
+        onSetFlowAnchor={handleSetFlowAnchor}
         onOpenCalendar={() => setCalendarOpen(true)}
       />
       <GoalCalendarDialog
@@ -2856,6 +3122,14 @@ export default function FinancialGoals() {
           if (!v) setCalendarOpen(false);
         }}
         onBack={() => setCalendarOpen(false)}
+      />
+      <GoalTimelineDetailDialog
+        goal={timelineGoal}
+        open={!!timelineGoal}
+        onOpenChange={(v) => {
+          if (!v) setTimelineGoalId(null);
+        }}
+        onSaveMonth={handleSaveMonthlyAmount}
       />
       <BudgetFormDialog
         open={budgetFormOpen}

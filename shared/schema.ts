@@ -490,6 +490,15 @@ export interface FinancialGoalFlow {
   anchor: number | null; // epoch ms del último aporte de flujo
 }
 
+// Cuánto se ahorró en un mes puntual para esta meta, cargado a mano desde el detalle de la
+// línea de tiempo mensual. Independiente de holdings/history: es un registro manual de
+// seguimiento, no mueve el saldo de ningún instrumento.
+export interface FinancialGoalMonthlyEntry {
+  year: number;
+  month: number; // 0-11
+  amount: number;
+}
+
 export const financialGoals = pgTable("financial_goals", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
@@ -503,6 +512,7 @@ export const financialGoals = pgTable("financial_goals", {
   holdings: jsonb("holdings").notNull().$type<FinancialGoalHolding[]>().default([]),
   history: jsonb("history").notNull().$type<FinancialGoalHistoryEntry[]>().default([]),
   flow: jsonb("flow").notNull().$type<FinancialGoalFlow>().default({ amount: 0, unit: "mes", every: 1, rangeTo: 25, anchor: null }),
+  monthlyProgress: jsonb("monthly_progress").notNull().$type<FinancialGoalMonthlyEntry[]>().default([]),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -917,6 +927,11 @@ export const insertFinancialGoalSchema = createInsertSchema(financialGoals).omit
     rangeTo: z.number(),
     anchor: z.number().nullable(),
   }).optional().default({ amount: 0, unit: "mes", every: 1, rangeTo: 25, anchor: null }),
+  monthlyProgress: z.array(z.object({
+    year: z.number(),
+    month: z.number(),
+    amount: z.number(),
+  })).optional().default([]),
 });
 export type InsertFinancialGoal = z.infer<typeof insertFinancialGoalSchema>;
 export type FinancialGoal = typeof financialGoals.$inferSelect;
