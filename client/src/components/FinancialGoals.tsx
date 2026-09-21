@@ -749,7 +749,7 @@ function DistributionCard({ goals }: { goals: FinancialGoal[] }) {
                     <Cell key={i} fill={d.color} />
                   ))}
                 </Pie>
-                <Tooltip content={<PieSliceTooltip />} />
+                <Tooltip content={<PieSliceTooltip />} position={{ x: 0, y: 0 }} wrapperStyle={{ zIndex: 20 }} />
               </PieChart>
             </ResponsiveContainer>
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
@@ -863,7 +863,7 @@ function BudgetPieSlide({
                     <Cell key={i} fill={d.color} />
                   ))}
                 </Pie>
-                <Tooltip content={<PieSliceTooltip />} />
+                <Tooltip content={<PieSliceTooltip />} position={{ x: 0, y: 0 }} wrapperStyle={{ zIndex: 20 }} />
               </PieChart>
             </ResponsiveContainer>
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
@@ -2340,7 +2340,7 @@ function GoalDetailDialog({
                       <Cell key={i} fill={s.color} />
                     ))}
                   </Pie>
-                  <Tooltip content={<PieSliceTooltip />} />
+                  <Tooltip content={<PieSliceTooltip />} position={{ x: 0, y: 0 }} wrapperStyle={{ zIndex: 20 }} />
                 </PieChart>
               </ResponsiveContainer>
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
