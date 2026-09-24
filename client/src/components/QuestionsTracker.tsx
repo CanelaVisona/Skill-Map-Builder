@@ -261,6 +261,8 @@ export function QuestionsTracker() {
   // Tarjeta con la barra "Editar / Borrar" abierta (se abre manteniendo presionada la tarjeta).
   const [problemActionsId, setProblemActionsId] = useState<string | null>(null);
   const [questionActionsId, setQuestionActionsId] = useState<string | null>(null);
+  // Problema cuya tarjeta de "Meta final" tiene abierta la barra "Borrar".
+  const [metaActionsId, setMetaActionsId] = useState<string | null>(null);
 
   // Wizard "Meta final": 5 pasos guiados para derivar la meta final de un problema.
   const [metaWizardOpen, setMetaWizardOpen] = useState(false);
@@ -450,6 +452,24 @@ export function QuestionsTracker() {
   const questionsPress = useBackgroundLongPress(openQuestionWizard);
   const answerPress = useBackgroundLongPress(() => setEditingAnswer(true));
   const actionPress = useBackgroundLongPress(() => setEditingAction(true));
+  // Tarjeta de "Meta final": toque corto abre el wizard; mantener presionado muestra "Borrar"
+  // (solo si ya hay una meta definida).
+  const metaPress = useLongPressSelect(
+    () => {
+      if (selectedProblem?.goal.trim()) setMetaActionsId(selectedProblem.id);
+    },
+    () => {
+      setMetaActionsId(null);
+      openMetaWizard();
+    },
+  );
+
+  const handleDeleteMeta = () => {
+    if (!selectedProblem) return;
+    updateProblem.mutate({ id: selectedProblem.id, goal: "" });
+    setSelectedItemId(null);
+    setMetaActionsId(null);
+  };
 
   const selectedScopeName =
     scope?.kind === "project"
@@ -648,7 +668,11 @@ export function QuestionsTracker() {
                   Meta final
                 </p>
                 <div
-                  onClick={openMetaWizard}
+                  data-entry-card
+                  onPointerDown={metaPress.onPointerDown}
+                  onPointerUp={metaPress.onPointerUp}
+                  onPointerCancel={metaPress.onPointerCancel}
+                  onPointerLeave={metaPress.onPointerLeave}
                   className={cn(
                     "cursor-pointer select-none rounded-xl border p-2 text-sm transition-colors",
                     !selectedProblem.goal.trim()
@@ -661,6 +685,7 @@ export function QuestionsTracker() {
                   )}
                 >
                   <p
+                    onClick={metaPress.onClick}
                     className={cn(
                       "break-words text-xs",
                       metaIsCurrent ? "text-white" : "text-muted-foreground",
@@ -668,6 +693,16 @@ export function QuestionsTracker() {
                   >
                     {selectedProblem.goal.trim() || "Tocá para definir la meta final y desbloquear las preguntas."}
                   </p>
+                  {metaActionsId === selectedProblem.id && selectedProblem.goal.trim() && (
+                    <div className="mt-2 flex items-center gap-3 border-t border-border/40 pt-2" data-no-longpress>
+                      <button
+                        onClick={handleDeleteMeta}
+                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-red-500"
+                      >
+                        <Trash2 size={12} /> Borrar
+                      </button>
+                    </div>
+                  )}
                 </div>
               </ScrollArea>
             )}

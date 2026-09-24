@@ -9,9 +9,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{
-  --chrome:#e6e0d1; --chrome-2:#d8d0bb; --ink:#1f2530; --muted:#585d69; --line:#b5ab93;
+  --chrome:#ffffff; --chrome-2:#eef0ee; --ink:#1f2530; --muted:#585d69; --line:#d8d4c8;
   --cork:#8d6c49; --cork-dark:#6f5236; --paper:#f2ebd8; --paper-ink:#1f2530;
-  --red:#b3261e; --focus:#2e5bd8; --panel:#f6f2e8;
+  --red:#b3261e; --focus:#2e5bd8; --panel:#ffffff;
   --ui:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
   --cond:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
   --type:"Special Elite","Courier New",Courier,monospace;
@@ -65,7 +65,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .side{border-right:1px solid var(--line);background:var(--panel);overflow:auto;padding:12px;display:flex;flex-direction:column;gap:14px;min-height:0}
 .side h2{font-family:var(--cond);font-weight:700;font-size:17px;margin:0 0 6px}
 .cases{display:flex;flex-direction:column;gap:2px}
-.case-item{display:flex;justify-content:space-between;align-items:center;gap:6px;text-align:left;background:none;border:0;border-left:3px solid transparent;padding:6px 8px;cursor:pointer;border-radius:0 4px 4px 0}
+.case-item{display:flex;justify-content:space-between;align-items:center;gap:6px;text-align:left;background:none;border:0;border-left:3px solid transparent;padding:6px 8px;cursor:pointer;border-radius:0 4px 4px 0;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 .case-item:hover{background:var(--chrome-2)}
 .case-item.active{border-left-color:var(--red);background:var(--chrome-2);font-weight:600}
 .case-item small{color:var(--muted);font-weight:400}
@@ -201,6 +201,10 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 .tl li button::before{content:"";position:absolute;left:-7px;top:6px;width:12px;height:12px;border-radius:50%;background:var(--c,#888)}
 .tl li button:hover strong{text-decoration:underline}
 .tl li small{display:block;color:var(--muted)}
+.iq-item{display:block;width:100%;text-align:left;background:none;border:1px solid var(--line);border-radius:6px;padding:8px 10px;margin-bottom:6px;cursor:pointer}
+.iq-item:hover{background:var(--chrome-2)}
+.iq-item strong{display:block;font-family:var(--type);font-size:14px;margin-bottom:2px}
+.iq-item small{color:var(--muted)}
 
 @media (max-width:760px){
   .layout{grid-template-columns:1fr}
@@ -221,7 +225,8 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
   .app.side-closed .inspector.centered{left:50%}
 }
 .side-head{display:flex;justify-content:space-between;align-items:center}
-.side-head h2{margin:0}
+.side-head h2{margin:0;cursor:pointer;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+#ctxMenu{position:fixed}
 .side-close{background:none;border:0;font-size:22px;line-height:1;color:var(--muted);cursor:pointer;width:32px;height:32px;border-radius:4px}
 .side-close:hover{background:var(--chrome-2);color:var(--ink)}
 @media (prefers-reduced-motion:reduce){ .inspector,.side{transition:none} }
@@ -242,10 +247,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
       <section>
         <div class="side-head"><h2>Casos</h2><button class="side-close" id="sideClose" aria-label="Cerrar menú">×</button></div>
         <div class="cases" id="cases"></div>
-        <div class="row" style="margin-top:8px">
-          <button class="btn" id="newCase">Nuevo caso</button>
-          <button class="btn danger" id="delCase">Archivar caso</button>
-        </div>
+        <p class="muted">Mantén pulsado un caso para editarlo o eliminarlo. Mantén pulsado «Casos» para añadir uno nuevo.</p>
       </section>
       <section>
         <h2>Pistas</h2>
@@ -280,6 +282,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
     </section>
     <div class="scrim" id="scrim"></div>
     <aside class="inspector" id="inspector" aria-label="Detalles"></aside>
+    <div class="menu" id="ctxMenu" role="menu" aria-label="Opciones"></div>
   </main>
 </div>
 <dialog id="confirmDlg" class="confirm">
@@ -289,6 +292,10 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 <dialog id="timeline">
   <div class="tl-head"><h2>Cronología</h2><button class="btn" id="tlClose">Cerrar</button></div>
   <ol class="tl" id="tlList"></ol>
+</dialog>
+<dialog id="importQuestions">
+  <div class="tl-head"><h2>Investigar una pregunta</h2><button class="btn" id="iqClose">Cerrar</button></div>
+  <div id="iqList" style="padding:8px 16px 16px;display:flex;flex-direction:column;gap:2px"></div>
 </dialog>
 
 <script>
@@ -788,7 +795,7 @@ cardsEl.addEventListener('keydown',e=>{const ce=e.target.closest('.card');if(ce&
 document.addEventListener('keydown',e=>{
   const typing=/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
   if(!typing&&focused&&!sel&&e.key.startsWith('Arrow')&&!document.querySelector('dialog[open]')){e.preventDefault();navigate(e.key.slice(5).toLowerCase());return}
-  if(e.key==='Escape'){if(linkMode)setLinkMode(false);else if(sel)select(null);closeMenu()}
+  if(e.key==='Escape'){if(linkMode)setLinkMode(false);else if(sel)select(null);closeMenu();closeCtxMenu()}
   if(!typing&&(e.key==='Delete'||e.key==='Backspace')&&sel){e.preventDefault();
     if(sel.kind==='card')deleteCard(sel.id);else{C().links=C().links.filter(l=>l.id!==sel.id);select(null);drawLinks();scheduleSave()}}
 });
@@ -810,14 +817,78 @@ $('#sideClose').onclick=()=>setSide(false);
 board.addEventListener('pointerdown',()=>{if(mobile()&&sideOpen())setSide(false)},true);
 $('#caseName').oninput=e=>{C().name=e.target.value;renderSide();$('#caseName').value=e.target.value;scheduleSave()};
 $('#zIn').onclick=()=>zoomAt(1.2);$('#zOut').onclick=()=>zoomAt(1/1.2);$('#zFit').onclick=fitAll;
-$('#newCase').onclick=()=>{const c=newCase('Caso '+(state.cases.length+1));state.cases.push(c);state.active=c.id;sel=null;setLinkMode(false);renderAll();scheduleSave();$('#caseName').select()};
-$('#delCase').onclick=async()=>{
-  if(!await askConfirm(`¿Eliminar el caso «${C().name}» con todas sus pistas?`))return;
-  state.cases=state.cases.filter(c=>c.id!==state.active);
-  if(!state.cases.length)state.cases.push(newCase());
-  state.active=state.cases[0].id;sel=null;renderAll();scheduleSave();
-};
 $('#cases').onclick=e=>{const b=e.target.closest('[data-case]');if(!b)return;state.active=b.dataset.case;sel=null;setLinkMode(false);renderAll();scheduleSave()};
+
+/* ---------- Menú contextual (mantener pulsado) ---------- */
+const ctxMenu=$('#ctxMenu');
+function closeCtxMenu(){ctxMenu.classList.remove('open')}
+function openCtxMenu(items,cx,cy){
+  ctxMenu.innerHTML=items.map((it,i)=>`<button role="menuitem" data-i="${i}"${it.danger?' style="color:var(--red)"':''}>${esc(it.label)}</button>`).join('');
+  ctxMenu.classList.add('open');
+  const w=ctxMenu.offsetWidth,h=ctxMenu.offsetHeight;
+  ctxMenu.style.left=Math.max(6,Math.min(cx,innerWidth-w-6))+'px';
+  ctxMenu.style.top=Math.max(6,Math.min(cy,innerHeight-h-6))+'px';
+  ctxMenu.onclick=e=>{const b=e.target.closest('[data-i]');if(!b)return;closeCtxMenu();items[+b.dataset.i].action()};
+  ctxMenu.querySelector('button')?.focus({preventScroll:true});
+}
+document.addEventListener('pointerdown',e=>{
+  if(ctxMenu.classList.contains('open')&&!e.target.closest('#ctxMenu'))closeCtxMenu();
+});
+
+/* Mantener pulsado un elemento (con delegación opcional) abre un menú contextual, sin disparar
+   el click normal del elemento (cambiar de caso, etc.) que seguiría al soltar el dedo. */
+function longPressHandler(container,selector,onLongPress,ms=500){
+  let timer=null,sx=0,sy=0,pid=null,moved=false,targetEl=null;
+  container.addEventListener('pointerdown',e=>{
+    const t=selector?e.target.closest(selector):container;
+    if(!t)return;
+    targetEl=t;pid=e.pointerId;sx=e.clientX;sy=e.clientY;moved=false;
+    clearTimeout(timer);
+    timer=setTimeout(()=>{
+      if(moved)return;
+      try{navigator.vibrate&&navigator.vibrate(20)}catch{}
+      const stop=ev=>{ev.stopPropagation();ev.preventDefault()};
+      container.addEventListener('click',stop,{capture:true,once:true});
+      setTimeout(()=>container.removeEventListener('click',stop,{capture:true}),400);
+      onLongPress(targetEl,sx,sy);
+    },ms);
+  });
+  container.addEventListener('pointermove',e=>{
+    if(e.pointerId!==pid)return;
+    if(Math.hypot(e.clientX-sx,e.clientY-sy)>8){moved=true;clearTimeout(timer)}
+  });
+  container.addEventListener('pointerup',()=>clearTimeout(timer));
+  container.addEventListener('pointercancel',()=>clearTimeout(timer));
+}
+function editCase(id){
+  state.active=id;sel=null;setLinkMode(false);renderAll();scheduleSave();
+  requestAnimationFrame(()=>{$('#caseName').focus();$('#caseName').select()});
+}
+async function deleteCase(id){
+  const c=state.cases.find(x=>x.id===id);if(!c)return;
+  if(!await askConfirm(`¿Eliminar el caso «${c.name}» con todas sus pistas?`))return;
+  state.cases=state.cases.filter(x=>x.id!==id);
+  if(!state.cases.length)state.cases.push(newCase());
+  if(state.active===id||!state.cases.find(x=>x.id===state.active))state.active=state.cases[0].id;
+  sel=null;renderAll();scheduleSave();
+}
+function createCase(){
+  const c=newCase('Caso '+(state.cases.length+1));state.cases.push(c);
+  editCase(c.id);
+}
+longPressHandler($('#cases'),'[data-case]',(el,cx,cy)=>{
+  const id=el.dataset.case;
+  openCtxMenu([
+    {label:'Editar',action:()=>editCase(id)},
+    {label:'Eliminar caso',danger:true,action:()=>deleteCase(id)},
+  ],cx,cy);
+});
+longPressHandler(document.querySelector('.side-head h2'),null,(el,cx,cy)=>{
+  openCtxMenu([
+    {label:'Nuevo caso',action:createCase},
+    {label:'Investigar una pregunta…',action:openImportQuestions},
+  ],cx,cy);
+});
 $('#evList').onclick=e=>{const b=e.target.closest('[data-go]');if(!b)return;const g=b.dataset.go;select(null);focusCard(g,()=>select('card',g))};
 $('#search').oninput=e=>{query=e.target.value.trim();renderCards();drawLinks();renderSide()};
 
@@ -831,6 +902,45 @@ $('#timelineBtn').onclick=()=>{
 };
 $('#tlClose').onclick=()=>dlg.close();
 $('#tlList').onclick=e=>{const b=e.target.closest('[data-go]');if(!b)return;dlg.close();const g=b.dataset.go;select(null);focusCard(g,()=>select('card',g))};
+
+/* ---------- Investigar una pregunta (crea un caso nuevo a partir del rastreador de Preguntas) ---------- */
+const iqDlg=$('#importQuestions'),iqList=$('#iqList');
+$('#iqClose').onclick=()=>iqDlg.close();
+async function fetchQuestionProblems(){
+  const [probRes,areaRes,projRes]=await Promise.all([
+    fetch('/api/question-problems',{credentials:'same-origin'}),
+    fetch('/api/areas',{credentials:'same-origin'}),
+    fetch('/api/projects',{credentials:'same-origin'}),
+  ]);
+  if(!probRes.ok)throw new Error('No se pudieron cargar las preguntas');
+  const problems=await probRes.json();
+  const names=new Map();
+  if(areaRes.ok)(await areaRes.json()).forEach(a=>names.set(a.id,a.name));
+  if(projRes.ok)(await projRes.json()).forEach(p=>names.set(p.id,p.name));
+  return problems.map(p=>({...p,scopeName:names.get(p.areaId||p.projectId)||''}));
+}
+function openImportQuestions(){
+  iqList.innerHTML='<p class="muted" style="margin:4px 0">Cargando preguntas…</p>';
+  iqDlg.showModal();
+  fetchQuestionProblems().then(problems=>{
+    if(!problems.length){iqList.innerHTML='<p class="muted" style="margin:4px 0">Todavía no tenés preguntas guardadas en el rastreador de Preguntas.</p>';return}
+    iqList.innerHTML=problems.map((p,i)=>`<button class="iq-item" data-i="${i}"><strong>${esc(p.text||'Pregunta sin título')}</strong><small>${p.scopeName?esc(p.scopeName)+' · ':''}${p.items.length} pregunta${p.items.length===1?'':'s'}</small></button>`).join('');
+    iqList.onclick=e=>{const b=e.target.closest('[data-i]');if(!b)return;iqDlg.close();createCaseFromProblem(problems[+b.dataset.i])};
+  }).catch(()=>{iqList.innerHTML='<p class="muted" style="margin:4px 0">No se pudieron cargar las preguntas. Probá de nuevo más tarde.</p>'});
+}
+function createCaseFromProblem(problem){
+  const cs=newCase(problem.text||'Pregunta sin título');
+  state.cases.push(cs);
+  let y=0;
+  const mkNote=(title,body)=>{const c={id:uid(),type:'nota',title,body,status:'',time:'',fields:[],x:0,y,rot:+(Math.random()*4-2).toFixed(1)};cs.cards.push(c);y+=200;return c.id};
+  const rootId=problem.goal?mkNote('Meta final',problem.goal):null;
+  (problem.items||[]).forEach(it=>{
+    const body=[it.answer?`Respuesta: ${it.answer}`:'',it.action?`Acción: ${it.action}`:''].filter(Boolean).join('\n\n');
+    const id=mkNote(it.question||'Pregunta',body);
+    if(rootId)cs.links.push({id:uid(),a:rootId,b:id,label:''});
+  });
+  state.active=cs.id;sel=null;setLinkMode(false);renderAll();requestAnimationFrame(fitAll);scheduleSave();
+}
 
 /* ---------- Sample case ---------- */
 $('#sampleBtn').onclick=()=>{
