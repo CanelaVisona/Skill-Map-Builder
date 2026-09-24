@@ -47,7 +47,7 @@ export function EvidenceBoardModalWrapper({ open, onOpenChange }: EvidenceBoardM
             <iframe
               title="Diario de pistas"
               srcDoc={boardHtml}
-              className="w-full flex-1 min-h-0 border-0 block bg-black"
+              className="w-full flex-1 min-h-0 border-0 block bg-white dark:bg-black"
               data-testid="frame-evidence-board"
             />
           </motion.div>

@@ -11,7 +11,7 @@
 :root{
   --chrome:#ffffff; --chrome-2:#eef0ee; --ink:#1f2530; --muted:#585d69; --line:#d8d4c8;
   --cork:#8d6c49; --cork-dark:#6f5236; --paper:#f2ebd8; --paper-ink:#1f2530;
-  --red:#b3261e; --focus:#2e5bd8; --panel:#ffffff;
+  --red:#b3261e; --focus:#2e5bd8; --panel:#ffffff; --board-bg:#ffffff;
   --ui:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
   --cond:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
   --type:"Special Elite","Courier New",Courier,monospace;
@@ -22,12 +22,12 @@
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
     --chrome:#1c1e23; --chrome-2:#272a31; --ink:#e8e4da; --muted:#a0a4ad; --line:#3b3f48;
-    --cork:#5b4430; --cork-dark:#46341f; --panel:#22252b; --focus:#7aa2ff;
+    --cork:#5b4430; --cork-dark:#46341f; --panel:#22252b; --focus:#7aa2ff; --board-bg:#000;
   }
 }
 :root[data-theme="dark"]{
   --chrome:#1c1e23; --chrome-2:#272a31; --ink:#e8e4da; --muted:#a0a4ad; --line:#3b3f48;
-  --cork:#5b4430; --cork-dark:#46341f; --panel:#22252b; --focus:#7aa2ff;
+  --cork:#5b4430; --cork-dark:#46341f; --panel:#22252b; --focus:#7aa2ff; --board-bg:#000;
 }
 html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
 *,*::before,*::after{box-sizing:inherit}
@@ -79,7 +79,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .muted{color:var(--muted);font-size:13px}
 
 /* Board */
-.board{position:relative;overflow:hidden;touch-action:none;cursor:grab;background:#000;-webkit-touch-callout:none;user-select:none;-webkit-user-select:none}
+.board{position:relative;overflow:hidden;touch-action:none;cursor:grab;background:var(--board-bg);-webkit-touch-callout:none;user-select:none;-webkit-user-select:none}
 .board.panning{cursor:grabbing}
 .board.linking{cursor:crosshair}
 .world{position:absolute;left:0;top:0;transform-origin:0 0}
@@ -906,7 +906,7 @@ $('#tlList').onclick=e=>{const b=e.target.closest('[data-go]');if(!b)return;dlg.
 /* ---------- Investigar una pregunta (crea un caso nuevo a partir del rastreador de Preguntas) ---------- */
 const iqDlg=$('#importQuestions'),iqList=$('#iqList');
 $('#iqClose').onclick=()=>iqDlg.close();
-async function fetchQuestionProblems(){
+async function fetchQuestions(){
   const [probRes,areaRes,projRes]=await Promise.all([
     fetch('/api/question-problems',{credentials:'same-origin'}),
     fetch('/api/areas',{credentials:'same-origin'}),
@@ -917,28 +917,27 @@ async function fetchQuestionProblems(){
   const names=new Map();
   if(areaRes.ok)(await areaRes.json()).forEach(a=>names.set(a.id,a.name));
   if(projRes.ok)(await projRes.json()).forEach(p=>names.set(p.id,p.name));
-  return problems.map(p=>({...p,scopeName:names.get(p.areaId||p.projectId)||''}));
+  const list=[];
+  problems.forEach(p=>{
+    const scopeName=names.get(p.areaId||p.projectId)||'';
+    (p.items||[]).forEach(it=>{if((it.question||'').trim())list.push({...it,problem:p,scopeName})});
+  });
+  return list;
 }
 function openImportQuestions(){
   iqList.innerHTML='<p class="muted" style="margin:4px 0">Cargando preguntas…</p>';
   iqDlg.showModal();
-  fetchQuestionProblems().then(problems=>{
-    if(!problems.length){iqList.innerHTML='<p class="muted" style="margin:4px 0">Todavía no tenés preguntas guardadas en el rastreador de Preguntas.</p>';return}
-    iqList.innerHTML=problems.map((p,i)=>`<button class="iq-item" data-i="${i}"><strong>${esc(p.text||'Pregunta sin título')}</strong><small>${p.scopeName?esc(p.scopeName)+' · ':''}${p.items.length} pregunta${p.items.length===1?'':'s'}</small></button>`).join('');
-    iqList.onclick=e=>{const b=e.target.closest('[data-i]');if(!b)return;iqDlg.close();createCaseFromProblem(problems[+b.dataset.i])};
+  fetchQuestions().then(items=>{
+    if(!items.length){iqList.innerHTML='<p class="muted" style="margin:4px 0">Todavía no tenés preguntas guardadas en el rastreador de Preguntas.</p>';return}
+    iqList.innerHTML=items.map((it,i)=>`<button class="iq-item" data-i="${i}"><strong>${esc(it.question)}</strong>${it.scopeName||it.problem.text?`<small>${it.scopeName?esc(it.scopeName)+' · ':''}${esc(it.problem.text||'')}</small>`:''}</button>`).join('');
+    iqList.onclick=e=>{const b=e.target.closest('[data-i]');if(!b)return;iqDlg.close();createCaseFromQuestion(items[+b.dataset.i])};
   }).catch(()=>{iqList.innerHTML='<p class="muted" style="margin:4px 0">No se pudieron cargar las preguntas. Probá de nuevo más tarde.</p>'});
 }
-function createCaseFromProblem(problem){
-  const cs=newCase(problem.text||'Pregunta sin título');
+function createCaseFromQuestion(item){
+  const cs=newCase(item.question||'Pregunta sin título');
   state.cases.push(cs);
-  let y=0;
-  const mkNote=(title,body)=>{const c={id:uid(),type:'nota',title,body,status:'',time:'',fields:[],x:0,y,rot:+(Math.random()*4-2).toFixed(1)};cs.cards.push(c);y+=200;return c.id};
-  const rootId=problem.goal?mkNote('Meta final',problem.goal):null;
-  (problem.items||[]).forEach(it=>{
-    const body=[it.answer?`Respuesta: ${it.answer}`:'',it.action?`Acción: ${it.action}`:''].filter(Boolean).join('\n\n');
-    const id=mkNote(it.question||'Pregunta',body);
-    if(rootId)cs.links.push({id:uid(),a:rootId,b:id,label:''});
-  });
+  const body=[item.problem&&item.problem.text?`Problema: ${item.problem.text}`:'',item.problem&&item.problem.goal?`Meta final: ${item.problem.goal}`:'',item.answer?`Respuesta: ${item.answer}`:'',item.action?`Acción: ${item.action}`:''].filter(Boolean).join('\n\n');
+  cs.cards.push({id:uid(),type:'nota',title:item.question||'Pregunta',body,status:'',time:'',fields:[],x:0,y:0,rot:+(Math.random()*4-2).toFixed(1)});
   state.active=cs.id;sel=null;setLinkMode(false);renderAll();requestAnimationFrame(fitAll);scheduleSave();
 }
 
