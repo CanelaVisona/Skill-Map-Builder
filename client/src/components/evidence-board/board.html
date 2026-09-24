@@ -314,7 +314,12 @@ let sel=null; // {kind:'card'|'link', id}
 let linkMode=false, linkFrom=null, drag=null, query='';
 const board=$('#board'), world=$('#world'), cardsEl=$('#cards'), svg=$('#strings');
 
-function newCase(name){return {id:uid(),name:name||'Caso sin título',cards:[],links:[],view:{x:80,y:60,k:1}}}
+/* Alto real de la barra superior (varía con el ancho de pantalla y el
+   safe-area de iOS), usado para que las pistas nuevas nunca se creen
+   tapadas por ella. */
+function headerH(){const t=document.querySelector('.top');return t?Math.ceil(t.getBoundingClientRect().height):56}
+
+function newCase(name){return {id:uid(),name:name||'Caso sin título',cards:[],links:[],view:{x:80,y:headerH()+16,k:1}}}
 function normalize(s){
   try{s=s?JSON.parse(JSON.stringify(s)):s}catch{s=null}
   if(!s||!Array.isArray(s.cases)||!s.cases.length){const c=newCase();return {cases:[c],active:c.id}}
@@ -373,12 +378,13 @@ function zoomAt(f,cx,cy){
 function fitAll(){
   stopFocus();
   const cs=C().cards,r=board.getBoundingClientRect(),v=C().view;
-  if(!cs.length){v.x=80;v.y=60;v.k=1;applyView();return}
+  const pad=40,padTop=headerH()+16;
+  if(!cs.length){v.x=80;v.y=padTop;v.k=1;applyView();return}
   let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
   cs.forEach(c=>{const el=cardsEl.querySelector(`[data-id="${c.id}"]`);const h=el?el.offsetHeight:150;
     x0=Math.min(x0,c.x);y0=Math.min(y0,c.y);x1=Math.max(x1,c.x+CW);y1=Math.max(y1,c.y+h)});
-  const pad=40,k=Math.min(1,Math.max(.25,Math.min((r.width-pad*2)/(x1-x0),(r.height-pad*2)/(y1-y0))));
-  animateView({k,x:(r.width-(x1-x0)*k)/2-x0*k,y:(r.height-(y1-y0)*k)/2-y0*k},null,520);
+  const k=Math.min(1,Math.max(.25,Math.min((r.width-pad*2)/(x1-x0),(r.height-padTop-pad)/(y1-y0))));
+  animateView({k,x:(r.width-(x1-x0)*k)/2-x0*k,y:padTop+((r.height-padTop-pad)-(y1-y0)*k)/2-y0*k},null,520);
 }
 let focused=null, anim=null;
 function focusCard(id,done){
@@ -646,6 +652,7 @@ async function deleteCard(id){
 function addCard(type,at){
   const r=board.getBoundingClientRect();
   const p=at||toWorld(r.left+r.width/2-CW/2*C().view.k+(Math.random()*60-30),r.top+r.height/2-80+(Math.random()*60-30));
+  p.y=Math.max(p.y,toWorld(0,headerH()+12).y);
   const c={id:uid(),type,title:type==='nota'?'Nota':'Nueva '+TYPES[type].label.toLowerCase(),body:'',status:'',time:'',
     fields:TYPES[type].fields.map(k=>({k,v:''})),x:Math.round(p.x),y:Math.round(p.y),rot:+(Math.random()*4-2).toFixed(1)};
   if(type==='persona'||type==='objeto'||type==='documento'||type==='lugar')c.title=TYPES[type].label+' sin identificar';
