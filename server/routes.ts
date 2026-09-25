@@ -5,6 +5,7 @@ import { db } from "./db";
 import { eq } from "drizzle-orm";
 import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertJournalShadowPageSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertSourceObjectiveSchema, insertSourceBeliefSchema, insertSourceVisionSchema, insertSourcePowersSchema, insertSourceBugSchema, insertSourceBugRecordSchema, insertNodeErrorSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema, insertSpaceRepetitionPracticeSchema, insertRewiringTrackerSchema, type InsertSpaceRepetitionPractice, type SpaceRepetitionPractice, type RewiringTracker, skills, areas, projects, spaceRepetitionPractices } from "@shared/schema";
 import { fromError } from "zod-validation-error";
+import { z } from "zod";
 import cookieParser from "cookie-parser";
 import crypto from "crypto";
 import Busboy from "busboy";
@@ -388,6 +389,34 @@ export async function registerRoutes(
     }
   });
   
+  // Orden manual del Progress Tracker / menú de áreas, compartido entre dispositivos.
+  app.get("/api/tracker-order", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUserById(req.userId!);
+      res.json({ order: Array.isArray(user?.trackerOrder) ? user.trackerOrder : [] });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/tracker-order", requireAuth, async (req, res) => {
+    try {
+      const { order } = req.body;
+      if (!Array.isArray(order) || !order.every((key) => typeof key === "string")) {
+        res.status(400).json({ message: "order debe ser un array de strings" });
+        return;
+      }
+      const updatedUser = await storage.updateUserTrackerOrder(req.userId!, order);
+      if (!updatedUser) {
+        res.status(404).json({ message: "Usuario no encontrado" });
+        return;
+      }
+      res.json({ order: updatedUser.trackerOrder ?? [] });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Areas (protected)
   app.get("/api/areas", requireAuth, async (req, res) => {
     try {
@@ -6383,6 +6412,88 @@ export async function registerRoutes(
       }
       await storage.deleteQuestionItem(req.params.id);
       res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ============ Evidence Board (Diario de pistas) ============
+  // Todo el tablero (casos, pistas, hilos, vista) se guarda como un único blob JSON por
+  // usuario -- lo trae y lo guarda tal cual, sin validar su forma interna (la define el propio
+  // tablero en client/src/components/evidence-board/board.html). Esto es lo que permite que el
+  // mismo caso aparezca sincronizado en cualquier dispositivo donde el usuario inicie sesión.
+  app.get("/api/evidence-board", requireAuth, async (req, res) => {
+    try {
+      const row = await storage.getEvidenceBoard(req.userId!);
+      res.json({ state: row?.state ?? null, updatedAt: row?.updatedAt ?? null });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/evidence-board", requireAuth, async (req, res) => {
+    try {
+      if (req.body.state === undefined) {
+        return res.status(400).json({ message: "Falta el estado del tablero" });
+      }
+      const row = await storage.upsertEvidenceBoard(req.userId!, req.body.state);
+      res.json({ state: row.state, updatedAt: row.updatedAt });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ============ Objetivos (mediano / largo plazo) ============
+  // Todas las listas del usuario, para la tab "Objetivos" del Journal.
+  app.get("/api/life-goals", requireAuth, async (req, res) => {
+    try {
+      const rows = await storage.getAllLifeGoals(req.userId!);
+      res.json(rows.map((row) => ({
+        sourceType: row.sourceType,
+        sourceId: row.sourceId,
+        mediumTerm: row.mediumTerm,
+        longTerm: row.longTerm,
+        completed: row.completed,
+      })));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/life-goals/:type/:sourceId", requireAuth, async (req, res) => {
+    try {
+      const { type, sourceId } = req.params;
+      if (type !== "area" && type !== "project") {
+        return res.status(400).json({ message: "Invalid type. Must be 'area' or 'project'" });
+      }
+      const row = await storage.getLifeGoals(req.userId!, type, sourceId);
+      res.json({ mediumTerm: row?.mediumTerm ?? [], longTerm: row?.longTerm ?? [], completed: row?.completed ?? [] });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/life-goals/:type/:sourceId", requireAuth, async (req, res) => {
+    try {
+      const { type, sourceId } = req.params;
+      if (type !== "area" && type !== "project") {
+        return res.status(400).json({ message: "Invalid type. Must be 'area' or 'project'" });
+      }
+      const parsed = z.object({
+        mediumTerm: z.array(z.object({ id: z.string(), text: z.string() })),
+        longTerm: z.array(z.object({ id: z.string(), text: z.string() })),
+        completed: z.array(z.object({
+          id: z.string(),
+          text: z.string(),
+          horizon: z.enum(["short", "medium", "long"]),
+          completedAt: z.string(),
+        })).default([]),
+      }).safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Objetivos inválidos" });
+      }
+      const row = await storage.upsertLifeGoals(req.userId!, type, sourceId, parsed.data);
+      res.json({ mediumTerm: row.mediumTerm, longTerm: row.longTerm, completed: row.completed });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

@@ -5,8 +5,8 @@
 const STORAGE_KEY = "progressTrackerPrefs";
 
 export interface ProgressTrackerPrefs {
-  // Secuencia de claves (`${type}-${id}`) con el orden elegido a mano. Las claves que no
-  // figuran acá conservan su orden natural, después de las ordenadas.
+  // Orden manual viejo, de cuando vivía en localStorage. Ya no se escribe: el orden ahora
+  // se guarda en el servidor (ver use-tracker-order.ts); solo se lee para migrarlo una vez.
   order: string[];
   // "Próximos": clave -> fecha ISO en la que la quest vuelve sola al tracker. Cadena vacía
   // = oculta sin fecha, solo reaparece si se la muestra a mano. Unifica lo que antes eran
@@ -76,4 +76,16 @@ export function applyManualOrder<T>(items: T[], keyOf: (item: T) => string, orde
 export function fixSectionOrder(prevOrder: string[], sectionKeys: string[]): string[] {
   const sectionSet = new Set(sectionKeys);
   return [...prevOrder.filter((key) => !sectionSet.has(key)), ...sectionKeys];
+}
+
+// Orden de las áreas tal como las muestra el Progress Tracker: primero las que tienen
+// subtítulo en su nivel actual, después el resto, y encima el orden manual guardado.
+// Lo usa también el menú de áreas para que ambos listados coincidan.
+export function orderAreasLikeTracker<T extends { id: string; unlockedLevel: number; levelSubtitles?: Record<string, string> | null }>(
+  areas: T[],
+  order: string[],
+): T[] {
+  const hasSubtitle = (area: T) => Boolean(area.levelSubtitles?.[area.unlockedLevel.toString()]);
+  const natural = [...areas.filter(hasSubtitle), ...areas.filter((area) => !hasSubtitle(area))];
+  return applyManualOrder(natural, (area) => `area-${area.id}`, order);
 }

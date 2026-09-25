@@ -342,33 +342,36 @@ const C=()=>state.cases.find(c=>c.id===state.active);
 const card=id=>C().cards.find(c=>c.id===id);
 const link=id=>C().links.find(l=>l.id===id);
 
-/* ---------- Saving ---------- */
-let ref=null, saveTimer=null, writing=false, pending=false;
+/* ---------- Saving ----------
+   El tablero se guarda tanto en localStorage (copia rápida/offline) como en la cuenta del
+   usuario (/api/evidence-board, misma sesión que el resto de la app), así el mismo caso
+   aparece en cualquier dispositivo donde inicie sesión (por ejemplo iPhone y PC). */
+let saveTimer=null, writing=false, pending=false;
 function setSave(t){$('#saveState').textContent=t}
 function scheduleSave(){dirty=true;setSave('Guardando…');clearTimeout(saveTimer);saveTimer=setTimeout(flush,700)}
 async function flush(){
   const snap=JSON.parse(JSON.stringify(state));
   try{localStorage.setItem(KEY,JSON.stringify(snap))}catch{}
-  if(!ref){setSave('Guardado en este navegador');return}
   if(writing){pending=true;return}
   writing=true;
-  try{await ref.set({state:snap,savedAt:Date.now()});setSave('Guardado en tu cuenta')}
-  catch(e){setSave('Sin conexión: guardado solo en este navegador')}
+  try{
+    const r=await fetch('/api/evidence-board',{method:'PUT',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({state:snap})});
+    if(!r.ok)throw new Error('save failed');
+    setSave('Guardado en tu cuenta');
+  }catch(e){setSave('Sin conexión: guardado solo en este navegador')}
   writing=false;
   if(pending){pending=false;flush()}
 }
 (async()=>{
-  if(!window.claude||!window.claude.use){setSave('Guardado en este navegador');return}
   try{
-    claude.use('assets').then(a=>{assetsNs=a;assetsTried=true;if(sel&&sel.mode==='edit')renderInspector()}).catch(()=>{assetsTried=true});
-    const [db,user]=await Promise.all([claude.use('db'),claude.use('user')]);
-    if(!db||!user){setSave('Guardado en este navegador');return}
-    const id=await user.id(); if(!id){setSave('Guardado en este navegador');return}
-    ref=db.doc('data/users/'+id+'/board');
-    const s=await ref.get();
-    if(s.exists&&s.data()&&s.data().state&&!dirty){state=normalize(s.data().state);sel=null;renderAll();setSave('Guardado en tu cuenta')}
-    else flush();
-  }catch(e){ref=null;setSave('Guardado en este navegador')}
+    const r=await fetch('/api/evidence-board',{credentials:'same-origin'});
+    if(!r.ok)throw new Error('load failed');
+    const data=await r.json();
+    if(data&&data.state){
+      if(!dirty){state=normalize(data.state);sel=null;renderAll()}
+      setSave('Guardado en tu cuenta');
+    }else flush();
+  }catch(e){setSave('Guardado en este navegador')}
 })();
 
 /* ---------- View ---------- */
@@ -447,8 +450,8 @@ function artSVG(type){const t=TYPES[type]||TYPES.nota;
   return `<svg viewBox="0 0 200 120" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="200" height="120" fill="${t.color}"/><rect width="200" height="120" fill="#000" opacity=".5"/>${ART[type]||ART.nota}</svg>`}
 const imgSrc=c=>c.img?(c.img.startsWith('data:')?c.img:'/_blob/'+c.img):'';
 function picHTML(c,cls){if(!c.img&&(c.type==='nota'||c.type==='evento'))return '';return `<div class="${cls}">${c.img?`<img src="${esc(imgSrc(c))}" alt="" loading="lazy">`:artSVG(c.type)}</div>`}
-let assetsNs=null, assetsTried=false;
-const canUpload=()=>!assetsTried||!!assetsNs||!ref;
+let assetsNs=null;
+const canUpload=()=>true;
 function shrink(file,max,q){
   return new Promise((res,rej)=>{const u=URL.createObjectURL(file),im=new Image();
     im.onload=()=>{const k=Math.min(1,max/Math.max(im.width,im.height)),cv=document.createElement('canvas');

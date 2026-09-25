@@ -19,6 +19,9 @@ export const users = pgTable("users", {
   profileValues: text("profile_values").default(""),
   profileLikes: text("profile_likes").default(""),
   profileAbout: text("profile_about").default(""),
+  // Orden manual del Progress Tracker (claves `${type}-${id}`). Vive en el servidor para
+  // que el tracker y el menú de áreas se vean igual en todos los dispositivos.
+  trackerOrder: jsonb("tracker_order").notNull().$type<string[]>().default([]),
 });
 
 export const sessions = pgTable("sessions", {
@@ -1021,3 +1024,45 @@ export type InsertQuestionItem = z.infer<typeof insertQuestionItemSchema>;
 export type QuestionItem = typeof questionItems.$inferSelect;
 export type QuestionProblemWithItems = QuestionProblem & { items: QuestionItem[] };
 export type MealTrackerMeta = typeof mealTrackerMeta.$inferSelect;
+
+// ============ EVIDENCE BOARD (Diario de pistas) ============
+// Todo el estado del tablero (casos, pistas, hilos, vista de cámara) vive en un único blob
+// JSON por usuario -- el tablero (client/src/components/evidence-board/board.html) define su
+// propia forma internamente, así que el server lo trata como opaco. Una fila por usuario
+// (mismo patrón que meal_tracker_meta) permite upsert directo por userId, y es lo que hace que
+// el mismo caso aparezca en cualquier dispositivo donde el usuario inicie sesión.
+export const evidenceBoards = pgTable("evidence_boards", {
+  userId: varchar("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  state: jsonb("state").notNull().$type<Record<string, any>>(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export type EvidenceBoardRow = typeof evidenceBoards.$inferSelect;
+
+// ============ OBJETIVOS (corto / mediano / largo plazo) ============
+// El corto plazo no se guarda: es el nombre del nivel actual del área/proyecto activo. Solo
+// persisten los objetivos de mediano y largo plazo, una fila por área/proyecto de cada usuario
+// (id = `${userId}:${sourceType}:${sourceId}`, mismo patrón que meal_tracker_days).
+export interface LifeGoalItem {
+  id: string;
+  text: string;
+}
+
+// Objetivo tildado: sale de la lista de pendientes y se muestra en la tab "Objetivos" del Journal.
+export interface CompletedLifeGoal {
+  id: string;
+  text: string;
+  horizon: "short" | "medium" | "long";
+  completedAt: string; // ISO
+}
+
+export const lifeGoals = pgTable("life_goals", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  sourceType: varchar("source_type").notNull(), // "area" | "project"
+  sourceId: varchar("source_id").notNull(),
+  mediumTerm: jsonb("medium_term").notNull().$type<LifeGoalItem[]>().default([]),
+  longTerm: jsonb("long_term").notNull().$type<LifeGoalItem[]>().default([]),
+  completed: jsonb("completed").notNull().$type<CompletedLifeGoal[]>().default([]),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export type LifeGoalsRow = typeof lifeGoals.$inferSelect;

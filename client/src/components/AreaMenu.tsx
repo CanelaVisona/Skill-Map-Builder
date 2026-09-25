@@ -9,6 +9,8 @@ import type { BodyLink } from "@/components/BodyLinkPicker";
 import { useToast } from "@/hooks/use-toast";
 import { ProgressBar } from "@/components/ProgressBar";
 import { cn } from "@/lib/utils";
+import { orderAreasLikeTracker } from "@/lib/progress-tracker-settings";
+import { useTrackerOrder } from "@/lib/use-tracker-order";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, CalendarClock, Clock, Music, Trophy, BookOpen, Home, Dumbbell, Briefcase, Heart, Utensils, Palette, Code, Gamepad2, Camera, FolderKanban, Trash2, LogOut, Archive, ArchiveRestore, Pencil, Zap, ChevronDown, ChevronRight, Mountain, Compass, Scroll, Eye, Swords, Lock, Target, Shield, Star, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Brain, GraduationCap, Wallet, TrendingUp, PiggyBank, Users, MessageCircle, Plane, Globe, MapPin, Leaf, Sun, Moon, Coffee, Bike, Wrench, Hammer, Lightbulb, Puzzle, Flag, PawPrint, Smile, Flame, Droplet } from "lucide-react";
 import { Button } from "./ui/button";
@@ -3542,10 +3544,13 @@ export function AreaMenu() {
   const [emergentAction, setEmergentAction] = useState("");
   const [emergentNodeTitle, setEmergentNodeTitle] = useState("");
 
+  const { order: trackerOrder } = useTrackerOrder();
+
   // "Próximos": quests marked upcoming are hidden from their normal section and
   // listed together in the collapsible at the bottom of the menu instead.
   const isUpcoming = (q: { upcoming?: 0 | 1 | null }) => q.upcoming === 1;
-  const visibleAreas = areas.filter((a) => !isUpcoming(a));
+  // Mismo orden que el Progress Tracker (subtítulo de nivel primero + orden manual).
+  const visibleAreas = orderAreasLikeTracker(areas.filter((a) => !isUpcoming(a)), trackerOrder);
   const visibleMainQuests = mainQuests.filter((p) => !isUpcoming(p));
   const visibleSideQuests = sideQuests.filter((p) => !isUpcoming(p));
   const visibleEmergentQuests = emergentQuests.filter((p) => !isUpcoming(p));
@@ -3863,7 +3868,10 @@ export function AreaMenu() {
                   area={area}
                   isActive={area.id === activeAreaId}
                   isMenuOpen={isOpen}
-                  onSelect={() => setActiveAreaId(area.id)}
+                  onSelect={() => {
+                    setActiveAreaId(area.id);
+                    setIsOpen(false);
+                  }}
                   onDelete={() => deleteArea(area.id)}
                   onArchive={() => archiveArea(area.id)}
                   onEdit={(updates) => updateAreaDetails(area.id, updates)}
@@ -3893,7 +3901,10 @@ export function AreaMenu() {
               project={project}
               isActive={project.id === activeProjectId}
               isMenuOpen={isOpen}
-              onSelect={() => setActiveProjectId(project.id)}
+              onSelect={() => {
+                setActiveProjectId(project.id);
+                setIsOpen(false);
+              }}
               onDelete={() => deleteProject(project.id)}
               onArchive={() => archiveProject(project.id)}
               onEdit={(updates) => updateProjectDetails(project.id, updates)}
@@ -3923,7 +3934,10 @@ export function AreaMenu() {
               project={project}
               isActive={project.id === activeProjectId}
               isMenuOpen={isOpen}
-              onSelect={() => setActiveProjectId(project.id)}
+              onSelect={() => {
+                setActiveProjectId(project.id);
+                setIsOpen(false);
+              }}
               onDelete={() => deleteProject(project.id)}
               onArchive={() => archiveProject(project.id)}
               onEdit={(updates) => updateProjectDetails(project.id, updates)}
@@ -3952,7 +3966,10 @@ export function AreaMenu() {
                 project={project}
                 isActive={project.id === activeProjectId}
                 isMenuOpen={isOpen}
-                onSelect={() => setActiveProjectId(project.id)}
+                onSelect={() => {
+                  setActiveProjectId(project.id);
+                  setIsOpen(false);
+                }}
                 onDelete={() => deleteProject(project.id)}
                 onArchive={() => archiveProject(project.id)}
                 onEdit={(updates) => updateProjectDetails(project.id, updates)}
@@ -3982,7 +3999,10 @@ export function AreaMenu() {
                 project={project}
                 isActive={project.id === activeProjectId}
                 isMenuOpen={isOpen}
-                onSelect={() => setActiveProjectId(project.id)}
+                onSelect={() => {
+                  setActiveProjectId(project.id);
+                  setIsOpen(false);
+                }}
                 onDelete={() => deleteProject(project.id)}
                 onArchive={() => archiveProject(project.id)}
                 onEdit={(updates) => updateProjectDetails(project.id, updates)}

@@ -617,6 +617,113 @@ function HoldingChips({ holdings }: { holdings: Holding[] }) {
   );
 }
 
+// ---------- hitos (checkpoints sobre la barra de progreso) ----------
+
+interface Milestone {
+  id: string;
+  name: string;
+  amount: number;
+  emoji: string;
+}
+
+// Hitos fijos de toda meta con objetivo: 10/25/50/75% (el 100% lo marca el trofeo al final
+// de la barra). No son editables.
+const MILESTONE_STEPS: { pct: number; name: string; emoji: string }[] = [
+  { pct: 10, name: "Primer paso", emoji: "🚩" },
+  { pct: 25, name: "Un cuarto", emoji: "⭐" },
+  { pct: 50, name: "Mitad del camino", emoji: "🔥" },
+  { pct: 75, name: "Recta final", emoji: "💎" },
+];
+
+function goalMilestones(goal: FinancialGoal): Milestone[] {
+  const target = goal.target || 0;
+  if (target <= 0) return [];
+  return MILESTONE_STEPS.map((s) => ({ id: `m${s.pct}`, name: `${s.name} · ${s.pct}%`, amount: (target * s.pct) / 100, emoji: s.emoji }));
+}
+
+function nextMilestone(goal: FinancialGoal): Milestone | null {
+  const saved = goalSaved(goal);
+  return goalMilestones(goal).find((m) => m.amount > saved) || null;
+}
+
+function GoalMilestoneBar({ goal, size = "sm", className = "" }: { goal: FinancialGoal; size?: "sm" | "lg"; className?: string }) {
+  const saved = goalSaved(goal);
+  const target = goal.target || 0;
+  if (target <= 0) return null;
+  const fill = Math.min(100, (saved / target) * 100);
+  const milestones = goalMilestones(goal);
+  const done = saved >= target;
+  const lg = size === "lg";
+  const marker = lg ? "h-6 w-6 text-[12px]" : "h-3.5 w-3.5 text-[0px]";
+
+  return (
+    <div className={`relative ${lg ? "h-6" : "h-3.5"} ${className}`}>
+      <div className={`absolute inset-x-0 top-1/2 -translate-y-1/2 ${lg ? "h-2.5" : "h-2"} rounded-full bg-muted overflow-hidden`}>
+        <div className="h-full rounded-full transition-all duration-700" style={{ width: `${fill}%`, background: goal.color }} />
+      </div>
+      {milestones.map((m) => {
+        const reached = saved >= m.amount;
+        const pos = (m.amount / target) * 100;
+        return (
+          <div
+            key={m.id}
+            title={`${m.emoji || "⭐"} ${m.name || "Hito"} · ${moneyUsd(m.amount)}${reached ? " · ¡alcanzado!" : ""}`}
+            className={`absolute top-1/2 -translate-x-1/2 -translate-y-1/2 ${marker} rounded-full flex items-center justify-center border-2 transition-all duration-500`}
+            style={{
+              left: `${pos}%`,
+              background: reached ? goal.color : "hsl(var(--card))",
+              borderColor: reached ? "hsl(var(--card))" : "hsl(var(--muted-foreground) / 0.45)",
+              boxShadow: reached ? `0 0 0 1.5px ${goal.color}, 0 0 8px ${goal.color}aa` : undefined,
+            }}
+          >
+            {lg && <span className={reached ? "" : "grayscale opacity-60"}>{m.emoji || "⭐"}</span>}
+          </div>
+        );
+      })}
+      <div
+        title={`🏆 Objetivo · ${moneyUsd(target)}`}
+        className={`absolute right-0 top-1/2 translate-x-1/3 -translate-y-1/2 ${lg ? "h-7 w-7 text-sm" : "h-4 w-4 text-[9px]"} rounded-full flex items-center justify-center border-2`}
+        style={{
+          background: done ? goal.color : "hsl(var(--card))",
+          borderColor: done ? "hsl(var(--card))" : "hsl(var(--muted-foreground) / 0.45)",
+          boxShadow: done ? `0 0 0 1.5px ${goal.color}, 0 0 10px ${goal.color}` : undefined,
+        }}
+      >
+        <span className={done ? "" : "grayscale opacity-60"}>🏆</span>
+      </div>
+    </div>
+  );
+}
+
+function GoalMilestoneList({ goal }: { goal: FinancialGoal }) {
+  const saved = goalSaved(goal);
+  const target = goal.target || 0;
+  const items = [...goalMilestones(goal), { id: "__final", name: "Objetivo · 100%", amount: target, emoji: "🏆" }];
+  const nextId = items.find((m) => m.amount > saved)?.id;
+  return (
+    <div className="flex flex-col gap-1.5 mt-3">
+      {items.map((m) => {
+        const reached = saved >= m.amount;
+        const isNext = m.id === nextId;
+        return (
+          <div
+            key={m.id}
+            className={`flex items-center gap-2 text-sm rounded-lg px-2 py-1.5 border ${isNext ? "" : "border-transparent"}`}
+            style={isNext ? { borderColor: `${goal.color}66`, background: tint(goal.color, 10) } : undefined}
+          >
+            <span className={`text-base w-6 text-center ${reached ? "" : "grayscale opacity-50"}`}>{m.emoji || "⭐"}</span>
+            <span className={`flex-1 min-w-0 truncate ${reached ? "font-medium" : "text-muted-foreground"}`}>{m.name || "Hito"}</span>
+            <span className="text-xs tabular-nums"><Money usd={m.amount} /></span>
+            <span className="text-xs w-20 text-right" style={reached ? { color: goal.color } : undefined}>
+              {reached ? "✓ Logrado" : isNext ? <span className="text-muted-foreground">faltan <Money usd={m.amount - saved} /></span> : <span className="text-muted-foreground">🔒</span>}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ---------- preview card (grid view) ----------
 
 function GoalPreviewCard({ goal, onTap, onLongPress, onOpenTimeline }: { goal: FinancialGoal; onTap: () => void; onLongPress: () => void; onOpenTimeline: () => void }) {
@@ -626,6 +733,7 @@ function GoalPreviewCard({ goal, onTap, onLongPress, onOpenTimeline }: { goal: F
   const pct = has ? Math.round((saved / goal.target) * 100) : 0;
   const ringPct = Math.min(100, pct);
   const done = has && saved >= goal.target;
+  const next = has ? nextMilestone(goal) : null;
   const ringBg = has ? `conic-gradient(${goal.color} ${ringPct}%, hsl(var(--muted)) 0)` : "hsl(var(--muted))";
 
   return (
@@ -651,8 +759,13 @@ function GoalPreviewCard({ goal, onTap, onLongPress, onOpenTimeline }: { goal: F
         {has && <span className="text-sm text-muted-foreground">/ <Money usd={goal.target} /></span>}
       </div>
       {has ? (
-        <div className="h-2 rounded-full bg-muted overflow-hidden mb-3">
-          <div className="h-full rounded-full transition-all" style={{ width: `${ringPct}%`, background: goal.color }} />
+        <div className="mb-3">
+          <GoalMilestoneBar goal={goal} />
+          {next && (
+            <div className="text-[11px] text-muted-foreground mt-1.5 truncate">
+              Próximo hito: {next.emoji || "⭐"} {next.name || "Hito"} · faltan <Money usd={next.amount - saved} />
+            </div>
+          )}
         </div>
       ) : (
         <div className="mb-3" />
@@ -714,11 +827,7 @@ function GoalDashboardRow({ goal, onTap, onLongPress }: { goal: FinancialGoal; o
           <span className="ml-auto text-xs text-muted-foreground">sin objetivo</span>
         )}
       </div>
-      {has && (
-        <div className="h-1.5 rounded-full bg-muted overflow-hidden mt-2">
-          <div className="h-full rounded-full" style={{ width: `${Math.min(100, pct)}%`, background: goal.color }} />
-        </div>
-      )}
+      {has && <GoalMilestoneBar goal={goal} className="mt-2" />}
     </motion.div>
   );
 }
@@ -2330,6 +2439,14 @@ function GoalDetailDialog({
           </div>
         </div>
 
+        {has && (
+          <div className="rounded-xl border border-border p-3 pr-4">
+            <div className="font-display font-semibold text-sm mb-2.5">🏁 Hitos</div>
+            <GoalMilestoneBar goal={goal} size="lg" />
+            <GoalMilestoneList goal={goal} />
+          </div>
+        )}
+
         {slices.length > 0 ? (
           <>
             <div className="relative h-[170px] mt-1">
@@ -2893,7 +3010,20 @@ export default function FinancialGoals() {
       if (!res.ok) throw new Error("Failed to update goal");
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (updated: FinancialGoal, { id }) => {
+      // Si el nuevo saldo cruzó algún hito (o el objetivo), lo celebramos.
+      const prev = goals.find((g) => g.id === id);
+      if (prev && updated && (updated.target || 0) > 0) {
+        const before = goalSaved(prev);
+        const after = goalSaved(updated);
+        const unlocked = goalMilestones(updated).filter((m) => before < m.amount && after >= m.amount);
+        if (before < updated.target && after >= updated.target) {
+          toast({ title: `🏆 ¡Meta completada! ${updated.emoji} ${updated.name}` });
+        } else if (unlocked.length) {
+          const m = unlocked[unlocked.length - 1];
+          toast({ title: `${m.emoji || "⭐"} ¡Hito desbloqueado!`, description: `${m.name || "Hito"} · ${updated.name}` });
+        }
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/financial-goals"] });
       setFormOpen(false);
     },

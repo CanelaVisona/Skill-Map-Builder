@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useSkillTree, type Area, type Project } from "@/lib/skill-context";
+import { useTrackerOrder } from "@/lib/use-tracker-order";
 import {
   calculateLevelProgressPercentage,
   countMasteredSkillsInLevel,
@@ -14,6 +15,7 @@ import {
   applyManualOrder,
   fixSectionOrder,
   loadProgressTrackerPrefs,
+  orderAreasLikeTracker,
   saveProgressTrackerPrefs,
   type ProgressTrackerPrefs,
 } from "@/lib/progress-tracker-settings";
@@ -517,6 +519,7 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
   const [viewMode, setViewMode] = useState<ProgressViewMode>("classic");
   const [editMode, setEditMode] = useState(false);
   const [prefs, setPrefs] = useState<ProgressTrackerPrefs>(loadProgressTrackerPrefs);
+  const { order, setOrder } = useTrackerOrder();
 
   // Al abrir el tracker se relee la preferencia (por si cambió en otra pestaña) y se
   // arranca siempre en modo lectura. Mientras está abierto, cada tanto se sacan de
@@ -575,7 +578,7 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
     if (from < 0 || to < 0 || to >= sectionKeys.length) return;
     const reordered = [...sectionKeys];
     [reordered[from], reordered[to]] = [reordered[to], reordered[from]];
-    updatePrefs({ ...prefs, order: fixSectionOrder(prefs.order, reordered) });
+    setOrder(fixSectionOrder(order, reordered));
   };
 
   const buildProgressItem = (item: Area | Project, type: "area" | "project"): ProgressItem => {
@@ -595,7 +598,8 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
     };
   };
 
-  const allAreaItems = sortBySubtitleFirst(Array.isArray(areas) ? areas.map((area) => buildProgressItem(area, "area")) : []);
+  // Mismo orden que el menú de áreas (subtítulo primero; el orden manual se aplica abajo).
+  const allAreaItems = (Array.isArray(areas) ? orderAreasLikeTracker(areas, []) : []).map((area) => buildProgressItem(area, "area"));
 
   const projectList = Array.isArray(projects) ? projects : [];
   const allMainQuestItems = sortBySubtitleFirst(
@@ -620,7 +624,7 @@ export function ProgressModal({ open, onOpenChange }: { open: boolean; onOpenCha
 
   // Cada sección: primero se saca lo que está en "Próximos", después se aplica el orden manual.
   const visibleOf = (items: ProgressItem[]) =>
-    applyManualOrder(items.filter((item) => !isUpcoming(item)), getItemKey, prefs.order);
+    applyManualOrder(items.filter((item) => !isUpcoming(item)), getItemKey, order);
   const areaItems = visibleOf(allAreaItems);
   const mainQuestItems = visibleOf(allMainQuestItems);
   const sideQuestItems = visibleOf(allSideQuestItems);

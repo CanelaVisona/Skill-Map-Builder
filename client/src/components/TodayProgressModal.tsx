@@ -187,6 +187,15 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     }
   }, [open]);
 
+  // Con el modal abierto se re-renderiza cada minuto para que la franja horaria actual (que
+  // queda bloqueada abierta) pase sola a la siguiente cuando cambia la hora.
+  const [, setClockTick] = useState(0);
+  useEffect(() => {
+    if (!open) return;
+    const id = setInterval(() => setClockTick((n) => n + 1), 60_000);
+    return () => clearInterval(id);
+  }, [open]);
+
   const habitsScheduledForView = (habitsData || []).filter((h) => {
     if (h.endDate && h.endDate < effectiveDate) return false;
     const days = h.scheduledDays?.length ? h.scheduledDays : [0, 1, 2, 3, 4, 5, 6];
@@ -628,26 +637,41 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // destacada de una sin tener que ir abriendo franja por franja.
   const firstNonEmptySlotKey = TIME_SLOTS.find((s) => itemBuckets[s.key].length > 0)?.key;
 
-  // Sección de franjas que debe estar abierta: "Sin asignar" tiene prioridad mientras tenga
-  // pendientes; si no (vacía, o solo con tareas ya hechas), se cierra siempre y se abre la
-  // franja horaria actual en su lugar (o, en una previsualización, la primera franja con algo
-  // agendado). Es excluyente: nunca hay más de una sección abierta a la vez, así el resto queda
-  // visualmente "de fondo" (ver data-[state=closed] en el trigger).
-  const defaultOpenSlotSection: string = hasPendingUnassigned
+  // Viendo hoy, la franja horaria actual queda bloqueada abierta (no se puede cerrar) hasta que
+  // pase su horario; recién ahí se libera y se bloquea la siguiente. En una previsualización no
+  // hay "hora actual", así que no hay franja bloqueada.
+  const lockedSlotKey: TaskSlotKey | null = isPreview ? null : getCurrentTimeSlotKey();
+
+  // Además de la franja bloqueada puede haber, como mucho, UNA sección más abierta. Por defecto:
+  // "Sin asignar" mientras tenga pendientes; en una previsualización, la primera franja con algo
+  // agendado. El resto queda visualmente "de fondo" (ver data-[state=closed] en el trigger).
+  const defaultExtraSlotSection: string | null = hasPendingUnassigned
     ? "unassigned"
     : isPreview
     ? firstNonEmptySlotKey ?? getCurrentTimeSlotKey()
-    : getCurrentTimeSlotKey();
-  const [manualOpenSlotSection, setManualOpenSlotSection] = useState<string | null>(null);
+    : null;
+  // undefined = el usuario no tocó nada (se usa el default); null = cerró la sección extra.
+  const [manualExtraSlotSection, setManualExtraSlotSection] = useState<string | null | undefined>(undefined);
   // Al cambiar de día (previsualización) se descarta la elección manual y se vuelve a calcular
   // la sección por defecto para ese día — abrir "Sin asignar" en un día no tiene por qué seguir
   // abierto al pasar a previsualizar otro.
   const [lastSlotSectionDate, setLastSlotSectionDate] = useState(effectiveDate);
   if (effectiveDate !== lastSlotSectionDate) {
     setLastSlotSectionDate(effectiveDate);
-    setManualOpenSlotSection(null);
+    setManualExtraSlotSection(undefined);
   }
-  const openSlotSection = manualOpenSlotSection ?? defaultOpenSlotSection;
+  const extraSlotSection = manualExtraSlotSection !== undefined ? manualExtraSlotSection : defaultExtraSlotSection;
+  const openSlotSections = Array.from(
+    new Set([lockedSlotKey, extraSlotSection].filter((v): v is string => !!v))
+  );
+  const handleSlotSectionsChange = (values: string[]) => {
+    const others = values.filter((v) => v !== lockedSlotKey);
+    // Si se abrió una sección nueva, reemplaza a la extra anterior (nunca más de una extra).
+    const next = others.find((v) => v !== extraSlotSection) ?? others[0] ?? null;
+    // Sin franja bloqueada (previsualización) siempre tiene que quedar algo abierto.
+    if (!next && !lockedSlotKey) return;
+    setManualExtraSlotSection(next);
+  };
 
   const moveItemToSlot = (item: TodayItem, slot: TaskSlotKey) => {
     setTaskSlot.mutate({ date: effectiveDate, taskType: item.type, taskId: item.id, slot });
@@ -1152,9 +1176,9 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                   <>
                     {hasSlotSection && (
                       <Accordion
-                        type="single"
-                        value={openSlotSection}
-                        onValueChange={(v) => v && setManualOpenSlotSection(v)}
+                        type="multiple"
+                        value={openSlotSections}
+                        onValueChange={handleSlotSectionsChange}
                         className="space-y-1"
                       >
                         {itemBuckets.unassigned.length > 0 && (
@@ -1184,10 +1208,20 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                           </AccordionItem>
                         )}
 
-                        {TIME_SLOTS.map((s) => (
-                          <AccordionItem key={s.key} value={s.key} className="border-0">
+                        {TIME_SLOTS.map((s) => {
+                          const isLocked = s.key === lockedSlotKey;
+                          return (
+                          <AccordionItem
+                            key={s.key}
+                            value={s.key}
+                            className={
+                              isLocked
+                                ? "rounded-lg border-2 border-primary/60 bg-primary/10 px-2 shadow-[0_0_12px_-2px_hsl(var(--primary)/0.45)]"
+                                : "border-0"
+                            }
+                          >
                             <AccordionTrigger
-                              className="py-1.5 hover:no-underline data-[state=closed]:opacity-40 transition-opacity"
+                              className={`py-1.5 hover:no-underline data-[state=closed]:opacity-40 transition-opacity ${isLocked ? "cursor-default [&>svg]:hidden" : ""}`}
                               onMouseDown={(e) => startSlotTitleLongPress(e, s.key)}
                               onMouseUp={cancelSlotTitleLongPress}
                               onMouseLeave={cancelSlotTitleLongPress}
@@ -1201,8 +1235,19 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                 if (slotTitleLongPressFired.current) e.preventDefault();
                               }}
                             >
-                              <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                              <h3
+                                className={
+                                  isLocked
+                                    ? "flex items-center gap-1.5 text-sm font-bold uppercase tracking-wide text-primary"
+                                    : "text-xs font-bold uppercase tracking-wide text-muted-foreground"
+                                }
+                              >
                                 {s.label} ({itemBuckets[s.key].filter((i) => i.done).length}/{itemBuckets[s.key].length})
+                                {isLocked && (
+                                  <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-primary-foreground">
+                                    Ahora
+                                  </span>
+                                )}
                               </h3>
                             </AccordionTrigger>
                             <AccordionContent className="pt-0 pb-1">
@@ -1244,7 +1289,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                               )}
                             </AccordionContent>
                           </AccordionItem>
-                        ))}
+                          );
+                        })}
                       </Accordion>
                     )}
 
