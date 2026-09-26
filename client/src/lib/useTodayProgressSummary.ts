@@ -72,14 +72,12 @@ export function useTodayProgressSummary() {
     ),
   }));
 
-  const extraHabitsDoneToday = habitsNotScheduledToday
-    .map((h, i) => ({
-      id: h.id,
-      done: !!(otherRecordQueries[i]?.data as HabitRecord[] | undefined)?.some(
-        (r) => r.date === todayStr && r.completed === 1
-      ),
-    }))
-    .filter((h) => h.done);
+  const notScheduledHabitRows = habitsNotScheduledToday.map((h, i) => ({
+    id: h.id,
+    done: !!(otherRecordQueries[i]?.data as HabitRecord[] | undefined)?.some(
+      (r) => r.date === todayStr && r.completed === 1
+    ),
+  }));
 
   const rewiringQuery = useQuery({
     queryKey: ["rewiring-trackers"],
@@ -162,15 +160,24 @@ export function useTodayProgressSummary() {
   const { data: slotsData } = slotsQuery;
   const isHidden = (key: string) => (slotsData || []).some((s) => `${s.taskType}:${s.taskId}` === key && s.slot === "hidden");
 
-  const visibleHabits = habitItems.filter((h) => h.done || !isHidden(`habit:${h.id}`));
+  // Espejo de TodayProgressModal: un hábito no programado hoy con una fila de franja que no es
+  // "hidden" se agregó a mano al día y cuenta como uno programado (aunque no esté hecho).
+  const addedHabitIds = new Set(
+    (slotsData || []).filter((s) => s.taskType === "habit" && s.slot !== "hidden").map((s) => s.taskId)
+  );
+  const addedHabits = notScheduledHabitRows.filter((h) => addedHabitIds.has(h.id));
+  const extraHabitsDoneToday = notScheduledHabitRows.filter((h) => h.done && !addedHabitIds.has(h.id));
+
+  const visibleHabits = [...habitItems, ...addedHabits].filter((h) => h.done || !isHidden(`habit:${h.id}`));
   const visibleNodes = plannedNodesToday.filter((n) => n.done || !isHidden(`node:${n.id}`));
   const visiblePractices = practicesToday.filter((p) => p.done || !isHidden(`practice:${p.id}`));
+  const visibleManualTasks = manualTasks.filter((t) => t.done === 1 || !isHidden(`manual:${t.id}`));
 
   const total =
     visibleHabits.length +
     visibleNodes.length +
     visiblePractices.length +
-    manualTasks.length +
+    visibleManualTasks.length +
     extraHabitsDoneToday.length +
     extraNodesToday.length +
     extraRewiringRowsToday.length;
@@ -179,7 +186,7 @@ export function useTodayProgressSummary() {
     visibleHabits.filter((h) => h.done).length +
     visibleNodes.filter((n) => n.done).length +
     visiblePractices.filter((p) => p.done).length +
-    manualTasks.filter((t) => t.done === 1).length +
+    visibleManualTasks.filter((t) => t.done === 1).length +
     extraHabitsDoneToday.length +
     extraNodesToday.length +
     extraRewiringRowsToday.length;
@@ -192,7 +199,7 @@ export function useTodayProgressSummary() {
     visibleHabits.filter((h) => h.done).length +
     visibleNodes.filter((n) => n.done).length +
     visiblePractices.filter((p) => p.done).length +
-    manualTasks.filter((t) => t.done === 1).length +
+    visibleManualTasks.filter((t) => t.done === 1).length +
     extraHabitsDoneToday.length +
     extraRewiringRowsToday.length;
 
