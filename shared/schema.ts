@@ -558,6 +558,21 @@ export const budgetCategories = pgTable("budget_categories", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+// Una fuente de ingresos (gráfico "Ingresos" en Metas financieras). Cada fuente es activa
+// (requiere trabajo: sueldo, freelance) o pasiva (alquileres, dividendos, intereses) y guarda
+// lo cobrado en 3 meses; el gráfico muestra el promedio, agrupado en activos vs pasivos.
+export type IncomeSourceKind = "activo" | "pasivo";
+
+export const incomeSources = pgTable("income_sources", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  kind: text("kind").notNull().$type<IncomeSourceKind>().default("activo"),
+  months: jsonb("months").notNull().$type<BudgetCategoryMonthEntry[]>().default([]),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 // Cotización del dólar registrada mes a mes, usada para mostrar el equivalente en USD de
 // cualquier monto en pesos dentro de Metas financieras. Un registro por (usuario, año, mes);
 // el cliente hace upsert (PATCH si ya existe ese mes, POST si no).
@@ -693,7 +708,9 @@ export const todayTaskSlots = pgTable("today_task_slots", {
   date: varchar("date").notNull(), // YYYY-MM-DD format
   taskType: text("task_type").$type<"habit" | "node" | "practice" | "manual" | "rewiring">().notNull(),
   taskId: varchar("task_id").notNull(),
-  slot: text("slot").$type<"morning" | "midday" | "afternoon" | "night" | "hidden">().notNull(),
+  // "added": hábito NO programado para ese día que se agregó a mano a tareas de hoy (mantener
+  // presionado el fondo / el título de una franja), sin franja propia.
+  slot: text("slot").$type<"morning" | "midday" | "afternoon" | "night" | "hidden" | "added">().notNull(),
   // Orden dentro de su (date, slot): más chico va primero. Se asigna automáticamente al
   // final de la franja al asignar/mover una tarea, y se puede reordenar de a pares
   // (intercambia con el vecino) sin agregar ningún elemento visual nuevo.
@@ -702,7 +719,7 @@ export const todayTaskSlots = pgTable("today_task_slots", {
 });
 export const insertTodayTaskSlotSchema = createInsertSchema(todayTaskSlots).omit({ id: true, updatedAt: true }).extend({
   taskType: z.enum(["habit", "node", "practice", "manual", "rewiring"]),
-  slot: z.enum(["morning", "midday", "afternoon", "night", "hidden"]),
+  slot: z.enum(["morning", "midday", "afternoon", "night", "hidden", "added"]),
   sortOrder: z.number().optional().default(0),
 });
 export type InsertTodayTaskSlot = z.infer<typeof insertTodayTaskSlotSchema>;
@@ -960,6 +977,17 @@ export const insertBudgetCategorySchema = createInsertSchema(budgetCategories).o
 });
 export type InsertBudgetCategory = z.infer<typeof insertBudgetCategorySchema>;
 export type BudgetCategory = typeof budgetCategories.$inferSelect;
+
+export const insertIncomeSourceSchema = createInsertSchema(incomeSources).omit({ id: true, createdAt: true, updatedAt: true, userId: true }).extend({
+  kind: z.enum(["activo", "pasivo"]),
+  months: z.array(z.object({
+    year: z.number(),
+    month: z.number(),
+    amount: z.number(),
+  })).length(3),
+});
+export type InsertIncomeSource = z.infer<typeof insertIncomeSourceSchema>;
+export type IncomeSource = typeof incomeSources.$inferSelect;
 
 export const insertDollarRateSchema = createInsertSchema(dollarRates).omit({ id: true, createdAt: true, updatedAt: true, userId: true });
 export type InsertDollarRate = z.infer<typeof insertDollarRateSchema>;

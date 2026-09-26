@@ -1,7 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { TodayTaskSlot } from "@shared/schema";
 
-export type TaskSlotKey = "morning" | "midday" | "afternoon" | "night" | "hidden";
+// "added" no es una franja real: marca un hábito no programado para ese día que se agregó a
+// mano a tareas de hoy sin elegir franja (cae en "Sin asignar" o en sus franjas por defecto).
+export type TaskSlotKey = "morning" | "midday" | "afternoon" | "night" | "hidden" | "added";
 export type TaskType = "habit" | "node" | "practice" | "manual" | "rewiring";
 
 // Mañana 6-11, mediodía 12-16, tarde 17-20, noche 21-23 y también las horas de

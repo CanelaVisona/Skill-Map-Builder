@@ -11,7 +11,7 @@ import { Calendar, ArrowLeft, Check, ChevronLeft, ChevronRight, Pencil } from "l
 import { useSkillTree, type Area, type Project, type Skill } from "@/lib/skill-context";
 import { useHabits, useUpdateHabitRecord } from "@/lib/useHabits";
 import { useTodayTaskSlots, useSetTodayTaskSlot, useClearTodayTaskSlot, useReorderTodayTaskSlot, getCurrentTimeSlotKey, getTimeSlotKeyForDate, type TaskSlotKey, type TaskType } from "@/lib/useTodayTaskSlots";
-import { useManualTasks, useManualTasksRange, useCreateManualTask, useUpdateManualTask, useDeleteManualTask } from "@/lib/useManualTasks";
+import { useManualTasks, useManualTasksRange, isDefaultManualTask, useCreateManualTask, useUpdateManualTask, useDeleteManualTask } from "@/lib/useManualTasks";
 import { calculateStatus, calculateStatusL2, type SpaceRepetitionPractice } from "@/components/SpaceRepetitionModal";
 import { rewiringDayRows } from "@/lib/rewiringTasks";
 import { useConfirmHabit, useConfirmPractice } from "@/lib/useConfirmActions";
@@ -245,7 +245,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     }
   });
 
-  const habitItems = habitsScheduledForView.map((h, i) => ({
+  const scheduledHabitItems = habitsScheduledForView.map((h, i) => ({
     id: h.id,
     label: (
       <>
@@ -336,23 +336,42 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     })),
   });
 
-  const extraHabits = habitsNotScheduledForView
-    .map((h, i) => ({
-      id: h.id,
-      label: (
-        <>
-          {h.emoji} {h.name}
-          <MinutesSuffix minutes={h.minMinutes} />
-          {rewiringHabitBadgeById.has(h.id) && (
-            <TaskCountBadge {...rewiringHabitBadgeById.get(h.id)!} />
-          )}
-        </>
-      ),
-      done: !!(otherHabitRecordQueries[i]?.data as HabitRecord[] | undefined)?.some(
-        (r) => r.date === effectiveDate && r.completed === 1
-      ),
-    }))
-    .filter((h) => h.done);
+  // Franjas horarias: cada tarea (hábito/nodo/práctica/manual) puede asignarse a
+  // mañana/mediodía/tarde/noche, o marcarse "hidden" (mantener presionada una tarea no hecha)
+  // para que deje de contar como tarea de ese día. La asignación es por día (queryKey incluye
+  // effectiveDate), lo que también permite ordenar tareas de días futuros previsualizados.
+  const { data: slotsData } = useTodayTaskSlots(effectiveDate, open);
+
+  // Hábitos no programados para este día que se agregaron a mano (desde el diálogo de
+  // "mantener presionado"): cualquier fila de franja que no sea "hidden" los vuelve una tarea
+  // más del día — cuentan en el total aunque todavía no estén hechos, igual que uno programado.
+  const addedHabitIds = new Set(
+    (slotsData || []).filter((s) => s.taskType === "habit" && s.slot !== "hidden").map((s) => s.taskId)
+  );
+
+  const notScheduledHabitRows = habitsNotScheduledForView.map((h, i) => ({
+    id: h.id,
+    label: (
+      <>
+        {h.emoji} {h.name}
+        <MinutesSuffix minutes={h.minMinutes} />
+        {rewiringHabitBadgeById.has(h.id) && (
+          <TaskCountBadge {...rewiringHabitBadgeById.get(h.id)!} />
+        )}
+      </>
+    ),
+    done: !!(otherHabitRecordQueries[i]?.data as HabitRecord[] | undefined)?.some(
+      (r) => r.date === effectiveDate && r.completed === 1
+    ),
+  }));
+  const addedHabitItems = notScheduledHabitRows.filter((h) => addedHabitIds.has(h.id));
+  // Los agregados a mano se tratan igual que los programados (cuentan, se pueden ocultar, etc.).
+  const habitItems = [...scheduledHabitItems, ...addedHabitItems];
+  const extraHabits = notScheduledHabitRows.filter((h) => h.done && !addedHabitIds.has(h.id));
+  // Candidatos para agregar a mano: activos ese día, no programados y todavía no agregados.
+  const habitsAddableForView = habitsNotScheduledForView.filter(
+    (h) => !(h.endDate && h.endDate < effectiveDate) && !addedHabitIds.has(h.id)
+  );
 
   // Rewirings (RewiringTracker.tsx): actividad extra sin concepto de "programado para hoy". Se
   // muestra UNA fila por cada repetición registrada el día que se está viendo, todas con el
@@ -457,11 +476,6 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const updateManualTask = useUpdateManualTask();
   const deleteManualTask = useDeleteManualTask();
 
-  // Franjas horarias: cada tarea (hábito/nodo/práctica/manual) puede asignarse a
-  // mañana/mediodía/tarde/noche, o marcarse "hidden" (mantener presionada una tarea no hecha)
-  // para que deje de contar como tarea de ese día. La asignación es por día (queryKey incluye
-  // effectiveDate), lo que también permite ordenar tareas de días futuros previsualizados.
-  const { data: slotsData } = useTodayTaskSlots(effectiveDate, open);
   const setTaskSlot = useSetTodayTaskSlot();
   const clearTaskSlot = useClearTodayTaskSlot();
   const reorderTaskSlot = useReorderTodayTaskSlot();
@@ -498,6 +512,9 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const visibleHabitItems = habitItems.filter((h) => h.done || !isHidden(`habit:${h.id}`));
   const visiblePlannedNodesForView = plannedNodesForView.filter((n) => n.done || !isHidden(`node:${n.id}`));
   const visiblePracticesToday = practicesToday.filter(({ practice: p, done }) => done || !isHidden(`practice:${p.id}`));
+  // Las tareas por defecto (comidas) no se eliminan — se recrearían —, se "sacan de hoy" igual
+  // que un hábito; las manuales comunes nunca tienen franja "hidden", así que no las afecta.
+  const visibleManualTasks = manualTasks.filter((t) => t.done === 1 || !isHidden(`manual:${t.id}`));
 
   const totalHabits = habitItems.filter((h) => h.done || !wasHiddenAtOpen(`habit:${h.id}`)).length;
   const completedHabits = habitItems.filter((h) => h.done).length;
@@ -505,7 +522,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const completedNodes = plannedNodesForView.filter((n) => n.done).length;
   const totalPractices = practicesToday.filter(({ practice: p, done }) => done || !wasHiddenAtOpen(`practice:${p.id}`)).length;
   const completedPractices = practicesToday.filter((p) => p.done).length;
-  const totalManual = manualTasks.length;
+  const totalManual = manualTasks.filter((t) => t.done === 1 || !wasHiddenAtOpen(`manual:${t.id}`)).length;
   const completedManual = manualTasks.filter((t) => t.done === 1).length;
 
   // Tareas configuradas para hoy (usado para decidir si se muestra el acordeón de franjas
@@ -544,7 +561,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       ),
       done,
     })),
-    ...manualTasks.map((t) => ({
+    ...visibleManualTasks.map((t) => ({
       key: `manual:${t.id}`,
       type: "manual" as const,
       id: t.id,
@@ -571,7 +588,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // puede ser más de una, en cuyo caso la tarea se duplica en cada franja.
   const resolveSlots = (item: TodayItem): TaskSlotKey[] => {
     const manual = slotByKey.get(item.key);
-    if (manual) return [manual];
+    // "added" solo marca que el hábito se agregó al día, no es una franja elegida.
+    if (manual && manual !== "added") return [manual];
     if (item.defaultSlot) return [item.defaultSlot];
     if (item.type === "habit") return habitDefaultSlotsById.get(item.id) ?? [];
     return [];
@@ -694,6 +712,12 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   };
 
   const unassignItem = (item: TodayItem) => {
+    // Un hábito agregado a mano existe en el día solo por su fila de franja: borrarla lo
+    // sacaría de hoy, así que se lo deja como "added" (sin franja) en vez de borrarla.
+    if (item.type === "habit" && addedHabitIds.has(item.id)) {
+      setTaskSlot.mutate({ date: effectiveDate, taskType: "habit", taskId: item.id, slot: "added" });
+      return;
+    }
     clearTaskSlot.mutate({ date: effectiveDate, taskType: item.type, taskId: item.id });
   };
 
@@ -952,6 +976,28 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     }
   };
 
+  // Agrega al día un hábito que no estaba programado para él: se guarda como una fila de franja
+  // (la franja del título presionado, o "added" = sin franja si se presionó el fondo).
+  const addHabitToDay = (habitId: string) => {
+    setAddTaskDialogOpen(false);
+    const slot: TaskSlotKey = addTaskTargetSlot ?? "added";
+    // Mismo truco optimista que en submitNewTask: que aparezca al toque en su lugar.
+    queryClient.setQueryData<TodayTaskSlot[]>(["today-task-slots", effectiveDate], (old) => [
+      ...(old || []),
+      {
+        id: `optimistic:habit:${habitId}`,
+        userId: "",
+        date: effectiveDate,
+        taskType: "habit",
+        taskId: habitId,
+        slot,
+        sortOrder: 0,
+        updatedAt: new Date(),
+      },
+    ]);
+    setTaskSlot.mutate({ date: effectiveDate, taskType: "habit", taskId: habitId, slot });
+  };
+
   const viewLabel = new Date(effectiveDate + "T12:00:00").toLocaleDateString("es-AR", {
     weekday: "long",
     day: "numeric",
@@ -1196,8 +1242,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                     item={item}
                                     pastDay={effectiveDate < todayStr}
                                     onMove={(slot) => moveItemToSlot(item, slot)}
-                                    onHide={item.type !== "manual" ? () => hideItemFromToday(item) : undefined}
-                                    onDelete={item.type === "manual" ? () => deleteManualItem(item) : undefined}
+                                    onHide={item.type !== "manual" || isDefaultManualTask(item.id) ? () => hideItemFromToday(item) : undefined}
+                                    onDelete={item.type === "manual" && !isDefaultManualTask(item.id) ? () => deleteManualItem(item) : undefined}
                                     onDuplicate={canDuplicate(item) ? () => duplicateItem(item) : undefined}
                                     onToggleDone={canToggleDone(item) ? () => toggleItemDone(item) : undefined}
                                     onChangeDay={canChangeDay(item) ? () => openChangeDayDialog(item) : undefined}
@@ -1275,8 +1321,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                         pastDay={effectiveDate < todayStr}
                                         onMove={(slot) => moveItemToSlot(item, slot)}
                                         onClear={() => unassignItem(item)}
-                                        onHide={item.type !== "manual" ? () => hideItemFromToday(item) : undefined}
-                                        onDelete={item.type === "manual" ? () => deleteManualItem(item) : undefined}
+                                        onHide={item.type !== "manual" || isDefaultManualTask(item.id) ? () => hideItemFromToday(item) : undefined}
+                                        onDelete={item.type === "manual" && !isDefaultManualTask(item.id) ? () => deleteManualItem(item) : undefined}
                                         onDuplicate={canDuplicate(item) ? () => duplicateItem(item) : undefined}
                                         onToggleDone={canToggleDone(item) ? () => toggleItemDone(item) : undefined}
                                         onChangeDay={canChangeDay(item) ? () => openChangeDayDialog(item) : undefined}
@@ -1567,6 +1613,25 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
             Agregar
           </button>
         </div>
+        {/* Hábitos que no estaban programados para este día: tocar uno lo suma a las tareas
+            del día (en la franja elegida, si el diálogo se abrió desde el título de una). */}
+        {habitsAddableForView.length > 0 && (
+          <div className="border-t border-border/30 pt-3 space-y-2">
+            <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">O agregá un hábito</p>
+            <div className="max-h-48 overflow-y-auto space-y-1">
+              {habitsAddableForView.map((h) => (
+                <button
+                  key={h.id}
+                  onClick={() => addHabitToDay(h.id)}
+                  className="w-full text-left px-2 py-1.5 text-sm rounded-md hover:bg-muted active:bg-muted/60 transition-colors"
+                >
+                  {h.emoji} {h.name}
+                  <MinutesSuffix minutes={h.minMinutes} />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
 

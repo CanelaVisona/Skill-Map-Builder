@@ -35,6 +35,8 @@ import type {
   BudgetMonthEntry,
   BudgetCategory,
   BudgetCategoryMonthEntry,
+  IncomeSource,
+  IncomeSourceKind,
   DollarRate,
 } from "@shared/schema";
 
@@ -49,6 +51,13 @@ const BUDGET_CATEGORIES: { key: "fixed" | "variable" | "savings"; label: string;
   { key: "variable", label: "Gastos variables", color: "#c8952b" },
   { key: "savings", label: "Ahorro", color: "#158a63" },
 ];
+const INCOME_KINDS: { key: IncomeSourceKind; label: string; short: string; color: string }[] = [
+  { key: "activo", label: "Ingresos activos", short: "Activo", color: "#3d8bd4" },
+  { key: "pasivo", label: "Ingresos pasivos", short: "Pasivo", color: "#158a63" },
+];
+function incomeKindColor(kind: string): string {
+  return (INCOME_KINDS.find((k) => k.key === kind) || INCOME_KINDS[0]).color;
+}
 const MONTH_NAMES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
 // ---------- helpers ----------
@@ -929,7 +938,10 @@ function MovementsCard({ goals }: { goals: FinancialGoal[] }) {
 function quarterTotalAvg(q: BudgetQuarter): number {
   return budgetAvg(q, "fixed") + budgetAvg(q, "variable") + budgetAvg(q, "savings");
 }
-function categoryAvg(c: BudgetCategory): number {
+// Lo mínimo que comparten una categoría de presupuesto y una fuente de ingreso: nombre + 3 meses.
+type MonthlyItem = Pick<BudgetCategory, "id" | "name" | "months">;
+
+function categoryAvg(c: MonthlyItem): number {
   if (!c.months.length) return 0;
   return c.months.reduce((s, m) => s + (Number(m.amount) || 0), 0) / c.months.length;
 }
@@ -1080,12 +1092,14 @@ function BudgetCard({
 function BudgetCategoryRow({
   category,
   color,
+  renameLabel = "Nombre",
   onRename,
   onDelete,
   onUpdateMonths,
 }: {
-  category: BudgetCategory;
+  category: MonthlyItem;
   color: string;
+  renameLabel?: string;
   onRename: () => void;
   onDelete: () => void;
   onUpdateMonths: (months: BudgetCategoryMonthEntry[]) => void;
@@ -1148,7 +1162,7 @@ function BudgetCategoryRow({
               onRename();
             }}
           >
-            <Pencil className="h-3.5 w-3.5" /> Nombre
+            <Pencil className="h-3.5 w-3.5" /> {renameLabel}
           </Button>
           <Button
             type="button"
@@ -1616,24 +1630,38 @@ function BudgetCalendarDialog({
   );
 }
 
-interface BudgetCategoryMonthHit {
-  category: BudgetCategory;
+interface BudgetCategoryMonthHit<T extends MonthlyItem> {
+  category: T;
   color: string;
   amount: number;
 }
 
-function BudgetCategoriesCalendarDialog({
+const CATEGORIES_CALENDAR_TEXT = {
+  title: "Calendario de categorías",
+  description: "Meses con gasto cargado por categoría · tocá cualquier mes para agregar o editar",
+  sameAs: "Mismo presupuesto que",
+  empty: "Sin categorías cargadas para",
+  add: "Agregar categoría",
+};
+
+// Calendario anual de ítems con 3 meses cargados (categorías de presupuesto o fuentes de
+// ingreso). Los textos y el color de cada ítem son configurables para reusarlo en los dos gráficos.
+function BudgetCategoriesCalendarDialog<T extends MonthlyItem>({
   categories,
   open,
   onOpenChange,
   onEditCategory,
   onCreateForMonth,
+  colorFor = (_c, i) => PALETTE[i % PALETTE.length],
+  text = CATEGORIES_CALENDAR_TEXT,
 }: {
-  categories: BudgetCategory[];
+  categories: T[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onEditCategory: (category: BudgetCategory) => void;
+  onEditCategory: (category: T) => void;
   onCreateForMonth: (year: number, month: number) => void;
+  colorFor?: (category: T, index: number) => string;
+  text?: typeof CATEGORIES_CALENDAR_TEXT;
 }) {
   const [year, setYear] = useState(() => new Date().getFullYear());
   const [selMonth, setSelMonth] = useState<number | null>(null);
@@ -1645,9 +1673,9 @@ function BudgetCategoriesCalendarDialog({
     }
   }, [open]);
 
-  const monthMap = new Map<string, BudgetCategoryMonthHit[]>();
+  const monthMap = new Map<string, BudgetCategoryMonthHit<T>[]>();
   categories.forEach((c, i) => {
-    const color = PALETTE[i % PALETTE.length];
+    const color = colorFor(c, i);
     c.months.forEach((m) => {
       if (!m.amount) return;
       const key = `${m.year}-${m.month}`;
@@ -1665,8 +1693,8 @@ function BudgetCategoriesCalendarDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Calendario de categorías</DialogTitle>
-          <DialogDescription>Meses con gasto cargado por categoría · tocá cualquier mes para agregar o editar</DialogDescription>
+          <DialogTitle>{text.title}</DialogTitle>
+          <DialogDescription>{text.description}</DialogDescription>
         </DialogHeader>
 
         <div className="flex items-center justify-between mb-1">
@@ -1734,7 +1762,7 @@ function BudgetCategoriesCalendarDialog({
                   <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: e.color }} />
                   {e.category.name}
                 </div>
-                <div className="text-xs text-muted-foreground">Mismo presupuesto que: {e.category.months.map((m) => MONTH_NAMES[m.month]).join(", ")}</div>
+                <div className="text-xs text-muted-foreground">{text.sameAs}: {e.category.months.map((m) => MONTH_NAMES[m.month]).join(", ")}</div>
                 <div className="flex items-center justify-between text-sm pt-1 border-t border-border/60">
                   <span className="text-muted-foreground">Registrado en {MONTH_NAMES[selMonth]}</span>
                   <span className="font-semibold"><Money usd={e.amount} year={year} month={selMonth} /></span>
@@ -1755,13 +1783,283 @@ function BudgetCategoriesCalendarDialog({
               </div>
             )}
             {selEntries.length === 0 && (
-              <div className="text-sm text-muted-foreground text-center py-2">Sin categorías cargadas para {MONTH_NAMES[selMonth]}.</div>
+              <div className="text-sm text-muted-foreground text-center py-2">{text.empty} {MONTH_NAMES[selMonth]}.</div>
             )}
             <Button type="button" size="sm" variant="ghost" className="w-full" onClick={() => onCreateForMonth(year, selMonth)}>
-              <Plus className="h-3.5 w-3.5" /> Agregar categoría
+              <Plus className="h-3.5 w-3.5" /> {text.add}
             </Button>
           </div>
         )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------- dashboard side: income ----------
+
+const INCOME_CALENDAR_TEXT: typeof CATEGORIES_CALENDAR_TEXT = {
+  title: "Calendario de ingresos",
+  description: "Meses con ingresos cargados · azul = activo, verde = pasivo · tocá cualquier mes para agregar o editar",
+  sameAs: "Mismo ingreso que",
+  empty: "Sin ingresos cargados para",
+  add: "Agregar ingreso",
+};
+
+function IncomeCard({
+  sources,
+  onOpenDetail,
+  onOpenCalendar,
+}: {
+  sources: IncomeSource[];
+  onOpenDetail: () => void;
+  onOpenCalendar: () => void;
+}) {
+  const chartPress = useLongPress(onOpenDetail, () => {});
+  const groups = INCOME_KINDS.map((k) => {
+    const items = sources.filter((s) => s.kind === k.key).map((s) => ({ source: s, avg: categoryAvg(s) }));
+    return { ...k, items, total: items.reduce((a, i) => a + i.avg, 0) };
+  });
+  const data = groups.filter((g) => g.total > 0).map((g) => ({ name: g.label, value: g.total, color: g.color }));
+  const total = groups.reduce((a, g) => a + g.total, 0);
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4 relative">
+      {sources.length > 0 && (
+        <button
+          onClick={onOpenCalendar}
+          title="Calendario anual"
+          className="absolute top-4 right-4 h-7 w-7 rounded-lg border border-border text-muted-foreground hover:text-foreground flex items-center justify-center z-10"
+        >
+          <CalendarRange className="h-3.5 w-3.5" />
+        </button>
+      )}
+
+      <BudgetPieSlide
+        title="Ingresos"
+        hint="Mantené presionado el gráfico para ver el detalle"
+        data={data}
+        total={total}
+        totalLabel="promedio / mes"
+        emptyText="Todavía no cargaste ingresos. Mantené presionado acá para empezar."
+        chartLongPress={chartPress}
+      />
+
+      {total > 0 && (
+        <div className="flex flex-col gap-2 mt-3 pt-3 border-t border-border/60">
+          {groups
+            .filter((g) => g.items.length > 0)
+            .map((g) => (
+              <div key={g.key}>
+                <div className="flex items-center justify-between text-xs uppercase tracking-wide text-muted-foreground mb-1">
+                  <span>{g.short}s</span>
+                  <span>{Math.round((g.total / total) * 100)}% del total</span>
+                </div>
+                {g.items.map(({ source, avg }) => (
+                  <div key={source.id} className="flex items-center gap-2 text-sm pl-1">
+                    <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: g.color }} />
+                    <span className="flex-1 min-w-0 truncate text-muted-foreground">{source.name}</span>
+                    <span className="font-medium"><Money usd={avg} /></span>
+                  </div>
+                ))}
+              </div>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function IncomeDetailDialog({
+  sources,
+  open,
+  onOpenChange,
+  onAdd,
+  onEdit,
+  onDelete,
+  onUpdateMonths,
+}: {
+  sources: IncomeSource[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onAdd: () => void;
+  onEdit: (source: IncomeSource) => void;
+  onDelete: (source: IncomeSource) => void;
+  onUpdateMonths: (source: IncomeSource, months: BudgetCategoryMonthEntry[]) => void;
+}) {
+  const titleLongPress = useLongPress(onAdd, () => {});
+  const total = sources.reduce((a, s) => a + categoryAvg(s), 0);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="cursor-pointer select-none inline-block" {...titleLongPress}>
+            Ingresos
+          </DialogTitle>
+          <DialogDescription>Mantené presionado el título para agregar un ingreso nuevo · mantené presionado un ingreso para editarlo o eliminarlo</DialogDescription>
+        </DialogHeader>
+
+        {sources.length === 0 ? (
+          <div className="text-sm text-muted-foreground text-center py-8">Todavía no cargaste ingresos.</div>
+        ) : (
+          <>
+            <div className="flex items-center justify-between text-sm pb-2 border-b border-border">
+              <span className="text-muted-foreground">Promedio total</span>
+              <span className="font-semibold"><Money usd={total} /></span>
+            </div>
+            {INCOME_KINDS.map((k) => {
+              const items = sources.filter((s) => s.kind === k.key);
+              if (!items.length) return null;
+              const kindTotal = items.reduce((a, s) => a + categoryAvg(s), 0);
+              return (
+                <div key={k.key} className="space-y-2">
+                  <div className="flex items-center justify-between text-xs uppercase tracking-wide text-muted-foreground px-0.5">
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-sm shrink-0" style={{ background: k.color }} />
+                      {k.label}
+                    </span>
+                    <Money usd={kindTotal} />
+                  </div>
+                  {items.map((s) => (
+                    <BudgetCategoryRow
+                      key={s.id}
+                      category={s}
+                      color={k.color}
+                      renameLabel="Editar"
+                      onRename={() => onEdit(s)}
+                      onDelete={() => onDelete(s)}
+                      onUpdateMonths={(months) => onUpdateMonths(s, months)}
+                    />
+                  ))}
+                </div>
+              );
+            })}
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function IncomeFormDialog({
+  open,
+  onOpenChange,
+  source,
+  months: windowMonths,
+  onSubmit,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  source: IncomeSource | null;
+  months: { year: number; month: number; label: string }[];
+  onSubmit: (data: { name: string; kind: IncomeSourceKind; months: BudgetCategoryMonthEntry[] }) => void;
+}) {
+  const months = source ? source.months.map((m) => ({ year: m.year, month: m.month, label: monthLabel(m.year, m.month) })) : windowMonths;
+  const [name, setName] = useState("");
+  const [kind, setKind] = useState<IncomeSourceKind>("activo");
+  const [values, setValues] = useState<string[]>(["", "", ""]);
+  const [nameErr, setNameErr] = useState(false);
+  const [amountCurrency, setAmountCurrency] = useState<AmountCurrency>("usd");
+  const rates = useDollarRates();
+
+  useEffect(() => {
+    if (!open) return;
+    setAmountCurrency("usd");
+    if (source) {
+      setName(source.name);
+      setKind(source.kind === "pasivo" ? "pasivo" : "activo");
+      setValues(source.months.map((m) => (m.amount ? moneyFormatter.format(m.amount) : "")));
+    } else {
+      setName("");
+      setKind("activo");
+      setValues(["", "", ""]);
+    }
+    setNameErr(false);
+  }, [open, source]);
+
+  const handleSave = () => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setNameErr(true);
+      return;
+    }
+    const monthEntries: BudgetCategoryMonthEntry[] = months.map((m, idx) => ({ year: m.year, month: m.month, amount: parseAmountAs(values[idx] || "", amountCurrency, rates, m.year, m.month) }));
+    onSubmit({ name: trimmed, kind, months: monthEntries });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{source ? "Editar ingreso" : "Nuevo ingreso"}</DialogTitle>
+          <DialogDescription>Cargá cuánto cobraste por este ingreso en esos 3 meses. El gráfico va a mostrar el promedio.</DialogDescription>
+        </DialogHeader>
+
+        {dollarRateFor(rates) !== null && (
+          <div className="flex items-center justify-between gap-2 -mt-1">
+            <span className="text-xs text-muted-foreground">Cargar los montos en</span>
+            <CurrencyToggle currency={amountCurrency} onChange={setAmountCurrency} />
+          </div>
+        )}
+
+        <div className="space-y-4">
+          <div>
+            <label className="text-sm font-medium mb-1.5 block" htmlFor="income-name">
+              Nombre del ingreso
+            </label>
+            <Input id="income-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej: Sueldo, Alquiler, Dividendos" maxLength={40} />
+            {nameErr && <p className="text-xs text-destructive mt-1">Poné un nombre para el ingreso.</p>}
+          </div>
+          <div>
+            <span className="text-sm font-medium mb-1.5 block">Tipo</span>
+            <div className="grid grid-cols-2 gap-2">
+              {INCOME_KINDS.map((k) => (
+                <button
+                  key={k.key}
+                  type="button"
+                  onClick={() => setKind(k.key)}
+                  className="rounded-lg border-[1.5px] py-2 text-sm font-medium flex items-center justify-center gap-1.5 transition-colors"
+                  style={{
+                    borderColor: kind === k.key ? k.color : "hsl(var(--border))",
+                    background: kind === k.key ? tint(k.color, 20) : undefined,
+                  }}
+                >
+                  <span className="h-2 w-2 rounded-sm shrink-0" style={{ background: k.color }} />
+                  {k.short}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <span className="text-sm font-medium mb-1.5 block">Ingreso por mes</span>
+            <div className="grid grid-cols-3 gap-2">
+              {months.map((m, idx) => (
+                <div key={idx}>
+                  <span className="text-[11px] text-muted-foreground mb-1 block capitalize truncate">{m.label}</span>
+                  <div className="relative">
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">{amountCurrency === "usd" ? "US$" : "$"}</span>
+                    <Input
+                      value={values[idx]}
+                      onChange={(e) => setValues((v) => v.map((x, i) => (i === idx ? e.target.value : x)))}
+                      placeholder="0"
+                      inputMode="decimal"
+                      className="h-9 text-xs pl-8"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 pt-2">
+          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button type="button" onClick={handleSave}>
+            Guardar ingreso
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -2772,6 +3070,11 @@ export default function FinancialGoals() {
   const [renamingBudgetCategory, setRenamingBudgetCategory] = useState<BudgetCategory | null>(null);
   const [budgetCalendarOpen, setBudgetCalendarOpen] = useState(false);
   const [budgetCategoriesCalendarOpen, setBudgetCategoriesCalendarOpen] = useState(false);
+  const [incomeDetailOpen, setIncomeDetailOpen] = useState(false);
+  const [incomeFormOpen, setIncomeFormOpen] = useState(false);
+  const [incomeFormTarget, setIncomeFormTarget] = useState<IncomeSource | null>(null);
+  const [incomeFormMonths, setIncomeFormMonths] = useState(() => lastThreeMonths());
+  const [incomeCalendarOpen, setIncomeCalendarOpen] = useState(false);
   const [dollarActionSheetOpen, setDollarActionSheetOpen] = useState(false);
   const [dollarFormOpen, setDollarFormOpen] = useState(false);
   const [dollarCalendarOpen, setDollarCalendarOpen] = useState(false);
@@ -2990,6 +3293,88 @@ export default function FinancialGoals() {
 
   const handleBudgetCategoryUpdateMonths = (category: BudgetCategory, months: BudgetCategoryMonthEntry[]) => {
     updateBudgetCategory.mutate({ id: category.id, data: { months } });
+  };
+
+  const { data: incomeSources = [] } = useQuery<IncomeSource[]>({
+    queryKey: ["/api/income-sources"],
+    queryFn: async () => {
+      const res = await fetch("/api/income-sources");
+      if (!res.ok) throw new Error("Failed to fetch income sources");
+      return res.json();
+    },
+  });
+
+  const createIncomeSource = useMutation({
+    mutationFn: async (data: { name: string; kind: IncomeSourceKind; months: BudgetCategoryMonthEntry[] }) => {
+      const res = await fetch("/api/income-sources", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      if (!res.ok) throw new Error("Failed to create income source");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/income-sources"] });
+      setIncomeFormOpen(false);
+    },
+  });
+
+  const updateIncomeSource = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { name?: string; kind?: IncomeSourceKind; months?: BudgetCategoryMonthEntry[] } }) => {
+      const res = await fetch(`/api/income-sources/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      if (!res.ok) throw new Error("Failed to update income source");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/income-sources"] });
+      setIncomeFormOpen(false);
+      setIncomeFormTarget(null);
+    },
+  });
+
+  const deleteIncomeSource = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/income-sources/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete income source");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/income-sources"] });
+    },
+  });
+
+  const openIncomeCreate = () => {
+    setIncomeFormTarget(null);
+    setIncomeFormMonths(lastThreeMonths());
+    setIncomeDetailOpen(false);
+    setIncomeFormOpen(true);
+  };
+  const openIncomeEdit = (source: IncomeSource) => {
+    setIncomeFormTarget(source);
+    setIncomeDetailOpen(false);
+    setIncomeCalendarOpen(false);
+    setIncomeFormOpen(true);
+  };
+  const openIncomeCreateForMonth = (year: number, month: number) => {
+    setIncomeFormTarget(null);
+    setIncomeFormMonths(threeMonthsEnding(year, month));
+    setIncomeCalendarOpen(false);
+    setIncomeFormOpen(true);
+  };
+
+  const handleIncomeSubmit = (data: { name: string; kind: IncomeSourceKind; months: BudgetCategoryMonthEntry[] }) => {
+    if (incomeFormTarget) {
+      updateIncomeSource.mutate({ id: incomeFormTarget.id, data });
+      return;
+    }
+    const existing = incomeSources.find((s) => s.name.trim().toLowerCase() === data.name.trim().toLowerCase());
+    if (existing) {
+      updateIncomeSource.mutate({ id: existing.id, data: { kind: data.kind, months: data.months } });
+    } else {
+      createIncomeSource.mutate(data);
+    }
+  };
+
+  const handleIncomeDelete = (source: IncomeSource) => {
+    if (window.confirm(`¿Eliminar el ingreso "${source.name}"? No se puede deshacer.`)) {
+      deleteIncomeSource.mutate(source.id);
+    }
   };
 
   const createGoal = useMutation({
@@ -3220,6 +3605,7 @@ export default function FinancialGoals() {
                   onOpenQuarterCalendar={() => setBudgetCalendarOpen(true)}
                   onOpenCategoriesCalendar={() => setBudgetCategoriesCalendarOpen(true)}
                 />
+                <IncomeCard sources={incomeSources} onOpenDetail={() => setIncomeDetailOpen(true)} onOpenCalendar={() => setIncomeCalendarOpen(true)} />
                 <DistributionCard goals={goals} />
                 <MovementsCard goals={goals} />
               </div>
@@ -3313,6 +3699,34 @@ export default function FinancialGoals() {
         onOpenChange={setBudgetCategoriesCalendarOpen}
         onEditCategory={openBudgetCategoryEditFull}
         onCreateForMonth={openBudgetCategoryCreateForMonth}
+      />
+      <IncomeDetailDialog
+        sources={incomeSources}
+        open={incomeDetailOpen}
+        onOpenChange={setIncomeDetailOpen}
+        onAdd={openIncomeCreate}
+        onEdit={openIncomeEdit}
+        onDelete={handleIncomeDelete}
+        onUpdateMonths={(source, months) => updateIncomeSource.mutate({ id: source.id, data: { months } })}
+      />
+      <IncomeFormDialog
+        open={incomeFormOpen}
+        onOpenChange={(v) => {
+          setIncomeFormOpen(v);
+          if (!v) setIncomeFormTarget(null);
+        }}
+        source={incomeFormTarget}
+        months={incomeFormMonths}
+        onSubmit={handleIncomeSubmit}
+      />
+      <BudgetCategoriesCalendarDialog
+        categories={incomeSources}
+        open={incomeCalendarOpen}
+        onOpenChange={setIncomeCalendarOpen}
+        onEditCategory={openIncomeEdit}
+        onCreateForMonth={openIncomeCreateForMonth}
+        colorFor={(s) => incomeKindColor(s.kind)}
+        text={INCOME_CALENDAR_TEXT}
       />
       <DollarActionSheet
         open={dollarActionSheetOpen}

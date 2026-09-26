@@ -5269,8 +5269,9 @@ export async function registerRoutes(
       if (!["habit", "node", "practice", "manual", "rewiring"].includes(taskType)) {
         return res.status(400).json({ message: "taskType debe ser habit, node, practice, manual o rewiring" });
       }
-      if (!["morning", "midday", "afternoon", "night", "hidden"].includes(slot)) {
-        return res.status(400).json({ message: "slot debe ser morning, midday, afternoon, night o hidden" });
+      // "added" = hábito no programado ese día agregado a mano a tareas de hoy, sin franja.
+      if (!["morning", "midday", "afternoon", "night", "hidden", "added"].includes(slot)) {
+        return res.status(400).json({ message: "slot debe ser morning, midday, afternoon, night, hidden o added" });
       }
 
       const result = await storage.upsertTodayTaskSlot({
@@ -5324,9 +5325,14 @@ export async function registerRoutes(
   // Manual Today Tasks (tareas agregadas a mano en "Tareas de hoy", con mantener presionado el fondo)
   app.get("/api/manual-today-tasks", requireAuth, async (req, res) => {
     try {
-      const { date, endDate } = req.query;
+      const { date, endDate, seedDefaults } = req.query;
       if (!date) {
         return res.status(400).json({ message: "date es requerido (formato YYYY-MM-DD)" });
+      }
+      // El front pide sembrar las tareas por defecto (comidas) solo para hoy y días futuros
+      // (lo decide con su fecha local), así los días pasados no se llenan de tareas pendientes.
+      if (seedDefaults === "1") {
+        await storage.seedDefaultManualTodayTasks(req.userId!, date as string);
       }
       const tasks = await storage.getManualTodayTasks(req.userId!, date as string, endDate as string | undefined);
       res.json(tasks);
@@ -6252,6 +6258,58 @@ export async function registerRoutes(
         return res.status(403).json({ message: "No tienes permiso para eliminar esta categoría" });
       }
       await storage.deleteBudgetCategory(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ============ Ingresos (activos / pasivos) ============
+  app.get("/api/income-sources", requireAuth, async (req, res) => {
+    try {
+      const sources = await storage.getIncomeSources(req.userId!);
+      res.json(sources);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/income-sources", requireAuth, async (req, res) => {
+    try {
+      const data = { ...req.body, userId: req.userId };
+      const source = await storage.createIncomeSource(data);
+      res.status(201).json(source);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/income-sources/:id", requireAuth, async (req, res) => {
+    try {
+      const source = await storage.getIncomeSource(req.params.id);
+      if (!source) {
+        return res.status(404).json({ message: "Ingreso no encontrado" });
+      }
+      if (source.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para modificar este ingreso" });
+      }
+      const updated = await storage.updateIncomeSource(req.params.id, req.body);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/income-sources/:id", requireAuth, async (req, res) => {
+    try {
+      const source = await storage.getIncomeSource(req.params.id);
+      if (!source) {
+        return res.status(404).json({ message: "Ingreso no encontrado" });
+      }
+      if (source.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para eliminar este ingreso" });
+      }
+      await storage.deleteIncomeSource(req.params.id);
       res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ message: error.message });
