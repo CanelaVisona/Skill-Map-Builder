@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, boolean, jsonb, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, boolean, jsonb, timestamp, doublePrecision } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -571,6 +571,31 @@ export const dollarRates = pgTable("dollar_rates", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+// Estrategias de ahorro planteadas como misiones (ej: "Llevar tu comida") que se tildan
+// cuando se cumplen.
+export const savingMissions = pgTable("saving_missions", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  emoji: text("emoji").notNull().default("🎯"),
+  done: boolean("done").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Ingresos personales (sueldo, freelance, etc.), independientes de las metas de ahorro.
+// El monto se guarda en dólares, como el resto del modal de finanzas.
+export const personalIncomes = pgTable("personal_incomes", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  source: text("source").notNull(),
+  amount: doublePrecision("amount").notNull().default(0),
+  date: varchar("date").notNull(), // YYYY-MM-DD
+  note: text("note"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 // ============ REWIRING TRACKER TABLES ============
 
 export const rewiringTrackers = pgTable("rewiring_trackers", {
@@ -964,6 +989,14 @@ export type BudgetCategory = typeof budgetCategories.$inferSelect;
 export const insertDollarRateSchema = createInsertSchema(dollarRates).omit({ id: true, createdAt: true, updatedAt: true, userId: true });
 export type InsertDollarRate = z.infer<typeof insertDollarRateSchema>;
 export type DollarRate = typeof dollarRates.$inferSelect;
+
+export const insertPersonalIncomeSchema = createInsertSchema(personalIncomes).omit({ id: true, createdAt: true, updatedAt: true, userId: true });
+export type InsertPersonalIncome = z.infer<typeof insertPersonalIncomeSchema>;
+export type PersonalIncome = typeof personalIncomes.$inferSelect;
+
+export const insertSavingMissionSchema = createInsertSchema(savingMissions).omit({ id: true, createdAt: true, updatedAt: true, userId: true });
+export type InsertSavingMission = z.infer<typeof insertSavingMissionSchema>;
+export type SavingMission = typeof savingMissions.$inferSelect;
 
 export const insertRewiringTrackerSchema = createInsertSchema(rewiringTrackers).omit({ id: true, createdAt: true, updatedAt: true, userId: true }).extend({
   skillIds: z.array(z.string()).optional().default([]),

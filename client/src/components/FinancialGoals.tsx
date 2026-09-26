@@ -36,6 +36,7 @@ import type {
   BudgetCategory,
   BudgetCategoryMonthEntry,
   DollarRate,
+  PersonalIncome,
 } from "@shared/schema";
 
 const PALETTE = ["#158a63", "#2f9e8f", "#c8952b", "#d1654f", "#7c6cd1", "#3d8bd4", "#c65f9a", "#6aa33a"];
@@ -603,20 +604,6 @@ function PieSliceTooltip({ active, payload }: { active?: boolean; payload?: any[
   );
 }
 
-function HoldingChips({ holdings }: { holdings: Holding[] }) {
-  if (!holdings.length) return null;
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {holdings.map((h) => (
-        <span key={h.id} className="text-[11px] text-muted-foreground bg-muted/60 border border-border px-2 py-0.5 rounded-full">
-          <b className="text-foreground font-semibold">{h.instrument}</b>
-          {h.broker ? ` · ${h.broker}` : ""}
-        </span>
-      ))}
-    </div>
-  );
-}
-
 // ---------- hitos (checkpoints sobre la barra de progreso) ----------
 
 interface Milestone {
@@ -771,63 +758,11 @@ function GoalPreviewCard({ goal, onTap, onLongPress, onOpenTimeline }: { goal: F
         <div className="mb-3" />
       )}
       {goal.targetDate && <GoalTimelineBar createdAt={goal.createdAt as unknown as string} targetDate={goal.targetDate} onOpenDetail={onOpenTimeline} />}
-      <div className="mt-3">
-        <HoldingChips holdings={goal.holdings} />
-      </div>
       {goal.flow.amount > 0 && (
-        <div className="mt-2.5 text-xs font-medium" style={{ color: GOLD }}>
+        <div className="mt-3 text-xs font-medium" style={{ color: GOLD }}>
           💵 <Money usd={goal.flow.amount} /> {flowCycleLabel(goal.flow)}
         </div>
       )}
-    </motion.div>
-  );
-}
-
-// ---------- dashboard row (list view) ----------
-
-function GoalDashboardRow({ goal, onTap, onLongPress }: { goal: FinancialGoal; onTap: () => void; onLongPress: () => void }) {
-  const longPress = useLongPress(onLongPress, onTap);
-  const saved = goalSaved(goal);
-  const has = (goal.target || 0) > 0;
-  const pct = has ? Math.round((saved / goal.target) * 100) : 0;
-  const done = has && saved >= goal.target;
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      className={`rounded-2xl border bg-card p-4 cursor-pointer select-none transition-colors ${done ? "border-foreground/30" : "border-border hover:border-foreground/20"}`}
-      {...longPress}
-    >
-      <div className="flex items-start gap-3">
-        <div className="h-10 w-10 rounded-xl flex items-center justify-center text-lg shrink-0" style={{ background: tint(goal.color) }}>
-          {goal.emoji}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="font-display font-semibold text-sm truncate">{goal.name}</div>
-          <div className="mt-1.5">
-            <HoldingChips holdings={goal.holdings} />
-          </div>
-        </div>
-      </div>
-      <div className="flex items-start gap-2 mt-3">
-        <span className="font-display text-lg font-medium"><Money usd={saved} /></span>
-        {has && <span className="text-sm text-muted-foreground">/ <Money usd={goal.target} /></span>}
-        {has ? (
-          done ? (
-            <span className="ml-auto text-xs font-semibold" style={{ color: goal.color }}>
-              ✓ Completada
-            </span>
-          ) : (
-            <span className="ml-auto text-sm font-semibold tabular-nums" style={{ color: goal.color }}>
-              {pct}%
-            </span>
-          )
-        ) : (
-          <span className="ml-auto text-xs text-muted-foreground">sin objetivo</span>
-        )}
-      </div>
-      {has && <GoalMilestoneBar goal={goal} className="mt-2" />}
     </motion.div>
   );
 }
@@ -892,10 +827,10 @@ function MovementsCard({ goals }: { goals: FinancialGoal[] }) {
 
   return (
     <div className="rounded-2xl border border-border bg-card p-4">
-      <div className="font-display font-semibold text-sm">Ingresos recientes</div>
-      <div className="text-xs text-muted-foreground mt-0.5 mb-3">Últimos aportes que registraste</div>
+      <div className="font-display font-semibold text-sm">Aportes recientes</div>
+      <div className="text-xs text-muted-foreground mt-0.5 mb-3">Últimos aportes a tus metas</div>
       {all.length === 0 ? (
-        <div className="text-sm text-muted-foreground py-4">Sin ingresos todavía.</div>
+        <div className="text-sm text-muted-foreground py-4">Sin aportes todavía.</div>
       ) : (
         <div className="flex flex-col gap-1 max-h-[280px] overflow-y-auto minimal-scrollbar -mx-1 px-1">
           {all.map((m) => {
@@ -921,6 +856,394 @@ function MovementsCard({ goals }: { goals: FinancialGoal[] }) {
         </div>
       )}
     </div>
+  );
+}
+
+// ---------- ingresos personales: tarjeta, carga y calendario anual ----------
+
+const INCOME_SOURCES = ["Sueldo", "Freelance", "Aguinaldo", "Bono", "Alquiler", "Venta", "Regalo", "Otro"];
+
+function incomeYearMonth(i: PersonalIncome): { year: number; month: number } {
+  const [y, m] = i.date.split("-").map(Number);
+  return { year: y, month: m - 1 };
+}
+function incomeDmy(date: string): string {
+  const [y, m, d] = date.split("-");
+  return `${d}/${m}/${y}`;
+}
+function monthIncomeTotal(incomes: PersonalIncome[], year: number, month: number): number {
+  return incomes.reduce((a, i) => {
+    const ym = incomeYearMonth(i);
+    return ym.year === year && ym.month === month ? a + (i.amount || 0) : a;
+  }, 0);
+}
+
+function PersonalIncomeCard({
+  incomes,
+  onAdd,
+  onEdit,
+  onOpenCalendar,
+}: {
+  incomes: PersonalIncome[];
+  onAdd: () => void;
+  onEdit: (income: PersonalIncome) => void;
+  onOpenCalendar: () => void;
+}) {
+  const now = new Date();
+  const thisMonth = monthIncomeTotal(incomes, now.getFullYear(), now.getMonth());
+  const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const lastMonth = monthIncomeTotal(incomes, prev.getFullYear(), prev.getMonth());
+  const diffPct = lastMonth > 0 ? Math.round(((thisMonth - lastMonth) / lastMonth) * 100) : null;
+  const recent = [...incomes].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)).slice(0, 6);
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <div className="font-display font-semibold text-sm">💰 Ingresos</div>
+          <div className="text-xs text-muted-foreground mt-0.5">Sueldo y otras entradas de plata</div>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={onOpenCalendar}
+            title="Calendario anual"
+            className="h-7 w-7 rounded-lg border border-border text-muted-foreground hover:text-foreground flex items-center justify-center"
+          >
+            <CalendarRange className="h-3.5 w-3.5" />
+          </button>
+          <button onClick={onAdd} title="Agregar ingreso" className="h-7 w-7 rounded-lg border border-border text-muted-foreground hover:text-foreground flex items-center justify-center">
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-3">
+        <div className="text-xs text-muted-foreground">{MONTH_NAMES[now.getMonth()]} {now.getFullYear()}</div>
+        <div className="font-display text-2xl font-medium">
+          <Money usd={thisMonth} year={now.getFullYear()} month={now.getMonth()} />
+        </div>
+        {diffPct !== null && (
+          <div className="text-xs mt-0.5" style={{ color: diffPct >= 0 ? "#158a63" : "#d1654f" }}>
+            {diffPct >= 0 ? "▲" : "▼"} {Math.abs(diffPct)}% vs {MONTH_NAMES[prev.getMonth()]}
+          </div>
+        )}
+      </div>
+
+      {recent.length === 0 ? (
+        <div className="text-sm text-muted-foreground py-3">Sin ingresos cargados. Tocá ＋ para agregar el primero.</div>
+      ) : (
+        <div className="flex flex-col gap-0.5 mt-2 -mx-1">
+          {recent.map((i) => (
+            <button key={i.id} type="button" onClick={() => onEdit(i)} className="flex items-center gap-2 py-1.5 px-1 rounded-lg hover:bg-muted/50 text-left">
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium truncate">{i.source}</div>
+                <div className="text-[11px] text-muted-foreground truncate">
+                  {i.note ? i.note + " · " : ""}
+                  {incomeDmy(i.date)}
+                </div>
+              </div>
+              <span className="text-sm font-semibold shrink-0" style={{ color: "#158a63" }}>
+                +<Money usd={i.amount} year={incomeYearMonth(i).year} month={incomeYearMonth(i).month} />
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PersonalIncomeFormDialog({
+  open,
+  onOpenChange,
+  income,
+  initialMonth,
+  onSubmit,
+  onDelete,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  income: PersonalIncome | null;
+  initialMonth: { year: number; month: number } | null;
+  onSubmit: (data: { source: string; amount: number; date: string; note: string | null }) => void;
+  onDelete: () => void;
+}) {
+  const [source, setSource] = useState("");
+  const [amountText, setAmountText] = useState("");
+  const [dateText, setDateText] = useState("");
+  const [note, setNote] = useState("");
+  const [sourceErr, setSourceErr] = useState(false);
+  const [amountErr, setAmountErr] = useState(false);
+  const [amountCurrency, setAmountCurrency] = useState<AmountCurrency>("usd");
+  const rates = useDollarRates();
+
+  useEffect(() => {
+    if (!open) return;
+    setAmountCurrency("usd");
+    setSourceErr(false);
+    setAmountErr(false);
+    if (income) {
+      setSource(income.source);
+      setAmountText(income.amount ? moneyFormatter.format(income.amount) : "");
+      setDateText(income.date);
+      setNote(income.note || "");
+      return;
+    }
+    setSource(INCOME_SOURCES[0]);
+    setAmountText("");
+    setNote("");
+    const now = new Date();
+    // Si se abre desde un mes del calendario que no es el actual, arranca en el día 1 de ese mes.
+    if (initialMonth && !(initialMonth.year === now.getFullYear() && initialMonth.month === now.getMonth())) {
+      setDateText(toDateInputValue(new Date(initialMonth.year, initialMonth.month, 1).getTime()));
+    } else {
+      setDateText(toDateInputValue(now.getTime()));
+    }
+  }, [open, income, initialMonth]);
+
+  const handleSave = () => {
+    const src = source.trim();
+    const validDate = /^\d{4}-\d{2}-\d{2}$/.test(dateText) ? dateText : toDateInputValue(Date.now());
+    const [y, m] = validDate.split("-").map(Number);
+    const amount = parseAmountAs(amountText, amountCurrency, rates, y, m - 1);
+    setSourceErr(!src);
+    setAmountErr(amount <= 0);
+    if (!src || amount <= 0) return;
+    onSubmit({ source: src, amount, date: validDate, note: note.trim() || null });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{income ? "Editar ingreso" : "Agregar ingreso"}</DialogTitle>
+          <DialogDescription>Registrá plata que te entró: sueldo, trabajos, ventas, etc.</DialogDescription>
+        </DialogHeader>
+
+        {dollarRateFor(rates) !== null && (
+          <div className="flex items-center justify-between gap-2 -mt-1">
+            <span className="text-xs text-muted-foreground">Cargar el monto en</span>
+            <CurrencyToggle currency={amountCurrency} onChange={setAmountCurrency} />
+          </div>
+        )}
+
+        <div className="space-y-3">
+          <div>
+            <label className="text-sm font-medium mb-1.5 block" htmlFor="pinc-source">
+              Concepto
+            </label>
+            <div className="flex flex-wrap gap-1 mb-2">
+              {INCOME_SOURCES.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setSource(s)}
+                  className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${source === s ? "bg-primary/15 border-primary/40 text-foreground" : "border-border text-muted-foreground hover:text-foreground"}`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+            <Input id="pinc-source" value={source} onChange={(e) => setSource(e.target.value)} placeholder="Ej: Sueldo" maxLength={60} />
+            {sourceErr && <p className="text-xs text-destructive mt-1">Poné un concepto.</p>}
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-sm font-medium mb-1.5 block" htmlFor="pinc-amount">
+                Monto
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">{amountCurrency === "usd" ? "US$" : "$"}</span>
+                <Input id="pinc-amount" className="pl-10" inputMode="decimal" value={amountText} onChange={(e) => setAmountText(e.target.value)} placeholder="0" />
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1.5 block" htmlFor="pinc-date">
+                Fecha
+              </label>
+              <Input id="pinc-date" type="date" value={dateText} onChange={(e) => setDateText(e.target.value)} />
+            </div>
+          </div>
+          {amountErr && <p className="text-xs text-destructive -mt-1">Poné un monto mayor a 0.</p>}
+
+          <div>
+            <label className="text-sm font-medium mb-1.5 block" htmlFor="pinc-note">
+              Nota <span className="text-muted-foreground font-normal">(opcional)</span>
+            </label>
+            <Input id="pinc-note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ej: Cliente X, horas extra" maxLength={80} />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 pt-2">
+          {income && (
+            <Button type="button" variant="destructive" onClick={onDelete} className="mr-auto">
+              <Trash2 className="h-4 w-4" /> Borrar
+            </Button>
+          )}
+          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button type="button" onClick={handleSave}>
+            Guardar ingreso
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function PersonalIncomeCalendarDialog({
+  incomes,
+  active,
+  open,
+  onOpenChange,
+  onAddForMonth,
+  onEditIncome,
+}: {
+  incomes: PersonalIncome[];
+  active: boolean; // el calendario está en uso (aunque esté oculto detrás del formulario de carga)
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onAddForMonth: (year: number, month: number) => void;
+  onEditIncome: (income: PersonalIncome) => void;
+}) {
+  const [year, setYear] = useState(() => new Date().getFullYear());
+  const [selMonth, setSelMonth] = useState<number | null>(null);
+
+  // Solo al abrir el calendario (no al volver del formulario de carga) arranca en el mes actual.
+  useEffect(() => {
+    if (active) {
+      setYear(new Date().getFullYear());
+      setSelMonth(new Date().getMonth());
+    }
+  }, [active]);
+
+  const monthTotal = (m: number) => monthIncomeTotal(incomes, year, m);
+  const yearTotal = MONTH_NAMES.reduce((a, _, m) => a + monthTotal(m), 0);
+  const monthsWithIncome = MONTH_NAMES.filter((_, m) => monthTotal(m) > 0).length;
+  const maxMonth = Math.max(0, ...MONTH_NAMES.map((_, m) => monthTotal(m)));
+  const selRows =
+    selMonth !== null
+      ? incomes
+          .filter((i) => {
+            const ym = incomeYearMonth(i);
+            return ym.year === year && ym.month === selMonth;
+          })
+          .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+      : [];
+  const INCOME_COLOR = "#158a63";
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Calendario de ingresos</DialogTitle>
+          <DialogDescription>Cuánto te entró cada mes · tocá un mes para ver el detalle o cargar un ingreso</DialogDescription>
+        </DialogHeader>
+
+        <div className="flex items-center justify-between mb-1">
+          <button
+            onClick={() => {
+              setYear((y) => y - 1);
+              setSelMonth(null);
+            }}
+            className="h-8 w-8 rounded-lg border border-border text-muted-foreground hover:text-foreground flex items-center justify-center"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <div className="text-center">
+            <div className="font-display font-medium text-sm">{year}</div>
+            <div className="text-[11px] text-muted-foreground">
+              Total: <Money usd={yearTotal} />
+              {monthsWithIncome > 0 && (
+                <>
+                  {" "}
+                  · Promedio: <Money usd={yearTotal / monthsWithIncome} />
+                </>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              setYear((y) => y + 1);
+              setSelMonth(null);
+            }}
+            className="h-8 w-8 rounded-lg border border-border text-muted-foreground hover:text-foreground flex items-center justify-center"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          {MONTH_NAMES.map((name, m) => {
+            const total = monthTotal(m);
+            const has = total > 0;
+            const isSel = selMonth === m;
+            // Cuanto más entró en el mes (respecto del mejor mes del año), más intenso el color.
+            const intensity = has && maxMonth > 0 ? 14 + Math.round((total / maxMonth) * 26) : 0;
+            return (
+              <button
+                key={m}
+                onClick={() => setSelMonth(m)}
+                className="rounded-xl border-[1.5px] py-2.5 text-sm font-medium flex flex-col items-center gap-0.5"
+                style={{
+                  background: has ? tint(INCOME_COLOR, intensity) : "hsl(var(--muted) / 0.4)",
+                  borderColor: has ? INCOME_COLOR : "transparent",
+                  outline: isSel ? `2px solid ${has ? INCOME_COLOR : "hsl(var(--foreground))"}` : undefined,
+                  outlineOffset: isSel ? "-2px" : undefined,
+                }}
+              >
+                {name}
+                {has ? <span className="text-[11px] tabular-nums font-semibold">{moneyUsd(total)}</span> : <span className="text-[11px] text-muted-foreground">—</span>}
+              </button>
+            );
+          })}
+        </div>
+
+        {selMonth !== null && (
+          <div className="mt-3 rounded-xl border border-border bg-muted/40 p-3 space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="font-semibold">
+                {MONTH_NAMES[selMonth]} {year}
+              </span>
+              <span className="font-semibold">
+                <Money usd={monthTotal(selMonth)} year={year} month={selMonth} />
+              </span>
+            </div>
+            {selRows.length === 0 ? (
+              <div className="text-sm text-muted-foreground text-center py-2">Sin ingresos este mes.</div>
+            ) : (
+              <div className="flex flex-col">
+                {selRows.map((i) => (
+                  <button
+                    key={i.id}
+                    type="button"
+                    onClick={() => onEditIncome(i)}
+                    className="flex items-center gap-2 py-1.5 border-t border-border/60 first:border-t-0 text-left hover:opacity-80"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium truncate">{i.source}</div>
+                      <div className="text-[11px] text-muted-foreground truncate">
+                        {i.note ? i.note + " · " : ""}
+                        {incomeDmy(i.date)}
+                      </div>
+                    </div>
+                    <span className="text-sm font-semibold shrink-0" style={{ color: INCOME_COLOR }}>
+                      +<Money usd={i.amount} year={year} month={selMonth} />
+                    </span>
+                    <Pencil className="h-3 w-3 text-muted-foreground shrink-0" />
+                  </button>
+                ))}
+              </div>
+            )}
+            <Button type="button" size="sm" variant="outline" className="w-full mt-1" onClick={() => onAddForMonth(year, selMonth)}>
+              <Plus className="h-3.5 w-3.5" /> Agregar ingreso
+            </Button>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -2353,6 +2676,7 @@ function GoalDetailDialog({
   const [flowHoldingId, setFlowHoldingId] = useState<string>("");
   const [editingAnchor, setEditingAnchor] = useState(false);
   const [anchorText, setAnchorText] = useState("");
+  const titlePress = useLongPress(onEdit);
 
   useEffect(() => {
     if (goal && goal.holdings.length) setFlowHoldingId(goal.holdings[0].id);
@@ -2383,8 +2707,17 @@ function GoalDetailDialog({
       <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <DialogTitle className="flex items-center gap-2">
+            <button onClick={() => onOpenChange(false)} title="Volver" className="h-8 w-8 rounded-lg border border-border text-muted-foreground hover:text-foreground flex items-center justify-center shrink-0">
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+            <div className="min-w-0 flex-1">
+              <DialogTitle
+                {...titlePress}
+                title="Mantené apretado para editar"
+                className="flex items-center gap-2 select-none cursor-pointer"
+                style={{ WebkitTouchCallout: "none" }}
+                onContextMenu={(e) => e.preventDefault()}
+              >
                 <span className="text-xl">{goal.emoji}</span>
                 <span className="truncate">{goal.name}</span>
               </DialogTitle>
@@ -2409,14 +2742,9 @@ function GoalDetailDialog({
                 </div>
               )}
             </div>
-            <div className="flex items-center gap-1 shrink-0">
-              <button onClick={onOpenCalendar} title="Ver calendario de aportes" className="h-8 w-8 rounded-lg border border-border text-muted-foreground hover:text-foreground flex items-center justify-center">
-                <CalendarDays className="h-4 w-4" />
-              </button>
-              <button onClick={onEdit} title="Editar meta" className="h-8 w-8 rounded-lg border border-border text-muted-foreground hover:text-foreground flex items-center justify-center">
-                <Pencil className="h-4 w-4" />
-              </button>
-            </div>
+            <button onClick={onOpenCalendar} title="Ver calendario de aportes" className="h-8 w-8 rounded-lg border border-border text-muted-foreground hover:text-foreground flex items-center justify-center shrink-0">
+              <CalendarDays className="h-4 w-4" />
+            </button>
           </div>
         </DialogHeader>
 
@@ -2771,6 +3099,10 @@ export default function FinancialGoals() {
   const [budgetRenameOpen, setBudgetRenameOpen] = useState(false);
   const [renamingBudgetCategory, setRenamingBudgetCategory] = useState<BudgetCategory | null>(null);
   const [budgetCalendarOpen, setBudgetCalendarOpen] = useState(false);
+  const [incomeFormOpen, setIncomeFormOpen] = useState(false);
+  const [incomeFormMonth, setIncomeFormMonth] = useState<{ year: number; month: number } | null>(null);
+  const [incomeFormTarget, setIncomeFormTarget] = useState<PersonalIncome | null>(null);
+  const [incomeCalendarOpen, setIncomeCalendarOpen] = useState(false);
   const [budgetCategoriesCalendarOpen, setBudgetCategoriesCalendarOpen] = useState(false);
   const [dollarActionSheetOpen, setDollarActionSheetOpen] = useState(false);
   const [dollarFormOpen, setDollarFormOpen] = useState(false);
@@ -2786,6 +3118,53 @@ export default function FinancialGoals() {
       const res = await fetch("/api/dollar-rates");
       if (!res.ok) throw new Error("Failed to fetch dollar rates");
       return res.json();
+    },
+  });
+
+  const { data: personalIncomes = [] } = useQuery<PersonalIncome[]>({
+    queryKey: ["/api/personal-incomes"],
+    queryFn: async () => {
+      const res = await fetch("/api/personal-incomes");
+      if (!res.ok) throw new Error("Failed to fetch personal incomes");
+      return res.json();
+    },
+  });
+
+  const createIncome = useMutation({
+    mutationFn: async (data: { source: string; amount: number; date: string; note: string | null }) => {
+      const res = await fetch("/api/personal-incomes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      if (!res.ok) throw new Error("Failed to create personal income");
+      return res.json();
+    },
+    onSuccess: (_income, data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/personal-incomes"] });
+      setIncomeFormOpen(false);
+      toast({ title: `+${moneyPairText(data.amount, dollarRates)} · ${data.source}` });
+    },
+    onError: () => toast({ title: "No se pudo guardar el ingreso. Probá de nuevo." }),
+  });
+
+  const updateIncome = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { source: string; amount: number; date: string; note: string | null } }) => {
+      const res = await fetch(`/api/personal-incomes/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      if (!res.ok) throw new Error("Failed to update personal income");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/personal-incomes"] });
+      setIncomeFormOpen(false);
+    },
+    onError: () => toast({ title: "No se pudo guardar el ingreso. Probá de nuevo." }),
+  });
+
+  const deleteIncome = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/personal-incomes/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete personal income");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/personal-incomes"] });
+      setIncomeFormOpen(false);
     },
   });
 
@@ -3102,6 +3481,22 @@ export default function FinancialGoals() {
     toast({ title: `+${moneyPairText(mf, dollarRates)} en ${holding.instrument}` });
   };
 
+  const openIncomeForm = (month: { year: number; month: number } | null, income: PersonalIncome | null = null) => {
+    setIncomeFormMonth(month);
+    setIncomeFormTarget(income);
+    setIncomeFormOpen(true);
+  };
+
+  const handleIncomeSubmit = (data: { source: string; amount: number; date: string; note: string | null }) => {
+    if (incomeFormTarget) updateIncome.mutate({ id: incomeFormTarget.id, data });
+    else createIncome.mutate(data);
+  };
+
+  const handleIncomeDelete = () => {
+    if (!incomeFormTarget) return;
+    if (window.confirm(`¿Borrar el ingreso "${incomeFormTarget.source}"?`)) deleteIncome.mutate(incomeFormTarget.id);
+  };
+
   const handleSetFlowAnchor = (timestamp: number) => {
     if (!detailGoal) return;
     updateGoal.mutate({ id: detailGoal.id, data: { flow: { ...detailGoal.flow, anchor: timestamp } } });
@@ -3148,7 +3543,7 @@ export default function FinancialGoals() {
       <div className="flex-1 min-h-0 overflow-y-auto minimal-scrollbar px-5 py-4">
         {isLoading ? (
           <div className="text-center text-sm text-muted-foreground py-10">Cargando metas...</div>
-        ) : goals.length === 0 ? (
+        ) : view === "preview" && goals.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-border p-10 text-center">
             <div className="font-display font-medium mb-1">Sin objetivos todavía</div>
             <p className="text-sm text-muted-foreground mb-4">Creá tu primera meta financiera para empezar a trackear tus ahorros.</p>
@@ -3205,13 +3600,9 @@ export default function FinancialGoals() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4">
-              <div className="space-y-3">
-                {goals.map((g) => (
-                  <GoalDashboardRow key={g.id} goal={g} onTap={() => setDetailGoalId(g.id)} onLongPress={() => openEdit(g)} />
-                ))}
-              </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
               <div className="space-y-4">
+                <PersonalIncomeCard incomes={personalIncomes} onAdd={() => openIncomeForm(null)} onEdit={(i) => openIncomeForm(null, i)} onOpenCalendar={() => setIncomeCalendarOpen(true)} />
                 <BudgetCard
                   quarters={budgetQuarters}
                   categories={budgetCategories}
@@ -3220,6 +3611,8 @@ export default function FinancialGoals() {
                   onOpenQuarterCalendar={() => setBudgetCalendarOpen(true)}
                   onOpenCategoriesCalendar={() => setBudgetCategoriesCalendarOpen(true)}
                 />
+              </div>
+              <div className="space-y-4">
                 <DistributionCard goals={goals} />
                 <MovementsCard goals={goals} />
               </div>
@@ -3299,6 +3692,22 @@ export default function FinancialGoals() {
           if (!v) setRenamingBudgetCategory(null);
         }}
         onSubmit={handleBudgetCategoryRename}
+      />
+      <PersonalIncomeFormDialog
+        open={incomeFormOpen}
+        onOpenChange={setIncomeFormOpen}
+        income={incomeFormTarget}
+        initialMonth={incomeFormMonth}
+        onSubmit={handleIncomeSubmit}
+        onDelete={handleIncomeDelete}
+      />
+      <PersonalIncomeCalendarDialog
+        incomes={personalIncomes}
+        active={incomeCalendarOpen}
+        open={incomeCalendarOpen && !incomeFormOpen}
+        onOpenChange={setIncomeCalendarOpen}
+        onAddForMonth={(year, month) => openIncomeForm({ year, month })}
+        onEditIncome={(i) => openIncomeForm(null, i)}
       />
       <BudgetCalendarDialog
         quarters={budgetQuarters}

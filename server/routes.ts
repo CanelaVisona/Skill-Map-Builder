@@ -6294,6 +6294,134 @@ export async function registerRoutes(
     }
   });
 
+  // ============ Estrategias de ahorro (misiones) ============
+  app.get("/api/saving-missions", requireAuth, async (req, res) => {
+    try {
+      const missions = await storage.getSavingMissions(req.userId!);
+      res.json(missions);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/saving-missions", requireAuth, async (req, res) => {
+    try {
+      const title = String(req.body.title || "").trim();
+      if (!title) {
+        return res.status(400).json({ message: "La misión necesita un título" });
+      }
+      const mission = await storage.createSavingMission({
+        userId: req.userId!,
+        title,
+        emoji: String(req.body.emoji || "🎯"),
+        done: !!req.body.done,
+      });
+      res.status(201).json(mission);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/saving-missions/:id", requireAuth, async (req, res) => {
+    try {
+      const mission = await storage.getSavingMission(req.params.id);
+      if (!mission) {
+        return res.status(404).json({ message: "Misión no encontrada" });
+      }
+      if (mission.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para modificar esta misión" });
+      }
+      const patch: Record<string, unknown> = {};
+      if (typeof req.body.title === "string" && req.body.title.trim()) patch.title = req.body.title.trim();
+      if (typeof req.body.emoji === "string") patch.emoji = req.body.emoji;
+      if (typeof req.body.done === "boolean") patch.done = req.body.done;
+      const updated = await storage.updateSavingMission(req.params.id, patch);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/saving-missions/:id", requireAuth, async (req, res) => {
+    try {
+      const mission = await storage.getSavingMission(req.params.id);
+      if (!mission) {
+        return res.status(404).json({ message: "Misión no encontrada" });
+      }
+      if (mission.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para borrar esta misión" });
+      }
+      await storage.deleteSavingMission(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ============ Ingresos personales ============
+  const parseIncomeBody = (body: any) => {
+    const patch: Record<string, unknown> = {};
+    if (typeof body.source === "string" && body.source.trim()) patch.source = body.source.trim();
+    if (typeof body.amount === "number" && isFinite(body.amount) && body.amount >= 0) patch.amount = body.amount;
+    if (typeof body.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.date)) patch.date = body.date;
+    if (body.note === null || typeof body.note === "string") patch.note = body.note ? String(body.note).trim() || null : null;
+    return patch;
+  };
+
+  app.get("/api/personal-incomes", requireAuth, async (req, res) => {
+    try {
+      const incomes = await storage.getPersonalIncomes(req.userId!);
+      res.json(incomes);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/personal-incomes", requireAuth, async (req, res) => {
+    try {
+      const data = parseIncomeBody(req.body);
+      if (!data.source || data.amount === undefined || !data.date) {
+        return res.status(400).json({ message: "El ingreso necesita concepto, monto y fecha" });
+      }
+      const income = await storage.createPersonalIncome({ ...(data as any), userId: req.userId! });
+      res.status(201).json(income);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/personal-incomes/:id", requireAuth, async (req, res) => {
+    try {
+      const income = await storage.getPersonalIncome(req.params.id);
+      if (!income) {
+        return res.status(404).json({ message: "Ingreso no encontrado" });
+      }
+      if (income.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para modificar este ingreso" });
+      }
+      const updated = await storage.updatePersonalIncome(req.params.id, parseIncomeBody(req.body));
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/personal-incomes/:id", requireAuth, async (req, res) => {
+    try {
+      const income = await storage.getPersonalIncome(req.params.id);
+      if (!income) {
+        return res.status(404).json({ message: "Ingreso no encontrado" });
+      }
+      if (income.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para borrar este ingreso" });
+      }
+      await storage.deletePersonalIncome(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // ============ Preguntas (question problems + chained items) ============
   app.get("/api/question-problems", requireAuth, async (req, res) => {
     try {
