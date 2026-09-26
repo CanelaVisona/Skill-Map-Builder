@@ -14,6 +14,7 @@ import {
   ArrowLeft,
   CalendarDays,
   CalendarRange,
+  Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,6 +38,7 @@ import type {
   BudgetCategoryMonthEntry,
   DollarRate,
   PersonalIncome,
+  SavingMission,
 } from "@shared/schema";
 
 const PALETTE = ["#158a63", "#2f9e8f", "#c8952b", "#d1654f", "#7c6cd1", "#3d8bd4", "#c65f9a", "#6aa33a"];
@@ -1242,6 +1244,171 @@ function PersonalIncomeCalendarDialog({
             </Button>
           </div>
         )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------- estrategias de ahorro (misiones) ----------
+
+const MISSION_EMOJIS = ["🎯", "🍱", "☕", "🚲", "🛒", "📵", "💡", "🧾", "🏷️", "🍳", "🚶", "💳"];
+
+function SavingMissionRow({ mission, onToggle, onEdit }: { mission: SavingMission; onToggle: () => void; onEdit: () => void }) {
+  const press = useLongPress(onEdit, onToggle);
+  return (
+    <div
+      {...press}
+      className={`flex items-center gap-2.5 py-2 px-2 rounded-xl border cursor-pointer select-none transition-colors ${mission.done ? "bg-muted/40 border-transparent" : "border-border hover:border-foreground/20"}`}
+    >
+      <span
+        role="checkbox"
+        aria-checked={mission.done}
+        className="h-5 w-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-colors"
+        style={mission.done ? { background: GOLD, borderColor: GOLD } : { borderColor: "hsl(var(--muted-foreground) / 0.5)" }}
+      >
+        {mission.done && <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />}
+      </span>
+      <span className={`text-base shrink-0 ${mission.done ? "grayscale opacity-60" : ""}`}>{mission.emoji}</span>
+      <span className={`flex-1 min-w-0 text-sm truncate ${mission.done ? "line-through text-muted-foreground" : "font-medium"}`}>{mission.title}</span>
+      {mission.done && (
+        <span className="text-[11px] font-semibold shrink-0" style={{ color: GOLD }}>
+          Cumplida
+        </span>
+      )}
+    </div>
+  );
+}
+
+function SavingMissionsCard({
+  missions,
+  onAdd,
+  onToggle,
+  onEdit,
+}: {
+  missions: SavingMission[];
+  onAdd: () => void;
+  onToggle: (mission: SavingMission) => void;
+  onEdit: (mission: SavingMission) => void;
+}) {
+  const titlePress = useLongPress(onAdd);
+  const done = missions.filter((m) => m.done).length;
+  // Pendientes primero, cumplidas al final.
+  const sorted = [...missions].sort((a, b) => Number(a.done) - Number(b.done));
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4 h-full">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="font-display font-semibold text-sm cursor-pointer select-none inline-block" {...titlePress}>
+            ⚔️ Estrategias de ahorro
+          </div>
+          <div className="text-xs text-muted-foreground mt-0.5">Mantené presionado el título para agregar una misión</div>
+        </div>
+        {missions.length > 0 && (
+          <span className="text-xs font-semibold tabular-nums shrink-0" style={{ color: GOLD }}>
+            {done}/{missions.length}
+          </span>
+        )}
+      </div>
+      {missions.length > 0 && (
+        <div className="h-1.5 rounded-full bg-muted overflow-hidden mt-2.5">
+          <div className="h-full rounded-full transition-all duration-500" style={{ width: `${(done / missions.length) * 100}%`, background: GOLD }} />
+        </div>
+      )}
+      {missions.length === 0 ? (
+        <div className="text-sm text-muted-foreground py-4">Sin misiones todavía. Ej: "Llevar tu comida".</div>
+      ) : (
+        <div className="flex flex-col gap-1.5 mt-3">
+          {sorted.map((m) => (
+            <SavingMissionRow key={m.id} mission={m} onToggle={() => onToggle(m)} onEdit={() => onEdit(m)} />
+          ))}
+          <div className="text-[11px] text-muted-foreground mt-1">Tocá para tildar · mantené presionada una misión para editarla</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SavingMissionFormDialog({
+  open,
+  onOpenChange,
+  mission,
+  onSubmit,
+  onDelete,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  mission: SavingMission | null;
+  onSubmit: (data: { title: string; emoji: string }) => void;
+  onDelete: () => void;
+}) {
+  const [title, setTitle] = useState("");
+  const [emoji, setEmoji] = useState(MISSION_EMOJIS[0]);
+  const [err, setErr] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setTitle(mission?.title || "");
+    setEmoji(mission?.emoji || MISSION_EMOJIS[0]);
+    setErr(false);
+  }, [open, mission]);
+
+  const handleSave = () => {
+    const t = title.trim();
+    if (!t) {
+      setErr(true);
+      return;
+    }
+    onSubmit({ title: t, emoji });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>{mission ? "Editar misión" : "Nueva misión"}</DialogTitle>
+          <DialogDescription>Una estrategia concreta para ahorrar, que tildás cuando la cumplís.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-1">
+            {MISSION_EMOJIS.map((e) => (
+              <button
+                key={e}
+                type="button"
+                onClick={() => setEmoji(e)}
+                className={`h-8 w-8 rounded-lg text-base flex items-center justify-center transition-colors ${emoji === e ? "bg-primary/15 scale-105" : "hover:bg-muted"}`}
+              >
+                {e}
+              </button>
+            ))}
+          </div>
+          <div>
+            <Input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSave();
+              }}
+              placeholder="Ej: Llevar tu comida"
+              maxLength={80}
+              autoFocus
+            />
+            {err && <p className="text-xs text-destructive mt-1">Poné un título para la misión.</p>}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 pt-2">
+          {mission && (
+            <Button type="button" variant="destructive" onClick={onDelete} className="mr-auto">
+              <Trash2 className="h-4 w-4" /> Borrar
+            </Button>
+          )}
+          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button type="button" onClick={handleSave}>
+            {mission ? "Guardar" : "Agregar misión"}
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -3103,6 +3270,8 @@ export default function FinancialGoals() {
   const [incomeFormMonth, setIncomeFormMonth] = useState<{ year: number; month: number } | null>(null);
   const [incomeFormTarget, setIncomeFormTarget] = useState<PersonalIncome | null>(null);
   const [incomeCalendarOpen, setIncomeCalendarOpen] = useState(false);
+  const [missionFormOpen, setMissionFormOpen] = useState(false);
+  const [missionFormTarget, setMissionFormTarget] = useState<SavingMission | null>(null);
   const [budgetCategoriesCalendarOpen, setBudgetCategoriesCalendarOpen] = useState(false);
   const [dollarActionSheetOpen, setDollarActionSheetOpen] = useState(false);
   const [dollarFormOpen, setDollarFormOpen] = useState(false);
@@ -3167,6 +3336,80 @@ export default function FinancialGoals() {
       setIncomeFormOpen(false);
     },
   });
+
+  const { data: savingMissions = [] } = useQuery<SavingMission[]>({
+    queryKey: ["/api/saving-missions"],
+    queryFn: async () => {
+      const res = await fetch("/api/saving-missions");
+      if (!res.ok) throw new Error("Failed to fetch saving missions");
+      return res.json();
+    },
+  });
+
+  const createMission = useMutation({
+    mutationFn: async (data: { title: string; emoji: string }) => {
+      const res = await fetch("/api/saving-missions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      if (!res.ok) throw new Error("Failed to create saving mission");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/saving-missions"] });
+      setMissionFormOpen(false);
+    },
+    onError: () => toast({ title: "No se pudo guardar la misión. Probá de nuevo." }),
+  });
+
+  const updateMission = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<Pick<SavingMission, "title" | "emoji" | "done">> }) => {
+      const res = await fetch(`/api/saving-missions/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      if (!res.ok) throw new Error("Failed to update saving mission");
+      return res.json();
+    },
+    // Tildado optimista: el check responde al instante sin esperar al servidor.
+    onMutate: async ({ id, data }) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/saving-missions"] });
+      const prev = queryClient.getQueryData<SavingMission[]>(["/api/saving-missions"]);
+      queryClient.setQueryData<SavingMission[]>(["/api/saving-missions"], (old) => (old || []).map((m) => (m.id === id ? { ...m, ...data } : m)));
+      return { prev };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(["/api/saving-missions"], ctx.prev);
+      toast({ title: "No se pudo guardar la misión. Probá de nuevo." });
+    },
+    onSuccess: () => setMissionFormOpen(false),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["/api/saving-missions"] }),
+  });
+
+  const deleteMission = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/saving-missions/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete saving mission");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/saving-missions"] });
+      setMissionFormOpen(false);
+    },
+  });
+
+  const openMissionForm = (mission: SavingMission | null) => {
+    setMissionFormTarget(mission);
+    setMissionFormOpen(true);
+  };
+
+  const handleMissionToggle = (mission: SavingMission) => {
+    updateMission.mutate({ id: mission.id, data: { done: !mission.done } });
+    if (!mission.done) toast({ title: `${mission.emoji} ¡Misión cumplida!`, description: mission.title });
+  };
+
+  const handleMissionSubmit = (data: { title: string; emoji: string }) => {
+    if (missionFormTarget) updateMission.mutate({ id: missionFormTarget.id, data });
+    else createMission.mutate(data);
+  };
+
+  const handleMissionDelete = () => {
+    if (!missionFormTarget) return;
+    if (window.confirm(`¿Borrar la misión "${missionFormTarget.title}"?`)) deleteMission.mutate(missionFormTarget.id);
+  };
 
   const createDollarRate = useMutation({
     mutationFn: async (data: { year: number; month: number; rate: number }) => {
@@ -3603,6 +3846,13 @@ export default function FinancialGoals() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
               <div className="space-y-4">
                 <PersonalIncomeCard incomes={personalIncomes} onAdd={() => openIncomeForm(null)} onEdit={(i) => openIncomeForm(null, i)} onOpenCalendar={() => setIncomeCalendarOpen(true)} />
+              </div>
+              <div className="space-y-4">
+                <DistributionCard goals={goals} />
+              </div>
+            </div>
+            {/* Presupuesto y estrategias de ahorro, uno al lado del otro */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
                 <BudgetCard
                   quarters={budgetQuarters}
                   categories={budgetCategories}
@@ -3611,12 +3861,9 @@ export default function FinancialGoals() {
                   onOpenQuarterCalendar={() => setBudgetCalendarOpen(true)}
                   onOpenCategoriesCalendar={() => setBudgetCategoriesCalendarOpen(true)}
                 />
-              </div>
-              <div className="space-y-4">
-                <DistributionCard goals={goals} />
-                <MovementsCard goals={goals} />
-              </div>
+                <SavingMissionsCard missions={savingMissions} onAdd={() => openMissionForm(null)} onToggle={handleMissionToggle} onEdit={openMissionForm} />
             </div>
+            <MovementsCard goals={goals} />
           </div>
         )}
       </div>
@@ -3693,6 +3940,7 @@ export default function FinancialGoals() {
         }}
         onSubmit={handleBudgetCategoryRename}
       />
+      <SavingMissionFormDialog open={missionFormOpen} onOpenChange={setMissionFormOpen} mission={missionFormTarget} onSubmit={handleMissionSubmit} onDelete={handleMissionDelete} />
       <PersonalIncomeFormDialog
         open={incomeFormOpen}
         onOpenChange={setIncomeFormOpen}

@@ -1,5 +1,7 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
+import { useMemo } from "react";
+import { useTheme } from "next-themes";
 import boardHtml from "./evidence-board/board.html?raw";
 
 interface EvidenceBoardModalWrapperProps {
@@ -15,6 +17,15 @@ interface EvidenceBoardModalWrapperProps {
 // el origen de esta página, así que ese localStorage sobrevive entre
 // aperturas del modal.
 export function EvidenceBoardModalWrapper({ open, onOpenChange }: EvidenceBoardModalWrapperProps) {
+  // El iframe solo ve prefers-color-scheme del sistema (p. ej. iPhone en modo
+  // oscuro con la app en claro); forzamos el tema de la app con data-theme.
+  const { resolvedTheme } = useTheme();
+  const theme = resolvedTheme === "dark" ? "dark" : "light";
+  const themedBoardHtml = useMemo(
+    () => boardHtml.replace('<html lang="es">', `<html lang="es" data-theme="${theme}">`),
+    [theme],
+  );
+
   return (
     <AnimatePresence>
       {open && (
@@ -46,7 +57,7 @@ export function EvidenceBoardModalWrapper({ open, onOpenChange }: EvidenceBoardM
             </div>
             <iframe
               title="Diario de pistas"
-              srcDoc={boardHtml}
+              srcDoc={themedBoardHtml}
               className="w-full flex-1 min-h-0 border-0 block bg-white dark:bg-black"
               data-testid="frame-evidence-board"
             />

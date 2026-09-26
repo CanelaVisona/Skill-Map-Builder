@@ -71,7 +71,10 @@ button,input,select,textarea{font:inherit;color:inherit}
 .case-item small{color:var(--muted);font-weight:400}
 .row{display:flex;gap:6px;flex-wrap:wrap}
 .search{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:4px;background:var(--chrome)}
-.ev-list{display:flex;flex-direction:column;gap:1px}
+.ev-list{display:flex;flex-direction:column;gap:10px}
+.ev-cat{display:flex;flex-direction:column;gap:1px}
+.ev-cat h3{font-family:var(--cond);font-weight:600;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 2px 6px}
+.ev-cat h3 small{font-weight:500;opacity:.8}
 .ev{display:flex;gap:8px;align-items:center;text-align:left;background:none;border:0;padding:5px 6px;cursor:pointer;border-radius:4px}
 .ev:hover{background:var(--chrome-2)}
 .ev span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -297,6 +300,11 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
   <div class="tl-head"><h2>Investigar una pregunta</h2><button class="btn" id="iqClose">Cerrar</button></div>
   <div id="iqList" style="padding:8px 16px 16px;display:flex;flex-direction:column;gap:2px"></div>
 </dialog>
+<dialog id="importLevels">
+  <div class="tl-head"><h2>Caso desde un nivel</h2><button class="btn" id="ilClose">Cerrar</button></div>
+  <div style="padding:10px 16px 0"><input class="search" id="ilSearch" type="search" placeholder="Buscar nivel, área o quest" aria-label="Buscar niveles"></div>
+  <div id="ilList" style="padding:8px 16px 16px;display:flex;flex-direction:column;gap:2px"></div>
+</dialog>
 
 <script>
 const TYPES={
@@ -307,6 +315,8 @@ const TYPES={
   evento:{label:'Evento',color:'#a13b2e',fields:['Lugar','Fuente']},
   nota:{label:'Nota',color:'#e8c93a',fields:[]}
 };
+/* Orden de las categorías en la lista de pistas del menú lateral. */
+const EV_GROUPS=[['persona','Personas'],['nota','Notas'],['objeto','Objetos'],['lugar','Lugares'],['documento','Documentos'],['evento','Eventos']].map(([type,label])=>({type,label}));
 const STATUS={'':'Sin marcar',clave:'Clave',sospechoso:'Sospechoso',testigo:'Testigo',victima:'Víctima',descartado:'Descartado'};
 const PERSON_ONLY=['sospechoso','testigo','victima'];
 const COLORS=[['rojo','#b3261e'],['azul','#2f5fa8'],['verde','#3f7d3a'],['amarillo','#c9a227'],['negro','#262626']];
@@ -523,8 +533,12 @@ function drawLinks(){
 }
 function renderSide(){
   $('#cases').innerHTML=state.cases.map(c=>`<button class="case-item${c.id===state.active?' active':''}" data-case="${c.id}"><span>${esc(c.name)}</span><small>${c.cards.length}</small></button>`).join('');
-  const list=C().cards.filter(matches).slice().sort((a,b)=>(a.type+a.title).localeCompare(b.type+b.title));
-  $('#evList').innerHTML=list.length?list.map(c=>`<button class="ev${c.status==='descartado'?' dis':''}" data-go="${c.id}"><i class="swatch" style="background:${(TYPES[c.type]||TYPES.nota).color}"></i><span>${esc(c.title||'Sin título')}</span></button>`).join('')
+  const list=C().cards.filter(matches).slice().sort((a,b)=>(a.title||'').localeCompare(b.title||''));
+  const evBtn=c=>`<button class="ev${c.status==='descartado'?' dis':''}" data-go="${c.id}"><i class="swatch" style="background:${(TYPES[c.type]||TYPES.nota).color}"></i><span>${esc(c.title||'Sin título')}</span></button>`;
+  $('#evList').innerHTML=list.length?EV_GROUPS.map(g=>{
+      const items=list.filter(c=>(TYPES[c.type]?c.type:'nota')===g.type);
+      return items.length?`<div class="ev-cat"><h3>${g.label} <small>${items.length}</small></h3>${items.map(evBtn).join('')}</div>`:'';
+    }).join('')
     :`<p class="muted">${query?'Ninguna pista coincide con la búsqueda.':'Aún no hay pistas en este caso.'}</p>`;
   $('#caseName').value=C().name;
   $('#empty').classList.toggle('show',!C().cards.length);
@@ -890,6 +904,7 @@ longPressHandler(document.querySelector('.side-head h2'),null,(el,cx,cy)=>{
   openCtxMenu([
     {label:'Nuevo caso',action:createCase},
     {label:'Investigar una pregunta…',action:openImportQuestions},
+    {label:'Desde un nivel de área o quest…',action:openImportLevels},
   ],cx,cy);
 });
 $('#evList').onclick=e=>{const b=e.target.closest('[data-go]');if(!b)return;const g=b.dataset.go;select(null);focusCard(g,()=>select('card',g))};
@@ -941,6 +956,53 @@ function createCaseFromQuestion(item){
   state.cases.push(cs);
   const body=[item.problem&&item.problem.text?`Problema: ${item.problem.text}`:'',item.problem&&item.problem.goal?`Meta final: ${item.problem.goal}`:'',item.answer?`Respuesta: ${item.answer}`:'',item.action?`Acción: ${item.action}`:''].filter(Boolean).join('\n\n');
   cs.cards.push({id:uid(),type:'nota',title:item.question||'Pregunta',body,status:'',time:'',fields:[],x:0,y:0,rot:+(Math.random()*4-2).toFixed(1)});
+  state.active=cs.id;sel=null;setLinkMode(false);renderAll();requestAnimationFrame(fitAll);scheduleSave();
+}
+
+/* ---------- Caso desde un nivel (subtítulo de un nivel de un área o quest) ---------- */
+const ilDlg=$('#importLevels'),ilList=$('#ilList');
+let ilItems=[];
+$('#ilClose').onclick=()=>ilDlg.close();
+async function fetchLevels(){
+  const [areaRes,projRes]=await Promise.all([
+    fetch('/api/areas',{credentials:'same-origin'}),
+    fetch('/api/projects',{credentials:'same-origin'}),
+  ]);
+  if(!areaRes.ok&&!projRes.ok)throw new Error('No se pudieron cargar las áreas');
+  const scopes=[
+    ...(areaRes.ok?(await areaRes.json()).map(a=>({...a,kind:'Área'})):[]),
+    ...(projRes.ok?(await projRes.json()).map(p=>({...p,kind:'Quest'})):[]),
+  ];
+  const list=[];
+  scopes.forEach(s=>{
+    const subs=s.levelSubtitles||{}, descs=s.levelSubtitleDescriptions||{};
+    Object.keys(subs).map(Number).sort((a,b)=>a-b).forEach(lv=>{
+      const subtitle=(subs[lv]||'').trim();
+      if(subtitle)list.push({subtitle,level:lv,description:(descs[lv]||'').trim(),scopeName:s.name||'',kind:s.kind});
+    });
+  });
+  return list;
+}
+function renderLevels(){
+  const q=$('#ilSearch').value.trim().toLowerCase();
+  const shown=ilItems.map((it,i)=>({it,i})).filter(({it})=>!q||(it.subtitle+' '+it.scopeName).toLowerCase().includes(q));
+  ilList.innerHTML=shown.length?shown.map(({it,i})=>`<button class="iq-item" data-i="${i}"><strong>${esc(it.subtitle)}</strong><small>${it.kind} ${esc(it.scopeName)} · Nivel ${it.level}</small></button>`).join('')
+    :`<p class="muted" style="margin:4px 0">${ilItems.length?'Ningún nivel coincide con la búsqueda.':'Todavía no hay niveles con subtítulo en tus áreas o quests.'}</p>`;
+}
+function openImportLevels(){
+  $('#ilSearch').value='';
+  ilList.innerHTML='<p class="muted" style="margin:4px 0">Cargando niveles…</p>';
+  ilDlg.showModal();
+  fetchLevels().then(items=>{ilItems=items;renderLevels()})
+    .catch(()=>{ilList.innerHTML='<p class="muted" style="margin:4px 0">No se pudieron cargar los niveles. Probá de nuevo más tarde.</p>'});
+}
+$('#ilSearch').oninput=renderLevels;
+ilList.onclick=e=>{const b=e.target.closest('[data-i]');if(!b)return;ilDlg.close();createCaseFromLevel(ilItems[+b.dataset.i])};
+function createCaseFromLevel(item){
+  const cs=newCase(item.subtitle);
+  state.cases.push(cs);
+  const body=[`${item.kind}: ${item.scopeName} · Nivel ${item.level}`,item.description].filter(Boolean).join('\n\n');
+  cs.cards.push({id:uid(),type:'nota',title:item.subtitle,body,status:'',time:'',fields:[],x:0,y:0,rot:+(Math.random()*4-2).toFixed(1)});
   state.active=cs.id;sel=null;setLinkMode(false);renderAll();requestAnimationFrame(fitAll);scheduleSave();
 }
 

@@ -3611,6 +3611,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           ]
         };
       }));
+      // The server renumbers the level on insert; resync so any sibling our local
+      // shift missed doesn't stay drawn on top of the new node.
+      await refreshAllAreas();
     } catch (error) {
       console.error("Error adding skill below:", error);
     }
@@ -3699,6 +3702,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           ]
         };
       }));
+      // The server renumbers the level on insert; resync so any sibling our local
+      // shift missed doesn't stay drawn on top of the new node.
+      await refreshAllProjects();
     } catch (error) {
       console.error("Error adding project skill below:", error);
     }

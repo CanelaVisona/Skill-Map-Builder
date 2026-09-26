@@ -944,7 +944,38 @@ export async function registerRoutes(
         };
         
         const skill = await storage.createSkill(skillWithLevel);
-        
+
+        // The server owns levelPosition: the client shifts siblings from its local
+        // state before posting, and if that state was stale (or a shift PATCH failed)
+        // two nodes end up sharing a slot and render on top of each other. Rebuild
+        // the level's order here - new node at the requested slot, everyone else in
+        // their existing order - and renumber 1..n so positions are always unique.
+        const levelSiblings = (validatedSkill.areaId
+          ? await storage.getSkills(validatedSkill.areaId)
+          : validatedSkill.projectId
+            ? await storage.getProjectSkills(validatedSkill.projectId)
+            : await storage.getSubSkills(validatedSkill.parentSkillId!))
+          .filter(s => s.level === skillLevel && s.id !== skill.id)
+          .sort((a, b) =>
+            (a.levelPosition ?? 0) - (b.levelPosition ?? 0) ||
+            a.y - b.y ||
+            a.id.localeCompare(b.id)
+          );
+        const insertIndex = Math.min(
+          Math.max((validatedSkill.levelPosition ?? 1) - 1, 0),
+          levelSiblings.length
+        );
+        const orderedLevel = [
+          ...levelSiblings.slice(0, insertIndex),
+          skill,
+          ...levelSiblings.slice(insertIndex),
+        ];
+        for (let i = 0; i < orderedLevel.length; i++) {
+          if (orderedLevel[i].levelPosition !== i + 1) {
+            await storage.updateSkill(orderedLevel[i].id, { levelPosition: i + 1 });
+          }
+        }
+
         // Recalculate Y coordinates for all nodes in the area/project/parent
         await storage.recalculateYCoordinates({
           areaId: validatedSkill.areaId || undefined,
@@ -960,8 +991,8 @@ export async function registerRoutes(
           parentSkillId: validatedSkill.parentSkillId || undefined,
           excludeSkillId: req.body.status !== undefined ? skill.id : undefined,
         });
-        
-        res.status(201).json(skill);
+
+        res.status(201).json((await storage.getSkill(skill.id)) ?? skill);
       }
     } catch (error: any) {
       const validationError = fromError(error);
