@@ -46,16 +46,19 @@ export function useSetTodayTaskSlot() {
       taskType,
       taskId,
       slot,
+      position,
     }: {
       date: string;
       taskType: TaskType;
       taskId: string;
       slot: TaskSlotKey;
+      // Dónde cae dentro de la franja si es nueva ahí: al final (default) o al principio.
+      position?: "start" | "end";
     }) => {
       const res = await fetch("/api/today-task-slots", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, taskType, taskId, slot }),
+        body: JSON.stringify({ date, taskType, taskId, slot, position }),
       });
       if (!res.ok) throw new Error("Failed to set today task slot");
       return res.json() as Promise<TodayTaskSlot>;

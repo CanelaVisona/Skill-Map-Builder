@@ -5293,7 +5293,7 @@ export async function registerRoutes(
 
   app.post("/api/today-task-slots", requireAuth, async (req, res) => {
     try {
-      const { date, taskType, taskId, slot } = req.body;
+      const { date, taskType, taskId, slot, position } = req.body;
       if (!date || !taskType || !taskId || !slot) {
         return res.status(400).json({ message: "date, taskType, taskId y slot son requeridos" });
       }
@@ -5311,7 +5311,7 @@ export async function registerRoutes(
         taskType,
         taskId,
         slot,
-      });
+      }, position === "start" ? "start" : "end");
       res.status(201).json(result);
     } catch (error: any) {
       res.status(500).json({ message: error.message });

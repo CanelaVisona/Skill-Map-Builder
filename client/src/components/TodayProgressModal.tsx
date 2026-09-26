@@ -998,6 +998,89 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     setTaskSlot.mutate({ date: effectiveDate, taskType: "habit", taskId: habitId, slot });
   };
 
+  // --- Agregar tarea desde el calendario de actividades: mantener presionado un día abre un
+  // diálogo para crear una tarea/evento manual ahí, eligiendo su franja horaria (o sin
+  // asignar), si va al principio o al final de esa franja, y opcionalmente más días en los que
+  // se crea la misma tarea (una copia independiente por día).
+  const [calAddOpen, setCalAddOpen] = useState(false);
+  const [calAddTitle, setCalAddTitle] = useState("");
+  const [calAddKind, setCalAddKind] = useState<"task" | "event">("task");
+  const [calAddSlot, setCalAddSlot] = useState<TaskSlotKey | null>(null);
+  const [calAddPosition, setCalAddPosition] = useState<"start" | "end">("end");
+  const [calAddDates, setCalAddDates] = useState<string[]>([]);
+  const [calAddPickerOpen, setCalAddPickerOpen] = useState(false);
+  const [calAddPickerMonth, setCalAddPickerMonth] = useState(() => new Date());
+  const dayLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Si el long-press de un día ya abrió el diálogo, el click que sigue al soltar no tiene que
+  // además seleccionar ese día.
+  const dayLongPressFired = useRef(false);
+
+  const openCalendarAddDialog = (dateStr: string) => {
+    setCalAddTitle("");
+    setCalAddKind("task");
+    setCalAddSlot(null);
+    setCalAddPosition("end");
+    setCalAddDates([dateStr]);
+    setCalAddPickerOpen(false);
+    setCalAddPickerMonth(new Date(dateStr + "T12:00:00"));
+    setCalAddOpen(true);
+  };
+
+  const startDayLongPress = (dateStr: string) => {
+    dayLongPressFired.current = false;
+    dayLongPressTimer.current = setTimeout(() => {
+      dayLongPressFired.current = true;
+      openCalendarAddDialog(dateStr);
+    }, LONG_PRESS_MS);
+  };
+
+  const cancelDayLongPress = () => {
+    if (dayLongPressTimer.current) {
+      clearTimeout(dayLongPressTimer.current);
+      dayLongPressTimer.current = null;
+    }
+  };
+
+  const toggleCalAddDate = (dateStr: string) => {
+    setCalAddDates((prev) =>
+      prev.includes(dateStr) ? prev.filter((d) => d !== dateStr) : [...prev, dateStr].sort()
+    );
+  };
+
+  const submitCalendarAdd = async () => {
+    const title = calAddTitle.trim();
+    if (!title || calAddDates.length === 0) return;
+    setCalAddOpen(false);
+    const slot = calAddSlot;
+    const position = calAddPosition;
+    await Promise.all(
+      calAddDates.map(async (date) => {
+        const created = await createManualTask.mutateAsync({ date, title, kind: calAddKind });
+        if (!slot) return;
+        // Mismo truco optimista que en submitNewTask, solo si ese día ya está en cache (si no,
+        // se crearía una lista de franjas incompleta para un día que nunca se cargó).
+        queryClient.setQueryData<TodayTaskSlot[]>(["today-task-slots", date], (old) =>
+          old
+            ? [
+                ...old,
+                {
+                  id: `optimistic:${created.id}`,
+                  userId: "",
+                  date,
+                  taskType: "manual",
+                  taskId: created.id,
+                  slot,
+                  sortOrder: position === "start" ? Number.MIN_SAFE_INTEGER : Number.MAX_SAFE_INTEGER,
+                  updatedAt: new Date(),
+                },
+              ]
+            : old
+        );
+        setTaskSlot.mutate({ date, taskType: "manual", taskId: created.id, slot, position });
+      })
+    );
+  };
+
   const viewLabel = new Date(effectiveDate + "T12:00:00").toLocaleDateString("es-AR", {
     weekday: "long",
     day: "numeric",
@@ -1101,6 +1184,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       ]);
       return {
         habitsDone: activeHabitsThisMonth.filter((h) => todayHabitsDoneIds.has(h.id)),
+        habitsScheduled: activeHabitsThisMonth.filter((h) => visibleHabitItems.some((v) => v.id === h.id)),
         nodesDone: [...visiblePlannedNodesForView.filter((n) => n.done), ...extraNodes],
         nodesScheduled: visiblePlannedNodesForView,
         practicesDone: visiblePracticesToday.filter(({ done }) => done).map(({ practice }) => practice),
@@ -1129,6 +1213,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
 
     return {
       habitsDone: habitsDoneThatDay,
+      habitsScheduled: habitsScheduledThatDay.filter((h) => !h.endDate || h.endDate >= dateStr),
       nodesDone: [...nodesPlannedDoneThatDay, ...extraNodesThatDay],
       nodesScheduled: nodesPlannedThatDay,
       practicesDone: practicesThatDay,
@@ -1446,19 +1531,25 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                 return (
                   <button
                     key={day}
+                    // Tocar un día (pasado, hoy o futuro) muestra su lista de tareas en el
+                    // panelcito de abajo; la vista previa completa se abre con el lápiz de ese
+                    // panel. Mantener presionado abre el diálogo para agregarle una tarea.
+                    onMouseDown={() => startDayLongPress(dateStr)}
+                    onMouseUp={cancelDayLongPress}
+                    onMouseLeave={cancelDayLongPress}
+                    onTouchStart={() => startDayLongPress(dateStr)}
+                    onTouchEnd={cancelDayLongPress}
+                    onTouchCancel={cancelDayLongPress}
+                    onTouchMove={cancelDayLongPress}
+                    onContextMenu={(e) => e.preventDefault()}
                     onClick={() => {
-                      // Un día futuro abre la previsualización de "Tareas de hoy" para ese día
-                      // (con las 4 franjas horarias); hoy y días pasados siguen mostrando el
-                      // panelcito de detalle de abajo.
-                      if (isFuture) {
-                        setPreviewDate(dateStr);
-                        setViewMode("progress");
-                        setSelectedDay(null);
-                      } else {
-                        setSelectedDay((prev) => (prev === dateStr ? null : dateStr));
+                      if (dayLongPressFired.current) {
+                        dayLongPressFired.current = false;
+                        return;
                       }
+                      setSelectedDay((prev) => (prev === dateStr ? null : dateStr));
                     }}
-                    className={`relative aspect-square rounded-lg flex flex-col items-center justify-center text-xs font-medium transition-all cursor-pointer active:scale-95 ${cellBg} ${
+                    className={`relative aspect-square rounded-lg flex flex-col items-center justify-center text-xs font-medium transition-all cursor-pointer select-none active:scale-95 ${cellBg} ${
                       isToday ? "ring-2 ring-emerald-500" : ""
                     } ${selectedDay === dateStr ? "ring-2 ring-foreground" : ""}`}
                   >

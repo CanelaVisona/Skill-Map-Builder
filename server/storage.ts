@@ -3339,16 +3339,31 @@ export class DbStorage implements IStorage {
 
   // sortOrder no lo pasa el caller: siempre lo calcula esta función (al final de la franja
   // destino), así que no forma parte de lo que se le exige a quien llama.
-  async upsertTodayTaskSlot(row: Omit<InsertTodayTaskSlot, "sortOrder">): Promise<TodayTaskSlot> {
+  // Primer sortOrder de una franja (uno menos que el menor actual): para agregar una tarea "al
+  // principio" de la franja en vez de al final.
+  async getFirstTodayTaskSlotOrder(userId: string, date: string, slot: TodayTaskSlot["slot"]): Promise<number> {
+    const siblings = await db.select().from(todayTaskSlots).where(
+      and(eq(todayTaskSlots.userId, userId), eq(todayTaskSlots.date, date), eq(todayTaskSlots.slot, slot))
+    );
+    return siblings.reduce((min, s) => Math.min(min, s.sortOrder ?? 0), 0) - 1;
+  }
+
+  // sortOrder no lo pasa el caller: siempre lo calcula esta función (al final de la franja
+  // destino, o al principio si position = "start"), así que no forma parte de lo que se le
+  // exige a quien llama.
+  async upsertTodayTaskSlot(row: Omit<InsertTodayTaskSlot, "sortOrder">, position: "start" | "end" = "end"): Promise<TodayTaskSlot> {
     const id = `${row.userId}:${row.date}:${row.taskType}:${row.taskId}`;
     const existing = await db.select().from(todayTaskSlots).where(eq(todayTaskSlots.id, id)).limit(1);
+    const orderFor = () => position === "start"
+      ? this.getFirstTodayTaskSlotOrder(row.userId, row.date, row.slot)
+      : this.getNextTodayTaskSlotOrder(row.userId, row.date, row.slot);
 
     if (existing[0]) {
-      // Solo se reasigna el sortOrder (al final) cuando la franja realmente cambia; si se
-      // vuelve a guardar la misma franja, conserva su posición actual.
+      // Solo se reasigna el sortOrder cuando la franja realmente cambia; si se vuelve a
+      // guardar la misma franja, conserva su posición actual.
       const sortOrder = existing[0].slot === row.slot
         ? existing[0].sortOrder
-        : await this.getNextTodayTaskSlotOrder(row.userId, row.date, row.slot);
+        : await orderFor();
       const result = await db.update(todayTaskSlots)
         .set({ slot: row.slot, sortOrder, updatedAt: new Date() })
         .where(eq(todayTaskSlots.id, id))
@@ -3356,7 +3371,7 @@ export class DbStorage implements IStorage {
       return result[0];
     }
 
-    const sortOrder = await this.getNextTodayTaskSlotOrder(row.userId, row.date, row.slot);
+    const sortOrder = await orderFor();
     const result = await db.insert(todayTaskSlots).values({ id, ...row, sortOrder }).returning();
     return result[0];
   }
