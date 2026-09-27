@@ -68,6 +68,11 @@ const chainComplete = (it: QuestionItem) =>
 
 const problemHasFoundChain = (p: QuestionProblem) => p.items.some(chainComplete);
 
+// Un problema puede pasar a "Preguntas encontradas" cuando ya tiene meta final y al menos una
+// pregunta completa.
+const problemCanBeFound = (p: QuestionProblem) =>
+  p.goal.trim().length > 0 && p.items.some((it) => it.question.trim().length > 0);
+
 // Mantener presionado el fondo de una columna (fuera de una tarjeta) para agregar.
 function useBackgroundLongPress(onLongPress: () => void) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -235,10 +240,15 @@ export function QuestionsTracker() {
   const activeAreas = useMemo(() => areas.filter((a) => !a.archived), [areas]);
   const activeProjects = useMemo(() => projects.filter((p) => !p.archived), [projects]);
 
-  const [view, setView] = useState<"active" | "found">("active");
+  // "home": pantalla inicial con los dos accesos ("Preguntas encontradas" / "Problemas para
+  // explorar"); "active": la cadena Problema → Meta final → Preguntas; "found": los encontrados.
+  const [view, setView] = useState<"home" | "active" | "found">("home");
   const [scope, setScope] = useState<Scope | null>(null);
   const [selectedProblemId, setSelectedProblemId] = useState<string | null>(null);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  // En "Preguntas encontradas" la columna de Preguntas recién aparece al tocar la Meta final.
+  const [foundMetaOpen, setFoundMetaOpen] = useState(false);
+  useEffect(() => setFoundMetaOpen(false), [selectedProblemId, view]);
 
   // Wizard "Planteo del problema": 3 pasos guiados para cargar un problema nuevo.
   const [problemWizardOpen, setProblemWizardOpen] = useState(false);
@@ -322,10 +332,35 @@ export function QuestionsTracker() {
     [problems, scope, view],
   );
 
-  // "Meta final" aparece al seleccionar un problema activo (no encontrado); "Preguntas" recién
-  // se desbloquea una vez que esa meta final quedó definida.
-  const showMetaCol = !!selectedProblem && !selectedProblem.foundAt;
-  const showQuestionsCol = showMetaCol && !!selectedProblem?.goal.trim();
+  // En "Preguntas encontradas" las pestañas muestran solo las áreas/quests que tienen al menos un
+  // problema encontrado; si el scope actual no tiene ninguno, se salta al primero que sí.
+  const foundAreas = useMemo(
+    () => activeAreas.filter((a) => problems.some((p) => p.foundAt && p.areaId === a.id)),
+    [activeAreas, problems],
+  );
+  const foundProjects = useMemo(
+    () => activeProjects.filter((pr) => problems.some((p) => p.foundAt && p.projectId === pr.id)),
+    [activeProjects, problems],
+  );
+  const tabAreas = view === "found" ? foundAreas : activeAreas;
+  const tabProjects = view === "found" ? foundProjects : activeProjects;
+
+  useEffect(() => {
+    if (view !== "found") return;
+    const scopeHasFound =
+      scope?.kind === "project"
+        ? foundProjects.some((p) => p.id === scope.id)
+        : foundAreas.some((a) => a.id === scope?.id);
+    if (scopeHasFound) return;
+    if (foundAreas.length > 0) setScope({ kind: "area", id: foundAreas[0].id });
+    else if (foundProjects.length > 0) setScope({ kind: "project", id: foundProjects[0].id });
+  }, [view, scope, foundAreas, foundProjects]);
+
+  // "Meta final" aparece al seleccionar un problema; "Preguntas" recién se desbloquea una vez que
+  // esa meta final quedó definida.
+  const showMetaCol = !!selectedProblem;
+  const showQuestionsCol =
+    showMetaCol && !!selectedProblem?.goal.trim() && (view !== "found" || foundMetaOpen);
   const showAnswerCol = showQuestionsCol && !!selectedItem;
   const showActionCol = showAnswerCol && answerDraft.trim().length > 0;
 
@@ -348,6 +383,17 @@ export function QuestionsTracker() {
         ? "flex-1 min-w-[190px]"
         : "w-[52%] sm:w-[210px] shrink-0 border-r border-border/40",
     );
+
+  // Cuando se abre una columna nueva (Respuesta, Acción…) queda fuera de la vista: se desplaza el
+  // contenedor horizontal hasta el final para mostrarla.
+  const columnsRef = useRef<HTMLDivElement | null>(null);
+  const prevVisibleCols = useRef(visibleCols);
+  useEffect(() => {
+    if (visibleCols > prevVisibleCols.current) {
+      columnsRef.current?.scrollTo({ left: columnsRef.current.scrollWidth, behavior: "smooth" });
+    }
+    prevVisibleCols.current = visibleCols;
+  }, [visibleCols]);
 
   const closeProblemWizard = () => {
     setProblemWizardOpen(false);
@@ -452,15 +498,21 @@ export function QuestionsTracker() {
   const questionsPress = useBackgroundLongPress(openQuestionWizard);
   const answerPress = useBackgroundLongPress(() => setEditingAnswer(true));
   const actionPress = useBackgroundLongPress(() => setEditingAction(true));
-  // Tarjeta de "Meta final": toque corto abre el wizard; mantener presionado muestra "Borrar"
-  // (solo si ya hay una meta definida).
+  // Tarjeta de "Meta final": toque corto abre el wizard (en "Preguntas encontradas", en cambio,
+  // muestra/oculta la columna de Preguntas); mantener presionado muestra "Borrar" (solo si ya hay
+  // una meta definida).
   const metaPress = useLongPressSelect(
     () => {
       if (selectedProblem?.goal.trim()) setMetaActionsId(selectedProblem.id);
     },
     () => {
       setMetaActionsId(null);
-      openMetaWizard();
+      if (view === "found") {
+        setFoundMetaOpen((open) => !open);
+        setSelectedItemId(null);
+      } else {
+        openMetaWizard();
+      }
     },
   );
 
@@ -476,33 +528,37 @@ export function QuestionsTracker() {
       ? activeProjects.find((p) => p.id === scope.id)?.name
       : activeAreas.find((a) => a.id === scope?.id)?.name;
 
-  // Cantidad de problemas activos (no encontrados) por área/quest, para el númerito de las pestañas.
+  // Cantidad de problemas de la vista actual (para explorar o encontrados) por área/quest, para el
+  // númerito de las pestañas.
   const activeProblemCountByAreaId = useMemo(() => {
     const counts = new Map<string, number>();
     for (const p of problems) {
-      if (p.foundAt || !p.areaId) continue;
+      if (!!p.foundAt !== (view === "found") || !p.areaId) continue;
       counts.set(p.areaId, (counts.get(p.areaId) ?? 0) + 1);
     }
     return counts;
-  }, [problems]);
+  }, [problems, view]);
   const activeProblemCountByProjectId = useMemo(() => {
     const counts = new Map<string, number>();
     for (const p of problems) {
-      if (p.foundAt || !p.projectId) continue;
+      if (!!p.foundAt !== (view === "found") || !p.projectId) continue;
       counts.set(p.projectId, (counts.get(p.projectId) ?? 0) + 1);
     }
     return counts;
-  }, [problems]);
+  }, [problems, view]);
+
+  const foundCount = problems.filter((p) => !!p.foundAt).length;
+  const exploringCount = problems.length - foundCount;
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
       {/* Header */}
       <div className="flex items-center justify-between gap-2 border-b border-border/30 px-4 py-3">
         <div className="flex min-w-0 items-center gap-2">
-          {view === "found" && (
+          {view !== "home" && (
             <button
               onClick={() => {
-                setView("active");
+                setView("home");
                 resetSelection();
               }}
               className="flex-shrink-0 text-muted-foreground transition-colors hover:text-foreground"
@@ -512,26 +568,46 @@ export function QuestionsTracker() {
             </button>
           )}
           <h2 className="truncate text-lg font-black text-foreground">
-            {view === "found" ? "Encontrados ⚔️" : "Preguntas"}
+            {view === "found" ? "Preguntas encontradas" : view === "active" ? "Problemas para explorar" : "Preguntas"}
           </h2>
         </div>
-        {view === "active" ? (
-          <button
-            onClick={() => {
-              setView("found");
-              resetSelection();
-            }}
-            className="flex flex-shrink-0 items-center gap-1 rounded-full border border-border/50 px-3 py-1 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <Swords size={13} /> Encontrados
-          </button>
-        ) : null}
       </div>
 
+      {view === "home" ? (
+        <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-2 gap-3 p-4 sm:grid-cols-2 sm:grid-rows-1">
+          <button
+            onClick={() => setView("found")}
+            className="flex flex-col items-start justify-between rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4 text-left transition-colors hover:bg-emerald-500/20"
+          >
+            <span className="flex items-center gap-2 text-base font-black text-foreground">
+              <Swords size={18} className="text-emerald-600 dark:text-emerald-400" /> Preguntas encontradas
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {foundCount === 0
+                ? "Todavía no hay preguntas encontradas."
+                : `${foundCount} problema${foundCount === 1 ? "" : "s"} con meta final y pregunta.`}
+            </span>
+          </button>
+          <button
+            onClick={() => setView("active")}
+            className="flex flex-col items-start justify-between rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 text-left transition-colors hover:bg-amber-500/20"
+          >
+            <span className="flex items-center gap-2 text-base font-black text-foreground">
+              <span aria-hidden>🛡️</span> Problemas para explorar
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {exploringCount === 0
+                ? "No hay problemas pendientes."
+                : `${exploringCount} problema${exploringCount === 1 ? "" : "s"} en exploración.`}
+            </span>
+          </button>
+        </div>
+      ) : (
+      <>
       {/* Área / quest tabs */}
-      {activeAreas.length > 0 || activeProjects.length > 0 ? (
+      {tabAreas.length > 0 || tabProjects.length > 0 ? (
         <div className="scrollbar-hide flex flex-nowrap items-center gap-1 overflow-x-auto border-b border-border/30 px-3 py-2">
-          {activeAreas.map((area) => {
+          {tabAreas.map((area) => {
             const count = activeProblemCountByAreaId.get(area.id) ?? 0;
             const isSelected = scope?.kind === "area" && scope.id === area.id;
             return (
@@ -558,10 +634,10 @@ export function QuestionsTracker() {
               </div>
             );
           })}
-          {activeAreas.length > 0 && activeProjects.length > 0 && (
+          {tabAreas.length > 0 && tabProjects.length > 0 && (
             <div className="mx-1 h-4 w-px shrink-0 bg-border/50" />
           )}
-          {activeProjects.map((project) => {
+          {tabProjects.map((project) => {
             const count = activeProblemCountByProjectId.get(project.id) ?? 0;
             const isSelected = scope?.kind === "project" && scope.id === project.id;
             return (
@@ -590,23 +666,19 @@ export function QuestionsTracker() {
           })}
         </div>
       ) : (
-        <div className="px-4 py-6 text-sm text-muted-foreground">No hay áreas ni quests todavía.</div>
+        <div className="px-4 py-6 text-sm text-muted-foreground">
+          {view === "found" ? "Todavía no hay preguntas encontradas." : "No hay áreas ni quests todavía."}
+        </div>
       )}
 
       {/* Body */}
       <div className="min-h-0 flex-1 px-3 py-3">
         {isLoading ? (
           <p className="text-sm text-muted-foreground">Cargando…</p>
-        ) : view === "found" ? (
-          <FoundList
-            problems={problemsForArea}
-            onRestore={(id) => updateProblem.mutate({ id, found: false })}
-            onDelete={(id) => deleteProblem.mutate(id)}
-          />
-        ) : (
-          <div className="flex h-full gap-2 overflow-x-auto">
+        ) : view === "found" && tabAreas.length === 0 && tabProjects.length === 0 ? null : (
+          <div ref={columnsRef} className="questions-columns-scroll flex h-full gap-2 overflow-x-auto pb-2">
             {/* Col 1 — Problemas */}
-            <ScrollArea className={colClass(0)} {...problemsPress}>
+            <ScrollArea className={colClass(0)} {...(view === "active" ? problemsPress : {})}>
               <div className="mb-2 flex items-center justify-between">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Problemas{selectedScopeName ? ` · ${selectedScopeName}` : ""}
@@ -615,7 +687,9 @@ export function QuestionsTracker() {
               <div className="space-y-1.5 pr-1">
                 {problemsForArea.length === 0 && (
                   <p className="text-xs text-muted-foreground">
-                    Mantené presionado el fondo para agregar un problema.
+                    {view === "found"
+                      ? "Todavía no encontraste preguntas en esta área."
+                      : "Mantené presionado el fondo para agregar un problema."}
                   </p>
                 )}
                 {problemsForArea.map((p) => (
@@ -650,6 +724,15 @@ export function QuestionsTracker() {
                       deleteProblem.mutate(p.id);
                       setProblemActionsId(null);
                     }}
+                    onRestore={
+                      p.foundAt
+                        ? () => {
+                            if (selectedProblemId === p.id) resetSelection();
+                            updateProblem.mutate({ id: p.id, found: false });
+                            setProblemActionsId(null);
+                          }
+                        : undefined
+                    }
                   />
                 ))}
               </div>
@@ -758,6 +841,16 @@ export function QuestionsTracker() {
                     />
                   ))}
                 </div>
+                {!selectedProblem.foundAt && problemCanBeFound(selectedProblem) && (
+                  <Button
+                    data-no-longpress
+                    onClick={handleFound}
+                    className="mt-3 w-full bg-emerald-500/20 text-emerald-700 hover:bg-emerald-500/30 dark:text-emerald-400"
+                    variant="outline"
+                  >
+                    ¡Pregunta encontrada!
+                  </Button>
+                )}
               </ScrollArea>
             )}
 
@@ -814,24 +907,13 @@ export function QuestionsTracker() {
                     Mantené presionado el fondo para agregar la acción.
                   </p>
                 )}
-                {selectedItem.question.trim() && answerDraft.trim() && actionDraft.trim() && (
-                  <Button
-                    data-no-longpress
-                    onClick={() => {
-                      commitAction();
-                      handleFound();
-                    }}
-                    className="mt-3 w-full bg-amber-500/20 text-amber-700 hover:bg-amber-500/30 dark:text-amber-400"
-                    variant="outline"
-                  >
-                    Encontrado ⚔️
-                  </Button>
-                )}
               </ScrollArea>
             )}
           </div>
         )}
       </div>
+      </>
+      )}
 
       <ProblemWizardDialog
         open={problemWizardOpen}
@@ -929,6 +1011,7 @@ function ProblemCard({
   onLongPress,
   onStartEdit,
   onDelete,
+  onRestore,
 }: {
   problem: QuestionProblem;
   // "current": es el problema seleccionado y todavía no tiene meta final (destacado).
@@ -945,6 +1028,8 @@ function ProblemCard({
   onLongPress: () => void;
   onStartEdit: () => void;
   onDelete: () => void;
+  // Solo en "Preguntas encontradas": devuelve el problema a "Problemas para explorar".
+  onRestore?: () => void;
 }) {
   const press = useLongPressSelect(onLongPress, onOpen);
   return (
@@ -995,6 +1080,14 @@ function ProblemCard({
               >
                 <Pencil size={12} /> Editar
               </button>
+              {onRestore && (
+                <button
+                  onClick={onRestore}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                >
+                  <RotateCcw size={12} /> Restaurar
+                </button>
+              )}
               <button
                 onClick={onDelete}
                 className="flex items-center gap-1 text-xs text-muted-foreground hover:text-red-500"
@@ -1625,95 +1718,6 @@ function QuestionWizardDialog({
         </div>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function FoundList({
-  problems,
-  onRestore,
-  onDelete,
-}: {
-  problems: QuestionProblem[];
-  onRestore: (id: string) => void;
-  onDelete: (id: string) => void;
-}) {
-  const [actionsId, setActionsId] = useState<string | null>(null);
-  if (problems.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground">Todavía no encontraste nada en esta área.</p>
-    );
-  }
-  return (
-    <ScrollArea className="h-full pr-2">
-      <div className="space-y-3">
-        {problems.map((p) => {
-          const showActions = actionsId === p.id;
-          let pressTimer: ReturnType<typeof setTimeout> | null = null;
-          const startPress = () => {
-            if (pressTimer) clearTimeout(pressTimer);
-            pressTimer = setTimeout(() => setActionsId((prev) => (prev === p.id ? null : p.id)), LONG_PRESS_MS);
-          };
-          const cancelPress = () => {
-            if (pressTimer) {
-              clearTimeout(pressTimer);
-              pressTimer = null;
-            }
-          };
-          return (
-          <div
-            key={p.id}
-            className="select-none rounded-2xl border border-border/50 p-3"
-            onPointerDown={startPress}
-            onPointerUp={cancelPress}
-            onPointerCancel={cancelPress}
-            onPointerLeave={cancelPress}
-          >
-            <span className="text-sm font-bold text-foreground break-words">{p.text || "(sin texto)"}</span>
-            {showActions && (
-              <div className="mt-2 flex items-center gap-3 border-t border-border/40 pt-2">
-                <button
-                  onClick={() => {
-                    onRestore(p.id);
-                    setActionsId(null);
-                  }}
-                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                >
-                  <RotateCcw size={12} /> Restaurar
-                </button>
-                <button
-                  onClick={() => {
-                    onDelete(p.id);
-                    setActionsId(null);
-                  }}
-                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-red-500"
-                >
-                  <Trash2 size={12} /> Borrar
-                </button>
-              </div>
-            )}
-            <div className="mt-2 space-y-2">
-              {p.items.filter(chainComplete).map((it) => (
-                <div key={it.id} className="rounded-xl bg-muted/40 p-2 text-xs">
-                  <p className="break-words">
-                    <span className="font-semibold text-muted-foreground">P: </span>
-                    {it.question}
-                  </p>
-                  <p className="break-words">
-                    <span className="font-semibold text-muted-foreground">R: </span>
-                    {it.answer}
-                  </p>
-                  <p className="break-words">
-                    <span className="font-semibold text-muted-foreground">A: </span>
-                    {it.action}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-          );
-        })}
-      </div>
-    </ScrollArea>
   );
 }
 

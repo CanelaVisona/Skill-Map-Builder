@@ -69,37 +69,40 @@ async function verifySkillOwnership(skillOrId: string | { areaId: string | null;
   return false;
 }
 
-// A node still shows its generated name when its title is blank or "Nodo N".
+// A node still shows its generated name when its title is blank, "Nodo N" or the
+// "Asigná un paso" default every generated level starts with.
 function isDefaultPlaceholderTitle(title: string | null | undefined): boolean {
   const t = (title ?? "").trim();
-  return t === "" || /^Nodo \d+$/.test(t);
+  return t === "" || t === "Asigná un paso" || /^Nodo \d+$/.test(t);
 }
 
 // When a node is moved into another level it should take the slot of one still-default
 // placeholder there instead of being appended on top of the full set, so the target
 // level keeps its node count (e.g. moved node + 5 defaults, not 7). Removes the first
-// (lowest levelPosition) locked, default-named, non-skeleton node of the target level,
+// (lowest levelPosition, i.e. top-most) unconfirmed, default-named, non-skeleton node of
+// the target level - including the level's "available" node when it's still generic -
 // rewiring anything that depended on it onto its own dependencies (mirrors deleteSkill).
-// Returns a refreshed skill list when it removed one, otherwise the list as given.
+// Returns a refreshed skill list plus the removed node's levelPosition (the slot the
+// moved node should take), or the list as given and null when nothing was removed.
 async function removeOneDefaultPlaceholder(
   allSkills: any[],
   targetLevel: number,
   movedSkillId: string,
   parentType: "area" | "project",
   parentId: string,
-): Promise<any[]> {
+): Promise<{ allSkills: any[]; removedPosition: number | null }> {
   const removable = allSkills
     .filter(s =>
       s.level === targetLevel &&
       s.id !== movedSkillId &&
-      s.status === "locked" &&
+      s.status !== "mastered" &&
       s.isAutoComplete !== 1 &&
       (s.levelPosition ?? 0) > 1 &&
       isDefaultPlaceholderTitle(s.title)
     )
     .sort((a, b) => (a.levelPosition ?? 0) - (b.levelPosition ?? 0))[0];
 
-  if (!removable) return allSkills;
+  if (!removable) return { allSkills, removedPosition: null };
 
   const inheritedDeps: string[] = Array.isArray(removable.dependencies) ? removable.dependencies : [];
   const dependents = allSkills.filter(s =>
@@ -117,9 +120,21 @@ async function removeOneDefaultPlaceholder(
 
   await storage.deleteSkill(removable.id);
 
-  return parentType === "area"
+  const refreshed = parentType === "area"
     ? await storage.getSkills(parentId)
     : await storage.getProjectSkills(parentId);
+  return { allSkills: refreshed, removedPosition: removable.levelPosition ?? null };
+}
+
+// Target-level order after a move: the moved node takes the exact slot of the placeholder
+// it replaced (so it fills the top-most generic node first); with no placeholder replaced
+// it's appended at the end.
+function orderWithMovedInSlot(targetOthers: any[], movedSkill: any, removedPosition: number | null): any[] {
+  const others = [...targetOthers].sort((a, b) => (a.levelPosition ?? 0) - (b.levelPosition ?? 0));
+  const insertAt = removedPosition === null
+    ? others.length
+    : others.filter(s => (s.levelPosition ?? 0) < removedPosition).length;
+  return [...others.slice(0, insertAt), movedSkill, ...others.slice(insertAt)];
 }
 
 export async function registerRoutes(
@@ -1371,7 +1386,8 @@ export async function registerRoutes(
       // still has its 6 default nodes leaves it with the moved node + 5 defaults, not 7.
       // If the target level has no default placeholders left, nothing is removed and the
       // level simply grows, same as before.
-      allSkills = await removeOneDefaultPlaceholder(allSkills, targetLevel, req.params.id, parentType, parentId);
+      const moveRemoval = await removeOneDefaultPlaceholder(allSkills, targetLevel, req.params.id, parentType, parentId);
+      allSkills = moveRemoval.allSkills;
 
       // Reposition remaining skills in ORIGINAL level with proportional spacing
       const originalLevelSkills = allSkills.filter(s => s.level === currentLevel);
@@ -1409,9 +1425,16 @@ export async function registerRoutes(
         ? await storage.getSkills(parentId)
         : await storage.getProjectSkills(parentId);
       
-      const allTargetLevelSkills = refreshedAllSkills
-        .filter(s => s.level === targetLevel)
-        .sort((a, b) => a.y - b.y);
+      // Order by levelPosition with the moved skill dropped into the replaced placeholder's
+      // slot - sorting by y would put it wherever its old-level y happens to land.
+      const refreshedMovedSkill = refreshedAllSkills.find(s => s.id === req.params.id);
+      const allTargetLevelSkills = refreshedMovedSkill
+        ? orderWithMovedInSlot(
+            refreshedAllSkills.filter(s => s.level === targetLevel && s.id !== req.params.id),
+            refreshedMovedSkill,
+            moveRemoval.removedPosition,
+          )
+        : refreshedAllSkills.filter(s => s.level === targetLevel).sort((a, b) => a.y - b.y);
 
       const updatedSkillIds = new Set<string>();
       if (allTargetLevelSkills.length > 0) {
@@ -1624,7 +1647,8 @@ export async function registerRoutes(
       // still-default placeholder ("" / "Nodo N", locked, not the skeleton) instead of
       // being appended on top of the existing set. Nothing is removed if the target
       // level has no default placeholders left.
-      allSkills = await removeOneDefaultPlaceholder(allSkills, targetLevel, req.params.id, parentType, parentId);
+      const changeRemoval = await removeOneDefaultPlaceholder(allSkills, targetLevel, req.params.id, parentType, parentId);
+      allSkills = changeRemoval.allSkills;
 
       // Close the gap left in the source level. Y coordinates are recalculated
       // globally further down (recalculateYCoordinates) - here we only need
@@ -1659,18 +1683,18 @@ export async function registerRoutes(
         orderedTargetIds = skeleton
           ? [skeleton.id, req.params.id, ...rest.map(s => s.id)]
           : [req.params.id, ...rest.map(s => s.id)];
+      } else if (changeRemoval.removedPosition !== null) {
+        // Not a confirmed node: it takes the exact slot of the generic placeholder it
+        // replaced - the top-most one in the level.
+        orderedTargetIds = orderWithMovedInSlot(targetExisting, { id: req.params.id }, changeRemoval.removedPosition)
+          .map(s => s.id);
       } else {
-        // Not a confirmed node, so it doesn't need to lead the level - land it
-        // right after the last node whose title was actually customized (or right
-        // after the skeleton if the level has no renamed nodes yet, including a
-        // level that didn't exist before this move), ahead of any untouched
-        // "Nodo N" placeholders.
-        const isPlaceholderTitle = (title: string | null | undefined) =>
-          !title || title.trim() === "" || /^Nodo \d+$/.test(title.trim());
-
+        // No generic placeholder left to replace - land it right after the last node
+        // whose title was actually customized (or right after the skeleton if the
+        // level has no renamed nodes yet), ahead of any other default-named nodes.
         let lastRenamedIndex = -1;
         for (let i = 0; i < rest.length; i++) {
-          if (!isPlaceholderTitle(rest[i].title)) {
+          if (!isDefaultPlaceholderTitle(rest[i].title)) {
             lastRenamedIndex = i;
           }
         }
@@ -1705,7 +1729,9 @@ export async function registerRoutes(
       await storage.recalculateFinalNodes(currentLevel, parentInfo);
       await storage.recalculateFinalNodes(targetLevel, parentInfo);
       await storage.recalculateAvailableStatus(currentLevel, parentInfo);
-      await storage.recalculateAvailableStatus(targetLevel, { ...parentInfo, excludeSkillId: req.params.id });
+      // A non-mastered moved node goes through the normal recalculation, so if it took the
+      // slot of the unlocked level's "available" placeholder it becomes available itself.
+      await storage.recalculateAvailableStatus(targetLevel, newStatus === "mastered" ? { ...parentInfo, excludeSkillId: req.params.id } : parentInfo);
 
       const finalAllSkills = parentType === "area"
         ? await storage.getSkills(parentId)

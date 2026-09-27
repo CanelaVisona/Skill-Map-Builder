@@ -18,6 +18,7 @@ import { getErrorBarBlocks } from "@/components/ErrorProgressPopup";
 import { useErrorCelebration } from "@/lib/error-celebration-context";
 import { beginPopupChain, endPopupChain, runPopupQueueAsync, runPopupQueue, getPopupBusyDelay } from "@/lib/popup-coordinator";
 import { getNodeTitleWordLimit, clampToWordLimit } from "@/lib/node-title-settings";
+import { getLevelTitleSuggestion, getOtherLevelTitles } from "@/lib/unique-level-title";
 import { useToast } from "@/hooks/use-toast";
 import { SkillLinkPicker } from "@/components/SkillLinkPicker";
 import { BodyLinkPicker, type BodyLink } from "@/components/BodyLinkPicker";
@@ -726,6 +727,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const showCompletedLevelSubtitle = isFirstOfLevel && isLevelCompleted && trimmedLevelSubtitle.length > 0;
   const [editSubtitle, setEditSubtitle] = useState(currentSubtitle);
   const [editSubtitleDescription, setEditSubtitleDescription] = useState(currentSubtitleDescription);
+  // No puede haber dos niveles con el mismo título en el árbol: si choca, se sugiere
+  // (y se aplica al guardar) el mismo nombre con el siguiente número romano.
+  const editSubtitleSuggestion = getLevelTitleSuggestion(editSubtitle, getOtherLevelTitles(levelSubtitles, skill.level));
   const levelLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const titleLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTitleLongPress = useRef(false);
@@ -2374,10 +2378,11 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   };
 
   const handleSubtitleSave = () => {
+    const subtitleToSave = editSubtitleSuggestion ?? editSubtitle;
     if (isProject) {
-      updateProjectLevelSubtitle(activeId, skill.level, editSubtitle, editSubtitleDescription);
+      updateProjectLevelSubtitle(activeId, skill.level, subtitleToSave, editSubtitleDescription);
     } else {
-      updateLevelSubtitle(activeId, skill.level, editSubtitle, editSubtitleDescription);
+      updateLevelSubtitle(activeId, skill.level, subtitleToSave, editSubtitleDescription);
     }
     setIsSubtitleDialogOpen(false);
   };
@@ -5033,6 +5038,17 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
               data-testid="input-edit-subtitle"
             />
+            {editSubtitleSuggestion && (
+              <button
+                type="button"
+                onClick={() => setEditSubtitle(editSubtitleSuggestion)}
+                className="text-left text-xs text-muted-foreground hover:text-foreground"
+                data-testid="button-use-subtitle-suggestion"
+              >
+                Ya existe un nivel con ese nombre. Se guardará como{" "}
+                <span className="font-semibold text-foreground underline underline-offset-2">{editSubtitleSuggestion}</span>
+              </button>
+            )}
           </div>
           <div className="grid gap-2">
             <Label htmlFor="edit-subtitle-description" className="text-xs text-muted-foreground uppercase tracking-wide">Descripción</Label>

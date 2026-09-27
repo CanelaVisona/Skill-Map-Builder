@@ -275,6 +275,32 @@ function computeLevelSwapYUpdates(
   return yUpdates;
 }
 
+// The currently unlocked level may take part in a level swap only while nobody has made
+// progress on it yet: the only mastered node allowed is Node 1 (the auto-mastered
+// decoration node every level starts with).
+export function isLevelWithoutProgress(skills: { level: number; status: string; levelPosition?: number | null; isAutoComplete?: number | null }[], level: number): boolean {
+  return !skills.some(s => s.level === level && s.status === "mastered" && s.levelPosition !== 1 && s.isAutoComplete !== 1);
+}
+
+// When a swap moves content into/out of the currently unlocked level, each group takes on
+// the fresh-level state shape of the slot it lands in (same as generateLevelWithSkills
+// creates it): Node 1 mastered, Node 2 available, the rest locked. Without this, the
+// content moved into the unlocked level would stay fully locked (nothing confirmable) and
+// the content moved out would keep its "available" node while blocked.
+function computeFreshLevelStatuses(skills: { id: string; y: number; levelPosition?: number | null }[]): Map<string, SkillStatus> {
+  const sorted = [...skills].sort((a, b) => ((a.levelPosition ?? 0) - (b.levelPosition ?? 0)) || (a.y - b.y));
+  const statuses = new Map<string, SkillStatus>();
+  sorted.forEach((s, i) => statuses.set(s.id, i === 0 ? "mastered" : i === 1 ? "available" : "locked"));
+  return statuses;
+}
+
+// Only sends a status when it actually changes: re-sending "mastered"/"available" makes the
+// PATCH endpoint run its auto-unlock/re-lock side effects on neighbouring nodes.
+function statusPatch(skill: { id: string; status: SkillStatus }, statusUpdates: Map<string, SkillStatus> | null) {
+  const status = statusUpdates?.get(skill.id);
+  return status && status !== skill.status ? { status, fromReorder: true } : {};
+}
+
 // Helper function to safely access dependencies as an array
 function ensureDependenciesArray(deps: any): string[] {
   if (Array.isArray(deps)) return deps;
@@ -4380,31 +4406,38 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
   // Swap the entire contents (all nodes + subtitle/description) of two levels in an area.
   // Used by the Skill Designer to reorder future/blocked levels — both levels must already
-  // be unlocked-adjacent look-ahead levels with real skill data (never the currently
-  // unlocked level itself, to avoid disturbing live progression).
+  // have real skill data and never be behind the currently unlocked level. The unlocked
+  // level itself may only be swapped while it has no progress yet (isLevelWithoutProgress);
+  // in that case both groups get their statuses reset to the fresh-level shape.
   const swapAreaLevels = async (areaId: string, levelA: number, levelB: number) => {
     if (levelA === levelB) return;
     const area = areas.find(a => a.id === areaId);
     if (!area) return;
+    if (levelA < area.unlockedLevel || levelB < area.unlockedLevel) return;
+    const touchesUnlocked = levelA === area.unlockedLevel || levelB === area.unlockedLevel;
+    if (touchesUnlocked && !isLevelWithoutProgress(area.skills, area.unlockedLevel)) return;
 
     const skillsA = area.skills.filter(s => s.level === levelA);
     const skillsB = area.skills.filter(s => s.level === levelB);
     if (skillsA.length === 0 || skillsB.length === 0) return;
 
     const yUpdates = computeLevelSwapYUpdates(skillsA, levelA, skillsB, levelB);
+    const statusUpdates = touchesUnlocked
+      ? new Map([...computeFreshLevelStatuses(skillsA), ...computeFreshLevelStatuses(skillsB)])
+      : null;
 
     try {
       await Promise.all([
         ...skillsA.map(s => fetch(`/api/skills/${s.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ level: levelB, y: yUpdates.get(s.id) }),
+          body: JSON.stringify({ level: levelB, y: yUpdates.get(s.id), ...statusPatch(s, statusUpdates) }),
           credentials: "include",
         })),
         ...skillsB.map(s => fetch(`/api/skills/${s.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ level: levelA, y: yUpdates.get(s.id) }),
+          body: JSON.stringify({ level: levelA, y: yUpdates.get(s.id), ...statusPatch(s, statusUpdates) }),
           credentials: "include",
         })),
       ]);
@@ -4691,31 +4724,37 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
   };
 
   // Swap the entire contents (all nodes + subtitle/description) of two levels in a project.
-  // Same rules as swapAreaLevels: both levels must already have real skill data and must
-  // never include the currently unlocked level itself.
+  // Same rules as swapAreaLevels: both levels must already have real skill data, never be
+  // behind the unlocked level, and the unlocked level only swaps while it has no progress.
   const swapProjectLevels = async (projectId: string, levelA: number, levelB: number) => {
     if (levelA === levelB) return;
     const project = projects.find(p => p.id === projectId);
     if (!project) return;
+    if (levelA < project.unlockedLevel || levelB < project.unlockedLevel) return;
+    const touchesUnlocked = levelA === project.unlockedLevel || levelB === project.unlockedLevel;
+    if (touchesUnlocked && !isLevelWithoutProgress(project.skills, project.unlockedLevel)) return;
 
     const skillsA = project.skills.filter(s => s.level === levelA);
     const skillsB = project.skills.filter(s => s.level === levelB);
     if (skillsA.length === 0 || skillsB.length === 0) return;
 
     const yUpdates = computeLevelSwapYUpdates(skillsA, levelA, skillsB, levelB);
+    const statusUpdates = touchesUnlocked
+      ? new Map([...computeFreshLevelStatuses(skillsA), ...computeFreshLevelStatuses(skillsB)])
+      : null;
 
     try {
       await Promise.all([
         ...skillsA.map(s => fetch(`/api/skills/${s.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ level: levelB, y: yUpdates.get(s.id) }),
+          body: JSON.stringify({ level: levelB, y: yUpdates.get(s.id), ...statusPatch(s, statusUpdates) }),
           credentials: "include",
         })),
         ...skillsB.map(s => fetch(`/api/skills/${s.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ level: levelA, y: yUpdates.get(s.id) }),
+          body: JSON.stringify({ level: levelA, y: yUpdates.get(s.id), ...statusPatch(s, statusUpdates) }),
           credentials: "include",
         })),
       ]);

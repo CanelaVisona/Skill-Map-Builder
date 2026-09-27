@@ -161,6 +161,31 @@ h1, h2, h3, h4, h5, h6 {
   scrollbar-width: none;
 }
 
+/* Scroll horizontal de las columnas de Preguntas: fino pero visible, con un riel apenas marcado
+   para que se note que hay más columnas a la derecha. */
+.questions-columns-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(113, 113, 122, 0.45) rgba(113, 113, 122, 0.1);
+}
+
+.questions-columns-scroll::-webkit-scrollbar {
+  height: 4px;
+}
+
+.questions-columns-scroll::-webkit-scrollbar-track {
+  background-color: rgba(113, 113, 122, 0.1);
+  border-radius: 9999px;
+}
+
+.questions-columns-scroll::-webkit-scrollbar-thumb {
+  background-color: rgba(113, 113, 122, 0.45);
+  border-radius: 9999px;
+}
+
+.questions-columns-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(113, 113, 122, 0.7);
+}
+
 @keyframes glow-pulse {
   0%, 100% { opacity: 0.45; }
   50% { opacity: 0.8; }

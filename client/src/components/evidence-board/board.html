@@ -46,6 +46,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .top .save-state{color:rgba(232,228,218,.55)}
 .case-name{font-family:var(--cond);font-weight:700;font-size:22px;background:transparent;border:1px solid transparent;border-radius:4px;padding:2px 6px;min-width:0;flex:1 1 180px;max-width:420px}
 .case-name:hover{border-color:var(--line)}
+.top .case-name[readonly]{pointer-events:none;border-color:transparent;user-select:none;-webkit-user-select:none}
 .tools{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .btn{font-family:var(--cond);font-weight:600;font-size:16px;letter-spacing:.01em;background:var(--chrome-2);border:1px solid var(--line);border-radius:4px;padding:5px 12px;cursor:pointer;white-space:nowrap}
 .btn:hover{filter:brightness(.96)}
@@ -104,6 +105,9 @@ button,input,select,textarea{font:inherit;color:inherit}
 .card dd{display:inline;margin:0}
 .card dd::after{content:"";display:block}
 .card .stamp{position:absolute;right:8px;top:112px;transform:rotate(-8deg);font-family:var(--cond);font-weight:700;font-size:13px;border:2px solid currentColor;padding:0 5px;border-radius:3px;opacity:.85}
+/* Marca al lado del título (p. ej. «Comienzo»): misma estampa, pero en línea con el texto. */
+.card .stamp.inline{position:static;display:inline-block;vertical-align:middle;margin-left:4px;transform:rotate(-6deg);line-height:1.3}
+.detail .dstamp.inline{display:inline-block;vertical-align:middle;font-family:var(--cond);font-size:14px;line-height:1.3;transform:rotate(-6deg)}
 .card.sel{outline:3px solid var(--focus);outline-offset:3px}
 .card.from{outline:3px dashed var(--red);outline-offset:3px}
 .card.dis{opacity:.5;filter:grayscale(.7)}
@@ -121,6 +125,9 @@ button,input,select,textarea{font:inherit;color:inherit}
 /* Inspector */
 .inspector{position:absolute;right:0;top:0;bottom:0;width:340px;max-width:100%;background:var(--panel);border-left:1px solid var(--line);z-index:30;overflow:auto;padding:14px 16px calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(105%);transition:transform .18s ease}
 .inspector.open{transform:none}
+/* Con el inspector abierto (editar pista o ver su detalle) la barra superior se oculta: así el
+   nombre del caso y «Cronología» nunca quedan por encima del panel ni del fondo oscuro. */
+.app:has(.inspector.open) .top{visibility:hidden;pointer-events:none}
 .inspector h2{font-family:var(--cond);font-weight:700;font-size:20px;margin:0}
 .ins-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
 .field{display:flex;flex-direction:column;gap:3px;margin-bottom:10px}
@@ -239,7 +246,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 <div class="app">
   <header class="top">
     <button class="btn icon" id="menuBtn" aria-label="Mostrar u ocultar el menú" aria-expanded="true">☰</button>
-    <input class="case-name" id="caseName" aria-label="Nombre del caso">
+    <input class="case-name" id="caseName" aria-label="Nombre del caso" readonly tabindex="-1">
     <div class="tools">
       <button class="btn" id="timelineBtn">Cronología</button>
       <span class="save-state" id="saveState" aria-live="polite"></span>
@@ -317,8 +324,9 @@ const TYPES={
 };
 /* Orden de las categorías en la lista de pistas del menú lateral. */
 const EV_GROUPS=[['persona','Personas'],['nota','Notas'],['objeto','Objetos'],['lugar','Lugares'],['documento','Documentos'],['evento','Eventos']].map(([type,label])=>({type,label}));
-const STATUS={'':'Sin marcar',clave:'Clave',sospechoso:'Sospechoso',testigo:'Testigo',victima:'Víctima',descartado:'Descartado'};
+const STATUS={'':'Sin marcar',comienzo:'Comienzo',clave:'Clave',sospechoso:'Sospechoso',testigo:'Testigo',victima:'Víctima',descartado:'Descartado'};
 const PERSON_ONLY=['sospechoso','testigo','victima'];
+const STAMP_COLORS={descartado:'#555',testigo:'#2f5fa8',clave:'#3f7d3a',comienzo:'#b58900'};
 const COLORS=[['rojo','#b3261e'],['azul','#2f5fa8'],['verde','#3f7d3a'],['amarillo','#c9a227'],['negro','#262626']];
 const CW=210, KEY='diario-pistas-v1';
 
@@ -484,16 +492,18 @@ function cardHTML(c){
   const t=TYPES[c.type]||TYPES.nota;
   const fields=c.fields.filter(f=>f.v).slice(0,3).map(f=>`<dt>${esc(f.k)}: </dt><dd>${esc(f.v)}</dd>`).join('');
   const body=c.body?(c.body.length>140?c.body.slice(0,140)+'…':c.body):'';
-  const stampColor=c.status==='descartado'?'#555':c.status==='testigo'?'#2f5fa8':c.status==='clave'?'#3f7d3a':'#b3261e';
+  const stampColor=STAMP_COLORS[c.status]||'#b3261e';
+  // La marca «Comienzo» va al lado del título; el resto queda estampada en la esquina.
+  const inlineStamp=c.status==='comienzo';
   return `<div class="tab" style="background:${t.color}"></div>
     <span class="pin" data-pin="${c.id}" title="Conectar con otra pista"></span>
     ${picHTML(c,'pic')}
     <div class="kind">${t.label}</div>
-    <h3>${esc(c.title||'Sin título')}</h3>
+    <h3>${esc(c.title||'Sin título')}${inlineStamp?` <span class="stamp inline" style="color:${stampColor}">${STATUS[c.status]}</span>`:''}</h3>
     ${c.time?`<div class="when">${esc(fmtTime(c.time))}</div>`:''}
     ${body?`<p>${esc(body)}</p>`:''}
     ${fields?`<dl>${fields}</dl>`:''}
-    ${c.status?`<span class="stamp" style="color:${stampColor}">${STATUS[c.status]}</span>`:''}`;
+    ${c.status&&!inlineStamp?`<span class="stamp" style="color:${stampColor}">${STATUS[c.status]}</span>`:''}`;
 }
 function cardClass(c){
   return 'card'+(sel&&sel.kind==='card'&&sel.id===c.id?' sel':'')+(linkFrom===c.id?' from':'')+
@@ -604,8 +614,8 @@ function renderDetail(c,conns){
     <article class="detail" data-type="${c.type}">
       <div class="tab" style="background:${t.color}"></div>
       ${picHTML(c,'dpic')}
-      <div class="kind">${t.label}${c.status?` <span class="dstamp">${STATUS[c.status]}</span>`:''}</div>
-      <h3>${esc(c.title||'Sin título')}</h3>
+      <div class="kind">${t.label}${c.status&&c.status!=='comienzo'?` <span class="dstamp">${STATUS[c.status]}</span>`:''}</div>
+      <h3>${esc(c.title||'Sin título')}${c.status==='comienzo'?` <span class="dstamp inline" style="color:${STAMP_COLORS.comienzo};border-color:${STAMP_COLORS.comienzo}">${STATUS.comienzo}</span>`:''}</h3>
       ${c.time?`<div class="when">${esc(fmtTime(c.time))}</div>`:''}
       ${c.body?`<p>${esc(c.body)}</p>`:'<p class="faint">Sin notas.</p>'}
       ${fields.length?`<dl>${fields.map(f=>`<dt>${esc(f.k)}</dt><dd>${esc(f.v)}</dd>`).join('')}</dl>`:''}
@@ -877,10 +887,15 @@ function longPressHandler(container,selector,onLongPress,ms=500){
   container.addEventListener('pointerup',()=>clearTimeout(timer));
   container.addEventListener('pointercancel',()=>clearTimeout(timer));
 }
+/* El nombre del caso en la barra superior es de solo lectura: solo se habilita para renombrar desde
+   «Editar» en el menú de Casos (o al crear uno), y vuelve a bloquearse al salir o con Enter/Escape. */
 function editCase(id){
   state.active=id;sel=null;setLinkMode(false);renderAll();scheduleSave();
-  requestAnimationFrame(()=>{$('#caseName').focus();$('#caseName').select()});
+  const i=$('#caseName');i.readOnly=false;
+  requestAnimationFrame(()=>{i.focus();i.select()});
 }
+$('#caseName').addEventListener('blur',e=>{e.target.readOnly=true});
+$('#caseName').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key==='Escape')e.target.blur()});
 async function deleteCase(id){
   const c=state.cases.find(x=>x.id===id);if(!c)return;
   if(!await askConfirm(`¿Eliminar el caso «${c.name}» con todas sus pistas?`))return;
@@ -952,10 +967,9 @@ function openImportQuestions(){
   }).catch(()=>{iqList.innerHTML='<p class="muted" style="margin:4px 0">No se pudieron cargar las preguntas. Probá de nuevo más tarde.</p>'});
 }
 function createCaseFromQuestion(item){
-  const cs=newCase(item.question||'Pregunta sin título');
+  const cs=newCase('Definí el nombre del caso');
   state.cases.push(cs);
-  const body=[item.problem&&item.problem.text?`Problema: ${item.problem.text}`:'',item.problem&&item.problem.goal?`Meta final: ${item.problem.goal}`:'',item.answer?`Respuesta: ${item.answer}`:'',item.action?`Acción: ${item.action}`:''].filter(Boolean).join('\n\n');
-  cs.cards.push({id:uid(),type:'nota',title:item.question||'Pregunta',body,status:'',time:'',fields:[],x:0,y:0,rot:+(Math.random()*4-2).toFixed(1)});
+  cs.cards.push({id:uid(),type:'nota',title:'Comienzo de búsqueda',body:item.question||'',status:'comienzo',time:'',fields:[],x:0,y:0,rot:+(Math.random()*4-2).toFixed(1)});
   state.active=cs.id;sel=null;setLinkMode(false);renderAll();requestAnimationFrame(fitAll);scheduleSave();
 }
 

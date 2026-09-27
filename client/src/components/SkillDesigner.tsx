@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { useSkillTree, calculateDesignerLevelWindow } from "@/lib/skill-context";
+import { useSkillTree, calculateDesignerLevelWindow, isLevelWithoutProgress } from "@/lib/skill-context";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Input } from "@/components/ui/input";
@@ -11,6 +11,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { ChevronUp, ChevronDown, ChevronsUp, ChevronsDown, Lock, Plus, Trash2, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getNodeTitleWordLimit, clampToWordLimit } from "@/lib/node-title-settings";
+import { getLevelTitleSuggestion, getOtherLevelTitles } from "@/lib/unique-level-title";
 import { useToast } from "@/hooks/use-toast";
 
 interface SkillDesignerProps {
@@ -158,13 +159,25 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
     setEditingLevelData({ level, areaId, projectId });
   };
 
+  // No puede haber dos niveles con el mismo título en el árbol: si choca, se sugiere
+  // (y se aplica al guardar) el mismo nombre con el siguiente número romano.
+  const editingLevelOwnerSubtitles = editingLevelData?.areaId
+    ? areas.find((a) => a.id === editingLevelData.areaId)?.levelSubtitles
+    : editingLevelData?.projectId
+      ? projects.find((p) => p.id === editingLevelData.projectId)?.levelSubtitles
+      : undefined;
+  const editingLevelSubtitleSuggestion = editingLevelData
+    ? getLevelTitleSuggestion(editingLevelSubtitle, getOtherLevelTitles(editingLevelOwnerSubtitles, editingLevelData.level))
+    : null;
+
   const handleSaveLevelSubtitle = async () => {
     if (editingLevelData) {
+      const subtitleToSave = (editingLevelSubtitleSuggestion ?? editingLevelSubtitle).trim();
       // Guardar el subtítulo y descripción (vacío o con contenido)
       if (editingLevelData.areaId) {
-        await updateLevelSubtitle(editingLevelData.areaId, editingLevelData.level, editingLevelSubtitle.trim(), editingLevelSubtitleDescription.trim());
+        await updateLevelSubtitle(editingLevelData.areaId, editingLevelData.level, subtitleToSave, editingLevelSubtitleDescription.trim());
       } else if (editingLevelData.projectId) {
-        await updateProjectLevelSubtitle(editingLevelData.projectId, editingLevelData.level, editingLevelSubtitle.trim(), editingLevelSubtitleDescription.trim());
+        await updateProjectLevelSubtitle(editingLevelData.projectId, editingLevelData.level, subtitleToSave, editingLevelSubtitleDescription.trim());
       }
     }
     setEditingLevelSubtitle("");
@@ -305,12 +318,14 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
   };
 
   // Levels can be reordered (their whole contents swapped with the adjacent level) only
-  // when both sides are still ahead of the currently unlocked level - swapping never
-  // touches live progression - and the adjacent level already has real skill data to
-  // swap with (not just an empty "locked" placeholder in the Designer's look-ahead window).
-  const canSwapLevel = (level: number, direction: "up" | "down", unlockedLevel: number, maxLevel: number): boolean => {
+  // when neither side is behind the currently unlocked level, and the adjacent level already
+  // has real skill data to swap with (not just an empty "locked" placeholder in the
+  // Designer's look-ahead window). The unlocked level itself can swap with a blocked one
+  // only while none of its nodes has been confirmed yet - never touches live progress.
+  const canSwapLevel = (level: number, direction: "up" | "down", unlockedLevel: number, maxLevel: number, skills: any[]): boolean => {
     const otherLevel = direction === "up" ? level - 1 : level + 1;
-    if (level <= unlockedLevel || otherLevel <= unlockedLevel) return false;
+    if (level < unlockedLevel || otherLevel < unlockedLevel) return false;
+    if ((level === unlockedLevel || otherLevel === unlockedLevel) && !isLevelWithoutProgress(skills, unlockedLevel)) return false;
     if (otherLevel > maxLevel) return false;
     return true;
   };
@@ -365,8 +380,8 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                         const canEditLevelSubtitle = level >= area.unlockedLevel;
                         const isNotYetVisibleInSkillTree = level > visibleInSkillTree;
                         
-                        const canSwapUp = canSwapLevel(level, "up", area.unlockedLevel, maxLevel);
-                        const canSwapDown = canSwapLevel(level, "down", area.unlockedLevel, maxLevel);
+                        const canSwapUp = canSwapLevel(level, "up", area.unlockedLevel, maxLevel, area.skills);
+                        const canSwapDown = canSwapLevel(level, "down", area.unlockedLevel, maxLevel, area.skills);
                         const canDelete = canDeleteLevel(level, area.unlockedLevel, maxLevel);
                         const isLastGeneratedLevel = level === maxLevel;
                         return (
@@ -568,8 +583,8 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                           // Subtitle is editable for blocked levels and the currently unlocked level
                           const canEditLevelSubtitle = level >= project.unlockedLevel;
                           const isNotYetVisibleInSkillTree = level > visibleInSkillTree;
-                          const canSwapUp = canSwapLevel(level, "up", project.unlockedLevel, maxLevel);
-                          const canSwapDown = canSwapLevel(level, "down", project.unlockedLevel, maxLevel);
+                          const canSwapUp = canSwapLevel(level, "up", project.unlockedLevel, maxLevel, project.skills);
+                          const canSwapDown = canSwapLevel(level, "down", project.unlockedLevel, maxLevel, project.skills);
                           const canDelete = canDeleteLevel(level, project.unlockedLevel, maxLevel);
                           const isLastGeneratedLevel = level === maxLevel;
                           return (
@@ -769,8 +784,8 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                           // Subtitle is editable for blocked levels and the currently unlocked level
                           const canEditLevelSubtitle = level >= project.unlockedLevel;
                           const isNotYetVisibleInSkillTree = level > visibleInSkillTree;
-                          const canSwapUp = canSwapLevel(level, "up", project.unlockedLevel, maxLevel);
-                          const canSwapDown = canSwapLevel(level, "down", project.unlockedLevel, maxLevel);
+                          const canSwapUp = canSwapLevel(level, "up", project.unlockedLevel, maxLevel, project.skills);
+                          const canSwapDown = canSwapLevel(level, "down", project.unlockedLevel, maxLevel, project.skills);
                           const canDelete = canDeleteLevel(level, project.unlockedLevel, maxLevel);
                           const isLastGeneratedLevel = level === maxLevel;
                           return (
@@ -967,8 +982,8 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                           // Subtitle is editable for blocked levels and the currently unlocked level
                           const canEditLevelSubtitle = level >= project.unlockedLevel;
                           const isNotYetVisibleInSkillTree = level > visibleInSkillTree;
-                          const canSwapUp = canSwapLevel(level, "up", project.unlockedLevel, maxLevel);
-                          const canSwapDown = canSwapLevel(level, "down", project.unlockedLevel, maxLevel);
+                          const canSwapUp = canSwapLevel(level, "up", project.unlockedLevel, maxLevel, project.skills);
+                          const canSwapDown = canSwapLevel(level, "down", project.unlockedLevel, maxLevel, project.skills);
                           const canDelete = canDeleteLevel(level, project.unlockedLevel, maxLevel);
                           const isLastGeneratedLevel = level === maxLevel;
                           return (
@@ -1264,6 +1279,16 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
               onChange={(e) => setEditingLevelSubtitle(e.target.value)}
               autoFocus
             />
+            {editingLevelSubtitleSuggestion && (
+              <button
+                type="button"
+                onClick={() => setEditingLevelSubtitle(editingLevelSubtitleSuggestion)}
+                className="-mt-2 text-left text-xs text-muted-foreground hover:text-foreground"
+              >
+                Ya existe un nivel con ese nombre. Se guardará como{" "}
+                <span className="font-semibold text-foreground underline underline-offset-2">{editingLevelSubtitleSuggestion}</span>
+              </button>
+            )}
             <Textarea
               placeholder="Descripción del nivel..."
               value={editingLevelSubtitleDescription}
