@@ -889,7 +889,7 @@ function SavingMissionRow({ mission, onToggle, onEdit }: { mission: SavingMissio
         {mission.done && <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />}
       </span>
       <span className={`text-base shrink-0 ${mission.done ? "grayscale opacity-60" : ""}`}>{mission.emoji}</span>
-      <span className={`flex-1 min-w-0 text-sm truncate ${mission.done ? "line-through text-muted-foreground" : "font-medium"}`}>{mission.title}</span>
+      <span className={`flex-1 min-w-0 text-sm leading-snug break-words ${mission.done ? "line-through text-muted-foreground" : "font-medium"}`}>{mission.title}</span>
       {mission.amount > 0 && (
         <span className={`text-xs font-semibold shrink-0 ${mission.done ? "" : "text-muted-foreground"}`} style={mission.done ? { color: GOLD } : undefined}>
           +<Money usd={mission.amount} />
@@ -917,6 +917,9 @@ function SavingMissionsCard({
 }) {
   const titlePress = useLongPress(onAdd);
   const done = missions.filter((m) => m.done).length;
+  // Total ahorrado = suma de lo que ahorra cada misión ya cumplida (en dólares).
+  const saved = missions.reduce((a, m) => a + (m.done ? Number(m.amount) || 0 : 0), 0);
+  const potential = missions.reduce((a, m) => a + (Number(m.amount) || 0), 0);
   // Pendientes primero, cumplidas al final.
   const sorted = [...missions].sort((a, b) => Number(a.done) - Number(b.done));
 
@@ -938,6 +941,19 @@ function SavingMissionsCard({
       {missions.length > 0 && (
         <div className="h-1.5 rounded-full bg-muted overflow-hidden mt-2.5">
           <div className="h-full rounded-full transition-all duration-500" style={{ width: `${(done / missions.length) * 100}%`, background: GOLD }} />
+        </div>
+      )}
+      {potential > 0 && (
+        <div className="flex items-baseline justify-between gap-2 mt-3 pb-3 border-b border-border/60">
+          <span className="text-xs text-muted-foreground">Total ahorrado</span>
+          <span className="flex items-baseline gap-1.5">
+            <Money usd={saved} className="font-display font-semibold text-lg" />
+            {saved < potential && (
+              <span className="text-[11px] text-muted-foreground">
+                de <Money usd={potential} />
+              </span>
+            )}
+          </span>
         </div>
       )}
       {missions.length === 0 ? (
