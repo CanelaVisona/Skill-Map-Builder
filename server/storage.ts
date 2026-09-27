@@ -596,6 +596,38 @@ export class DbStorage implements IStorage {
     return allIds;
   }
 
+  // Sub-nodos (a cualquier profundidad) de las áreas/quests del usuario que tienen fecha
+  // planeada o que ya se completaron: el front solo tiene cargados los nodos de primer nivel,
+  // así que sin esto los sub-nodos nunca aparecían en "Hoy" ni en el calendario de actividades.
+  // parentName = título del nodo padre directo.
+  async getDatedSubSkills(userId: string): Promise<{ id: string; title: string; status: string; plannedDate: string | null; plannedDuration: number | null; completedAt: Date | null; parentName: string }[]> {
+    const result = await pool.query(
+      `WITH RECURSIVE tree AS (
+         SELECT s.id FROM skills s
+         LEFT JOIN areas a ON s.area_id = a.id
+         LEFT JOIN projects p ON s.project_id = p.id
+         WHERE s.parent_skill_id IS NULL AND (a.user_id = $1 OR p.user_id = $1)
+         UNION ALL
+         SELECT c.id FROM skills c JOIN tree t ON c.parent_skill_id = t.id
+       )
+       SELECT s.id, s.title, s.status, s.planned_date, s.planned_duration, s.completed_at, parent.title AS parent_name
+       FROM skills s
+       JOIN tree t ON s.id = t.id
+       JOIN skills parent ON parent.id = s.parent_skill_id
+       WHERE s.planned_date IS NOT NULL OR s.completed_at IS NOT NULL`,
+      [userId]
+    );
+    return result.rows.map((r: any) => ({
+      id: r.id,
+      title: r.title,
+      status: r.status,
+      plannedDate: r.planned_date,
+      plannedDuration: r.planned_duration,
+      completedAt: r.completed_at,
+      parentName: r.parent_name,
+    }));
+  }
+
   async getSkill(id: string): Promise<Skill | undefined> {
     const result = await db.select().from(skills).where(eq(skills.id, id));
     return result[0];

@@ -80,7 +80,9 @@ interface PlannedNode {
   // Solo presentes en nodos con fecha planeada (no en los "extra"): de dónde viene, para poder
   // llamar a updateSkill/updateProjectSkill al cambiar su día desde "Tareas de hoy".
   parentId?: string;
-  kind?: "area" | "project";
+  // "sub" = sub-nodo (dentro del sub-árbol de otro nodo): no vive en areas/projects del
+  // contexto, se edita directo por /api/skills/:id (ver patchSubSkill).
+  kind?: "area" | "project" | "sub";
 }
 
 // Sufijo "· Xmin" que se agrega al lado del título de una tarea cuando tiene una duración
@@ -141,6 +143,31 @@ function TaskDot({ emoji, color, size = "sm" }: { emoji?: string | null; color: 
 function getFirstDayOfMonth(date: Date) {
   const firstDow = new Date(date.getFullYear(), date.getMonth(), 1).getDay();
   return firstDow === 0 ? 6 : firstDow - 1;
+}
+
+// Fila de un nodo en el panel de detalle del calendario: completado → verde con tilde;
+// pendiente → su punto/emoji de siempre.
+function NodeListRow({ node }: { node: PlannedNode }) {
+  return (
+    <div className="flex items-center gap-2 text-sm">
+      {node.done ? <DoneNodeMark size="md" /> : <TaskDot emoji={extractLeadingEmoji(node.title)} color={NODE_COLOR} size="md" />}
+      <span className={node.done ? "text-emerald-600 dark:text-emerald-400" : undefined}>
+        {node.done ? node.title : stripLeadingEmoji(node.title)} <span className="text-muted-foreground">· {node.parentName}</span>
+      </span>
+    </div>
+  );
+}
+
+// Nodo completado (de área, quest o sub-nodo; planeado o "extra") en el calendario de
+// actividades: círculo verde con un tilde en vez del punto/emoji del nodo.
+function DoneNodeMark({ size = "sm" }: { size?: "sm" | "md" }) {
+  return (
+    <span
+      className={`${size === "md" ? "h-3.5 w-3.5" : "h-2.5 w-2.5"} flex flex-shrink-0 items-center justify-center rounded-full bg-emerald-500`}
+    >
+      <Check className={`${size === "md" ? "h-2.5 w-2.5" : "h-2 w-2"} text-white`} strokeWidth={4} />
+    </span>
+  );
 }
 
 export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
@@ -282,10 +309,55 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     return result;
   };
 
+  // Sub-nodos (a cualquier profundidad) con fecha planeada o completados: el contexto solo
+  // tiene los nodos de primer nivel de cada área/quest, así que se piden aparte.
+  const { data: datedSubSkillsData } = useQuery({
+    queryKey: ["dated-sub-skills"],
+    queryFn: async () => {
+      const res = await fetch("/api/sub-skills/dated");
+      if (!res.ok) throw new Error("Failed to fetch dated sub-skills");
+      return res.json() as Promise<{ id: string; title: string; status: string; plannedDate: string | null; plannedDuration: number | null; completedAt: string | null; parentName: string }[]>;
+    },
+    enabled: open,
+    // Los sub-nodos se editan desde el sub-árbol sin invalidar esta consulta: se refresca
+    // cada vez que se abre el modal.
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
+  const datedSubSkills = datedSubSkillsData || [];
+
+  const plannedSubNodes: PlannedNode[] = datedSubSkills
+    .filter((s) => !!s.plannedDate)
+    .map((s) => ({
+      id: s.id,
+      title: s.title || "Sin nombre",
+      parentName: s.parentName,
+      plannedDate: s.plannedDate!,
+      done: s.status === "mastered",
+      plannedDuration: s.plannedDuration,
+      kind: "sub",
+    }));
+
   const allPlannedNodes = [
     ...collectPlannedNodes(Array.isArray(areas) ? areas : [], "area"),
     ...collectPlannedNodes(Array.isArray(projects) ? projects : [], "project"),
+    ...plannedSubNodes,
   ];
+
+  const patchSubSkill = useMutation({
+    mutationFn: async ({ id, updates }: { id: string; updates: { plannedDate?: string | null; status?: string } }) => {
+      const res = await fetch(`/api/skills/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      if (!res.ok) throw new Error("Failed to update sub-skill");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dated-sub-skills"] });
+    },
+  });
 
   const plannedNodesForView = allPlannedNodes.filter((n) => n.plannedDate === effectiveDate);
 
@@ -425,12 +497,29 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     return result;
   };
 
+  // Lo mismo para sub-nodos completados sin fecha planeada.
+  const collectExtraCompletedSubNodes = (startDate: string, endDate: string): PlannedNode[] =>
+    datedSubSkills
+      .filter((s) => s.status === "mastered" && !!s.completedAt && !s.plannedDate)
+      .map((s) => ({ s, completedDateStr: getDateStr(new Date(s.completedAt!)) }))
+      .filter(({ completedDateStr }) => completedDateStr >= startDate && completedDateStr <= endDate)
+      .map(({ s, completedDateStr }) => ({
+        id: s.id,
+        title: s.title || "Sin nombre",
+        parentName: s.parentName,
+        plannedDate: completedDateStr,
+        done: true,
+        completedAt: s.completedAt!,
+        plannedDuration: s.plannedDuration,
+      }));
+
   // Se usa effectiveDate (no todayStr) para que también aparezcan acá los nodos completados sin
   // fecha planeada de un día pasado que se esté editando; para un día futuro no hay nada
   // completado todavía, así que naturalmente da vacío.
   const extraNodes = [
     ...collectExtraCompletedNodes(Array.isArray(areas) ? areas : [], effectiveDate, effectiveDate),
     ...collectExtraCompletedNodes(Array.isArray(projects) ? projects : [], effectiveDate, effectiveDate),
+    ...collectExtraCompletedSubNodes(effectiveDate, effectiveDate),
   ];
   // Nodos "extra" (sin fecha planeada): no tienen un campo de fecha editable (su día sale de
   // completedAt, que no se puede reasignar a mano), así que quedan afuera de "Cambiar de día".
@@ -727,7 +816,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     // fecha en el árbol — mismo efecto que limpiar "When exactly?" a mano en el nodo.
     if (item.type === "node") {
       const node = allPlannedNodes.find((n) => n.id === item.id);
-      if (node?.parentId && node.kind) {
+      if (node?.kind === "sub") patchSubSkill.mutate({ id: item.id, updates: { plannedDate: null } });
+      else if (node?.parentId && node.kind) {
         if (node.kind === "project") updateProjectSkill(node.parentId, item.id, { plannedDate: null });
         else updateSkill(node.parentId, item.id, { plannedDate: null });
       }
@@ -758,7 +848,14 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // de progresión de nivel y mismos pop-ups de XP/quest/subida de nivel.
   const toggleNodeDone = (item: TodayItem) => {
     const parent = findNodeParent(item.id);
-    if (!parent) return;
+    if (!parent) {
+      // Sub-nodo: no está en el contexto, se marca directo en el server (que igual estampa
+      // completedAt, suma XP al padre y desbloquea el siguiente del nivel).
+      if (datedSubSkills.some((s) => s.id === item.id)) {
+        patchSubSkill.mutate({ id: item.id, updates: { status: item.done ? "available" : "mastered" } });
+      }
+      return;
+    }
     if (parent.kind === "area") toggleSkillStatus(parent.parentId, item.id);
     else toggleProjectSkillStatus(parent.parentId, item.id);
   };
@@ -887,7 +984,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     }
     if (item.type === "node") {
       const node = allPlannedNodes.find((n) => n.id === item.id);
-      if (node?.parentId && node.kind) {
+      if (node?.kind === "sub") patchSubSkill.mutate({ id: item.id, updates: { plannedDate: newDate } });
+      else if (node?.parentId && node.kind) {
         if (node.kind === "project") updateProjectSkill(node.parentId, item.id, { plannedDate: newDate });
         else updateSkill(node.parentId, item.id, { plannedDate: newDate });
       }
@@ -1126,6 +1224,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const extraNodesThisMonth = [
     ...collectExtraCompletedNodes(Array.isArray(areas) ? areas : [], calMonthStart, calMonthEnd),
     ...collectExtraCompletedNodes(Array.isArray(projects) ? projects : [], calMonthStart, calMonthEnd),
+    ...collectExtraCompletedSubNodes(calMonthStart, calMonthEnd),
   ];
 
   // Prácticas de repetición espaciada confirmadas dentro del mes mostrado. Solo se puede
@@ -1225,6 +1324,13 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   };
 
   const selectedDayDetails = selectedDay ? getDayStats(selectedDay, new Date(selectedDay + "T12:00:00")) : null;
+  const selectedDayIsFuture = !!selectedDay && selectedDay > todayStr;
+
+  // Mini calendario del diálogo de agregar (para elegir más días).
+  const pickerYear = calAddPickerMonth.getFullYear();
+  const pickerMonth = calAddPickerMonth.getMonth();
+  const pickerDim = new Date(pickerYear, pickerMonth + 1, 0).getDate();
+  const pickerOffset = getFirstDayOfMonth(calAddPickerMonth);
 
   return (
     <>
@@ -1569,7 +1675,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                           />
                         ))}
                         {nodesDoneThatDay.map((n) => (
-                          <TaskDot key={n.id} emoji={extractLeadingEmoji(n.title)} color={NODE_COLOR} />
+                          <DoneNodeMark key={n.id} />
                         ))}
                         {practicesDoneThatDay.map((p) => (
                           <TaskDot key={p.id} emoji={p.emoji} color={PRACTICE_COLOR} />
@@ -1581,9 +1687,13 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                     )}
                     {hasFutureContent && (
                       <div className="flex gap-1 flex-wrap justify-center max-w-full">
-                        {nodesScheduledThatDay.map((n) => (
-                          <TaskDot key={n.id} emoji={extractLeadingEmoji(n.title)} color={NODE_COLOR} />
-                        ))}
+                        {nodesScheduledThatDay.map((n) =>
+                          n.done ? (
+                            <DoneNodeMark key={n.id} />
+                          ) : (
+                            <TaskDot key={n.id} emoji={extractLeadingEmoji(n.title)} color={NODE_COLOR} />
+                          )
+                        )}
                         {manualScheduledThatDay.map((t) => (
                           <TaskDot key={t.id} emoji={extractLeadingEmoji(t.title)} color={t.kind === "event" ? EVENT_COLOR : TASK_COLOR} />
                         ))}
@@ -1596,7 +1706,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
 
             <div className="rounded-lg border border-border/30 bg-muted/20 px-3 py-2.5 min-h-[3rem]">
               {!selectedDay ? (
-                <p className="text-xs text-muted-foreground">Tocá un día para ver qué se hizo.</p>
+                <p className="text-xs text-muted-foreground">Tocá un día para ver sus tareas. Mantenelo presionado para agregar una.</p>
               ) : (
                 <div className="space-y-1">
                   <div className="flex items-center justify-between gap-2">
@@ -1618,7 +1728,32 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                       <Pencil className="h-3 w-3 text-muted-foreground" />
                     </button>
                   </div>
-                  {selectedDayDetails && (selectedDayDetails.habitsDone.length > 0 || selectedDayDetails.nodesDone.length > 0 || selectedDayDetails.practicesDone.length > 0 || selectedDayDetails.manualDone.length > 0) ? (
+                  {selectedDayIsFuture && selectedDayDetails ? (
+                    // Un día futuro no tiene nada "hecho" todavía: se lista lo agendado (hábitos
+                    // programados ese día, nodos con fecha planeada — completados o no — y
+                    // tareas/eventos manuales).
+                    selectedDayDetails.habitsScheduled.length > 0 || selectedDayDetails.nodesScheduled.length > 0 || selectedDayDetails.manualScheduled.length > 0 ? (
+                      <div className="space-y-1">
+                        {selectedDayDetails.habitsScheduled.map((h) => (
+                          <div key={h.id} className="flex items-center gap-2 text-sm">
+                            <TaskDot emoji={h.emoji} color={HABIT_COLORS[activeHabitsThisMonth.indexOf(h) % HABIT_COLORS.length]} size="md" />
+                            <span>{h.name}</span>
+                          </div>
+                        ))}
+                        {selectedDayDetails.nodesScheduled.map((n) => (
+                          <NodeListRow key={n.id} node={n} />
+                        ))}
+                        {selectedDayDetails.manualScheduled.map((t) => (
+                          <div key={t.id} className="flex items-center gap-2 text-sm">
+                            <TaskDot emoji={extractLeadingEmoji(t.title)} color={t.kind === "event" ? EVENT_COLOR : TASK_COLOR} size="md" />
+                            <span>{stripLeadingEmoji(t.title)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">Nada agendado ese día.</p>
+                    )
+                  ) : selectedDayDetails && (selectedDayDetails.habitsDone.length > 0 || selectedDayDetails.nodesDone.length > 0 || selectedDayDetails.practicesDone.length > 0 || selectedDayDetails.manualDone.length > 0) ? (
                     <div className="space-y-1">
                       {selectedDayDetails.habitsDone.map((h) => (
                         <div key={h.id} className="flex items-center gap-2 text-sm">
@@ -1627,10 +1762,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                         </div>
                       ))}
                       {selectedDayDetails.nodesDone.map((n) => (
-                        <div key={n.id} className="flex items-center gap-2 text-sm">
-                          <TaskDot emoji={extractLeadingEmoji(n.title)} color={NODE_COLOR} size="md" />
-                          <span>{stripLeadingEmoji(n.title)} <span className="text-muted-foreground">· {n.parentName}</span></span>
-                        </div>
+                        <NodeListRow key={n.id} node={n} />
                       ))}
                       {selectedDayDetails.practicesDone.map((p) => (
                         <div key={p.id} className="flex items-center gap-2 text-sm">
@@ -1723,6 +1855,160 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
             </div>
           </div>
         )}
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={calAddOpen} onOpenChange={setCalAddOpen}>
+      <DialogContent className="max-w-sm rounded-2xl max-h-[85vh] overflow-y-auto minimal-scrollbar">
+        <DialogTitle>
+          {calAddDates.length === 1
+            ? `Nueva tarea · ${new Date(calAddDates[0] + "T12:00:00").toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" })}`
+            : `Nueva tarea · ${calAddDates.length} días`}
+        </DialogTitle>
+        <div className="flex gap-2">
+          {(["task", "event"] as const).map((k) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setCalAddKind(k)}
+              className={`flex-1 px-3 py-1.5 text-sm rounded-md border transition-colors ${
+                calAddKind === k
+                  ? "border-transparent text-white"
+                  : "border-border/30 bg-muted text-muted-foreground hover:bg-muted/80"
+              }`}
+              style={calAddKind === k ? { background: k === "event" ? EVENT_COLOR : TASK_COLOR } : undefined}
+            >
+              {k === "event" ? "Evento" : "Tarea"}
+            </button>
+          ))}
+        </div>
+        <Input
+          autoFocus
+          value={calAddTitle}
+          onChange={(e) => setCalAddTitle(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") submitCalendarAdd();
+          }}
+          placeholder={calAddKind === "event" ? "¿Qué evento querés agregar?" : "¿Qué tarea querés agregar?"}
+        />
+
+        <div className="space-y-2">
+          <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Momento del día</p>
+          <div className="grid grid-cols-2 gap-1.5">
+            {[{ key: null, label: "Sin asignar" } as { key: TaskSlotKey | null; label: string }, ...TIME_SLOTS].map((s) => (
+              <button
+                key={s.key ?? "none"}
+                type="button"
+                onClick={() => setCalAddSlot(s.key)}
+                className={`px-2 py-1.5 text-sm rounded-md border transition-colors ${
+                  calAddSlot === s.key
+                    ? "border-emerald-500 bg-emerald-500/15 text-foreground"
+                    : "border-border/30 bg-muted text-muted-foreground hover:bg-muted/80"
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+          {calAddSlot && (
+            <div className="flex gap-1.5">
+              {([["start", "Al principio"], ["end", "Al final"]] as const).map(([pos, label]) => (
+                <button
+                  key={pos}
+                  type="button"
+                  onClick={() => setCalAddPosition(pos)}
+                  className={`flex-1 px-2 py-1.5 text-sm rounded-md border transition-colors ${
+                    calAddPosition === pos
+                      ? "border-emerald-500 bg-emerald-500/15 text-foreground"
+                      : "border-border/30 bg-muted text-muted-foreground hover:bg-muted/80"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <button
+            type="button"
+            onClick={() => setCalAddPickerOpen((o) => !o)}
+            className="flex w-full items-center justify-between text-xs font-bold uppercase tracking-wide text-muted-foreground"
+          >
+            <span>Días ({calAddDates.length})</span>
+            <span className="normal-case font-medium text-emerald-600 dark:text-emerald-400">
+              {calAddPickerOpen ? "Listo" : "Seleccionar más días"}
+            </span>
+          </button>
+          {calAddPickerOpen && (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCalAddPickerMonth(new Date(pickerYear, pickerMonth - 1, 1))}
+                  className="flex h-7 w-7 items-center justify-center rounded border border-border/30 bg-muted hover:bg-muted/80"
+                >
+                  <ChevronLeft className="h-4 w-4 text-muted-foreground" />
+                </button>
+                <span className="text-sm font-bold capitalize">{MONTHS[pickerMonth]} {pickerYear}</span>
+                <button
+                  type="button"
+                  onClick={() => setCalAddPickerMonth(new Date(pickerYear, pickerMonth + 1, 1))}
+                  className="flex h-7 w-7 items-center justify-center rounded border border-border/30 bg-muted hover:bg-muted/80"
+                >
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                </button>
+              </div>
+              <div className="grid grid-cols-7 gap-1">
+                {DAY_LBLS.map((lbl) => (
+                  <div key={lbl} className="text-center text-[10px] font-medium text-muted-foreground uppercase">
+                    {lbl}
+                  </div>
+                ))}
+                {Array.from({ length: pickerOffset }).map((_, i) => (
+                  <div key={`pempty-${i}`} />
+                ))}
+                {Array.from({ length: pickerDim }).map((_, d) => {
+                  const dateStr = `${pickerYear}-${String(pickerMonth + 1).padStart(2, "0")}-${String(d + 1).padStart(2, "0")}`;
+                  const selected = calAddDates.includes(dateStr);
+                  return (
+                    <button
+                      key={dateStr}
+                      type="button"
+                      onClick={() => toggleCalAddDate(dateStr)}
+                      className={`aspect-square rounded-md text-xs transition-colors ${
+                        selected
+                          ? "bg-emerald-500 text-white font-bold"
+                          : dateStr === todayStr
+                          ? "bg-muted/40 ring-1 ring-emerald-500"
+                          : "bg-muted/30 hover:bg-muted/60"
+                      }`}
+                    >
+                      {d + 1}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            onClick={() => setCalAddOpen(false)}
+            className="px-3 py-1.5 text-sm rounded-md hover:bg-muted transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={submitCalendarAdd}
+            disabled={!calAddTitle.trim() || calAddDates.length === 0}
+            className="px-3 py-1.5 text-sm rounded-md bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            Agregar
+          </button>
+        </div>
       </DialogContent>
     </Dialog>
 

@@ -593,6 +593,8 @@ export const savingMissions = pgTable("saving_missions", {
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   emoji: text("emoji").notNull().default("🎯"),
+  // Cuánta plata se ahorra al cumplir la misión, en dólares como el resto del modal de finanzas.
+  amount: doublePrecision("amount").notNull().default(0),
   done: boolean("done").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

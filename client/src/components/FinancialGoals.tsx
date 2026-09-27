@@ -869,7 +869,7 @@ function MovementsCard({ goals }: { goals: FinancialGoal[] }) {
   );
 }
 
-// ---------- estrategias de ahorro (misiones) ----------
+// ---------- misiones de ahorro ----------
 
 const MISSION_EMOJIS = ["🎯", "🍱", "☕", "🚲", "🛒", "📵", "💡", "🧾", "🏷️", "🍳", "🚶", "💳"];
 
@@ -890,7 +890,12 @@ function SavingMissionRow({ mission, onToggle, onEdit }: { mission: SavingMissio
       </span>
       <span className={`text-base shrink-0 ${mission.done ? "grayscale opacity-60" : ""}`}>{mission.emoji}</span>
       <span className={`flex-1 min-w-0 text-sm truncate ${mission.done ? "line-through text-muted-foreground" : "font-medium"}`}>{mission.title}</span>
-      {mission.done && (
+      {mission.amount > 0 && (
+        <span className={`text-xs font-semibold shrink-0 ${mission.done ? "" : "text-muted-foreground"}`} style={mission.done ? { color: GOLD } : undefined}>
+          +<Money usd={mission.amount} />
+        </span>
+      )}
+      {mission.done && !(mission.amount > 0) && (
         <span className="text-[11px] font-semibold shrink-0" style={{ color: GOLD }}>
           Cumplida
         </span>
@@ -920,7 +925,7 @@ function SavingMissionsCard({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="font-display font-semibold text-sm cursor-pointer select-none inline-block" {...titlePress}>
-            ⚔️ Estrategias de ahorro
+            ⚔️ Misiones de ahorro
           </div>
           <div className="text-xs text-muted-foreground mt-0.5">Mantené presionado el título para agregar una misión</div>
         </div>
@@ -959,17 +964,22 @@ function SavingMissionFormDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   mission: SavingMission | null;
-  onSubmit: (data: { title: string; emoji: string }) => void;
+  onSubmit: (data: { title: string; emoji: string; amount: number }) => void;
   onDelete: () => void;
 }) {
   const [title, setTitle] = useState("");
   const [emoji, setEmoji] = useState(MISSION_EMOJIS[0]);
+  const [amount, setAmount] = useState("");
+  const [amountCurrency, setAmountCurrency] = useState<AmountCurrency>("usd");
   const [err, setErr] = useState(false);
+  const rates = useDollarRates();
 
   useEffect(() => {
     if (!open) return;
     setTitle(mission?.title || "");
     setEmoji(mission?.emoji || MISSION_EMOJIS[0]);
+    setAmount(mission?.amount ? moneyFormatter.format(mission.amount) : "");
+    setAmountCurrency("usd");
     setErr(false);
   }, [open, mission]);
 
@@ -979,7 +989,7 @@ function SavingMissionFormDialog({
       setErr(true);
       return;
     }
-    onSubmit({ title: t, emoji });
+    onSubmit({ title: t, emoji, amount: parseAmountAs(amount, amountCurrency, rates) });
   };
 
   return (
@@ -1014,6 +1024,25 @@ function SavingMissionFormDialog({
               autoFocus
             />
             {err && <p className="text-xs text-destructive mt-1">Poné un título para la misión.</p>}
+          </div>
+          <div>
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+              <label className="text-sm font-medium">¿Cuánto ahorrás al cumplirla?</label>
+              {dollarRateFor(rates) !== null && <CurrencyToggle currency={amountCurrency} onChange={setAmountCurrency} />}
+            </div>
+            <div className="relative">
+              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">{amountCurrency === "usd" ? "US$" : "$"}</span>
+              <Input
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSave();
+                }}
+                placeholder="0"
+                inputMode="decimal"
+                className="pl-10"
+              />
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2 pt-2">
@@ -3210,7 +3239,7 @@ export default function FinancialGoals() {
   });
 
   const createMission = useMutation({
-    mutationFn: async (data: { title: string; emoji: string }) => {
+    mutationFn: async (data: { title: string; emoji: string; amount: number }) => {
       const res = await fetch("/api/saving-missions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
       if (!res.ok) throw new Error("Failed to create saving mission");
       return res.json();
@@ -3223,7 +3252,7 @@ export default function FinancialGoals() {
   });
 
   const updateMission = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<Pick<SavingMission, "title" | "emoji" | "done">> }) => {
+    mutationFn: async ({ id, data }: { id: string; data: Partial<Pick<SavingMission, "title" | "emoji" | "amount" | "done">> }) => {
       const res = await fetch(`/api/saving-missions/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
       if (!res.ok) throw new Error("Failed to update saving mission");
       return res.json();
@@ -3261,10 +3290,16 @@ export default function FinancialGoals() {
 
   const handleMissionToggle = (mission: SavingMission) => {
     updateMission.mutate({ id: mission.id, data: { done: !mission.done } });
-    if (!mission.done) toast({ title: `${mission.emoji} ¡Misión cumplida!`, description: mission.title });
+    if (!mission.done) {
+      toast(
+        mission.amount > 0
+          ? { title: `+${moneyPairText(mission.amount, dollarRates)}`, description: `${mission.emoji} ¡Misión cumplida! ${mission.title}` }
+          : { title: `${mission.emoji} ¡Misión cumplida!`, description: mission.title },
+      );
+    }
   };
 
-  const handleMissionSubmit = (data: { title: string; emoji: string }) => {
+  const handleMissionSubmit = (data: { title: string; emoji: string; amount: number }) => {
     if (missionFormTarget) updateMission.mutate({ id: missionFormTarget.id, data });
     else createMission.mutate(data);
   };
@@ -3772,25 +3807,19 @@ export default function FinancialGoals() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-              <div className="space-y-4">
-                <IncomeCard sources={incomeSources} onOpenDetail={() => setIncomeDetailOpen(true)} onOpenCalendar={() => setIncomeCalendarOpen(true)} />
-              </div>
-              <div className="space-y-4">
-                <DistributionCard goals={goals} />
-              </div>
-            </div>
-            {/* Presupuesto y estrategias de ahorro, uno al lado del otro */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
-                <BudgetCard
-                  quarters={budgetQuarters}
-                  categories={budgetCategories}
-                  onLongPressQuarter={openBudgetCreate}
-                  onOpenCategoriesDetail={() => setBudgetCategoriesDetailOpen(true)}
-                  onOpenQuarterCalendar={() => setBudgetCalendarOpen(true)}
-                  onOpenCategoriesCalendar={() => setBudgetCategoriesCalendarOpen(true)}
-                />
-                <SavingMissionsCard missions={savingMissions} onAdd={() => openMissionForm(null)} onToggle={handleMissionToggle} onEdit={openMissionForm} />
+            {/* Misiones de ahorro, presupuesto, ingresos e instrumentos, de izquierda a derecha */}
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 items-stretch">
+              <SavingMissionsCard missions={savingMissions} onAdd={() => openMissionForm(null)} onToggle={handleMissionToggle} onEdit={openMissionForm} />
+              <BudgetCard
+                quarters={budgetQuarters}
+                categories={budgetCategories}
+                onLongPressQuarter={openBudgetCreate}
+                onOpenCategoriesDetail={() => setBudgetCategoriesDetailOpen(true)}
+                onOpenQuarterCalendar={() => setBudgetCalendarOpen(true)}
+                onOpenCategoriesCalendar={() => setBudgetCategoriesCalendarOpen(true)}
+              />
+              <IncomeCard sources={incomeSources} onOpenDetail={() => setIncomeDetailOpen(true)} onOpenCalendar={() => setIncomeCalendarOpen(true)} />
+              <DistributionCard goals={goals} />
             </div>
             <MovementsCard goals={goals} />
           </div>

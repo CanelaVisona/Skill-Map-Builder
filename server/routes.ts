@@ -2371,6 +2371,15 @@ export async function registerRoutes(
     }
   });
 
+  // Sub-nodos con fecha planeada o completados (para "Hoy" y el calendario de actividades).
+  app.get("/api/sub-skills/dated", requireAuth, async (req, res) => {
+    try {
+      res.json(await storage.getDatedSubSkills(req.userId!));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Sub-skills (protected)
   app.get("/api/skills/:id/subskills", requireAuth, async (req, res) => {
     try {
@@ -6403,6 +6412,7 @@ export async function registerRoutes(
         userId: req.userId!,
         title,
         emoji: String(req.body.emoji || "🎯"),
+        amount: Math.max(0, Number(req.body.amount) || 0),
         done: !!req.body.done,
       });
       res.status(201).json(mission);
@@ -6423,6 +6433,7 @@ export async function registerRoutes(
       const patch: Record<string, unknown> = {};
       if (typeof req.body.title === "string" && req.body.title.trim()) patch.title = req.body.title.trim();
       if (typeof req.body.emoji === "string") patch.emoji = req.body.emoji;
+      if (typeof req.body.amount === "number" && Number.isFinite(req.body.amount)) patch.amount = Math.max(0, req.body.amount);
       if (typeof req.body.done === "boolean") patch.done = req.body.done;
       const updated = await storage.updateSavingMission(req.params.id, patch);
       res.json(updated);
