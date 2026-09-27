@@ -1326,6 +1326,112 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const selectedDayDetails = selectedDay ? getDayStats(selectedDay, new Date(selectedDay + "T12:00:00")) : null;
   const selectedDayIsFuture = !!selectedDay && selectedDay > todayStr;
 
+  // Lista del panel de detalle en el MISMO orden que la vista previa de ese día: primero
+  // "Sin asignar", después La mañana → Mediodía → Tarde → Noche, al final "Más"; dentro de
+  // cada una, las hechas primero y después el orden guardado (sortOrder/updatedAt) — mismo
+  // criterio que itemBuckets más arriba. Usa las franjas guardadas de ese día (misma
+  // queryKey que la vista previa, así que un reordenamiento ahí se refleja acá).
+  const { data: selectedDaySlotsData } = useTodayTaskSlots(selectedDay ?? "", open && !!selectedDay);
+  type DayListEntry = { key: string; done: boolean; node: React.ReactNode; fallback: "unassigned" | "more"; defaultSlot?: TaskSlotKey };
+  const selectedDayList: React.ReactNode[] = (() => {
+    if (!selectedDay || !selectedDayDetails) return [];
+    const slotRows = new Map((selectedDaySlotsData || []).map((s) => [`${s.taskType}:${s.taskId}`, s]));
+    const habitRow = (h: Habit) => (
+      <div className="flex items-center gap-2 text-sm">
+        <TaskDot emoji={h.emoji} color={HABIT_COLORS[activeHabitsThisMonth.indexOf(h) % HABIT_COLORS.length]} size="md" />
+        <span>{h.name}</span>
+      </div>
+    );
+    const manualRow = (t: { title: string; kind: string }) => (
+      <div className="flex items-center gap-2 text-sm">
+        <TaskDot emoji={extractLeadingEmoji(t.title)} color={t.kind === "event" ? EVENT_COLOR : TASK_COLOR} size="md" />
+        <span>{stripLeadingEmoji(t.title)}</span>
+      </div>
+    );
+
+    const entries: DayListEntry[] = [];
+    if (selectedDayIsFuture) {
+      // Hábitos agregados a mano a ese día (fila de franja que no sea "hidden") además de
+      // los programados, igual que en la vista previa.
+      const scheduledIds = new Set(selectedDayDetails.habitsScheduled.map((h) => h.id));
+      const addedHabits = activeHabitsThisMonth.filter((h) => {
+        const row = slotRows.get(`habit:${h.id}`);
+        return !scheduledIds.has(h.id) && !!row && row.slot !== "hidden";
+      });
+      [...selectedDayDetails.habitsScheduled, ...addedHabits].forEach((h) =>
+        entries.push({ key: `habit:${h.id}`, done: false, node: habitRow(h), fallback: "unassigned" })
+      );
+      selectedDayDetails.nodesScheduled.forEach((n) =>
+        entries.push({ key: `node:${n.id}`, done: n.done, node: <NodeListRow node={n} />, fallback: "unassigned" })
+      );
+      selectedDayDetails.manualScheduled.forEach((t) =>
+        entries.push({ key: `manual:${t.id}`, done: t.done === 1, node: manualRow(t), fallback: "unassigned" })
+      );
+    } else {
+      const scheduledIds = new Set(selectedDayDetails.habitsScheduled.map((h) => h.id));
+      selectedDayDetails.habitsDone.forEach((h) => {
+        const row = slotRows.get(`habit:${h.id}`);
+        const counted = scheduledIds.has(h.id) || (!!row && row.slot !== "hidden");
+        entries.push({ key: `habit:${h.id}`, done: true, node: habitRow(h), fallback: counted ? "unassigned" : "more" });
+      });
+      selectedDayDetails.nodesDone.forEach((n) =>
+        entries.push({
+          key: `node:${n.id}`,
+          done: true,
+          node: <NodeListRow node={n} />,
+          fallback: "unassigned",
+          // Nodo "extra" (sin fecha planeada): cae en la franja del momento en que se confirmó.
+          defaultSlot: n.completedAt ? getTimeSlotKeyForDate(new Date(n.completedAt)) : undefined,
+        })
+      );
+      selectedDayDetails.practicesDone.forEach((p) =>
+        entries.push({
+          key: `practice:${p.id}`,
+          done: true,
+          node: (
+            <div className="flex items-center gap-2 text-sm">
+              <TaskDot emoji={p.emoji} color={PRACTICE_COLOR} size="md" />
+              <span>{p.name}</span>
+            </div>
+          ),
+          fallback: "unassigned",
+        })
+      );
+      selectedDayDetails.manualDone.forEach((t) =>
+        entries.push({ key: `manual:${t.id}`, done: true, node: manualRow(t), fallback: "unassigned" })
+      );
+    }
+
+    const bucketOrder = ["unassigned", ...TIME_SLOTS.map((s) => s.key), "more"];
+    const placed = entries
+      // Ocultada ese día y sin hacer: tampoco aparece en la vista previa.
+      .filter((e) => e.done || slotRows.get(e.key)?.slot !== "hidden")
+      .map((e, baseIdx) => {
+        const row = slotRows.get(e.key);
+        const realSlot = row && TIME_SLOTS.some((t) => t.key === row.slot) ? (row.slot as TaskSlotKey) : undefined;
+        const habitDefault = e.key.startsWith("habit:") ? habitDefaultSlotsById.get(e.key.slice(6))?.[0] : undefined;
+        const bucket = realSlot ?? e.defaultSlot ?? habitDefault ?? e.fallback;
+        return {
+          e,
+          baseIdx,
+          bucketIdx: bucketOrder.indexOf(bucket),
+          sortOrder: row?.sortOrder ?? 0,
+          updatedAt: row ? new Date(row.updatedAt).getTime() : 0,
+        };
+      });
+    placed.sort((a, b) => {
+      if (a.bucketIdx !== b.bucketIdx) return a.bucketIdx - b.bucketIdx;
+      if (a.e.done !== b.e.done) return Number(b.e.done) - Number(a.e.done);
+      const isSlotBucket = a.bucketIdx > 0 && a.bucketIdx < bucketOrder.length - 1;
+      if (isSlotBucket) {
+        if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+        if (a.updatedAt !== b.updatedAt) return a.updatedAt - b.updatedAt;
+      }
+      return a.baseIdx - b.baseIdx;
+    });
+    return placed.map(({ e }) => <React.Fragment key={e.key}>{e.node}</React.Fragment>);
+  })();
+
   // Mini calendario del diálogo de agregar (para elegir más días).
   const pickerYear = calAddPickerMonth.getFullYear();
   const pickerMonth = calAddPickerMonth.getMonth();
@@ -1728,57 +1834,12 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                       <Pencil className="h-3 w-3 text-muted-foreground" />
                     </button>
                   </div>
-                  {selectedDayIsFuture && selectedDayDetails ? (
-                    // Un día futuro no tiene nada "hecho" todavía: se lista lo agendado (hábitos
-                    // programados ese día, nodos con fecha planeada — completados o no — y
-                    // tareas/eventos manuales).
-                    selectedDayDetails.habitsScheduled.length > 0 || selectedDayDetails.nodesScheduled.length > 0 || selectedDayDetails.manualScheduled.length > 0 ? (
-                      <div className="space-y-1">
-                        {selectedDayDetails.habitsScheduled.map((h) => (
-                          <div key={h.id} className="flex items-center gap-2 text-sm">
-                            <TaskDot emoji={h.emoji} color={HABIT_COLORS[activeHabitsThisMonth.indexOf(h) % HABIT_COLORS.length]} size="md" />
-                            <span>{h.name}</span>
-                          </div>
-                        ))}
-                        {selectedDayDetails.nodesScheduled.map((n) => (
-                          <NodeListRow key={n.id} node={n} />
-                        ))}
-                        {selectedDayDetails.manualScheduled.map((t) => (
-                          <div key={t.id} className="flex items-center gap-2 text-sm">
-                            <TaskDot emoji={extractLeadingEmoji(t.title)} color={t.kind === "event" ? EVENT_COLOR : TASK_COLOR} size="md" />
-                            <span>{stripLeadingEmoji(t.title)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">Nada agendado ese día.</p>
-                    )
-                  ) : selectedDayDetails && (selectedDayDetails.habitsDone.length > 0 || selectedDayDetails.nodesDone.length > 0 || selectedDayDetails.practicesDone.length > 0 || selectedDayDetails.manualDone.length > 0) ? (
-                    <div className="space-y-1">
-                      {selectedDayDetails.habitsDone.map((h) => (
-                        <div key={h.id} className="flex items-center gap-2 text-sm">
-                          <TaskDot emoji={h.emoji} color={HABIT_COLORS[activeHabitsThisMonth.indexOf(h) % HABIT_COLORS.length]} size="md" />
-                          <span>{h.name}</span>
-                        </div>
-                      ))}
-                      {selectedDayDetails.nodesDone.map((n) => (
-                        <NodeListRow key={n.id} node={n} />
-                      ))}
-                      {selectedDayDetails.practicesDone.map((p) => (
-                        <div key={p.id} className="flex items-center gap-2 text-sm">
-                          <TaskDot emoji={p.emoji} color={PRACTICE_COLOR} size="md" />
-                          <span>{p.name}</span>
-                        </div>
-                      ))}
-                      {selectedDayDetails.manualDone.map((t) => (
-                        <div key={t.id} className="flex items-center gap-2 text-sm">
-                          <TaskDot emoji={extractLeadingEmoji(t.title)} color={t.kind === "event" ? EVENT_COLOR : TASK_COLOR} size="md" />
-                          <span>{stripLeadingEmoji(t.title)}</span>
-                        </div>
-                      ))}
-                    </div>
+                  {selectedDayList.length > 0 ? (
+                    <div className="space-y-1">{selectedDayList}</div>
                   ) : (
-                    <p className="text-sm text-muted-foreground">Nada completado ese día.</p>
+                    <p className="text-sm text-muted-foreground">
+                      {selectedDayIsFuture ? "Nada agendado ese día." : "Nada completado ese día."}
+                    </p>
                   )}
                 </div>
               )}

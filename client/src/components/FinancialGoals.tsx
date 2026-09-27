@@ -3807,19 +3807,23 @@ export default function FinancialGoals() {
               </div>
             </div>
 
-            {/* Misiones de ahorro, presupuesto, ingresos e instrumentos, de izquierda a derecha */}
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 items-stretch">
-              <SavingMissionsCard missions={savingMissions} onAdd={() => openMissionForm(null)} onToggle={handleMissionToggle} onEdit={openMissionForm} />
-              <BudgetCard
-                quarters={budgetQuarters}
-                categories={budgetCategories}
-                onLongPressQuarter={openBudgetCreate}
-                onOpenCategoriesDetail={() => setBudgetCategoriesDetailOpen(true)}
-                onOpenQuarterCalendar={() => setBudgetCalendarOpen(true)}
-                onOpenCategoriesCalendar={() => setBudgetCategoriesCalendarOpen(true)}
-              />
-              <IncomeCard sources={incomeSources} onOpenDetail={() => setIncomeDetailOpen(true)} onOpenCalendar={() => setIncomeCalendarOpen(true)} />
-              <DistributionCard goals={goals} />
+            {/* Izquierda: misiones de ahorro e ingresos · derecha: presupuesto e instrumentos */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+              <div className="space-y-4">
+                <SavingMissionsCard missions={savingMissions} onAdd={() => openMissionForm(null)} onToggle={handleMissionToggle} onEdit={openMissionForm} />
+                <IncomeCard sources={incomeSources} onOpenDetail={() => setIncomeDetailOpen(true)} onOpenCalendar={() => setIncomeCalendarOpen(true)} />
+              </div>
+              <div className="space-y-4">
+                <BudgetCard
+                  quarters={budgetQuarters}
+                  categories={budgetCategories}
+                  onLongPressQuarter={openBudgetCreate}
+                  onOpenCategoriesDetail={() => setBudgetCategoriesDetailOpen(true)}
+                  onOpenQuarterCalendar={() => setBudgetCalendarOpen(true)}
+                  onOpenCategoriesCalendar={() => setBudgetCategoriesCalendarOpen(true)}
+                />
+                <DistributionCard goals={goals} />
+              </div>
             </div>
             <MovementsCard goals={goals} />
           </div>
