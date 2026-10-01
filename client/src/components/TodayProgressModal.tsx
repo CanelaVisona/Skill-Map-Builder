@@ -7,7 +7,7 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
-import { Calendar, ArrowLeft, Check, ChevronLeft, ChevronRight, Pencil } from "lucide-react";
+import { Calendar, ArrowLeft, Check, ChevronLeft, ChevronRight, Pencil, Star } from "lucide-react";
 import { useSkillTree, type Area, type Project, type Skill } from "@/lib/skill-context";
 import { useHabits, useUpdateHabitRecord } from "@/lib/useHabits";
 import { useTodayTaskSlots, useSetTodayTaskSlot, useClearTodayTaskSlot, useReorderTodayTaskSlot, getCurrentTimeSlotKey, getTimeSlotKeyForDate, type TaskSlotKey, type TaskType } from "@/lib/useTodayTaskSlots";
@@ -15,6 +15,7 @@ import { useManualTasks, useManualTasksRange, isDefaultManualTask, useCreateManu
 import { calculateStatus, calculateStatusL2, type SpaceRepetitionPractice } from "@/components/SpaceRepetitionModal";
 import { rewiringDayRows } from "@/lib/rewiringTasks";
 import { useConfirmHabit, useConfirmPractice } from "@/lib/useConfirmActions";
+import { useTodayPriorities, useSetTodayPriorities, MAX_TODAY_PRIORITIES } from "@/lib/useTodayPriorities";
 import type { Habit, HabitRecord, TodayTaskSlot } from "@shared/schema";
 
 const LONG_PRESS_MS = 1500;
@@ -199,6 +200,11 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // además abrir/cerrar el acordeón de esa franja.
   const slotTitleLongPressFired = useRef(false);
 
+  // Pop-up de la estrellita: las (hasta 3) prioridades "no negociables" del día. prioritiesEditing
+  // = se está eligiendo cuáles son, entre todas las tareas del día.
+  const [prioritiesOpen, setPrioritiesOpen] = useState(false);
+  const [prioritiesEditing, setPrioritiesEditing] = useState(false);
+
   const todayStr = getDateStr(new Date());
   const effectiveDate = previewDate ?? todayStr;
   const isPreview = previewDate !== null;
@@ -211,6 +217,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       setPreviewDate(null);
       setViewMode("progress");
       setSelectedDay(null);
+      setPrioritiesOpen(false);
     }
   }, [open]);
 
@@ -919,6 +926,53 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
 
   const canDuplicate = (item: TodayItem) => item.type === "manual" || item.type === "habit";
 
+  // --- Prioridades del día (la estrellita): hasta MAX_TODAY_PRIORITIES tareas "no negociables".
+  // Se guardan por key base `${type}:${id}` (sin el sufijo "#franja" de los duplicados de un
+  // hábito con varias franjas), así que la tarea queda destacada en todas sus copias. El estado
+  // de "hecha" no se guarda aparte: el pop-up muestra los mismos TodayItem que la lista, así
+  // que confirmar en un lado se ve confirmado en el otro.
+  const { data: priorityKeysData } = useTodayPriorities(effectiveDate, open);
+  const setPriorities = useSetTodayPriorities();
+  const priorityKeys = priorityKeysData || [];
+  const priorityKeySet = new Set(priorityKeys);
+  const itemBaseKey = (item: TodayItem) => `${item.type}:${item.id}`;
+  const itemsByBaseKey = new Map<string, TodayItem>();
+  [...todayItems, ...extraItems].forEach((item) => {
+    if (!itemsByBaseKey.has(itemBaseKey(item))) itemsByBaseKey.set(itemBaseKey(item), item);
+  });
+  // En el orden en que se eligieron; se saltean las que ya no están en el día (p.ej. se sacó de
+  // hoy o se movió a otro día después de marcarla).
+  const priorityItems = priorityKeys
+    .map((k) => itemsByBaseKey.get(k))
+    .filter((item): item is TodayItem => !!item);
+  // Una prioridad que ya no está en el día no ocupa lugar: se limpia al guardar.
+  const prioritiesFull = priorityItems.length >= MAX_TODAY_PRIORITIES;
+  // Candidatas a prioridad: las tareas configuradas del día (no la actividad extra de "Más",
+  // que ya está hecha, ni los rewirings, que no se confirman desde acá).
+  const priorityCandidates = todayItems.filter((item) => item.type !== "rewiring");
+
+  const togglePriority = (item: TodayItem) => {
+    const key = itemBaseKey(item);
+    const current = priorityItems.map(itemBaseKey);
+    if (current.includes(key)) {
+      setPriorities.mutate({ date: effectiveDate, taskKeys: current.filter((k) => k !== key) });
+    } else if (current.length < MAX_TODAY_PRIORITIES) {
+      setPriorities.mutate({ date: effectiveDate, taskKeys: [...current, key] });
+    }
+  };
+
+  const priorityRowProps = (item: TodayItem) => ({
+    priority: priorityKeySet.has(itemBaseKey(item)),
+    priorityFull: prioritiesFull,
+    onTogglePriority: item.type !== "rewiring" ? () => togglePriority(item) : undefined,
+  });
+
+  const openPriorities = () => {
+    // Sin prioridades elegidas todavía, el pop-up arranca directo en el selector.
+    setPrioritiesEditing(priorityItems.length === 0);
+    setPrioritiesOpen(true);
+  };
+
   // --- Cambiar de día: mover la "realización" de una tarea a otra fecha, mantenendo
   // presionada la fila (ver TodayTaskRow). Qué significa "mover" depende del tipo:
   // - manual: se reasigna la fila entera (tenga o no tenga hecha) a la fecha nueva.
@@ -1466,13 +1520,29 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                   </p>
                 </div>
               </div>
-              <button
-                onClick={openCalendar}
-                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-border/30 bg-muted hover:bg-muted/80 active:bg-muted/60 transition-colors"
-                title="Ver calendario de actividades"
-              >
-                <Calendar className="h-4 w-4 text-muted-foreground" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={openPriorities}
+                  className="relative flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-border/30 bg-muted hover:bg-muted/80 active:bg-muted/60 transition-colors"
+                  title="Prioridades del día"
+                >
+                  <Star
+                    className={`h-4 w-4 ${priorityItems.length > 0 ? "fill-amber-400 text-amber-500" : "text-muted-foreground"}`}
+                  />
+                  {priorityItems.length > 0 && (
+                    <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold leading-none text-white">
+                      {priorityItems.filter((i) => i.done).length}/{priorityItems.length}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={openCalendar}
+                  className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-border/30 bg-muted hover:bg-muted/80 active:bg-muted/60 transition-colors"
+                  title="Ver calendario de actividades"
+                >
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                </button>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -1544,6 +1614,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                     onDuplicate={canDuplicate(item) ? () => duplicateItem(item) : undefined}
                                     onToggleDone={canToggleDone(item) ? () => toggleItemDone(item) : undefined}
                                     onChangeDay={canChangeDay(item) ? () => openChangeDayDialog(item) : undefined}
+                                    {...priorityRowProps(item)}
                                   />
                                 ))}
                               </div>
@@ -1623,6 +1694,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                         onDuplicate={canDuplicate(item) ? () => duplicateItem(item) : undefined}
                                         onToggleDone={canToggleDone(item) ? () => toggleItemDone(item) : undefined}
                                         onChangeDay={canChangeDay(item) ? () => openChangeDayDialog(item) : undefined}
+                                        {...priorityRowProps(item)}
                                         onMoveUp={idx > 0 ? () => moveItemOrder(s.key, itemBuckets[s.key], idx, "up") : undefined}
                                         onMoveDown={idx < itemBuckets[s.key].length - 1 ? () => moveItemOrder(s.key, itemBuckets[s.key], idx, "down") : undefined}
                                       />
@@ -1656,6 +1728,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                   onDuplicate={canDuplicate(item) ? () => duplicateItem(item) : undefined}
                                   onToggleDone={canToggleDone(item) ? () => toggleItemDone(item) : undefined}
                                   onChangeDay={canChangeDay(item) ? () => openChangeDayDialog(item) : undefined}
+                                  {...priorityRowProps(item)}
                                 />
                               ))}
                             </div>
@@ -1846,6 +1919,117 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
             </div>
           </div>
         )}
+      </DialogContent>
+    </Dialog>
+
+    {/* Pop-up de la estrellita: las prioridades "no negociables" del día. Usa los mismos
+        TodayItem y el mismo toggleItemDone que la lista, así que confirmar una tarea acá o en
+        "Tareas de hoy" se refleja en los dos lados. */}
+    <Dialog open={prioritiesOpen} onOpenChange={setPrioritiesOpen}>
+      <DialogContent className="max-w-sm rounded-2xl max-h-[85vh] overflow-y-auto minimal-scrollbar">
+        <DialogTitle className="flex items-center gap-2">
+          <Star className="h-5 w-5 fill-amber-400 text-amber-500" />
+          {isPreview ? "Prioridades del día" : "Prioridades de hoy"}
+        </DialogTitle>
+        <p className="text-sm text-muted-foreground -mt-2">
+          {prioritiesEditing
+            ? `Elegí hasta ${MAX_TODAY_PRIORITIES} tareas no negociables (${priorityItems.length}/${MAX_TODAY_PRIORITIES}).`
+            : "Tus no negociables del día."}
+        </p>
+
+        {prioritiesEditing ? (
+          priorityCandidates.length === 0 ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">
+              No hay tareas para este día todavía.
+            </p>
+          ) : (
+            <div className="space-y-1">
+              {priorityCandidates.map((item) => {
+                const selected = priorityKeySet.has(itemBaseKey(item));
+                const disabled = !selected && prioritiesFull;
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => togglePriority(item)}
+                    disabled={disabled}
+                    className={`flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left text-sm transition-colors ${
+                      selected
+                        ? "border-amber-500 bg-amber-500/10"
+                        : "border-transparent hover:bg-muted active:bg-muted/60"
+                    } disabled:cursor-not-allowed disabled:opacity-40`}
+                  >
+                    <Star
+                      className={`h-4 w-4 flex-shrink-0 ${selected ? "fill-amber-400 text-amber-500" : "text-muted-foreground"}`}
+                    />
+                    <span className={`flex-1 ${item.done ? "text-yellow-600/60" : ""}`}>{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )
+        ) : priorityItems.length === 0 ? (
+          <p className="py-4 text-center text-sm text-muted-foreground">
+            Todavía no elegiste prioridades para este día.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            <div className="flex items-center gap-1">
+              {priorityItems.map((item) => (
+                <div
+                  key={item.key}
+                  className={`h-2 flex-1 rounded-sm transition-colors duration-500 ${item.done ? "bg-amber-500" : "bg-muted"}`}
+                />
+              ))}
+            </div>
+            {priorityItems.map((item) => {
+              const canToggle = canToggleDone(item);
+              return (
+                <div
+                  key={item.key}
+                  className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-colors ${
+                    item.done ? "border-amber-500/40 bg-amber-500/10" : "border-border/40"
+                  }`}
+                >
+                  <span
+                    onClick={canToggle ? () => toggleItemDone(item) : undefined}
+                    className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
+                      item.done ? "bg-yellow-600/70 border-yellow-600/70" : "border-border/60"
+                    } ${canToggle ? "cursor-pointer" : ""}`}
+                  >
+                    {item.done && <Check className="h-3 w-3 text-yellow-900" strokeWidth={3} />}
+                  </span>
+                  <span className={`flex-1 ${item.done ? "text-yellow-600 line-through decoration-yellow-600/50" : "font-medium"}`}>
+                    {item.label}
+                  </span>
+                </div>
+              );
+            })}
+            {priorityItems.every((i) => i.done) && (
+              <p className="pt-1 text-center text-sm font-semibold text-amber-600 dark:text-amber-400">
+                ¡Cumpliste todas tus prioridades! ⭐
+              </p>
+            )}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 pt-2">
+          {prioritiesEditing ? (
+            <button
+              onClick={() => setPrioritiesEditing(false)}
+              className="px-3 py-1.5 text-sm rounded-md bg-amber-500 text-white hover:bg-amber-600 transition-colors"
+            >
+              Listo
+            </button>
+          ) : (
+            <button
+              onClick={() => setPrioritiesEditing(true)}
+              className="px-3 py-1.5 text-sm rounded-md border border-border/40 hover:bg-muted transition-colors"
+            >
+              {priorityItems.length === 0 ? "Elegir prioridades" : "Editar prioridades"}
+            </button>
+          )}
+        </div>
       </DialogContent>
     </Dialog>
 
@@ -2120,6 +2304,9 @@ function TodayTaskRow({
   onChangeDay,
   onMoveUp,
   onMoveDown,
+  priority,
+  priorityFull,
+  onTogglePriority,
 }: {
   item: TodayItem;
   // Tarea sin hacer que no es "la que sigue" (la primera pendiente de la franja horaria
@@ -2143,6 +2330,11 @@ function TodayTaskRow({
   onChangeDay?: () => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
+  // Es una de las (hasta 3) prioridades del día: se destaca con una estrellita al lado.
+  priority?: boolean;
+  // Ya hay 3 prioridades elegidas: no se puede marcar otra sin sacar alguna antes.
+  priorityFull?: boolean;
+  onTogglePriority?: () => void;
 }) {
   const [hideConfirmOpen, setHideConfirmOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -2217,6 +2409,9 @@ function TodayTaskRow({
               className={`flex-1 cursor-pointer ${item.done ? (pastDay ? "text-yellow-600 font-medium" : "text-yellow-600/60") : ""}`}
             >
               {item.label}
+              {priority && (
+                <Star className="ml-1 inline h-3.5 w-3.5 -translate-y-px fill-amber-400 text-amber-500" aria-label="Prioridad" />
+              )}
               {current && (
                 <span className="text-amber-500 font-bold" aria-hidden="true">
                   {" "}!
@@ -2225,6 +2420,15 @@ function TodayTaskRow({
             </span>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            {onTogglePriority && (
+              <>
+                <DropdownMenuItem onClick={onTogglePriority} disabled={!priority && priorityFull}>
+                  <Star className={`mr-2 h-4 w-4 ${priority ? "fill-amber-400 text-amber-500" : ""}`} />
+                  {priority ? "Quitar de prioridades" : priorityFull ? "Prioridades completas (3/3)" : "Marcar como prioridad"}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+              </>
+            )}
             {TIME_SLOTS.map((s) => (
               <DropdownMenuItem key={s.key} onClick={() => onMove(s.key)}>
                 {s.label}

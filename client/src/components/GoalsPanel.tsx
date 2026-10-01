@@ -189,6 +189,7 @@ function GoalRow({
 
 function GoalSection({
   title,
+  hint,
   items,
   canComplete,
   onAdd,
@@ -197,6 +198,7 @@ function GoalSection({
   onComplete,
 }: {
   title: string;
+  hint: string;
   items: LifeGoalItem[];
   canComplete: boolean;
   onAdd: (text: string) => void;
@@ -218,6 +220,7 @@ function GoalSection({
         title="Mantené presionado para agregar"
       >
         {title}
+        <span className="ml-1.5 font-normal normal-case tracking-normal text-muted-foreground/60">{hint}</span>
       </button>
       {items.length === 0 && !isAdding && (
         <p className="text-xs text-muted-foreground/50 italic">Mantené presionado el título para agregar</p>
@@ -345,7 +348,10 @@ function GoalsPanel() {
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-1.5">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Corto plazo</span>
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Corto plazo
+          <span className="ml-1.5 font-normal normal-case tracking-normal text-muted-foreground/60">&lt; 1 año</span>
+        </span>
         {levelName && source ? (
           <div className="flex items-start gap-2 text-sm text-foreground">
             <Checkbox
@@ -365,6 +371,7 @@ function GoalsPanel() {
       </div>
       <GoalSection
         title="Mediano plazo"
+        hint="1 a 2 años"
         items={goals.mediumTerm}
         canComplete={!!source}
         onAdd={(text) => addGoal("mediumTerm", text)}
@@ -374,6 +381,7 @@ function GoalsPanel() {
       />
       <GoalSection
         title="Largo plazo"
+        hint="3 años o más"
         items={goals.longTerm}
         canComplete={!!source}
         onAdd={(text) => addGoal("longTerm", text)}

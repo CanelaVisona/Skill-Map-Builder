@@ -264,6 +264,17 @@ const GOAL_HORIZONS: { key: GoalHorizon; title: string; sub: string }[] = [
   { key: "sinFecha", title: "Sin fecha asignada", sub: "" },
 ];
 
+// Fecha sugerida al crear una meta desde una sección vacía (cae dentro del plazo).
+const HORIZON_DEFAULT_YEARS: Partial<Record<GoalHorizon, number>> = { corto: 1, mediano: 3, largo: 10 };
+
+function horizonDefaultDate(h: GoalHorizon): string {
+  const years = HORIZON_DEFAULT_YEARS[h];
+  if (!years) return "";
+  const d = new Date();
+  d.setFullYear(d.getFullYear() + years);
+  return toDateInputValue(d.getTime());
+}
+
 function goalHorizon(targetDate: string | null | undefined): GoalHorizon {
   if (!targetDate) return "sinFecha";
   const target = new Date(targetDate + "T00:00:00");
@@ -717,6 +728,37 @@ function GoalMilestoneList({ goal }: { goal: FinancialGoal }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ---------- encabezado de horizonte (tocar: plegar · mantener: crear meta) ----------
+
+function HorizonHeader({
+  horizon,
+  count,
+  isOpen,
+  onToggle,
+  onLongPress,
+}: {
+  horizon: { key: GoalHorizon; title: string; sub: string };
+  count: number;
+  isOpen: boolean;
+  onToggle: () => void;
+  onLongPress?: () => void;
+}) {
+  const press = useLongPress(onLongPress ?? onToggle, onToggle);
+  return (
+    <div
+      {...press}
+      onContextMenu={(e) => e.preventDefault()}
+      style={{ WebkitTouchCallout: "none" }}
+      className="flex items-center gap-2 mb-2.5 px-0.5 w-full text-left cursor-pointer select-none"
+    >
+      <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform ${isOpen ? "" : "-rotate-90"}`} />
+      <h3 className="font-display font-semibold text-sm uppercase tracking-wide">{horizon.title}</h3>
+      {horizon.sub && <span className="text-xs text-muted-foreground">{horizon.sub}</span>}
+      <span className="text-xs text-muted-foreground ml-auto">{count}</span>
     </div>
   );
 }
@@ -2423,12 +2465,14 @@ function GoalFormDialog({
   open,
   onOpenChange,
   goal,
+  initialTargetDate = "",
   onSubmit,
   onDelete,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   goal: FinancialGoal | null;
+  initialTargetDate?: string;
   onSubmit: (data: { name: string; emoji: string; color: string; target: number; targetDate: string | null; holdings: Holding[]; flow: Flow }) => void;
   onDelete: () => void;
 }) {
@@ -2470,7 +2514,7 @@ function GoalFormDialog({
     } else {
       setName("");
       setTargetText("");
-      setTargetDate("");
+      setTargetDate(initialTargetDate);
       setEmoji(EMOJIS[Math.floor(Math.random() * 8)]);
       setColor(PALETTE[Math.floor(Math.random() * PALETTE.length)]);
       setHoldings([newHoldingDraft()]);
@@ -2479,7 +2523,7 @@ function GoalFormDialog({
     }
     setNameErr(false);
     setInstErr(false);
-  }, [open, goal]);
+  }, [open, goal, initialTargetDate]);
 
   const addHoldingRow = () => setHoldings((h) => [...h, newHoldingDraft()]);
   const removeHoldingRow = (id: string) =>
@@ -3207,6 +3251,7 @@ export default function FinancialGoals() {
     });
   const [formOpen, setFormOpen] = useState(false);
   const [formGoal, setFormGoal] = useState<FinancialGoal | null>(null);
+  const [formInitialDate, setFormInitialDate] = useState("");
   const [detailGoalId, setDetailGoalId] = useState<string | null>(null);
   const [timelineGoalId, setTimelineGoalId] = useState<string | null>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -3668,8 +3713,9 @@ export default function FinancialGoals() {
   const totalTarget = goals.reduce((a, g) => a + (g.target || 0), 0);
   const overallPct = totalTarget > 0 ? Math.round((totalSaved / totalTarget) * 100) : 0;
 
-  const openCreate = () => {
+  const openCreate = (initialDate = "") => {
     setFormGoal(null);
+    setFormInitialDate(initialDate);
     setFormOpen(true);
   };
   const openEdit = (g: FinancialGoal) => {
@@ -3736,7 +3782,7 @@ export default function FinancialGoals() {
   };
 
   const titleLongPress = useLongPress(
-    openCreate,
+    () => openCreate(),
     () => toast({ title: "Mantené presionado el título para crear una meta" })
   );
 
@@ -3766,38 +3812,29 @@ export default function FinancialGoals() {
       <div className="flex-1 min-h-0 overflow-y-auto minimal-scrollbar px-5 py-4">
         {isLoading ? (
           <div className="text-center text-sm text-muted-foreground py-10">Cargando metas...</div>
-        ) : view === "preview" && goals.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-border p-10 text-center">
-            <div className="font-display font-medium mb-1">Sin objetivos todavía</div>
-            <p className="text-sm text-muted-foreground mb-4">Creá tu primera meta financiera para empezar a trackear tus ahorros.</p>
-            <Button onClick={openCreate}>
-              <Plus className="h-4 w-4" />
-              Crear meta
-            </Button>
-          </div>
         ) : view === "preview" ? (
           <div className="space-y-6">
             {GOAL_HORIZONS.map((h) => {
               const goalsInHorizon = goals.filter((g) => goalHorizon(g.targetDate) === h.key);
-              if (!goalsInHorizon.length) return null;
+              if (!goalsInHorizon.length && h.key === "sinFecha") return null;
               const isOpen = !collapsedHorizons.has(h.key);
               return (
                 <div key={h.key}>
-                  <button
-                    type="button"
-                    onClick={() => toggleHorizon(h.key)}
-                    className="flex items-center gap-2 mb-2.5 px-0.5 w-full text-left"
-                  >
-                    <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform ${isOpen ? "" : "-rotate-90"}`} />
-                    <h3 className="font-display font-semibold text-sm uppercase tracking-wide">{h.title}</h3>
-                    {h.sub && <span className="text-xs text-muted-foreground">{h.sub}</span>}
-                    <span className="text-xs text-muted-foreground ml-auto">{goalsInHorizon.length}</span>
-                  </button>
+                  <HorizonHeader
+                    horizon={h}
+                    count={goalsInHorizon.length}
+                    isOpen={isOpen}
+                    onToggle={() => toggleHorizon(h.key)}
+                    onLongPress={h.key !== "sinFecha" ? () => openCreate(horizonDefaultDate(h.key)) : undefined}
+                  />
                   {isOpen && (
                     <div className="grid grid-cols-1 gap-3">
                       {goalsInHorizon.map((g) => (
                         <GoalPreviewCard key={g.id} goal={g} onTap={() => setDetailGoalId(g.id)} onLongPress={() => openEdit(g)} onOpenTimeline={() => setTimelineGoalId(g.id)} />
                       ))}
+                      {!goalsInHorizon.length && (
+                        <p className="text-xs text-muted-foreground px-0.5">Sin objetivos todavía · mantené presionado el título para agregar uno</p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -3846,7 +3883,7 @@ export default function FinancialGoals() {
         )}
       </div>
 
-      <GoalFormDialog open={formOpen} onOpenChange={setFormOpen} goal={formGoal} onSubmit={handleFormSubmit} onDelete={handleDelete} />
+      <GoalFormDialog open={formOpen} onOpenChange={setFormOpen} goal={formGoal} initialTargetDate={formInitialDate} onSubmit={handleFormSubmit} onDelete={handleDelete} />
       <GoalDetailDialog
         goal={detailGoal}
         open={!!detailGoal && !calendarOpen}

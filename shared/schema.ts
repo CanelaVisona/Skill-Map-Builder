@@ -752,6 +752,19 @@ export const insertTodayTaskSlotSchema = createInsertSchema(todayTaskSlots).omit
 export type InsertTodayTaskSlot = z.infer<typeof insertTodayTaskSlotSchema>;
 export type TodayTaskSlot = typeof todayTaskSlots.$inferSelect;
 
+// Prioridades del día ("no negociables"): hasta 3 tareas de "Tareas de hoy" destacadas con la
+// estrellita. Una fila por (usuario, día), id determinístico `${userId}:${date}` para permitir
+// upsert directo, igual que meal_tracker_days. taskKeys usa el mismo formato que el front para
+// identificar una tarea: `${taskType}:${taskId}` (p.ej. "habit:abc", "manual:xyz").
+export const todayPriorities = pgTable("today_priorities", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  date: varchar("date").notNull(), // YYYY-MM-DD format
+  taskKeys: jsonb("task_keys").notNull().$type<string[]>().default([]),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export type TodayPriorities = typeof todayPriorities.$inferSelect;
+
 // Tarea manual agregada a mano en "Tareas de hoy" (mantener presionado el fondo). Vive fuera
 // del árbol de habilidades/hábitos/repetición espaciada. Puede ser "task" o "event" (elegido al
 // crearla) y, a diferencia de antes, sí se muestra en el calendario de actividades — incluida

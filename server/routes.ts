@@ -5388,6 +5388,37 @@ export async function registerRoutes(
     }
   });
 
+  // Today Priorities (hasta 3 tareas "no negociables" del día, la estrellita de "Tareas de hoy")
+  app.get("/api/today-priorities", requireAuth, async (req, res) => {
+    try {
+      const { date } = req.query;
+      if (!date) {
+        return res.status(400).json({ message: "date es requerido (formato YYYY-MM-DD)" });
+      }
+      const taskKeys = await storage.getTodayPriorities(req.userId!, date as string);
+      res.json({ date, taskKeys });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/today-priorities", requireAuth, async (req, res) => {
+    try {
+      const { date, taskKeys } = req.body;
+      if (!date || !Array.isArray(taskKeys) || taskKeys.some((k: unknown) => typeof k !== "string" || !k)) {
+        return res.status(400).json({ message: "date y taskKeys (lista de strings) son requeridos" });
+      }
+      const unique = Array.from(new Set(taskKeys as string[]));
+      if (unique.length > 3) {
+        return res.status(400).json({ message: "Podés elegir como máximo 3 prioridades por día" });
+      }
+      const saved = await storage.setTodayPriorities(req.userId!, date, unique);
+      res.json({ date, taskKeys: saved });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Manual Today Tasks (tareas agregadas a mano en "Tareas de hoy", con mantener presionado el fondo)
   app.get("/api/manual-today-tasks", requireAuth, async (req, res) => {
     try {
