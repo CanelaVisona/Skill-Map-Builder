@@ -103,6 +103,24 @@ app.use((req, res, next) => {
     }
   }
 
+  // Columna de objetivos de corto plazo, agregada después de crear life_goals.
+  try {
+    await db.execute(sql`
+      ALTER TABLE "life_goals" ADD COLUMN IF NOT EXISTS "short_term" jsonb DEFAULT '[]'::jsonb NOT NULL;
+    `);
+  } catch (error: any) {
+    console.error("⚠ life_goals.short_term migration warning:", error.message);
+  }
+
+  // Tiempo estimado de una tarea manual de "Tareas de hoy", agregado después de crear la tabla.
+  try {
+    await db.execute(sql`
+      ALTER TABLE "manual_today_tasks" ADD COLUMN IF NOT EXISTS "minutes" integer;
+    `);
+  } catch (error: any) {
+    console.error("⚠ manual_today_tasks.minutes migration warning:", error.message);
+  }
+
   // Run data migration for old areas and skills
   // TEMPORARILY DISABLED: This migration was causing startup to hang
   // TODO: Revisit this migration and optimize it

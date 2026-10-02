@@ -7,15 +7,16 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
-import { Calendar, ArrowLeft, Check, ChevronLeft, ChevronRight, Pencil, Star } from "lucide-react";
+import { Calendar, ArrowLeft, Check, ChevronLeft, ChevronRight, Clock, Pencil, Star } from "lucide-react";
 import { useSkillTree, type Area, type Project, type Skill } from "@/lib/skill-context";
 import { useHabits, useUpdateHabitRecord } from "@/lib/useHabits";
 import { useTodayTaskSlots, useSetTodayTaskSlot, useClearTodayTaskSlot, useReorderTodayTaskSlot, getCurrentTimeSlotKey, getTimeSlotKeyForDate, type TaskSlotKey, type TaskType } from "@/lib/useTodayTaskSlots";
-import { useManualTasks, useManualTasksRange, isDefaultManualTask, useCreateManualTask, useUpdateManualTask, useDeleteManualTask } from "@/lib/useManualTasks";
+import { useManualTasks, useManualTasksRange, isDefaultManualTask, defaultTaskMealId, useCreateManualTask, useUpdateManualTask, useDeleteManualTask } from "@/lib/useManualTasks";
 import { calculateStatus, calculateStatusL2, type SpaceRepetitionPractice } from "@/components/SpaceRepetitionModal";
 import { rewiringDayRows } from "@/lib/rewiringTasks";
 import { useConfirmHabit, useConfirmPractice } from "@/lib/useConfirmActions";
 import { useTodayPriorities, useSetTodayPriorities, MAX_TODAY_PRIORITIES } from "@/lib/useTodayPriorities";
+import { MealTrackerModal } from "@/components/MealTrackerModal";
 import type { Habit, HabitRecord, TodayTaskSlot } from "@shared/schema";
 
 const LONG_PRESS_MS = 1500;
@@ -205,6 +206,10 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const [prioritiesOpen, setPrioritiesOpen] = useState(false);
   const [prioritiesEditing, setPrioritiesEditing] = useState(false);
 
+  // Pop-up del registro de comidas abierto desde una tarea por defecto (Desayuná/Almorzá/…):
+  // id de la comida ("desayuno", "almuerzo"…) o null si está cerrado.
+  const [mealPopupId, setMealPopupId] = useState<string | null>(null);
+
   const todayStr = getDateStr(new Date());
   const effectiveDate = previewDate ?? todayStr;
   const isPreview = previewDate !== null;
@@ -352,7 +357,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   ];
 
   const patchSubSkill = useMutation({
-    mutationFn: async ({ id, updates }: { id: string; updates: { plannedDate?: string | null; status?: string } }) => {
+    mutationFn: async ({ id, updates }: { id: string; updates: { plannedDate?: string | null; plannedDuration?: number | null; status?: string } }) => {
       const res = await fetch(`/api/skills/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -661,7 +666,12 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       key: `manual:${t.id}`,
       type: "manual" as const,
       id: t.id,
-      label: t.kind === "event" ? <>📅 {stripLeadingEmoji(t.title)}</> : stripLeadingEmoji(t.title),
+      label: (
+        <>
+          {t.kind === "event" ? <>📅 {stripLeadingEmoji(t.title)}</> : stripLeadingEmoji(t.title)}
+          <MinutesSuffix minutes={t.minutes} />
+        </>
+      ),
       done: t.done === 1,
       dotColor: t.kind === "event" ? EVENT_COLOR : TASK_COLOR,
       dotEmoji: extractLeadingEmoji(t.title),
@@ -717,17 +727,13 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   todayItems.forEach((item) => distributeItem(item, "unassigned"));
   extraItems.forEach((item) => distributeItem(item, "more"));
 
-  // Las tareas ya hechas siempre van antes que las que faltan, en cualquier bucket. Dentro de
-  // cada franja horaria, entre tareas con el mismo estado de "hecha" se respeta el orden
-  // guardado (sortOrder) — el que se puede cambiar de a pares con "Mover arriba"/"Mover abajo".
-  // Desempata por updatedAt para que las franjas asignadas antes de tener esta columna (todas
-  // con sortOrder 0) tengan igual un orden estable en vez de depender del orden de la consulta.
-  const byDoneFirst = (a: TodayItem, b: TodayItem) => Number(b.done) - Number(a.done);
-  itemBuckets.unassigned.sort(byDoneFirst);
+  // Confirmar una tarea no la mueve: hechas y pendientes comparten el mismo orden. Dentro de
+  // cada franja horaria se respeta el orden guardado (sortOrder) — el que se puede cambiar de a
+  // pares con "Mover arriba"/"Mover abajo". Desempata por updatedAt para que las franjas
+  // asignadas antes de tener esta columna (todas con sortOrder 0) tengan igual un orden estable
+  // en vez de depender del orden de la consulta. "Sin asignar" queda en el orden en que se armó.
   TIME_SLOTS.forEach((s) => {
     itemBuckets[s.key].sort((a, b) => {
-      const doneDiff = byDoneFirst(a, b);
-      if (doneDiff !== 0) return doneDiff;
       const diff = (sortOrderByKey.get(a.key) ?? 0) - (sortOrderByKey.get(b.key) ?? 0);
       if (diff !== 0) return diff;
       return (slotUpdatedAtByKey.get(a.key) ?? 0) - (slotUpdatedAtByKey.get(b.key) ?? 0);
@@ -873,6 +879,14 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // SpaceRepetitionModal tampoco (avanzar un intervalo es unidireccional).
   const toggleItemDone = (item: TodayItem) => {
     if (item.type === "manual") {
+      // Las comidas por defecto no se tildan a mano: se abre el registro de esa comida y la
+      // tarea queda confirmada cuando la comida tiene algo registrado (lo sincroniza el
+      // backend). En un día futuro no hay nada que registrar todavía: se tilda como siempre.
+      const mealId = defaultTaskMealId(item.id);
+      if (mealId && effectiveDate <= todayStr) {
+        setMealPopupId(mealId);
+        return;
+      }
       toggleManualDone(item);
       return;
     }
@@ -1055,6 +1069,72 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       updatePracticeDateMutation.mutate({ id: item.id, lastConfirmedAt: moved.toISOString() });
       clearTaskSlot.mutate({ date: effectiveDate, taskType: "practice", taskId: item.id });
     }
+  };
+
+  // --- Asignar tiempo: el tiempo estimado ("· Xmin") se edita desde el menú de la tarea y se
+  // guarda en el mismo campo que ya lo alimenta según el tipo: nodo → plannedDuration, hábito/
+  // práctica → minMinutes (ojo: es del hábito/práctica, no solo de este día), manual → minutes.
+  // Los rewirings no tienen un campo de duración propio, así que quedan afuera.
+  const [timeItem, setTimeItem] = useState<TodayItem | null>(null);
+  const [timeValue, setTimeValue] = useState("");
+
+  const updateDurationMutation = useMutation({
+    mutationFn: async ({ item, minutes }: { item: TodayItem; minutes: number | null }) => {
+      const url = item.type === "habit" ? `/api/habits/${item.id}` : `/api/space-repetition/${item.id}`;
+      const res = await fetch(url, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ minMinutes: minutes }),
+      });
+      if (!res.ok) throw new Error("Failed to update duration");
+      return res.json();
+    },
+    onSuccess: (_, { item }) => {
+      queryClient.invalidateQueries({ queryKey: [item.type === "habit" ? "habits" : "space-repetition"] });
+    },
+  });
+
+  const canAssignTime = (item: TodayItem) => item.type !== "rewiring";
+
+  const currentMinutes = (item: TodayItem): number | null | undefined => {
+    if (item.type === "habit") return (habitsData || []).find((h) => h.id === item.id)?.minMinutes;
+    if (item.type === "practice") return (practicesData || []).find((p) => p.id === item.id)?.minMinutes;
+    if (item.type === "manual") return manualTasks.find((t) => t.id === item.id)?.minutes;
+    if (item.type === "node") {
+      return (
+        allPlannedNodes.find((n) => n.id === item.id)?.plannedDuration ??
+        extraNodes.find((n) => n.id === item.id)?.plannedDuration
+      );
+    }
+    return null;
+  };
+
+  const openTimeDialog = (item: TodayItem) => {
+    const m = currentMinutes(item);
+    setTimeValue(m ? String(m) : "");
+    setTimeItem(item);
+  };
+
+  const submitTime = (raw: string = timeValue) => {
+    const item = timeItem;
+    setTimeItem(null);
+    if (!item) return;
+    const parsed = parseInt(raw, 10);
+    const minutes = Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    if (minutes === (currentMinutes(item) ?? null)) return;
+
+    if (item.type === "manual") {
+      updateManualTask.mutate({ id: item.id, date: effectiveDate, updates: { minutes } });
+      return;
+    }
+    if (item.type === "node") {
+      const parent = findNodeParent(item.id);
+      if (!parent) patchSubSkill.mutate({ id: item.id, updates: { plannedDuration: minutes } });
+      else if (parent.kind === "project") updateProjectSkill(parent.parentId, item.id, { plannedDuration: minutes });
+      else updateSkill(parent.parentId, item.id, { plannedDuration: minutes });
+      return;
+    }
+    updateDurationMutation.mutate({ item, minutes });
   };
 
   // Mantener presionado el fondo (fuera de una tarea puntual) abre el diálogo para agregar
@@ -1614,6 +1694,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                     onDuplicate={canDuplicate(item) ? () => duplicateItem(item) : undefined}
                                     onToggleDone={canToggleDone(item) ? () => toggleItemDone(item) : undefined}
                                     onChangeDay={canChangeDay(item) ? () => openChangeDayDialog(item) : undefined}
+                                    onAssignTime={canAssignTime(item) ? () => openTimeDialog(item) : undefined}
                                     {...priorityRowProps(item)}
                                   />
                                 ))}
@@ -1684,7 +1765,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                       <TodayTaskRow
                                         key={item.key}
                                         item={item}
-                                        dimmed={!item.done && idx !== firstUndoneIdx}
+                                        dimmed={idx !== firstUndoneIdx}
                                         current={!item.done && idx === firstUndoneIdx}
                                         pastDay={effectiveDate < todayStr}
                                         onMove={(slot) => moveItemToSlot(item, slot)}
@@ -1694,6 +1775,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                         onDuplicate={canDuplicate(item) ? () => duplicateItem(item) : undefined}
                                         onToggleDone={canToggleDone(item) ? () => toggleItemDone(item) : undefined}
                                         onChangeDay={canChangeDay(item) ? () => openChangeDayDialog(item) : undefined}
+                                        onAssignTime={canAssignTime(item) ? () => openTimeDialog(item) : undefined}
                                         {...priorityRowProps(item)}
                                         onMoveUp={idx > 0 ? () => moveItemOrder(s.key, itemBuckets[s.key], idx, "up") : undefined}
                                         onMoveDown={idx < itemBuckets[s.key].length - 1 ? () => moveItemOrder(s.key, itemBuckets[s.key], idx, "down") : undefined}
@@ -1728,6 +1810,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                   onDuplicate={canDuplicate(item) ? () => duplicateItem(item) : undefined}
                                   onToggleDone={canToggleDone(item) ? () => toggleItemDone(item) : undefined}
                                   onChangeDay={canChangeDay(item) ? () => openChangeDayDialog(item) : undefined}
+                                  onAssignTime={canAssignTime(item) ? () => openTimeDialog(item) : undefined}
                                   {...priorityRowProps(item)}
                                 />
                               ))}
@@ -2286,6 +2369,67 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         </div>
       </DialogContent>
     </Dialog>
+
+    <Dialog open={timeItem !== null} onOpenChange={(o) => { if (!o) setTimeItem(null); }}>
+      <DialogContent className="max-w-xs rounded-2xl">
+        <DialogTitle>Asignar tiempo</DialogTitle>
+        <div className="flex flex-col gap-3">
+          {timeItem && (timeItem.type === "habit" || timeItem.type === "practice") && (
+            <p className="text-xs text-muted-foreground">
+              Se guarda en {timeItem.type === "habit" ? "el hábito" : "la práctica"}: aplica a todos los días.
+            </p>
+          )}
+          <div className="flex flex-wrap gap-1.5">
+            {[5, 10, 15, 30, 45, 60, 90].map((m) => (
+              <button
+                key={m}
+                onClick={() => submitTime(String(m))}
+                className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                  timeValue === String(m)
+                    ? "border-amber-500 bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                    : "border-border/50 hover:bg-muted"
+                }`}
+              >
+                {m}min
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <Input
+              type="number"
+              inputMode="numeric"
+              min={1}
+              placeholder="Minutos"
+              value={timeValue}
+              onChange={(e) => setTimeValue(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") submitTime(); }}
+            />
+            <span className="text-sm text-muted-foreground">min</span>
+          </div>
+        </div>
+        <div className="flex justify-between gap-2 pt-1">
+          <button
+            onClick={() => submitTime("")}
+            className="rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted"
+          >
+            Quitar tiempo
+          </button>
+          <button
+            onClick={() => submitTime()}
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            Guardar
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
+
+    <MealTrackerModal
+      open={mealPopupId !== null}
+      onOpenChange={(o) => { if (!o) setMealPopupId(null); }}
+      initialMealId={mealPopupId}
+      initialDate={effectiveDate}
+    />
     </>
   );
 }
@@ -2307,14 +2451,16 @@ function TodayTaskRow({
   priority,
   priorityFull,
   onTogglePriority,
+  onAssignTime,
 }: {
   item: TodayItem;
-  // Tarea sin hacer que no es "la que sigue" (la primera pendiente de la franja horaria
-  // actual): se muestra más tenue. Incluye tanto a las pendientes de más abajo en la franja
-  // activa como a todas las pendientes de las demás franjas, que todavía no les toca.
+  // Tarea que no es "la que sigue" (la primera pendiente de la franja horaria actual): se
+  // muestra más tenue (solo opacidad, sin cambiar su color), esté hecha o pendiente, para que
+  // la única que resalte sea la desbloqueada.
   dimmed?: boolean;
   // La tarea "desbloqueada" ahora mismo: la primera pendiente de la franja horaria actual.
-  // Se marca con un "!" dorado al lado para que se distinga de un vistazo del resto.
+  // Se pinta como una tarjeta dorada con brillo, para que quede claro que es LA tarea del
+  // momento y el resto puede esperar.
   current?: boolean;
   // Se está viendo un día ya pasado (no hoy, no una previsualización futura): ahí una tarea
   // hecha se pinta en dorado pleno en vez de atenuado, porque no compite con nada pendiente.
@@ -2335,6 +2481,9 @@ function TodayTaskRow({
   // Ya hay 3 prioridades elegidas: no se puede marcar otra sin sacar alguna antes.
   priorityFull?: boolean;
   onTogglePriority?: () => void;
+  // Abre el diálogo para asignarle un tiempo estimado (minutos). undefined para los tipos que
+  // no tienen dónde guardarlo (rewirings).
+  onAssignTime?: () => void;
 }) {
   const [hideConfirmOpen, setHideConfirmOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -2370,7 +2519,11 @@ function TodayTaskRow({
     <>
       <div
         className={`flex items-center gap-2 text-sm touch-none select-none transition-opacity ${
-          dimmed ? "opacity-45" : ""
+          dimmed ? "opacity-25" : ""
+        } ${
+          current
+            ? "my-1.5 rounded-xl border-2 border-amber-500/80 bg-amber-500/10 px-3 py-2.5 shadow-[0_0_18px_-3px_rgba(245,158,11,0.65)]"
+            : ""
         }`}
         onMouseDown={startLongPress}
         onMouseUp={cancelLongPress}
@@ -2382,7 +2535,11 @@ function TodayTaskRow({
         <span
           onClick={onToggleDone}
           className={`flex flex-shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
-            item.done ? "h-3.5 w-3.5 bg-yellow-600/70 border-yellow-600/70" : "h-4 w-4 border-border/50"
+            item.done
+              ? "h-3.5 w-3.5 bg-yellow-600/70 border-yellow-600/70"
+              : current
+              ? "h-5 w-5 border-amber-500 bg-amber-500/10"
+              : "h-4 w-4 border-border/50"
           } ${onToggleDone ? "cursor-pointer" : ""}`}
         >
           {item.done && <Check className="h-2.5 w-2.5 text-yellow-900" strokeWidth={3} />}
@@ -2406,20 +2563,29 @@ function TodayTaskRow({
         >
           <DropdownMenuTrigger asChild>
             <span
-              className={`flex-1 cursor-pointer ${item.done ? (pastDay ? "text-yellow-600 font-medium" : "text-yellow-600/60") : ""}`}
+              className={`flex-1 cursor-pointer ${item.done ? (pastDay ? "text-yellow-600 font-medium" : "text-yellow-600/60") : ""} ${
+                current ? "text-[15px] font-semibold leading-snug" : ""
+              }`}
             >
               {item.label}
               {priority && (
                 <Star className="ml-1 inline h-3.5 w-3.5 -translate-y-px fill-amber-400 text-amber-500" aria-label="Prioridad" />
               )}
-              {current && (
-                <span className="text-amber-500 font-bold" aria-hidden="true">
-                  {" "}!
-                </span>
-              )}
             </span>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+          <DropdownMenuContent
+            align="end"
+            className="max-h-[min(60vh,var(--radix-dropdown-menu-content-available-height))] overflow-y-auto overscroll-contain minimal-scrollbar"
+          >
+            {onAssignTime && (
+              <>
+                <DropdownMenuItem onClick={onAssignTime}>
+                  <Clock className="mr-2 h-4 w-4" />
+                  Asignar tiempo
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+              </>
+            )}
             {onTogglePriority && (
               <>
                 <DropdownMenuItem onClick={onTogglePriority} disabled={!priority && priorityFull}>

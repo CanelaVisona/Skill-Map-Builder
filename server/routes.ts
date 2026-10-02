@@ -1067,6 +1067,38 @@ export async function registerRoutes(
         }
       }
 
+      // Progresión en orden dentro de un nivel: nunca puede quedar un nodo sin confirmar con
+      // nodos confirmados después de él. Confirmar exige que todos los anteriores estén
+      // confirmados; desconfirmar, que ninguno de los siguientes lo esté. Se valida acá (y no
+      // solo en el cliente) porque hay caminos que no pasan por las guardas del árbol, como
+      // los sub-nodos confirmados desde "Tareas de hoy". Los reordenamientos (fromReorder) y
+      // los reseteos de un nivel entero (fromLevelReset) recalculan todos los estados del nivel
+      // a la vez y quedan afuera.
+      const togglingMastered =
+        (req.body.status === "mastered" && existingSkill.status !== "mastered") ||
+        (req.body.status !== undefined && req.body.status !== "mastered" && existingSkill.status === "mastered");
+      if (togglingMastered && !req.body.fromReorder && !req.body.fromLevelReset && existingSkill.level && existingSkill.levelPosition) {
+        let siblings: typeof existingSkill[] = [];
+        if (existingSkill.parentSkillId) {
+          siblings = await storage.getSubSkills(existingSkill.parentSkillId);
+        } else if (existingSkill.areaId) {
+          siblings = (await storage.getSkills(existingSkill.areaId)).filter(s => !s.parentSkillId);
+        } else if (existingSkill.projectId) {
+          siblings = (await storage.getProjectSkills(existingSkill.projectId)).filter(s => !s.parentSkillId);
+        }
+        const position = existingSkill.levelPosition;
+        const sameLevel = siblings.filter(s => s.id !== existingSkill.id && s.level === existingSkill.level && s.levelPosition != null);
+        if (req.body.status === "mastered") {
+          if (sameLevel.some(s => s.levelPosition! < position && s.status !== "mastered")) {
+            res.status(400).json({ message: "No podés confirmar este nodo: primero confirmá los nodos anteriores." });
+            return;
+          }
+        } else if (sameLevel.some(s => s.levelPosition! > position && s.status === "mastered")) {
+          res.status(400).json({ message: "No podés desconfirmar este nodo: hay nodos confirmados después de él." });
+          return;
+        }
+      }
+
       // Handle XP propagation: if updating experiencePoints on a subskill, also update parent
       if (req.body.experiencePoints !== undefined && existingSkill.parentSkillId) {
         const currentXp = existingSkill.experiencePoints || 0;
@@ -5328,7 +5360,7 @@ export async function registerRoutes(
 
   app.post("/api/today-task-slots", requireAuth, async (req, res) => {
     try {
-      const { date, taskType, taskId, slot, position } = req.body;
+      const { date, taskType, taskId, slot, position, keepExisting, tzOffsetMinutes } = req.body;
       if (!date || !taskType || !taskId || !slot) {
         return res.status(400).json({ message: "date, taskType, taskId y slot son requeridos" });
       }
@@ -5338,6 +5370,26 @@ export async function registerRoutes(
       // "added" = hábito no programado ese día agregado a mano a tareas de hoy, sin franja.
       if (!["morning", "midday", "afternoon", "night", "hidden", "added"].includes(slot)) {
         return res.status(400).json({ message: "slot debe ser morning, midday, afternoon, night, hidden o added" });
+      }
+
+      // keepExisting: solo asigna franja si la tarea todavía no tiene una ese día (p.ej. al
+      // confirmar un nodo que ya estaba ubicado en una franja, no se lo mueve de lugar).
+      if (keepExisting) {
+        const current = (await storage.getTodayTaskSlots(req.userId!, date)).find(
+          (s) => s.taskType === taskType && s.taskId === taskId
+        );
+        if (current) return res.status(200).json(current);
+      }
+
+      // "beforePending": la tarea entra justo antes de la primera pendiente de la franja (ver
+      // insertTodayTaskSlotBeforePending) — para los nodos sin fecha recién confirmados.
+      if (position === "beforePending") {
+        const slots = await storage.insertTodayTaskSlotBeforePending(
+          { userId: req.userId!, date, taskType, taskId, slot },
+          Number(tzOffsetMinutes) || 0
+        );
+        const inserted = slots.find((s) => s.taskType === taskType && s.taskId === taskId);
+        return res.status(201).json(inserted);
       }
 
       const result = await storage.upsertTodayTaskSlot({
@@ -5430,6 +5482,10 @@ export async function registerRoutes(
       // (lo decide con su fecha local), así los días pasados no se llenan de tareas pendientes.
       if (seedDefaults === "1") {
         await storage.seedDefaultManualTodayTasks(req.userId!, date as string);
+        // Una comida registrada antes de que se sembraran las tareas (o desde otro lado) tiene
+        // que verse ya confirmada en "Tareas de hoy".
+        const mealDay = await storage.getMealTrackerDay(req.userId!, date as string);
+        if (mealDay) await syncMealTrackerDefaultTasks(req.userId!, date as string, mealDay.meals as any, false);
       }
       const tasks = await storage.getManualTodayTasks(req.userId!, date as string, endDate as string | undefined);
       res.json(tasks);
@@ -5466,9 +5522,12 @@ export async function registerRoutes(
       if (!existing || existing.userId !== req.userId) {
         return res.status(404).json({ message: "Tarea no encontrada" });
       }
-      const { title, done, date } = req.body;
+      const { title, done, date, minutes } = req.body;
       if (done !== undefined && done !== 0 && done !== 1) {
         return res.status(400).json({ message: "done debe ser 0 o 1" });
+      }
+      if (minutes !== undefined && minutes !== null && (!Number.isInteger(minutes) || minutes < 0)) {
+        return res.status(400).json({ message: "minutes debe ser un entero >= 0 o null" });
       }
       if (date !== undefined && (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date))) {
         return res.status(400).json({ message: "date debe tener formato YYYY-MM-DD" });
@@ -5477,6 +5536,7 @@ export async function registerRoutes(
         ...(title !== undefined ? { title: String(title).trim() } : {}),
         ...(done !== undefined ? { done } : {}),
         ...(date !== undefined ? { date } : {}),
+        ...(minutes !== undefined ? { minutes } : {}),
       });
       // Si se movió de día, la franja horaria asignada quedó atada a la fecha vieja: no tiene
       // sentido dejarla huérfana ahí (el día viejo ya no la va a mostrar, pero queda basura en
@@ -5660,6 +5720,33 @@ export async function registerRoutes(
     return proteina && vegetales && carbos && fruta;
   }
 
+  // Comida → sufijo de su tarea por defecto en "Tareas de hoy" (ver seedDefaultManualTodayTasks).
+  const MEAL_TRACKER_DEFAULT_TASK_KEYS: Record<string, string> = {
+    desayuno: "breakfast",
+    almuerzo: "lunch",
+    merienda: "snack",
+    cena: "dinner",
+  };
+
+  // Registrar una comida (tener algo tildado en cualquiera de sus categorías) confirma su tarea
+  // por defecto del día ("Desayuná", "Almorzá"…). Con allowUnset, una comida sin nada tildado
+  // también la vuelve a pendiente — se usa al editar las comidas, no al solo listar las tareas,
+  // para no destildar tareas confirmadas antes de que existiera este vínculo. Si la tarea no
+  // existe (día pasado sin sembrar), no hace nada.
+  async function syncMealTrackerDefaultTasks(
+    userId: string,
+    date: string,
+    meals: Record<string, Record<string, Record<string, boolean>>> | null | undefined,
+    allowUnset: boolean,
+  ): Promise<void> {
+    for (const mealId of MEAL_TRACKER_MEAL_IDS) {
+      const registered = Object.keys(meals?.[mealId] || {}).some((catKey) => mealTrackerCatOn(meals as any, mealId, catKey));
+      if (!registered && !allowUnset) continue;
+      const taskId = `${userId}:${date}:default:${MEAL_TRACKER_DEFAULT_TASK_KEYS[mealId]}`;
+      await storage.updateManualTodayTask(taskId, { done: registered ? 1 : 0 });
+    }
+  }
+
   function mealTrackerDaysBetween(a: string, b: string): number {
     const [ay, am, ad] = a.split("-").map(Number);
     const [by, bm, bd] = b.split("-").map(Number);
@@ -5722,6 +5809,7 @@ export async function registerRoutes(
       if (!meals[mealId][categoryKey]) meals[mealId][categoryKey] = {};
       meals[mealId][categoryKey][item] = !meals[mealId][categoryKey][item];
       const updated = await storage.upsertMealTrackerDay(req.userId!, date, { meals });
+      await syncMealTrackerDefaultTasks(req.userId!, date, meals, true);
       res.json(updated);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -5754,6 +5842,7 @@ export async function registerRoutes(
       if (!meals[mealId][categoryKey]) meals[mealId][categoryKey] = {};
       meals[mealId][categoryKey][trimmed] = true;
       const updatedDay = await storage.upsertMealTrackerDay(req.userId!, date, { meals });
+      await syncMealTrackerDefaultTasks(req.userId!, date, meals, true);
 
       const options = await storage.getMealTrackerCustomOptions(req.userId!);
       res.json({ day: updatedDay, customOptions: groupMealTrackerCustomOptions(options) });
@@ -5785,6 +5874,7 @@ export async function registerRoutes(
         });
         if (changed) {
           day = await storage.upsertMealTrackerDay(req.userId!, date, { meals });
+          await syncMealTrackerDefaultTasks(req.userId!, date, meals, true);
         }
       }
 
@@ -5850,6 +5940,7 @@ export async function registerRoutes(
       const { date } = req.body;
       if (!date) return res.status(400).json({ message: "date es requerido" });
       const updated = await storage.upsertMealTrackerDay(req.userId!, date, { meals: {}, regCelebrated: {}, celebrated: false });
+      await syncMealTrackerDefaultTasks(req.userId!, date, {}, true);
       res.json(updated);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -5929,6 +6020,7 @@ export async function registerRoutes(
         else delete meals._dishState[mealId][dishId];
       }
       const updated = await storage.upsertMealTrackerDay(req.userId!, date, { meals });
+      await syncMealTrackerDefaultTasks(req.userId!, date, meals, true);
       res.json(updated);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -6728,7 +6820,7 @@ export async function registerRoutes(
     }
   });
 
-  // ============ Objetivos (mediano / largo plazo) ============
+  // ============ Objetivos (corto / mediano / largo plazo) ============
   // Todas las listas del usuario, para la tab "Objetivos" del Journal.
   app.get("/api/life-goals", requireAuth, async (req, res) => {
     try {
@@ -6736,6 +6828,7 @@ export async function registerRoutes(
       res.json(rows.map((row) => ({
         sourceType: row.sourceType,
         sourceId: row.sourceId,
+        shortTerm: row.shortTerm,
         mediumTerm: row.mediumTerm,
         longTerm: row.longTerm,
         completed: row.completed,
@@ -6752,7 +6845,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Invalid type. Must be 'area' or 'project'" });
       }
       const row = await storage.getLifeGoals(req.userId!, type, sourceId);
-      res.json({ mediumTerm: row?.mediumTerm ?? [], longTerm: row?.longTerm ?? [], completed: row?.completed ?? [] });
+      res.json({ shortTerm: row?.shortTerm ?? [], mediumTerm: row?.mediumTerm ?? [], longTerm: row?.longTerm ?? [], completed: row?.completed ?? [] });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -6764,21 +6857,30 @@ export async function registerRoutes(
       if (type !== "area" && type !== "project") {
         return res.status(400).json({ message: "Invalid type. Must be 'area' or 'project'" });
       }
+      const goalItem = z.object({
+        id: z.string(),
+        text: z.string(),
+        targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        milestones: z.array(z.object({ id: z.string(), text: z.string() })).optional(),
+        milestonesDone: z.number().int().min(0).optional(),
+      });
       const parsed = z.object({
-        mediumTerm: z.array(z.object({ id: z.string(), text: z.string() })),
-        longTerm: z.array(z.object({ id: z.string(), text: z.string() })),
+        shortTerm: z.array(goalItem).default([]),
+        mediumTerm: z.array(goalItem),
+        longTerm: z.array(goalItem),
         completed: z.array(z.object({
           id: z.string(),
           text: z.string(),
           horizon: z.enum(["short", "medium", "long"]),
           completedAt: z.string(),
+          item: goalItem.optional(),
         })).default([]),
       }).safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ message: "Objetivos inválidos" });
       }
       const row = await storage.upsertLifeGoals(req.userId!, type, sourceId, parsed.data);
-      res.json({ mediumTerm: row.mediumTerm, longTerm: row.longTerm, completed: row.completed });
+      res.json({ shortTerm: row.shortTerm, mediumTerm: row.mediumTerm, longTerm: row.longTerm, completed: row.completed });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

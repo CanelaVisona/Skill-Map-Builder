@@ -10,6 +10,10 @@ import { motion, AnimatePresence } from "framer-motion";
 interface MealTrackerModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  // Modo pop-up (desde "Tareas de hoy", al confirmar Desayuná/Almorzá/…): abre directo en esa
+  // comida del día indicado y se cierra entero al tocar "Listo", en vez de volver al día.
+  initialMealId?: string | null;
+  initialDate?: string;
 }
 
 type MealKind = "main" | "light";
@@ -246,7 +250,7 @@ async function fetchJson(url: string, opts?: RequestInit) {
   return res.json();
 }
 
-export function MealTrackerModal({ open, onOpenChange }: MealTrackerModalProps) {
+export function MealTrackerModal({ open, onOpenChange, initialMealId, initialDate }: MealTrackerModalProps) {
   const queryClient = useQueryClient();
   const [panel, setPanel] = useState<"day" | "meal" | "add" | "add-dish" | "summary" | "calendar">("day");
   const [activeMealId, setActiveMealId] = useState<string | null>(null);
@@ -277,8 +281,24 @@ export function MealTrackerModal({ open, onOpenChange }: MealTrackerModalProps) 
     enabled: open,
   });
 
+  // Registrar una comida confirma su tarea por defecto en "Tareas de hoy" (el backend la
+  // sincroniza en cada cambio): al terminar de editar se refrescan esas listas.
+  const refreshTodayTasks = () => {
+    queryClient.invalidateQueries({ queryKey: ["manual-today-tasks"] });
+    queryClient.invalidateQueries({ queryKey: ["manual-today-tasks-range"] });
+  };
+
+  useEffect(() => {
+    if (open && initialMealId) {
+      setSelectedDate(initialDate ?? today);
+      setActiveMealId(initialMealId);
+      setPanel("meal");
+    }
+  }, [open, initialMealId, initialDate, today]);
+
   useEffect(() => {
     if (!open) {
+      refreshTodayTasks();
       setPanel("day");
       setActiveMealId(null);
       setAddCatKey(null);
@@ -362,7 +382,8 @@ export function MealTrackerModal({ open, onOpenChange }: MealTrackerModalProps) 
 
   const closeMealPanel = async () => {
     if (!activeMeal || !day) {
-      setPanel("day");
+      if (initialMealId) onOpenChange(false);
+      else setPanel("day");
       return;
     }
     const nowRegistered = mealRegistered(meals, activeMeal);
@@ -388,6 +409,11 @@ export function MealTrackerModal({ open, onOpenChange }: MealTrackerModalProps) 
           streak: result.streak,
         }));
       }
+    }
+    refreshTodayTasks();
+    if (initialMealId) {
+      onOpenChange(false);
+      return;
     }
     setPanel("day");
     setActiveMealId(null);

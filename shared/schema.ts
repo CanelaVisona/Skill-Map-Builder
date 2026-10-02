@@ -776,6 +776,7 @@ export const manualTodayTasks = pgTable("manual_today_tasks", {
   title: text("title").notNull(),
   kind: text("kind").$type<"task" | "event">().notNull().default("task"),
   done: integer("done").$type<0 | 1>().notNull().default(0),
+  minutes: integer("minutes"), // Tiempo estimado asignado desde "Tareas de hoy" (se muestra como "· Xmin")
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export const insertManualTodayTaskSchema = createInsertSchema(manualTodayTasks).omit({ id: true, createdAt: true }).extend({
@@ -1115,12 +1116,22 @@ export const evidenceBoards = pgTable("evidence_boards", {
 export type EvidenceBoardRow = typeof evidenceBoards.$inferSelect;
 
 // ============ OBJETIVOS (corto / mediano / largo plazo) ============
-// El corto plazo no se guarda: es el nombre del nivel actual del área/proyecto activo. Solo
-// persisten los objetivos de mediano y largo plazo, una fila por área/proyecto de cada usuario
+// El primer objetivo de corto plazo no se guarda: es el nombre del nivel actual del área/proyecto
+// activo. Persisten los demás objetivos de corto, mediano y largo plazo, una fila por área/proyecto de cada usuario
 // (id = `${userId}:${sourceType}:${sourceId}`, mismo patrón que meal_tracker_days).
+export interface LifeGoalMilestone {
+  id: string;
+  text: string;
+}
+
 export interface LifeGoalItem {
   id: string;
   text: string;
+  targetDate?: string; // YYYY-MM-DD
+  // Hitos en orden; se muestran como estrellas sobre la flecha hoy → fecha objetivo.
+  milestones?: LifeGoalMilestone[];
+  // Cuántos hitos (desde el primero) están cumplidos.
+  milestonesDone?: number;
 }
 
 // Objetivo tildado: sale de la lista de pendientes y se muestra en la tab "Objetivos" del Journal.
@@ -1129,6 +1140,9 @@ export interface CompletedLifeGoal {
   text: string;
   horizon: "short" | "medium" | "long";
   completedAt: string; // ISO
+  // Copia del objetivo tal como estaba (fecha, hitos) para poder recuperarlo. No existe en los
+  // completados del nivel actual ni en los guardados antes de este campo.
+  item?: LifeGoalItem;
 }
 
 export const lifeGoals = pgTable("life_goals", {
@@ -1136,6 +1150,7 @@ export const lifeGoals = pgTable("life_goals", {
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   sourceType: varchar("source_type").notNull(), // "area" | "project"
   sourceId: varchar("source_id").notNull(),
+  shortTerm: jsonb("short_term").notNull().$type<LifeGoalItem[]>().default([]),
   mediumTerm: jsonb("medium_term").notNull().$type<LifeGoalItem[]>().default([]),
   longTerm: jsonb("long_term").notNull().$type<LifeGoalItem[]>().default([]),
   completed: jsonb("completed").notNull().$type<CompletedLifeGoal[]>().default([]),

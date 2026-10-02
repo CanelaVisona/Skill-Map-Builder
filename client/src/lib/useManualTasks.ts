@@ -11,6 +11,21 @@ export function isDefaultManualTask(id: string): boolean {
   return id.includes(":default:");
 }
 
+// Comida del registro de comidas (MealTrackerModal) que corresponde a cada tarea por defecto.
+// Confirmar la tarea abre el registro de esa comida, y registrarla confirma la tarea (el
+// backend la sincroniza cada vez que cambian las comidas del día).
+const DEFAULT_TASK_MEAL_IDS: Record<string, string> = {
+  breakfast: "desayuno",
+  lunch: "almuerzo",
+  snack: "merienda",
+  dinner: "cena",
+};
+
+export function defaultTaskMealId(id: string): string | null {
+  const key = id.split(":default:")[1];
+  return key ? DEFAULT_TASK_MEAL_IDS[key] ?? null : null;
+}
+
 export function useManualTasks(date: string, enabled = true) {
   const queryClient = useQueryClient();
   return useQuery({
@@ -77,7 +92,7 @@ export function useUpdateManualTask() {
       // `updates.date` es el día NUEVO al que se mueve la tarea (mantener presionada una tarea
       // y elegir "Cambiar de día"); `date` arriba es el día ACTUAL bajo el que se la está
       // viendo, se usa solo para invalidar esa lista.
-      updates: { title?: string; done?: 0 | 1; date?: string };
+      updates: { title?: string; done?: 0 | 1; date?: string; minutes?: number | null };
     }) => {
       const res = await fetch(`/api/manual-today-tasks/${id}`, {
         method: "PATCH",

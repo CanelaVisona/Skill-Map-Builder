@@ -359,10 +359,10 @@ export interface IStorage {
   getEvidenceBoard(userId: string): Promise<EvidenceBoardRow | undefined>;
   upsertEvidenceBoard(userId: string, state: unknown): Promise<EvidenceBoardRow>;
 
-  // Objetivos (mediano / largo plazo)
+  // Objetivos (corto / mediano / largo plazo)
   getAllLifeGoals(userId: string): Promise<LifeGoalsRow[]>;
   getLifeGoals(userId: string, sourceType: "area" | "project", sourceId: string): Promise<LifeGoalsRow | undefined>;
-  upsertLifeGoals(userId: string, sourceType: "area" | "project", sourceId: string, data: { mediumTerm: LifeGoalItem[]; longTerm: LifeGoalItem[]; completed: CompletedLifeGoal[] }): Promise<LifeGoalsRow>;
+  upsertLifeGoals(userId: string, sourceType: "area" | "project", sourceId: string, data: { shortTerm: LifeGoalItem[]; mediumTerm: LifeGoalItem[]; longTerm: LifeGoalItem[]; completed: CompletedLifeGoal[] }): Promise<LifeGoalsRow>;
 }
 
 export class DbStorage implements IStorage {
@@ -3208,7 +3208,7 @@ export class DbStorage implements IStorage {
     return result[0];
   }
 
-  // Objetivos (mediano / largo plazo)
+  // Objetivos (corto / mediano / largo plazo)
   async getAllLifeGoals(userId: string): Promise<LifeGoalsRow[]> {
     return db.select().from(lifeGoals).where(eq(lifeGoals.userId, userId));
   }
@@ -3219,13 +3219,13 @@ export class DbStorage implements IStorage {
     return result[0];
   }
 
-  async upsertLifeGoals(userId: string, sourceType: "area" | "project", sourceId: string, data: { mediumTerm: LifeGoalItem[]; longTerm: LifeGoalItem[]; completed: CompletedLifeGoal[] }): Promise<LifeGoalsRow> {
+  async upsertLifeGoals(userId: string, sourceType: "area" | "project", sourceId: string, data: { shortTerm: LifeGoalItem[]; mediumTerm: LifeGoalItem[]; longTerm: LifeGoalItem[]; completed: CompletedLifeGoal[] }): Promise<LifeGoalsRow> {
     const id = `${userId}:${sourceType}:${sourceId}`;
     const result = await db.insert(lifeGoals)
-      .values({ id, userId, sourceType, sourceId, mediumTerm: data.mediumTerm, longTerm: data.longTerm, completed: data.completed, updatedAt: new Date() })
+      .values({ id, userId, sourceType, sourceId, shortTerm: data.shortTerm, mediumTerm: data.mediumTerm, longTerm: data.longTerm, completed: data.completed, updatedAt: new Date() })
       .onConflictDoUpdate({
         target: lifeGoals.id,
-        set: { mediumTerm: data.mediumTerm, longTerm: data.longTerm, completed: data.completed, updatedAt: new Date() },
+        set: { shortTerm: data.shortTerm, mediumTerm: data.mediumTerm, longTerm: data.longTerm, completed: data.completed, updatedAt: new Date() },
       })
       .returning();
     return result[0];
@@ -3440,6 +3440,57 @@ export class DbStorage implements IStorage {
     );
   }
 
+  // Ubica una tarea ya hecha (p.ej. un nodo sin fecha recién confirmado) justo antes de la
+  // primera tarea pendiente de la franja, así lo hecho queda arriba y lo pendiente al final sin
+  // mover nada de lo que ya estaba. Si no hay pendientes, queda al final. tzOffsetMinutes es el
+  // getTimezoneOffset() del cliente: hace falta para saber en qué día local cae la última
+  // confirmación de una práctica (solo se guarda el instante).
+  async insertTodayTaskSlotBeforePending(
+    row: Omit<InsertTodayTaskSlot, "sortOrder">,
+    tzOffsetMinutes: number
+  ): Promise<TodayTaskSlot[]> {
+    const siblings = (await this.getTodayTaskSlots(row.userId, row.date))
+      .filter((s) => s.slot === row.slot && !(s.taskType === row.taskType && s.taskId === row.taskId))
+      .sort((a, b) => (a.sortOrder - b.sortOrder) || (new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()));
+
+    const idsOf = (type: string) => siblings.filter((s) => s.taskType === type).map((s) => s.taskId);
+    const doneKeys = new Set<string>();
+    const manualIds = idsOf("manual");
+    if (manualIds.length) {
+      (await db.select().from(manualTodayTasks).where(inArray(manualTodayTasks.id, manualIds)))
+        .forEach((t) => { if (t.done === 1) doneKeys.add(`manual:${t.id}`); });
+    }
+    const nodeIds = idsOf("node");
+    if (nodeIds.length) {
+      (await db.select({ id: skills.id, status: skills.status }).from(skills).where(inArray(skills.id, nodeIds)))
+        .forEach((s) => { if (s.status === "mastered") doneKeys.add(`node:${s.id}`); });
+    }
+    const habitIds = idsOf("habit");
+    if (habitIds.length) {
+      (await db.select().from(habitRecords).where(and(
+        eq(habitRecords.userId, row.userId), eq(habitRecords.date, row.date), inArray(habitRecords.habitId, habitIds)
+      ))).forEach((r) => { if (r.completed === 1) doneKeys.add(`habit:${r.habitId}`); });
+    }
+    const practiceIds = idsOf("practice");
+    if (practiceIds.length) {
+      (await db.select().from(spaceRepetitionPractices).where(inArray(spaceRepetitionPractices.id, practiceIds)))
+        .forEach((p) => {
+          if (!p.lastConfirmedAt) return;
+          const local = new Date(new Date(p.lastConfirmedAt).getTime() - tzOffsetMinutes * 60_000);
+          if (local.toISOString().slice(0, 10) === row.date) doneKeys.add(`practice:${p.id}`);
+        });
+    }
+    // Las filas de rewiring son repeticiones ya registradas: siempre cuentan como hechas.
+    siblings.filter((s) => s.taskType === "rewiring").forEach((s) => doneKeys.add(`rewiring:${s.taskId}`));
+
+    const firstPending = siblings.findIndex((s) => !doneKeys.has(`${s.taskType}:${s.taskId}`));
+    const at = firstPending === -1 ? siblings.length : firstPending;
+    const order = siblings.map((s) => ({ taskType: s.taskType, taskId: s.taskId }));
+    order.splice(at, 0, { taskType: row.taskType, taskId: row.taskId });
+    await this.reorderTodayTaskSlotBucket(row.userId, row.date, row.slot, order);
+    return this.getTodayTaskSlots(row.userId, row.date);
+  }
+
   // Today Priorities (hasta 3 tareas "no negociables" del día, la estrellita de "Tareas de hoy")
   async getTodayPriorities(userId: string, date: string): Promise<string[]> {
     const rows = await db.select().from(todayPriorities).where(eq(todayPriorities.id, `${userId}:${date}`)).limit(1);
@@ -3507,8 +3558,9 @@ export class DbStorage implements IStorage {
     return result[0];
   }
 
-  async updateManualTodayTask(id: string, updates: Partial<Pick<InsertManualTodayTask, "title" | "done" | "date">>): Promise<ManualTodayTask | undefined> {
+  async updateManualTodayTask(id: string, updates: Partial<Pick<InsertManualTodayTask, "title" | "done" | "date" | "minutes">>): Promise<ManualTodayTask | undefined> {
     const updateData: Record<string, unknown> = {};
+    if (updates.minutes !== undefined) updateData.minutes = updates.minutes;
     if (updates.title !== undefined) updateData.title = updates.title;
     if (updates.done !== undefined) updateData.done = updates.done;
     if (updates.date !== undefined) updateData.date = updates.date;

@@ -10,7 +10,10 @@ import { playLevelUpSound } from "@/lib/sound";
 // slot (mañana/mediodía/tarde/noche) based on the hour it was confirmed at. Fire-and-forget,
 // since a failure here shouldn't block the confirmation itself — the node just falls back
 // to "Sin asignar" and can still be moved manually.
-function assignTodayTaskSlotForConfirmedNode(skillId: string) {
+// Un nodo planeado para hoy ya es parte de "Tareas de hoy" (en su franja y posición, o en
+// "Sin asignar"): confirmarlo no lo mueve de lugar, así que no se le asigna nada.
+function assignTodayTaskSlotForConfirmedNode(skillId: string, plannedDate?: string | null) {
+  if (plannedDate === getTodayStr()) return;
   fetch("/api/today-task-slots", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -19,6 +22,12 @@ function assignTodayTaskSlotForConfirmedNode(skillId: string) {
       taskType: "node",
       taskId: skillId,
       slot: getCurrentTimeSlotKey(),
+      // Si el nodo ya estaba en una franja de hoy, confirmarlo no lo mueve de lugar.
+      keepExisting: true,
+      // Entra antes de la primera tarea pendiente de la franja (lo hecho arriba, lo pendiente
+      // al final), sin mover nada de lo que ya estaba.
+      position: "beforePending",
+      tzOffsetMinutes: new Date().getTimezoneOffset(),
     }),
   }).catch(error => {
     console.error("Error assigning today task slot for confirmed node:", error);
@@ -1200,6 +1209,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
       });
+      // El server rechaza confirmar/desconfirmar fuera de orden (ver PATCH /api/skills/:id).
+      if (!response.ok) throw new Error(`Skill status update rejected: ${response.status}`);
 
       const updatedLevelSkills = await response.json();
 
@@ -1300,7 +1311,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         // the "¡Subiste de nivel!" banner hiding), which will pick up this XP delta too. An
         // immediate refresh here would reveal the next node (or new level) way too early.
         void addAreaXp(areaId, false, 1, deferAutoUnlock || isOpeningNewLevel);
-        assignTodayTaskSlotForConfirmedNode(skillId);
+        assignTodayTaskSlotForConfirmedNode(skillId, skill.plannedDate);
       } else if (skill.status === "mastered" && newStatus === "available") {
         void addAreaXp(areaId, false, -1);
       }
@@ -1483,7 +1494,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           fetch(`/api/skills/${s.id}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ status: newStatus }),
+            // Reseteo del nivel entero: el server no le aplica la regla de orden nodo por nodo.
+            body: JSON.stringify({ status: newStatus, fromLevelReset: true }),
           }).catch(error => {
             console.error(`Error resetting skill ${s.id}:`, error);
           });
@@ -1555,7 +1567,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           fetch(`/api/skills/${s.id}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ status: resetStatus }),
+            // Reseteo del nivel entero: el server no le aplica la regla de orden nodo por nodo.
+            body: JSON.stringify({ status: resetStatus, fromLevelReset: true }),
           }).catch(error => {
             console.error(`Error resetting skill ${s.id}:`, error);
           });
@@ -1679,11 +1692,13 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
 
     try {
-      await fetch(`/api/skills/${skillId}`, {
+      const response = await fetch(`/api/skills/${skillId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
       });
+      // El server rechaza confirmar/desconfirmar fuera de orden (ver PATCH /api/skills/:id).
+      if (!response.ok) throw new Error(`Skill status update rejected: ${response.status}`);
 
       // Only archive if star is active AND this is the actual final node -- isStarActive
       // alone is level-wide (true for every node in a starred level), so without the
@@ -1757,7 +1772,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       if (newStatus === "mastered") {
         // See matching comment in toggleSkillStatus above.
         void addAreaXp(projectId, true, 1, deferAutoUnlock || isOpeningNewLevel);
-        assignTodayTaskSlotForConfirmedNode(skillId);
+        assignTodayTaskSlotForConfirmedNode(skillId, skill.plannedDate);
       } else if (skill.status === "mastered" && newStatus === "available") {
         void addAreaXp(projectId, true, -1);
       }
@@ -3181,11 +3196,13 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     const isCompletingTree = hasStar && newStatus === "mastered";
 
     try {
-      await fetch(`/api/skills/${skillId}`, {
+      const response = await fetch(`/api/skills/${skillId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
       });
+      // El server rechaza confirmar/desconfirmar fuera de orden (ver PATCH /api/skills/:id).
+      if (!response.ok) throw new Error(`Skill status update rejected: ${response.status}`);
 
       setSubSkills(prev => prev.map(s =>
         s.id === skillId ? { ...s, status: newStatus } : s

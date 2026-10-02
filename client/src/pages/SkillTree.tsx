@@ -3608,6 +3608,23 @@ interface SourceGroup {
   unlockedLevel: number;
 }
 
+// Entrada de la red de Achievements: un nodo completado o un learning/tool/thought asociado a él.
+interface AchievementActivity {
+  id: string;
+  type: 'node' | 'learning' | 'tool' | 'thought';
+  title: string;
+  sentence: string;
+  completedAt?: string | null;
+  skill?: SkillWithSource;
+}
+
+const formatAchievementDate = (dateString: string | null | undefined): string => {
+  if (!dateString) return 'Fecha desconocida';
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return 'Fecha desconocida';
+  return new Intl.DateTimeFormat('es-AR', { year: 'numeric', month: 'long', day: 'numeric' }).format(date);
+};
+
 function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { learnings?: JournalLearning[]; tools?: JournalTool[]; thoughts?: JournalThought[] }) {
   const { areas, mainQuests, sideQuests } = useSkillTree();
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
@@ -3645,7 +3662,43 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
   const getThoughtsForSkill = (skillId: string) => {
     return thoughts.filter(t => t.skillId === skillId);
   };
-  
+
+  // Activities for the path graph: the completed node (with its date) followed by its learnings, tools and thoughts
+  const buildSkillActivities = (skill: SkillWithSource): AchievementActivity[] => {
+    const activities: AchievementActivity[] = [];
+    if (skill.status === "mastered") {
+      activities.push({
+        id: `node-${skill.id}`,
+        type: 'node',
+        title: skill.title,
+        sentence: skill.description,
+        completedAt: skill.completedAt,
+        skill,
+      });
+    }
+    activities.push(
+      ...learnings.filter(l => l.skillId === skill.id).map(l => ({ id: l.id, type: 'learning' as const, title: l.title, sentence: l.sentence })),
+      ...tools.filter(t => t.skillId === skill.id).map(t => ({ id: t.id, type: 'tool' as const, title: t.title, sentence: t.sentence })),
+      ...thoughts.filter(t => t.skillId === skill.id).map(t => ({ id: t.id, type: 'thought' as const, title: t.title, sentence: t.sentence })),
+    );
+    return activities;
+  };
+
+  const openActivity = (activity: AchievementActivity) => {
+    if (activity.type === 'node') {
+      if (activity.skill) handleSelectSkill(activity.skill);
+    } else if (activity.type === 'learning') {
+      const learning = learnings.find(l => l.id === activity.id);
+      if (learning) setViewingLearning(learning);
+    } else if (activity.type === 'tool') {
+      const tool = tools.find(t => t.id === activity.id);
+      if (tool) setViewingTool(tool);
+    } else if (activity.type === 'thought') {
+      const thought = thoughts.find(t => t.id === activity.id);
+      if (thought) setViewingThought(thought);
+    }
+  };
+
   // Group completed skills by source
   const sourceGroups: SourceGroup[] = [];
   
@@ -4174,31 +4227,7 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
                 const levelSkills = group.skills.filter(s => s.level === selectedLevel.level);
                 
                 // Collect all activities (learnings, tools, thoughts) for this level in order
-                const levelActivities: Array<{id: string; type: 'learning' | 'tool' | 'thought'; title: string; sentence: string}> = [];
-                
-                levelSkills.forEach(skill => {
-                  // Get activities in order they were added (by skillId which contains timestamp)
-                  const skillLearnings = learnings.filter(l => l.skillId === skill.id).map(l => ({
-                    id: l.id,
-                    type: 'learning' as const,
-                    title: l.title,
-                    sentence: l.sentence
-                  }));
-                  const skillTools = tools.filter(t => t.skillId === skill.id).map(t => ({
-                    id: t.id,
-                    type: 'tool' as const,
-                    title: t.title,
-                    sentence: t.sentence
-                  }));
-                  const skillThoughts = thoughts.filter(t => t.skillId === skill.id).map(t => ({
-                    id: t.id,
-                    type: 'thought' as const,
-                    title: t.title,
-                    sentence: t.sentence
-                  }));
-                  
-                  levelActivities.push(...skillLearnings, ...skillTools, ...skillThoughts);
-                });
+                const levelActivities = levelSkills.flatMap(buildSkillActivities);
                 
                 return (
                   <>
@@ -4220,21 +4249,12 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
                                   {/* Node */}
                                   <div className="flex-shrink-0 flex justify-center">
                                     <button
-                                      onClick={() => {
-                                        if (activity.type === 'learning') {
-                                          const learning = learnings.find(l => l.id === activity.id);
-                                          if (learning) setViewingLearning(learning);
-                                        } else if (activity.type === 'tool') {
-                                          const tool = tools.find(t => t.id === activity.id);
-                                          if (tool) setViewingTool(tool);
-                                        } else if (activity.type === 'thought') {
-                                          const thought = thoughts.find(t => t.id === activity.id);
-                                          if (thought) setViewingThought(thought);
-                                        }
-                                      }}
+                                      onClick={() => openActivity(activity)}
                                       className="w-12 h-12 rounded-full bg-background border-2 border-border flex items-center justify-center flex-shrink-0 hover:border-muted-foreground/50 transition-all hover:shadow-lg hover:shadow-foreground/10 dark:bg-zinc-900 dark:border-zinc-700 dark:hover:border-zinc-500 dark:hover:shadow-zinc-900/50 group relative z-10"
                                     >
-                                      {activity.type === 'learning' ? (
+                                      {activity.type === 'node' ? (
+                                        <CalendarCheck className="h-5 w-5 text-green-500 group-hover:text-green-400" />
+                                      ) : activity.type === 'learning' ? (
                                         <Lightbulb className="h-5 w-5 text-yellow-500 group-hover:text-yellow-400" />
                                       ) : activity.type === 'tool' ? (
                                         <Wrench className="h-5 w-5 text-blue-500 group-hover:text-blue-400" />
@@ -4247,22 +4267,16 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
                                   {/* Content */}
                                   <div className="flex-1 pt-1">
                                     <div className="bg-transparent border border-border/30 rounded-lg p-4 hover:bg-muted/30 transition-colors cursor-pointer group dark:bg-zinc-800/40 dark:border-zinc-700/50 dark:hover:bg-zinc-800/60"
-                                      onClick={() => {
-                                        if (activity.type === 'learning') {
-                                          const learning = learnings.find(l => l.id === activity.id);
-                                          if (learning) setViewingLearning(learning);
-                                        } else if (activity.type === 'tool') {
-                                          const tool = tools.find(t => t.id === activity.id);
-                                          if (tool) setViewingTool(tool);
-                                        } else if (activity.type === 'thought') {
-                                          const thought = thoughts.find(t => t.id === activity.id);
-                                          if (thought) setViewingThought(thought);
-                                        }
-                                      }}
+                                      onClick={() => openActivity(activity)}
                                     >
                                       <p className="text-sm font-medium text-foreground mb-2 group-hover:text-foreground transition-colors dark:text-zinc-200 dark:group-hover:text-zinc-50">
                                         {activity.title}
                                       </p>
+                                      {activity.type === 'node' && (
+                                        <p className="text-xs text-green-600 dark:text-green-500 mb-2">
+                                          ✓ Completado el {formatAchievementDate(activity.completedAt)}
+                                        </p>
+                                      )}
                                       <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap group-hover:text-muted-foreground/80 transition-colors dark:text-zinc-400 dark:group-hover:text-zinc-300">
                                         {activity.sentence}
                                       </p>
@@ -4300,34 +4314,15 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
                 if (!group) return null;
                 
                 // Group activities by level
-                const activitiesByLevel: Record<number, Array<{id: string; type: 'learning' | 'tool' | 'thought'; title: string; sentence: string}>> = {};
+                const activitiesByLevel: Record<number, AchievementActivity[]> = {};
                 
                 group.skills.forEach(skill => {
-                  // Get activities for this skill
-                  const skillLearnings = learnings.filter(l => l.skillId === skill.id).map(l => ({
-                    id: l.id,
-                    type: 'learning' as const,
-                    title: l.title,
-                    sentence: l.sentence
-                  }));
-                  const skillTools = tools.filter(t => t.skillId === skill.id).map(t => ({
-                    id: t.id,
-                    type: 'tool' as const,
-                    title: t.title,
-                    sentence: t.sentence
-                  }));
-                  const skillThoughts = thoughts.filter(t => t.skillId === skill.id).map(t => ({
-                    id: t.id,
-                    type: 'thought' as const,
-                    title: t.title,
-                    sentence: t.sentence
-                  }));
-                  
-                  const levelActivities = [...skillLearnings, ...skillTools, ...skillThoughts];
+                  const skillActivities = buildSkillActivities(skill);
+                  if (skillActivities.length === 0) return;
                   if (!activitiesByLevel[skill.level]) {
                     activitiesByLevel[skill.level] = [];
                   }
-                  activitiesByLevel[skill.level].push(...levelActivities);
+                  activitiesByLevel[skill.level].push(...skillActivities);
                 });
                 
                 const sortedLevels = Object.keys(activitiesByLevel)
@@ -4369,21 +4364,12 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
                                   {/* Node */}
                                   <div className="flex-shrink-0 flex justify-center">
                                     <button
-                                      onClick={() => {
-                                        if (activity.type === 'learning') {
-                                          const learning = learnings.find(l => l.id === activity.id);
-                                          if (learning) setViewingLearning(learning);
-                                        } else if (activity.type === 'tool') {
-                                          const tool = tools.find(t => t.id === activity.id);
-                                          if (tool) setViewingTool(tool);
-                                        } else if (activity.type === 'thought') {
-                                          const thought = thoughts.find(t => t.id === activity.id);
-                                          if (thought) setViewingThought(thought);
-                                        }
-                                      }}
+                                      onClick={() => openActivity(activity)}
                                       className="w-12 h-12 rounded-full bg-background border-2 border-border flex items-center justify-center flex-shrink-0 hover:border-muted-foreground/50 transition-all hover:shadow-lg hover:shadow-foreground/10 dark:bg-zinc-900 dark:border-zinc-700 dark:hover:border-zinc-500 dark:hover:shadow-zinc-900/50 group relative z-10"
                                     >
-                                      {activity.type === 'learning' ? (
+                                      {activity.type === 'node' ? (
+                                        <CalendarCheck className="h-5 w-5 text-green-500 group-hover:text-green-400" />
+                                      ) : activity.type === 'learning' ? (
                                         <Lightbulb className="h-5 w-5 text-yellow-500 group-hover:text-yellow-400" />
                                       ) : activity.type === 'tool' ? (
                                         <Wrench className="h-5 w-5 text-blue-500 group-hover:text-blue-400" />
@@ -4396,22 +4382,16 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
                                   {/* Content */}
                                   <div className="flex-1 pt-1">
                                     <div className="bg-transparent border border-border/30 rounded-lg p-4 hover:bg-muted/30 transition-colors cursor-pointer group dark:bg-zinc-800/40 dark:border-zinc-700/50 dark:hover:bg-zinc-800/60"
-                                      onClick={() => {
-                                        if (activity.type === 'learning') {
-                                          const learning = learnings.find(l => l.id === activity.id);
-                                          if (learning) setViewingLearning(learning);
-                                        } else if (activity.type === 'tool') {
-                                          const tool = tools.find(t => t.id === activity.id);
-                                          if (tool) setViewingTool(tool);
-                                        } else if (activity.type === 'thought') {
-                                          const thought = thoughts.find(t => t.id === activity.id);
-                                          if (thought) setViewingThought(thought);
-                                        }
-                                      }}
+                                      onClick={() => openActivity(activity)}
                                     >
                                       <p className="text-sm font-medium text-foreground mb-2 group-hover:text-foreground transition-colors dark:text-zinc-200 dark:group-hover:text-zinc-50">
                                         {activity.title}
                                       </p>
+                                      {activity.type === 'node' && (
+                                        <p className="text-xs text-green-600 dark:text-green-500 mb-2">
+                                          ✓ Completado el {formatAchievementDate(activity.completedAt)}
+                                        </p>
+                                      )}
                                       <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap group-hover:text-muted-foreground/80 transition-colors dark:text-zinc-400 dark:group-hover:text-zinc-300">
                                         {activity.sentence}
                                       </p>
