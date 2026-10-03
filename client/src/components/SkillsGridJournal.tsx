@@ -39,6 +39,7 @@ interface GlobalSkillData {
   level: number;
   areaId: string;
   projectId?: string | null;
+  parentSkillId?: string | null;
   status: "locked" | "available" | "mastered";
   createdAt?: string;
 }
@@ -57,6 +58,8 @@ interface SkillsGridJournalProps {
 
 export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
+  // Habilidad (top-level skill) whose subskills are being shown; null = showing habilidades
+  const [openParentId, setOpenParentId] = useState<string | null>(null);
   const [activeAreaId, setActiveAreaId] = useState(areaId || "");
   const [activeAreaIds, setActiveAreaIds] = useState<string[]>(areaId ? [areaId] : []);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; skillId: string } | null>(null);
@@ -69,6 +72,7 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
   const [editDescription, setEditDescription] = useState<string>("");
   const [editLinkType, setEditLinkType] = useState<"area" | "project">("area");
   const [editLinkId, setEditLinkId] = useState<string>("");
+  const [editParentId, setEditParentId] = useState<string>(""); // "" = it's a habilidad
   const [editGoalUnlimited, setEditGoalUnlimited] = useState(false);
   const [editGoalValue, setEditGoalValue] = useState<string>("");
   const [editError, setEditError] = useState<string>("");
@@ -123,7 +127,8 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
     activeArea,
     activeAreaId: contextActiveAreaId,
     globalSkills,
-    createGlobalSkill
+    createGlobalSkill,
+    refetchGlobalSkills
   } = useSkillTree();
 
   // Determine which area to display
@@ -215,6 +220,18 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
     });
   }, [globalSkillsForArea]);
 
+  const openParent = openParentId ? journalSkills.find((s) => s.id === openParentId) || null : null;
+  const visibleSkills = openParent
+    ? journalSkills.filter((s) => s.parentSkillId === openParent.id)
+    : journalSkills.filter((s) => !s.parentSkillId);
+  const getSubskills = (parentId: string) => journalSkills.filter((s) => s.parentSkillId === parentId);
+
+  const openSubskills = (parentId: string) => {
+    setOpenParentId(parentId);
+    setSelectedSkillId(null);
+    setContextMenu(null);
+  };
+
   const groupSkillsIntoRows = (skills: GlobalSkillData[]) => {
     const rows: GlobalSkillData[][] = [];
     let index = 0;
@@ -240,6 +257,7 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
     }
     setActiveAreaId(newAreaId);
     setSelectedSkillId(null);
+    setOpenParentId(null);
     setDropdownOpen(false);
   };
 
@@ -249,6 +267,7 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
     }
     setActiveAreaId(newAreaId);
     setSelectedSkillId(null);
+    setOpenParentId(null);
     setDropdownOpen(false);
   };
 
@@ -270,8 +289,9 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
   const handleLongPress = (skillId: string, e: React.MouseEvent | React.TouchEvent) => {
     e.preventDefault();
 
-    const menuWidth = 120;
-    const menuHeight = 40;
+    const menuWidth = 140;
+    const isHabilidad = !globalSkillsForArea.find((s) => s.id === skillId)?.parentSkillId;
+    const menuHeight = isHabilidad ? 104 : 40;
     const margin = 8;
     const el = skillRefs.current[skillId];
 
@@ -299,8 +319,18 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
     setContextMenu({ x, y, skillId });
   };
 
+  // Set when a long press opens the context menu, so the click fired on release is ignored
+  const longPressFiredRef = React.useRef(false);
+  const consumeLongPress = () => {
+    const fired = longPressFiredRef.current;
+    longPressFiredRef.current = false;
+    return fired;
+  };
+
   const handleMouseDown = (skillId: string, e: React.MouseEvent | React.TouchEvent) => {
+    longPressFiredRef.current = false;
     longPressTimer.current = setTimeout(() => {
+      longPressFiredRef.current = true;
       handleLongPress(skillId, e);
     }, 500);
   };
@@ -317,8 +347,13 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
     setEditSkillId(skillId);
     setEditName(skill.name);
     setEditDescription(skill.description || "");
-    setEditLinkType(skill.projectId ? "project" : "area");
-    setEditLinkId(skill.projectId || skill.areaId || "");
+    // Subskills have no link of their own; prefill with the parent's in case it's turned into a habilidad
+    const linkSource = skill.parentSkillId
+      ? globalSkills.find((s) => s.id === skill.parentSkillId) || skill
+      : skill;
+    setEditLinkType(linkSource.projectId ? "project" : "area");
+    setEditLinkId(linkSource.projectId || linkSource.areaId || "");
+    setEditParentId(skill.parentSkillId || "");
     setEditGoalUnlimited(!skill.goalXp || skill.goalXp === 0);
     setEditGoalValue(String(skill.goalXp || ""));
     setEditError("");
@@ -331,6 +366,7 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
     setEditDescription("");
     setEditLinkType("area");
     setEditLinkId("");
+    setEditParentId("");
     setEditGoalUnlimited(false);
     setEditGoalValue("");
     setEditError("");
@@ -350,7 +386,16 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
       return;
     }
 
-    if (!editLinkId) {
+    // Subskills inherit their area/project from the parent habilidad
+    const isSubskill = !!editParentId;
+
+    // Only one level of nesting: a habilidad with its own subskills can't become a subskill
+    if (isSubskill && getSubskills(skill.id).length > 0) {
+      setEditError("Esta habilidad tiene subskills. Movelos o borralos antes de convertirla en subskill.");
+      return;
+    }
+
+    if (!isSubskill && !editLinkId) {
       setEditError(editLinkType === "area" ? "Selecciona un área" : "Selecciona un proyecto");
       return;
     }
@@ -371,14 +416,16 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
         body: JSON.stringify({
           name: editName.trim(),
           description: editDescription,
-          areaId: editLinkType === "area" ? editLinkId : null,
-          projectId: editLinkType === "project" ? editLinkId : null,
+          parentSkillId: isSubskill ? editParentId : null,
+          areaId: !isSubskill && editLinkType === "area" ? editLinkId : null,
+          projectId: !isSubskill && editLinkType === "project" ? editLinkId : null,
           goalXp: newGoalLevel,
         }),
       });
       if (response.ok) {
         closeEditModal();
         refetch();
+        refetchGlobalSkills();
       } else {
         setEditError("Error al guardar los cambios");
       }
@@ -389,7 +436,11 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
   };
 
   const handleDeleteSkill = async (skillId: string) => {
-    if (!confirm("¿Estás seguro de que querés borrar este skill?")) return;
+    const subskillCount = getSubskills(skillId).length;
+    const message = subskillCount > 0
+      ? `¿Estás seguro de que querés borrar esta habilidad y sus ${subskillCount} subskills?`
+      : "¿Estás seguro de que querés borrar este skill?";
+    if (!confirm(message)) return;
     try {
       const response = await fetch(`/api/global-skills/${skillId}`, {
         method: "DELETE",
@@ -415,7 +466,12 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
     setLongPressStart({ x, y });
 
     longPressTimerRef.current = setTimeout(() => {
-      setShowGridLongPressOptions(true);
+      // Inside a habilidad the only thing to create is a subskill
+      if (openParentId) {
+        setShowNewSkillForm(true);
+      } else {
+        setShowGridLongPressOptions(true);
+      }
     }, 600);
   };
 
@@ -446,8 +502,8 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
       return;
     }
 
-    // Validate link ID
-    if (!newSkillLinkId) {
+    // Validate link ID (subskills inherit it from their habilidad)
+    if (!openParentId && !newSkillLinkId) {
       setNewSkillError(newSkillLinkType === "area" ? "Selecciona un área" : "Selecciona un proyecto");
       return;
     }
@@ -460,11 +516,13 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
     }
 
     try {
-      const newSkill = await createGlobalSkill(
-        newSkillName.trim(),
-        newSkillLinkType === "area" ? newSkillLinkId : undefined,
-        newSkillLinkType === "project" ? newSkillLinkId : undefined
-      );
+      const newSkill = openParentId
+        ? await createGlobalSkill(newSkillName.trim(), undefined, undefined, openParentId)
+        : await createGlobalSkill(
+            newSkillName.trim(),
+            newSkillLinkType === "area" ? newSkillLinkId : undefined,
+            newSkillLinkType === "project" ? newSkillLinkId : undefined
+          );
 
       if (!newSkill) {
         setNewSkillError("Error al crear skill");
@@ -638,10 +696,39 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
         status: globalSelectedSkill.status,
         currentXp: globalSelectedSkill.currentXp,
         goalXp: globalSelectedSkill.goalXp,
-        areaName: currentArea?.name || "",
+        areaName: openParent ? `${openParent.name} · ${currentArea?.name || ""}` : currentArea?.name || "",
         description: globalSelectedSkill.description || "",
+        isSubskill: !!globalSelectedSkill.parentSkillId,
       }
     : null;
+
+  // Subskills section shown under a selected habilidad
+  const selectedSubskills = globalSelectedSkill && !globalSelectedSkill.parentSkillId
+    ? getSubskills(globalSelectedSkill.id)
+    : null;
+  const subskillsSection = selectedSubskills && selectedSubskills.length > 0 && globalSelectedSkill && (
+    <>
+      <div className="border-t border-gray-700" />
+      <div className="flex flex-col gap-1">
+        <div className="text-xs text-muted-foreground uppercase tracking-wider">
+          Subskills ({selectedSubskills.length})
+        </div>
+        {selectedSubskills.map((sub) => (
+          <div key={sub.id} className="flex justify-between text-xs">
+            <span className="truncate text-black dark:text-white">{sub.name}</span>
+            <span style={{ color: areaColor }}>Lv{clampToUnlockedLevel(sub.level)}</span>
+          </div>
+        ))}
+        <button
+          onClick={() => openSubskills(globalSelectedSkill.id)}
+          className="mt-1 px-3 py-1.5 rounded text-xs font-semibold transition-colors"
+          style={{ backgroundColor: areaColor, color: "#0e0c0a" }}
+        >
+          Abrir subskills
+        </button>
+      </div>
+    </>
+  );
 
   return (
     <div className="w-full h-full flex flex-col gap-3">
@@ -754,6 +841,24 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
         </div>
       </div>
 
+      {/* Back bar while viewing the subskills of a habilidad */}
+      {openParent && (
+        <div className="flex items-center gap-2 text-xs">
+          <button
+            onClick={() => {
+              setOpenParentId(null);
+              setSelectedSkillId(null);
+            }}
+            className="px-2 py-1 rounded transition-colors hover:bg-amber-700/20"
+            style={{ color: "#c8a96e" }}
+          >
+            ← Habilidades
+          </button>
+          <span style={{ color: "#5a4a2a" }}>/</span>
+          <span className="font-semibold" style={{ color: areaColor }}>{openParent.name}</span>
+        </div>
+      )}
+
       {/* Main Content - Grid + Details */}
       <div className="flex flex-1 gap-3 overflow-hidden">
         {/* Skills Grid */}
@@ -769,7 +874,12 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
           onContextMenu={(e) => e.preventDefault()}
         >
           <div className="flex flex-col items-center gap-4 mx-auto w-full">
-            {groupSkillsIntoRows(journalSkills).map((row, rowIndex) => (
+            {openParent && visibleSkills.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center mt-6">
+                Mantené presionado para agregar un subskill a {openParent.name}
+              </p>
+            )}
+            {groupSkillsIntoRows(visibleSkills).map((row, rowIndex) => (
               <div
                 key={`row-${rowIndex}`}
                 className="flex items-center justify-center gap-8"
@@ -801,9 +911,24 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
                       }}
                       areaColor={areaColor}
                       selected={selectedSkillId === skill.id}
-                      onClick={() => setSelectedSkillId(selectedSkillId === skill.id ? null : skill.id)}
+                      // Diamond enters the habilidad's subskills (does nothing if it has none);
+                      // the XP bar toggles the detail panel
+                      onMedallionClick={() => {
+                        if (consumeLongPress()) return;
+                        if (!openParent && getSubskills(skill.id).length > 0) openSubskills(skill.id);
+                      }}
+                      onBarClick={() => {
+                        if (consumeLongPress()) return;
+                        setSelectedSkillId(selectedSkillId === skill.id ? null : skill.id);
+                      }}
+                      shape={skill.parentSkillId ? "hexagon" : "diamond_classic"}
                       size={56}
                     />
+                    {!openParent && getSubskills(skill.id).length > 0 && (
+                      <div className="text-[9px] text-center text-muted-foreground mt-0.5">
+                        {getSubskills(skill.id).length} subskills
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -817,7 +942,9 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
             <SkillGridDetail
               skill={selectedSkill}
               areaColor={areaColor}
-            />
+            >
+              {subskillsSection}
+            </SkillGridDetail>
           </div>
         )}
       </div>
@@ -835,7 +962,9 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
             <SkillGridDetail
               skill={selectedSkill}
               areaColor={areaColor}
-            />
+            >
+              {subskillsSection}
+            </SkillGridDetail>
           </div>
         </div>
       )}
@@ -875,6 +1004,31 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
             >
               Editar
             </button>
+            {!globalSkillsForArea.find((s) => s.id === contextMenu.skillId)?.parentSkillId && (
+              <>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openSubskills(contextMenu.skillId);
+                  }}
+                  className="block w-full text-left px-3 py-2 text-xs hover:bg-amber-700/20 transition-colors"
+                  style={{ color: "#c8a96e" }}
+                >
+                  Ver subskills
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openSubskills(contextMenu.skillId);
+                    setShowNewSkillForm(true);
+                  }}
+                  className="block w-full text-left px-3 py-2 text-xs hover:bg-amber-700/20 transition-colors"
+                  style={{ color: "#c8a96e" }}
+                >
+                  Agregar subskill
+                </button>
+              </>
+            )}
           </div>
         </>,
         document.body
@@ -979,7 +1133,7 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
                     color: "#0e0c0a",
                   }}
                 >
-                  Crear Skill
+                  Crear Habilidad
                 </button>
               </div>
             </div>
@@ -1013,7 +1167,7 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
             >
               {/* Title */}
               <h2 className="text-lg font-semibold mb-4" style={{ color: palette.text }}>
-                Nuevo skill
+                {openParent ? `Nuevo subskill de ${openParent.name}` : "Nueva habilidad"}
               </h2>
 
               {/* Error message */}
@@ -1086,7 +1240,8 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
                 )}
               </div>
 
-              {/* Link Type Selector */}
+              {/* Link Type Selector (subskills inherit it from their habilidad) */}
+              {!openParent && (<>
               <div className="mb-4">
                 <label className="text-xs block mb-2" style={{ color: palette.text }}>
                   Linkeado a
@@ -1158,6 +1313,7 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
                       ))}
                 </select>
               </div>
+              </>)}
 
               {/* Buttons */}
               <div className="flex gap-2 justify-end">
@@ -1273,7 +1429,41 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
                 onBlur={(e) => (e.currentTarget.style.borderColor = "#3a2a14")}
               />
 
-              {/* Link Type Selector */}
+              {/* Parent habilidad selector: lets a habilidad become a subskill and vice versa */}
+              <div className="mb-4">
+                <label className="text-xs block mb-2" style={{ color: "#c8a96e" }}>
+                  Pertenece a
+                </label>
+                <select
+                  value={editParentId}
+                  onChange={(e) => setEditParentId(e.target.value)}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  className="w-full px-3 py-2 rounded text-xs focus:outline-none transition-colors"
+                  style={{
+                    backgroundColor: "#130f09",
+                    border: "1px solid #3a2a14",
+                    color: "#c8a96e",
+                    pointerEvents: "auto",
+                  }}
+                >
+                  <option value="">-- Ninguna (es una habilidad) --</option>
+                  {globalSkills
+                    .filter((s) => !s.parentSkillId && s.id !== editSkillId)
+                    .map((s) => {
+                      const linkName = s.projectId
+                        ? projects.find((p) => p.id === s.projectId)?.name
+                        : areas.find((a) => a.id === s.areaId)?.name;
+                      return (
+                        <option key={s.id} value={s.id}>
+                          {s.name}{linkName ? ` (${linkName})` : ""}
+                        </option>
+                      );
+                    })}
+                </select>
+              </div>
+
+              {/* Link Type Selector (subskills inherit it from their habilidad) */}
+              {!editParentId && (<>
               <div className="mb-4">
                 <label className="text-xs block mb-2" style={{ color: "#c8a96e" }}>
                   Linkeado a
@@ -1345,6 +1535,7 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
                       ))}
                 </select>
               </div>
+              </>)}
 
               {/* Meta de nivel */}
               <div className="mb-4">

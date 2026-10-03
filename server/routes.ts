@@ -4858,6 +4858,20 @@ export async function registerRoutes(
 
   app.patch("/api/global-skills/:id", requireAuth, async (req, res) => {
     try {
+      // When a skill moves to another parent, its accumulated XP moves with it:
+      // the old parent loses it and the new parent gains it
+      if ("parentSkillId" in req.body) {
+        const existing = await storage.getGlobalSkill(req.params.id);
+        const newParentId = req.body.parentSkillId || null;
+        if (existing && (existing.parentSkillId || null) !== newParentId && existing.currentXp > 0) {
+          if (existing.parentSkillId) {
+            await storage.addXpToGlobalSkill(existing.parentSkillId, -existing.currentXp);
+          }
+          if (newParentId) {
+            await storage.addXpToGlobalSkill(newParentId, existing.currentXp);
+          }
+        }
+      }
       const skill = await storage.updateGlobalSkill(req.params.id, req.body);
       if (!skill) {
         return res.status(404).json({ message: "Global skill not found" });

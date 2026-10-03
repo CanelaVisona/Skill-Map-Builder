@@ -2478,7 +2478,11 @@ export class DbStorage implements IStorage {
   }
 
   async deleteGlobalSkill(id: string): Promise<void> {
-    // Children will be deleted by CASCADE
+    // parent_skill_id has no FK in the DB, so subskills must be deleted explicitly
+    const children = await db.select({ id: globalSkills.id }).from(globalSkills).where(eq(globalSkills.parentSkillId, id));
+    for (const child of children) {
+      await this.deleteGlobalSkill(child.id);
+    }
     await db.delete(globalSkills).where(eq(globalSkills.id, id));
   }
 

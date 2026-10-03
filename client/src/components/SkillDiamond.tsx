@@ -26,6 +26,10 @@ interface SkillDiamondProps {
   areaColor: string;
   selected?: boolean;
   onClick?: () => void;
+  /** Separate handlers for the medallion and the XP bar; when given, they handle only their own part. */
+  onMedallionClick?: () => void;
+  onBarClick?: () => void;
+  shape?: ShapeKey;
   size?: number;
   /** Renders only the medallion itself, without the name label / mini XP bar below it —
    *  used by callers (e.g. SkillGridDetail) that already show their own name/progress UI. */
@@ -47,9 +51,13 @@ export function SkillDiamond({
   areaColor,
   selected = false,
   onClick,
+  onMedallionClick,
+  onBarClick,
+  shape = "diamond_classic",
   size = 56,
   hideMeta = false,
 }: SkillDiamondProps) {
+  const hasPartHandlers = !!(onMedallionClick || onBarClick);
   const isLocked = skill.status === "locked";
   const isUnlocked = skill.status === "available" || skill.status === "mastered";
   const isAvailable = skill.status === "available";
@@ -84,7 +92,7 @@ export function SkillDiamond({
 
   // Every skill is a uniform legendary-tier diamond whose material automatically upgrades
   // with level — a locked skill just stays plain dim iron/common until it actually unlocks.
-  const effectiveShape: ShapeKey = "diamond_classic";
+  const effectiveShape: ShapeKey = shape;
   const effectiveMaterial: MaterialKey = isLocked ? "iron" : getMaterialForLevel(currentLevel);
   const effectiveRarity: RarityKey = isLocked ? "common" : "legendary";
 
@@ -122,7 +130,8 @@ export function SkillDiamond({
   return (
     <div
       className={cn(
-        "flex flex-col items-center gap-1 cursor-pointer transition-opacity duration-200 hover:opacity-100",
+        "flex flex-col items-center gap-1 transition-opacity duration-200 hover:opacity-100",
+        !hasPartHandlers && "cursor-pointer",
         !isLocked && "hover:shadow-lg"
       )}
       style={{ minHeight: "96px", minWidth: "96px", display: "flex", alignItems: "center", justifyContent: "center" }}
@@ -142,7 +151,10 @@ export function SkillDiamond({
       </div>
 
       {/* Medallion */}
-      <div className="relative flex items-center justify-center">
+      <div
+        className={cn("relative flex items-center justify-center", onMedallionClick && "cursor-pointer")}
+        onClick={onMedallionClick}
+      >
         <motion.div
           animate={isAvailable ? { scale: [1, 1.04, 1] } : { scale: 1 }}
           transition={isAvailable ? { duration: 2.2, repeat: Infinity, repeatType: "loop" } : { duration: 0.2 }}
@@ -214,7 +226,11 @@ export function SkillDiamond({
           {/* XP Progress bar — lighter neutral track (vs. the old near-black one) so it reads
               clearly as "empty" even against the darker green fill tiers at low levels, plus a
               glossy highlight + glow on the fill itself so the filled portion pops. */}
-          <div className="relative mx-auto" style={{ width: `${renderSize + 10}px` }}>
+          <div
+            className={cn("relative mx-auto", onBarClick && "cursor-pointer py-1.5")}
+            style={{ width: `${renderSize + 10}px` }}
+            onClick={onBarClick}
+          >
             <div className="h-2.5 w-full rounded-full bg-gray-600/70 border border-gray-400/60 overflow-hidden shadow-inner">
               <div
                 className="h-full relative transition-all duration-300 rounded-full"

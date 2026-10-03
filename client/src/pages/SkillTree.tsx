@@ -30,7 +30,7 @@ import HousePriorityList from "../components/HousePriorityList";
 import HouseRepairsList from "../components/HouseRepairsList";
 import { EvidenceBoardModalWrapper } from "@/components/EvidenceBoardModal";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, User, Menu, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Utensils, Swords, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt, OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation, Bug, BugOff, HelpCircle, PiggyBank, Search } from "lucide-react";
+import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, User, Menu, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Utensils, Swords, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt, OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation, Check, HelpCircle, PiggyBank, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -6913,6 +6913,63 @@ function ClothingInventoryModalWrapper({ open, onOpenChange }: { open: boolean; 
   );
 }
 
+// Lista editable de items cortos (estrategias, disparadores...): un campo chico por item,
+// con botón para quitarlo y otro para agregar uno nuevo.
+function BugListEditor({
+  label,
+  addLabel,
+  placeholder,
+  items,
+  onChange,
+}: {
+  label: string;
+  addLabel: string;
+  placeholder: string;
+  items: string[];
+  onChange: (items: string[]) => void;
+}) {
+  return (
+    <div>
+      <Label className="text-xs text-muted-foreground">{label}</Label>
+      <div className="mt-1 space-y-1.5">
+        {items.map((item, idx) => (
+          <div key={idx} className="flex items-center gap-1.5">
+            <Input
+              value={item}
+              placeholder={placeholder}
+              className="h-8 text-xs"
+              autoFocus={idx === items.length - 1 && item === ""}
+              onChange={(e) => onChange(items.map((value, i) => (i === idx ? e.target.value : value)))}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  onChange([...items, ""]);
+                }
+              }}
+            />
+            <button
+              type="button"
+              className="shrink-0 p-1.5 rounded hover:bg-destructive/20"
+              onClick={() => onChange(items.filter((_, i) => i !== idx))}
+              title="Quitar"
+            >
+              <X className="h-3.5 w-3.5 text-muted-foreground" />
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-border/60 bg-background/50 py-1.5 text-xs text-muted-foreground hover:bg-muted/40 transition-colors"
+          onClick={() => onChange([...items, ""])}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          {addLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyResolved = false }: { open: boolean; onOpenChange?: (open: boolean) => void; embedded?: boolean; onlyResolved?: boolean }) {
   const { areas } = useSkillTree();
   const { showXpPopup, hideXpPopup } = useXpPopup();
@@ -6925,6 +6982,15 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
   const [addBugAreaId, setAddBugAreaId] = useState<string | null>(null);
   const [newBugNombre, setNewBugNombre] = useState("");
   const [newBugDesc, setNewBugDesc] = useState("");
+  // Edición del bug seleccionado (long-press sobre el título en el detalle).
+  const [isBugEditOpen, setIsBugEditOpen] = useState(false);
+  const [bugEditNombre, setBugEditNombre] = useState("");
+  const [bugEditDesc, setBugEditDesc] = useState("");
+  const [bugEditEstrategias, setBugEditEstrategias] = useState<string[]>([]);
+  const [bugEditAparece, setBugEditAparece] = useState<string[]>([]);
+  const [bugEditDisparadores, setBugEditDisparadores] = useState<string[]>([]);
+  const [bugEditError, setBugEditError] = useState<string | null>(null);
+  const bugTitleLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
   const [recordContextMenuId, setRecordContextMenuId] = useState<string | null>(null);
   const [isRecordFormOpen, setIsRecordFormOpen] = useState(false);
@@ -7063,6 +7129,29 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
       setAddBugAreaId(null);
       setNewBugNombre("");
       setNewBugDesc("");
+    },
+  });
+
+  const updateBug = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<Pick<SourceBug, "nombre" | "desc" | "aparece" | "disparadores" | "estrategias">> }) => {
+      const res = await fetch(`/api/source-bugs/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.message || "No se pudo guardar el bug");
+      }
+      return res.json();
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["all-area-bugs"] });
+      setIsBugEditOpen(false);
+      setBugEditError(null);
+    },
+    onError: (error: Error) => {
+      setBugEditError(error.message || "No se pudo guardar el bug");
     },
   });
 
@@ -7255,6 +7344,8 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
     setRecordContextMenuId(null);
     setIsRecordFormOpen(false);
     setRecordFormError(null);
+    setIsBugEditOpen(false);
+    setBugEditError(null);
   }, [selectedBugRef?.areaId, selectedBugRef?.bugId]);
 
   const bugStatusLabel: Record<SourceBug["status"], string> = {
@@ -7398,6 +7489,55 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
     }
   };
 
+  const cleanItems = (items: string[]) =>
+    Array.from(new Set(items.map((item) => item.trim()).filter(Boolean)));
+
+  const openBugEdit = () => {
+    if (!selectedBug) return;
+    setBugEditNombre(selectedBug.nombre);
+    setBugEditDesc(selectedBug.desc ?? "");
+    setBugEditEstrategias([...(selectedBug.estrategias ?? [])]);
+    setBugEditAparece([...(selectedBug.aparece ?? [])]);
+    setBugEditDisparadores([...(selectedBug.disparadores ?? [])]);
+    setBugEditError(null);
+    setIsBugEditOpen(true);
+  };
+
+  const handleSaveBugEdit = () => {
+    if (!selectedBug) return;
+    if (!bugEditNombre.trim()) {
+      setBugEditError("El nombre no puede quedar vacío.");
+      return;
+    }
+    updateBug.mutate({
+      id: selectedBug.id,
+      data: {
+        nombre: bugEditNombre.trim(),
+        desc: bugEditDesc.trim(),
+        estrategias: cleanItems(bugEditEstrategias),
+        aparece: cleanItems(bugEditAparece),
+        disparadores: cleanItems(bugEditDisparadores),
+      },
+    });
+  };
+
+  const startBugTitleLongPress = () => {
+    if (bugTitleLongPressTimer.current) {
+      clearTimeout(bugTitleLongPressTimer.current);
+    }
+    bugTitleLongPressTimer.current = setTimeout(() => {
+      bugTitleLongPressTimer.current = null;
+      openBugEdit();
+    }, 600);
+  };
+
+  const endBugTitleLongPress = () => {
+    if (bugTitleLongPressTimer.current) {
+      clearTimeout(bugTitleLongPressTimer.current);
+      bugTitleLongPressTimer.current = null;
+    }
+  };
+
   const panelBody = (
             <>
               {isLoading ? (
@@ -7419,9 +7559,90 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                     </Button>
                     <div className="text-right min-w-0 flex-1">
                       <p className="text-xs text-muted-foreground uppercase tracking-wide truncate">{selectedAreaGroup.areaName}</p>
-                      <h4 className="text-sm font-semibold uppercase tracking-wide truncate text-foreground">{selectedBug.nombre}</h4>
+                      <h4
+                        className="text-sm font-semibold uppercase tracking-wide truncate text-foreground cursor-pointer select-none"
+                        title="Mantené apretado para editar"
+                        onMouseDown={startBugTitleLongPress}
+                        onMouseUp={endBugTitleLongPress}
+                        onMouseLeave={endBugTitleLongPress}
+                        onTouchStart={startBugTitleLongPress}
+                        onTouchEnd={endBugTitleLongPress}
+                        onTouchMove={endBugTitleLongPress}
+                        onContextMenu={(e) => e.preventDefault()}
+                        data-testid="all-bugs-bug-title"
+                      >
+                        {selectedBug.nombre}
+                      </h4>
                     </div>
                   </div>
+
+                  {isBugEditOpen && createPortal(
+                    <div
+                      className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-black/70 p-4 py-10"
+                      onClick={() => setIsBugEditOpen(false)}
+                    >
+                      <div
+                        className="w-full max-w-lg rounded-xl border border-border/60 bg-background p-5 space-y-3 shadow-2xl"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <h5 className="text-sm font-semibold uppercase tracking-wide text-foreground">Editar bug</h5>
+                        <div>
+                          <Label htmlFor="global-bug-nombre" className="text-xs text-muted-foreground">Nombre</Label>
+                          <Input
+                            id="global-bug-nombre"
+                            value={bugEditNombre}
+                            onChange={(e) => setBugEditNombre(e.target.value.toUpperCase())}
+                            className="uppercase"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="global-bug-desc" className="text-xs text-muted-foreground">Descripción</Label>
+                          <Textarea
+                            id="global-bug-desc"
+                            rows={3}
+                            placeholder="¿Qué patrón/comportamiento es este bug?"
+                            value={bugEditDesc}
+                            onChange={(e) => setBugEditDesc(e.target.value)}
+                          />
+                        </div>
+                        <BugListEditor
+                          label="Estrategias"
+                          addLabel="Agregar estrategia"
+                          placeholder="Estrategia"
+                          items={bugEditEstrategias}
+                          onChange={setBugEditEstrategias}
+                        />
+                        <BugListEditor
+                          label="Cuándo aparece"
+                          addLabel="Agregar situación"
+                          placeholder="Cuándo aparece"
+                          items={bugEditAparece}
+                          onChange={setBugEditAparece}
+                        />
+                        <BugListEditor
+                          label="Disparadores"
+                          addLabel="Agregar disparador"
+                          placeholder="Disparador"
+                          items={bugEditDisparadores}
+                          onChange={setBugEditDisparadores}
+                        />
+
+                        {bugEditError && (
+                          <p className="text-xs text-red-500">{bugEditError}</p>
+                        )}
+
+                        <div className="flex justify-end gap-2">
+                          <Button type="button" variant="outline" onClick={() => setIsBugEditOpen(false)}>
+                            Cancelar
+                          </Button>
+                          <Button type="button" onClick={handleSaveBugEdit} disabled={updateBug.isPending}>
+                            {updateBug.isPending ? "Guardando..." : "Guardar cambios"}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>,
+                    document.body
+                  )}
 
                   <section className="rounded-xl border border-border/50 bg-muted/10 p-4 space-y-3">
                     <div className="flex items-center justify-between gap-2">
@@ -8396,7 +8617,7 @@ function QuestDiary() {
                 <Swords className="h-5 w-5" />
               </TabsTrigger>
               <TabsTrigger value="errores" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-errores" title="Bugs">
-                <Bug className="h-5 w-5" />
+                <Circle className="h-5 w-5" />
               </TabsTrigger>
               <TabsTrigger value="body" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-body" title="Fuerza">
                 <BicepsFlexed className="h-5 w-5" />
@@ -8601,11 +8822,11 @@ function QuestDiary() {
                 <Tabs defaultValue="activos" className="flex h-full flex-col">
                   <TabsList className="w-fit mb-3">
                     <TabsTrigger value="activos" className="text-xs" data-testid="bugs-subtab-activos">
-                      <Bug className="h-3.5 w-3.5 mr-1" />
+                      <Circle className="h-3.5 w-3.5 mr-1" />
                       Bugs
                     </TabsTrigger>
                     <TabsTrigger value="debugueados" className="text-xs" data-testid="bugs-subtab-debugueados">
-                      <BugOff className="h-3.5 w-3.5 mr-1" />
+                      <Check className="h-3.5 w-3.5 mr-1" />
                       Debugueados
                     </TabsTrigger>
                   </TabsList>

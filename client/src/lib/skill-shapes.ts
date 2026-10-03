@@ -3,12 +3,12 @@
 // at — pixel-space SVG points and percentage-based CSS clip-path strings are both derived
 // from that single normalized vertex list, so they can never drift apart.
 
-export type ShapeKey = "triangle" | "diamond_classic" | "diamond_ornate" | "medallion" | "insignia";
+export type ShapeKey = "triangle" | "diamond_classic" | "diamond_ornate" | "medallion" | "insignia" | "hexagon";
 
 // Every skill now renders as a triangle by default (see SkillDiamond.tsx) — the other shapes
 // are kept defined here in case a per-skill shape picker comes back later, but are currently
 // unreachable from the UI.
-export const SHAPE_KEYS: ShapeKey[] = ["triangle", "diamond_classic", "diamond_ornate", "medallion", "insignia"];
+export const SHAPE_KEYS: ShapeKey[] = ["triangle", "diamond_classic", "diamond_ornate", "medallion", "insignia", "hexagon"];
 
 export const SHAPE_LABELS: Record<ShapeKey, string> = {
   triangle: "Triángulo",
@@ -16,6 +16,7 @@ export const SHAPE_LABELS: Record<ShapeKey, string> = {
   diamond_ornate: "Rombo ornamentado",
   medallion: "Medallón",
   insignia: "Insignia",
+  hexagon: "Hexágono",
 };
 
 interface NormalizedVertexShape {
@@ -62,6 +63,9 @@ function getNormalizedShape(shape: ShapeKey): NormalizedShape {
       return { kind: "polygon", vertices: starVertices(50, 50, 46, 25, 4) };
     case "medallion":
       return { kind: "circle", cx: 50, cy: 50, r: 46 };
+    case "hexagon":
+      // Regular hexagon, point up — used for subskills (habilidades stay diamonds).
+      return { kind: "polygon", vertices: starVertices(50, 50, 46, 46, 3) };
     case "insignia":
       // Heraldic shield: rounded shoulders tapering to a point at the bottom.
       return {

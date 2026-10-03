@@ -15,15 +15,17 @@ interface SkillData {
   goalXp: number;
   areaName: string;
   description?: string;
+  isSubskill?: boolean;
 }
 
 interface SkillGridDetailProps {
   skill: SkillData | null;
   areaColor: string;
   onClose?: () => void;
+  children?: React.ReactNode;
 }
 
-export function SkillGridDetail({ skill, areaColor }: SkillGridDetailProps) {
+export function SkillGridDetail({ skill, areaColor, children }: SkillGridDetailProps) {
   const [progressPercent, setProgressPercent] = useState(0);
   const palette = usePopupPalette();
 
@@ -92,6 +94,7 @@ export function SkillGridDetail({ skill, areaColor }: SkillGridDetailProps) {
             goalXp: skill.goalXp,
           }}
           areaColor={areaColor}
+          shape={skill.isSubskill ? "hexagon" : "diamond_classic"}
           size={64}
           hideMeta
         />
@@ -173,6 +176,8 @@ export function SkillGridDetail({ skill, areaColor }: SkillGridDetailProps) {
               </span>
             </div>
           </div>
+
+      {children}
     </div>
   );
 }
