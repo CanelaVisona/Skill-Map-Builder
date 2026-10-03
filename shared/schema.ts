@@ -67,6 +67,8 @@ export const skills = pgTable("skills", {
   isFinalNode: integer("is_final_node").$type<0 | 1>().default(0),
   isAutoComplete: integer("is_auto_complete").$type<0 | 1>().default(0),
   hasCompletionStar: integer("has_completion_star").$type<0 | 1>().default(0),
+  // SideQuest node: not part of the level's title, but done along the way and it grew the area.
+  isSideQuest: integer("is_side_quest").$type<0 | 1>().default(0),
   level: integer("level").notNull().default(1),
   levelPosition: integer("level_position").notNull().default(1),
   experiencePoints: integer("experience_points").default(0),
@@ -777,11 +779,18 @@ export const manualTodayTasks = pgTable("manual_today_tasks", {
   kind: text("kind").$type<"task" | "event">().notNull().default("task"),
   done: integer("done").$type<0 | 1>().notNull().default(0),
   minutes: integer("minutes"), // Tiempo estimado asignado desde "Tareas de hoy" (se muestra como "· Xmin")
+  // Evento asociado a un área/quest: el día del evento se crea un nodo con su nombre en el
+  // lugar del nodo desbloqueado de ese árbol (linkedSkillId queda apuntando a ese nodo), y
+  // confirmar el evento confirma el nodo.
+  linkedKind: text("linked_kind").$type<"area" | "project">(),
+  linkedParentId: varchar("linked_parent_id"),
+  linkedSkillId: varchar("linked_skill_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export const insertManualTodayTaskSchema = createInsertSchema(manualTodayTasks).omit({ id: true, createdAt: true }).extend({
   kind: z.enum(["task", "event"]).optional().default("task"),
   done: z.union([z.literal(0), z.literal(1)]).optional().default(0),
+  linkedKind: z.enum(["area", "project"]).nullable().optional(),
 });
 export type InsertManualTodayTask = z.infer<typeof insertManualTodayTaskSchema>;
 export type ManualTodayTask = typeof manualTodayTasks.$inferSelect;

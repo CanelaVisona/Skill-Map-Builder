@@ -3618,10 +3618,9 @@ interface AchievementActivity {
   skill?: SkillWithSource;
 }
 
-const formatAchievementDate = (dateString: string | null | undefined): string => {
-  if (!dateString) return 'Fecha desconocida';
+const formatAchievementDate = (dateString: string): string => {
   const date = new Date(dateString);
-  if (isNaN(date.getTime())) return 'Fecha desconocida';
+  if (isNaN(date.getTime())) return '';
   return new Intl.DateTimeFormat('es-AR', { year: 'numeric', month: 'long', day: 'numeric' }).format(date);
 };
 
@@ -4250,10 +4249,12 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
                                   <div className="flex-shrink-0 flex justify-center">
                                     <button
                                       onClick={() => openActivity(activity)}
-                                      className="w-12 h-12 rounded-full bg-background border-2 border-border flex items-center justify-center flex-shrink-0 hover:border-muted-foreground/50 transition-all hover:shadow-lg hover:shadow-foreground/10 dark:bg-zinc-900 dark:border-zinc-700 dark:hover:border-zinc-500 dark:hover:shadow-zinc-900/50 group relative z-10"
+                                      className={activity.type === 'node'
+                                        ? "w-12 h-12 rounded-full bg-foreground border-2 border-foreground text-background shadow-sm flex items-center justify-center flex-shrink-0 transition-all hover:shadow-lg hover:shadow-foreground/10 group relative z-10"
+                                        : "w-12 h-12 rounded-full bg-background border-2 border-border flex items-center justify-center flex-shrink-0 hover:border-muted-foreground/50 transition-all hover:shadow-lg hover:shadow-foreground/10 dark:bg-zinc-900 dark:border-zinc-700 dark:hover:border-zinc-500 dark:hover:shadow-zinc-900/50 group relative z-10"}
                                     >
                                       {activity.type === 'node' ? (
-                                        <CalendarCheck className="h-5 w-5 text-green-500 group-hover:text-green-400" />
+                                        <Check size={18} strokeWidth={3} />
                                       ) : activity.type === 'learning' ? (
                                         <Lightbulb className="h-5 w-5 text-yellow-500 group-hover:text-yellow-400" />
                                       ) : activity.type === 'tool' ? (
@@ -4272,7 +4273,7 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
                                       <p className="text-sm font-medium text-foreground mb-2 group-hover:text-foreground transition-colors dark:text-zinc-200 dark:group-hover:text-zinc-50">
                                         {activity.title}
                                       </p>
-                                      {activity.type === 'node' && (
+                                      {activity.type === 'node' && activity.completedAt && (
                                         <p className="text-xs text-green-600 dark:text-green-500 mb-2">
                                           ✓ Completado el {formatAchievementDate(activity.completedAt)}
                                         </p>
@@ -4365,10 +4366,12 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
                                   <div className="flex-shrink-0 flex justify-center">
                                     <button
                                       onClick={() => openActivity(activity)}
-                                      className="w-12 h-12 rounded-full bg-background border-2 border-border flex items-center justify-center flex-shrink-0 hover:border-muted-foreground/50 transition-all hover:shadow-lg hover:shadow-foreground/10 dark:bg-zinc-900 dark:border-zinc-700 dark:hover:border-zinc-500 dark:hover:shadow-zinc-900/50 group relative z-10"
+                                      className={activity.type === 'node'
+                                        ? "w-12 h-12 rounded-full bg-foreground border-2 border-foreground text-background shadow-sm flex items-center justify-center flex-shrink-0 transition-all hover:shadow-lg hover:shadow-foreground/10 group relative z-10"
+                                        : "w-12 h-12 rounded-full bg-background border-2 border-border flex items-center justify-center flex-shrink-0 hover:border-muted-foreground/50 transition-all hover:shadow-lg hover:shadow-foreground/10 dark:bg-zinc-900 dark:border-zinc-700 dark:hover:border-zinc-500 dark:hover:shadow-zinc-900/50 group relative z-10"}
                                     >
                                       {activity.type === 'node' ? (
-                                        <CalendarCheck className="h-5 w-5 text-green-500 group-hover:text-green-400" />
+                                        <Check size={18} strokeWidth={3} />
                                       ) : activity.type === 'learning' ? (
                                         <Lightbulb className="h-5 w-5 text-yellow-500 group-hover:text-yellow-400" />
                                       ) : activity.type === 'tool' ? (
@@ -4387,7 +4390,7 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
                                       <p className="text-sm font-medium text-foreground mb-2 group-hover:text-foreground transition-colors dark:text-zinc-200 dark:group-hover:text-zinc-50">
                                         {activity.title}
                                       </p>
-                                      {activity.type === 'node' && (
+                                      {activity.type === 'node' && activity.completedAt && (
                                         <p className="text-xs text-green-600 dark:text-green-500 mb-2">
                                           ✓ Completado el {formatAchievementDate(activity.completedAt)}
                                         </p>

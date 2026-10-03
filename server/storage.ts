@@ -648,6 +648,7 @@ export class DbStorage implements IStorage {
       dependencies: skill.dependencies as string[],
       manualLock: (skill.manualLock ?? 0) as 0 | 1,
       isFinalNode: (skill.isFinalNode ?? 0) as 0 | 1,
+      isSideQuest: (skill.isSideQuest ?? 0) as 0 | 1,
       level: skill.level,
       levelPosition: skill.levelPosition,
       plannedDate: skill.plannedDate,
@@ -670,6 +671,7 @@ export class DbStorage implements IStorage {
     if (skill.dependencies !== undefined) updateData.dependencies = skill.dependencies as string[];
     if (skill.manualLock !== undefined) updateData.manualLock = skill.manualLock as 0 | 1;
     if (skill.isFinalNode !== undefined) updateData.isFinalNode = skill.isFinalNode as 0 | 1;
+    if (skill.isSideQuest !== undefined) updateData.isSideQuest = skill.isSideQuest as 0 | 1;
     if (skill.level !== undefined) updateData.level = skill.level;
     if (skill.levelPosition !== undefined) updateData.levelPosition = skill.levelPosition;
     if (skill.plannedDate !== undefined) updateData.plannedDate = skill.plannedDate;
@@ -3513,6 +3515,18 @@ export class DbStorage implements IStorage {
   // Manual Today Tasks (tareas agregadas a mano en "Tareas de hoy")
   // Con endDate se trae el rango [date, endDate] (usado para previsualizar el mes en el
   // calendario, días futuros incluidos); sin él, solo las de ese día puntual.
+  async getPendingNodeLinkedManualTasks(userId: string, upTo: string): Promise<ManualTodayTask[]> {
+    const { lte, isNull, isNotNull } = await import("drizzle-orm");
+    return await db.select().from(manualTodayTasks).where(
+      and(
+        eq(manualTodayTasks.userId, userId),
+        lte(manualTodayTasks.date, upTo),
+        isNotNull(manualTodayTasks.linkedParentId),
+        isNull(manualTodayTasks.linkedSkillId)
+      )
+    );
+  }
+
   async getManualTodayTasks(userId: string, date: string, endDate?: string): Promise<ManualTodayTask[]> {
     if (endDate) {
       const { gte, lte } = await import("drizzle-orm");
@@ -3562,7 +3576,7 @@ export class DbStorage implements IStorage {
     return result[0];
   }
 
-  async updateManualTodayTask(id: string, updates: Partial<Pick<InsertManualTodayTask, "title" | "done" | "date" | "minutes">>): Promise<ManualTodayTask | undefined> {
+  async updateManualTodayTask(id: string, updates: Partial<Pick<InsertManualTodayTask, "title" | "done" | "date" | "minutes" | "linkedSkillId">>): Promise<ManualTodayTask | undefined> {
     const updateData: Record<string, unknown> = {};
     if (updates.minutes !== undefined) updateData.minutes = updates.minutes;
     if (updates.title !== undefined) updateData.title = updates.title;

@@ -7,6 +7,7 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar, ArrowLeft, Check, ChevronLeft, ChevronRight, Clock, Pencil, Star } from "lucide-react";
 import { useSkillTree, type Area, type Project, type Skill } from "@/lib/skill-context";
 import { useHabits, useUpdateHabitRecord } from "@/lib/useHabits";
@@ -174,7 +175,7 @@ function DoneNodeMark({ size = "sm" }: { size?: "sm" | "md" }) {
 
 export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const queryClient = useQueryClient();
-  const { areas, projects, updateSkill, updateProjectSkill, globalSkills, toggleSkillStatus, toggleProjectSkillStatus } = useSkillTree();
+  const { areas, projects, updateSkill, updateProjectSkill, globalSkills, toggleSkillStatus, toggleProjectSkillStatus, addSkillInPlaceOfAvailable, materializePendingEventNodes } = useSkillTree();
   const { data: habitsData } = useHabits();
   // Confirmar un hábito/práctica desde acá tiene que otorgar exactamente lo mismo (XP, pop-ups)
   // que confirmarlo desde su pantalla de origen — ver useConfirmActions.ts. Los nodos ya usan
@@ -191,6 +192,14 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const [newTaskTitle, setNewTaskTitle] = useState("");
   // Elegido con los botones "Tarea"/"Evento" del diálogo de agregar — se manda tal cual al crear.
   const [newTaskKind, setNewTaskKind] = useState<"task" | "event">("task");
+  // Área o quest a la que pertenece la tarea/evento que se está por crear ("" = ninguna).
+  // - Tarea: se crea como un nodo de ese árbol, en el lugar de su nodo desbloqueado y con fecha
+  //   planeada en el día que se está viendo: así es a la vez la tarea del día y el nodo, y
+  //   confirmarla en "Tareas de hoy" confirma el nodo.
+  // - Evento: queda como evento, y el nodo se crea recién el día del evento (en el lugar del
+  //   nodo desbloqueado de ese momento, ver materializePendingEventNodes). Confirmar el evento
+  //   confirma ese nodo.
+  const [newTaskParent, setNewTaskParent] = useState("");
   // Franja a la que se asigna la tarea que se está por crear: null = sin asignar (mantener
   // presionado el fondo). Mantener presionado el título de una franja horaria en vez del fondo
   // apunta la tarea nueva directo a esa franja, para que no caiga en "Sin asignar".
@@ -843,7 +852,20 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const toggleManualDone = (item: TodayItem) => {
     const task = manualTasks.find((t) => t.id === item.id);
     if (!task) return;
-    updateManualTask.mutate({ id: item.id, date: effectiveDate, updates: { done: task.done === 1 ? 0 : 1 } });
+    const newDone = task.done === 1 ? 0 : 1;
+    updateManualTask.mutate({ id: item.id, date: effectiveDate, updates: { done: newDone } });
+    // Evento con nodo propio (ver newTaskParent): confirmarlo/desconfirmarlo hace lo mismo con
+    // el nodo, salvo que el nodo ya esté en ese estado (p.ej. se confirmó desde el árbol).
+    if (task.linkedSkillId) {
+      const parent = findNodeParent(task.linkedSkillId);
+      const parentTree = parent
+        ? (parent.kind === "area" ? areas : projects).find((p) => p.id === parent.parentId)
+        : undefined;
+      const node = parentTree?.skills?.find((s: Skill) => s.id === task.linkedSkillId);
+      if (node && (node.status === "mastered") !== (newDone === 1)) {
+        toggleNodeDone({ ...item, type: "node", id: node.id, key: `node:${node.id}`, done: node.status === "mastered" });
+      }
+    }
   };
 
   // Busca el área/proyecto dueño de un nodo por su id de skill, sin depender de que el ítem
@@ -1143,6 +1165,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     backgroundLongPressTimer.current = setTimeout(() => {
       setNewTaskTitle("");
       setNewTaskKind("task");
+      setNewTaskParent("");
       setAddTaskTargetSlot(null);
       setAddTaskDialogOpen(true);
     }, LONG_PRESS_MS);
@@ -1165,6 +1188,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       slotTitleLongPressFired.current = true;
       setNewTaskTitle("");
       setNewTaskKind("task");
+      setNewTaskParent("");
       setAddTaskTargetSlot(slot);
       setAddTaskDialogOpen(true);
     }, LONG_PRESS_MS);
@@ -1182,6 +1206,27 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     const title = newTaskTitle.trim();
     if (!title) return;
     setAddTaskDialogOpen(false);
+    if (newTaskKind === "event" && newTaskParent) {
+      const [linkedKind, linkedParentId] = newTaskParent.split(":") as ["area" | "project", string];
+      const created = await createManualTask.mutateAsync({ date: effectiveDate, title, kind: "event", linkedKind, linkedParentId });
+      if (addTaskTargetSlot) {
+        setTaskSlot.mutate({ date: effectiveDate, taskType: "manual", taskId: created.id, slot: addTaskTargetSlot });
+      }
+      // Si el evento es de hoy (o de un día ya pasado), su nodo se crea ya mismo.
+      if (effectiveDate <= todayStr) {
+        await materializePendingEventNodes();
+        queryClient.invalidateQueries({ queryKey: ["manual-today-tasks", effectiveDate] });
+      }
+      return;
+    }
+    if (newTaskKind === "task" && newTaskParent) {
+      const [parentKind, parentId] = newTaskParent.split(":") as ["area" | "project", string];
+      const node = await addSkillInPlaceOfAvailable(parentKind, parentId, title, { plannedDate: effectiveDate });
+      if (node && addTaskTargetSlot) {
+        setTaskSlot.mutate({ date: effectiveDate, taskType: "node", taskId: node.id, slot: addTaskTargetSlot });
+      }
+      return;
+    }
     const created = await createManualTask.mutateAsync({ date: effectiveDate, title, kind: newTaskKind });
     // Si el diálogo se abrió apuntado a una franja (long-press en su título), la tarea recién
     // creada se asigna directo ahí — queda última de la fila porque es la de updatedAt más
@@ -2149,6 +2194,32 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
           }}
           placeholder={newTaskKind === "event" ? "¿Qué evento querés agregar?" : "¿Qué tarea querés agregar?"}
         />
+        {(areas.length > 0 || projects.length > 0) && (
+          <Select value={newTaskParent || "__none__"} onValueChange={(v) => setNewTaskParent(v === "__none__" ? "" : v)}>
+            <SelectTrigger className="border-0 bg-muted/50 focus:ring-0">
+              <SelectValue placeholder="Área o quest" />
+            </SelectTrigger>
+            <SelectContent className="border-0 minimal-scrollbar">
+              <SelectItem value="__none__">Sin área ni quest</SelectItem>
+              {areas.length > 0 && (
+                <SelectGroup>
+                  <SelectLabel>Áreas</SelectLabel>
+                  {areas.map((a) => (
+                    <SelectItem key={a.id} value={`area:${a.id}`}>{a.name}</SelectItem>
+                  ))}
+                </SelectGroup>
+              )}
+              {projects.length > 0 && (
+                <SelectGroup>
+                  <SelectLabel>Quests</SelectLabel>
+                  {projects.map((p) => (
+                    <SelectItem key={p.id} value={`project:${p.id}`}>{p.name}</SelectItem>
+                  ))}
+                </SelectGroup>
+              )}
+            </SelectContent>
+          </Select>
+        )}
         <div className="flex justify-end gap-2 pt-2">
           <button
             onClick={() => setAddTaskDialogOpen(false)}

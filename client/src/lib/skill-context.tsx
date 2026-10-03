@@ -57,6 +57,7 @@ export interface Skill {
   isFinalNode?: number;
   isAutoComplete?: number;
   hasCompletionStar?: number;
+  isSideQuest?: number;
   level: number;
   levelPosition?: number;
   experiencePoints?: number;
@@ -189,9 +190,11 @@ interface SkillTreeContextType {
   toggleSubSkillLock: (skillId: string) => void;
   moveSubSkill: (skillId: string, direction: "up" | "down") => void;
   deleteSubSkillTree: () => Promise<void>;
-  addSkillBelow: (areaId: string, skillId: string, title?: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null }) => Promise<void>;
-  addProjectSkillBelow: (projectId: string, skillId: string, title?: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null }) => Promise<void>;
-  addSubSkillBelow: (skillId: string, title?: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null }) => Promise<void>;
+  addSkillBelow: (areaId: string, skillId: string, title?: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; isSideQuest?: 0 | 1 }) => Promise<void>;
+  addProjectSkillBelow: (projectId: string, skillId: string, title?: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; isSideQuest?: 0 | 1 }) => Promise<void>;
+  addSubSkillBelow: (skillId: string, title?: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; isSideQuest?: 0 | 1 }) => Promise<void>;
+  addSkillInPlaceOfAvailable: (kind: "area" | "project", parentId: string, title: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null }) => Promise<Skill | null>;
+  materializePendingEventNodes: () => Promise<void>;
   duplicateSkill: (areaId: string, skill: Skill) => Promise<void>;
   duplicateProjectSkill: (projectId: string, skill: Skill) => Promise<void>;
   duplicateSubSkill: (skill: Skill) => Promise<void>;
@@ -3571,7 +3574,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
-  const addSkillBelow = async (areaId: string, skillId: string, title: string = "", copyFields?: { plannedDate?: string | null; plannedDuration?: number | null }) => {
+  const addSkillBelow = async (areaId: string, skillId: string, title: string = "", copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; isSideQuest?: 0 | 1 }) => {
     const area = areas.find(a => a.id === areaId);
     if (!area) return;
 
@@ -3618,6 +3621,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         manualLock: 0,
         ...(copyFields?.plannedDate !== undefined ? { plannedDate: copyFields.plannedDate } : {}),
         ...(copyFields?.plannedDuration !== undefined ? { plannedDuration: copyFields.plannedDuration } : {}),
+        ...(copyFields?.isSideQuest ? { isSideQuest: 1 } : {}),
       };
 
       const response = await fetch("/api/skills", {
@@ -3662,7 +3666,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
-  const addProjectSkillBelow = async (projectId: string, skillId: string, title: string = "?", copyFields?: { plannedDate?: string | null; plannedDuration?: number | null }) => {
+  const addProjectSkillBelow = async (projectId: string, skillId: string, title: string = "?", copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; isSideQuest?: 0 | 1 }) => {
     const project = projects.find(p => p.id === projectId);
     if (!project) return;
 
@@ -3709,6 +3713,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         manualLock: 0,
         ...(copyFields?.plannedDate !== undefined ? { plannedDate: copyFields.plannedDate } : {}),
         ...(copyFields?.plannedDuration !== undefined ? { plannedDuration: copyFields.plannedDuration } : {}),
+        ...(copyFields?.isSideQuest ? { isSideQuest: 1 } : {}),
       };
 
       const response = await fetch("/api/skills", {
@@ -3753,7 +3758,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
-  const addSubSkillBelow = async (skillId: string, title: string = "?", copyFields?: { plannedDate?: string | null; plannedDuration?: number | null }) => {
+  const addSubSkillBelow = async (skillId: string, title: string = "?", copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; isSideQuest?: 0 | 1 }) => {
     const clickedSkill = subSkills.find(s => s.id === skillId);
     if (!clickedSkill || !activeParentSkillId) return;
 
@@ -3790,6 +3795,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         manualLock: 0,
         ...(copyFields?.plannedDate !== undefined ? { plannedDate: copyFields.plannedDate } : {}),
         ...(copyFields?.plannedDuration !== undefined ? { plannedDuration: copyFields.plannedDuration } : {}),
+        ...(copyFields?.isSideQuest ? { isSideQuest: 1 } : {}),
       };
 
       const response = await fetch("/api/skills", {
@@ -3826,6 +3832,113 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       console.error("Error adding sub-skill below:", error);
     }
   };
+
+  // Crea un nodo nuevo en el lugar del nodo desbloqueado (available) del área/quest: el nuevo
+  // queda desbloqueado en esa posición y el que estaba ahí pasa a ser el siguiente (bloqueado,
+  // dependiendo del nuevo). Se usa al agregar una tarea en "Tareas de hoy" asociada a un
+  // área/quest. Si no hay ningún nodo desbloqueado, entra justo después del último confirmado.
+  // El server renumera el nivel, recalcula Y y deja como available solo al primero sin
+  // confirmar (el nuevo, cuyo status explícito se respeta).
+  const addSkillInPlaceOfAvailable = async (
+    kind: "area" | "project",
+    parentId: string,
+    title: string,
+    copyFields?: { plannedDate?: string | null; plannedDuration?: number | null }
+  ): Promise<Skill | null> => {
+    // Se lee el árbol fresco del server (no el estado local): esto puede correr varias veces
+    // seguidas sobre el mismo árbol (eventos pendientes) y el estado local quedaría viejo.
+    let parent: Area | Project | undefined;
+    try {
+      const listRes = await fetch(kind === "area" ? "/api/areas" : "/api/projects", { credentials: "include" });
+      const list = listRes.ok ? await listRes.json() : [];
+      parent = (Array.isArray(list) ? list : []).find((p: Area | Project) => p.id === parentId);
+    } catch (error) {
+      console.error("Error loading tree for new node:", error);
+    }
+    if (!parent) return null;
+
+    const byOrder = (a: Skill, b: Skill) => (a.level - b.level) || ((a.levelPosition || 0) - (b.levelPosition || 0));
+    const sorted = [...parent.skills].sort(byOrder);
+    const available = sorted.find(s => s.status === "available" && (s.levelPosition || 0) > 1);
+    const lastMastered = [...sorted].reverse().find(s => s.status === "mastered");
+    const anchor = available ?? lastMastered;
+    if (!anchor) return null;
+
+    try {
+      const response = await fetch("/api/skills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(kind === "area" ? { areaId: parentId } : { projectId: parentId }),
+          title,
+          description: "",
+          x: anchor.x,
+          y: available ? anchor.y : anchor.y + 150,
+          status: "available",
+          dependencies: available ? ensureDependenciesArray(available.dependencies) : [anchor.id],
+          level: anchor.level,
+          levelPosition: available ? (anchor.levelPosition || 0) : (anchor.levelPosition || 0) + 1,
+          isFinalNode: 0,
+          manualLock: 0,
+          ...(copyFields?.plannedDate !== undefined ? { plannedDate: copyFields.plannedDate } : {}),
+          ...(copyFields?.plannedDuration !== undefined ? { plannedDuration: copyFields.plannedDuration } : {}),
+        }),
+      });
+      if (!response.ok) throw new Error("Failed to create skill");
+      const newSkill: Skill = await response.json();
+
+      // El que estaba desbloqueado ahora va después del nuevo: depende de él.
+      if (available) {
+        await fetch(`/api/skills/${available.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dependencies: [newSkill.id] }),
+        });
+      }
+
+      if (kind === "area") await refreshAllAreas();
+      else await refreshAllProjects();
+      return newSkill;
+    } catch (error) {
+      console.error("Error adding skill in place of available:", error);
+      return null;
+    }
+  };
+
+  // Eventos de "Tareas de hoy" asociados a un área/quest cuyo día ya llegó y todavía no tienen
+  // nodo: se crea ahora, con el nombre del evento, en el lugar del nodo desbloqueado de ese
+  // árbol, y el evento queda apuntando a él (confirmar el evento confirma el nodo). El nodo no
+  // lleva fecha planeada: el evento ya es la tarea del día, así no aparece dos veces.
+  const materializingEventNodesRef = useRef(false);
+  const materializePendingEventNodes = async () => {
+    if (materializingEventNodesRef.current) return;
+    materializingEventNodesRef.current = true;
+    try {
+      const res = await fetch(`/api/manual-today-tasks/pending-node-links?upTo=${getTodayStr()}`, { credentials: "include" });
+      if (!res.ok) return;
+      const pending: { id: string; title: string; linkedKind: "area" | "project" | null; linkedParentId: string | null }[] = await res.json();
+      for (const event of pending) {
+        if (!event.linkedKind || !event.linkedParentId) continue;
+        const node = await addSkillInPlaceOfAvailable(event.linkedKind, event.linkedParentId, event.title);
+        if (!node) continue;
+        await fetch(`/api/manual-today-tasks/${event.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ linkedSkillId: node.id }),
+        });
+      }
+    } catch (error) {
+      console.error("Error creating nodes for linked events:", error);
+    } finally {
+      materializingEventNodesRef.current = false;
+    }
+  };
+
+  useEffect(() => {
+    if (isLoading) return;
+    materializePendingEventNodes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading]);
 
   // Duplicating a node behaves exactly like adding a new node below it (same
   // eligibility rules, same insertion/status logic) - the only difference is that
@@ -5210,6 +5323,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       toggleSubSkillLock,
       moveSubSkill,
       addSkillBelow,
+      addSkillInPlaceOfAvailable,
+      materializePendingEventNodes,
       addProjectSkillBelow,
       addSubSkillBelow,
       moveSkillToLevel,

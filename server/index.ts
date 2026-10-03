@@ -121,6 +121,17 @@ app.use((req, res, next) => {
     console.error("⚠ manual_today_tasks.minutes migration warning:", error.message);
   }
 
+  // Vínculo de un evento de "Tareas de hoy" con un área/quest y el nodo creado el día del evento.
+  try {
+    await db.execute(sql`
+      ALTER TABLE "manual_today_tasks" ADD COLUMN IF NOT EXISTS "linked_kind" text;
+      ALTER TABLE "manual_today_tasks" ADD COLUMN IF NOT EXISTS "linked_parent_id" varchar;
+      ALTER TABLE "manual_today_tasks" ADD COLUMN IF NOT EXISTS "linked_skill_id" varchar;
+    `);
+  } catch (error: any) {
+    console.error("⚠ manual_today_tasks node link migration warning:", error.message);
+  }
+
   // Run data migration for old areas and skills
   // TEMPORARILY DISABLED: This migration was causing startup to hang
   // TODO: Revisit this migration and optimize it

@@ -5508,14 +5508,31 @@ export async function registerRoutes(
     }
   });
 
+  // Eventos asociados a un área/quest cuyo día ya llegó (date <= upTo) y todavía no tienen su
+  // nodo creado: el front los materializa en el árbol al cargar.
+  app.get("/api/manual-today-tasks/pending-node-links", requireAuth, async (req, res) => {
+    try {
+      const { upTo } = req.query;
+      if (!upTo || typeof upTo !== "string") {
+        return res.status(400).json({ message: "upTo es requerido (formato YYYY-MM-DD)" });
+      }
+      res.json(await storage.getPendingNodeLinkedManualTasks(req.userId!, upTo));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.post("/api/manual-today-tasks", requireAuth, async (req, res) => {
     try {
-      const { date, title, kind } = req.body;
+      const { date, title, kind, linkedKind, linkedParentId } = req.body;
       if (!date || !title || typeof title !== "string" || !title.trim()) {
         return res.status(400).json({ message: "date y title son requeridos" });
       }
       if (kind !== undefined && kind !== "task" && kind !== "event") {
         return res.status(400).json({ message: "kind debe ser task o event" });
+      }
+      if (linkedParentId && linkedKind !== "area" && linkedKind !== "project") {
+        return res.status(400).json({ message: "linkedKind debe ser area o project" });
       }
       const task = await storage.createManualTodayTask({
         userId: req.userId!,
@@ -5523,6 +5540,7 @@ export async function registerRoutes(
         title: title.trim(),
         kind: kind === "event" ? "event" : "task",
         done: 0,
+        ...(linkedParentId ? { linkedKind, linkedParentId: String(linkedParentId) } : {}),
       });
       res.status(201).json(task);
     } catch (error: any) {
@@ -5536,7 +5554,7 @@ export async function registerRoutes(
       if (!existing || existing.userId !== req.userId) {
         return res.status(404).json({ message: "Tarea no encontrada" });
       }
-      const { title, done, date, minutes } = req.body;
+      const { title, done, date, minutes, linkedSkillId } = req.body;
       if (done !== undefined && done !== 0 && done !== 1) {
         return res.status(400).json({ message: "done debe ser 0 o 1" });
       }
@@ -5551,6 +5569,7 @@ export async function registerRoutes(
         ...(done !== undefined ? { done } : {}),
         ...(date !== undefined ? { date } : {}),
         ...(minutes !== undefined ? { minutes } : {}),
+        ...(linkedSkillId !== undefined ? { linkedSkillId: linkedSkillId === null ? null : String(linkedSkillId) } : {}),
       });
       // Si se movió de día, la franja horaria asignada quedó atada a la fecha vieja: no tiene
       // sentido dejarla huérfana ahí (el día viejo ya no la va a mostrar, pero queda basura en

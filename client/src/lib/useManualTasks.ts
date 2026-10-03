@@ -63,11 +63,24 @@ export function useManualTasksRange(startDate: string, endDate: string, enabled 
 export function useCreateManualTask() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ date, title, kind }: { date: string; title: string; kind?: "task" | "event" }) => {
+    mutationFn: async ({
+      date,
+      title,
+      kind,
+      linkedKind,
+      linkedParentId,
+    }: {
+      date: string;
+      title: string;
+      kind?: "task" | "event";
+      // Área/quest del evento: el día del evento se le crea un nodo ahí (ver skill-context).
+      linkedKind?: "area" | "project";
+      linkedParentId?: string;
+    }) => {
       const res = await fetch("/api/manual-today-tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, title, kind }),
+        body: JSON.stringify({ date, title, kind, linkedKind, linkedParentId }),
       });
       if (!res.ok) throw new Error("Failed to create manual task");
       return res.json() as Promise<ManualTodayTask>;

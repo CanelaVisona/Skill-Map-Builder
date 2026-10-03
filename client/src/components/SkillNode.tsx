@@ -19,6 +19,7 @@ import { useErrorCelebration } from "@/lib/error-celebration-context";
 import { beginPopupChain, endPopupChain, runPopupQueueAsync, runPopupQueue, getPopupBusyDelay } from "@/lib/popup-coordinator";
 import { getNodeTitleWordLimit, clampToWordLimit } from "@/lib/node-title-settings";
 import { getLevelTitleSuggestion, getOtherLevelTitles } from "@/lib/unique-level-title";
+import { getCurrentTimeSlotKey } from "@/lib/useTodayTaskSlots";
 import { useToast } from "@/hooks/use-toast";
 import { SkillLinkPicker } from "@/components/SkillLinkPicker";
 import { BodyLinkPicker, type BodyLink } from "@/components/BodyLinkPicker";
@@ -47,6 +48,9 @@ import { Calendar } from "@/components/ui/calendar";
 const WEEKDAY_NAMES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 const WEEKDAY_IDS = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"];
 const CUSTOM_DATE_VALUE = "__custom__";
+// Opción "Ahora" de "When exactly?": planea el nodo para hoy y lo mete en "Tareas de hoy" en el
+// lugar de la tarea desbloqueada (justo antes de la primera pendiente de la franja actual).
+const NOW_DATE_VALUE = "__now__";
 
 interface QuickDateOption {
   id: string;
@@ -656,6 +660,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [editAction, setEditAction] = useState(skill.description?.split("\n\nWhen: ")[0] || "");
   const [editPlannedDate, setEditPlannedDate] = useState(skill.plannedDate || "");
   const [showCustomCalendar, setShowCustomCalendar] = useState(false);
+  // Se eligió "Ahora" (no "Hoy") en "When exactly?": misma fecha, pero el selector lo muestra así.
+  const [editWhenIsNow, setEditWhenIsNow] = useState(false);
   // True right after picking "Elegir fecha" and before a day is actually chosen in the popup
   // calendar. Without this, the Select's controlled `value` (derived from editPlannedDate,
   // which hasn't changed yet) would snap back to the previous option on the very next render,
@@ -2267,6 +2273,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       const descParts = (skill.description || "").split("\n\nWhen: ");
       setEditAction(descParts[0] || "");
       setEditPlannedDate(skill.plannedDate || "");
+      setEditWhenIsNow(false);
       setShowCustomCalendar(false);
       setPendingCustomDate(false);
       setPlannedSlotPrompt(null);
@@ -2568,6 +2575,28 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     return () => clearTimeout(timer);
   }, [editTitle, editAction, editPlannedDate, editPlannedDuration, isEditDialogOpen, skill.id, skill.title, skill.description, skill.plannedDate, skill.plannedDuration, isSubSkillView, isProject, activeId, updateSubSkill, updateProjectSkill, updateSkill]);
 
+  // "Ahora": el nodo entra en "Tareas de hoy" en la franja horaria actual, en el lugar de la
+  // tarea desbloqueada (antes de la primera pendiente), y pasa a ser la tarea del momento.
+  const placeNodeNowInTodayTasks = async (date: string) => {
+    try {
+      await fetch("/api/today-task-slots", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          date,
+          taskType: "node",
+          taskId: skill.id,
+          slot: getCurrentTimeSlotKey(),
+          position: "beforePending",
+          tzOffsetMinutes: new Date().getTimezoneOffset(),
+        }),
+      });
+      queryClient.invalidateQueries({ queryKey: ["today-task-slots", date] });
+    } catch (error) {
+      console.error("Error ubicando el nodo en Tareas de hoy:", error);
+    }
+  };
+
   // Registra el nodo en "Tareas de hoy" para el día elegido, en la franja y posición
   // decididas en el mini-flujo de plannedSlotPrompt (ver ese estado). "Al final" es el
   // comportamiento por defecto del backend (agrega al final de la franja); "al principio"
@@ -2747,6 +2776,19 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     }
   };
 
+  // Adds a node below this one; as a SideQuest it's drawn with a dotted border to mark that
+  // it isn't part of the level's title, but was done along the way and grew the area.
+  const addNodeBelow = (isSideQuest: boolean = false) => {
+    const fields = isSideQuest ? { isSideQuest: 1 as const } : undefined;
+    if (isSubSkillView) {
+      addSubSkillBelow(skill.id, "", fields);
+    } else if (isProject) {
+      addProjectSkillBelow(activeId, skill.id, "", fields);
+    } else {
+      addSkillBelow(activeId, skill.id, "", fields);
+    }
+  };
+
   return (
     <>
     <Popover open={isOpen} onOpenChange={handleOpenChange}>
@@ -2847,7 +2889,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               // Mastered last node of level (always orange, whether level completed or not)
               isMastered && isLastNodeOfLevel && "bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/30",
               // Level completed - all nodes turn orange
-              isMastered && isLevelCompleted && "bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/30"
+              isMastered && isLevelCompleted && "bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/30",
+              // SideQuest: dotted border. bg-clip-padding keeps the fill out from under the
+              // border so the gaps stay visible on filled (mastered) circles too.
+              skill.isSideQuest === 1 && "border-dotted bg-clip-padding"
             )}
           >
             {hasUnlockedWithIncompleteSubtasks ? (
@@ -3037,7 +3082,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
           // Node 1 of each level is always mastered and has no title; its only
           // available action is adding the next node, and only once that next
           // node is unlocked (available).
-          <div className="flex justify-center">
+          <div className="flex justify-center gap-2">
             <Button
               variant="ghost"
               size="sm"
@@ -3046,19 +3091,28 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               title={!canAddFromNode ? "Solo se puede agregar cuando el siguiente nodo está desbloqueado" : undefined}
               onClick={() => {
                 if (!canAddFromNode) return;
-                if (isSubSkillView) {
-                  addSubSkillBelow(skill.id, "");
-                } else if (isProject) {
-                  addProjectSkillBelow(activeId, skill.id, "");
-                } else {
-                  addSkillBelow(activeId, skill.id, "");
-                }
+                addNodeBelow();
                 setIsOpen(false);
               }}
               data-testid="button-add-skill-below-node1"
             >
               <Plus className="h-4 w-4 mr-1" />
               Agregar nodo debajo
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-3 text-xs bg-muted/50 hover:bg-muted"
+              disabled={!canAddFromNode}
+              title={!canAddFromNode ? "Solo se puede agregar cuando el siguiente nodo está desbloqueado" : "Nodo que no es parte del título del nivel, pero que te hizo crecer en el área"}
+              onClick={() => {
+                if (!canAddFromNode) return;
+                addNodeBelow(true);
+                setIsOpen(false);
+              }}
+              data-testid="button-add-sidequest-below-node1"
+            >
+              SideQuest
             </Button>
           </div>
         ) : popoverStep === 0 ? (
@@ -3157,19 +3211,29 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                        title={!canAddFromNode ? "Solo se puede agregar desde el nodo confirmado anterior al desbloqueado" : undefined}
                        onClick={() => {
                          if (!canAddFromNode) return;
-                         if (isSubSkillView) {
-                           addSubSkillBelow(skill.id, "");
-                         } else if (isProject) {
-                           addProjectSkillBelow(activeId, skill.id, "");
-                         } else {
-                           addSkillBelow(activeId, skill.id, "");
-                         }
+                         addNodeBelow();
                          setIsAddOptionsOpen(false);
                          setIsOpen(false);
                        }}
                        data-testid="button-add-new"
                      >
                        Agregar
+                     </Button>
+                     <Button
+                       variant="ghost"
+                       size="sm"
+                       className="h-7 px-3 text-xs justify-start font-normal hover:bg-muted/50"
+                       disabled={!canAddFromNode}
+                       title={!canAddFromNode ? "Solo se puede agregar desde el nodo confirmado anterior al desbloqueado" : "Nodo que no es parte del título del nivel, pero que te hizo crecer en el área"}
+                       onClick={() => {
+                         if (!canAddFromNode) return;
+                         addNodeBelow(true);
+                         setIsAddOptionsOpen(false);
+                         setIsOpen(false);
+                       }}
+                       data-testid="button-add-sidequest"
+                     >
+                       SideQuest
                      </Button>
                      <Button
                        variant="ghost"
@@ -4081,9 +4145,13 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                     // While pendingCustomDate is true, force the Select to show "Elegir fecha"
                     // as selected immediately (instead of waiting for editPlannedDate to
                     // change), so its controlled value never mismatches what was just clicked.
+                    const todayValue = formatLocalDate(new Date());
+                    const isNowSelected = editWhenIsNow && editPlannedDate === todayValue;
                     const selectValue = pendingCustomDate
                       ? CUSTOM_DATE_VALUE
-                      : editPlannedDate
+                      : isNowSelected
+                        ? NOW_DATE_VALUE
+                        : editPlannedDate
                         ? (matchedOption ? matchedOption.id : CUSTOM_DATE_VALUE)
                         : "";
                     // Rendered fully by hand instead of via <SelectValue> children, which only
@@ -4091,7 +4159,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                     // that doesn't correspond to any SelectItem.
                     const triggerLabel = pendingCustomDate
                       ? "Elegir fecha"
-                      : matchedOption
+                      : isNowSelected
+                        ? "Ahora"
+                        : matchedOption
                         ? matchedOption.label
                         : editPlannedDate
                           ? new Date(editPlannedDate + "T00:00:00").toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" })
@@ -4103,6 +4173,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                     const deselectWhenOption = (id: string) => {
                       suppressWhenOptionClickRef.current = id;
                       setEditPlannedDate("");
+                      setEditWhenIsNow(false);
                       setPendingCustomDate(false);
                       setShowCustomCalendar(false);
                       setIsWhenSelectOpen(false);
@@ -4118,7 +4189,14 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                               onOpenChange={setIsWhenSelectOpen}
                               value={selectValue}
                               onValueChange={(value) => {
-                                if (value === CUSTOM_DATE_VALUE) {
+                                setEditWhenIsNow(value === NOW_DATE_VALUE);
+                                if (value === NOW_DATE_VALUE) {
+                                  setEditPlannedDate(todayValue);
+                                  setPlannedSlotPrompt(null);
+                                  setPendingCustomDate(false);
+                                  setShowCustomCalendar(false);
+                                  placeNodeNowInTodayTasks(todayValue);
+                                } else if (value === CUSTOM_DATE_VALUE) {
                                   setPendingCustomDate(true);
                                   setShowCustomCalendar(true);
                                 } else {
@@ -4138,6 +4216,23 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                                 </span>
                               </SelectTrigger>
                               <SelectContent className="border-0 minimal-scrollbar">
+                                <SelectItem
+                                  value={NOW_DATE_VALUE}
+                                  onPointerUp={(e) => {
+                                    if (selectValue === NOW_DATE_VALUE) {
+                                      e.preventDefault();
+                                      deselectWhenOption(NOW_DATE_VALUE);
+                                    }
+                                  }}
+                                  onClick={(e) => {
+                                    if (suppressWhenOptionClickRef.current === NOW_DATE_VALUE) {
+                                      e.preventDefault();
+                                      suppressWhenOptionClickRef.current = null;
+                                    }
+                                  }}
+                                >
+                                  Ahora
+                                </SelectItem>
                                 {quickOptions.map((opt) => (
                                   <SelectItem
                                     key={opt.id}
