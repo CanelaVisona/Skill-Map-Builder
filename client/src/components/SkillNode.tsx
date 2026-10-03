@@ -20,6 +20,7 @@ import { beginPopupChain, endPopupChain, runPopupQueueAsync, runPopupQueue, getP
 import { getNodeTitleWordLimit, clampToWordLimit } from "@/lib/node-title-settings";
 import { getLevelTitleSuggestion, getOtherLevelTitles } from "@/lib/unique-level-title";
 import { getCurrentTimeSlotKey } from "@/lib/useTodayTaskSlots";
+import { setNowPlacement } from "@/lib/now-placement";
 import { useToast } from "@/hooks/use-toast";
 import { SkillLinkPicker } from "@/components/SkillLinkPicker";
 import { BodyLinkPicker, type BodyLink } from "@/components/BodyLinkPicker";
@@ -2575,9 +2576,17 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     return () => clearTimeout(timer);
   }, [editTitle, editAction, editPlannedDate, editPlannedDuration, isEditDialogOpen, skill.id, skill.title, skill.description, skill.plannedDate, skill.plannedDuration, isSubSkillView, isProject, activeId, updateSubSkill, updateProjectSkill, updateSkill]);
 
-  // "Ahora": el nodo entra en "Tareas de hoy" en la franja horaria actual, en el lugar de la
-  // tarea desbloqueada (antes de la primera pendiente), y pasa a ser la tarea del momento.
+  // "Ahora": el nodo entra en "Tareas de hoy" en la franja horaria actual, ocupando el lugar de
+  // la tarea desbloqueada (que pasa a ser la próxima). Acá se guarda la fecha al toque (sin
+  // esperar el autosave) y se lo mete en la franja actual; la posición exacta la ajusta
+  // TodayProgressModal con setNowPlacement, porque es el único que conoce el orden visual
+  // completo de la franja (el server no ve los ítems sin fila propia, como los hábitos con
+  // franja por defecto, y dejaba el nodo después de la tarea desbloqueada).
   const placeNodeNowInTodayTasks = async (date: string) => {
+    if (isSubSkillView) updateSubSkill(skill.id, { plannedDate: date });
+    else if (isProject) updateProjectSkill(activeId, skill.id, { plannedDate: date });
+    else updateSkill(activeId, skill.id, { plannedDate: date });
+    setNowPlacement({ date, nodeId: skill.id });
     try {
       await fetch("/api/today-task-slots", {
         method: "POST",
@@ -4215,7 +4224,17 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                                   {triggerLabel || "Elegir..."}
                                 </span>
                               </SelectTrigger>
-                              <SelectContent className="border-0 minimal-scrollbar">
+                              {/* Solo 4 opciones a la vista (cada ítem mide 2rem + 0.5rem de
+                                  padding del viewport); el resto se scrollea con una barra fina.
+                                  collisionPadding lo mantiene dentro de la pantalla. */}
+                              <SelectContent
+                                className="border-0 max-h-[min(8.5rem,var(--radix-select-content-available-height))]"
+                                viewportClassName="minimal-scrollbar"
+                                hideScrollButtons
+                                side="bottom"
+                                sideOffset={4}
+                                collisionPadding={16}
+                              >
                                 <SelectItem
                                   value={NOW_DATE_VALUE}
                                   onPointerUp={(e) => {

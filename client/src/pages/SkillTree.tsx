@@ -3665,7 +3665,8 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
   // Activities for the path graph: the completed node (with its date) followed by its learnings, tools and thoughts
   const buildSkillActivities = (skill: SkillWithSource): AchievementActivity[] => {
     const activities: AchievementActivity[] = [];
-    if (skill.status === "mastered") {
+    // The first node of each level is auto-confirmed (see SkillNode), so it isn't a real achievement
+    if (skill.status === "mastered" && skill.levelPosition !== 1) {
       activities.push({
         id: `node-${skill.id}`,
         type: 'node',

@@ -152,6 +152,16 @@ h1, h2, h3, h4, h5, h6 {
   background-color: rgba(113, 113, 122, 0.45);
 }
 
+/* Radix Select oculta la barra de su viewport con un estilo propio: con minimal-scrollbar se
+   vuelve a mostrar (fina, como en el resto de la app). */
+[data-radix-select-viewport].minimal-scrollbar {
+  scrollbar-width: thin !important;
+}
+
+[data-radix-select-viewport].minimal-scrollbar::-webkit-scrollbar {
+  display: block !important;
+}
+
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
 }

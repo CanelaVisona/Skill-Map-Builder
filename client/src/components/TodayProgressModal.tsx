@@ -18,6 +18,7 @@ import { rewiringDayRows } from "@/lib/rewiringTasks";
 import { useConfirmHabit, useConfirmPractice } from "@/lib/useConfirmActions";
 import { useTodayPriorities, useSetTodayPriorities, MAX_TODAY_PRIORITIES } from "@/lib/useTodayPriorities";
 import { MealTrackerModal } from "@/components/MealTrackerModal";
+import { useNowPlacement, setNowPlacement } from "@/lib/now-placement";
 import type { Habit, HabitRecord, TodayTaskSlot } from "@shared/schema";
 
 const LONG_PRESS_MS = 1500;
@@ -748,6 +749,48 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       return (slotUpdatedAtByKey.get(a.key) ?? 0) - (slotUpdatedAtByKey.get(b.key) ?? 0);
     });
   });
+
+  // Nodo al que se le eligió "Ahora" en "When exactly?" (ver setNowPlacement en SkillNode):
+  // ocupa el lugar de la tarea desbloqueada de la franja actual (la primera sin hacer), que
+  // pasa a quedar justo después. Se hace acá y no en el server porque solo acá se conoce el
+  // orden visual real de la franja, incluidos los ítems sin fila propia (hábitos con franja por
+  // defecto, actividad extra), que el server no ve. Espera a tener todo cargado (y la fila del
+  // nodo ya creada por SkillNode) para no calcular la tarea desbloqueada con datos a medias.
+  const nowPlacement = useNowPlacement();
+  const nowPlacementReady =
+    open &&
+    !!nowPlacement &&
+    !isPreview &&
+    nowPlacement.date === effectiveDate &&
+    !!slotsData &&
+    !!manualTasksData &&
+    !!habitsData &&
+    viewRecordQueries.every((q) => !q.isLoading) &&
+    slotByKey.has(`node:${nowPlacement.nodeId}`) &&
+    todayItems.some((i) => i.type === "node" && i.id === nowPlacement.nodeId);
+  useEffect(() => {
+    if (!nowPlacementReady || !nowPlacement) return;
+    setNowPlacement(null);
+    const slot = getCurrentTimeSlotKey();
+    const nodeKey = `node:${nowPlacement.nodeId}`;
+    const bucket = itemBuckets[slot].filter((i) => i.key !== nodeKey);
+    const nodeItem = todayItems.find((i) => i.key === nodeKey)!;
+    const firstUndone = bucket.findIndex((i) => !i.done);
+    const at = firstUndone === -1 ? bucket.length : firstUndone;
+    const ordered = [...bucket.slice(0, at), nodeItem, ...bucket.slice(at)];
+    // Un hábito puede estar duplicado en varias franjas (keys "#slot"): una sola entrada por tarea.
+    const seen = new Set<string>();
+    const order = ordered
+      .filter((i) => {
+        const k = `${i.type}:${i.id}`;
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      })
+      .map((i) => ({ taskType: i.type, taskId: i.id }));
+    reorderTaskSlot.mutate({ date: effectiveDate, slot, order });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nowPlacementReady]);
 
   // El acordeón de franjas horarias solo se muestra si hay algo para agrupar ahí: tareas
   // configuradas para hoy, o actividad extra que ya se movió a una franja específica.
