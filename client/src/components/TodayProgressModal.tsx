@@ -847,7 +847,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         title={stripLeadingEmoji(sub.title || "Sin nombre")}
         done={sub.status === "mastered"}
         current={parentIsCurrent && i === firstUndone}
-        dimmed={!parentIsCurrent && sub.status !== "mastered"}
+        dimmed={!(parentIsCurrent && i === firstUndone)}
         onToggleDone={i === firstUndone || i === lastDone ? () => toggleSubNode(item.id, sub) : undefined}
       />
     ));
@@ -899,7 +899,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         title={stripLeadingEmoji(st.title)}
         done={st.done === 1}
         current={parentIsCurrent && i === firstUndone}
-        dimmed={!parentIsCurrent && !item.done && st.done !== 1}
+        dimmed={!(parentIsCurrent && i === firstUndone)}
         onToggleDone={
           i === firstUndone || i === lastDone
             ? () => updateSubstep.mutate({ id: st.id, date: effectiveDate, updates: { done: st.done === 1 ? 0 : 1 } })
