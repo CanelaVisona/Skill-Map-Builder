@@ -121,6 +121,25 @@ app.use((req, res, next) => {
     console.error("⚠ manual_today_tasks.minutes migration warning:", error.message);
   }
 
+  // Sub-pasos (checklist del día) de las tareas de "Tareas de hoy" que no son nodos.
+  try {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "today_task_substeps" (
+        "id" varchar PRIMARY KEY NOT NULL,
+        "user_id" varchar NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+        "date" varchar NOT NULL,
+        "task_type" text NOT NULL,
+        "task_id" varchar NOT NULL,
+        "title" text NOT NULL,
+        "done" integer DEFAULT 0 NOT NULL,
+        "sort_order" integer DEFAULT 0 NOT NULL,
+        "created_at" timestamp DEFAULT now() NOT NULL
+      );
+    `);
+  } catch (error: any) {
+    console.error("⚠ today_task_substeps migration warning:", error.message);
+  }
+
   // Vínculo de un evento de "Tareas de hoy" con un área/quest y el nodo creado el día del evento.
   try {
     await db.execute(sql`

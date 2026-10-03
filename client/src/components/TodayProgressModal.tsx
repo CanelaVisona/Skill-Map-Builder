@@ -8,7 +8,7 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, ArrowLeft, Check, ChevronLeft, ChevronRight, Clock, Pencil, Star } from "lucide-react";
+import { Calendar, ArrowLeft, Check, ChevronLeft, ChevronRight, Clock, Pencil, Plus, Star, X } from "lucide-react";
 import { useSkillTree, type Area, type Project, type Skill } from "@/lib/skill-context";
 import { useHabits, useUpdateHabitRecord } from "@/lib/useHabits";
 import { useTodayTaskSlots, useSetTodayTaskSlot, useClearTodayTaskSlot, useReorderTodayTaskSlot, getCurrentTimeSlotKey, getTimeSlotKeyForDate, type TaskSlotKey, type TaskType } from "@/lib/useTodayTaskSlots";
@@ -19,6 +19,8 @@ import { useConfirmHabit, useConfirmPractice } from "@/lib/useConfirmActions";
 import { useTodayPriorities, useSetTodayPriorities, MAX_TODAY_PRIORITIES } from "@/lib/useTodayPriorities";
 import { MealTrackerModal } from "@/components/MealTrackerModal";
 import { useNowPlacement, setNowPlacement } from "@/lib/now-placement";
+import { addSubSkillFromToday, toggleSubSkillFromToday, masterWholeSubSkillTree, isSubSkillPlaceholder } from "@/lib/subskill-tree";
+import { useTodayTaskSubsteps, useCreateTodayTaskSubstep, useUpdateTodayTaskSubstep, useDeleteTodayTaskSubstep, type SubstepTaskType } from "@/lib/useTodayTaskSubsteps";
 import type { Habit, HabitRecord, TodayTaskSlot } from "@shared/schema";
 
 const LONG_PRESS_MS = 1500;
@@ -176,7 +178,7 @@ function DoneNodeMark({ size = "sm" }: { size?: "sm" | "md" }) {
 
 export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const queryClient = useQueryClient();
-  const { areas, projects, updateSkill, updateProjectSkill, globalSkills, toggleSkillStatus, toggleProjectSkillStatus, addSkillInPlaceOfAvailable, materializePendingEventNodes } = useSkillTree();
+  const { areas, projects, updateSkill, updateProjectSkill, globalSkills, toggleSkillStatus, toggleProjectSkillStatus, addSkillInPlaceOfAvailable, materializePendingEventNodes, refreshSkillTrees } = useSkillTree();
   const { data: habitsData } = useHabits();
   // Confirmar un hábito/práctica desde acá tiene que otorgar exactamente lo mismo (XP, pop-ups)
   // que confirmarlo desde su pantalla de origen — ver useConfirmActions.ts. Los nodos ya usan
@@ -792,6 +794,123 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nowPlacementReady]);
 
+  // Sub-nodos de los nodos de Tareas de hoy: se muestran adentro del nodo padre (sin el "inicio"
+  // ni los pasos de relleno sin nombrar) y se confirman en orden. Mientras quede alguno sin
+  // confirmar, el padre no se puede confirmar; confirmar el último lo desbloquea, y confirmar el
+  // padre confirma todo el sub-árbol. Si el nodo es la tarea desbloqueada, el destacado pasa a
+  // su primer sub-nodo sin confirmar. Se agregan con "Agregar sub-nodo" (ver subskill-tree.ts).
+  const pendingNodeItems = todayItems.filter((i) => i.type === "node" && !i.done);
+  const subSkillQueries = useQueries({
+    queries: pendingNodeItems.map((i) => ({
+      queryKey: ["today-node-subskills", i.id],
+      queryFn: async () => {
+        const res = await fetch(`/api/skills/${i.id}/subskills`);
+        if (!res.ok) throw new Error("Failed to fetch sub-skills");
+        return res.json() as Promise<Skill[]>;
+      },
+      enabled: open,
+      staleTime: 0,
+    })),
+  });
+  const subSkillsByNodeId = new Map<string, Skill[]>();
+  pendingNodeItems.forEach((i, idx) => {
+    const list = (subSkillQueries[idx]?.data || [])
+      .filter((sub) => (sub.levelPosition || 0) > 1 && !isSubSkillPlaceholder(sub))
+      .sort((a, b) => (a.level - b.level) || ((a.levelPosition || 0) - (b.levelPosition || 0)));
+    subSkillsByNodeId.set(i.id, list);
+  });
+  const subNodesFor = (item: TodayItem) => (item.type === "node" ? subSkillsByNodeId.get(item.id) || [] : []);
+  const hasPendingSubNodes = (item: TodayItem) => subNodesFor(item).some((sub) => sub.status !== "mastered");
+  const [subNodeBusy, setSubNodeBusy] = useState(false);
+  const toggleSubNode = async (parentId: string, sub: Skill) => {
+    if (subNodeBusy) return;
+    setSubNodeBusy(true);
+    try {
+      await toggleSubSkillFromToday(parentId, sub);
+      await refreshSkillTrees();
+    } catch (error) {
+      console.error("Error confirmando sub-nodo desde Tareas de hoy:", error);
+    } finally {
+      queryClient.invalidateQueries({ queryKey: ["today-node-subskills", parentId] });
+      queryClient.invalidateQueries({ queryKey: ["dated-sub-skills"] });
+      setSubNodeBusy(false);
+    }
+  };
+  const renderSubNodes = (item: TodayItem, parentIsCurrent: boolean) => {
+    const subs = subNodesFor(item);
+    if (subs.length === 0) return null;
+    const firstUndone = subs.findIndex((sub) => sub.status !== "mastered");
+    const lastDone = firstUndone === -1 ? subs.length - 1 : firstUndone - 1;
+    return subs.map((sub, i) => (
+      <TodaySubRow
+        key={sub.id}
+        title={stripLeadingEmoji(sub.title || "Sin nombre")}
+        done={sub.status === "mastered"}
+        current={parentIsCurrent && i === firstUndone}
+        dimmed={!parentIsCurrent && sub.status !== "mastered"}
+        onToggleDone={i === firstUndone || i === lastDone ? () => toggleSubNode(item.id, sub) : undefined}
+      />
+    ));
+  };
+
+  // Sub-pasos (checklist del día) de las tareas que no son nodos: se agregan desde el menú de la
+  // tarea ("Agregar sub-paso"), se muestran adentro de ella y se confirman en orden. Si la tarea
+  // es la desbloqueada, el destacado pasa a su primer sub-paso sin hacer.
+  const { data: substepsData } = useTodayTaskSubsteps(effectiveDate, open);
+  const createSubstep = useCreateTodayTaskSubstep();
+  const updateSubstep = useUpdateTodayTaskSubstep();
+  const deleteSubstep = useDeleteTodayTaskSubstep();
+  const substepsFor = (item: TodayItem) =>
+    item.type === "node" ? [] : (substepsData || []).filter((st) => st.taskType === item.type && st.taskId === item.id);
+  const [addSubstepFor, setAddSubstepFor] = useState<TodayItem | null>(null);
+  const [newSubstepTitle, setNewSubstepTitle] = useState("");
+  const openAddSubstepDialog = (item: TodayItem) => {
+    setNewSubstepTitle("");
+    setAddSubstepFor(item);
+  };
+  const submitNewSubstep = async () => {
+    const title = newSubstepTitle.trim();
+    if (!title || !addSubstepFor) return;
+    const target = addSubstepFor;
+    setAddSubstepFor(null);
+    if (target.type === "node") {
+      // Nodo: el "sub-paso" es un sub-nodo real de su sub-árbol (se crea el árbol si no existe).
+      try {
+        await addSubSkillFromToday(target.id, title);
+      } catch (error) {
+        console.error("Error creando sub-nodo desde Tareas de hoy:", error);
+      }
+      queryClient.invalidateQueries({ queryKey: ["today-node-subskills", target.id] });
+      return;
+    }
+    createSubstep.mutate({ date: effectiveDate, taskType: target.type as SubstepTaskType, taskId: target.id, title });
+  };
+
+  // Sub-pasos de una tarea, indentados adentro de ella. En orden: solo se puede confirmar el
+  // primero sin hacer, y desconfirmar el último hecho.
+  const renderSubsteps = (item: TodayItem, parentIsCurrent: boolean) => {
+    const steps = substepsFor(item);
+    if (steps.length === 0) return null;
+    const firstUndone = steps.findIndex((st) => st.done !== 1);
+    const lastDone = firstUndone === -1 ? steps.length - 1 : firstUndone - 1;
+    return steps.map((st, i) => (
+      <TodaySubRow
+        key={st.id}
+        title={stripLeadingEmoji(st.title)}
+        done={st.done === 1}
+        current={parentIsCurrent && i === firstUndone}
+        dimmed={!parentIsCurrent && !item.done && st.done !== 1}
+        onToggleDone={
+          i === firstUndone || i === lastDone
+            ? () => updateSubstep.mutate({ id: st.id, date: effectiveDate, updates: { done: st.done === 1 ? 0 : 1 } })
+            : undefined
+        }
+        onDelete={() => deleteSubstep.mutate({ id: st.id, date: effectiveDate })}
+      />
+    ));
+  };
+  const hasPendingSubsteps = (item: TodayItem) => substepsFor(item).some((st) => st.done !== 1);
+
   // El acordeón de franjas horarias solo se muestra si hay algo para agrupar ahí: tareas
   // configuradas para hoy, o actividad extra que ya se movió a una franja específica.
   const hasSlotSection = itemBuckets.unassigned.length > 0 || TIME_SLOTS.some((s) => itemBuckets[s.key].length > 0);
@@ -963,6 +1082,13 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       return;
     }
     if (item.type === "node") {
+      if (!item.done && subNodesFor(item).length > 0) {
+        if (hasPendingSubNodes(item)) return;
+        masterWholeSubSkillTree(item.id)
+          .catch((error) => console.error("Error confirmando el sub-árbol:", error))
+          .finally(() => toggleNodeDone(item));
+        return;
+      }
       toggleNodeDone(item);
       return;
     }
@@ -1772,8 +1898,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                             <AccordionContent className="pt-0 pb-1">
                               <div className="space-y-1.5">
                                 {itemBuckets.unassigned.map((item) => (
+                                  <React.Fragment key={item.key}>
                                   <TodayTaskRow
-                                    key={item.key}
                                     item={item}
                                     pastDay={effectiveDate < todayStr}
                                     onMove={(slot) => moveItemToSlot(item, slot)}
@@ -1783,8 +1909,12 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                     onToggleDone={canToggleDone(item) ? () => toggleItemDone(item) : undefined}
                                     onChangeDay={canChangeDay(item) ? () => openChangeDayDialog(item) : undefined}
                                     onAssignTime={canAssignTime(item) ? () => openTimeDialog(item) : undefined}
+                                    onAddSubstep={!(item.type === "node" && item.done) ? () => openAddSubstepDialog(item) : undefined}
                                     {...priorityRowProps(item)}
                                   />
+                                  {renderSubNodes(item, false)}
+                                  {renderSubsteps(item, false)}
+                                  </React.Fragment>
                                 ))}
                               </div>
                             </AccordionContent>
@@ -1849,12 +1979,16 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                     // destacada en vez de tenue.
                                     const isActiveSlot = isPreview ? itemBuckets[s.key].length > 0 : s.key === getCurrentTimeSlotKey();
                                     const firstUndoneIdx = isActiveSlot ? itemBuckets[s.key].findIndex((i) => !i.done) : -1;
-                                    return itemBuckets[s.key].map((item, idx) => (
+                                    return itemBuckets[s.key].map((item, idx) => {
+                                      // Nodo desbloqueado con sub-árbol: el destacado pasa a su
+                                      // sub-nodo desbloqueado, que se muestra adentro de él.
+                                      const isCurrent = !item.done && idx === firstUndoneIdx;
+                                      return (
+                                      <React.Fragment key={item.key}>
                                       <TodayTaskRow
-                                        key={item.key}
                                         item={item}
                                         dimmed={idx !== firstUndoneIdx}
-                                        current={!item.done && idx === firstUndoneIdx}
+                                        current={isCurrent && !hasPendingSubsteps(item) && !hasPendingSubNodes(item)}
                                         pastDay={effectiveDate < todayStr}
                                         onMove={(slot) => moveItemToSlot(item, slot)}
                                         onClear={() => unassignItem(item)}
@@ -1864,11 +1998,16 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                         onToggleDone={canToggleDone(item) ? () => toggleItemDone(item) : undefined}
                                         onChangeDay={canChangeDay(item) ? () => openChangeDayDialog(item) : undefined}
                                         onAssignTime={canAssignTime(item) ? () => openTimeDialog(item) : undefined}
+                                        onAddSubstep={!(item.type === "node" && item.done) ? () => openAddSubstepDialog(item) : undefined}
                                         {...priorityRowProps(item)}
                                         onMoveUp={idx > 0 ? () => moveItemOrder(s.key, itemBuckets[s.key], idx, "up") : undefined}
                                         onMoveDown={idx < itemBuckets[s.key].length - 1 ? () => moveItemOrder(s.key, itemBuckets[s.key], idx, "down") : undefined}
                                       />
-                                    ));
+                                      {renderSubNodes(item, isCurrent && !isPreview)}
+                                      {renderSubsteps(item, isCurrent)}
+                                      </React.Fragment>
+                                      );
+                                    });
                                   })()}
                                 </div>
                               )}
@@ -2200,6 +2339,36 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
               {priorityItems.length === 0 ? "Elegir prioridades" : "Editar prioridades"}
             </button>
           )}
+        </div>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={!!addSubstepFor} onOpenChange={(o) => { if (!o) setAddSubstepFor(null); }}>
+      <DialogContent className="max-w-sm rounded-2xl">
+        <DialogTitle>{addSubstepFor?.type === "node" ? "Nuevo sub-nodo" : "Nuevo sub-paso"}</DialogTitle>
+        <Input
+          autoFocus
+          value={newSubstepTitle}
+          onChange={(e) => setNewSubstepTitle(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") submitNewSubstep();
+          }}
+          placeholder="¿Cuál es el paso?"
+        />
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            onClick={() => setAddSubstepFor(null)}
+            className="px-3 py-1.5 text-sm rounded-md hover:bg-muted transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={submitNewSubstep}
+            disabled={!newSubstepTitle.trim()}
+            className="px-3 py-1.5 text-sm rounded-md bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            Agregar
+          </button>
         </div>
       </DialogContent>
     </Dialog>
@@ -2548,6 +2717,61 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   );
 }
 
+// Fila anidada adentro de una tarea: el sub-nodo desbloqueado de un nodo, o un sub-paso de una
+// tarea que no es nodo. `current` le da el mismo destacado dorado que la tarea desbloqueada.
+function TodaySubRow({
+  title,
+  done,
+  current,
+  dimmed,
+  onToggleDone,
+  onDelete,
+}: {
+  title: string;
+  done?: boolean;
+  current?: boolean;
+  dimmed?: boolean;
+  onToggleDone?: () => void;
+  onDelete?: () => void;
+}) {
+  return (
+    <div className={`ml-5 border-l-2 pl-3 ${current ? "border-amber-500/40" : "border-border/40"} ${dimmed ? "opacity-25" : ""}`}>
+      <div
+        className={`flex items-center gap-2 text-sm ${
+          current
+            ? "my-1.5 rounded-xl border-2 border-amber-500/80 bg-amber-500/10 px-3 py-2.5 shadow-[0_0_18px_-3px_rgba(245,158,11,0.65)]"
+            : "py-0.5"
+        }`}
+      >
+        <span
+          onClick={onToggleDone}
+          className={`flex flex-shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
+            done
+              ? "h-3.5 w-3.5 bg-yellow-600/70 border-yellow-600/70"
+              : current
+              ? "h-5 w-5 border-amber-500 bg-amber-500/10"
+              : "h-3.5 w-3.5 border-border/50"
+          } ${onToggleDone ? "cursor-pointer" : ""}`}
+        >
+          {done && <Check className="h-2 w-2 text-yellow-900" strokeWidth={3} />}
+        </span>
+        <span className={`flex-1 ${done ? "text-yellow-600/60" : ""} ${current ? "text-[15px] font-semibold leading-snug" : ""}`}>
+          {title}
+        </span>
+        {onDelete && (
+          <button
+            onClick={onDelete}
+            className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-muted-foreground/60 hover:text-foreground"
+            aria-label="Borrar sub-paso"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function TodayTaskRow({
   item,
   dimmed,
@@ -2566,6 +2790,7 @@ function TodayTaskRow({
   priorityFull,
   onTogglePriority,
   onAssignTime,
+  onAddSubstep,
 }: {
   item: TodayItem;
   // Tarea que no es "la que sigue" (la primera pendiente de la franja horaria actual): se
@@ -2598,6 +2823,8 @@ function TodayTaskRow({
   // Abre el diálogo para asignarle un tiempo estimado (minutos). undefined para los tipos que
   // no tienen dónde guardarlo (rewirings).
   onAssignTime?: () => void;
+  // Abre el diálogo para agregarle un sub-paso (o un sub-nodo de su sub-árbol, si es un nodo).
+  onAddSubstep?: () => void;
 }) {
   const [hideConfirmOpen, setHideConfirmOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -2705,6 +2932,15 @@ function TodayTaskRow({
                 <DropdownMenuItem onClick={onTogglePriority} disabled={!priority && priorityFull}>
                   <Star className={`mr-2 h-4 w-4 ${priority ? "fill-amber-400 text-amber-500" : ""}`} />
                   {priority ? "Quitar de prioridades" : priorityFull ? "Prioridades completas (3/3)" : "Marcar como prioridad"}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+              </>
+            )}
+            {onAddSubstep && (
+              <>
+                <DropdownMenuItem onClick={onAddSubstep}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  {item.type === "node" ? "Agregar sub-nodo" : "Agregar sub-paso"}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
               </>

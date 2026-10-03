@@ -1047,8 +1047,12 @@ export async function registerRoutes(
 
       if (req.body.status === "available" && existingSkill.status === "locked" && !req.body.fromSubtaskCompletion && !req.body.fromReorder) {
         // Verify the immediate predecessor (node at levelPosition - 1) is mastered
+        // Hermanos del mismo árbol: el sub-árbol del padre si es un sub-nodo (si no, la
+        // confirmación de un sub-nodo no encadenaba el desbloqueo/re-bloqueo del siguiente).
         let allSkills: typeof existingSkill[] = [];
-        if (existingSkill.areaId) {
+        if (existingSkill.parentSkillId) {
+          allSkills = await storage.getSubSkills(existingSkill.parentSkillId);
+        } else if (existingSkill.areaId) {
           allSkills = await storage.getSkills(existingSkill.areaId);
         } else if (existingSkill.projectId) {
           allSkills = await storage.getProjectSkills(existingSkill.projectId);
@@ -1130,8 +1134,12 @@ export async function registerRoutes(
 
       // Auto-unlock logic: when a node is mastered, unlock the next node in the same level
       if (req.body.status === "mastered" && existingSkill.level && existingSkill.levelPosition) {
+        // Hermanos del mismo árbol: el sub-árbol del padre si es un sub-nodo (si no, la
+        // confirmación de un sub-nodo no encadenaba el desbloqueo/re-bloqueo del siguiente).
         let allSkills: typeof existingSkill[] = [];
-        if (existingSkill.areaId) {
+        if (existingSkill.parentSkillId) {
+          allSkills = await storage.getSubSkills(existingSkill.parentSkillId);
+        } else if (existingSkill.areaId) {
           allSkills = await storage.getSkills(existingSkill.areaId);
         } else if (existingSkill.projectId) {
           allSkills = await storage.getProjectSkills(existingSkill.projectId);
@@ -1155,8 +1163,12 @@ export async function registerRoutes(
 
       // Re-lock logic: when a node is unconfirmed (mastered → available), re-lock the next node
       if (req.body.status === "available" && existingSkill.status === "mastered" && existingSkill.level && existingSkill.levelPosition) {
+        // Hermanos del mismo árbol: el sub-árbol del padre si es un sub-nodo (si no, la
+        // confirmación de un sub-nodo no encadenaba el desbloqueo/re-bloqueo del siguiente).
         let allSkills: typeof existingSkill[] = [];
-        if (existingSkill.areaId) {
+        if (existingSkill.parentSkillId) {
+          allSkills = await storage.getSubSkills(existingSkill.parentSkillId);
+        } else if (existingSkill.areaId) {
           allSkills = await storage.getSkills(existingSkill.areaId);
         } else if (existingSkill.projectId) {
           allSkills = await storage.getProjectSkills(existingSkill.projectId);
@@ -1188,7 +1200,10 @@ export async function registerRoutes(
           }
 
           // Also update the area's unlockedLevel to revert back to current level
-          if (existingSkill.areaId) {
+          // (los niveles de un sub-árbol no son niveles del área/quest: ahí no se toca nada)
+          if (existingSkill.parentSkillId) {
+            // nada
+          } else if (existingSkill.areaId) {
             await storage.updateArea(existingSkill.areaId, { unlockedLevel: existingSkill.level });
           } else if (existingSkill.projectId) {
             await storage.updateProject(existingSkill.projectId, { unlockedLevel: existingSkill.level });
@@ -5449,6 +5464,75 @@ export async function registerRoutes(
       await storage.reorderTodayTaskSlotBucket(req.userId!, date, slot, order);
       const slots = await storage.getTodayTaskSlots(req.userId!, date);
       res.json(slots);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Sub-pasos (checklist del día) de las tareas de "Tareas de hoy" que no son nodos.
+  app.get("/api/today-task-substeps", requireAuth, async (req, res) => {
+    try {
+      const { date } = req.query;
+      if (!date || typeof date !== "string") {
+        return res.status(400).json({ message: "date es requerido (formato YYYY-MM-DD)" });
+      }
+      res.json(await storage.getTodayTaskSubsteps(req.userId!, date));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/today-task-substeps", requireAuth, async (req, res) => {
+    try {
+      const { date, taskType, taskId, title } = req.body;
+      if (!date || !taskType || !taskId || !title || typeof title !== "string" || !title.trim()) {
+        return res.status(400).json({ message: "date, taskType, taskId y title son requeridos" });
+      }
+      // Los nodos tienen su propio sub-árbol: no llevan sub-pasos.
+      if (!["habit", "practice", "manual", "rewiring"].includes(taskType)) {
+        return res.status(400).json({ message: "taskType debe ser habit, practice, manual o rewiring" });
+      }
+      const substep = await storage.createTodayTaskSubstep({
+        userId: req.userId!,
+        date,
+        taskType,
+        taskId: String(taskId),
+        title: title.trim(),
+      });
+      res.status(201).json(substep);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/today-task-substeps/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getTodayTaskSubstep(req.params.id);
+      if (!existing || existing.userId !== req.userId) {
+        return res.status(404).json({ message: "Sub-paso no encontrado" });
+      }
+      const { title, done } = req.body;
+      if (done !== undefined && done !== 0 && done !== 1) {
+        return res.status(400).json({ message: "done debe ser 0 o 1" });
+      }
+      const updated = await storage.updateTodayTaskSubstep(req.params.id, {
+        ...(title !== undefined ? { title: String(title).trim() } : {}),
+        ...(done !== undefined ? { done } : {}),
+      });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/today-task-substeps/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getTodayTaskSubstep(req.params.id);
+      if (!existing || existing.userId !== req.userId) {
+        return res.status(404).json({ message: "Sub-paso no encontrado" });
+      }
+      await storage.deleteTodayTaskSubstep(req.params.id);
+      res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

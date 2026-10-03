@@ -5,6 +5,7 @@ import { calculateLevelProgressPercentage, countMasteredSkillsInLevel, countSkil
 import { beginPopupChain, endPopupChain, getPopupBusyDelay, hasPendingPopupChain, markPopupActive, POPUP_VISIBLE_MS } from "@/lib/popup-coordinator";
 import { getCurrentTimeSlotKey } from "@/lib/useTodayTaskSlots";
 import { playLevelUpSound } from "@/lib/sound";
+import { makeLastCreatedSubSkillFinal, fetchSubSkills } from "@/lib/subskill-tree";
 
 // Best-effort: places a just-confirmed node into today's matching "Tareas de hoy" time
 // slot (mañana/mediodía/tarde/noche) based on the hour it was confirmed at. Fire-and-forget,
@@ -193,8 +194,11 @@ interface SkillTreeContextType {
   addSkillBelow: (areaId: string, skillId: string, title?: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; isSideQuest?: 0 | 1 }) => Promise<void>;
   addProjectSkillBelow: (projectId: string, skillId: string, title?: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; isSideQuest?: 0 | 1 }) => Promise<void>;
   addSubSkillBelow: (skillId: string, title?: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; isSideQuest?: 0 | 1 }) => Promise<void>;
+  addSideQuestNode: (kind: "area" | "project" | "sub", parentId: string, skillId: string) => Promise<void>;
   addSkillInPlaceOfAvailable: (kind: "area" | "project", parentId: string, title: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null }) => Promise<Skill | null>;
   materializePendingEventNodes: () => Promise<void>;
+  // Relee áreas y quests del server (p.ej. después de cambiar estados de nodos por fuera del árbol).
+  refreshSkillTrees: () => Promise<void>;
   duplicateSkill: (areaId: string, skill: Skill) => Promise<void>;
   duplicateProjectSkill: (projectId: string, skill: Skill) => Promise<void>;
   duplicateSubSkill: (skill: Skill) => Promise<void>;
@@ -3828,6 +3832,11 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         }),
         newSkill
       ]);
+
+      // El último sub-nodo creado pasa a ser el final del nivel (ver subskill-tree.ts).
+      const parentSkillId = activeParentSkillId;
+      await makeLastCreatedSubSkillFinal(parentSkillId, clickedSkill.level, newSkill.id);
+      setSubSkills(await fetchSubSkills(parentSkillId));
     } catch (error) {
       console.error("Error adding sub-skill below:", error);
     }
@@ -3839,6 +3848,63 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
   // área/quest. Si no hay ningún nodo desbloqueado, entra justo después del último confirmado.
   // El server renumera el nivel, recalcula Y y deja como available solo al primero sin
   // confirmar (el nuevo, cuyo status explícito se respeta).
+  // SideQuest: takes the place of the level's unlocked node (it becomes the available one)
+  // and the node that was unlocked gets locked as the next step, now depending on it.
+  // The server renumbers the level and re-locks everything after the new node.
+  // If the level has no unlocked node, it's just added below like a regular node.
+  const addSideQuestNode = async (kind: "area" | "project" | "sub", parentId: string, skillId: string) => {
+    const levelSource = kind === "sub"
+      ? subSkills
+      : (kind === "area" ? areas.find(a => a.id === parentId) : projects.find(p => p.id === parentId))?.skills;
+    const clickedSkill = levelSource?.find(s => s.id === skillId);
+    if (!levelSource || !clickedSkill) return;
+
+    const available = levelSource.find(s =>
+      s.level === clickedSkill.level && s.status === "available" && (s.levelPosition || 0) > 1
+    );
+    if (!available) {
+      if (kind === "sub") await addSubSkillBelow(skillId, "", { isSideQuest: 1 });
+      else if (kind === "project") await addProjectSkillBelow(parentId, skillId, "", { isSideQuest: 1 });
+      else await addSkillBelow(parentId, skillId, "", { isSideQuest: 1 });
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/skills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(kind === "area" ? { areaId: parentId } : kind === "project" ? { projectId: parentId } : { parentSkillId: parentId }),
+          title: "",
+          description: "",
+          x: available.x,
+          y: available.y,
+          status: "available",
+          dependencies: ensureDependenciesArray(available.dependencies),
+          level: available.level,
+          levelPosition: available.levelPosition,
+          isFinalNode: 0,
+          manualLock: 0,
+          isSideQuest: 1,
+        }),
+      });
+      if (!response.ok) throw new Error("Failed to create side quest");
+      const newSkill: Skill = await response.json();
+
+      await fetch(`/api/skills/${available.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dependencies: [newSkill.id] }),
+      });
+
+      if (kind === "area") await refreshAllAreas();
+      else if (kind === "project") await refreshAllProjects();
+      else setSubSkills(await fetchSubSkills(parentId));
+    } catch (error) {
+      console.error("Error adding side quest:", error);
+    }
+  };
+
   const addSkillInPlaceOfAvailable = async (
     kind: "area" | "project",
     parentId: string,
@@ -5324,7 +5390,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       moveSubSkill,
       addSkillBelow,
       addSkillInPlaceOfAvailable,
+      addSideQuestNode,
       materializePendingEventNodes,
+      refreshSkillTrees: async () => { await Promise.all([refreshAllAreas(), refreshAllProjects()]); },
       addProjectSkillBelow,
       addSubSkillBelow,
       moveSkillToLevel,

@@ -511,6 +511,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     addSkillBelow,
     addProjectSkillBelow,
     addSubSkillBelow,
+    addSideQuestNode,
     duplicateSkill,
     duplicateProjectSkill,
     duplicateSubSkill,
@@ -2785,16 +2786,22 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     }
   };
 
-  // Adds a node below this one; as a SideQuest it's drawn with a dotted border to mark that
-  // it isn't part of the level's title, but was done along the way and grew the area.
+  // Adds a node below this one. A SideQuest instead takes the unlocked node's place (see
+  // addSideQuestNode) and is drawn with a dotted ring: it isn't part of the level's title,
+  // but was done along the way and grew the area.
   const addNodeBelow = (isSideQuest: boolean = false) => {
-    const fields = isSideQuest ? { isSideQuest: 1 as const } : undefined;
-    if (isSubSkillView) {
-      addSubSkillBelow(skill.id, "", fields);
+    if (isSideQuest) {
+      if (isSubSkillView) {
+        if (activeParentSkillId) addSideQuestNode("sub", activeParentSkillId, skill.id);
+      } else {
+        addSideQuestNode(isProject ? "project" : "area", activeId, skill.id);
+      }
+    } else if (isSubSkillView) {
+      addSubSkillBelow(skill.id, "");
     } else if (isProject) {
-      addProjectSkillBelow(activeId, skill.id, "", fields);
+      addProjectSkillBelow(activeId, skill.id, "");
     } else {
-      addSkillBelow(activeId, skill.id, "", fields);
+      addSkillBelow(activeId, skill.id, "");
     }
   };
 
@@ -2899,11 +2906,40 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               isMastered && isLastNodeOfLevel && "bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/30",
               // Level completed - all nodes turn orange
               isMastered && isLevelCompleted && "bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/30",
-              // SideQuest: dotted border. bg-clip-padding keeps the fill out from under the
-              // border so the gaps stay visible on filled (mastered) circles too.
-              skill.isSideQuest === 1 && "border-dotted bg-clip-padding"
+              // SideQuest: the border itself goes transparent and the dotted ring below is
+              // drawn in its place. bg-clip-padding keeps the fill out from under the border
+              // so the gaps between dots stay visible on filled (mastered) circles too.
+              skill.isSideQuest === 1 && "border-transparent bg-clip-padding"
             )}
           >
+            {skill.isSideQuest === 1 && (
+              // CSS `dotted` can't control how many dots there are, so the ring is an SVG:
+              // pathLength=120 with a 10-unit dash cycle gives 12 round dots. Colors mirror
+              // the border colors of each state above.
+              <svg
+                className={cn(
+                  "absolute -inset-0.5 w-[calc(100%+4px)] h-[calc(100%+4px)] pointer-events-none",
+                  (isLastNodeOfLevel || (isMastered && isLevelCompleted))
+                    ? (isMastered ? "text-amber-500" : "text-amber-400")
+                    : isMastered ? "text-foreground"
+                    : isLocked ? "text-muted-foreground/70"
+                    : "text-muted-foreground"
+                )}
+                viewBox="0 0 40 40"
+              >
+                <circle
+                  cx="20"
+                  cy="20"
+                  r="19"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  pathLength={120}
+                  strokeDasharray="0.01 9.99"
+                />
+              </svg>
+            )}
             {hasUnlockedWithIncompleteSubtasks ? (
               <Lock size={14} className="text-white" />
             ) : isLocked ? (

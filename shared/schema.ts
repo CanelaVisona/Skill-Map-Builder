@@ -767,6 +767,22 @@ export const todayPriorities = pgTable("today_priorities", {
 });
 export type TodayPriorities = typeof todayPriorities.$inferSelect;
 
+// Sub-pasos de una tarea de "Tareas de hoy" que no es un nodo (tarea/evento manual, hábito,
+// práctica, rewiring): un checklist propio de ese día, que se muestra adentro de la tarea y se
+// confirma en orden. Son del día: un hábito no arrastra sus sub-pasos al día siguiente.
+export const todayTaskSubsteps = pgTable("today_task_substeps", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  date: varchar("date").notNull(), // YYYY-MM-DD format
+  taskType: text("task_type").$type<"habit" | "practice" | "manual" | "rewiring">().notNull(),
+  taskId: varchar("task_id").notNull(),
+  title: text("title").notNull(),
+  done: integer("done").$type<0 | 1>().notNull().default(0),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export type TodayTaskSubstep = typeof todayTaskSubsteps.$inferSelect;
+
 // Tarea manual agregada a mano en "Tareas de hoy" (mantener presionado el fondo). Vive fuera
 // del árbol de habilidades/hábitos/repetición espaciada. Puede ser "task" o "event" (elegido al
 // crearla) y, a diferencia de antes, sí se muestra en el calendario de actividades — incluida
