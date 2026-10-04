@@ -19,7 +19,7 @@ import { useConfirmHabit, useConfirmPractice } from "@/lib/useConfirmActions";
 import { useTodayPriorities, useSetTodayPriorities, MAX_TODAY_PRIORITIES } from "@/lib/useTodayPriorities";
 import { MealTrackerModal } from "@/components/MealTrackerModal";
 import { useNowPlacement, setNowPlacement } from "@/lib/now-placement";
-import { addSubSkillFromToday, toggleSubSkillFromToday, masterWholeSubSkillTree, isSubSkillPlaceholder } from "@/lib/subskill-tree";
+import { addSubSkillFromToday, toggleSubSkillFromToday, masterWholeSubSkillTree, isSubSkillPlaceholder, moveSubSkillFromToday, renameSubSkill, deleteSubSkillFromToday } from "@/lib/subskill-tree";
 import { useTodayTaskSubsteps, useCreateTodayTaskSubstep, useUpdateTodayTaskSubstep, useDeleteTodayTaskSubstep, type SubstepTaskType } from "@/lib/useTodayTaskSubsteps";
 import type { Habit, HabitRecord, TodayTaskSlot } from "@shared/schema";
 
@@ -836,21 +836,64 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       setSubNodeBusy(false);
     }
   };
+  // Subir/bajar, renombrar y eliminar un sub-nodo (tocándolo abre su menú). Mismo candado que
+  // confirmar: una operación a la vez, y después se refresca el sub-árbol y los árboles.
+  const runSubNodeOp = async (parentId: string, op: () => Promise<void>) => {
+    if (subNodeBusy) return;
+    setSubNodeBusy(true);
+    try {
+      await op();
+      await refreshSkillTrees();
+    } catch (error) {
+      console.error("Error editando sub-nodo desde Tareas de hoy:", error);
+    } finally {
+      queryClient.invalidateQueries({ queryKey: ["node-subskills", parentId] });
+      queryClient.invalidateQueries({ queryKey: ["dated-sub-skills"] });
+      setSubNodeBusy(false);
+    }
+  };
   const renderSubNodes = (item: TodayItem, parentIsCurrent: boolean) => {
     const subs = subNodesFor(item);
     if (subs.length === 0) return null;
     const firstUndone = subs.findIndex((sub) => sub.status !== "mastered");
     const lastDone = firstUndone === -1 ? subs.length - 1 : firstUndone - 1;
-    return subs.map((sub, i) => (
-      <TodaySubRow
-        key={sub.id}
-        title={stripLeadingEmoji(sub.title || "Sin nombre")}
-        done={sub.status === "mastered"}
-        current={parentIsCurrent && i === firstUndone}
-        dimmed={!(parentIsCurrent && i === firstUndone)}
-        onToggleDone={i === firstUndone || i === lastDone ? () => toggleSubNode(item.id, sub) : undefined}
-      />
-    ));
+    return subs.map((sub, i) => {
+      const prev = subs[i - 1];
+      const next = subs[i + 1];
+      return (
+        <TodaySubRow
+          key={sub.id}
+          title={stripLeadingEmoji(sub.title || "Sin nombre")}
+          done={sub.status === "mastered"}
+          current={parentIsCurrent && i === firstUndone}
+          dimmed={!(parentIsCurrent && i === firstUndone)}
+          onToggleDone={i === firstUndone || i === lastDone ? () => toggleSubNode(item.id, sub) : undefined}
+          onMoveUp={prev && prev.level === sub.level ? () => runSubNodeOp(item.id, () => moveSubSkillFromToday(sub, prev)) : undefined}
+          onMoveDown={next && next.level === sub.level ? () => runSubNodeOp(item.id, () => moveSubSkillFromToday(sub, next)) : undefined}
+          onRename={() => {
+            setRenameSubTitle(sub.title || "");
+            setRenameSubTarget({ kind: "node", id: sub.id, parentId: item.id });
+          }}
+          onDelete={() => runSubNodeOp(item.id, () => deleteSubSkillFromToday(item.id, sub))}
+          deleteLabel="sub-nodo"
+        />
+      );
+    });
+  };
+
+  // Diálogo para cambiarle el nombre a un sub-nodo o a un sub-paso.
+  const [renameSubTarget, setRenameSubTarget] = useState<{ kind: "node" | "step"; id: string; parentId: string } | null>(null);
+  const [renameSubTitle, setRenameSubTitle] = useState("");
+  const submitRenameSub = () => {
+    const title = renameSubTitle.trim();
+    const target = renameSubTarget;
+    if (!title || !target) return;
+    setRenameSubTarget(null);
+    if (target.kind === "node") {
+      runSubNodeOp(target.parentId, () => renameSubSkill(target.id, title));
+    } else {
+      updateSubstep.mutate({ id: target.id, date: effectiveDate, updates: { title } });
+    }
   };
 
   // Sub-pasos (checklist del día) de las tareas que no son nodos: se agregan desde el menú de la
@@ -893,6 +936,15 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     if (steps.length === 0) return null;
     const firstUndone = steps.findIndex((st) => st.done !== 1);
     const lastDone = firstUndone === -1 ? steps.length - 1 : firstUndone - 1;
+    // Subir/bajar intercambia el orden con el vecino; si el que sube está sin hacer y el de
+    // arriba hecho (o al revés), también se intercambia "hecho", para que el checklist siga
+    // confirmado en orden (igual que los sub-nodos, donde el estado queda con la posición).
+    const swapSubsteps = (a: typeof steps[number], b: typeof steps[number]) => {
+      const aOrder = a.sortOrder === b.sortOrder ? steps.indexOf(a) : a.sortOrder;
+      const bOrder = a.sortOrder === b.sortOrder ? steps.indexOf(b) : b.sortOrder;
+      updateSubstep.mutate({ id: a.id, date: effectiveDate, updates: { sortOrder: bOrder, done: b.done as 0 | 1 } });
+      updateSubstep.mutate({ id: b.id, date: effectiveDate, updates: { sortOrder: aOrder, done: a.done as 0 | 1 } });
+    };
     return steps.map((st, i) => (
       <TodaySubRow
         key={st.id}
@@ -905,7 +957,14 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
             ? () => updateSubstep.mutate({ id: st.id, date: effectiveDate, updates: { done: st.done === 1 ? 0 : 1 } })
             : undefined
         }
+        onMoveUp={i > 0 ? () => swapSubsteps(st, steps[i - 1]) : undefined}
+        onMoveDown={i < steps.length - 1 ? () => swapSubsteps(st, steps[i + 1]) : undefined}
+        onRename={() => {
+          setRenameSubTitle(st.title);
+          setRenameSubTarget({ kind: "step", id: st.id, parentId: item.id });
+        }}
         onDelete={() => deleteSubstep.mutate({ id: st.id, date: effectiveDate })}
+        deleteLabel="sub-paso"
       />
     ));
   };
@@ -2343,6 +2402,35 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       </DialogContent>
     </Dialog>
 
+    <Dialog open={!!renameSubTarget} onOpenChange={(o) => { if (!o) setRenameSubTarget(null); }}>
+      <DialogContent className="max-w-sm rounded-2xl">
+        <DialogTitle>{renameSubTarget?.kind === "node" ? "Cambiar nombre del sub-nodo" : "Cambiar nombre del sub-paso"}</DialogTitle>
+        <Input
+          autoFocus
+          value={renameSubTitle}
+          onChange={(e) => setRenameSubTitle(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") submitRenameSub();
+          }}
+        />
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            onClick={() => setRenameSubTarget(null)}
+            className="px-3 py-1.5 text-sm rounded-md hover:bg-muted transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={submitRenameSub}
+            disabled={!renameSubTitle.trim()}
+            className="px-3 py-1.5 text-sm rounded-md bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            Guardar
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
+
     <Dialog open={!!addSubstepFor} onOpenChange={(o) => { if (!o) setAddSubstepFor(null); }}>
       <DialogContent className="max-w-sm rounded-2xl">
         <DialogTitle>{addSubstepFor?.type === "node" ? "Nuevo sub-nodo" : "Nuevo sub-paso"}</DialogTitle>
@@ -2717,58 +2805,106 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   );
 }
 
-// Fila anidada adentro de una tarea: el sub-nodo desbloqueado de un nodo, o un sub-paso de una
-// tarea que no es nodo. `current` le da el mismo destacado dorado que la tarea desbloqueada.
+// Fila anidada adentro de una tarea: un sub-nodo de un nodo, o un sub-paso de una tarea que no
+// es nodo. `current` le da el mismo destacado dorado que la tarea desbloqueada. Tocar el círculo
+// la confirma; tocar el nombre abre su menú (subir/bajar, cambiar nombre, eliminar).
 function TodaySubRow({
   title,
   done,
   current,
   dimmed,
   onToggleDone,
+  onMoveUp,
+  onMoveDown,
+  onRename,
   onDelete,
+  deleteLabel = "sub-paso",
 }: {
   title: string;
   done?: boolean;
   current?: boolean;
   dimmed?: boolean;
   onToggleDone?: () => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  onRename?: () => void;
   onDelete?: () => void;
+  deleteLabel?: string;
 }) {
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const hasMenu = !!(onMoveUp || onMoveDown || onRename || onDelete);
+  const titleNode = (
+    <span
+      className={`flex-1 ${hasMenu ? "cursor-pointer" : ""} ${done ? "text-yellow-600/60" : ""} ${
+        current ? "text-[15px] font-semibold leading-snug" : ""
+      }`}
+    >
+      {title}
+    </span>
+  );
   return (
-    <div className={`ml-5 border-l-2 pl-3 ${current ? "border-amber-500/40" : "border-border/40"} ${dimmed ? "opacity-25" : ""}`}>
-      <div
-        className={`flex items-center gap-2 text-sm ${
-          current
-            ? "my-1.5 rounded-xl border-2 border-amber-500/80 bg-amber-500/10 px-3 py-2.5 shadow-[0_0_18px_-3px_rgba(245,158,11,0.65)]"
-            : "py-0.5"
-        }`}
-      >
-        <span
-          onClick={onToggleDone}
-          className={`flex flex-shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
-            done
-              ? "h-3.5 w-3.5 bg-yellow-600/70 border-yellow-600/70"
-              : current
-              ? "h-5 w-5 border-amber-500 bg-amber-500/10"
-              : "h-3.5 w-3.5 border-border/50"
-          } ${onToggleDone ? "cursor-pointer" : ""}`}
+    <>
+      <div className={`ml-5 border-l-2 pl-3 transition-opacity ${current ? "border-amber-500/40" : "border-border/40"} ${dimmed ? "opacity-25" : ""}`}>
+        <div
+          className={`flex items-center gap-2 text-sm ${
+            current
+              ? "my-1.5 rounded-xl border-2 border-amber-500/80 bg-amber-500/10 px-3 py-2.5 shadow-[0_0_18px_-3px_rgba(245,158,11,0.65)]"
+              : "py-0.5"
+          }`}
         >
-          {done && <Check className="h-2 w-2 text-yellow-900" strokeWidth={3} />}
-        </span>
-        <span className={`flex-1 ${done ? "text-yellow-600/60" : ""} ${current ? "text-[15px] font-semibold leading-snug" : ""}`}>
-          {title}
-        </span>
-        {onDelete && (
-          <button
-            onClick={onDelete}
-            className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-muted-foreground/60 hover:text-foreground"
-            aria-label="Borrar sub-paso"
+          <span
+            onClick={onToggleDone}
+            className={`flex flex-shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
+              done
+                ? "h-3.5 w-3.5 bg-yellow-600/70 border-yellow-600/70"
+                : current
+                ? "h-5 w-5 border-amber-500 bg-amber-500/10"
+                : "h-3.5 w-3.5 border-border/50"
+            } ${onToggleDone ? "cursor-pointer" : ""}`}
           >
-            <X className="h-3 w-3" />
-          </button>
-        )}
+            {done && <Check className="h-2 w-2 text-yellow-900" strokeWidth={3} />}
+          </span>
+          {hasMenu ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>{titleNode}</DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {onMoveUp && <DropdownMenuItem onClick={onMoveUp}>Mover arriba</DropdownMenuItem>}
+                {onMoveDown && <DropdownMenuItem onClick={onMoveDown}>Mover abajo</DropdownMenuItem>}
+                {(onMoveUp || onMoveDown) && (onRename || onDelete) && <DropdownMenuSeparator />}
+                {onRename && (
+                  <DropdownMenuItem onClick={onRename}>
+                    <Pencil className="mr-2 h-4 w-4" />
+                    Cambiar nombre
+                  </DropdownMenuItem>
+                )}
+                {onDelete && (
+                  <DropdownMenuItem onClick={() => setDeleteConfirmOpen(true)} className="text-destructive focus:text-destructive">
+                    Eliminar
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            titleNode
+          )}
+        </div>
       </div>
-    </div>
+
+      {onDelete && (
+        <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>¿Eliminar este {deleteLabel}?</AlertDialogTitle>
+              <AlertDialogDescription>Se va a borrar. No se puede deshacer.</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={onDelete}>Eliminar</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+    </>
   );
 }
 

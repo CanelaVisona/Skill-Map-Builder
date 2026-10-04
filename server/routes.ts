@@ -5511,13 +5511,17 @@ export async function registerRoutes(
       if (!existing || existing.userId !== req.userId) {
         return res.status(404).json({ message: "Sub-paso no encontrado" });
       }
-      const { title, done } = req.body;
+      const { title, done, sortOrder } = req.body;
       if (done !== undefined && done !== 0 && done !== 1) {
         return res.status(400).json({ message: "done debe ser 0 o 1" });
+      }
+      if (sortOrder !== undefined && !Number.isInteger(sortOrder)) {
+        return res.status(400).json({ message: "sortOrder debe ser un entero" });
       }
       const updated = await storage.updateTodayTaskSubstep(req.params.id, {
         ...(title !== undefined ? { title: String(title).trim() } : {}),
         ...(done !== undefined ? { done } : {}),
+        ...(sortOrder !== undefined ? { sortOrder } : {}),
       });
       res.json(updated);
     } catch (error: any) {

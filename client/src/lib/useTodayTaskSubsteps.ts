@@ -37,7 +37,7 @@ export function useCreateTodayTaskSubstep() {
 export function useUpdateTodayTaskSubstep() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, updates }: { id: string; date: string; updates: { title?: string; done?: 0 | 1 } }) => {
+    mutationFn: async ({ id, updates }: { id: string; date: string; updates: { title?: string; done?: 0 | 1; sortOrder?: number } }) => {
       const res = await fetch(`/api/today-task-substeps/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },

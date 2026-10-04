@@ -3540,7 +3540,7 @@ export class DbStorage implements IStorage {
     return result[0];
   }
 
-  async updateTodayTaskSubstep(id: string, updates: { title?: string; done?: 0 | 1 }): Promise<TodayTaskSubstep | undefined> {
+  async updateTodayTaskSubstep(id: string, updates: { title?: string; done?: 0 | 1; sortOrder?: number }): Promise<TodayTaskSubstep | undefined> {
     const result = await db.update(todayTaskSubsteps).set(updates).where(eq(todayTaskSubsteps.id, id)).returning();
     return result[0];
   }

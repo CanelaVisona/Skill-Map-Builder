@@ -114,3 +114,51 @@ export async function masterWholeSubSkillTree(parentSkillId: string) {
     await patchSkill(s.id, { status: "mastered", fromLevelReset: true });
   }
 }
+
+// El nodo final de un nivel de sub-árbol es siempre el último por posición (ver
+// makeLastCreatedSubSkillFinal): se re-asigna después de borrar un sub-nodo.
+async function ensureLastSubSkillIsFinal(parentSkillId: string, level: number) {
+  const levelNodes = (await fetchSubSkills(parentSkillId)).filter(s => s.level === level).sort(byOrder);
+  if (levelNodes.length < 2) return;
+  const last = levelNodes[levelNodes.length - 1];
+  for (const s of levelNodes) {
+    const expected = s.id === last.id ? 1 : 0;
+    if ((s.isFinalNode || 0) !== expected) await patchSkill(s.id, { isFinalNode: expected });
+  }
+}
+
+// Sube/baja un sub-nodo desde Tareas de hoy: intercambia su lugar con el sub-nodo vecino que se
+// ve ahí (`neighbor`). Igual que mover en el árbol (moveSubSkill): intercambian posición e y, y el
+// estado y el flag de nodo final se quedan con la posición (el que pasa adelante hereda el estado
+// del de adelante), así la progresión del nivel sigue siendo válida. Nunca con el "inicio".
+export async function moveSubSkillFromToday(sub: Skill, neighbor: Skill) {
+  if (sub.level !== neighbor.level || (neighbor.levelPosition || 0) <= 1 || (sub.levelPosition || 0) <= 1) return;
+  await Promise.all([
+    patchSkill(sub.id, {
+      y: neighbor.y,
+      levelPosition: neighbor.levelPosition,
+      status: neighbor.status,
+      isFinalNode: neighbor.isFinalNode || 0,
+      fromReorder: true,
+    }),
+    patchSkill(neighbor.id, {
+      y: sub.y,
+      levelPosition: sub.levelPosition,
+      status: sub.status,
+      isFinalNode: sub.isFinalNode || 0,
+      fromReorder: true,
+    }),
+  ]);
+}
+
+export async function renameSubSkill(subSkillId: string, title: string) {
+  await patchSkill(subSkillId, { title });
+}
+
+// Borra un sub-nodo desde Tareas de hoy. El server renumera el nivel y, si era el desbloqueado,
+// desbloquea el siguiente; acá solo se re-asigna el nodo final al último que quede.
+export async function deleteSubSkillFromToday(parentSkillId: string, sub: Skill) {
+  const res = await fetch(`/api/skills/${sub.id}`, { method: "DELETE" });
+  if (!res.ok) return;
+  await ensureLastSubSkillIsFinal(parentSkillId, sub.level);
+}
