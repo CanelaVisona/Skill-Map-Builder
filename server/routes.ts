@@ -5616,7 +5616,10 @@ export async function registerRoutes(
 
   app.post("/api/manual-today-tasks", requireAuth, async (req, res) => {
     try {
-      const { date, title, kind, linkedKind, linkedParentId } = req.body;
+      const { date, title, kind, linkedKind, linkedParentId, minutes } = req.body;
+      if (minutes !== undefined && minutes !== null && (!Number.isInteger(minutes) || minutes < 0)) {
+        return res.status(400).json({ message: "minutes debe ser un entero >= 0 o null" });
+      }
       if (!date || !title || typeof title !== "string" || !title.trim()) {
         return res.status(400).json({ message: "date y title son requeridos" });
       }
@@ -5633,6 +5636,7 @@ export async function registerRoutes(
         kind: kind === "event" ? "event" : "task",
         done: 0,
         ...(linkedParentId ? { linkedKind, linkedParentId: String(linkedParentId) } : {}),
+        ...(minutes ? { minutes } : {}),
       });
       res.status(201).json(task);
     } catch (error: any) {

@@ -8,7 +8,7 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, ArrowLeft, Check, ChevronLeft, ChevronRight, Clock, Pencil, Plus, Star } from "lucide-react";
+import { Calendar, ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Pencil, Plus, Star } from "lucide-react";
 import { useSkillTree, type Area, type Project, type Skill } from "@/lib/skill-context";
 import { useHabits, useUpdateHabitRecord } from "@/lib/useHabits";
 import { useTodayTaskSlots, useSetTodayTaskSlot, useClearTodayTaskSlot, useReorderTodayTaskSlot, getCurrentTimeSlotKey, getTimeSlotKeyForDate, type TaskSlotKey, type TaskType } from "@/lib/useTodayTaskSlots";
@@ -216,6 +216,11 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   //   nodo desbloqueado de ese momento, ver materializePendingEventNodes). Confirmar el evento
   //   confirma ese nodo.
   const [newTaskParent, setNewTaskParent] = useState("");
+  // Tiempo estimado elegido al crear la tarea ("" = sin tiempo).
+  const [newTaskMinutes, setNewTaskMinutes] = useState("");
+  // Secciones desplegables del diálogo (cerradas por defecto): área/quest y agregar un hábito.
+  const [newTaskParentOpen, setNewTaskParentOpen] = useState(false);
+  const [newTaskHabitsOpen, setNewTaskHabitsOpen] = useState(false);
   // Franja a la que se asigna la tarea que se está por crear: null = sin asignar (mantener
   // presionado el fondo). Mantener presionado el título de una franja horaria en vez del fondo
   // apunta la tarea nueva directo a esa franja, para que no caiga en "Sin asignar".
@@ -833,6 +838,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     const seen = new Set<string>();
     const order = ordered
       .filter((i) => {
+        if (i.traceSubs) return false;
         const k = `${i.type}:${i.id}`;
         if (seen.has(k)) return false;
         seen.add(k);
@@ -848,12 +854,19 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // confirmar, el padre no se puede confirmar; confirmar el último lo desbloquea, y confirmar el
   // padre confirma todo el sub-árbol. Si el nodo es la tarea desbloqueada, el destacado pasa a
   // su primer sub-nodo sin confirmar. Se agregan con "Agregar sub-nodo" (ver subskill-tree.ts).
-  const pendingNodeItems = todayItems.filter((i) => i.type === "node" && !i.done);
+  // Nodos de hoy sin confirmar, más los padres que en el registro de un día pasado quedan solo
+  // como texto (ver traceSubs): sus sub-nodos confirmados ese día se muestran como sub-nodos normales.
+  // Los nodos ya confirmados también: si tienen sub-nodos, se pueden desplegar (ver expandedParents).
+  const subTreeNodeIds = Array.from(new Set([
+    ...todayItems.filter((i) => i.type === "node").map((i) => i.id),
+    ...extraItems.filter((i) => i.type === "node" && !i.traceSubs).map((i) => i.id),
+    ...Array.from(traceParents.keys()),
+  ]));
   const subSkillQueries = useQueries({
-    queries: pendingNodeItems.map((i) => ({
-      queryKey: ["node-subskills", i.id],
+    queries: subTreeNodeIds.map((id) => ({
+      queryKey: ["node-subskills", id],
       queryFn: async () => {
-        const res = await fetch(`/api/skills/${i.id}/subskills`);
+        const res = await fetch(`/api/skills/${id}/subskills`);
         if (!res.ok) throw new Error("Failed to fetch sub-skills");
         return res.json() as Promise<Skill[]>;
       },
@@ -862,11 +875,11 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     })),
   });
   const subSkillsByNodeId = new Map<string, Skill[]>();
-  pendingNodeItems.forEach((i, idx) => {
+  subTreeNodeIds.forEach((id, idx) => {
     const list = (subSkillQueries[idx]?.data || [])
       .filter((sub) => (sub.levelPosition || 0) > 1 && !isSubSkillPlaceholder(sub))
       .sort((a, b) => (a.level - b.level) || ((a.levelPosition || 0) - (b.levelPosition || 0)));
-    subSkillsByNodeId.set(i.id, list);
+    subSkillsByNodeId.set(id, list);
   });
   const subNodesFor = (item: TodayItem) => (item.type === "node" ? subSkillsByNodeId.get(item.id) || [] : []);
   const hasPendingSubNodes = (item: TodayItem) => subNodesFor(item).some((sub) => sub.status !== "mastered");
@@ -901,12 +914,21 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       setSubNodeBusy(false);
     }
   };
-  const renderSubNodes = (item: TodayItem, parentIsCurrent: boolean) => {
+  // onlyIds: mostrar solo esos sub-nodos (registro de un día pasado), pero con el mismo
+  // comportamiento que en la lista completa (destildar el último confirmado, menú, etc.).
+  const renderSubNodes = (item: TodayItem, parentIsCurrent: boolean, onlyIds?: Set<string>) => {
     const subs = subNodesFor(item);
     if (subs.length === 0) return null;
+    // Nodo padre ya confirmado (con todo su sub-árbol): los sub-nodos quedan en una lista
+    // desplegable, cerrada por defecto, y no se pueden destildar, mover ni borrar (el padre
+    // confirmado exige el sub-árbol completo). El registro de un día pasado (traceSubs) no aplica:
+    // ahí el padre todavía no se confirmó.
+    const parentConfirmed = item.done && !item.traceSubs;
+    if (parentConfirmed && !expandedParents.has(item.key)) return null;
     const firstUndone = subs.findIndex((sub) => sub.status !== "mastered");
     const lastDone = firstUndone === -1 ? subs.length - 1 : firstUndone - 1;
     return subs.map((sub, i) => {
+      if (onlyIds && !onlyIds.has(sub.id)) return null;
       const prev = subs[i - 1];
       const next = subs[i + 1];
       // Sub-nodo confirmado otro día (p.ej. el padre se pasó del martes al miércoles): queda
@@ -929,9 +951,9 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
           done={sub.status === "mastered"}
           current={parentIsCurrent && i === firstUndone}
           dimmed={!(parentIsCurrent && i === firstUndone)}
-          onToggleDone={i === firstUndone || i === lastDone ? () => toggleSubNode(item.id, sub) : undefined}
-          onMoveUp={prev && prev.level === sub.level ? () => runSubNodeOp(item.id, () => moveSubSkillFromToday(sub, prev)) : undefined}
-          onMoveDown={next && next.level === sub.level ? () => runSubNodeOp(item.id, () => moveSubSkillFromToday(sub, next)) : undefined}
+          onToggleDone={!parentConfirmed && (i === firstUndone || i === lastDone) ? () => toggleSubNode(item.id, sub) : undefined}
+          onMoveUp={!parentConfirmed && prev && prev.level === sub.level ? () => runSubNodeOp(item.id, () => moveSubSkillFromToday(sub, prev)) : undefined}
+          onMoveDown={!parentConfirmed && next && next.level === sub.level ? () => runSubNodeOp(item.id, () => moveSubSkillFromToday(sub, next)) : undefined}
           onRename={() => {
             setRenameSubTitle(sub.title || "");
             setRenameSubTarget({ kind: "node", id: sub.id, parentId: item.id });
@@ -940,7 +962,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
           onAssignTime={() =>
             openTimeDialog({ key: `node:${sub.id}`, type: "node", id: sub.id, label: sub.title, done: sub.status === "mastered" })
           }
-          onDelete={() => runSubNodeOp(item.id, () => deleteSubSkillFromToday(item.id, sub))}
+          onDelete={parentConfirmed ? undefined : () => runSubNodeOp(item.id, () => deleteSubSkillFromToday(item.id, sub))}
           deleteLabel="sub-nodo"
         />
       );
@@ -949,17 +971,60 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
 
   // Nodo padre en el registro de un día pasado (ver traceSubs): solo texto, con los sub-nodos que
   // se confirmaron ese día debajo, también solo como texto.
-  const renderTraceRow = (item: TodayItem) => (
-    <React.Fragment key={item.key}>
-      <div className="flex items-center gap-2 text-sm opacity-60">
-        {item.dotEmoji && <TaskDot emoji={item.dotEmoji} color={item.dotColor || NODE_COLOR} size="md" />}
-        <span className="flex-1">{item.label}</span>
-      </div>
-      {(item.traceSubs || []).map((sub) => (
-        <TodaySubRow key={sub.id} title={stripLeadingEmoji(sub.title)} done />
-      ))}
-    </React.Fragment>
-  );
+  // Nodos padre confirmados cuya lista de sub-nodos está desplegada (por key de la fila).
+  const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
+  const expandProps = (item: TodayItem) => {
+    if (item.type !== "node" || !item.done || item.traceSubs || subNodesFor(item).length === 0) return {};
+    return {
+      expanded: expandedParents.has(item.key),
+      onToggleExpand: () =>
+        setExpandedParents((prev) => {
+          const next = new Set(prev);
+          if (next.has(item.key)) next.delete(item.key);
+          else next.add(item.key);
+          return next;
+        }),
+    };
+  };
+
+  // Solo el padre queda como texto (se va a confirmar otro día); sus sub-nodos confirmados ese
+  // día se ven como sub-nodos normales. Mientras carga su sub-árbol, se muestran sin acciones.
+  // Igual que un padre confirmado, sus sub-nodos van en una lista desplegable (cerrada por defecto).
+  const renderTraceRow = (item: TodayItem) => {
+    const loaded = subNodesFor(item).length > 0;
+    const expanded = expandedParents.has(item.key);
+    const toggleExpanded = () =>
+      setExpandedParents((prev) => {
+        const next = new Set(prev);
+        if (next.has(item.key)) next.delete(item.key);
+        else next.add(item.key);
+        return next;
+      });
+    return (
+      <React.Fragment key={item.key}>
+        <div className="flex items-center gap-2 text-sm">
+          {item.dotEmoji && (
+            <span className="opacity-60">
+              <TaskDot emoji={item.dotEmoji} color={item.dotColor || NODE_COLOR} size="md" />
+            </span>
+          )}
+          <span className="flex-1 opacity-60">{item.label}</span>
+          <button
+            type="button"
+            onClick={toggleExpanded}
+            className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+            aria-label={expanded ? "Ocultar sub-nodos" : "Ver sub-nodos"}
+          >
+            {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          </button>
+        </div>
+        {expanded &&
+          (loaded
+            ? renderSubNodes(item, false, new Set((item.traceSubs || []).map((sub) => sub.id)))
+            : (item.traceSubs || []).map((sub) => <TodaySubRow key={sub.id} title={stripLeadingEmoji(sub.title)} done dimmed />))}
+      </React.Fragment>
+    );
+  };
 
   // Diálogo para cambiarle el nombre a un sub-nodo o a un sub-paso.
   const [renameSubTarget, setRenameSubTarget] = useState<{ kind: "node" | "step"; id: string; parentId: string } | null>(null);
@@ -1105,7 +1170,15 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     setManualExtraSlotSection(next);
   };
 
+  // Un movimiento hecho a mano manda sobre el lugar que "Ahora" le iba a dar a su nodo: si ese
+  // reacomodo todavía estaba pendiente para este día (ver nowPlacement), se cancela, así no pisa
+  // la tarea que el usuario puso en el lugar de la desbloqueada.
+  const cancelPendingNowPlacement = () => {
+    if (nowPlacement && nowPlacement.date === effectiveDate) setNowPlacement(null);
+  };
+
   const moveItemToSlot = (item: TodayItem, slot: TaskSlotKey) => {
+    cancelPendingNowPlacement();
     setTaskSlot.mutate({ date: effectiveDate, taskType: item.type, taskId: item.id, slot });
   };
 
@@ -1116,13 +1189,23 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const moveItemOrder = (slot: TaskSlotKey, bucket: TodayItem[], index: number, direction: "up" | "down") => {
     const swapIndex = direction === "up" ? index - 1 : index + 1;
     if (swapIndex < 0 || swapIndex >= bucket.length) return;
+    cancelPendingNowPlacement();
     const newOrder = bucket.slice();
     [newOrder[index], newOrder[swapIndex]] = [newOrder[swapIndex], newOrder[index]];
-    reorderTaskSlot.mutate({
-      date: effectiveDate,
-      slot,
-      order: newOrder.map((it) => ({ taskType: it.type, taskId: it.id })),
-    });
+    // Una sola entrada por tarea (un hábito puede estar duplicado en varias franjas, keys
+    // "#slot"), y sin el padre que en un día pasado queda solo como texto (traceSubs): no es
+    // una tarea con fila propia, y mandarlo le crearía una.
+    const seen = new Set<string>();
+    const order = newOrder
+      .filter((it) => {
+        if (it.traceSubs) return false;
+        const k = `${it.type}:${it.id}`;
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      })
+      .map((it) => ({ taskType: it.type, taskId: it.id }));
+    reorderTaskSlot.mutate({ date: effectiveDate, slot, order });
   };
 
   const unassignItem = (item: TodayItem) => {
@@ -1220,6 +1303,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     const seen = new Set<string>();
     const order = reordered
       .filter((i) => {
+        if (i.traceSubs) return false;
         const k = `${i.type}:${i.id}`;
         if (seen.has(k)) return false;
         seen.add(k);
@@ -1520,6 +1604,9 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       setNewTaskTitle("");
       setNewTaskKind("task");
       setNewTaskParent("");
+      setNewTaskMinutes("");
+      setNewTaskParentOpen(false);
+      setNewTaskHabitsOpen(false);
       setAddTaskTargetSlot(null);
       setAddTaskDialogOpen(true);
     }, LONG_PRESS_MS);
@@ -1543,6 +1630,9 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       setNewTaskTitle("");
       setNewTaskKind("task");
       setNewTaskParent("");
+      setNewTaskMinutes("");
+      setNewTaskParentOpen(false);
+      setNewTaskHabitsOpen(false);
       setAddTaskTargetSlot(slot);
       setAddTaskDialogOpen(true);
     }, LONG_PRESS_MS);
@@ -1559,10 +1649,12 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const submitNewTask = async () => {
     const title = newTaskTitle.trim();
     if (!title) return;
+    const parsedMinutes = parseInt(newTaskMinutes, 10);
+    const minutes = Number.isFinite(parsedMinutes) && parsedMinutes > 0 ? parsedMinutes : null;
     setAddTaskDialogOpen(false);
     if (newTaskKind === "event" && newTaskParent) {
       const [linkedKind, linkedParentId] = newTaskParent.split(":") as ["area" | "project", string];
-      const created = await createManualTask.mutateAsync({ date: effectiveDate, title, kind: "event", linkedKind, linkedParentId });
+      const created = await createManualTask.mutateAsync({ date: effectiveDate, title, kind: "event", linkedKind, linkedParentId, minutes });
       if (addTaskTargetSlot) {
         setTaskSlot.mutate({ date: effectiveDate, taskType: "manual", taskId: created.id, slot: addTaskTargetSlot });
       }
@@ -1575,13 +1667,13 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     }
     if (newTaskKind === "task" && newTaskParent) {
       const [parentKind, parentId] = newTaskParent.split(":") as ["area" | "project", string];
-      const node = await addSkillInPlaceOfAvailable(parentKind, parentId, title, { plannedDate: effectiveDate });
+      const node = await addSkillInPlaceOfAvailable(parentKind, parentId, title, { plannedDate: effectiveDate, plannedDuration: minutes });
       if (node && addTaskTargetSlot) {
         setTaskSlot.mutate({ date: effectiveDate, taskType: "node", taskId: node.id, slot: addTaskTargetSlot });
       }
       return;
     }
-    const created = await createManualTask.mutateAsync({ date: effectiveDate, title, kind: newTaskKind });
+    const created = await createManualTask.mutateAsync({ date: effectiveDate, title, kind: newTaskKind, minutes });
     // Si el diálogo se abrió apuntado a una franja (long-press en su título), la tarea recién
     // creada se asigna directo ahí — queda última de la fila porque es la de updatedAt más
     // reciente entre las tareas no hechas de esa franja.
@@ -2096,6 +2188,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                     onAssignTime={canAssignTime(item) ? () => openTimeDialog(item) : undefined}
                                     onAddSubstep={!(item.type === "node" && item.done) ? () => openAddSubstepDialog(item) : undefined}
                                     {...priorityRowProps(item)}
+                                    {...expandProps(item)}
                                   />
                                   {renderSubNodes(item, false)}
                                   {renderSubsteps(item, false)}
@@ -2186,6 +2279,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                         onAssignTime={canAssignTime(item) ? () => openTimeDialog(item) : undefined}
                                         onAddSubstep={!(item.type === "node" && item.done) ? () => openAddSubstepDialog(item) : undefined}
                                         {...priorityRowProps(item)}
+                                    {...expandProps(item)}
                                         onMoveUp={idx > 0 ? () => moveItemOrder(s.key, itemBuckets[s.key], idx, "up") : undefined}
                                         onMoveDown={idx < itemBuckets[s.key].length - 1 ? () => moveItemOrder(s.key, itemBuckets[s.key], idx, "down") : undefined}
                                       />
@@ -2215,8 +2309,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                           <AccordionContent className="pt-0 pb-1">
                             <div className="space-y-1.5">
                               {itemBuckets.more.map((item) => item.traceSubs ? renderTraceRow(item) : (
+                                <React.Fragment key={item.key}>
                                 <TodayTaskRow
-                                  key={item.key}
                                   item={item}
                                   pastDay={effectiveDate < todayStr}
                                   onMove={(slot) => moveItemToSlot(item, slot)}
@@ -2225,7 +2319,10 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                   onChangeDay={canChangeDay(item) ? () => openChangeDayDialog(item) : undefined}
                                   onAssignTime={canAssignTime(item) ? () => openTimeDialog(item) : undefined}
                                   {...priorityRowProps(item)}
+                                    {...expandProps(item)}
                                 />
+                                {renderSubNodes(item, false)}
+                                </React.Fragment>
                               ))}
                             </div>
                           </AccordionContent>
@@ -2621,7 +2718,56 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
           }}
           placeholder={newTaskKind === "event" ? "¿Qué evento querés agregar?" : "¿Qué tarea querés agregar?"}
         />
+        {/* Tiempo estimado: tocar un valor lo elige, tocarlo de nuevo lo saca. */}
+        <div className="space-y-1.5">
+          <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Tiempo</p>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {[5, 10, 15, 30, 45, 60, 90].map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setNewTaskMinutes(newTaskMinutes === String(m) ? "" : String(m))}
+                className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                  newTaskMinutes === String(m)
+                    ? "border-amber-500 bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                    : "border-border/50 hover:bg-muted"
+                }`}
+              >
+                {m}min
+              </button>
+            ))}
+            <Input
+              type="number"
+              inputMode="numeric"
+              min={1}
+              placeholder="Otro"
+              value={newTaskMinutes}
+              onChange={(e) => setNewTaskMinutes(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") submitNewTask();
+              }}
+              className="h-7 w-20 text-xs"
+            />
+          </div>
+        </div>
         {(areas.length > 0 || projects.length > 0) && (
+          <div className="space-y-1.5">
+            <button
+              type="button"
+              onClick={() => setNewTaskParentOpen((o) => !o)}
+              className="flex w-full items-center gap-1 text-xs font-bold uppercase tracking-wide text-muted-foreground"
+            >
+              {newTaskParentOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+              Área o quest
+              {newTaskParent && (
+                <span className="ml-1 truncate font-normal normal-case tracking-normal text-foreground">
+                  · {newTaskParent.startsWith("area:")
+                    ? areas.find((a) => `area:${a.id}` === newTaskParent)?.name
+                    : projects.find((pr) => `project:${pr.id}` === newTaskParent)?.name}
+                </span>
+              )}
+            </button>
+            {newTaskParentOpen && (
           <Select value={newTaskParent || "__none__"} onValueChange={(v) => setNewTaskParent(v === "__none__" ? "" : v)}>
             <SelectTrigger className="border-0 bg-muted/50 focus:ring-0">
               <SelectValue placeholder="Área o quest" />
@@ -2646,6 +2792,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
               )}
             </SelectContent>
           </Select>
+            )}
+          </div>
         )}
         <div className="flex justify-end gap-2 pt-2">
           <button
@@ -2666,8 +2814,16 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
             del día (en la franja elegida, si el diálogo se abrió desde el título de una). */}
         {habitsAddableForView.length > 0 && (
           <div className="border-t border-border/30 pt-3 space-y-2">
-            <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">O agregá un hábito</p>
-            <div className="max-h-48 overflow-y-auto space-y-1">
+            <button
+              type="button"
+              onClick={() => setNewTaskHabitsOpen((o) => !o)}
+              className="flex w-full items-center gap-1 text-xs font-bold uppercase tracking-wide text-muted-foreground"
+            >
+              {newTaskHabitsOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+              O agregá un hábito
+            </button>
+            {newTaskHabitsOpen && (
+            <div className="max-h-48 overflow-y-auto minimal-scrollbar space-y-1">
               {habitsAddableForView.map((h) => (
                 <button
                   key={h.id}
@@ -2679,6 +2835,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                 </button>
               ))}
             </div>
+            )}
           </div>
         )}
       </DialogContent>
@@ -3063,6 +3220,8 @@ function TodayTaskRow({
   onTogglePriority,
   onAssignTime,
   onAddSubstep,
+  expanded,
+  onToggleExpand,
 }: {
   item: TodayItem;
   // Tarea que no es "la que sigue" (la primera pendiente de la franja horaria actual): se
@@ -3097,6 +3256,9 @@ function TodayTaskRow({
   onAssignTime?: () => void;
   // Abre el diálogo para agregarle un sub-paso (o un sub-nodo de su sub-árbol, si es un nodo).
   onAddSubstep?: () => void;
+  // Nodo confirmado con sub-nodos: flechita para desplegar/plegar su lista de sub-nodos.
+  expanded?: boolean;
+  onToggleExpand?: () => void;
 }) {
   const [hideConfirmOpen, setHideConfirmOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -3253,6 +3415,21 @@ function TodayTaskRow({
             )}
           </DropdownMenuContent>
         </DropdownMenu>
+        {onToggleExpand && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleExpand();
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+            className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+            aria-label={expanded ? "Ocultar sub-nodos" : "Ver sub-nodos"}
+          >
+            {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          </button>
+        )}
       </div>
 
       {onHide && (

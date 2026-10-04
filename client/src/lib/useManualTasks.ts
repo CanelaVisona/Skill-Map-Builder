@@ -69,6 +69,7 @@ export function useCreateManualTask() {
       kind,
       linkedKind,
       linkedParentId,
+      minutes,
     }: {
       date: string;
       title: string;
@@ -76,11 +77,13 @@ export function useCreateManualTask() {
       // Área/quest del evento: el día del evento se le crea un nodo ahí (ver skill-context).
       linkedKind?: "area" | "project";
       linkedParentId?: string;
+      // Tiempo estimado elegido al crearla (se muestra como "· Xmin").
+      minutes?: number | null;
     }) => {
       const res = await fetch("/api/manual-today-tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, title, kind, linkedKind, linkedParentId }),
+        body: JSON.stringify({ date, title, kind, linkedKind, linkedParentId, minutes }),
       });
       if (!res.ok) throw new Error("Failed to create manual task");
       return res.json() as Promise<ManualTodayTask>;
