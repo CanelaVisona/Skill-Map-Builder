@@ -600,7 +600,7 @@ export class DbStorage implements IStorage {
   // planeada o que ya se completaron: el front solo tiene cargados los nodos de primer nivel,
   // así que sin esto los sub-nodos nunca aparecían en "Hoy" ni en el calendario de actividades.
   // parentName = título del nodo padre directo.
-  async getDatedSubSkills(userId: string): Promise<{ id: string; title: string; status: string; plannedDate: string | null; plannedDuration: number | null; completedAt: Date | null; parentName: string }[]> {
+  async getDatedSubSkills(userId: string): Promise<{ id: string; title: string; status: string; plannedDate: string | null; plannedDuration: number | null; completedAt: Date | null; parentName: string; parentSkillId: string; parentPlannedDate: string | null }[]> {
     const result = await pool.query(
       `WITH RECURSIVE tree AS (
          SELECT s.id FROM skills s
@@ -610,7 +610,8 @@ export class DbStorage implements IStorage {
          UNION ALL
          SELECT c.id FROM skills c JOIN tree t ON c.parent_skill_id = t.id
        )
-       SELECT s.id, s.title, s.status, s.planned_date, s.planned_duration, s.completed_at, parent.title AS parent_name
+       SELECT s.id, s.title, s.status, s.planned_date, s.planned_duration, s.completed_at, parent.title AS parent_name,
+              s.parent_skill_id, parent.planned_date AS parent_planned_date
        FROM skills s
        JOIN tree t ON s.id = t.id
        JOIN skills parent ON parent.id = s.parent_skill_id
@@ -625,6 +626,10 @@ export class DbStorage implements IStorage {
       plannedDuration: r.planned_duration,
       completedAt: r.completed_at,
       parentName: r.parent_name,
+      // Para el registro de un día pasado: si el padre se pasó a otro día, sus sub-nodos
+      // confirmados ese día se muestran agrupados bajo él (ver TodayProgressModal).
+      parentSkillId: r.parent_skill_id,
+      parentPlannedDate: r.parent_planned_date,
     }));
   }
 

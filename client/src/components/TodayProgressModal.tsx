@@ -8,7 +8,7 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, ArrowLeft, Check, ChevronLeft, ChevronRight, Clock, Pencil, Plus, Star, X } from "lucide-react";
+import { Calendar, ArrowLeft, Check, ChevronLeft, ChevronRight, Clock, Pencil, Plus, Star } from "lucide-react";
 import { useSkillTree, type Area, type Project, type Skill } from "@/lib/skill-context";
 import { useHabits, useUpdateHabitRecord } from "@/lib/useHabits";
 import { useTodayTaskSlots, useSetTodayTaskSlot, useClearTodayTaskSlot, useReorderTodayTaskSlot, getCurrentTimeSlotKey, getTimeSlotKeyForDate, type TaskSlotKey, type TaskType } from "@/lib/useTodayTaskSlots";
@@ -49,6 +49,9 @@ interface TodayItem {
   // Franja horaria "de fábrica" para actividad extra sin franja asignada a mano: la
   // correspondiente al momento en el que se confirmó (en vez de caer en "Más").
   defaultSlot?: TaskSlotKey;
+  // Registro de un día pasado: nodo padre que ese día tenía sub-nodos confirmados pero después
+  // se pasó a otro día. Se muestra solo como texto (sin confirmar ni menú), con esos sub-nodos.
+  traceSubs?: { id: string; title: string }[];
 }
 
 const MONTHS = [
@@ -61,6 +64,16 @@ const NODE_COLOR = "#f59e0b";
 const PRACTICE_COLOR = "#e11d48";
 const TASK_COLOR = "#0284c7";
 const EVENT_COLOR = "#9333ea";
+
+// "el martes" si fue en los 6 días anteriores a refDateStr, si no "el dd/mm".
+const WEEKDAY_NAMES_ES = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+function formatConfirmedDay(dateStr: string, refDateStr: string): string {
+  const date = new Date(dateStr + "T12:00:00");
+  const ref = new Date(refDateStr + "T12:00:00");
+  const diffDays = Math.round((ref.getTime() - date.getTime()) / 86_400_000);
+  if (diffDays >= 1 && diffDays <= 6) return `el ${WEEKDAY_NAMES_ES[date.getDay()]}`;
+  return `el ${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
 
 function getDateStr(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -340,7 +353,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     queryFn: async () => {
       const res = await fetch("/api/sub-skills/dated");
       if (!res.ok) throw new Error("Failed to fetch dated sub-skills");
-      return res.json() as Promise<{ id: string; title: string; status: string; plannedDate: string | null; plannedDuration: number | null; completedAt: string | null; parentName: string }[]>;
+      return res.json() as Promise<{ id: string; title: string; status: string; plannedDate: string | null; plannedDuration: number | null; completedAt: string | null; parentName: string; parentSkillId: string; parentPlannedDate: string | null }[]>;
     },
     enabled: open,
     // Los sub-nodos se editan desde el sub-árbol sin invalidar esta consulta: se refresca
@@ -349,6 +362,28 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     refetchOnMount: "always",
   });
   const datedSubSkills = datedSubSkillsData || [];
+
+  // Registro de un día pasado: sub-nodos confirmados ese día cuyo nodo padre se pasó a otro día
+  // (tiene fecha planeada, pero no es este día). En vez de verse sueltos como actividad extra, se
+  // agrupan bajo su nodo padre, que queda solo como texto (ver traceSubs en TodayItem).
+  const traceSubSkills = datedSubSkills.filter(
+    (s) =>
+      s.status === "mastered" &&
+      !!s.completedAt &&
+      !s.plannedDate &&
+      getDateStr(new Date(s.completedAt)) === effectiveDate &&
+      !!s.parentPlannedDate &&
+      s.parentPlannedDate !== effectiveDate
+  );
+  const traceSubSkillIds = new Set(traceSubSkills.map((s) => s.id));
+  const traceParents = new Map<string, { title: string; subs: { id: string; title: string }[]; firstAt: number }>();
+  traceSubSkills.forEach((s) => {
+    const at = new Date(s.completedAt!).getTime();
+    const entry = traceParents.get(s.parentSkillId) ?? { title: s.parentName || "Sin nombre", subs: [], firstAt: at };
+    entry.subs.push({ id: s.id, title: s.title || "Sin nombre" });
+    entry.firstAt = Math.min(entry.firstAt, at);
+    traceParents.set(s.parentSkillId, entry);
+  });
 
   const plannedSubNodes: PlannedNode[] = datedSubSkills
     .filter((s) => !!s.plannedDate)
@@ -545,7 +580,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const extraNodes = [
     ...collectExtraCompletedNodes(Array.isArray(areas) ? areas : [], effectiveDate, effectiveDate),
     ...collectExtraCompletedNodes(Array.isArray(projects) ? projects : [], effectiveDate, effectiveDate),
-    ...collectExtraCompletedSubNodes(effectiveDate, effectiveDate),
+    ...collectExtraCompletedSubNodes(effectiveDate, effectiveDate).filter((n) => !traceSubSkillIds.has(n.id)),
   ];
   // Nodos "extra" (sin fecha planeada): no tienen un campo de fecha editable (su día sale de
   // completedAt, que no se puede reasignar a mano), así que quedan afuera de "Cambiar de día".
@@ -580,6 +615,18 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       ),
       done: true,
       defaultSlot: getTimeSlotKeyForDate(new Date(r.at)),
+    })),
+    // done: true para que nunca cuente como "la tarea desbloqueada" (no se puede confirmar acá).
+    ...Array.from(traceParents.entries()).map(([parentId, t]) => ({
+      key: `trace:${parentId}`,
+      type: "node" as const,
+      id: parentId,
+      label: stripLeadingEmoji(t.title),
+      done: true,
+      dotColor: NODE_COLOR,
+      dotEmoji: extractLeadingEmoji(t.title),
+      defaultSlot: getTimeSlotKeyForDate(new Date(t.firstAt)),
+      traceSubs: t.subs,
     })),
   ];
 
@@ -862,6 +909,19 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     return subs.map((sub, i) => {
       const prev = subs[i - 1];
       const next = subs[i + 1];
+      // Sub-nodo confirmado otro día (p.ej. el padre se pasó del martes al miércoles): queda
+      // como texto, marcado con el día en que se confirmó, sin confirmar/desconfirmar ni menú.
+      const confirmedDay = sub.status === "mastered" && sub.completedAt ? getDateStr(new Date(sub.completedAt)) : null;
+      if (confirmedDay && confirmedDay !== effectiveDate) {
+        return (
+          <TodaySubRow
+            key={sub.id}
+            title={`${stripLeadingEmoji(sub.title || "Sin nombre")} · confirmado ${formatConfirmedDay(confirmedDay, effectiveDate)}`}
+            done
+            dimmed
+          />
+        );
+      }
       return (
         <TodaySubRow
           key={sub.id}
@@ -886,6 +946,20 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       );
     });
   };
+
+  // Nodo padre en el registro de un día pasado (ver traceSubs): solo texto, con los sub-nodos que
+  // se confirmaron ese día debajo, también solo como texto.
+  const renderTraceRow = (item: TodayItem) => (
+    <React.Fragment key={item.key}>
+      <div className="flex items-center gap-2 text-sm opacity-60">
+        {item.dotEmoji && <TaskDot emoji={item.dotEmoji} color={item.dotColor || NODE_COLOR} size="md" />}
+        <span className="flex-1">{item.label}</span>
+      </div>
+      {(item.traceSubs || []).map((sub) => (
+        <TodaySubRow key={sub.id} title={stripLeadingEmoji(sub.title)} done />
+      ))}
+    </React.Fragment>
+  );
 
   // Diálogo para cambiarle el nombre a un sub-nodo o a un sub-paso.
   const [renameSubTarget, setRenameSubTarget] = useState<{ kind: "node" | "step"; id: string; parentId: string } | null>(null);
@@ -1128,6 +1202,33 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // confirmarlo desde HabitStreakModal/SpaceRepetitionModal (ver useConfirmActions.ts). Una
   // práctica ya confirmada ese día no se puede "desconfirmar" — no existe esa acción en
   // SpaceRepetitionModal tampoco (avanzar un intervalo es unidireccional).
+  // Si la tarea desbloqueada de la franja actual es un nodo con sub-nodos pendientes (su sub-nodo
+  // es el desbloqueado), confirmar una tarea que está después de él en esa franja la sube justo
+  // antes del nodo padre: así no queda nada confirmado después de la tarea desbloqueada.
+  const liftBeforeUnlockedParent = (item: TodayItem) => {
+    if (isPreview || item.done) return;
+    const slot = getCurrentTimeSlotKey();
+    const bucket = itemBuckets[slot] || [];
+    const currentIdx = bucket.findIndex((i) => !i.done);
+    const current = bucket[currentIdx];
+    if (!current || current.type !== "node" || !hasPendingSubNodes(current)) return;
+    const itemIdx = bucket.findIndex((i) => i.key === item.key);
+    if (itemIdx <= currentIdx) return;
+    const reordered = bucket.filter((i) => i.key !== item.key);
+    reordered.splice(currentIdx, 0, item);
+    // Un hábito puede estar duplicado en varias franjas (keys "#slot"): una sola entrada por tarea.
+    const seen = new Set<string>();
+    const order = reordered
+      .filter((i) => {
+        const k = `${i.type}:${i.id}`;
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      })
+      .map((i) => ({ taskType: i.type, taskId: i.id }));
+    reorderTaskSlot.mutate({ date: effectiveDate, slot, order });
+  };
+
   const toggleItemDone = (item: TodayItem) => {
     if (item.type === "manual") {
       // Las comidas por defecto no se tildan a mano: se abre el registro de esa comida y la
@@ -1138,6 +1239,9 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         setMealPopupId(mealId);
         return;
       }
+    }
+    liftBeforeUnlockedParent(item);
+    if (item.type === "manual") {
       toggleManualDone(item);
       return;
     }
@@ -1978,7 +2082,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                             </AccordionTrigger>
                             <AccordionContent className="pt-0 pb-1">
                               <div className="space-y-1.5">
-                                {itemBuckets.unassigned.map((item) => (
+                                {itemBuckets.unassigned.map((item) => item.traceSubs ? renderTraceRow(item) : (
                                   <React.Fragment key={item.key}>
                                   <TodayTaskRow
                                     item={item}
@@ -2061,6 +2165,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                     const isActiveSlot = isPreview ? itemBuckets[s.key].length > 0 : s.key === getCurrentTimeSlotKey();
                                     const firstUndoneIdx = isActiveSlot ? itemBuckets[s.key].findIndex((i) => !i.done) : -1;
                                     return itemBuckets[s.key].map((item, idx) => {
+                                      if (item.traceSubs) return renderTraceRow(item);
                                       // Nodo desbloqueado con sub-árbol: el destacado pasa a su
                                       // sub-nodo desbloqueado, que se muestra adentro de él.
                                       const isCurrent = !item.done && idx === firstUndoneIdx;
@@ -2109,7 +2214,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                           </AccordionTrigger>
                           <AccordionContent className="pt-0 pb-1">
                             <div className="space-y-1.5">
-                              {itemBuckets.more.map((item) => (
+                              {itemBuckets.more.map((item) => item.traceSubs ? renderTraceRow(item) : (
                                 <TodayTaskRow
                                   key={item.key}
                                   item={item}
