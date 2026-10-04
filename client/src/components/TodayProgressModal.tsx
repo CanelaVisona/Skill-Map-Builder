@@ -1198,6 +1198,33 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     if (nowPlacement && nowPlacement.date === effectiveDate) setNowPlacement(null);
   };
 
+  // "Ahora" (menú de la tarea): la tarea pasa a la franja de la hora actual, ocupando el lugar de
+  // la tarea desbloqueada (justo antes de la primera sin hacer), que queda como la siguiente.
+  // Solo viendo hoy y para tareas sin hacer: en otro día no hay "ahora".
+  const moveItemNow = (item: TodayItem) => {
+    if (isPreview || item.done) return;
+    cancelPendingNowPlacement();
+    const slot = getCurrentTimeSlotKey();
+    const sameTask = (i: TodayItem) => i.type === item.type && i.id === item.id;
+    const bucket = (itemBuckets[slot] || []).filter((i) => !sameTask(i) && !i.traceSubs);
+    const firstUndone = bucket.findIndex((i) => !i.done);
+    const at = firstUndone === -1 ? bucket.length : firstUndone;
+    const ordered = [...bucket.slice(0, at), item, ...bucket.slice(at)];
+    // Una sola entrada por tarea (un hábito puede estar duplicado en varias franjas, keys "#slot").
+    const seen = new Set<string>();
+    const order = ordered
+      .filter((i) => {
+        const k = `${i.type}:${i.id}`;
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      })
+      .map((i) => ({ taskType: i.type, taskId: i.id }));
+    reorderTaskSlot.mutate({ date: effectiveDate, slot, order });
+  };
+  const nowProps = (item: TodayItem) =>
+    !isPreview && !item.done && !item.traceSubs ? { onMoveNow: () => moveItemNow(item) } : {};
+
   const moveItemToSlot = (item: TodayItem, slot: TaskSlotKey) => {
     cancelPendingNowPlacement();
     setTaskSlot.mutate({ date: effectiveDate, taskType: item.type, taskId: item.id, slot });
@@ -2210,6 +2237,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                     onAddSubstep={!(item.type === "node" && item.done) ? () => openAddSubstepDialog(item) : undefined}
                                     {...priorityRowProps(item)}
                                     {...expandProps(item)}
+                                    {...nowProps(item)}
                                   />
                                   {renderSubNodes(item, false)}
                                   {renderSubsteps(item, false)}
@@ -2301,6 +2329,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                         onAddSubstep={!(item.type === "node" && item.done) ? () => openAddSubstepDialog(item) : undefined}
                                         {...priorityRowProps(item)}
                                     {...expandProps(item)}
+                                    {...nowProps(item)}
                                         onMoveUp={idx > 0 ? () => moveItemOrder(s.key, itemBuckets[s.key], idx, "up") : undefined}
                                         onMoveDown={idx < itemBuckets[s.key].length - 1 ? () => moveItemOrder(s.key, itemBuckets[s.key], idx, "down") : undefined}
                                       />
@@ -2341,6 +2370,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                   onAssignTime={canAssignTime(item) ? () => openTimeDialog(item) : undefined}
                                   {...priorityRowProps(item)}
                                     {...expandProps(item)}
+                                    {...nowProps(item)}
                                 />
                                 {renderSubNodes(item, false)}
                                 </React.Fragment>
@@ -3243,6 +3273,7 @@ function TodayTaskRow({
   onAddSubstep,
   expanded,
   onToggleExpand,
+  onMoveNow,
 }: {
   item: TodayItem;
   // Tarea que no es "la que sigue" (la primera pendiente de la franja horaria actual): se
@@ -3280,6 +3311,8 @@ function TodayTaskRow({
   // Nodo confirmado con sub-nodos: flechita para desplegar/plegar su lista de sub-nodos.
   expanded?: boolean;
   onToggleExpand?: () => void;
+  // "Ahora": pasa a ocupar el lugar de la tarea desbloqueada (solo viendo hoy, tareas sin hacer).
+  onMoveNow?: () => void;
 }) {
   const [hideConfirmOpen, setHideConfirmOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -3400,6 +3433,7 @@ function TodayTaskRow({
                 <DropdownMenuSeparator />
               </>
             )}
+            {onMoveNow && <DropdownMenuItem onClick={onMoveNow}>Ahora</DropdownMenuItem>}
             {TIME_SLOTS.map((s) => (
               <DropdownMenuItem key={s.key} onClick={() => onMove(s.key)}>
                 {s.label}
