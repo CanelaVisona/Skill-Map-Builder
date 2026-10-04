@@ -1642,28 +1642,32 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     wasDialogOpen.current = isEditDialogOpen;
   }, [isEditDialogOpen]);
 
+  // Sub-nodos de este nodo, para saber si todavía bloquean su confirmación. Comparte la clave
+  // ["node-subskills", id] con Tareas de hoy: confirmar sub-nodos desde ahí (sin que cambie el
+  // estado del padre) invalida esta consulta, y el nodo deja de quedar bloqueado en el árbol.
+  // skill.status y activeParentSkillId van en la clave para volver a pedirla en los mismos
+  // momentos que antes (al cambiar de estado o al salir/entrar de un sub-árbol).
+  const { data: ownSubSkills, isError: ownSubSkillsError } = useQuery({
+    queryKey: ["node-subskills", skill.id, skill.status, activeParentSkillId],
+    queryFn: async () => {
+      const response = await fetch(`/api/skills/${skill.id}/subskills`);
+      if (!response.ok) throw new Error("Failed to fetch sub-skills");
+      const data = await response.json();
+      return (Array.isArray(data) ? data : []) as Skill[];
+    },
+    enabled: !isInicioNode,
+    staleTime: 0,
+  });
   useEffect(() => {
-    const checkSubtasks = async () => {
-      if (!isInicioNode) {
-        try {
-          const response = await fetch(`/api/skills/${skill.id}/subskills`);
-          const subskills = await response.json();
-          if (Array.isArray(subskills) && subskills.length > 0) {
-            const hasIncomplete = subskills.some(s => s.status !== "mastered");
-            setHasIncompleteSubtasks(hasIncomplete);
-            setHasSubskillTree(true);
-          } else {
-            setHasIncompleteSubtasks(false);
-            setHasSubskillTree(false);
-          }
-        } catch {
-          setHasIncompleteSubtasks(false);
-          setHasSubskillTree(false);
-        }
-      }
-    };
-    checkSubtasks();
-  }, [skill.id, skill.status, activeParentSkillId]);
+    if (isInicioNode) return;
+    if (ownSubSkillsError || !ownSubSkills || ownSubSkills.length === 0) {
+      setHasIncompleteSubtasks(false);
+      setHasSubskillTree(false);
+      return;
+    }
+    setHasIncompleteSubtasks(ownSubSkills.some(s => s.status !== "mastered"));
+    setHasSubskillTree(true);
+  }, [ownSubSkills, ownSubSkillsError, isInicioNode]);
 
   const hasUnlockedWithIncompleteSubtasks = !isLocked && !isMastered && hasIncompleteSubtasks;
   // The node has its own sub-skill tree and every node in it is mastered.

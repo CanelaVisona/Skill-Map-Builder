@@ -802,7 +802,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const pendingNodeItems = todayItems.filter((i) => i.type === "node" && !i.done);
   const subSkillQueries = useQueries({
     queries: pendingNodeItems.map((i) => ({
-      queryKey: ["today-node-subskills", i.id],
+      queryKey: ["node-subskills", i.id],
       queryFn: async () => {
         const res = await fetch(`/api/skills/${i.id}/subskills`);
         if (!res.ok) throw new Error("Failed to fetch sub-skills");
@@ -831,7 +831,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     } catch (error) {
       console.error("Error confirmando sub-nodo desde Tareas de hoy:", error);
     } finally {
-      queryClient.invalidateQueries({ queryKey: ["today-node-subskills", parentId] });
+      queryClient.invalidateQueries({ queryKey: ["node-subskills", parentId] });
       queryClient.invalidateQueries({ queryKey: ["dated-sub-skills"] });
       setSubNodeBusy(false);
     }
@@ -880,7 +880,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       } catch (error) {
         console.error("Error creando sub-nodo desde Tareas de hoy:", error);
       }
-      queryClient.invalidateQueries({ queryKey: ["today-node-subskills", target.id] });
+      queryClient.invalidateQueries({ queryKey: ["node-subskills", target.id] });
       return;
     }
     createSubstep.mutate({ date: effectiveDate, taskType: target.type as SubstepTaskType, taskId: target.id, title });
