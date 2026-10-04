@@ -780,9 +780,25 @@ export const todayTaskSubsteps = pgTable("today_task_substeps", {
   done: integer("done").$type<0 | 1>().notNull().default(0),
   sortOrder: integer("sort_order").notNull().default(0),
   minutes: integer("minutes"), // Tiempo estimado asignado desde "Tareas de hoy" (se muestra como "· Xmin")
+  // Sub-paso permanente de un hábito (habitSubsteps) del que salió esta copia del día. Editar o
+  // borrar la copia también edita/borra la plantilla.
+  templateId: varchar("template_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export type TodayTaskSubstep = typeof todayTaskSubsteps.$inferSelect;
+
+// Sub-pasos permanentes de un hábito: una plantilla que se copia (sin confirmar) a los sub-pasos
+// del día cada día que el hábito aparece en "Tareas de hoy" (ver /api/today-task-substeps/sync).
+export const habitSubsteps = pgTable("habit_substeps", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  habitId: varchar("habit_id").notNull(),
+  title: text("title").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  minutes: integer("minutes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export type HabitSubstep = typeof habitSubsteps.$inferSelect;
 
 // Tarea manual agregada a mano en "Tareas de hoy" (mantener presionado el fondo). Vive fuera
 // del árbol de habilidades/hábitos/repetición espaciada. Puede ser "task" o "event" (elegido al

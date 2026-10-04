@@ -20,7 +20,7 @@ import { useTodayPriorities, useSetTodayPriorities, MAX_TODAY_PRIORITIES } from 
 import { MealTrackerModal } from "@/components/MealTrackerModal";
 import { useNowPlacement, setNowPlacement } from "@/lib/now-placement";
 import { addSubSkillFromToday, toggleSubSkillFromToday, masterWholeSubSkillTree, isSubSkillPlaceholder, moveSubSkillFromToday, renameSubSkill, deleteSubSkillFromToday } from "@/lib/subskill-tree";
-import { useTodayTaskSubsteps, useCreateTodayTaskSubstep, useUpdateTodayTaskSubstep, useDeleteTodayTaskSubstep, type SubstepTaskType } from "@/lib/useTodayTaskSubsteps";
+import { useTodayTaskSubsteps, useCreateTodayTaskSubstep, useUpdateTodayTaskSubstep, useDeleteTodayTaskSubstep, useCreateHabitSubstep, syncHabitSubsteps, type SubstepTaskType } from "@/lib/useTodayTaskSubsteps";
 import type { Habit, HabitRecord, TodayTaskSlot } from "@shared/schema";
 
 const LONG_PRESS_MS = 1500;
@@ -582,10 +582,24 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // Se usa effectiveDate (no todayStr) para que también aparezcan acá los nodos completados sin
   // fecha planeada de un día pasado que se esté editando; para un día futuro no hay nada
   // completado todavía, así que naturalmente da vacío.
-  const extraNodes = [
+  const extraTopNodes = [
     ...collectExtraCompletedNodes(Array.isArray(areas) ? areas : [], effectiveDate, effectiveDate),
     ...collectExtraCompletedNodes(Array.isArray(projects) ? projects : [], effectiveDate, effectiveDate),
-    ...collectExtraCompletedSubNodes(effectiveDate, effectiveDate).filter((n) => !traceSubSkillIds.has(n.id)),
+  ];
+  // Un sub-nodo confirmado cuyo nodo padre ya está en la lista del día (planeado para hoy, actividad
+  // extra o el padre que queda como texto en un día pasado) se ve adentro del padre (lista de
+  // sub-nodos / desplegable): no se lo muestra además suelto como actividad extra.
+  const nodeIdsShownInDay = new Set<string>([
+    ...plannedNodesForView.map((n) => n.id),
+    ...extraTopNodes.map((n) => n.id),
+    ...Array.from(traceParents.keys()),
+  ]);
+  const parentIdBySubSkillId = new Map(datedSubSkills.map((s) => [s.id, s.parentSkillId]));
+  const extraNodes = [
+    ...extraTopNodes,
+    ...collectExtraCompletedSubNodes(effectiveDate, effectiveDate).filter(
+      (n) => !traceSubSkillIds.has(n.id) && !nodeIdsShownInDay.has(parentIdBySubSkillId.get(n.id) ?? "")
+    ),
   ];
   // Nodos "extra" (sin fecha planeada): no tienen un campo de fecha editable (su día sale de
   // completedAt, que no se puede reasignar a mano), así que quedan afuera de "Cambiar de día".
@@ -1073,10 +1087,32 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     item.type === "node" ? [] : (substepsData || []).filter((st) => st.taskType === item.type && st.taskId === item.id);
   const [addSubstepFor, setAddSubstepFor] = useState<TodayItem | null>(null);
   const [newSubstepTitle, setNewSubstepTitle] = useState("");
+  // Hábitos: el sub-paso puede ser solo de este día o permanente (se repite todos los días que el
+  // hábito aparece en Tareas de hoy).
+  const [newSubstepPermanent, setNewSubstepPermanent] = useState(false);
+  const createHabitSubstep = useCreateHabitSubstep();
   const openAddSubstepDialog = (item: TodayItem) => {
     setNewSubstepTitle("");
+    setNewSubstepPermanent(false);
     setAddSubstepFor(item);
   };
+
+  // Sub-pasos permanentes de los hábitos del día: al ver hoy, se crean las copias que falten (sin
+  // confirmar). Solo hoy: un día futuro las recibe cuando llega, con la plantilla ya actualizada.
+  const habitIdsForSync = Array.from(new Set(todayItems.filter((i) => i.type === "habit").map((i) => i.id))).sort().join(",");
+  useEffect(() => {
+    if (!open || isPreview || effectiveDate !== todayStr || !habitIdsForSync) return;
+    let cancelled = false;
+    syncHabitSubsteps(effectiveDate, habitIdsForSync.split(","))
+      .then((created) => {
+        if (!cancelled && created > 0) queryClient.invalidateQueries({ queryKey: ["today-task-substeps", effectiveDate] });
+      })
+      .catch((error) => console.error("Error sincronizando sub-pasos de hábitos:", error));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, isPreview, effectiveDate, todayStr, habitIdsForSync]);
   const submitNewSubstep = async () => {
     const title = newSubstepTitle.trim();
     if (!title || !addSubstepFor) return;
@@ -1090,6 +1126,10 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         console.error("Error creando sub-nodo desde Tareas de hoy:", error);
       }
       queryClient.invalidateQueries({ queryKey: ["node-subskills", target.id] });
+      return;
+    }
+    if (target.type === "habit" && newSubstepPermanent) {
+      createHabitSubstep.mutate({ habitId: target.id, title, date: effectiveDate });
       return;
     }
     createSubstep.mutate({ date: effectiveDate, taskType: target.type as SubstepTaskType, taskId: target.id, title });
@@ -2718,6 +2758,24 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
           }}
           placeholder="¿Cuál es el paso?"
         />
+        {addSubstepFor?.type === "habit" && (
+          <div className="flex gap-2">
+            {([false, true] as const).map((permanent) => (
+              <button
+                key={String(permanent)}
+                type="button"
+                onClick={() => setNewSubstepPermanent(permanent)}
+                className={`flex-1 px-3 py-1.5 text-sm rounded-md border transition-colors ${
+                  newSubstepPermanent === permanent
+                    ? "border-transparent bg-primary text-primary-foreground"
+                    : "border-border/30 bg-muted text-muted-foreground hover:bg-muted/80"
+                }`}
+              >
+                {permanent ? "Todos los días" : "Solo hoy"}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex justify-end gap-2 pt-2">
           <button
             onClick={() => setAddSubstepFor(null)}

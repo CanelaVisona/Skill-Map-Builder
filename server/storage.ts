@@ -1,7 +1,7 @@
 import { eq, and, or, asc, sql, inArray, gte, lte } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db, pool } from "./db";
-import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type JournalShadowPage, type InsertJournalShadowPage, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourceObjective, type InsertSourceObjective, type SourceBelief, type InsertSourceBelief, type SourceVision, type InsertSourceVision, type SourcePowers, type InsertSourcePowers, type SourceBug, type InsertSourceBug, type SourceBugRecord, type InsertSourceBugRecord, type NodeError, type InsertNodeError, type NodeErrorRecord, type InsertNodeErrorRecord, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type BookWishlistItem, type InsertBookWishlistItem, type FinancialGoal, type InsertFinancialGoal, type BudgetQuarter, type InsertBudgetQuarter, type BudgetCategory, type InsertBudgetCategory, type IncomeSource, type InsertIncomeSource, type DollarRate, type InsertDollarRate, type PersonalIncome, type InsertPersonalIncome, type SavingMission, type InsertSavingMission, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, type BodyProgressRow, type InsertBodyProgress, type TodayTaskSlot, type InsertTodayTaskSlot, type TodayTaskSubstep, type ManualTodayTask, type InsertManualTodayTask, type MealTrackerDay, type InsertMealTrackerDay, type MealTrackerCustomOption, type InsertMealTrackerCustomOption, type MealTrackerDish, type InsertMealTrackerDish, type MealTrackerMeta, type QuestionProblem, type InsertQuestionProblem, type QuestionItem, type InsertQuestionItem, type QuestionProblemWithItems, type EvidenceBoardRow, evidenceBoards, type LifeGoalsRow, type LifeGoalItem, type CompletedLifeGoal, lifeGoals, questionProblems, questionItems, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, journalShadowPages, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourceObjectives, sourceBeliefs, sourceVision, sourcePowers, sourceBugs, sourceBugRecords, nodeErrors, nodeErrorRecords, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, bookWishlist, financialGoals, budgetQuarters, budgetCategories, incomeSources, dollarRates, personalIncomes, savingMissions, rewiringTrackers, rewiringTrackerRecords, bodyProgress, todayTaskSlots, todayTaskSubsteps, todayPriorities, manualTodayTasks, mealTrackerDays, mealTrackerCustomOptions, mealTrackerDishes, mealTrackerMeta } from "@shared/schema";
+import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type JournalShadowPage, type InsertJournalShadowPage, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourceObjective, type InsertSourceObjective, type SourceBelief, type InsertSourceBelief, type SourceVision, type InsertSourceVision, type SourcePowers, type InsertSourcePowers, type SourceBug, type InsertSourceBug, type SourceBugRecord, type InsertSourceBugRecord, type NodeError, type InsertNodeError, type NodeErrorRecord, type InsertNodeErrorRecord, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type BookWishlistItem, type InsertBookWishlistItem, type FinancialGoal, type InsertFinancialGoal, type BudgetQuarter, type InsertBudgetQuarter, type BudgetCategory, type InsertBudgetCategory, type IncomeSource, type InsertIncomeSource, type DollarRate, type InsertDollarRate, type PersonalIncome, type InsertPersonalIncome, type SavingMission, type InsertSavingMission, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, type BodyProgressRow, type InsertBodyProgress, type TodayTaskSlot, type InsertTodayTaskSlot, type TodayTaskSubstep, type HabitSubstep, type ManualTodayTask, type InsertManualTodayTask, type MealTrackerDay, type InsertMealTrackerDay, type MealTrackerCustomOption, type InsertMealTrackerCustomOption, type MealTrackerDish, type InsertMealTrackerDish, type MealTrackerMeta, type QuestionProblem, type InsertQuestionProblem, type QuestionItem, type InsertQuestionItem, type QuestionProblemWithItems, type EvidenceBoardRow, evidenceBoards, type LifeGoalsRow, type LifeGoalItem, type CompletedLifeGoal, lifeGoals, questionProblems, questionItems, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, journalShadowPages, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourceObjectives, sourceBeliefs, sourceVision, sourcePowers, sourceBugs, sourceBugRecords, nodeErrors, nodeErrorRecords, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, bookWishlist, financialGoals, budgetQuarters, budgetCategories, incomeSources, dollarRates, personalIncomes, savingMissions, rewiringTrackers, rewiringTrackerRecords, bodyProgress, todayTaskSlots, todayTaskSubsteps, habitSubsteps, todayPriorities, manualTodayTasks, mealTrackerDays, mealTrackerCustomOptions, mealTrackerDishes, mealTrackerMeta } from "@shared/schema";
 
 const normalizeSourceBugStatus = (status: string): "identificado" | "debugueando" | "debugueado" => {
   if (status === "activo") return "identificado";
@@ -3545,13 +3545,62 @@ export class DbStorage implements IStorage {
     return result[0];
   }
 
+  // Si la copia del día salió de un sub-paso permanente de un hábito, el nombre, el tiempo y el
+  // orden también se guardan en la plantilla (el "hecho" es solo de ese día).
   async updateTodayTaskSubstep(id: string, updates: { title?: string; done?: 0 | 1; sortOrder?: number; minutes?: number | null }): Promise<TodayTaskSubstep | undefined> {
     const result = await db.update(todayTaskSubsteps).set(updates).where(eq(todayTaskSubsteps.id, id)).returning();
+    const row = result[0];
+    if (row?.templateId) {
+      const templateUpdates: { title?: string; sortOrder?: number; minutes?: number | null } = {};
+      if (updates.title !== undefined) templateUpdates.title = updates.title;
+      if (updates.sortOrder !== undefined) templateUpdates.sortOrder = updates.sortOrder;
+      if (updates.minutes !== undefined) templateUpdates.minutes = updates.minutes;
+      if (Object.keys(templateUpdates).length > 0) {
+        await db.update(habitSubsteps).set(templateUpdates).where(eq(habitSubsteps.id, row.templateId));
+      }
+    }
+    return row;
+  }
+
+  // Borrar la copia de un sub-paso permanente también borra la plantilla: deja de aparecer los
+  // días siguientes (las copias de días pasados quedan como registro).
+  async deleteTodayTaskSubstep(id: string): Promise<void> {
+    const rows = await db.delete(todayTaskSubsteps).where(eq(todayTaskSubsteps.id, id)).returning();
+    const templateId = rows[0]?.templateId;
+    if (templateId) await db.delete(habitSubsteps).where(eq(habitSubsteps.id, templateId));
+  }
+
+  async createHabitSubstep(row: { userId: string; habitId: string; title: string; minutes?: number | null }): Promise<HabitSubstep> {
+    const siblings = await db.select().from(habitSubsteps).where(and(eq(habitSubsteps.userId, row.userId), eq(habitSubsteps.habitId, row.habitId)));
+    const sortOrder = siblings.reduce((max, s) => Math.max(max, s.sortOrder + 1), 0);
+    const result = await db.insert(habitSubsteps).values({ id: randomUUID(), ...row, minutes: row.minutes ?? null, sortOrder }).returning();
     return result[0];
   }
 
-  async deleteTodayTaskSubstep(id: string): Promise<void> {
-    await db.delete(todayTaskSubsteps).where(eq(todayTaskSubsteps.id, id));
+  // Copia a los sub-pasos de `date` los sub-pasos permanentes de esos hábitos que todavía no
+  // tengan su copia ese día (sin confirmar). Se puede llamar las veces que haga falta.
+  async syncHabitSubstepsForDate(userId: string, date: string, habitIds: string[]): Promise<number> {
+    if (habitIds.length === 0) return 0;
+    const templates = await db.select().from(habitSubsteps).where(and(eq(habitSubsteps.userId, userId), inArray(habitSubsteps.habitId, habitIds)));
+    if (templates.length === 0) return 0;
+    const existing = await db.select().from(todayTaskSubsteps).where(and(eq(todayTaskSubsteps.userId, userId), eq(todayTaskSubsteps.date, date)));
+    const copied = new Set(existing.map((s) => s.templateId).filter(Boolean));
+    const missing = templates.filter((t) => !copied.has(t.id));
+    for (const t of missing) {
+      await db.insert(todayTaskSubsteps).values({
+        id: randomUUID(),
+        userId,
+        date,
+        taskType: "habit",
+        taskId: t.habitId,
+        title: t.title,
+        done: 0,
+        sortOrder: t.sortOrder,
+        minutes: t.minutes,
+        templateId: t.id,
+      }).onConflictDoNothing();
+    }
+    return missing.length;
   }
 
   async getPendingNodeLinkedManualTasks(userId: string, upTo: string): Promise<ManualTodayTask[]> {

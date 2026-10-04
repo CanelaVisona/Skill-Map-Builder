@@ -5505,6 +5505,42 @@ export async function registerRoutes(
     }
   });
 
+  // Sub-paso permanente de un hábito: se guarda la plantilla y, si viene `date`, se crea ya su copia
+  // de ese día (el resto de los días la crea /sync al abrir "Tareas de hoy").
+  app.post("/api/habit-substeps", requireAuth, async (req, res) => {
+    try {
+      const { habitId, title, minutes, date } = req.body;
+      if (!habitId || !title || typeof title !== "string" || !title.trim()) {
+        return res.status(400).json({ message: "habitId y title son requeridos" });
+      }
+      if (minutes !== undefined && minutes !== null && (!Number.isInteger(minutes) || minutes < 0)) {
+        return res.status(400).json({ message: "minutes debe ser un entero >= 0 o null" });
+      }
+      const habit = await storage.getHabit(String(habitId));
+      if (!habit || habit.userId !== req.userId) {
+        return res.status(404).json({ message: "Hábito no encontrado" });
+      }
+      const template = await storage.createHabitSubstep({ userId: req.userId!, habitId: habit.id, title: title.trim(), minutes: minutes ?? null });
+      if (date) await storage.syncHabitSubstepsForDate(req.userId!, String(date), [habit.id]);
+      res.status(201).json(template);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/today-task-substeps/sync", requireAuth, async (req, res) => {
+    try {
+      const { date, habitIds } = req.body;
+      if (!date || !Array.isArray(habitIds)) {
+        return res.status(400).json({ message: "date y habitIds son requeridos" });
+      }
+      const created = await storage.syncHabitSubstepsForDate(req.userId!, String(date), habitIds.map(String));
+      res.json({ created });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.patch("/api/today-task-substeps/:id", requireAuth, async (req, res) => {
     try {
       const existing = await storage.getTodayTaskSubstep(req.params.id);
