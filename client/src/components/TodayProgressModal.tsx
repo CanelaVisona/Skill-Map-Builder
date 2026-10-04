@@ -2898,10 +2898,7 @@ function TodaySubRow({
               <DropdownMenuContent align="end">
                 {onAssignTime && (
                   <>
-                    <DropdownMenuItem onClick={onAssignTime}>
-                      <Clock className="mr-2 h-4 w-4" />
-                      Asignar tiempo
-                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={onAssignTime}>Asignar tiempo</DropdownMenuItem>
                     <DropdownMenuSeparator />
                   </>
                 )}
