@@ -779,6 +779,7 @@ export const todayTaskSubsteps = pgTable("today_task_substeps", {
   title: text("title").notNull(),
   done: integer("done").$type<0 | 1>().notNull().default(0),
   sortOrder: integer("sort_order").notNull().default(0),
+  minutes: integer("minutes"), // Tiempo estimado asignado desde "Tareas de hoy" (se muestra como "· Xmin")
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export type TodayTaskSubstep = typeof todayTaskSubsteps.$inferSelect;

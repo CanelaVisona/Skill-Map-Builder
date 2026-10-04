@@ -136,6 +136,9 @@ app.use((req, res, next) => {
         "created_at" timestamp DEFAULT now() NOT NULL
       );
     `);
+    await db.execute(sql`
+      ALTER TABLE "today_task_substeps" ADD COLUMN IF NOT EXISTS "minutes" integer;
+    `);
   } catch (error: any) {
     console.error("⚠ today_task_substeps migration warning:", error.message);
   }

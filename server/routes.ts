@@ -5511,7 +5511,10 @@ export async function registerRoutes(
       if (!existing || existing.userId !== req.userId) {
         return res.status(404).json({ message: "Sub-paso no encontrado" });
       }
-      const { title, done, sortOrder } = req.body;
+      const { title, done, sortOrder, minutes } = req.body;
+      if (minutes !== undefined && minutes !== null && (!Number.isInteger(minutes) || minutes < 0)) {
+        return res.status(400).json({ message: "minutes debe ser un entero >= 0 o null" });
+      }
       if (done !== undefined && done !== 0 && done !== 1) {
         return res.status(400).json({ message: "done debe ser 0 o 1" });
       }
@@ -5522,6 +5525,7 @@ export async function registerRoutes(
         ...(title !== undefined ? { title: String(title).trim() } : {}),
         ...(done !== undefined ? { done } : {}),
         ...(sortOrder !== undefined ? { sortOrder } : {}),
+        ...(minutes !== undefined ? { minutes } : {}),
       });
       res.json(updated);
     } catch (error: any) {

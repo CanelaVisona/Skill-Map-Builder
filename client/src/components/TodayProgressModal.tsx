@@ -380,6 +380,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dated-sub-skills"] });
+      // Sub-nodos que se ven adentro de su nodo en Tareas de hoy (p.ej. tiempo asignado).
+      queryClient.invalidateQueries({ queryKey: ["node-subskills"] });
     },
   });
 
@@ -874,6 +876,10 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
             setRenameSubTitle(sub.title || "");
             setRenameSubTarget({ kind: "node", id: sub.id, parentId: item.id });
           }}
+          minutes={sub.plannedDuration}
+          onAssignTime={() =>
+            openTimeDialog({ key: `node:${sub.id}`, type: "node", id: sub.id, label: sub.title, done: sub.status === "mastered" })
+          }
           onDelete={() => runSubNodeOp(item.id, () => deleteSubSkillFromToday(item.id, sub))}
           deleteLabel="sub-nodo"
         />
@@ -964,6 +970,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
           setRenameSubTarget({ kind: "step", id: st.id, parentId: item.id });
         }}
         onDelete={() => deleteSubstep.mutate({ id: st.id, date: effectiveDate })}
+        minutes={st.minutes}
+        onAssignTime={() => openSubstepTimeDialog(st.id, st.minutes)}
         deleteLabel="sub-paso"
       />
     ));
@@ -1326,6 +1334,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // práctica → minMinutes (ojo: es del hábito/práctica, no solo de este día), manual → minutes.
   // Los rewirings no tienen un campo de duración propio, así que quedan afuera.
   const [timeItem, setTimeItem] = useState<TodayItem | null>(null);
+  // Sub-paso al que se le está asignando tiempo (mismo diálogo que las tareas).
+  const [timeSubstepId, setTimeSubstepId] = useState<string | null>(null);
   const [timeValue, setTimeValue] = useState("");
 
   const updateDurationMutation = useMutation({
@@ -1353,7 +1363,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     if (item.type === "node") {
       return (
         allPlannedNodes.find((n) => n.id === item.id)?.plannedDuration ??
-        extraNodes.find((n) => n.id === item.id)?.plannedDuration
+        extraNodes.find((n) => n.id === item.id)?.plannedDuration ??
+        Array.from(subSkillsByNodeId.values()).flat().find((sub) => sub.id === item.id)?.plannedDuration
       );
     }
     return null;
@@ -1365,12 +1376,23 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     setTimeItem(item);
   };
 
+  const openSubstepTimeDialog = (substepId: string, minutes: number | null | undefined) => {
+    setTimeValue(minutes ? String(minutes) : "");
+    setTimeSubstepId(substepId);
+  };
+
   const submitTime = (raw: string = timeValue) => {
     const item = timeItem;
+    const substepId = timeSubstepId;
     setTimeItem(null);
-    if (!item) return;
+    setTimeSubstepId(null);
     const parsed = parseInt(raw, 10);
     const minutes = Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    if (substepId) {
+      updateSubstep.mutate({ id: substepId, date: effectiveDate, updates: { minutes } });
+      return;
+    }
+    if (!item) return;
     if (minutes === (currentMinutes(item) ?? null)) return;
 
     if (item.type === "manual") {
@@ -2741,7 +2763,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       </DialogContent>
     </Dialog>
 
-    <Dialog open={timeItem !== null} onOpenChange={(o) => { if (!o) setTimeItem(null); }}>
+    <Dialog open={timeItem !== null || timeSubstepId !== null} onOpenChange={(o) => { if (!o) { setTimeItem(null); setTimeSubstepId(null); } }}>
       <DialogContent className="max-w-xs rounded-2xl">
         <DialogTitle>Asignar tiempo</DialogTitle>
         <div className="flex flex-col gap-3">
@@ -2817,6 +2839,8 @@ function TodaySubRow({
   onMoveUp,
   onMoveDown,
   onRename,
+  onAssignTime,
+  minutes,
   onDelete,
   deleteLabel = "sub-paso",
 }: {
@@ -2828,11 +2852,14 @@ function TodaySubRow({
   onMoveUp?: () => void;
   onMoveDown?: () => void;
   onRename?: () => void;
+  // Abre el diálogo de tiempo estimado (sub-nodo: su plannedDuration; sub-paso: sus minutos del día).
+  onAssignTime?: () => void;
+  minutes?: number | null;
   onDelete?: () => void;
   deleteLabel?: string;
 }) {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const hasMenu = !!(onMoveUp || onMoveDown || onRename || onDelete);
+  const hasMenu = !!(onMoveUp || onMoveDown || onRename || onAssignTime || onDelete);
   const titleNode = (
     <span
       className={`flex-1 ${hasMenu ? "cursor-pointer" : ""} ${done ? "text-yellow-600/60" : ""} ${
@@ -2840,6 +2867,7 @@ function TodaySubRow({
       }`}
     >
       {title}
+      <MinutesSuffix minutes={minutes} />
     </span>
   );
   return (
@@ -2868,14 +2896,20 @@ function TodaySubRow({
             <DropdownMenu>
               <DropdownMenuTrigger asChild>{titleNode}</DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                {onAssignTime && (
+                  <>
+                    <DropdownMenuItem onClick={onAssignTime}>
+                      <Clock className="mr-2 h-4 w-4" />
+                      Asignar tiempo
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
                 {onMoveUp && <DropdownMenuItem onClick={onMoveUp}>Mover arriba</DropdownMenuItem>}
                 {onMoveDown && <DropdownMenuItem onClick={onMoveDown}>Mover abajo</DropdownMenuItem>}
                 {(onMoveUp || onMoveDown) && (onRename || onDelete) && <DropdownMenuSeparator />}
                 {onRename && (
-                  <DropdownMenuItem onClick={onRename}>
-                    <Pencil className="mr-2 h-4 w-4" />
-                    Cambiar nombre
-                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={onRename}>Cambiar nombre</DropdownMenuItem>
                 )}
                 {onDelete && (
                   <DropdownMenuItem onClick={() => setDeleteConfirmOpen(true)} className="text-destructive focus:text-destructive">
