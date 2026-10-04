@@ -806,6 +806,27 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     });
   });
 
+  // Los nodos confirmados siempre van antes de la tarea desbloqueada (la primera sin hacer de la
+  // franja activa): los que hayan quedado después de ella (confirmados desde el árbol, o antes de
+  // que les tocara) se muestran justo antes, en el mismo orden relativo. Es una regla de cómo se
+  // muestra la franja, así vale sin importar desde dónde se confirmó el nodo. Misma noción de
+  // "franja activa" que el destacado: la de la hora actual, o cualquiera con algo en una vista previa.
+  TIME_SLOTS.forEach((s) => {
+    const bucket = itemBuckets[s.key];
+    const isActiveSlot = isPreview ? bucket.length > 0 : s.key === getCurrentTimeSlotKey();
+    if (!isActiveSlot) return;
+    const firstUndone = bucket.findIndex((i) => !i.done);
+    if (firstUndone === -1) return;
+    const isConfirmedNode = (i: TodayItem) => i.type === "node" && i.done && !i.traceSubs;
+    const lifted = bucket.slice(firstUndone + 1).filter(isConfirmedNode);
+    if (lifted.length === 0) return;
+    itemBuckets[s.key] = [
+      ...bucket.slice(0, firstUndone),
+      ...lifted,
+      ...bucket.slice(firstUndone).filter((i) => !lifted.includes(i)),
+    ];
+  });
+
   // Nodo al que se le eligió "Ahora" en "When exactly?" (ver setNowPlacement en SkillNode):
   // ocupa el lugar de la tarea desbloqueada de la franja actual (la primera sin hacer), que
   // pasa a quedar justo después. Se hace acá y no en el server porque solo acá se conoce el
