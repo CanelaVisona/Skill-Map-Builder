@@ -666,6 +666,10 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // "hidden" solo oculta mientras la tarea sigue sin hacer: si después se confirma, tiene
   // que volver a aparecer en tareas de hoy (ya como hecha), no quedar oculta para siempre.
   const isHidden = (key: string) => slotByKey.get(key) === "hidden";
+  // Actividad extra (nodos confirmados sin fecha para este día) que se sacó de hoy a mano: ya
+  // estaba hecha cuando se la sacó, así que no vuelve a aparecer (ver hideItemFromToday).
+  const isHiddenExtraNode = (i: TodayItem) => i.type === "node" && !i.traceSubs && isHidden(i.key);
+  const visibleExtraItems = extraItems.filter((i) => !isHiddenExtraNode(i));
 
   // La barra de progreso no debe subir en el momento en que ocultás una tarea (se sentiría
   // como una recompensa por ocultar). Por eso el total/completado usa una "foto" de qué
@@ -705,8 +709,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
 
   // Los ítems de "Más" ya están todos hechos (son actividad extra detectada como completada
   // hoy), así que suman por igual a total y a completed.
-  const total = totalConfigured + extraItems.length;
-  const completed = completedHabits + completedNodes + completedPractices + completedManual + extraItems.length;
+  const total = totalConfigured + visibleExtraItems.length;
+  const completed = completedHabits + completedNodes + completedPractices + completedManual + visibleExtraItems.length;
   const todayItems: TodayItem[] = [
     ...visibleHabitItems.map((h) => ({ key: `habit:${h.id}`, type: "habit" as const, id: h.id, label: h.label, done: h.done })),
     ...visiblePlannedNodesForView.map((n) => ({
@@ -798,7 +802,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     });
   };
   todayItems.forEach((item) => distributeItem(item, "unassigned"));
-  extraItems.forEach((item) => distributeItem(item, "more"));
+  visibleExtraItems.forEach((item) => distributeItem(item, "more"));
 
   // Confirmar una tarea no la mueve: hechas y pendientes comparten el mismo orden. Dentro de
   // cada franja horaria se respeta el orden guardado (sortOrder) — el que se puede cambiar de a
@@ -887,7 +891,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // Los nodos ya confirmados también: si tienen sub-nodos, se pueden desplegar (ver expandedParents).
   const subTreeNodeIds = Array.from(new Set([
     ...todayItems.filter((i) => i.type === "node").map((i) => i.id),
-    ...extraItems.filter((i) => i.type === "node" && !i.traceSubs).map((i) => i.id),
+    ...visibleExtraItems.filter((i) => i.type === "node" && !i.traceSubs).map((i) => i.id),
     ...Array.from(traceParents.keys()),
   ]));
   const subSkillQueries = useQueries({
@@ -1310,7 +1314,11 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         if (node.kind === "project") updateProjectSkill(node.parentId, item.id, { plannedDate: null });
         else updateSkill(node.parentId, item.id, { plannedDate: null });
       }
-      clearTaskSlot.mutate({ date: effectiveDate, taskType: "node", taskId: item.id });
+      // Ya confirmado: sin fecha pasaría a verse como actividad extra de este día (se confirmó
+      // hoy), así que además se lo oculta en este día. Sin confirmar, solo se le borra la fecha
+      // (si después se confirma, vuelve a aparecer como cualquier tarea hecha).
+      if (item.done) setTaskSlot.mutate({ date: effectiveDate, taskType: "node", taskId: item.id, slot: "hidden" });
+      else clearTaskSlot.mutate({ date: effectiveDate, taskType: "node", taskId: item.id });
       return;
     }
     setTaskSlot.mutate({ date: effectiveDate, taskType: item.type, taskId: item.id, slot: "hidden" });
@@ -1478,7 +1486,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const priorityKeySet = new Set(priorityKeys);
   const itemBaseKey = (item: TodayItem) => `${item.type}:${item.id}`;
   const itemsByBaseKey = new Map<string, TodayItem>();
-  [...todayItems, ...extraItems].forEach((item) => {
+  [...todayItems, ...visibleExtraItems].forEach((item) => {
     if (!itemsByBaseKey.has(itemBaseKey(item))) itemsByBaseKey.set(itemBaseKey(item), item);
   });
   // En el orden en que se eligieron; se saltean las que ya no están en el día (p.ej. se sacó de
@@ -1990,7 +1998,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       return {
         habitsDone: activeHabitsThisMonth.filter((h) => todayHabitsDoneIds.has(h.id)),
         habitsScheduled: activeHabitsThisMonth.filter((h) => visibleHabitItems.some((v) => v.id === h.id)),
-        nodesDone: [...visiblePlannedNodesForView.filter((n) => n.done), ...extraNodes],
+        nodesDone: [...visiblePlannedNodesForView.filter((n) => n.done), ...extraNodes.filter((n) => !isHidden(`node:${n.id}`))],
         nodesScheduled: visiblePlannedNodesForView,
         practicesDone: visiblePracticesToday.filter(({ done }) => done).map(({ practice }) => practice),
         manualScheduled: manualThatDay,
