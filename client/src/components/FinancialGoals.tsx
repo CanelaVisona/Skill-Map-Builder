@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from "react";
+import React, { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
@@ -15,6 +15,8 @@ import {
   CalendarDays,
   CalendarRange,
   Check,
+  X,
+  Repeat,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -915,8 +917,39 @@ function MovementsCard({ goals }: { goals: FinancialGoal[] }) {
 
 const MISSION_EMOJIS = ["🎯", "🍱", "☕", "🚲", "🛒", "📵", "💡", "🧾", "🏷️", "🍳", "🚶", "💳"];
 
-function SavingMissionRow({ mission, onToggle, onEdit }: { mission: SavingMission; onToggle: () => void; onEdit: () => void }) {
+function missionSeriesKey(m: SavingMission): string {
+  return m.seriesId || m.id;
+}
+
+// Racha de una misión repetible: cuántas veces se cumplió la serie y cuánto se ahorró con ella.
+interface MissionStreak {
+  count: number;
+  saved: number;
+}
+
+function missionStreaks(missions: SavingMission[]): Map<string, MissionStreak> {
+  const map = new Map<string, MissionStreak>();
+  missions.forEach((m) => {
+    if (!m.done) return;
+    const key = missionSeriesKey(m);
+    const s = map.get(key) || { count: 0, saved: 0 };
+    s.count += 1;
+    s.saved += Number(m.amount) || 0;
+    map.set(key, s);
+  });
+  return map;
+}
+
+// Cuanto más larga la racha, más encendido el fueguito.
+function streakColor(count: number): string {
+  if (count >= 10) return "#e11d48";
+  if (count >= 5) return "#f97316";
+  return GOLD;
+}
+
+function SavingMissionRow({ mission, streak, onToggle, onEdit }: { mission: SavingMission; streak?: MissionStreak; onToggle: () => void; onEdit: () => void }) {
   const press = useLongPress(onEdit, onToggle);
+  const showStreak = mission.repeatable && !mission.done && !!streak && streak.count > 0;
   return (
     <div
       {...press}
@@ -931,7 +964,31 @@ function SavingMissionRow({ mission, onToggle, onEdit }: { mission: SavingMissio
         {mission.done && <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />}
       </span>
       <span className={`text-base shrink-0 ${mission.done ? "grayscale opacity-60" : ""}`}>{mission.emoji}</span>
-      <span className={`flex-1 min-w-0 text-sm leading-snug break-words ${mission.done ? "line-through text-muted-foreground" : "font-medium"}`}>{mission.title}</span>
+      <span className="flex-1 min-w-0">
+        <span className={`block text-sm leading-snug break-words ${mission.done ? "line-through text-muted-foreground" : "font-medium"}`}>
+          {mission.title}
+          {mission.repeatable && <Repeat className="inline h-3 w-3 ml-1.5 -mt-0.5 text-muted-foreground" aria-label="Repetible" />}
+        </span>
+        {showStreak && (
+          <span className="block text-[11px] text-muted-foreground mt-0.5">
+            Cumplida {streak!.count} {streak!.count === 1 ? "vez" : "veces"}
+            {streak!.saved > 0 && (
+              <>
+                {" "}· llevás <Money usd={streak!.saved} /> ahorrados
+              </>
+            )}
+          </span>
+        )}
+      </span>
+      {showStreak && (
+        <span
+          title={`Racha: ${streak!.count} ${streak!.count === 1 ? "vez" : "veces"}`}
+          className="text-[11px] font-bold tabular-nums shrink-0 rounded-full px-1.5 py-0.5"
+          style={{ color: streakColor(streak!.count), background: `${streakColor(streak!.count)}1f` }}
+        >
+          🔥 {streak!.count}
+        </span>
+      )}
       {mission.amount > 0 && (
         <span className={`text-xs font-semibold shrink-0 ${mission.done ? "" : "text-muted-foreground"}`} style={mission.done ? { color: GOLD } : undefined}>
           +<Money usd={mission.amount} />
@@ -946,24 +1003,60 @@ function SavingMissionRow({ mission, onToggle, onEdit }: { mission: SavingMissio
   );
 }
 
+function currentMonthKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${d.getMonth()}`;
+}
+
+// Mes en el que cuenta una misión: el de cumplimiento si está tildada. Las pendientes siempre
+// cuentan en el mes en curso, así pasan al mes siguiente hasta que se cumplan.
+function missionMonthKey(m: SavingMission): string {
+  if (!m.done) return currentMonthKey();
+  const d = new Date((m.completedAt || m.updatedAt) as unknown as string);
+  return `${d.getFullYear()}-${d.getMonth()}`;
+}
+
+const MISSIONS_VISIBLE = 3;
+
 function SavingMissionsCard({
-  missions,
+  missions: allMissions,
   onAdd,
   onToggle,
   onEdit,
+  onOpenCalendar,
 }: {
   missions: SavingMission[];
   onAdd: () => void;
   onToggle: (mission: SavingMission) => void;
   onEdit: (mission: SavingMission) => void;
+  onOpenCalendar: () => void;
 }) {
   const titlePress = useLongPress(onAdd);
+  // La lista se limpia cada mes: quedan las cumplidas de este mes y todas las pendientes.
+  const monthKey = currentMonthKey();
+  const missions = allMissions.filter((m) => missionMonthKey(m) === monthKey);
+  const hasPastCompleted = allMissions.some((m) => m.done && missionMonthKey(m) !== monthKey);
   const done = missions.filter((m) => m.done).length;
   // Total ahorrado = suma de lo que ahorra cada misión ya cumplida (en dólares).
   const saved = missions.reduce((a, m) => a + (m.done ? Number(m.amount) || 0 : 0), 0);
   const potential = missions.reduce((a, m) => a + (Number(m.amount) || 0), 0);
   // Pendientes primero, cumplidas al final.
   const sorted = [...missions].sort((a, b) => Number(a.done) - Number(b.done));
+  const streaks = missionStreaks(allMissions);
+
+  // Se ven 3 misiones; el resto queda accesible con scroll.
+  const listRef = useRef<HTMLDivElement>(null);
+  const [listMaxHeight, setListMaxHeight] = useState<number | undefined>(undefined);
+  const listSignature = sorted.map((m) => `${m.id}:${m.done}:${m.title}`).join("|");
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    if (!el || el.children.length <= MISSIONS_VISIBLE) {
+      setListMaxHeight(undefined);
+      return;
+    }
+    const third = el.children[MISSIONS_VISIBLE - 1] as HTMLElement;
+    setListMaxHeight(third.offsetTop - el.offsetTop + third.offsetHeight);
+  }, [listSignature]);
 
   return (
     <div className="rounded-2xl border border-border bg-card p-4 h-full">
@@ -974,11 +1067,22 @@ function SavingMissionsCard({
           </div>
           <div className="text-xs text-muted-foreground mt-0.5">Mantené presionado el título para agregar una misión</div>
         </div>
-        {missions.length > 0 && (
-          <span className="text-xs font-semibold tabular-nums shrink-0" style={{ color: GOLD }}>
-            {done}/{missions.length}
-          </span>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {missions.length > 0 && (
+            <span className="text-xs font-semibold tabular-nums" style={{ color: GOLD }}>
+              {done}/{missions.length}
+            </span>
+          )}
+          {hasPastCompleted && (
+            <button
+              onClick={onOpenCalendar}
+              title="Misiones cumplidas por mes"
+              className="h-7 w-7 rounded-lg border border-border text-muted-foreground hover:text-foreground flex items-center justify-center"
+            >
+              <CalendarRange className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
       </div>
       {missions.length > 0 && (
         <div className="h-1.5 rounded-full bg-muted overflow-hidden mt-2.5">
@@ -987,7 +1091,7 @@ function SavingMissionsCard({
       )}
       {potential > 0 && (
         <div className="flex items-baseline justify-between gap-2 mt-3 pb-3 border-b border-border/60">
-          <span className="text-xs text-muted-foreground">Total ahorrado</span>
+          <span className="text-xs text-muted-foreground">Ahorrado este mes</span>
           <span className="flex items-baseline gap-1.5">
             <Money usd={saved} className="font-display font-semibold text-lg" />
             {saved < potential && (
@@ -999,16 +1103,148 @@ function SavingMissionsCard({
         </div>
       )}
       {missions.length === 0 ? (
-        <div className="text-sm text-muted-foreground py-4">Sin misiones todavía. Ej: "Llevar tu comida".</div>
+        <div className="text-sm text-muted-foreground py-4">Sin misiones este mes. Ej: "Llevar tu comida".</div>
       ) : (
-        <div className="flex flex-col gap-1.5 mt-3">
-          {sorted.map((m) => (
-            <SavingMissionRow key={m.id} mission={m} onToggle={() => onToggle(m)} onEdit={() => onEdit(m)} />
-          ))}
-          <div className="text-[11px] text-muted-foreground mt-1">Tocá para tildar · mantené presionada una misión para editarla</div>
+        <div className="mt-3">
+          <div ref={listRef} className="flex flex-col gap-1.5 overflow-y-auto minimal-scrollbar pr-0.5" style={{ maxHeight: listMaxHeight }}>
+            {sorted.map((m) => (
+              <SavingMissionRow key={m.id} mission={m} streak={streaks.get(missionSeriesKey(m))} onToggle={() => onToggle(m)} onEdit={() => onEdit(m)} />
+            ))}
+          </div>
+          <div className="text-[11px] text-muted-foreground mt-2">Tocá para tildar · mantené presionada una misión para editarla</div>
         </div>
       )}
     </div>
+  );
+}
+
+function SavingMissionsCalendarDialog({
+  missions,
+  open,
+  onOpenChange,
+}: {
+  missions: SavingMission[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [year, setYear] = useState(() => new Date().getFullYear());
+  const [selMonth, setSelMonth] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setYear(new Date().getFullYear());
+      setSelMonth(null);
+    }
+  }, [open]);
+
+  // Solo meses ya cerrados: el mes en curso vive en la tarjeta.
+  const monthKey = currentMonthKey();
+  const byMonth = new Map<string, SavingMission[]>();
+  missions.forEach((m) => {
+    if (!m.done) return;
+    const key = missionMonthKey(m);
+    if (key === monthKey) return;
+    const arr = byMonth.get(key) || [];
+    arr.push(m);
+    byMonth.set(key, arr);
+  });
+  const monthTotal = (items: SavingMission[]) => items.reduce((a, m) => a + (Number(m.amount) || 0), 0);
+
+  const now = new Date();
+  const isCurrentOrFuture = (m: number) => year > now.getFullYear() || (year === now.getFullYear() && m >= now.getMonth());
+  const selItems = selMonth !== null ? byMonth.get(`${year}-${selMonth}`) || [] : [];
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>⚔️ Misiones cumplidas</DialogTitle>
+          <DialogDescription>Lo que ahorraste con misiones en cada mes que ya pasó</DialogDescription>
+        </DialogHeader>
+
+        <div className="flex items-center justify-between mb-1">
+          <button
+            onClick={() => {
+              setYear((y) => y - 1);
+              setSelMonth(null);
+            }}
+            className="h-8 w-8 rounded-lg border border-border text-muted-foreground hover:text-foreground flex items-center justify-center"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <span className="font-display font-medium text-sm">{year}</span>
+          <button
+            onClick={() => {
+              setYear((y) => y + 1);
+              setSelMonth(null);
+            }}
+            className="h-8 w-8 rounded-lg border border-border text-muted-foreground hover:text-foreground flex items-center justify-center"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          {MONTH_NAMES.map((name, m) => {
+            const items = byMonth.get(`${year}-${m}`) || [];
+            const has = items.length > 0;
+            const total = monthTotal(items);
+            const isCurrent = year === now.getFullYear() && m === now.getMonth();
+            return (
+              <button
+                key={m}
+                disabled={isCurrentOrFuture(m)}
+                onClick={() => setSelMonth(m)}
+                className="rounded-xl border-[1.5px] py-2.5 text-sm font-medium flex flex-col items-center gap-0.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{
+                  background: has ? `${GOLD}22` : "hsl(var(--muted) / 0.4)",
+                  borderColor: has ? GOLD : "transparent",
+                  outline: selMonth === m ? "2px solid hsl(var(--foreground))" : undefined,
+                  outlineOffset: selMonth === m ? "-2px" : undefined,
+                }}
+              >
+                {name}
+                {has ? (
+                  <span className="text-[11px] font-semibold" style={{ color: GOLD }}>
+                    {total > 0 ? <Money usd={total} year={year} month={m} /> : `${items.length} ✓`}
+                  </span>
+                ) : (
+                  <span className="text-[11px] text-muted-foreground">{isCurrent ? "en curso" : "—"}</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {selMonth !== null && (
+          <div className="mt-3">
+            {selItems.length === 0 ? (
+              <div className="text-sm text-muted-foreground text-center py-2">Sin misiones cumplidas en {MONTH_NAMES[selMonth]}.</div>
+            ) : (
+              <>
+                <div className="flex flex-col gap-1.5">
+                  {selItems.map((m) => (
+                    <div key={m.id} className="flex items-center gap-2.5 py-2 px-2 rounded-xl bg-muted/40">
+                      <span className="text-base shrink-0">{m.emoji}</span>
+                      <span className="flex-1 min-w-0 text-sm leading-snug break-words">{m.title}</span>
+                      {m.amount > 0 && (
+                        <span className="text-xs font-semibold shrink-0" style={{ color: GOLD }}>
+                          +<Money usd={m.amount} year={year} month={selMonth} />
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="flex items-center justify-between text-sm mt-3 pt-3 border-t border-border/60 px-1">
+                  <span className="text-muted-foreground">Total ahorrado en {MONTH_NAMES[selMonth]}</span>
+                  <span className="font-display font-semibold"><Money usd={monthTotal(selItems)} year={year} month={selMonth} /></span>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1022,10 +1258,11 @@ function SavingMissionFormDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   mission: SavingMission | null;
-  onSubmit: (data: { title: string; emoji: string; amount: number }) => void;
+  onSubmit: (data: { title: string; emoji: string; amount: number; repeatable: boolean }) => void;
   onDelete: () => void;
 }) {
   const [title, setTitle] = useState("");
+  const [repeatable, setRepeatable] = useState(false);
   const [emoji, setEmoji] = useState(MISSION_EMOJIS[0]);
   const [amount, setAmount] = useState("");
   const [amountCurrency, setAmountCurrency] = useState<AmountCurrency>("usd");
@@ -1037,6 +1274,7 @@ function SavingMissionFormDialog({
     setTitle(mission?.title || "");
     setEmoji(mission?.emoji || MISSION_EMOJIS[0]);
     setAmount(mission?.amount ? moneyFormatter.format(mission.amount) : "");
+    setRepeatable(!!mission?.repeatable);
     setAmountCurrency("usd");
     setErr(false);
   }, [open, mission]);
@@ -1047,7 +1285,7 @@ function SavingMissionFormDialog({
       setErr(true);
       return;
     }
-    onSubmit({ title: t, emoji, amount: parseAmountAs(amount, amountCurrency, rates) });
+    onSubmit({ title: t, emoji, amount: parseAmountAs(amount, amountCurrency, rates), repeatable });
   };
 
   return (
@@ -1102,6 +1340,22 @@ function SavingMissionFormDialog({
               />
             </div>
           </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={repeatable}
+            onClick={() => setRepeatable((v) => !v)}
+            className="w-full flex items-center gap-3 rounded-xl border border-border px-3 py-2.5 text-left hover:border-foreground/20 transition-colors"
+          >
+            <Repeat className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="flex-1 min-w-0">
+              <span className="block text-sm font-medium">Repetible</span>
+              <span className="block text-[11px] text-muted-foreground">Al cumplirla vuelve a aparecer y suma a su racha 🔥</span>
+            </span>
+            <span className={`h-5 w-9 rounded-full p-0.5 transition-colors shrink-0 ${repeatable ? "" : "bg-muted"}`} style={repeatable ? { background: GOLD } : undefined}>
+              <span className={`block h-4 w-4 rounded-full bg-white shadow transition-transform ${repeatable ? "translate-x-4" : ""}`} />
+            </span>
+          </button>
         </div>
         <div className="flex items-center gap-2 pt-2">
           {mission && (
@@ -2332,25 +2586,28 @@ function DollarRateFormDialog({
   onOpenChange: (open: boolean) => void;
   target: { year: number; month: number };
   rates: DollarRate[];
-  onSubmit: (data: { year: number; month: number; rate: number }) => void;
+  onSubmit: (data: { year: number; month: number; rate: number; prices: number[] }) => void;
 }) {
-  const [text, setText] = useState("");
+  const [texts, setTexts] = useState<string[]>([""]);
   const [err, setErr] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     const existing = rates.find((r) => r.year === target.year && r.month === target.month);
-    setText(existing ? moneyFormatter.format(existing.rate) : "");
+    const prices = existing ? (existing.prices?.length ? existing.prices : [existing.rate]) : [];
+    setTexts(prices.length ? prices.map((p) => moneyFormatter.format(p)) : [""]);
     setErr(false);
   }, [open, target.year, target.month]);
 
+  const prices = texts.map(parseMoney).filter((n) => n > 0);
+  const avg = prices.length ? prices.reduce((a, n) => a + n, 0) / prices.length : 0;
+
   const handleSave = () => {
-    const n = parseMoney(text);
-    if (n <= 0) {
+    if (!prices.length) {
       setErr(true);
       return;
     }
-    onSubmit({ year: target.year, month: target.month, rate: n });
+    onSubmit({ year: target.year, month: target.month, rate: Math.round(avg), prices });
   };
 
   return (
@@ -2363,14 +2620,53 @@ function DollarRateFormDialog({
           <DialogDescription>Se usa para mostrar el equivalente en pesos de los montos en dólares de ese mes.</DialogDescription>
         </DialogHeader>
         <div>
-          <label className="text-sm font-medium mb-1.5 block" htmlFor="dr-rate">
-            Precio del dólar (ARS)
+          <label className="text-sm font-medium mb-1.5 block" htmlFor="dr-rate-0">
+            Precios del dólar (ARS)
           </label>
-          <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
-            <Input id="dr-rate" className="pl-6" inputMode="decimal" value={text} onChange={(e) => setText(e.target.value)} placeholder="0" autoFocus />
+          <div className="flex flex-col gap-1.5">
+            {texts.map((t, i) => (
+              <div key={i} className="flex items-center gap-1.5">
+                <div className="relative flex-1">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+                  <Input
+                    id={`dr-rate-${i}`}
+                    className="pl-6"
+                    inputMode="decimal"
+                    value={t}
+                    onChange={(e) => setTexts((prev) => prev.map((x, j) => (j === i ? e.target.value : x)))}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        setTexts((prev) => [...prev, ""]);
+                      }
+                    }}
+                    placeholder="0"
+                    autoFocus={i === texts.length - 1}
+                  />
+                </div>
+                {texts.length > 1 && (
+                  <button
+                    type="button"
+                    aria-label="Quitar precio"
+                    onClick={() => setTexts((prev) => prev.filter((_, j) => j !== i))}
+                    className="h-9 w-9 rounded-md text-muted-foreground hover:text-destructive flex items-center justify-center shrink-0"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            ))}
           </div>
-          {err && <p className="text-xs text-destructive mt-1">Ingresá un valor mayor a 0.</p>}
+          <button type="button" onClick={() => setTexts((prev) => [...prev, ""])} className="mt-2 text-xs font-medium text-muted-foreground hover:text-foreground flex items-center gap-1">
+            <Plus className="h-3.5 w-3.5" /> Agregar otro precio
+          </button>
+          {err && <p className="text-xs text-destructive mt-1">Ingresá al menos un valor mayor a 0.</p>}
+          {prices.length > 1 && (
+            <div className="flex items-center justify-between text-sm mt-3 pt-3 border-t border-border/60">
+              <span className="text-muted-foreground">Promedio de {prices.length} precios</span>
+              <span className="font-display font-semibold tabular-nums">{money(avg)}</span>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2 pt-2">
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
@@ -3267,6 +3563,7 @@ export default function FinancialGoals() {
   const [budgetCalendarOpen, setBudgetCalendarOpen] = useState(false);
   const [missionFormOpen, setMissionFormOpen] = useState(false);
   const [missionFormTarget, setMissionFormTarget] = useState<SavingMission | null>(null);
+  const [missionCalendarOpen, setMissionCalendarOpen] = useState(false);
   const [budgetCategoriesCalendarOpen, setBudgetCategoriesCalendarOpen] = useState(false);
   const [incomeDetailOpen, setIncomeDetailOpen] = useState(false);
   const [incomeFormOpen, setIncomeFormOpen] = useState(false);
@@ -3300,7 +3597,7 @@ export default function FinancialGoals() {
   });
 
   const createMission = useMutation({
-    mutationFn: async (data: { title: string; emoji: string; amount: number }) => {
+    mutationFn: async (data: { title: string; emoji: string; amount: number; repeatable?: boolean; seriesId?: string }) => {
       const res = await fetch("/api/saving-missions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
       if (!res.ok) throw new Error("Failed to create saving mission");
       return res.json();
@@ -3313,7 +3610,7 @@ export default function FinancialGoals() {
   });
 
   const updateMission = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<Pick<SavingMission, "title" | "emoji" | "amount" | "done">> }) => {
+    mutationFn: async ({ id, data }: { id: string; data: Partial<Pick<SavingMission, "title" | "emoji" | "amount" | "done" | "completedAt" | "repeatable">> }) => {
       const res = await fetch(`/api/saving-missions/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
       if (!res.ok) throw new Error("Failed to update saving mission");
       return res.json();
@@ -3350,17 +3647,38 @@ export default function FinancialGoals() {
   };
 
   const handleMissionToggle = (mission: SavingMission) => {
-    updateMission.mutate({ id: mission.id, data: { done: !mission.done } });
-    if (!mission.done) {
-      toast(
-        mission.amount > 0
-          ? { title: `+${moneyPairText(mission.amount, dollarRates)}`, description: `${mission.emoji} ¡Misión cumplida! ${mission.title}` }
-          : { title: `${mission.emoji} ¡Misión cumplida!`, description: mission.title },
-      );
+    updateMission.mutate({ id: mission.id, data: { done: !mission.done, completedAt: mission.done ? null : new Date() } });
+    const seriesKey = missionSeriesKey(mission);
+    if (mission.done) {
+      // Destildar una repetible: se saca la copia pendiente que había generado, para no duplicarla.
+      if (mission.repeatable) {
+        const copy = savingMissions.find(
+          (m) => !m.done && m.id !== mission.id && missionSeriesKey(m) === seriesKey && new Date(m.createdAt).getTime() >= new Date(mission.completedAt || 0).getTime(),
+        );
+        if (copy) deleteMission.mutate(copy.id);
+      }
+      return;
     }
+    if (mission.repeatable) {
+      // Vuelve a aparecer pendiente para la próxima vez, en la misma serie.
+      createMission.mutate({ title: mission.title, emoji: mission.emoji, amount: mission.amount, repeatable: true, seriesId: seriesKey });
+      const prev = missionStreaks(savingMissions).get(seriesKey) || { count: 0, saved: 0 };
+      const count = prev.count + 1;
+      const saved = prev.saved + (Number(mission.amount) || 0);
+      toast({
+        title: `🔥 Racha x${count} · ${mission.emoji} ${mission.title}`,
+        description: saved > 0 ? `Llevás ${moneyPairText(saved, dollarRates)} ahorrados repitiendo esta misión.` : `La cumpliste ${count} ${count === 1 ? "vez" : "veces"}. ¡Seguí así!`,
+      });
+      return;
+    }
+    toast(
+      mission.amount > 0
+        ? { title: `+${moneyPairText(mission.amount, dollarRates)}`, description: `${mission.emoji} ¡Misión cumplida! ${mission.title}` }
+        : { title: `${mission.emoji} ¡Misión cumplida!`, description: mission.title },
+    );
   };
 
-  const handleMissionSubmit = (data: { title: string; emoji: string; amount: number }) => {
+  const handleMissionSubmit = (data: { title: string; emoji: string; amount: number; repeatable: boolean }) => {
     if (missionFormTarget) updateMission.mutate({ id: missionFormTarget.id, data });
     else createMission.mutate(data);
   };
@@ -3371,7 +3689,7 @@ export default function FinancialGoals() {
   };
 
   const createDollarRate = useMutation({
-    mutationFn: async (data: { year: number; month: number; rate: number }) => {
+    mutationFn: async (data: { year: number; month: number; rate: number; prices: number[] }) => {
       const res = await fetch("/api/dollar-rates", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
       if (!res.ok) throw new Error("Failed to create dollar rate");
       return res.json();
@@ -3383,7 +3701,7 @@ export default function FinancialGoals() {
   });
 
   const updateDollarRate = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: { rate: number } }) => {
+    mutationFn: async ({ id, data }: { id: string; data: { rate: number; prices: number[] } }) => {
       const res = await fetch(`/api/dollar-rates/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
       if (!res.ok) throw new Error("Failed to update dollar rate");
       return res.json();
@@ -3400,10 +3718,10 @@ export default function FinancialGoals() {
     setDollarFormOpen(true);
   };
 
-  const handleDollarSubmit = (data: { year: number; month: number; rate: number }) => {
+  const handleDollarSubmit = (data: { year: number; month: number; rate: number; prices: number[] }) => {
     const existing = dollarRates.find((r) => r.year === data.year && r.month === data.month);
     if (existing) {
-      updateDollarRate.mutate({ id: existing.id, data: { rate: data.rate } });
+      updateDollarRate.mutate({ id: existing.id, data: { rate: data.rate, prices: data.prices } });
     } else {
       createDollarRate.mutate(data);
     }
@@ -3863,7 +4181,7 @@ export default function FinancialGoals() {
             {/* Izquierda: misiones de ahorro e ingresos · derecha: presupuesto e instrumentos */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
               <div className="space-y-4">
-                <SavingMissionsCard missions={savingMissions} onAdd={() => openMissionForm(null)} onToggle={handleMissionToggle} onEdit={openMissionForm} />
+                <SavingMissionsCard missions={savingMissions} onAdd={() => openMissionForm(null)} onToggle={handleMissionToggle} onEdit={openMissionForm} onOpenCalendar={() => setMissionCalendarOpen(true)} />
                 <IncomeCard sources={incomeSources} onOpenDetail={() => setIncomeDetailOpen(true)} onOpenCalendar={() => setIncomeCalendarOpen(true)} />
               </div>
               <div className="space-y-4">
@@ -3955,6 +4273,7 @@ export default function FinancialGoals() {
         }}
         onSubmit={handleBudgetCategoryRename}
       />
+      <SavingMissionsCalendarDialog missions={savingMissions} open={missionCalendarOpen} onOpenChange={setMissionCalendarOpen} />
       <SavingMissionFormDialog open={missionFormOpen} onOpenChange={setMissionFormOpen} mission={missionFormTarget} onSubmit={handleMissionSubmit} onDelete={handleMissionDelete} />
       <BudgetCalendarDialog
         quarters={budgetQuarters}

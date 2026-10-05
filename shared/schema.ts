@@ -583,7 +583,8 @@ export const dollarRates = pgTable("dollar_rates", {
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   year: integer("year").notNull(),
   month: integer("month").notNull(), // 0-11
-  rate: integer("rate").notNull(),
+  rate: integer("rate").notNull(), // promedio de los precios anotados
+  prices: jsonb("prices").notNull().$type<number[]>().default([]),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -598,6 +599,11 @@ export const savingMissions = pgTable("saving_missions", {
   // Cuánta plata se ahorra al cumplir la misión, en dólares como el resto del modal de finanzas.
   amount: doublePrecision("amount").notNull().default(0),
   done: boolean("done").notNull().default(false),
+  // Cuándo se tildó; define en qué mes cuenta la misión (null si está pendiente).
+  completedAt: timestamp("completed_at"),
+  // Repetible: al cumplirla se crea una copia pendiente con el mismo seriesId (null = la serie es su propio id).
+  repeatable: boolean("repeatable").notNull().default(false),
+  seriesId: varchar("series_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

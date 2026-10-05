@@ -6728,6 +6728,9 @@ export async function registerRoutes(
         emoji: String(req.body.emoji || "🎯"),
         amount: Math.max(0, Number(req.body.amount) || 0),
         done: !!req.body.done,
+        completedAt: req.body.done ? new Date() : null,
+        repeatable: !!req.body.repeatable,
+        seriesId: typeof req.body.seriesId === "string" && req.body.seriesId ? req.body.seriesId : null,
       });
       res.status(201).json(mission);
     } catch (error: any) {
@@ -6748,7 +6751,11 @@ export async function registerRoutes(
       if (typeof req.body.title === "string" && req.body.title.trim()) patch.title = req.body.title.trim();
       if (typeof req.body.emoji === "string") patch.emoji = req.body.emoji;
       if (typeof req.body.amount === "number" && Number.isFinite(req.body.amount)) patch.amount = Math.max(0, req.body.amount);
-      if (typeof req.body.done === "boolean") patch.done = req.body.done;
+      if (typeof req.body.repeatable === "boolean") patch.repeatable = req.body.repeatable;
+      if (typeof req.body.done === "boolean" && req.body.done !== mission.done) {
+        patch.done = req.body.done;
+        patch.completedAt = req.body.done ? new Date() : null;
+      }
       const updated = await storage.updateSavingMission(req.params.id, patch);
       res.json(updated);
     } catch (error: any) {
