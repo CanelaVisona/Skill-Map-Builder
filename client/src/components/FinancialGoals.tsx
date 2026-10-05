@@ -1035,7 +1035,6 @@ function SavingMissionsCard({
   // La lista se limpia cada mes: quedan las cumplidas de este mes y todas las pendientes.
   const monthKey = currentMonthKey();
   const missions = allMissions.filter((m) => missionMonthKey(m) === monthKey);
-  const hasPastCompleted = allMissions.some((m) => m.done && missionMonthKey(m) !== monthKey);
   const done = missions.filter((m) => m.done).length;
   // Total ahorrado = suma de lo que ahorra cada misión ya cumplida (en dólares).
   const saved = missions.reduce((a, m) => a + (m.done ? Number(m.amount) || 0 : 0), 0);
@@ -1073,15 +1072,13 @@ function SavingMissionsCard({
               {done}/{missions.length}
             </span>
           )}
-          {hasPastCompleted && (
-            <button
-              onClick={onOpenCalendar}
-              title="Misiones cumplidas por mes"
-              className="h-7 w-7 rounded-lg border border-border text-muted-foreground hover:text-foreground flex items-center justify-center"
-            >
-              <CalendarRange className="h-3.5 w-3.5" />
-            </button>
-          )}
+          <button
+            onClick={onOpenCalendar}
+            title="Misiones cumplidas por mes"
+            className="h-7 w-7 rounded-lg border border-border text-muted-foreground hover:text-foreground flex items-center justify-center"
+          >
+            <CalendarRange className="h-3.5 w-3.5" />
+          </button>
         </div>
       </div>
       {missions.length > 0 && (
