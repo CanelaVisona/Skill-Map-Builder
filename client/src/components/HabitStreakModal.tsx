@@ -15,6 +15,7 @@ import { useBodyGainPopup } from "@/lib/body-gain-popup-context";
 import { beginPopupChain, endPopupChain, runPopupQueue } from "@/lib/popup-coordinator";
 import { BodyLinkPicker, type BodyLink } from "@/components/BodyLinkPicker";
 import { SkillLinkPicker } from "@/components/SkillLinkPicker";
+import { isHabitScheduledOn, describeHabitSchedule, type HabitScheduleLike, type HabitRepeatMode } from "@shared/habitSchedule";
 
 interface HabitData extends Habit {
   done: Set<string>;
@@ -44,6 +45,18 @@ const TIME_SLOT_OPTIONS: { key: TimeSlot; label: string }[] = [
   { key: "afternoon", label: "Tarde" },
   { key: "night", label: "Noche" },
 ];
+
+interface RepeatConfig {
+  repeatMode: HabitRepeatMode;
+  repeatInterval: number;
+  repeatMonthDay: number;
+  repeatStartDate: string;
+}
+
+function defaultRepeatConfig(): RepeatConfig {
+  const today = new Date();
+  return { repeatMode: "weekly", repeatInterval: 2, repeatMonthDay: today.getDate(), repeatStartDate: getLocalDateString(today) };
+}
 
 type PanelType = "main" | "history" | "detail" | "add" | "edit" | "skill-picker" | "archived" | "archived-detail";
 
@@ -84,35 +97,29 @@ function getLocalDateString(date: Date = new Date()): string {
 }
 
 // Helper function to compute streak
-function computeStreakGlobal(done: Set<string>, scheduledDays?: number[], referenceDate?: Date, frozenDates: Set<string> = new Set()): number {
+function computeStreakGlobal(done: Set<string>, schedule: HabitScheduleLike, referenceDate?: Date, frozenDates: Set<string> = new Set()): number {
   const today = referenceDate || new Date();
   today.setHours(0, 0, 0, 0);
   const todayStr = getLocalDateString(today);
-  
-  const days = (Array.isArray(scheduledDays) && scheduledDays.length > 0) ? scheduledDays : [0, 1, 2, 3, 4, 5, 6];
-  
+
   let s = 0;
   const c = new Date(today);
-  const todayDayOfWeek = c.getDay() === 0 ? 6 : c.getDay() - 1;
-  
-  if (days.includes(todayDayOfWeek) && done.has(todayStr)) {
+
+  if (isHabitScheduledOn(schedule, c) && done.has(todayStr)) {
     s++;
-    c.setDate(c.getDate() - 1);
-  } else {
-    c.setDate(c.getDate() - 1);
   }
-  
+  c.setDate(c.getDate() - 1);
+
   let maxIterations = 1000;
   while (maxIterations > 0) {
     maxIterations--;
     const x = getLocalDateString(c);
-    const dayOfWeek = c.getDay() === 0 ? 6 : c.getDay() - 1;
-    
-    if (!days.includes(dayOfWeek)) {
+
+    if (!isHabitScheduledOn(schedule, c)) {
       c.setDate(c.getDate() - 1);
       continue;
     }
-    
+
     if (done.has(x)) {
       s++;
       c.setDate(c.getDate() - 1);
@@ -128,63 +135,55 @@ function computeStreakGlobal(done: Set<string>, scheduledDays?: number[], refere
 }
 
 // Helper function to check if streak is broken
-function isStreakBrokenGlobal(done: Set<string>, scheduledDays?: number[], referenceDate?: Date, frozenDates: Set<string> = new Set()): boolean {
+function isStreakBrokenGlobal(done: Set<string>, schedule: HabitScheduleLike, referenceDate?: Date, frozenDates: Set<string> = new Set()): boolean {
   const today = referenceDate || new Date();
   today.setHours(0, 0, 0, 0);
   const todayStr = getLocalDateString(today);
-  
-  const days = (Array.isArray(scheduledDays) && scheduledDays.length > 0) ? scheduledDays : [0, 1, 2, 3, 4, 5, 6];
-  
-  const yesterdayStr = new Date(today);
-  yesterdayStr.setDate(yesterdayStr.getDate() - 1);
-  const yesterdayDateStr = getLocalDateString(yesterdayStr);
-  const yesterdayDayOfWeek = yesterdayStr.getDay() === 0 ? 6 : yesterdayStr.getDay() - 1;
-  
-  const todayDayOfWeek = today.getDay() === 0 ? 6 : today.getDay() - 1;
-  const todayScheduled = days.includes(todayDayOfWeek);
-  const todayNotDone = todayScheduled && !done.has(todayStr);
-  
-  const yesterdayScheduled = days.includes(yesterdayDayOfWeek);
-  const yesterdayNotDone = yesterdayScheduled && !done.has(yesterdayDateStr) && !frozenDates.has(yesterdayDateStr);
-  
-  return todayNotDone && yesterdayNotDone;
+
+  // Última vez que tocaba antes de hoy (para cada X días / mensual puede no ser ayer).
+  const prev = new Date(today);
+  prev.setDate(prev.getDate() - 1);
+  let prevScheduled = false;
+  for (let i = 0; i < 400; i++) {
+    if (isHabitScheduledOn(schedule, prev)) { prevScheduled = true; break; }
+    prev.setDate(prev.getDate() - 1);
+  }
+  const prevStr = getLocalDateString(prev);
+
+  const todayNotDone = isHabitScheduledOn(schedule, today) && !done.has(todayStr);
+  const prevNotDone = prevScheduled && !done.has(prevStr) && !frozenDates.has(prevStr);
+
+  return todayNotDone && prevNotDone;
 }
 
 // Helper function to find the best streak from historical records
-function computeBestStreakFromRecords(done: Set<string>, scheduledDays?: number[]): number {
+function computeBestStreakFromRecords(done: Set<string>, schedule: HabitScheduleLike): number {
   if (done.size === 0) return 0;
-  
-  const days = (Array.isArray(scheduledDays) && scheduledDays.length > 0) 
-    ? scheduledDays 
-    : [0, 1, 2, 3, 4, 5, 6];
-  
+
   const sortedDates = Array.from(done).sort();
   let best = 0;
   let current = 0;
-  
+
   for (const dateStr of sortedDates) {
     const d = new Date(dateStr + "T00:00:00");
-    const dayOfWeek = d.getDay() === 0 ? 6 : d.getDay() - 1;
-    if (!days.includes(dayOfWeek)) continue;
-    
+    if (!isHabitScheduledOn(schedule, d)) continue;
+
     const prev = new Date(d);
     prev.setDate(prev.getDate() - 1);
     let foundPrev = false;
-    
-    for (let i = 1; i <= 7; i++) {
-      const p = getLocalDateString(prev);
-      const pDow = prev.getDay() === 0 ? 6 : prev.getDay() - 1;
-      if (days.includes(pDow)) {
-        foundPrev = done.has(p);
+
+    for (let i = 1; i <= 400; i++) {
+      if (isHabitScheduledOn(schedule, prev)) {
+        foundPrev = done.has(getLocalDateString(prev));
         break;
       }
       prev.setDate(prev.getDate() - 1);
     }
-    
+
     current = foundPrev ? current + 1 : 1;
     best = Math.max(best, current);
   }
-  
+
   return best;
 }
 
@@ -203,6 +202,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
   const [newHabitAreaId, setNewHabitAreaId] = useState<string | null>(null);
   const [newHabitProjectId, setNewHabitProjectId] = useState<string | null>(null);
   const [newHabitScheduledDays, setNewHabitScheduledDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
+  const [newHabitRepeat, setNewHabitRepeat] = useState<RepeatConfig>(defaultRepeatConfig);
   const [newHabitType, setNewHabitType] = useState<"mini" | "deep">("mini");
   const [newHabitDefaultTimeSlots, setNewHabitDefaultTimeSlots] = useState<TimeSlot[]>([]);
   const [newHabitMinMinutes, setNewHabitMinMinutes] = useState<number | null>(null);
@@ -212,6 +212,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
   const [editHabitAreaId, setEditHabitAreaId] = useState<string | null>(null);
   const [editHabitProjectId, setEditHabitProjectId] = useState<string | null>(null);
   const [editHabitScheduledDays, setEditHabitScheduledDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
+  const [editHabitRepeat, setEditHabitRepeat] = useState<RepeatConfig>(defaultRepeatConfig);
   const [editHabitType, setEditHabitType] = useState<"mini" | "deep">("mini");
   const [editHabitDefaultTimeSlots, setEditHabitDefaultTimeSlots] = useState<TimeSlot[]>([]);
   const [editHabitMinMinutes, setEditHabitMinMinutes] = useState<number | null>(null);
@@ -389,8 +390,8 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
         let calculatedBestStreak = habit.bestStreak || 0;
         if (done.size > 0) {
           const referenceDate = isArchived ? new Date(habit.endDate! + "T00:00:00") : new Date();
-          const streakAtReference = computeStreakGlobal(done, habit.scheduledDays, referenceDate, frozenDates);
-          const bestEver = computeBestStreakFromRecords(done, habit.scheduledDays);
+          const streakAtReference = computeStreakGlobal(done, habit, referenceDate, frozenDates);
+          const bestEver = computeBestStreakFromRecords(done, habit);
           calculatedBestStreak = Math.max(calculatedBestStreak, streakAtReference, bestEver);
         }
 
@@ -451,6 +452,10 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       bodyLinks?: BodyLink[];
       scheduledDays: number[];
       habitType: "mini" | "deep";
+      repeatMode?: HabitRepeatMode;
+      repeatInterval?: number | null;
+      repeatMonthDay?: number | null;
+      repeatStartDate?: string | null;
       defaultTimeSlots?: TimeSlot[];
       minMinutes?: number | null;
     }) => {
@@ -480,6 +485,10 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       bodyLinks?: BodyLink[];
       scheduledDays?: number[];
       habitType?: "mini" | "deep";
+      repeatMode?: HabitRepeatMode;
+      repeatInterval?: number | null;
+      repeatMonthDay?: number | null;
+      repeatStartDate?: string | null;
       defaultTimeSlots?: TimeSlot[];
       minMinutes?: number | null;
     }) => {
@@ -496,6 +505,10 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
           skillIds: data.skillIds,
           bodyLinks: data.bodyLinks,
           scheduledDays: data.scheduledDays,
+          repeatMode: data.repeatMode,
+          repeatInterval: data.repeatInterval,
+          repeatMonthDay: data.repeatMonthDay,
+          repeatStartDate: data.repeatStartDate,
           habitType: data.habitType,
           defaultTimeSlots: data.defaultTimeSlots,
           minMinutes: data.minMinutes,
@@ -635,6 +648,12 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
       setEditHabitSkillIds(habit.skillIds?.length ? habit.skillIds : habit.skillId ? [habit.skillId] : []);
       setEditHabitBodyLinks(habit.bodyLinks ?? []);
       setEditHabitScheduledDays(habit.scheduledDays || [0, 1, 2, 3, 4, 5, 6]);
+      setEditHabitRepeat({
+        repeatMode: (habit.repeatMode as HabitRepeatMode) || "weekly",
+        repeatInterval: habit.repeatInterval ?? 2,
+        repeatMonthDay: habit.repeatMonthDay ?? new Date().getDate(),
+        repeatStartDate: habit.repeatStartDate || getLocalDateString(new Date(habit.createdAt)),
+      });
       setEditHabitType(habit.habitType || "mini");
       setEditHabitDefaultTimeSlots(Array.isArray(habit.defaultTimeSlots) ? (habit.defaultTimeSlots as TimeSlot[]) : []);
       setEditHabitMinMinutes(habit.minMinutes ?? null);
@@ -666,6 +685,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
     setNewHabitSkillIds([]);
     setNewHabitBodyLinks([]);
     setNewHabitScheduledDays([0, 1, 2, 3, 4, 5, 6]);
+    setNewHabitRepeat(defaultRepeatConfig());
     setNewHabitType("mini");
     setNewHabitDefaultTimeSlots([]);
     setNewHabitMinMinutes(null);
@@ -679,6 +699,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
     setEditHabitSkillIds([]);
     setEditHabitBodyLinks([]);
     setEditHabitScheduledDays([0, 1, 2, 3, 4, 5, 6]);
+    setEditHabitRepeat(defaultRepeatConfig());
     setEditHabitType("mini");
     setEditHabitDefaultTimeSlots([]);
     setEditHabitMinMinutes(null);
@@ -801,6 +822,8 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
               skills={newPanelSkills}
               scheduledDays={newHabitScheduledDays}
               onScheduledDaysChange={setNewHabitScheduledDays}
+              repeat={newHabitRepeat}
+              onRepeatChange={setNewHabitRepeat}
               habitType={newHabitType}
               onHabitTypeChange={setNewHabitType}
               defaultTimeSlots={newHabitDefaultTimeSlots}
@@ -831,6 +854,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                       skillIds: newHabitSkillIds,
                       bodyLinks: newHabitBodyLinks,
                       scheduledDays: newHabitScheduledDays,
+                      ...newHabitRepeat,
                       habitType: newHabitType,
                       defaultTimeSlots: newHabitDefaultTimeSlots,
                       minMinutes: newHabitMinMinutes,
@@ -863,6 +887,8 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
               skills={editPanelSkills}
               scheduledDays={editHabitScheduledDays}
               onScheduledDaysChange={setEditHabitScheduledDays}
+              repeat={editHabitRepeat}
+              onRepeatChange={setEditHabitRepeat}
               habitType={editHabitType}
               onHabitTypeChange={setEditHabitType}
               defaultTimeSlots={editHabitDefaultTimeSlots}
@@ -894,6 +920,7 @@ export function HabitStreakModal({ open, onOpenChange }: HabitStreakModalProps) 
                       skillIds: editHabitSkillIds,
                       bodyLinks: editHabitBodyLinks,
                       scheduledDays: editHabitScheduledDays,
+                      ...editHabitRepeat,
                       habitType: editHabitType,
                       defaultTimeSlots: editHabitDefaultTimeSlots,
                       minMinutes: editHabitMinMinutes,
@@ -1078,8 +1105,8 @@ function HabitCard({
   onPressEnd: (habitId: string) => void;
 }) {
   const theme = HABIT_THEME[habit.habitType === "deep" ? "deep" : "mini"];
-  const streak = computeStreakGlobal(habit.done, habit.scheduledDays, today, habit.frozenDates);
-  const broken = isStreakBrokenGlobal(habit.done, habit.scheduledDays, today, habit.frozenDates);
+  const streak = computeStreakGlobal(habit.done, habit, today, habit.frozenDates);
+  const broken = isStreakBrokenGlobal(habit.done, habit, today, habit.frozenDates);
   const isToday = habit.done.has(todayStr);
 
   // Skills linkeados al hábito: se muestran con letra chica mientras el hábito no esté
@@ -1095,9 +1122,8 @@ function HabitCard({
   const linkedBodyNames = (habit.bodyLinks ?? []).map(
     (link) => `${BODY_DIMENSION_LABELS[link.dimension]} en ${BODY_ZONE_LABELS[link.zone]}`
   );
-  const scheduledDays = habit.scheduledDays?.length ? habit.scheduledDays : [0, 1, 2, 3, 4, 5, 6];
-  const todayDayOfWeek = today.getDay() === 0 ? 6 : today.getDay() - 1;
-  const isScheduledToday = scheduledDays.includes(todayDayOfWeek);
+  const isScheduledToday = isHabitScheduledOn(habit, today);
+  const scheduleLabel = describeHabitSchedule(habit);
 
   let daysRemaining: number | null = null;
   let endProgressPct = 0;
@@ -1120,8 +1146,8 @@ function HabitCard({
   // cuenta cualquier día hecho, agendado o no).
   let weekTotal = 0;
   let weekCompleted = 0;
-  weekDays.forEach((w, i) => {
-    if (scheduledDays.includes(i)) weekTotal++;
+  weekDays.forEach((w) => {
+    if (isHabitScheduledOn(habit, w)) weekTotal++;
     if (habit.done.has(getLocalDateString(w))) weekCompleted++;
   });
 
@@ -1173,10 +1199,10 @@ function HabitCard({
       </div>
 
       {/* Scheduled days */}
-      {habit.scheduledDays && habit.scheduledDays.length > 0 && habit.scheduledDays.length < 7 && (
+      {scheduleLabel && (
         <div className="mb-2 text-xs text-muted-foreground">
-          Días: <span className="font-medium text-foreground">
-            {habit.scheduledDays.map((d) => DAY_LBLS[d]).join(", ")}
+          {(habit.repeatMode || "weekly") === "weekly" && "Días: "}<span className="font-medium text-foreground">
+            {scheduleLabel}
           </span>
         </div>
       )}
@@ -1213,7 +1239,7 @@ function HabitCard({
           const isTod = wds === todayStr;
           const isDone = habit.done.has(wds);
           const isMissed = wc < today && !isDone;
-          const isScheduled = scheduledDays.includes(i);
+          const isScheduled = isHabitScheduledOn(habit, w);
 
           return (
             <div
@@ -1427,11 +1453,7 @@ function MainPanel({
 
   const doneCount = habits.filter((h) => h.done.has(todayStr)).length;
 
-  const todayDayOfWeek = today.getDay() === 0 ? 6 : today.getDay() - 1;
-  const isScheduledToday = (h: HabitData) => {
-    const days = h.scheduledDays?.length ? h.scheduledDays : [0, 1, 2, 3, 4, 5, 6];
-    return days.includes(todayDayOfWeek);
-  };
+  const isScheduledToday = (h: HabitData) => isHabitScheduledOn(h, today);
   // Los hábitos programados para hoy se muestran primero.
   const sortByToday = (list: HabitData[]) =>
     [...list].sort((a, b) => Number(isScheduledToday(b)) - Number(isScheduledToday(a)));
@@ -1863,8 +1885,8 @@ function DetailPanel({
   // Misma lógica que el resto de los paneles (computeStreakGlobal/computeBestStreakFromRecords):
   // antes esta vista recalculaba la racha con una copia local que ignoraba los días congelados,
   // lo que la desalineaba de "Mejor racha" mostrada en la lista principal.
-  const streak = computeStreakGlobal(habit.done, habit.scheduledDays, today, habit.frozenDates);
-  const broken = isStreakBrokenGlobal(habit.done, habit.scheduledDays, today, habit.frozenDates);
+  const streak = computeStreakGlobal(habit.done, habit, today, habit.frozenDates);
+  const broken = isStreakBrokenGlobal(habit.done, habit, today, habit.frozenDates);
   const bestStreak = broken ? habit.bestStreak : Math.max(streak, habit.bestStreak);
   const doneInMonth = Array.from(habit.done).filter(
     (d) => d.startsWith(`${year}-${String(month + 1).padStart(2, "0")}`)
@@ -2013,6 +2035,8 @@ function AddPanel({
   onBodyLinksChange,
   scheduledDays,
   onScheduledDaysChange,
+  repeat,
+  onRepeatChange,
   habitType,
   onHabitTypeChange,
   defaultTimeSlots,
@@ -2042,6 +2066,8 @@ function AddPanel({
   onBodyLinksChange: (links: BodyLink[]) => void;
   scheduledDays: number[];
   onScheduledDaysChange: (days: number[]) => void;
+  repeat: RepeatConfig;
+  onRepeatChange: (repeat: RepeatConfig) => void;
   habitType: "mini" | "deep";
   onHabitTypeChange: (type: "mini" | "deep") => void;
   defaultTimeSlots: TimeSlot[];
@@ -2166,38 +2192,14 @@ function AddPanel({
           </p>
         </div>
 
-        {/* Scheduled Days Selector */}
-        <div>
-          <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
-            Días de la semana *
-          </label>
-          <div className="mt-2 grid grid-cols-7 gap-1.5">
-            {["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"].map((day, index) => (
-              <button
-                key={index}
-                onClick={() => {
-                  const newDays = scheduledDays.includes(index)
-                    ? scheduledDays.filter((d) => d !== index)
-                    : [...scheduledDays, index];
-                  if (newDays.length > 0) {
-                    onScheduledDaysChange(newDays.sort((a, b) => a - b));
-                  }
-                }}
-                disabled={isLoading || (scheduledDays.length === 1 && scheduledDays.includes(index))}
-                className={`py-2.5 sm:py-2 px-1 rounded-lg font-semibold text-xs sm:text-sm transition-all active:scale-95 touch-manipulation ${
-                  scheduledDays.includes(index)
-                    ? "bg-purple-600 text-white border-2 border-purple-600"
-                    : "border-2 border-border/30 bg-background text-foreground hover:border-purple-400"
-                } disabled:opacity-50 disabled:cursor-not-allowed`}
-              >
-                {day}
-              </button>
-            ))}
-          </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Selecciona al menos un día para rastrear el hábito
-          </p>
-        </div>
+        {/* Frecuencia: días de la semana, cada X días o cada mes */}
+        <RepeatPicker
+          scheduledDays={scheduledDays}
+          onScheduledDaysChange={onScheduledDaysChange}
+          repeat={repeat}
+          onRepeatChange={onRepeatChange}
+          isLoading={isLoading}
+        />
 
         {/* Default Time Slot Selector */}
         <div>
@@ -2367,6 +2369,8 @@ function EditPanel({
   onBodyLinksChange,
   scheduledDays,
   onScheduledDaysChange,
+  repeat,
+  onRepeatChange,
   habitType,
   onHabitTypeChange,
   defaultTimeSlots,
@@ -2398,6 +2402,8 @@ function EditPanel({
   onBodyLinksChange: (links: BodyLink[]) => void;
   scheduledDays: number[];
   onScheduledDaysChange: (days: number[]) => void;
+  repeat: RepeatConfig;
+  onRepeatChange: (repeat: RepeatConfig) => void;
   habitType: "mini" | "deep";
   onHabitTypeChange: (type: "mini" | "deep") => void;
   defaultTimeSlots: TimeSlot[];
@@ -2520,38 +2526,14 @@ function EditPanel({
           </p>
         </div>
 
-        {/* Scheduled Days Selector */}
-        <div>
-          <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
-            Días de la semana *
-          </label>
-          <div className="mt-2 grid grid-cols-7 gap-1.5">
-            {["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"].map((day, index) => (
-              <button
-                key={index}
-                onClick={() => {
-                  const newDays = scheduledDays.includes(index)
-                    ? scheduledDays.filter((d) => d !== index)
-                    : [...scheduledDays, index];
-                  if (newDays.length > 0) {
-                    onScheduledDaysChange(newDays.sort((a, b) => a - b));
-                  }
-                }}
-                disabled={isLoading || (scheduledDays.length === 1 && scheduledDays.includes(index))}
-                className={`py-2.5 sm:py-2 px-1 rounded-lg font-semibold text-xs sm:text-sm transition-all active:scale-95 touch-manipulation ${ 
-                  scheduledDays.includes(index)
-                    ? "bg-purple-600 text-white border-2 border-purple-600"
-                    : "border-2 border-border/30 bg-background text-foreground hover:border-purple-400"
-                } disabled:opacity-50 disabled:cursor-not-allowed`}
-              >
-                {day}
-              </button>
-            ))}
-          </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Selecciona al menos un día para rastrear el hábito
-          </p>
-        </div>
+        {/* Frecuencia: días de la semana, cada X días o cada mes */}
+        <RepeatPicker
+          scheduledDays={scheduledDays}
+          onScheduledDaysChange={onScheduledDaysChange}
+          repeat={repeat}
+          onRepeatChange={onRepeatChange}
+          isLoading={isLoading}
+        />
 
         {/* Default Time Slot Selector */}
         <div>
@@ -2786,8 +2768,8 @@ function ArchivedPanel({
           habits.map((habit) => {
             const today = new Date();
             today.setHours(0, 0, 0, 0);
-            const streak = computeStreakGlobal(habit.done, habit.scheduledDays, today, habit.frozenDates);
-            const broken = isStreakBrokenGlobal(habit.done, habit.scheduledDays, today, habit.frozenDates);
+            const streak = computeStreakGlobal(habit.done, habit, today, habit.frozenDates);
+            const broken = isStreakBrokenGlobal(habit.done, habit, today, habit.frozenDates);
             const displayBestStreak = broken ? habit.bestStreak : Math.max(streak, habit.bestStreak);
             const isEditing = editingId === habit.id;
             
@@ -2912,8 +2894,8 @@ function ArchivedDetailPanel({
   today.setHours(0, 0, 0, 0);
   
   // Calculate display best streak
-  const streak = computeStreakGlobal(habit.done, habit.scheduledDays, today, habit.frozenDates);
-  const broken = isStreakBrokenGlobal(habit.done, habit.scheduledDays, today, habit.frozenDates);
+  const streak = computeStreakGlobal(habit.done, habit, today, habit.frozenDates);
+  const broken = isStreakBrokenGlobal(habit.done, habit, today, habit.frozenDates);
   const displayBestStreak = broken ? habit.bestStreak : Math.max(streak, habit.bestStreak);
 
   return (
@@ -3020,6 +3002,141 @@ function ArchivedDetailPanel({
       </div>
 
       <div className="h-2" />
+    </div>
+  );
+}
+
+const REPEAT_MODE_OPTIONS: { key: HabitRepeatMode; label: string }[] = [
+  { key: "weekly", label: "Días" },
+  { key: "interval", label: "Cada X días" },
+  { key: "monthly", label: "Cada mes" },
+];
+
+// Frecuencia del hábito, compartida por los paneles de alta y edición.
+function RepeatPicker({
+  scheduledDays,
+  onScheduledDaysChange,
+  repeat,
+  onRepeatChange,
+  isLoading,
+}: {
+  scheduledDays: number[];
+  onScheduledDaysChange: (days: number[]) => void;
+  repeat: RepeatConfig;
+  onRepeatChange: (repeat: RepeatConfig) => void;
+  isLoading: boolean;
+}) {
+  const inputClass =
+    "w-full px-3 py-2.5 border border-border/50 rounded-lg bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm touch-manipulation";
+
+  return (
+    <div>
+      <label className="text-xs font-semibold text-foreground uppercase tracking-wide">
+        Repetir *
+      </label>
+      <div className="mt-2 grid grid-cols-3 gap-1.5">
+        {REPEAT_MODE_OPTIONS.map((opt) => (
+          <button
+            key={opt.key}
+            type="button"
+            onClick={() => onRepeatChange({ ...repeat, repeatMode: opt.key })}
+            disabled={isLoading}
+            className={`py-2.5 sm:py-2 px-1 rounded-lg font-semibold text-xs sm:text-sm transition-all active:scale-95 touch-manipulation ${
+              repeat.repeatMode === opt.key
+                ? "bg-purple-600 text-white border-2 border-purple-600"
+                : "border-2 border-border/30 bg-background text-foreground hover:border-purple-400"
+            } disabled:opacity-50 disabled:cursor-not-allowed`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      {repeat.repeatMode === "weekly" && (
+        <>
+          <div className="mt-2 grid grid-cols-7 gap-1.5">
+            {DAY_LBLS.map((day, index) => (
+              <button
+                key={index}
+                type="button"
+                onClick={() => {
+                  const newDays = scheduledDays.includes(index)
+                    ? scheduledDays.filter((d) => d !== index)
+                    : [...scheduledDays, index];
+                  if (newDays.length > 0) {
+                    onScheduledDaysChange(newDays.sort((a, b) => a - b));
+                  }
+                }}
+                disabled={isLoading || (scheduledDays.length === 1 && scheduledDays.includes(index))}
+                className={`py-2.5 sm:py-2 px-1 rounded-lg font-semibold text-xs sm:text-sm transition-all active:scale-95 touch-manipulation ${
+                  scheduledDays.includes(index)
+                    ? "bg-purple-600 text-white border-2 border-purple-600"
+                    : "border-2 border-border/30 bg-background text-foreground hover:border-purple-400"
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                {day}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Selecciona al menos un día para rastrear el hábito
+          </p>
+        </>
+      )}
+
+      {repeat.repeatMode === "interval" && (
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <div>
+            <span className="text-xs text-muted-foreground">Cada cuántos días</span>
+            <input
+              type="number"
+              min={1}
+              max={365}
+              value={repeat.repeatInterval}
+              onChange={(e) => {
+                const n = parseInt(e.target.value, 10);
+                onRepeatChange({ ...repeat, repeatInterval: Number.isFinite(n) ? Math.min(365, Math.max(1, n)) : 1 });
+              }}
+              disabled={isLoading}
+              className={`mt-1 ${inputClass}`}
+            />
+          </div>
+          <div>
+            <span className="text-xs text-muted-foreground">Empezando el</span>
+            <input
+              type="date"
+              value={repeat.repeatStartDate}
+              onChange={(e) => e.target.value && onRepeatChange({ ...repeat, repeatStartDate: e.target.value })}
+              disabled={isLoading}
+              className={`mt-1 ${inputClass}`}
+            />
+          </div>
+          <p className="col-span-2 text-xs text-muted-foreground">
+            Toca el {repeat.repeatStartDate.split("-").reverse().join("/")} y después cada {repeat.repeatInterval} {repeat.repeatInterval === 1 ? "día" : "días"}
+          </p>
+        </div>
+      )}
+
+      {repeat.repeatMode === "monthly" && (
+        <div className="mt-2">
+          <span className="text-xs text-muted-foreground">Día del mes</span>
+          <input
+            type="number"
+            min={1}
+            max={31}
+            value={repeat.repeatMonthDay}
+            onChange={(e) => {
+              const n = parseInt(e.target.value, 10);
+              onRepeatChange({ ...repeat, repeatMonthDay: Number.isFinite(n) ? Math.min(31, Math.max(1, n)) : 1 });
+            }}
+            disabled={isLoading}
+            className={`mt-1 ${inputClass}`}
+          />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Si el mes no tiene ese día, toca el último día del mes
+          </p>
+        </div>
+      )}
     </div>
   );
 }

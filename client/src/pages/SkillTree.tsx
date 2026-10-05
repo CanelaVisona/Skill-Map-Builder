@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
+import { isHabitScheduledOn } from "@shared/habitSchedule";
 import { createPortal } from "react-dom";
 import { SkillTreeProvider, useSkillTree, type Skill, type GlobalSkill, type Area, type Project } from "@/lib/skill-context";
 import { MenuProvider, useMenu } from "@/lib/menu-context";
@@ -149,12 +150,10 @@ function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpen
 
   const now = new Date();
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-  const todayDayOfWeek = now.getDay() === 0 ? 6 : now.getDay() - 1;
 
   const habitsScheduledToday = (habitsData || []).filter((h) => {
     if (h.endDate && h.endDate < todayStr) return false;
-    const days = h.scheduledDays?.length ? h.scheduledDays : [0, 1, 2, 3, 4, 5, 6];
-    return days.includes(todayDayOfWeek);
+    return isHabitScheduledOn(h, now);
   });
 
   const todayRecordQueries = useQueries({

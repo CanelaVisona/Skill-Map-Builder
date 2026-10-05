@@ -392,6 +392,10 @@ export const habits = pgTable("habits", {
   skillIds: jsonb("skill_ids").notNull().$type<string[]>().default([]), // Multiple skills linked for XP rewards
   bodyLinks: jsonb("body_links").notNull().$type<BodyLink[]>().default([]), // Link a componentes corporales para crecimiento de fuerza/flex
   scheduledDays: jsonb("scheduled_days").notNull().$type<number[]>().default([0,1,2,3,4,5,6]), // Days of week (0=Mon, 6=Sun)
+  repeatMode: text("repeat_mode").notNull().default("weekly").$type<"weekly" | "interval" | "monthly">(), // "weekly" = usa scheduledDays, "interval" = cada repeatInterval días desde repeatStartDate, "monthly" = el día repeatMonthDay de cada mes
+  repeatInterval: integer("repeat_interval"), // Cada cuántos días (modo "interval")
+  repeatMonthDay: integer("repeat_month_day"), // Día del mes 1-31 (modo "monthly"); si el mes es más corto, toca el último día
+  repeatStartDate: varchar("repeat_start_date"), // YYYY-MM-DD, desde cuándo se cuentan los X días (modo "interval")
   habitType: text("habit_type").notNull().default("mini").$type<"mini" | "deep">(), // "mini" = corta duración/casi diaria, "deep" = actividades más largas y menos frecuentes
   minMinutes: integer("min_minutes"), // Minutos mínimos sugeridos para la tarea, se muestran junto al hábito en "Tareas de hoy"
   freezeDates: text("freeze_dates").default("[]").notNull(), // Array of frozen dates as JSON string (YYYY-MM-DD format)
@@ -988,6 +992,9 @@ export type GlobalSkill = typeof globalSkills.$inferSelect;
 export const insertHabitSchema = createInsertSchema(habits).omit({ id: true, createdAt: true, updatedAt: true }).extend({
   skillIds: z.array(z.string()).optional().default([]),
   defaultTimeSlots: z.array(z.enum(["morning", "midday", "afternoon", "night"])).optional().default([]),
+  repeatMode: z.enum(["weekly", "interval", "monthly"]).optional().default("weekly"),
+  repeatInterval: z.number().int().min(1).max(365).optional().nullable(),
+  repeatMonthDay: z.number().int().min(1).max(31).optional().nullable(),
 });
 export const insertHabitRecordSchema = createInsertSchema(habitRecords).omit({ id: true, createdAt: true });
 export const insertSpaceRepetitionPracticeSchema = createInsertSchema(spaceRepetitionPractices).omit({ id: true, createdAt: true, updatedAt: true }).extend({

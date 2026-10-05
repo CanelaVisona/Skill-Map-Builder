@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { isHabitScheduledOn } from "@shared/habitSchedule";
 import { useQuery, useQueries, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
@@ -77,12 +78,6 @@ function formatConfirmedDay(dateStr: string, refDateStr: string): string {
 
 function getDateStr(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}
-
-// Día de la semana (0=Lunes..6=Domingo) de una fecha YYYY-MM-DD, sin depender de "hoy".
-function dateStrToDayOfWeek(dateStr: string): number {
-  const dow = new Date(dateStr + "T12:00:00").getDay();
-  return dow === 0 ? 6 : dow - 1;
 }
 
 interface PlannedNode {
@@ -243,7 +238,6 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const todayStr = getDateStr(new Date());
   const effectiveDate = previewDate ?? todayStr;
   const isPreview = previewDate !== null;
-  const effectiveDayOfWeek = dateStrToDayOfWeek(effectiveDate);
 
   // Al cerrar el modal, se vuelve siempre a "hoy" en la vista de progreso — no se queda
   // trabada en la previsualización de un día futuro de la sesión anterior.
@@ -267,8 +261,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
 
   const habitsScheduledForView = (habitsData || []).filter((h) => {
     if (h.endDate && h.endDate < effectiveDate) return false;
-    const days = h.scheduledDays?.length ? h.scheduledDays : [0, 1, 2, 3, 4, 5, 6];
-    return days.includes(effectiveDayOfWeek);
+    return isHabitScheduledOn(h, effectiveDate);
   });
 
   const viewRecordQueries = useQueries({
@@ -2007,11 +2000,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       };
     }
 
-    const habitsScheduledThatDay = activeHabitsThisMonth.filter((h) => {
-      const days = h.scheduledDays?.length ? h.scheduledDays : [0, 1, 2, 3, 4, 5, 6];
-      const dow = dObj.getDay() === 0 ? 6 : dObj.getDay() - 1;
-      return days.includes(dow);
-    });
+    const habitsScheduledThatDay = activeHabitsThisMonth.filter((h) => isHabitScheduledOn(h, dObj));
     const habitsDoneThatDay = activeHabitsThisMonth.filter((h) => habitDoneDatesByHabit.get(h.id)?.has(dateStr));
     const extraHabitsDoneThatDay = habitsDoneThatDay.filter((h) => !habitsScheduledThatDay.includes(h));
 

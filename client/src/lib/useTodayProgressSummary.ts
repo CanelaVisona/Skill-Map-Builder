@@ -1,4 +1,5 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
+import { isHabitScheduledOn } from "@shared/habitSchedule";
 import { useSkillTree, type Area, type Project, type Skill } from "@/lib/skill-context";
 import { useHabits } from "@/lib/useHabits";
 import { useManualTasks } from "@/lib/useManualTasks";
@@ -9,11 +10,6 @@ import type { HabitRecord } from "@shared/schema";
 
 function getDateStr(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}
-
-function dateStrToDayOfWeek(dateStr: string): number {
-  const dow = new Date(dateStr + "T12:00:00").getDay();
-  return dow === 0 ? 6 : dow - 1;
 }
 
 interface RewiringTrackerSummary {
@@ -32,12 +28,10 @@ export function useTodayProgressSummary() {
   const habitsQuery = useHabits();
   const { data: habitsData } = habitsQuery;
   const todayStr = getDateStr(new Date());
-  const todayDayOfWeek = dateStrToDayOfWeek(todayStr);
 
   const habitsScheduledToday = (habitsData || []).filter((h) => {
     if (h.endDate && h.endDate < todayStr) return false;
-    const days = h.scheduledDays?.length ? h.scheduledDays : [0, 1, 2, 3, 4, 5, 6];
-    return days.includes(todayDayOfWeek);
+    return isHabitScheduledOn(h, todayStr);
   });
   const habitsNotScheduledToday = (habitsData || []).filter(
     (h) => !habitsScheduledToday.some((s) => s.id === h.id)

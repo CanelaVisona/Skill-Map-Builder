@@ -1086,19 +1086,6 @@ function SavingMissionsCard({
           <div className="h-full rounded-full transition-all duration-500" style={{ width: `${(done / missions.length) * 100}%`, background: GOLD }} />
         </div>
       )}
-      {potential > 0 && (
-        <div className="flex items-baseline justify-between gap-2 mt-3 pb-3 border-b border-border/60">
-          <span className="text-xs text-muted-foreground">Ahorrado este mes</span>
-          <span className="flex items-baseline gap-1.5">
-            <Money usd={saved} className="font-display font-semibold text-lg" />
-            {saved < potential && (
-              <span className="text-[11px] text-muted-foreground">
-                de <Money usd={potential} />
-              </span>
-            )}
-          </span>
-        </div>
-      )}
       {missions.length === 0 ? (
         <div className="text-sm text-muted-foreground py-4">Sin misiones este mes. Ej: "Llevar tu comida".</div>
       ) : (
@@ -1108,7 +1095,19 @@ function SavingMissionsCard({
               <SavingMissionRow key={m.id} mission={m} streak={streaks.get(missionSeriesKey(m))} onToggle={() => onToggle(m)} onEdit={() => onEdit(m)} />
             ))}
           </div>
-          <div className="text-[11px] text-muted-foreground mt-2">Tocá para tildar · mantené presionada una misión para editarla</div>
+          {potential > 0 && (
+            <div className="flex items-baseline justify-between gap-2 mt-3 pt-3 border-t border-border/60">
+              <span className="text-xs text-muted-foreground">Ahorrado este mes</span>
+              <span className="flex items-baseline gap-1.5">
+                <Money usd={saved} className="font-display font-semibold text-lg" />
+                {saved < potential && (
+                  <span className="text-[11px] text-muted-foreground">
+                    de <Money usd={potential} />
+                  </span>
+                )}
+              </span>
+            </div>
+          )}
         </div>
       )}
     </div>

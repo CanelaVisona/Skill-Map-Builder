@@ -162,6 +162,18 @@ app.use((req, res, next) => {
     console.error("⚠ today_task_substeps migration warning:", error.message);
   }
 
+  // Hábitos que se repiten cada X días o una vez por mes.
+  try {
+    await db.execute(sql`
+      ALTER TABLE "habits" ADD COLUMN IF NOT EXISTS "repeat_mode" text DEFAULT 'weekly' NOT NULL;
+      ALTER TABLE "habits" ADD COLUMN IF NOT EXISTS "repeat_interval" integer;
+      ALTER TABLE "habits" ADD COLUMN IF NOT EXISTS "repeat_month_day" integer;
+      ALTER TABLE "habits" ADD COLUMN IF NOT EXISTS "repeat_start_date" varchar;
+    `);
+  } catch (error: any) {
+    console.error("⚠ habits repeat_mode migration warning:", error.message);
+  }
+
   // Vínculo de un evento de "Tareas de hoy" con un área/quest y el nodo creado el día del evento.
   try {
     await db.execute(sql`
