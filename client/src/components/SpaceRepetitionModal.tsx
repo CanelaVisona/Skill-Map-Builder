@@ -12,6 +12,8 @@ import { useBodyProgress } from "@/lib/body-progress-context";
 import { useBodyGainPopup } from "@/lib/body-gain-popup-context";
 import { BodyLinkPicker, type BodyLink } from "@/components/BodyLinkPicker";
 import { SkillLinkPicker } from "@/components/SkillLinkPicker";
+import { SideQuestLinkPicker, type SideQuestLink } from "@/components/SideQuestLinkPicker";
+import { useSkillTree } from "@/lib/skill-context";
 import { useXpPopup } from "@/lib/xp-popup-context";
 import { beginPopupChain, endPopupChain, runPopupQueue } from "@/lib/popup-coordinator";
 
@@ -30,6 +32,8 @@ export interface SpaceRepetitionPractice {
   bodyLinks?: BodyLink[];
   minMinutes?: number | null;
   lastConfirmedAt?: string | null;
+  sideQuestAreaId?: string | null;
+  sideQuestProjectId?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -428,12 +432,14 @@ export function SpaceRepetitionModal({
   const [newSkillIds, setNewSkillIds] = useState<string[]>([]);
   const [newBodyLinks, setNewBodyLinks] = useState<BodyLink[]>([]);
   const [newMinMinutes, setNewMinMinutes] = useState<number | null>(null);
+  const [newSideQuestLink, setNewSideQuestLink] = useState<SideQuestLink>({ sideQuestAreaId: null, sideQuestProjectId: null });
   const [notification, setNotification] = useState<string | null>(null);
   const { theme } = useTheme();
   const queryClient = useQueryClient();
   const { addBodyBlock } = useBodyProgress();
   const { showBodyGainPopup } = useBodyGainPopup();
   const { showXpPopup, hideXpPopup } = useXpPopup();
+  const { refreshSkillTrees } = useSkillTree();
 
   // Fetch areas (used by the area select + to color the XP popup for linked skills)
   const { data: areas = [] } = useQuery<Area[]>({
@@ -471,6 +477,7 @@ export function SpaceRepetitionModal({
   const [editSkillIds, setEditSkillIds] = useState<string[]>([]);
   const [editBodyLinks, setEditBodyLinks] = useState<BodyLink[]>([]);
   const [editMinMinutes, setEditMinMinutes] = useState<number | null>(null);
+  const [editSideQuestLink, setEditSideQuestLink] = useState<SideQuestLink>({ sideQuestAreaId: null, sideQuestProjectId: null });
   const [editPanelSkills, setEditPanelSkills] = useState<any[]>([]);
 
   useEffect(() => {
@@ -639,6 +646,7 @@ export function SpaceRepetitionModal({
           skillIds: newSkillIds,
           bodyLinks: newBodyLinks,
           minMinutes: newMinMinutes,
+          ...newSideQuestLink,
         })
       });
       if (!res.ok) throw new Error("Error creating practice");
@@ -650,6 +658,7 @@ export function SpaceRepetitionModal({
       setNewSkillIds([]);
       setNewBodyLinks([]);
       setNewMinMinutes(null);
+      setNewSideQuestLink({ sideQuestAreaId: null, sideQuestProjectId: null });
       setCurrentPanel("main");
     } catch (error) {
       console.error("Error adding practice:", error);
@@ -669,6 +678,7 @@ export function SpaceRepetitionModal({
     setEditSkillIds(practice.skillIds ?? []);
     setEditBodyLinks(practice.bodyLinks ?? []);
     setEditMinMinutes(practice.minMinutes ?? null);
+    setEditSideQuestLink({ sideQuestAreaId: practice.sideQuestAreaId ?? null, sideQuestProjectId: practice.sideQuestProjectId ?? null });
     setCurrentPanel("edit");
   };
 
@@ -685,6 +695,7 @@ export function SpaceRepetitionModal({
           skillIds: editSkillIds,
           bodyLinks: editBodyLinks,
           minMinutes: editMinMinutes,
+          ...editSideQuestLink,
         }),
       });
       if (!res.ok) throw new Error("Error updating practice");
@@ -839,6 +850,8 @@ export function SpaceRepetitionModal({
       // misma lista vía react-query bajo esta key — sin esto quedarían mostrando el estado
       // viejo de la práctica hasta un refresh completo.
       queryClient.invalidateQueries({ queryKey: ["space-repetition"] });
+      // El intervalo pudo crear un nodo SideQuest en el área/quest unido.
+      refreshSkillTrees();
     }
   };
 
@@ -951,6 +964,8 @@ export function SpaceRepetitionModal({
               areas={areas}
               skills={newPanelSkills}
               minMinutes={newMinMinutes}
+              sideQuestLink={newSideQuestLink}
+              onSideQuestLinkChange={setNewSideQuestLink}
               onEmojiChange={setNewEmoji}
               onNameChange={setNewName}
               onAreaIdChange={setNewAreaId}
@@ -964,6 +979,7 @@ export function SpaceRepetitionModal({
                 setNewSkillIds([]);
                 setNewBodyLinks([]);
                 setNewMinMinutes(null);
+                setNewSideQuestLink({ sideQuestAreaId: null, sideQuestProjectId: null });
                 setCurrentPanel("main");
               }}
               onSubmit={addPractice}
@@ -993,6 +1009,8 @@ export function SpaceRepetitionModal({
               areas={areas}
               skills={editPanelSkills}
               minMinutes={editMinMinutes}
+              sideQuestLink={editSideQuestLink}
+              onSideQuestLinkChange={setEditSideQuestLink}
               onEmojiChange={setEditEmoji}
               onNameChange={setEditName}
               onAreaIdChange={setEditAreaId}
@@ -1604,6 +1622,8 @@ function AddPanel({
   areas,
   skills,
   minMinutes,
+  sideQuestLink,
+  onSideQuestLinkChange,
   onEmojiChange,
   onNameChange,
   onAreaIdChange,
@@ -1621,6 +1641,8 @@ function AddPanel({
   areas: Area[];
   skills: any[];
   minMinutes: number | null;
+  sideQuestLink: SideQuestLink;
+  onSideQuestLinkChange: (link: SideQuestLink) => void;
   onEmojiChange: (emoji: string) => void;
   onNameChange: (name: string) => void;
   onAreaIdChange: (id: string | null) => void;
@@ -1721,6 +1743,21 @@ function AddPanel({
           </p>
         </div>
 
+        {/* SideQuest link */}
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-2">
+            Unir a área o quest
+          </label>
+          <SideQuestLinkPicker
+            value={sideQuestLink}
+            onChange={onSideQuestLinkChange}
+            className="w-full px-3 py-2.5 border border-border/50 rounded-xl bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 transition-all text-sm appearance-none cursor-pointer"
+          />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Opcional: cada intervalo registrado crea ahí un nodo SideQuest
+          </p>
+        </div>
+
         {/* Skill Select */}
         <div>
           <label className="block text-sm font-medium text-foreground mb-2">
@@ -1774,6 +1811,8 @@ function EditPanel({
   areas,
   skills,
   minMinutes,
+  sideQuestLink,
+  onSideQuestLinkChange,
   onEmojiChange,
   onNameChange,
   onAreaIdChange,
@@ -1792,6 +1831,8 @@ function EditPanel({
   areas: Area[];
   skills: any[];
   minMinutes: number | null;
+  sideQuestLink: SideQuestLink;
+  onSideQuestLinkChange: (link: SideQuestLink) => void;
   onEmojiChange: (emoji: string) => void;
   onNameChange: (name: string) => void;
   onAreaIdChange: (id: string | null) => void;
@@ -1890,6 +1931,21 @@ function EditPanel({
           </select>
           <p className="mt-1 text-xs text-muted-foreground">
             Opcional: vincular la práctica a un área
+          </p>
+        </div>
+
+        {/* SideQuest link */}
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-2">
+            Unir a área o quest
+          </label>
+          <SideQuestLinkPicker
+            value={sideQuestLink}
+            onChange={onSideQuestLinkChange}
+            className="w-full px-3 py-2.5 border border-border/50 rounded-xl bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 transition-all text-sm appearance-none cursor-pointer"
+          />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Opcional: cada intervalo registrado crea ahí un nodo SideQuest
           </p>
         </div>
 

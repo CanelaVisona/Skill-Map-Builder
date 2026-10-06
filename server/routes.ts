@@ -137,6 +137,58 @@ function orderWithMovedInSlot(targetOthers: any[], movedSkill: any, removedPosit
   return [...others.slice(0, insertAt), movedSkill, ...others.slice(insertAt)];
 }
 
+// Avance de un libro / práctica de repetición espaciada unido a un área o quest: registra lo
+// hecho como un nodo SideQuest ya confirmado. Entra en el lugar del nodo desbloqueado del árbol
+// (que queda después, dependiendo del nuevo, y sigue desbloqueado); si no hay ninguno, justo
+// después del último confirmado. No hace nada si el área/quest no es del usuario.
+async function createLoggedSideQuestNode(
+  link: { areaId?: string | null; projectId?: string | null },
+  userId: string,
+  title: string,
+): Promise<void> {
+  const areaId = link.areaId || undefined;
+  const projectId = areaId ? undefined : (link.projectId || undefined);
+  if (!areaId && !projectId) return;
+
+  const owner = areaId ? await storage.getArea(areaId) : await storage.getProject(projectId!);
+  if (!owner || owner.userId !== userId) return;
+
+  const tree = (areaId ? await storage.getSkills(areaId) : await storage.getProjectSkills(projectId!))
+    .filter(s => !s.parentSkillId)
+    .sort((a, b) => (a.level - b.level) || ((a.levelPosition ?? 0) - (b.levelPosition ?? 0)));
+  const available = tree.find(s => s.status === "available" && (s.levelPosition ?? 0) > 1);
+  const anchor = available ?? [...tree].reverse().find(s => s.status === "mastered");
+  if (!anchor) return;
+
+  const level = anchor.level;
+  const skill = await storage.createSkill({
+    ...(areaId ? { areaId } : { projectId }),
+    title,
+    description: "",
+    status: "mastered",
+    x: anchor.x,
+    y: anchor.y,
+    dependencies: available ? (Array.isArray(available.dependencies) ? available.dependencies : []) : [anchor.id],
+    level,
+    levelPosition: (anchor.levelPosition ?? 1) + (available ? 0 : 1),
+    isFinalNode: 0,
+    manualLock: 0,
+    isSideQuest: 1,
+  });
+  await storage.updateSkill(skill.id, { completedAt: new Date() });
+  if (available) await storage.updateSkill(available.id, { dependencies: [skill.id] });
+
+  // Renumera el nivel con el nuevo en su lugar (mismo criterio que POST /api/skills).
+  const siblings = tree.filter(s => s.level === level);
+  const insertAt = siblings.findIndex(s => s.id === anchor.id) + (available ? 0 : 1);
+  const ordered = [...siblings.slice(0, insertAt), skill, ...siblings.slice(insertAt)];
+  for (let i = 0; i < ordered.length; i++) {
+    if (ordered[i].levelPosition !== i + 1) await storage.updateSkill(ordered[i].id, { levelPosition: i + 1 });
+  }
+  await storage.recalculateYCoordinates({ areaId, projectId });
+  await storage.recalculateAvailableStatus(level, { areaId, projectId, excludeSkillId: skill.id });
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -5808,7 +5860,29 @@ export async function registerRoutes(
       if (!updated) {
         return res.status(404).json({ message: "Práctica no encontrada" });
       }
-      
+
+      // Un intervalo nuevo confirmado (en cualquier nivel) se registra como nodo SideQuest en el
+      // área/quest unido. Se detecta acá porque se confirma desde varios lugares del cliente.
+      const intervalCount = (v: unknown): number => {
+        if (Array.isArray(v)) return v.length;
+        if (typeof v === "string") { try { const p = JSON.parse(v); return Array.isArray(p) ? p.length : 0; } catch { return 0; } }
+        return 0;
+      };
+      const confirmedInterval =
+        (req.body.completedIntervals !== undefined && intervalCount(req.body.completedIntervals) > intervalCount(practice.completedIntervals)) ||
+        (req.body.completedIntervalsL2 !== undefined && intervalCount(req.body.completedIntervalsL2) > intervalCount(practice.completedIntervalsL2));
+      if (confirmedInterval && (updated.sideQuestAreaId || updated.sideQuestProjectId)) {
+        try {
+          await createLoggedSideQuestNode(
+            { areaId: updated.sideQuestAreaId, projectId: updated.sideQuestProjectId },
+            req.userId!,
+            `Repasé ${updated.name}`,
+          );
+        } catch (error) {
+          console.error("Error creating space repetition side quest node:", error);
+        }
+      }
+
       // Normalize all array fields in response
       let completedIntervalsArray: number[] = [];
       if (updated.completedIntervals) {
@@ -6372,6 +6446,25 @@ export async function registerRoutes(
         date: req.body.date,
         page: req.body.page
       });
+
+      // pagesRead lo calcula el cliente contra el máximo registrado antes (re-registrar el
+      // mismo día más abajo no cuenta como avance). Un fallo acá no invalida la sesión.
+      const pagesRead = Math.round(Number(req.body.pagesRead) || 0);
+      if (pagesRead > 0 && (book.sideQuestAreaId || book.sideQuestProjectId)) {
+        const unit = book.mode === "chapters"
+          ? (pagesRead === 1 ? "capítulo" : "capítulos")
+          : (pagesRead === 1 ? "página" : "páginas");
+        try {
+          await createLoggedSideQuestNode(
+            { areaId: book.sideQuestAreaId, projectId: book.sideQuestProjectId },
+            req.userId!,
+            `Leí ${pagesRead} ${unit} en ${book.title}`,
+          );
+        } catch (error) {
+          console.error("Error creating book side quest node:", error);
+        }
+      }
+
       res.status(201).json(session);
     } catch (error: any) {
       res.status(500).json({ message: error.message });

@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ArrowLeft, Trash2, Edit } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useSkillTree } from "@/lib/skill-context";
+import { SideQuestLinkPicker, type SideQuestLink } from "@/components/SideQuestLinkPicker";
 
 const GREEN_RAMP = [
   "#E8F5E9", // muy claro
@@ -44,6 +46,8 @@ interface Book {
   totalPages: number;
   mode: "pages" | "chapters";
   goalDays: number[];
+  sideQuestAreaId?: string | null;
+  sideQuestProjectId?: string | null;
   createdAt: string;
   updatedAt: string;
   sessions?: BookSession[];
@@ -1248,7 +1252,7 @@ function AddPanel({
     totalPages: number;
     mode: "pages" | "chapters";
     goalDays: number[];
-  }) => void;
+  } & SideQuestLink) => void;
   editingBook?: Book;
 }) {
   const [title, setTitle] = useState(editingBook?.title || "");
@@ -1256,6 +1260,10 @@ function AddPanel({
   const [total, setTotal] = useState(editingBook?.totalPages.toString() || "");
   const [mode, setMode] = useState<"pages" | "chapters">(editingBook?.mode || "pages");
   const [goalDays, setGoalDays] = useState<number[]>(editingBook?.goalDays || [1, 2, 3, 4, 5]);
+  const [sideQuestLink, setSideQuestLink] = useState<SideQuestLink>({
+    sideQuestAreaId: editingBook?.sideQuestAreaId ?? null,
+    sideQuestProjectId: editingBook?.sideQuestProjectId ?? null,
+  });
 
   const toggleDay = (dow: number) => {
     if (goalDays.includes(dow)) {
@@ -1275,6 +1283,7 @@ function AddPanel({
       totalPages: parseInt(total),
       mode,
       goalDays,
+      ...sideQuestLink,
     });
     if (!editingBook) {
       setTitle("");
@@ -1282,6 +1291,7 @@ function AddPanel({
       setTotal("");
       setMode("pages");
       setGoalDays([1, 2, 3, 4, 5]);
+      setSideQuestLink({ sideQuestAreaId: null, sideQuestProjectId: null });
     }
   };
 
@@ -1352,6 +1362,14 @@ function AddPanel({
               </button>
             ))}
           </div>
+        </div>
+
+        <div>
+          <label className="text-xs text-muted-foreground block mb-1.5">Unir a área o quest</label>
+          <SideQuestLinkPicker value={sideQuestLink} onChange={setSideQuestLink} />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Opcional: cada avance crea un nodo SideQuest "Leí X en {title || "[libro]"}"
+          </p>
         </div>
       </div>
 
@@ -1627,6 +1645,7 @@ export function BookTracker() {
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
   const [editingBookId, setEditingBookId] = useState<string | null>(null);
   const queryClient = useQueryClient();
+  const { refreshSkillTrees } = useSkillTree();
 
   const { data: books = [], isLoading } = useQuery<Book[]>({
     queryKey: ["/api/books", "active"],
@@ -1750,8 +1769,13 @@ export function BookTracker() {
         }
       }
 
+      // Avance real contra el máximo registrado hasta ahora: el server lo usa para crear el
+      // nodo SideQuest "Leí X en [libro]" si el libro está unido a un área/quest.
+      const maxPageBefore = sessions.reduce((max, s) => Math.max(max, s.page), 0);
+      const pagesRead = Math.max(0, validatedPage - maxPageBefore);
+
       // Add new session
-      const payload = { date: today, page: validatedPage };
+      const payload = { date: today, page: validatedPage, pagesRead };
       console.log("[registerPage] Posting to /api/books/:id/sessions");
       console.log("[registerPage] Payload:", JSON.stringify(payload));
       console.log("[registerPage] Date type:", typeof payload.date, "Page type:", typeof payload.page);
@@ -1793,6 +1817,8 @@ export function BookTracker() {
       console.log("[registerPage] Mutation successful, invalidating queries");
       queryClient.invalidateQueries({ queryKey: ["/api/books"] });
       queryClient.invalidateQueries({ queryKey: ["/api/book-wishlist"] });
+      // El avance pudo crear un nodo SideQuest en el área/quest unido.
+      refreshSkillTrees();
     },
   });
 

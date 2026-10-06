@@ -431,6 +431,9 @@ export const spaceRepetitionPractices = pgTable("space_repetition_practices", {
   completedIntervalsL2: jsonb("completed_intervals_l2").notNull().$type<number[]>().default([]),
   lostIntervals: text("lost_intervals").notNull().default("[]"),
   lastConfirmedAt: timestamp("last_confirmed_at"), // exact instant of the last confirmed interval; each next interval is due 24h * gap after this, not at the next calendar day
+  // Área o quest unido: cada intervalo confirmado crea ahí un nodo SideQuest confirmado (uno u otro, nunca ambos).
+  sideQuestAreaId: varchar("side_quest_area_id").references(() => areas.id, { onDelete: "set null" }),
+  sideQuestProjectId: varchar("side_quest_project_id").references(() => projects.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -445,6 +448,9 @@ export const booksLibrary = pgTable("books_library", {
   totalPages: integer("total_pages").notNull(),
   mode: text("mode").notNull().$type<"pages" | "chapters">().default("pages"),
   goalDays: jsonb("goal_days").notNull().$type<number[]>().default([0, 1, 2, 3, 4, 5]),
+  // Área o quest unido: cada avance registrado crea ahí un nodo SideQuest "Leí X en [libro]" (uno u otro, nunca ambos).
+  sideQuestAreaId: varchar("side_quest_area_id").references(() => areas.id, { onDelete: "set null" }),
+  sideQuestProjectId: varchar("side_quest_project_id").references(() => projects.id, { onDelete: "set null" }),
   archivedAt: timestamp("archived_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

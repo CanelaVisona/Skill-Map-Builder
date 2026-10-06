@@ -103,7 +103,7 @@ export function useConfirmHabit() {
 
 export function useConfirmPractice() {
   const queryClient = useQueryClient();
-  const { areas } = useSkillTree();
+  const { areas, refreshSkillTrees } = useSkillTree();
   const { showXpPopup, hideXpPopup } = useXpPopup();
   const { addBodyBlock } = useBodyProgress();
   const { showBodyGainPopup, hideBodyGainPopup } = useBodyGainPopup();
@@ -245,6 +245,8 @@ export function useConfirmPractice() {
       await awardXpAndGrowBody(practice);
     } finally {
       queryClient.invalidateQueries({ queryKey: ["space-repetition"] });
+      // El intervalo pudo crear un nodo SideQuest en el área/quest unido.
+      refreshSkillTrees();
     }
   };
 
