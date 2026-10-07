@@ -20,7 +20,7 @@ import { useConfirmHabit, useConfirmPractice } from "@/lib/useConfirmActions";
 import { useTodayPriorities, useSetTodayPriorities, MAX_TODAY_PRIORITIES } from "@/lib/useTodayPriorities";
 import { MealTrackerModal } from "@/components/MealTrackerModal";
 import { useNowPlacement, setNowPlacement } from "@/lib/now-placement";
-import { addSubSkillFromToday, toggleSubSkillFromToday, masterWholeSubSkillTree, isSubSkillPlaceholder, moveSubSkillFromToday, renameSubSkill, deleteSubSkillFromToday } from "@/lib/subskill-tree";
+import { addSubSkillFromToday, toggleSubSkillFromToday, masterWholeSubSkillTree, isSubSkillPlaceholder, moveSubSkillFromToday, renameSubSkill, deleteSubSkillFromToday, fetchSubSkills } from "@/lib/subskill-tree";
 import { useTodayTaskSubsteps, useCreateTodayTaskSubstep, useUpdateTodayTaskSubstep, useDeleteTodayTaskSubstep, useCreateHabitSubstep, syncHabitSubsteps, type SubstepTaskType } from "@/lib/useTodayTaskSubsteps";
 import type { Habit, HabitRecord, TodayTaskSlot } from "@shared/schema";
 
@@ -102,6 +102,13 @@ interface PlannedNode {
 // Sufijo "· Xmin" que se agrega al lado del título de una tarea cuando tiene una duración
 // cargada (nodos: plannedDuration; hábitos/prácticas: minMinutes). Mismo criterio visual en
 // los 3 casos, para que "Tareas de hoy" muestre el tiempo estimado sin importar la fuente.
+// Suma del tiempo propio de los hijos (sub-nodos o sub-pasos) de una tarea: es el tiempo que se
+// le muestra a la tarea cuando no tiene uno propio. null si ningún hijo tiene tiempo.
+function sumChildMinutes(childMinutes: (number | null | undefined)[]): number | null {
+  const sum = childMinutes.reduce<number>((acc, m) => acc + (m && m > 0 ? m : 0), 0);
+  return sum > 0 ? sum : null;
+}
+
 function MinutesSuffix({ minutes }: { minutes?: number | null }) {
   if (!minutes) return null;
   return <span className="text-muted-foreground"> · {minutes}min</span>;
@@ -992,7 +999,10 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
           }}
           minutes={sub.plannedDuration}
           onAssignTime={() =>
-            openTimeDialog({ key: `node:${sub.id}`, type: "node", id: sub.id, label: sub.title, done: sub.status === "mastered" })
+            openTimeDialog(
+              { key: `node:${sub.id}`, type: "node", id: sub.id, label: sub.title, done: sub.status === "mastered" },
+              parentTimeRef(item, subs.map((x) => x.plannedDuration), i)
+            )
           }
           onDelete={parentConfirmed ? undefined : () => runSubNodeOp(item.id, () => deleteSubSkillFromToday(item.id, sub))}
           deleteLabel="sub-nodo"
@@ -1115,21 +1125,52 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     if (!title || !addSubstepFor) return;
     const target = addSubstepFor;
     setAddSubstepFor(null);
+    // Si la tarea tiene tiempo propio, el hijo nuevo recibe el tiempo que queda libre (el del
+    // padre menos lo que ya tienen asignado los demás hijos); los demás no cambian. Si no queda
+    // nada, entra sin tiempo: lo que se le asigne después supera el máximo disponible y, al
+    // aceptar el aviso, se le suma a la tarea padre.
+    const parentMinutes = currentMinutes(target);
+    const remainingFor = (others: (number | null | undefined)[]) =>
+      parentMinutes ? parentMinutes - others.reduce<number>((acc, m) => acc + (m && m > 0 ? m : 0), 0) : 0;
     if (target.type === "node") {
       // Nodo: el "sub-paso" es un sub-nodo real de su sub-árbol (se crea el árbol si no existe).
       try {
-        await addSubSkillFromToday(target.id, title);
+        const created = await addSubSkillFromToday(target.id, title);
+        if (parentMinutes && created) {
+          const others = (await fetchSubSkills(target.id))
+            .filter((sub) => sub.id !== created.id && (sub.levelPosition || 0) > 1 && !isSubSkillPlaceholder(sub))
+            .map((sub) => sub.plannedDuration);
+          const remaining = remainingFor(others);
+          if (remaining > 0) await patchSubSkill.mutateAsync({ id: created.id, updates: { plannedDuration: remaining } });
+        }
       } catch (error) {
         console.error("Error creando sub-nodo desde Tareas de hoy:", error);
       }
       queryClient.invalidateQueries({ queryKey: ["node-subskills", target.id] });
       return;
     }
-    if (target.type === "habit" && newSubstepPermanent) {
-      createHabitSubstep.mutate({ habitId: target.id, title, date: effectiveDate });
-      return;
+    try {
+      // Id de la copia del día: el sub-paso creado, o (permanente) la copia de la plantilla nueva.
+      let createdId: string | null = null;
+      let templateId: string | null = null;
+      if (target.type === "habit" && newSubstepPermanent) {
+        templateId = (await createHabitSubstep.mutateAsync({ habitId: target.id, title, date: effectiveDate }))?.id ?? null;
+      } else {
+        createdId = (await createSubstep.mutateAsync({ date: effectiveDate, taskType: target.type as SubstepTaskType, taskId: target.id, title })).id;
+      }
+      if (parentMinutes) {
+        const res = await fetch(`/api/today-task-substeps?date=${effectiveDate}`);
+        const all = res.ok ? ((await res.json()) as { id: string; taskType: string; taskId: string; minutes: number | null; templateId: string | null }[]) : [];
+        const siblings = all.filter((st) => st.taskType === target.type && st.taskId === target.id);
+        const created = siblings.find((st) => (createdId ? st.id === createdId : st.templateId === templateId));
+        if (created) {
+          const remaining = remainingFor(siblings.filter((st) => st.id !== created.id).map((st) => st.minutes));
+          if (remaining > 0) await updateSubstep.mutateAsync({ id: created.id, date: effectiveDate, updates: { minutes: remaining } });
+        }
+      }
+    } catch (error) {
+      console.error("Error creando sub-paso desde Tareas de hoy:", error);
     }
-    createSubstep.mutate({ date: effectiveDate, taskType: target.type as SubstepTaskType, taskId: target.id, title });
   };
 
   // Sub-pasos de una tarea, indentados adentro de ella. En orden: solo se puede confirmar el
@@ -1168,7 +1209,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         }}
         onDelete={() => deleteSubstep.mutate({ id: st.id, date: effectiveDate })}
         minutes={st.minutes}
-        onAssignTime={() => openSubstepTimeDialog(st.id, st.minutes)}
+        onAssignTime={() => openSubstepTimeDialog(st.id, st.minutes, parentTimeRef(item, steps.map((x) => x.minutes), i))}
         deleteLabel="sub-paso"
       />
     ));
@@ -1259,6 +1300,17 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       .map((i) => ({ taskType: i.type, taskId: i.id }));
     reorderTaskSlot.mutate({ date: effectiveDate, slot, order });
   };
+  // Tarea sin tiempo propio con hijos que sí tienen: muestra la suma (ver sumChildMinutes).
+  const parentMinutesProps = (item: TodayItem) => {
+    if (currentMinutes(item)) return {};
+    const childMinutes = item.type === "node"
+      ? subNodesFor(item).map((sub) => sub.plannedDuration)
+      : substepsFor(item).map((st) => st.minutes);
+    if (childMinutes.length === 0) return {};
+    const sum = sumChildMinutes(childMinutes);
+    return sum ? { derivedMinutes: sum } : {};
+  };
+
   const nowProps = (item: TodayItem) =>
     !isPreview && !item.done && !item.traceSubs ? { onMoveNow: () => moveItemNow(item) } : {};
 
@@ -1647,29 +1699,111 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     return null;
   };
 
-  const openTimeDialog = (item: TodayItem) => {
+  // Referencia al asignarle tiempo a un sub-nodo/sub-paso de una tarea que tiene tiempo propio:
+  // cuánto queda del tiempo del padre descontando lo que ya tienen sus otros hijos. No se reparte
+  // solo ni se impone: es para saber cuánto se puede asignar como máximo.
+  type ParentTimeRef = { available: number; total: number; parent: TodayItem };
+  const [timeMaxRef, setTimeMaxRef] = useState<ParentTimeRef | null>(null);
+  const parentTimeRef = (
+    parent: TodayItem,
+    childMinutes: (number | null | undefined)[],
+    index: number
+  ): ParentTimeRef | null => {
+    const total = currentMinutes(parent);
+    if (!total || total <= 0) return null;
+    const others = childMinutes.reduce<number>((acc, m, i) => acc + (i !== index && m && m > 0 ? m : 0), 0);
+    return { available: Math.max(0, total - others), total, parent };
+  };
+  // Tiempo pedido para un hijo que supera el máximo disponible: se pide confirmación, y si se
+  // acepta, la tarea padre aumenta su tiempo en lo que se pasó.
+  const [timeOverflow, setTimeOverflow] = useState<{
+    minutes: number;
+    item: TodayItem | null;
+    substepId: string | null;
+    ref: ParentTimeRef;
+  } | null>(null);
+
+  const openTimeDialog = (item: TodayItem, maxRef: ParentTimeRef | null = null) => {
     const m = currentMinutes(item);
     setTimeValue(m ? String(m) : "");
+    setTimeMaxRef(maxRef);
     setTimeItem(item);
   };
 
-  const openSubstepTimeDialog = (substepId: string, minutes: number | null | undefined) => {
+  const openSubstepTimeDialog = (
+    substepId: string,
+    minutes: number | null | undefined,
+    maxRef: ParentTimeRef | null = null
+  ) => {
     setTimeValue(minutes ? String(minutes) : "");
+    setTimeMaxRef(maxRef);
     setTimeSubstepId(substepId);
   };
 
   const submitTime = (raw: string = timeValue) => {
     const item = timeItem;
     const substepId = timeSubstepId;
+    const maxRef = timeMaxRef;
     setTimeItem(null);
     setTimeSubstepId(null);
+    setTimeMaxRef(null);
     const parsed = parseInt(raw, 10);
     const minutes = Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    if (maxRef && minutes !== null && minutes > maxRef.available) {
+      setTimeOverflow({ minutes, item, substepId, ref: maxRef });
+      return;
+    }
+    saveChildOrItemMinutes(item, substepId, minutes);
+    // Tiempo asignado a una tarea padre: se reparte en partes iguales entre sus hijos.
+    if (item && !substepId && minutes !== null) distributeMinutesToChildren(item, minutes);
+  };
+
+  // Reparte el tiempo de una tarea en partes iguales entre sus sub-nodos (si es un nodo) o sus
+  // sub-pasos, guardándolo en cada uno. Los minutos que sobran de la división van a los primeros,
+  // así la suma da justo. Solo al asignarle tiempo al padre desde "Asignar tiempo" (no cuando el
+  // padre aumenta por aceptar que un hijo se pase del máximo).
+  // Los hijos ya confirmados conservan su tiempo: entre los pendientes se reparte lo que queda del
+  // tiempo del padre descontando lo de los confirmados. `children` permite pasar la lista recién
+  // traída del server (al agregar un hijo, antes de que se refresque la lista en pantalla).
+  type ChildForMinutes = { kind: "node" | "step"; id: string; done: boolean; minutes: number | null | undefined };
+  const childrenForMinutes = (item: TodayItem): ChildForMinutes[] =>
+    item.type === "node"
+      ? subNodesFor(item).map((sub) => ({ kind: "node" as const, id: sub.id, done: sub.status === "mastered", minutes: sub.plannedDuration }))
+      : substepsFor(item).map((st) => ({ kind: "step" as const, id: st.id, done: st.done === 1, minutes: st.minutes }));
+  const distributeMinutesToChildren = (item: TodayItem, minutes: number, children: ChildForMinutes[] = childrenForMinutes(item)) => {
+    const pending = children.filter((c) => !c.done);
+    if (pending.length === 0) return;
+    const confirmedMinutes = children.reduce((acc, c) => acc + (c.done && c.minutes && c.minutes > 0 ? c.minutes : 0), 0);
+    const remaining = Math.max(0, minutes - confirmedMinutes);
+    const base = Math.floor(remaining / pending.length);
+    let extra = remaining - base * pending.length;
+    pending.forEach((child) => {
+      const share = base + (extra > 0 ? 1 : 0);
+      if (extra > 0) extra--;
+      const value = share > 0 ? share : null;
+      if (child.kind === "node") patchSubSkill.mutate({ id: child.id, updates: { plannedDuration: value } });
+      else updateSubstep.mutate({ id: child.id, date: effectiveDate, updates: { minutes: value } });
+    });
+  };
+
+  const saveChildOrItemMinutes = (item: TodayItem | null, substepId: string | null, minutes: number | null) => {
     if (substepId) {
       updateSubstep.mutate({ id: substepId, date: effectiveDate, updates: { minutes } });
       return;
     }
-    if (!item) return;
+    if (item) saveItemMinutes(item, minutes);
+  };
+
+  // Aceptar el aviso: el hijo queda con el tiempo pedido y la tarea padre suma lo que se pasó.
+  const acceptTimeOverflow = () => {
+    const o = timeOverflow;
+    setTimeOverflow(null);
+    if (!o) return;
+    saveChildOrItemMinutes(o.item, o.substepId, o.minutes);
+    saveItemMinutes(o.ref.parent, o.ref.total + (o.minutes - o.ref.available));
+  };
+
+  const saveItemMinutes = (item: TodayItem, minutes: number | null) => {
     if (minutes === (currentMinutes(item) ?? null)) return;
 
     if (item.type === "manual") {
@@ -2275,6 +2409,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                     {...priorityRowProps(item)}
                                     {...expandProps(item)}
                                     {...nowProps(item)}
+                                    {...parentMinutesProps(item)}
                                   />
                                   {renderSubNodes(item, false)}
                                   {renderSubsteps(item, false)}
@@ -2367,6 +2502,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                         {...priorityRowProps(item)}
                                     {...expandProps(item)}
                                     {...nowProps(item)}
+                                    {...parentMinutesProps(item)}
                                         onMoveUp={idx > 0 ? () => moveItemOrder(s.key, itemBuckets[s.key], idx, "up") : undefined}
                                         onMoveDown={idx < itemBuckets[s.key].length - 1 ? () => moveItemOrder(s.key, itemBuckets[s.key], idx, "down") : undefined}
                                       />
@@ -2408,6 +2544,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                   {...priorityRowProps(item)}
                                     {...expandProps(item)}
                                     {...nowProps(item)}
+                                    {...parentMinutesProps(item)}
                                 />
                                 {renderSubNodes(item, false)}
                                 </React.Fragment>
@@ -3131,13 +3268,22 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       </DialogContent>
     </Dialog>
 
-    <Dialog open={timeItem !== null || timeSubstepId !== null} onOpenChange={(o) => { if (!o) { setTimeItem(null); setTimeSubstepId(null); } }}>
+    <Dialog open={timeItem !== null || timeSubstepId !== null} onOpenChange={(o) => { if (!o) { setTimeItem(null); setTimeSubstepId(null); setTimeMaxRef(null); } }}>
       <DialogContent className="max-w-xs rounded-2xl">
         <DialogTitle>Asignar tiempo</DialogTitle>
         <div className="flex flex-col gap-3">
           {timeItem && (timeItem.type === "habit" || timeItem.type === "practice") && (
             <p className="text-xs text-muted-foreground">
               Se guarda en {timeItem.type === "habit" ? "el hábito" : "la práctica"}: aplica a todos los días.
+            </p>
+          )}
+          {timeMaxRef && (
+            <p
+              className={`text-xs ${
+                (parseInt(timeValue, 10) || 0) > timeMaxRef.available ? "text-destructive" : "text-muted-foreground"
+              }`}
+            >
+              Máximo disponible: {timeMaxRef.available}min (de {timeMaxRef.total}min de la tarea padre)
             </p>
           )}
           <div className="flex flex-wrap gap-1.5">
@@ -3184,6 +3330,22 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         </div>
       </DialogContent>
     </Dialog>
+
+    <AlertDialog open={!!timeOverflow} onOpenChange={(o) => { if (!o) setTimeOverflow(null); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Supera el tiempo de la tarea padre</AlertDialogTitle>
+          <AlertDialogDescription>
+            {timeOverflow &&
+              `Le quedan ${timeOverflow.ref.available}min disponibles y le estás asignando ${timeOverflow.minutes}min. Si aceptás, la tarea padre pasa de ${timeOverflow.ref.total}min a ${timeOverflow.ref.total + (timeOverflow.minutes - timeOverflow.ref.available)}min.`}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+          <AlertDialogAction onClick={acceptTimeOverflow}>Aceptar</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
 
     <MealTrackerModal
       open={mealPopupId !== null}
@@ -3329,6 +3491,7 @@ function TodayTaskRow({
   expanded,
   onToggleExpand,
   onMoveNow,
+  derivedMinutes,
 }: {
   item: TodayItem;
   // Tarea que no es "la que sigue" (la primera pendiente de la franja horaria actual): se
@@ -3368,6 +3531,8 @@ function TodayTaskRow({
   onToggleExpand?: () => void;
   // "Ahora": pasa a ocupar el lugar de la tarea desbloqueada (solo viendo hoy, tareas sin hacer).
   onMoveNow?: () => void;
+  // Suma del tiempo de sus sub-nodos/sub-pasos, cuando la tarea no tiene tiempo propio.
+  derivedMinutes?: number;
 }) {
   const [hideConfirmOpen, setHideConfirmOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -3452,6 +3617,7 @@ function TodayTaskRow({
               }`}
             >
               {item.label}
+              {derivedMinutes ? <MinutesSuffix minutes={derivedMinutes} /> : null}
               {priority && (
                 <Star className="ml-1 inline h-3.5 w-3.5 -translate-y-px fill-amber-400 text-amber-500" aria-label="Prioridad" />
               )}
