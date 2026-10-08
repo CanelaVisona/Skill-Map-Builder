@@ -74,6 +74,9 @@ export const skills = pgTable("skills", {
   experiencePoints: integer("experience_points").default(0),
   plannedDate: text("planned_date"),
   plannedDuration: integer("planned_duration"),
+  // 1 = plannedDuration lo puso el usuario a mano; 0 = vino del reparto automático del tiempo de
+  // su nodo padre en "Tareas de hoy" (los repartos nunca tocan los puestos a mano).
+  plannedDurationManual: integer("planned_duration_manual").$type<0 | 1>().default(0),
   completedAt: timestamp("completed_at"),
 });
 
@@ -796,6 +799,8 @@ export const todayTaskSubsteps = pgTable("today_task_substeps", {
   done: integer("done").$type<0 | 1>().notNull().default(0),
   sortOrder: integer("sort_order").notNull().default(0),
   minutes: integer("minutes"), // Tiempo estimado asignado desde "Tareas de hoy" (se muestra como "· Xmin")
+  // 1 = minutes puesto a mano; 0 = vino del reparto automático del tiempo de la tarea padre.
+  minutesManual: integer("minutes_manual").$type<0 | 1>().notNull().default(0),
   // Sub-paso permanente de un hábito (habitSubsteps) del que salió esta copia del día. Editar o
   // borrar la copia también edita/borra la plantilla.
   templateId: varchar("template_id"),
@@ -812,6 +817,7 @@ export const habitSubsteps = pgTable("habit_substeps", {
   title: text("title").notNull(),
   sortOrder: integer("sort_order").notNull().default(0),
   minutes: integer("minutes"),
+  minutesManual: integer("minutes_manual").$type<0 | 1>().notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export type HabitSubstep = typeof habitSubsteps.$inferSelect;

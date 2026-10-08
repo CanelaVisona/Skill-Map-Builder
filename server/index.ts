@@ -142,6 +142,13 @@ app.use((req, res, next) => {
     await db.execute(sql`
       ALTER TABLE "today_task_substeps" ADD COLUMN IF NOT EXISTS "template_id" varchar;
     `);
+    // Tiempo puesto a mano (1) vs. repartido automáticamente desde la tarea padre (0).
+    await db.execute(sql`
+      ALTER TABLE "today_task_substeps" ADD COLUMN IF NOT EXISTS "minutes_manual" integer DEFAULT 0 NOT NULL;
+    `);
+    await db.execute(sql`
+      ALTER TABLE "skills" ADD COLUMN IF NOT EXISTS "planned_duration_manual" integer DEFAULT 0;
+    `);
     // Una sola copia por sub-paso permanente y día, aunque la sincronización corra dos veces a la vez.
     await db.execute(sql`
       CREATE UNIQUE INDEX IF NOT EXISTS "today_task_substeps_template_day_idx"
@@ -157,6 +164,9 @@ app.use((req, res, next) => {
         "minutes" integer,
         "created_at" timestamp DEFAULT now() NOT NULL
       );
+    `);
+    await db.execute(sql`
+      ALTER TABLE "habit_substeps" ADD COLUMN IF NOT EXISTS "minutes_manual" integer DEFAULT 0 NOT NULL;
     `);
   } catch (error: any) {
     console.error("⚠ today_task_substeps migration warning:", error.message);

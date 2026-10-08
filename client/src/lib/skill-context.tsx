@@ -65,6 +65,7 @@ export interface Skill {
   plannedDate?: string | null;
   plannedDuration?: number | null;
   completedAt?: string | null;
+  plannedDurationManual?: number | null;
 }
 
 export interface Area {
@@ -116,6 +117,7 @@ export interface GlobalSkill {
   goalXp: number;
   completed: boolean | number;
   completedAt?: string | null;
+  plannedDurationManual?: number | null;
   // Medallion visual customization (Journal → Skills grid) — all optional.
   icon?: string | null;
   shape?: "diamond_classic" | "diamond_ornate" | "medallion" | "insignia";

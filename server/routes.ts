@@ -5599,7 +5599,7 @@ export async function registerRoutes(
       if (!existing || existing.userId !== req.userId) {
         return res.status(404).json({ message: "Sub-paso no encontrado" });
       }
-      const { title, done, sortOrder, minutes } = req.body;
+      const { title, done, sortOrder, minutes, minutesManual } = req.body;
       if (minutes !== undefined && minutes !== null && (!Number.isInteger(minutes) || minutes < 0)) {
         return res.status(400).json({ message: "minutes debe ser un entero >= 0 o null" });
       }
@@ -5614,6 +5614,7 @@ export async function registerRoutes(
         ...(done !== undefined ? { done } : {}),
         ...(sortOrder !== undefined ? { sortOrder } : {}),
         ...(minutes !== undefined ? { minutes } : {}),
+        ...(minutesManual === 0 || minutesManual === 1 ? { minutesManual } : {}),
       });
       res.json(updated);
     } catch (error: any) {

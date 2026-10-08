@@ -102,6 +102,12 @@ interface PlannedNode {
 // Sufijo "· Xmin" que se agrega al lado del título de una tarea cuando tiene una duración
 // cargada (nodos: plannedDuration; hábitos/prácticas: minMinutes). Mismo criterio visual en
 // los 3 casos, para que "Tareas de hoy" muestre el tiempo estimado sin importar la fuente.
+// Los tiempos que se calculan solos (reparto del tiempo del padre entre sus hijos) se redondean
+// siempre para arriba al múltiplo de 5: 11-14 → 15, 16-19 → 20.
+function roundUpTo5(minutes: number): number {
+  return Math.ceil(minutes / 5) * 5;
+}
+
 // Suma del tiempo propio de los hijos (sub-nodos o sub-pasos) de una tarea: es el tiempo que se
 // le muestra a la tarea cuando no tiene uno propio. null si ningún hijo tiene tiempo.
 function sumChildMinutes(childMinutes: (number | null | undefined)[]): number | null {
@@ -409,7 +415,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   ];
 
   const patchSubSkill = useMutation({
-    mutationFn: async ({ id, updates }: { id: string; updates: { plannedDate?: string | null; plannedDuration?: number | null; status?: string } }) => {
+    mutationFn: async ({ id, updates }: { id: string; updates: { plannedDate?: string | null; plannedDuration?: number | null; plannedDurationManual?: 0 | 1; status?: string } }) => {
       const res = await fetch(`/api/skills/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -1125,23 +1131,48 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     if (!title || !addSubstepFor) return;
     const target = addSubstepFor;
     setAddSubstepFor(null);
-    // Si la tarea tiene tiempo propio, el hijo nuevo recibe el tiempo que queda libre (el del
-    // padre menos lo que ya tienen asignado los demás hijos); los demás no cambian. Si no queda
-    // nada, entra sin tiempo: lo que se le asigne después supera el máximo disponible y, al
-    // aceptar el aviso, se le suma a la tarea padre.
+    // Si la tarea tiene tiempo propio, al sumarse un hijo:
+    // 1. Si queda tiempo libre (el del padre menos lo que ya tienen todos los demás hijos), el
+    //    nuevo se lleva ese resto y los demás no cambian.
+    // 2. Si no queda libre, el tiempo del padre (descontando lo de los confirmados) se vuelve a
+    //    repartir en partes iguales entre los pendientes, el nuevo incluido.
+    // 3. Si los confirmados ya ocupan todo, el nuevo entra sin tiempo: lo que se le asigne después
+    //    supera el máximo disponible y, al aceptar el aviso, se le suma a la tarea padre.
     const parentMinutes = currentMinutes(target);
-    const remainingFor = (others: (number | null | undefined)[]) =>
-      parentMinutes ? parentMinutes - others.reduce<number>((acc, m) => acc + (m && m > 0 ? m : 0), 0) : 0;
+    const sumMinutes = (list: (number | null | undefined)[]) =>
+      list.reduce<number>((acc, m) => acc + (m && m > 0 ? m : 0), 0);
+    const assignTimeToNewChild = async (
+      children: ChildForMinutes[],
+      newId: string,
+      setNewMinutes: (minutes: number) => Promise<unknown>
+    ) => {
+      if (!parentMinutes) return;
+      const free = parentMinutes - sumMinutes(children.filter((c) => c.id !== newId).map((c) => c.minutes));
+      if (free > 0) {
+        // Redondeado a múltiplo de 5: si se pasa del tiempo libre, el padre sube en esa diferencia.
+        const rounded = roundUpTo5(free);
+        await setNewMinutes(rounded);
+        if (rounded > free) saveItemMinutes(target, parentMinutes + (rounded - free));
+        return;
+      }
+      const forPending = parentMinutes - sumMinutes(children.filter((c) => c.done || c.manual).map((c) => c.minutes));
+      if (forPending > 0) {
+        const total = distributeMinutesToChildren(target, parentMinutes, children);
+        if (total > parentMinutes) saveItemMinutes(target, total);
+      }
+    };
     if (target.type === "node") {
       // Nodo: el "sub-paso" es un sub-nodo real de su sub-árbol (se crea el árbol si no existe).
       try {
         const created = await addSubSkillFromToday(target.id, title);
         if (parentMinutes && created) {
-          const others = (await fetchSubSkills(target.id))
-            .filter((sub) => sub.id !== created.id && (sub.levelPosition || 0) > 1 && !isSubSkillPlaceholder(sub))
-            .map((sub) => sub.plannedDuration);
-          const remaining = remainingFor(others);
-          if (remaining > 0) await patchSubSkill.mutateAsync({ id: created.id, updates: { plannedDuration: remaining } });
+          const children = (await fetchSubSkills(target.id))
+            .filter((sub) => (sub.levelPosition || 0) > 1 && !isSubSkillPlaceholder(sub))
+            .sort((a, b) => (a.level - b.level) || ((a.levelPosition || 0) - (b.levelPosition || 0)))
+            .map((sub) => ({ kind: "node" as const, id: sub.id, done: sub.status === "mastered", manual: sub.plannedDurationManual === 1, minutes: sub.plannedDuration }));
+          await assignTimeToNewChild(children, created.id, (minutes) =>
+            patchSubSkill.mutateAsync({ id: created.id, updates: { plannedDuration: minutes, plannedDurationManual: 0 } })
+          );
         }
       } catch (error) {
         console.error("Error creando sub-nodo desde Tareas de hoy:", error);
@@ -1160,12 +1191,19 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       }
       if (parentMinutes) {
         const res = await fetch(`/api/today-task-substeps?date=${effectiveDate}`);
-        const all = res.ok ? ((await res.json()) as { id: string; taskType: string; taskId: string; minutes: number | null; templateId: string | null }[]) : [];
-        const siblings = all.filter((st) => st.taskType === target.type && st.taskId === target.id);
+        const all = res.ok
+          ? ((await res.json()) as { id: string; taskType: string; taskId: string; done: number; minutes: number | null; minutesManual: number; sortOrder: number; templateId: string | null }[])
+          : [];
+        const siblings = all
+          .filter((st) => st.taskType === target.type && st.taskId === target.id)
+          .sort((a, b) => a.sortOrder - b.sortOrder);
         const created = siblings.find((st) => (createdId ? st.id === createdId : st.templateId === templateId));
         if (created) {
-          const remaining = remainingFor(siblings.filter((st) => st.id !== created.id).map((st) => st.minutes));
-          if (remaining > 0) await updateSubstep.mutateAsync({ id: created.id, date: effectiveDate, updates: { minutes: remaining } });
+          await assignTimeToNewChild(
+            siblings.map((st) => ({ kind: "step" as const, id: st.id, done: st.done === 1, manual: st.minutesManual === 1, minutes: st.minutes })),
+            created.id,
+            (minutes) => updateSubstep.mutateAsync({ id: created.id, date: effectiveDate, updates: { minutes, minutesManual: 0 } })
+          );
         }
       }
     } catch (error) {
@@ -1753,9 +1791,10 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       setTimeOverflow({ minutes, item, substepId, ref: maxRef });
       return;
     }
-    saveChildOrItemMinutes(item, substepId, minutes);
-    // Tiempo asignado a una tarea padre: se reparte en partes iguales entre sus hijos.
-    if (item && !substepId && minutes !== null) distributeMinutesToChildren(item, minutes);
+    // Tiempo asignado a una tarea padre: se reparte en partes iguales entre sus hijos (redondeado
+    // a múltiplos de 5), y el padre queda con el total resultante.
+    const finalMinutes = item && !substepId && minutes !== null ? distributeMinutesToChildren(item, minutes) : minutes;
+    saveChildOrItemMinutes(item, substepId, finalMinutes);
   };
 
   // Reparte el tiempo de una tarea en partes iguales entre sus sub-nodos (si es un nodo) o sus
@@ -1765,30 +1804,43 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // Los hijos ya confirmados conservan su tiempo: entre los pendientes se reparte lo que queda del
   // tiempo del padre descontando lo de los confirmados. `children` permite pasar la lista recién
   // traída del server (al agregar un hijo, antes de que se refresque la lista en pantalla).
-  type ChildForMinutes = { kind: "node" | "step"; id: string; done: boolean; minutes: number | null | undefined };
+  // manual: el tiempo lo puso el usuario a mano (nunca lo toca un reparto automático).
+  type ChildForMinutes = { kind: "node" | "step"; id: string; done: boolean; manual: boolean; minutes: number | null | undefined };
   const childrenForMinutes = (item: TodayItem): ChildForMinutes[] =>
     item.type === "node"
-      ? subNodesFor(item).map((sub) => ({ kind: "node" as const, id: sub.id, done: sub.status === "mastered", minutes: sub.plannedDuration }))
-      : substepsFor(item).map((st) => ({ kind: "step" as const, id: st.id, done: st.done === 1, minutes: st.minutes }));
-  const distributeMinutesToChildren = (item: TodayItem, minutes: number, children: ChildForMinutes[] = childrenForMinutes(item)) => {
-    const pending = children.filter((c) => !c.done);
-    if (pending.length === 0) return;
-    const confirmedMinutes = children.reduce((acc, c) => acc + (c.done && c.minutes && c.minutes > 0 ? c.minutes : 0), 0);
-    const remaining = Math.max(0, minutes - confirmedMinutes);
+      ? subNodesFor(item).map((sub) => ({ kind: "node" as const, id: sub.id, done: sub.status === "mastered", manual: sub.plannedDurationManual === 1, minutes: sub.plannedDuration }))
+      : substepsFor(item).map((st) => ({ kind: "step" as const, id: st.id, done: st.done === 1, manual: st.minutesManual === 1, minutes: st.minutes }));
+  // Devuelve el tiempo que tiene que quedar en el padre: el redondeo a múltiplos de 5 de los
+  // hijos puede hacer que sumen más que el tiempo pedido, y ahí el padre sube a esa suma. No guarda
+  // el padre: lo hace quien llama, así se guarda una sola vez con el valor final.
+  const distributeMinutesToChildren = (item: TodayItem, minutes: number, children: ChildForMinutes[] = childrenForMinutes(item)): number => {
+    // Se reparte solo entre los pendientes con tiempo automático; los confirmados y los puestos a
+    // mano conservan el suyo y se descuentan del tiempo del padre.
+    const pending = children.filter((c) => !c.done && !c.manual);
+    if (pending.length === 0) return minutes;
+    const reservedMinutes = children.reduce(
+      (acc, c) => acc + ((c.done || c.manual) && c.minutes && c.minutes > 0 ? c.minutes : 0),
+      0
+    );
+    const remaining = Math.max(0, minutes - reservedMinutes);
     const base = Math.floor(remaining / pending.length);
     let extra = remaining - base * pending.length;
+    let assigned = 0;
     pending.forEach((child) => {
       const share = base + (extra > 0 ? 1 : 0);
       if (extra > 0) extra--;
-      const value = share > 0 ? share : null;
-      if (child.kind === "node") patchSubSkill.mutate({ id: child.id, updates: { plannedDuration: value } });
-      else updateSubstep.mutate({ id: child.id, date: effectiveDate, updates: { minutes: value } });
+      const value = share > 0 ? roundUpTo5(share) : null;
+      assigned += value ?? 0;
+      if (child.kind === "node") patchSubSkill.mutate({ id: child.id, updates: { plannedDuration: value, plannedDurationManual: 0 } });
+      else updateSubstep.mutate({ id: child.id, date: effectiveDate, updates: { minutes: value, minutesManual: 0 } });
     });
+    return Math.max(minutes, reservedMinutes + assigned);
   };
 
   const saveChildOrItemMinutes = (item: TodayItem | null, substepId: string | null, minutes: number | null) => {
     if (substepId) {
-      updateSubstep.mutate({ id: substepId, date: effectiveDate, updates: { minutes } });
+      // Puesto a mano desde "Asignar tiempo" del sub-paso (o "Quitar tiempo": vuelve a automático).
+      updateSubstep.mutate({ id: substepId, date: effectiveDate, updates: { minutes, minutesManual: minutes ? 1 : 0 } });
       return;
     }
     if (item) saveItemMinutes(item, minutes);
@@ -1812,7 +1864,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     }
     if (item.type === "node") {
       const parent = findNodeParent(item.id);
-      if (!parent) patchSubSkill.mutate({ id: item.id, updates: { plannedDuration: minutes } });
+      // Sub-nodo (no está en el contexto): tiempo puesto a mano desde su "Asignar tiempo".
+      if (!parent) patchSubSkill.mutate({ id: item.id, updates: { plannedDuration: minutes, plannedDurationManual: minutes ? 1 : 0 } });
       else if (parent.kind === "project") updateProjectSkill(parent.parentId, item.id, { plannedDuration: minutes });
       else updateSkill(parent.parentId, item.id, { plannedDuration: minutes });
       return;

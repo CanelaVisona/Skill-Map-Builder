@@ -681,6 +681,7 @@ export class DbStorage implements IStorage {
     if (skill.levelPosition !== undefined) updateData.levelPosition = skill.levelPosition;
     if (skill.plannedDate !== undefined) updateData.plannedDate = skill.plannedDate;
     if (skill.plannedDuration !== undefined) updateData.plannedDuration = skill.plannedDuration;
+    if (skill.plannedDurationManual !== undefined) updateData.plannedDurationManual = skill.plannedDurationManual;
     if (skill.completedAt !== undefined) updateData.completedAt = skill.completedAt;
 
     const result = await db.update(skills).set(updateData).where(eq(skills.id, id)).returning();
@@ -3547,14 +3548,15 @@ export class DbStorage implements IStorage {
 
   // Si la copia del día salió de un sub-paso permanente de un hábito, el nombre, el tiempo y el
   // orden también se guardan en la plantilla (el "hecho" es solo de ese día).
-  async updateTodayTaskSubstep(id: string, updates: { title?: string; done?: 0 | 1; sortOrder?: number; minutes?: number | null }): Promise<TodayTaskSubstep | undefined> {
+  async updateTodayTaskSubstep(id: string, updates: { title?: string; done?: 0 | 1; sortOrder?: number; minutes?: number | null; minutesManual?: 0 | 1 }): Promise<TodayTaskSubstep | undefined> {
     const result = await db.update(todayTaskSubsteps).set(updates).where(eq(todayTaskSubsteps.id, id)).returning();
     const row = result[0];
     if (row?.templateId) {
-      const templateUpdates: { title?: string; sortOrder?: number; minutes?: number | null } = {};
+      const templateUpdates: { title?: string; sortOrder?: number; minutes?: number | null; minutesManual?: 0 | 1 } = {};
       if (updates.title !== undefined) templateUpdates.title = updates.title;
       if (updates.sortOrder !== undefined) templateUpdates.sortOrder = updates.sortOrder;
       if (updates.minutes !== undefined) templateUpdates.minutes = updates.minutes;
+      if (updates.minutesManual !== undefined) templateUpdates.minutesManual = updates.minutesManual;
       if (Object.keys(templateUpdates).length > 0) {
         await db.update(habitSubsteps).set(templateUpdates).where(eq(habitSubsteps.id, row.templateId));
       }
@@ -3597,6 +3599,7 @@ export class DbStorage implements IStorage {
         done: 0,
         sortOrder: t.sortOrder,
         minutes: t.minutes,
+        minutesManual: t.minutesManual,
         templateId: t.id,
       }).onConflictDoNothing();
     }
