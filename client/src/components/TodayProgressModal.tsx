@@ -1965,6 +1965,18 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     // hora límite ya no corresponde y no se guarda.
     const finalMinutes = item && !substepId && minutes !== null ? distributeMinutesToChildren(item, minutes) : minutes;
     saveChildOrItemMinutes(item, substepId, finalMinutes, finalMinutes === minutes ? deadline : null);
+
+    // Tiempo de un hijo de una tarea con tiempo propio (puesto a mano, o quitado con "Quitar
+    // tiempo"): lo que sobra del tiempo del padre se reparte entre los otros hijos pendientes con
+    // tiempo automático. Si el redondeo a múltiplos de 5 los hace sumar más, el padre sube.
+    if (maxRef) {
+      const childId = substepId ?? item?.id;
+      const siblings = childrenForMinutes(maxRef.parent).map((c) =>
+        c.id === childId ? { ...c, minutes, manual: minutes !== null } : c
+      );
+      const total = distributeMinutesToChildren(maxRef.parent, maxRef.total, siblings);
+      if (total > maxRef.total) saveItemMinutes(maxRef.parent, total, null);
+    }
   };
 
   // Reparte el tiempo de una tarea en partes iguales entre sus sub-nodos (si es un nodo) o sus
