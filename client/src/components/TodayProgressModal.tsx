@@ -1311,13 +1311,13 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         // Redondeado a múltiplo de 5: si se pasa del tiempo libre, el padre sube en esa diferencia.
         const rounded = roundUpTo5(free);
         await setNewMinutes(rounded);
-        if (rounded > free) saveItemMinutes(target, parentMinutes + (rounded - free), null);
+        if (rounded > free) saveItemMinutes(target, parentMinutes + (rounded - free));
         return;
       }
       const forPending = parentMinutes - sumMinutes(children.filter((c) => c.done || c.manual).map((c) => c.minutes));
       if (forPending > 0) {
         const total = distributeMinutesToChildren(target, parentMinutes, children);
-        if (total > parentMinutes) saveItemMinutes(target, total, null);
+        if (total > parentMinutes) saveItemMinutes(target, total);
       }
     };
     if (target.type === "node") {
@@ -1980,10 +1980,10 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       return;
     }
     // Tiempo asignado a una tarea padre: se reparte en partes iguales entre sus hijos (redondeado
-    // a múltiplos de 5), y el padre queda con el total resultante. Si el redondeo lo cambió, la
-    // hora límite ya no corresponde y no se guarda.
+    // a múltiplos de 5), y el padre queda con el total resultante. Con hora límite, la hora manda:
+    // el padre se queda con los minutos hasta esa hora aunque el redondeo de los hijos sume más.
     const finalMinutes = item && !substepId && minutes !== null ? distributeMinutesToChildren(item, minutes) : minutes;
-    saveChildOrItemMinutes(item, substepId, finalMinutes, finalMinutes === minutes ? deadline : null);
+    saveChildOrItemMinutes(item, substepId, deadline ? minutes : finalMinutes, deadline);
 
     // Tiempo de un hijo de una tarea con tiempo propio (puesto a mano, o quitado con "Quitar
     // tiempo"): lo que sobra del tiempo del padre se reparte entre los otros hijos pendientes con
@@ -1994,7 +1994,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         c.id === childId ? { ...c, minutes, manual: minutes !== null } : c
       );
       const total = distributeMinutesToChildren(maxRef.parent, maxRef.total, siblings);
-      if (total > maxRef.total) saveItemMinutes(maxRef.parent, total, null);
+      if (total > maxRef.total) saveItemMinutes(maxRef.parent, total);
     }
   };
 
@@ -2054,12 +2054,23 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     setTimeOverflow(null);
     if (!o) return;
     saveChildOrItemMinutes(o.item, o.substepId, o.minutes, o.deadline);
-    saveItemMinutes(o.ref.parent, o.ref.total + (o.minutes - o.ref.available), null);
+    saveItemMinutes(o.ref.parent, o.ref.total + (o.minutes - o.ref.available));
   };
 
-  // deadline: hora límite con la que se calcularon los minutos (null = sin hora límite). Cuando el
-  // tiempo cambia por otra razón (p.ej. el padre sube por el redondeo de sus hijos), se pasa null.
-  const saveItemMinutes = (item: TodayItem, minutes: number | null, deadline: string | null) => {
+  // deadline: hora límite con la que se calcularon los minutos (null = sin hora límite). Sin pasarlo
+  // (cambio automático: el padre sube por el redondeo de sus hijos, por aceptar el aviso de un
+  // hijo, etc.), si la tarea tiene hora límite la conserva y su tiempo se recalcula desde ahora
+  // hasta esa hora, en vez de perderla.
+  const saveItemMinutes = (item: TodayItem, minutes: number | null, deadlineArg?: string | null) => {
+    let deadline: string | null = deadlineArg ?? null;
+    if (deadlineArg === undefined) {
+      const kept = currentDeadline(item);
+      const untilKept = kept ? minutesUntilDeadline(kept) : null;
+      if (kept && untilKept) {
+        deadline = kept;
+        minutes = untilKept;
+      }
+    }
     if (minutes === (currentMinutes(item) ?? null) && deadline === (currentDeadline(item) ?? null)) return;
 
     if (item.type === "manual") {
