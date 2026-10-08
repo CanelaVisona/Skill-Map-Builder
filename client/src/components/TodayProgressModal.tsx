@@ -782,7 +782,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       label: (
         <>
           {stripLeadingEmoji(n.title)} <span className="text-muted-foreground">· {n.parentName}</span>
-          <MinutesSuffix minutes={n.plannedDuration} deadline={n.plannedDeadline} showRemaining={!n.done && effectiveDate === todayStr} />
+          <MinutesSuffix minutes={n.plannedDuration} deadline={n.done ? null : n.plannedDeadline} showRemaining={!n.done && effectiveDate === todayStr} />
         </>
       ),
       done: n.done,
@@ -808,7 +808,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       label: (
         <>
           {t.kind === "event" ? <>📅 {stripLeadingEmoji(t.title)}</> : stripLeadingEmoji(t.title)}
-          <MinutesSuffix minutes={t.minutes} deadline={t.deadline} showRemaining={t.done !== 1 && effectiveDate === todayStr} />
+          <MinutesSuffix minutes={t.minutes} deadline={t.done === 1 ? null : t.deadline} showRemaining={t.done !== 1 && effectiveDate === todayStr} />
         </>
       ),
       done: t.done === 1,
@@ -3729,7 +3729,8 @@ function TodaySubRow({
       }`}
     >
       {title}
-      <MinutesSuffix minutes={minutes} deadline={deadline} showRemaining={showRemaining && !done} />
+      {/* Ya hecha: queda solo el tiempo previsto, sin la hora límite ni lo que falta. */}
+      <MinutesSuffix minutes={minutes} deadline={done ? null : deadline} showRemaining={showRemaining && !done} />
     </span>
   );
   return (
