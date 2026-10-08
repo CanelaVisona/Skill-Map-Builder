@@ -2510,6 +2510,13 @@ export async function registerRoutes(
     try {
       const parentSkillId = req.params.id;
       const subSkills = await storage.getSubSkills(parentSkillId);
+      // withChildren=1: también los sub-nodos de cada sub-nodo (un nivel más), para que "Tareas de
+      // hoy" los muestre anidados adentro de su sub-nodo. Se distinguen por parentSkillId.
+      if (req.query.withChildren === "1") {
+        const children = (await Promise.all(subSkills.map((s) => storage.getSubSkills(s.id)))).flat();
+        res.json([...subSkills, ...children]);
+        return;
+      }
       res.json(subSkills);
     } catch (error: any) {
       res.status(500).json({ message: error.message });

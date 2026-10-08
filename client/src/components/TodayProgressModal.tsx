@@ -911,7 +911,9 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     queries: subTreeNodeIds.map((id) => ({
       queryKey: ["node-subskills", id],
       queryFn: async () => {
-        const res = await fetch(`/api/skills/${id}/subskills`);
+        // withChildren=1: también los sub-nodos de cada sub-nodo, que se muestran anidados adentro
+        // de él (en el árbol son su propio sub-árbol: no aparecen en el sub-árbol del nodo).
+        const res = await fetch(`/api/skills/${id}/subskills?withChildren=1`);
         if (!res.ok) throw new Error("Failed to fetch sub-skills");
         return res.json() as Promise<Skill[]>;
       },
@@ -919,13 +921,25 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       staleTime: 0,
     })),
   });
+  const bySubTreeOrder = (a: Skill, b: Skill) => (a.level - b.level) || ((a.levelPosition || 0) - (b.levelPosition || 0));
+  const isRealSubNode = (sub: Skill) => (sub.levelPosition || 0) > 1 && !isSubSkillPlaceholder(sub);
   const subSkillsByNodeId = new Map<string, Skill[]>();
+  // Sub-nodos de cada sub-nodo (por id del sub-nodo).
+  const childSubSkillsBySubId = new Map<string, Skill[]>();
   subTreeNodeIds.forEach((id, idx) => {
-    const list = (subSkillQueries[idx]?.data || [])
-      .filter((sub) => (sub.levelPosition || 0) > 1 && !isSubSkillPlaceholder(sub))
-      .sort((a, b) => (a.level - b.level) || ((a.levelPosition || 0) - (b.levelPosition || 0)));
-    subSkillsByNodeId.set(id, list);
+    const rows = subSkillQueries[idx]?.data || [];
+    subSkillsByNodeId.set(id, rows.filter((sub) => sub.parentSkillId === id && isRealSubNode(sub)).sort(bySubTreeOrder));
+    rows
+      .filter((sub) => sub.parentSkillId && sub.parentSkillId !== id)
+      .forEach((sub) => {
+        const list = childSubSkillsBySubId.get(sub.parentSkillId!) ?? [];
+        list.push(sub);
+        childSubSkillsBySubId.set(sub.parentSkillId!, list);
+      });
   });
+  childSubSkillsBySubId.forEach((list, key) => childSubSkillsBySubId.set(key, list.filter(isRealSubNode).sort(bySubTreeOrder)));
+  const childSubNodesOf = (sub: Skill) => childSubSkillsBySubId.get(sub.id) || [];
+  const hasPendingChildSubNodes = (sub: Skill) => childSubNodesOf(sub).some((c) => c.status !== "mastered");
   const subNodesFor = (item: TodayItem) => (item.type === "node" ? subSkillsByNodeId.get(item.id) || [] : []);
   const hasPendingSubNodes = (item: TodayItem) => subNodesFor(item).some((sub) => sub.status !== "mastered");
   const [subNodeBusy, setSubNodeBusy] = useState(false);
@@ -938,7 +952,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     } catch (error) {
       console.error("Error confirmando sub-nodo desde Tareas de hoy:", error);
     } finally {
-      queryClient.invalidateQueries({ queryKey: ["node-subskills", parentId] });
+      // Prefijo: incluye la lista del nodo de arriba cuando parentId es un sub-nodo.
+      queryClient.invalidateQueries({ queryKey: ["node-subskills"] });
       queryClient.invalidateQueries({ queryKey: ["dated-sub-skills"] });
       setSubNodeBusy(false);
     }
@@ -954,7 +969,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     } catch (error) {
       console.error("Error editando sub-nodo desde Tareas de hoy:", error);
     } finally {
-      queryClient.invalidateQueries({ queryKey: ["node-subskills", parentId] });
+      // Prefijo: incluye la lista del nodo de arriba cuando parentId es un sub-nodo.
+      queryClient.invalidateQueries({ queryKey: ["node-subskills"] });
       queryClient.invalidateQueries({ queryKey: ["dated-sub-skills"] });
       setSubNodeBusy(false);
     }
@@ -972,47 +988,111 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     if (parentConfirmed && !expandedParents.has(item.key)) return null;
     const firstUndone = subs.findIndex((sub) => sub.status !== "mastered");
     const lastDone = firstUndone === -1 ? subs.length - 1 : firstUndone - 1;
+
+    // Sub-nodo confirmado otro día (p.ej. el padre se pasó del martes al miércoles): queda como
+    // texto, marcado con el día en que se confirmó, sin confirmar/desconfirmar ni menú.
+    const confirmedOtherDay = (sub: Skill) => {
+      const day = sub.status === "mastered" && sub.completedAt ? getDateStr(new Date(sub.completedAt)) : null;
+      return day && day !== effectiveDate ? day : null;
+    };
+    const renderOtherDayRow = (sub: Skill, day: string, depth: number) => (
+      <TodaySubRow
+        key={sub.id}
+        title={`${stripLeadingEmoji(sub.title || "Sin nombre")} · confirmado ${formatConfirmedDay(day, effectiveDate)}`}
+        done
+        dimmed
+        depth={depth}
+      />
+    );
+
+    // Sub-nodos de un sub-nodo: anidados adentro de él, en orden. Un sub-nodo con sub-nodos
+    // pendientes no se puede confirmar (igual que el nodo padre con los suyos); el destacado pasa
+    // a su primer sub-nodo sin confirmar. No llevan tiempo ni sus propios sub-nodos.
+    const renderChildren = (sub: Skill, subIsCurrent: boolean) => {
+      const kids = childSubNodesOf(sub);
+      const kidFirstUndone = kids.findIndex((k) => k.status !== "mastered");
+      const kidLastDone = kidFirstUndone === -1 ? kids.length - 1 : kidFirstUndone - 1;
+      return kids.map((kid, k) => {
+        const day = confirmedOtherDay(kid);
+        if (day) return renderOtherDayRow(kid, day, 1);
+        const kidIsCurrent = subIsCurrent && k === kidFirstUndone;
+        return (
+          <TodaySubRow
+            key={kid.id}
+            depth={1}
+            title={stripLeadingEmoji(kid.title || "Sin nombre")}
+            done={kid.status === "mastered"}
+            current={kidIsCurrent}
+            dimmed={!kidIsCurrent}
+            onToggleDone={
+              !parentConfirmed && sub.status === "available" && (k === kidFirstUndone || k === kidLastDone)
+                ? () => toggleSubNode(sub.id, kid)
+                : undefined
+            }
+            onMoveUp={!parentConfirmed && kids[k - 1] ? () => runSubNodeOp(item.id, () => moveSubSkillFromToday(kid, kids[k - 1])) : undefined}
+            onMoveDown={!parentConfirmed && kids[k + 1] ? () => runSubNodeOp(item.id, () => moveSubSkillFromToday(kid, kids[k + 1])) : undefined}
+            onRename={() => {
+              setRenameSubTitle(kid.title || "");
+              setRenameSubTarget({ kind: "node", id: kid.id, parentId: item.id });
+            }}
+            onDelete={parentConfirmed ? undefined : () => runSubNodeOp(item.id, () => deleteSubSkillFromToday(sub.id, kid))}
+            deleteLabel="sub-nodo"
+          />
+        );
+      });
+    };
+
     return subs.map((sub, i) => {
       if (onlyIds && !onlyIds.has(sub.id)) return null;
       const prev = subs[i - 1];
       const next = subs[i + 1];
-      // Sub-nodo confirmado otro día (p.ej. el padre se pasó del martes al miércoles): queda
-      // como texto, marcado con el día en que se confirmó, sin confirmar/desconfirmar ni menú.
-      const confirmedDay = sub.status === "mastered" && sub.completedAt ? getDateStr(new Date(sub.completedAt)) : null;
-      if (confirmedDay && confirmedDay !== effectiveDate) {
-        return (
-          <TodaySubRow
-            key={sub.id}
-            title={`${stripLeadingEmoji(sub.title || "Sin nombre")} · confirmado ${formatConfirmedDay(confirmedDay, effectiveDate)}`}
-            done
-            dimmed
-          />
-        );
-      }
+      const day = confirmedOtherDay(sub);
+      const pendingKids = hasPendingChildSubNodes(sub);
+      const isCurrentSub = parentIsCurrent && i === firstUndone;
       return (
-        <TodaySubRow
-          key={sub.id}
-          title={stripLeadingEmoji(sub.title || "Sin nombre")}
-          done={sub.status === "mastered"}
-          current={parentIsCurrent && i === firstUndone}
-          dimmed={!(parentIsCurrent && i === firstUndone)}
-          onToggleDone={!parentConfirmed && (i === firstUndone || i === lastDone) ? () => toggleSubNode(item.id, sub) : undefined}
-          onMoveUp={!parentConfirmed && prev && prev.level === sub.level ? () => runSubNodeOp(item.id, () => moveSubSkillFromToday(sub, prev)) : undefined}
-          onMoveDown={!parentConfirmed && next && next.level === sub.level ? () => runSubNodeOp(item.id, () => moveSubSkillFromToday(sub, next)) : undefined}
-          onRename={() => {
-            setRenameSubTitle(sub.title || "");
-            setRenameSubTarget({ kind: "node", id: sub.id, parentId: item.id });
-          }}
-          minutes={sub.plannedDuration}
-          onAssignTime={() =>
-            openTimeDialog(
-              { key: `node:${sub.id}`, type: "node", id: sub.id, label: sub.title, done: sub.status === "mastered" },
-              parentTimeRef(item, subs.map((x) => x.plannedDuration), i)
-            )
-          }
-          onDelete={parentConfirmed ? undefined : () => runSubNodeOp(item.id, () => deleteSubSkillFromToday(item.id, sub))}
-          deleteLabel="sub-nodo"
-        />
+        <React.Fragment key={sub.id}>
+          {day ? (
+            renderOtherDayRow(sub, day, 0)
+          ) : (
+            <TodaySubRow
+              title={stripLeadingEmoji(sub.title || "Sin nombre")}
+              done={sub.status === "mastered"}
+              current={isCurrentSub && !pendingKids}
+              dimmed={!(isCurrentSub && !pendingKids)}
+              onToggleDone={
+                !parentConfirmed && !pendingKids && (i === firstUndone || i === lastDone)
+                  ? () => toggleSubNode(item.id, sub)
+                  : undefined
+              }
+              // Mover un sub-nodo mueve también sus sub-nodos (son su propio sub-árbol).
+              onMoveUp={!parentConfirmed && prev && prev.level === sub.level ? () => runSubNodeOp(item.id, () => moveSubSkillFromToday(sub, prev)) : undefined}
+              onMoveDown={!parentConfirmed && next && next.level === sub.level ? () => runSubNodeOp(item.id, () => moveSubSkillFromToday(sub, next)) : undefined}
+              onAddChild={
+                !parentConfirmed && sub.status !== "mastered"
+                  ? () => {
+                      setNewNestedTitle("");
+                      setAddNestedTarget({ parentId: item.id, sub });
+                    }
+                  : undefined
+              }
+              onRename={() => {
+                setRenameSubTitle(sub.title || "");
+                setRenameSubTarget({ kind: "node", id: sub.id, parentId: item.id });
+              }}
+              minutes={sub.plannedDuration}
+              onAssignTime={() =>
+                openTimeDialog(
+                  { key: `node:${sub.id}`, type: "node", id: sub.id, label: sub.title, done: sub.status === "mastered" },
+                  parentTimeRef(item, subs.map((x) => x.plannedDuration), i)
+                )
+              }
+              // Eliminar un sub-nodo borra también sus sub-nodos (ver deleteSubSkillFromToday).
+              onDelete={parentConfirmed ? undefined : () => runSubNodeOp(item.id, () => deleteSubSkillFromToday(item.id, sub))}
+              deleteLabel="sub-nodo"
+            />
+          )}
+          {renderChildren(sub, isCurrentSub)}
+        </React.Fragment>
       );
     });
   };
@@ -1072,6 +1152,20 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
             : (item.traceSubs || []).map((sub) => <TodaySubRow key={sub.id} title={stripLeadingEmoji(sub.title)} done dimmed />))}
       </React.Fragment>
     );
+  };
+
+  // Diálogo para agregarle un sub-nodo a un sub-nodo (se muestra anidado adentro de él).
+  const [addNestedTarget, setAddNestedTarget] = useState<{ parentId: string; sub: Skill } | null>(null);
+  const [newNestedTitle, setNewNestedTitle] = useState("");
+  const submitNewNested = () => {
+    const title = newNestedTitle.trim();
+    const target = addNestedTarget;
+    if (!title || !target) return;
+    setAddNestedTarget(null);
+    runSubNodeOp(target.parentId, async () => {
+      // Sub-nodo real del sub-nodo (su propio sub-árbol: se crea si no existe).
+      await addSubSkillFromToday(target.sub.id, title);
+    });
   };
 
   // Diálogo para cambiarle el nombre a un sub-nodo o a un sub-paso.
@@ -1808,7 +1902,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   type ChildForMinutes = { kind: "node" | "step"; id: string; done: boolean; manual: boolean; minutes: number | null | undefined };
   const childrenForMinutes = (item: TodayItem): ChildForMinutes[] =>
     item.type === "node"
-      ? subNodesFor(item).map((sub) => ({ kind: "node" as const, id: sub.id, done: sub.status === "mastered", manual: sub.plannedDurationManual === 1, minutes: sub.plannedDuration }))
+      ? subNodesFor(item)
+          .map((sub) => ({ kind: "node" as const, id: sub.id, done: sub.status === "mastered", manual: sub.plannedDurationManual === 1, minutes: sub.plannedDuration }))
       : substepsFor(item).map((st) => ({ kind: "step" as const, id: st.id, done: st.done === 1, manual: st.minutesManual === 1, minutes: st.minutes }));
   // Devuelve el tiempo que tiene que quedar en el padre: el redondeo a múltiplos de 5 de los
   // hijos puede hacer que sumen más que el tiempo pedido, y ahí el padre sube a esa suma. No guarda
@@ -2904,6 +2999,38 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       </DialogContent>
     </Dialog>
 
+    <Dialog open={!!addNestedTarget} onOpenChange={(o) => { if (!o) setAddNestedTarget(null); }}>
+      <DialogContent className="max-w-sm rounded-2xl">
+        <DialogTitle>
+          {addNestedTarget ? `Nuevo sub-nodo de ${stripLeadingEmoji(addNestedTarget.sub.title || "Sin nombre")}` : "Nuevo sub-nodo"}
+        </DialogTitle>
+        <Input
+          autoFocus
+          value={newNestedTitle}
+          onChange={(e) => setNewNestedTitle(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") submitNewNested();
+          }}
+          placeholder="¿Cuál es el paso?"
+        />
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            onClick={() => setAddNestedTarget(null)}
+            className="px-3 py-1.5 text-sm rounded-md hover:bg-muted transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={submitNewNested}
+            disabled={!newNestedTitle.trim()}
+            className="px-3 py-1.5 text-sm rounded-md bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            Agregar
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
+
     <Dialog open={!!renameSubTarget} onOpenChange={(o) => { if (!o) setRenameSubTarget(null); }}>
       <DialogContent className="max-w-sm rounded-2xl">
         <DialogTitle>{renameSubTarget?.kind === "node" ? "Cambiar nombre del sub-nodo" : "Cambiar nombre del sub-paso"}</DialogTitle>
@@ -3424,6 +3551,8 @@ function TodaySubRow({
   onRename,
   onAssignTime,
   minutes,
+  onAddChild,
+  depth = 0,
   onDelete,
   deleteLabel = "sub-paso",
 }: {
@@ -3438,11 +3567,15 @@ function TodaySubRow({
   // Abre el diálogo de tiempo estimado (sub-nodo: su plannedDuration; sub-paso: sus minutos del día).
   onAssignTime?: () => void;
   minutes?: number | null;
+  // Agregarle un sub-nodo a este sub-nodo (se muestra anidado adentro de él).
+  onAddChild?: () => void;
+  // 1 = sub-nodo de un sub-nodo: un nivel más de sangría.
+  depth?: number;
   onDelete?: () => void;
   deleteLabel?: string;
 }) {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const hasMenu = !!(onMoveUp || onMoveDown || onRename || onAssignTime || onDelete);
+  const hasMenu = !!(onMoveUp || onMoveDown || onRename || onAssignTime || onAddChild || onDelete);
   const titleNode = (
     <span
       className={`flex-1 ${hasMenu ? "cursor-pointer" : ""} ${done ? "text-yellow-600/60" : ""} ${
@@ -3455,7 +3588,7 @@ function TodaySubRow({
   );
   return (
     <>
-      <div className={`ml-5 border-l-2 pl-3 transition-opacity ${current ? "border-amber-500/40" : "border-border/40"} ${dimmed ? "opacity-25" : ""}`}>
+      <div className={`${depth > 0 ? "ml-10" : "ml-5"} border-l-2 pl-3 transition-opacity ${current ? "border-amber-500/40" : "border-border/40"} ${dimmed ? "opacity-25" : ""}`}>
         <div
           className={`flex items-center gap-2 text-sm ${
             current
@@ -3482,6 +3615,12 @@ function TodaySubRow({
                 {onAssignTime && (
                   <>
                     <DropdownMenuItem onClick={onAssignTime}>Asignar tiempo</DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
+                {onAddChild && (
+                  <>
+                    <DropdownMenuItem onClick={onAddChild}>Agregar sub-nodo</DropdownMenuItem>
                     <DropdownMenuSeparator />
                   </>
                 )}

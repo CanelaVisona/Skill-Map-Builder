@@ -158,7 +158,12 @@ export async function renameSubSkill(subSkillId: string, title: string) {
 // Borra un sub-nodo desde Tareas de hoy. El server renumera el nivel y, si era el desbloqueado,
 // desbloquea el siguiente; acá solo se re-asigna el nodo final al último que quede.
 export async function deleteSubSkillFromToday(parentSkillId: string, sub: Skill) {
+  // Sus propios sub-nodos (los que en Tareas de hoy se ven anidados adentro de él) se van con él.
+  if ((await fetchSubSkills(sub.id)).length > 0) {
+    await fetch(`/api/skills/${sub.id}/subskills`, { method: "DELETE" });
+  }
   const res = await fetch(`/api/skills/${sub.id}`, { method: "DELETE" });
   if (!res.ok) return;
   await ensureLastSubSkillIsFinal(parentSkillId, sub.level);
 }
+

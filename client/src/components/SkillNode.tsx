@@ -21,6 +21,7 @@ import { getNodeTitleWordLimit, clampToWordLimit } from "@/lib/node-title-settin
 import { getLevelTitleSuggestion, getOtherLevelTitles } from "@/lib/unique-level-title";
 import { getCurrentTimeSlotKey } from "@/lib/useTodayTaskSlots";
 import { setNowPlacement } from "@/lib/now-placement";
+import { masterWholeSubSkillTree } from "@/lib/subskill-tree";
 import { useToast } from "@/hooks/use-toast";
 import { SkillLinkPicker } from "@/components/SkillLinkPicker";
 import { BodyLinkPicker, type BodyLink } from "@/components/BodyLinkPicker";
@@ -1655,19 +1656,22 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       const data = await response.json();
       return (Array.isArray(data) ? data : []) as Skill[];
     },
-    enabled: !isInicioNode,
+    // Dentro de un sub-árbol, los sub-nodos de un sub-nodo (creados desde "Tareas de hoy") no
+    // existen para el árbol: no se pueden ver ni abrir desde acá, así que tampoco lo bloquean ni le
+    // ponen la marca de sub-árbol completo.
+    enabled: !isInicioNode && !isSubSkillView,
     staleTime: 0,
   });
   useEffect(() => {
     if (isInicioNode) return;
-    if (ownSubSkillsError || !ownSubSkills || ownSubSkills.length === 0) {
+    if (isSubSkillView || ownSubSkillsError || !ownSubSkills || ownSubSkills.length === 0) {
       setHasIncompleteSubtasks(false);
       setHasSubskillTree(false);
       return;
     }
     setHasIncompleteSubtasks(ownSubSkills.some(s => s.status !== "mastered"));
     setHasSubskillTree(true);
-  }, [ownSubSkills, ownSubSkillsError, isInicioNode]);
+  }, [ownSubSkills, ownSubSkillsError, isInicioNode, isSubSkillView]);
 
   const hasUnlockedWithIncompleteSubtasks = !isLocked && !isMastered && hasIncompleteSubtasks;
   // The node has its own sub-skill tree and every node in it is mastered.
@@ -2677,6 +2681,11 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     // its very first step, so calling onClick() before it is what guarantees that pop-up
     // always gets to play first, ahead of our own staged-reward sequence.
     onClick();
+    // Sub-nodo confirmado desde el árbol: sus propios sub-nodos (que solo se ven en "Tareas de
+    // hoy") se confirman con él, igual que confirmar un nodo padre confirma su sub-árbol.
+    if (isSubSkillView && skill.status === "available") {
+      masterWholeSubSkillTree(skill.id).catch((error) => console.error("Error confirmando sub-nodos del sub-nodo:", error));
+    }
     if (hasPendingRewards) {
       runConfirmSequence(learningOverride);
     }
