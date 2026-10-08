@@ -992,6 +992,16 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const subNodesFor = (item: TodayItem) => (item.type === "node" ? subSkillsByNodeId.get(item.id) || [] : []);
   const hasPendingSubNodes = (item: TodayItem) => subNodesFor(item).some((sub) => sub.status !== "mastered");
   const [subNodeBusy, setSubNodeBusy] = useState(false);
+  // Al confirmar el padre, si tenía tiempo de sobra respecto de sus hijos, pasa a la suma del
+  // tiempo de sus hijos (lo que realmente llevó). Hábitos y prácticas no: su tiempo es la
+  // configuración del hábito/práctica, no algo de este día.
+  const shrinkParentToChildrenSum = (parent: TodayItem, childMinutes: (number | null | undefined)[]) => {
+    if (parent.type !== "node" && parent.type !== "manual") return;
+    const own = currentMinutes(parent);
+    const sum = sumChildMinutes(childMinutes);
+    if (own && sum && sum < own) saveItemMinutes(parent, sum, null);
+  };
+
   const toggleSubNode = async (parentId: string, sub: Skill) => {
     if (subNodeBusy) return;
     setSubNodeBusy(true);
@@ -1566,6 +1576,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     if (!task) return;
     const newDone = task.done === 1 ? 0 : 1;
     updateManualTask.mutate({ id: item.id, date: effectiveDate, updates: { done: newDone } });
+    // Al confirmarla, si tenía tiempo de sobra respecto de sus sub-pasos, pasa a su suma.
+    if (newDone === 1) shrinkParentToChildrenSum(item, substepsFor(item).map((st) => st.minutes));
     // Evento con nodo propio (ver newTaskParent): confirmarlo/desconfirmarlo hace lo mismo con
     // el nodo, salvo que el nodo ya esté en ese estado (p.ej. se confirmó desde el árbol).
     if (task.linkedSkillId) {
@@ -1665,6 +1677,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     if (item.type === "node") {
       if (!item.done && subNodesFor(item).length > 0) {
         if (hasPendingSubNodes(item)) return;
+        shrinkParentToChildrenSum(item, subNodesFor(item).map((sub) => sub.plannedDuration));
         masterWholeSubSkillTree(item.id)
           .catch((error) => console.error("Error confirmando el sub-árbol:", error))
           .finally(() => toggleNodeDone(item));
