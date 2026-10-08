@@ -70,6 +70,7 @@ export function useCreateManualTask() {
       linkedKind,
       linkedParentId,
       minutes,
+      deadline,
     }: {
       date: string;
       title: string;
@@ -79,11 +80,13 @@ export function useCreateManualTask() {
       linkedParentId?: string;
       // Tiempo estimado elegido al crearla (se muestra como "· Xmin").
       minutes?: number | null;
+      // Hora límite ("HH:MM") con la que se calcularon los minutos.
+      deadline?: string | null;
     }) => {
       const res = await fetch("/api/manual-today-tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, title, kind, linkedKind, linkedParentId, minutes }),
+        body: JSON.stringify({ date, title, kind, linkedKind, linkedParentId, minutes, deadline }),
       });
       if (!res.ok) throw new Error("Failed to create manual task");
       return res.json() as Promise<ManualTodayTask>;
@@ -108,7 +111,7 @@ export function useUpdateManualTask() {
       // `updates.date` es el día NUEVO al que se mueve la tarea (mantener presionada una tarea
       // y elegir "Cambiar de día"); `date` arriba es el día ACTUAL bajo el que se la está
       // viendo, se usa solo para invalidar esa lista.
-      updates: { title?: string; done?: 0 | 1; date?: string; minutes?: number | null };
+      updates: { title?: string; done?: 0 | 1; date?: string; minutes?: number | null; deadline?: string | null };
     }) => {
       const res = await fetch(`/api/manual-today-tasks/${id}`, {
         method: "PATCH",

@@ -5606,7 +5606,10 @@ export async function registerRoutes(
       if (!existing || existing.userId !== req.userId) {
         return res.status(404).json({ message: "Sub-paso no encontrado" });
       }
-      const { title, done, sortOrder, minutes, minutesManual } = req.body;
+      const { title, done, sortOrder, minutes, minutesManual, deadline } = req.body;
+      if (deadline !== undefined && deadline !== null && (typeof deadline !== "string" || !/^\d{2}:\d{2}$/.test(deadline))) {
+        return res.status(400).json({ message: "deadline debe tener formato HH:MM o null" });
+      }
       if (minutes !== undefined && minutes !== null && (!Number.isInteger(minutes) || minutes < 0)) {
         return res.status(400).json({ message: "minutes debe ser un entero >= 0 o null" });
       }
@@ -5622,6 +5625,7 @@ export async function registerRoutes(
         ...(sortOrder !== undefined ? { sortOrder } : {}),
         ...(minutes !== undefined ? { minutes } : {}),
         ...(minutesManual === 0 || minutesManual === 1 ? { minutesManual } : {}),
+        ...(deadline !== undefined ? { deadline } : {}),
       });
       res.json(updated);
     } catch (error: any) {
@@ -5712,7 +5716,7 @@ export async function registerRoutes(
 
   app.post("/api/manual-today-tasks", requireAuth, async (req, res) => {
     try {
-      const { date, title, kind, linkedKind, linkedParentId, minutes } = req.body;
+      const { date, title, kind, linkedKind, linkedParentId, minutes, deadline } = req.body;
       if (minutes !== undefined && minutes !== null && (!Number.isInteger(minutes) || minutes < 0)) {
         return res.status(400).json({ message: "minutes debe ser un entero >= 0 o null" });
       }
@@ -5733,6 +5737,7 @@ export async function registerRoutes(
         done: 0,
         ...(linkedParentId ? { linkedKind, linkedParentId: String(linkedParentId) } : {}),
         ...(minutes ? { minutes } : {}),
+        ...(typeof deadline === "string" && /^\d{2}:\d{2}$/.test(deadline) ? { deadline } : {}),
       });
       res.status(201).json(task);
     } catch (error: any) {
@@ -5746,7 +5751,10 @@ export async function registerRoutes(
       if (!existing || existing.userId !== req.userId) {
         return res.status(404).json({ message: "Tarea no encontrada" });
       }
-      const { title, done, date, minutes, linkedSkillId } = req.body;
+      const { title, done, date, minutes, linkedSkillId, deadline } = req.body;
+      if (deadline !== undefined && deadline !== null && (typeof deadline !== "string" || !/^\d{2}:\d{2}$/.test(deadline))) {
+        return res.status(400).json({ message: "deadline debe tener formato HH:MM o null" });
+      }
       if (done !== undefined && done !== 0 && done !== 1) {
         return res.status(400).json({ message: "done debe ser 0 o 1" });
       }
@@ -5762,6 +5770,7 @@ export async function registerRoutes(
         ...(date !== undefined ? { date } : {}),
         ...(minutes !== undefined ? { minutes } : {}),
         ...(linkedSkillId !== undefined ? { linkedSkillId: linkedSkillId === null ? null : String(linkedSkillId) } : {}),
+        ...(deadline !== undefined ? { deadline } : {}),
       });
       // Si se movió de día, la franja horaria asignada quedó atada a la fecha vieja: no tiene
       // sentido dejarla huérfana ahí (el día viejo ya no la va a mostrar, pero queda basura en

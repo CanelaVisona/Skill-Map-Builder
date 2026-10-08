@@ -600,7 +600,7 @@ export class DbStorage implements IStorage {
   // planeada o que ya se completaron: el front solo tiene cargados los nodos de primer nivel,
   // así que sin esto los sub-nodos nunca aparecían en "Hoy" ni en el calendario de actividades.
   // parentName = título del nodo padre directo.
-  async getDatedSubSkills(userId: string): Promise<{ id: string; title: string; status: string; plannedDate: string | null; plannedDuration: number | null; completedAt: Date | null; parentName: string; parentSkillId: string; parentPlannedDate: string | null }[]> {
+  async getDatedSubSkills(userId: string): Promise<{ id: string; title: string; status: string; plannedDate: string | null; plannedDuration: number | null; plannedDeadline: string | null; completedAt: Date | null; parentName: string; parentSkillId: string; parentPlannedDate: string | null }[]> {
     const result = await pool.query(
       `WITH RECURSIVE tree AS (
          SELECT s.id FROM skills s
@@ -610,7 +610,7 @@ export class DbStorage implements IStorage {
          UNION ALL
          SELECT c.id FROM skills c JOIN tree t ON c.parent_skill_id = t.id
        )
-       SELECT s.id, s.title, s.status, s.planned_date, s.planned_duration, s.completed_at, parent.title AS parent_name,
+       SELECT s.id, s.title, s.status, s.planned_date, s.planned_duration, s.planned_deadline, s.completed_at, parent.title AS parent_name,
               s.parent_skill_id, parent.planned_date AS parent_planned_date
        FROM skills s
        JOIN tree t ON s.id = t.id
@@ -624,6 +624,7 @@ export class DbStorage implements IStorage {
       status: r.status,
       plannedDate: r.planned_date,
       plannedDuration: r.planned_duration,
+      plannedDeadline: r.planned_deadline,
       completedAt: r.completed_at,
       parentName: r.parent_name,
       // Para el registro de un día pasado: si el padre se pasó a otro día, sus sub-nodos
@@ -658,6 +659,7 @@ export class DbStorage implements IStorage {
       levelPosition: skill.levelPosition,
       plannedDate: skill.plannedDate,
       plannedDuration: skill.plannedDuration,
+      plannedDeadline: skill.plannedDeadline ?? null,
     };
     const result = await db.insert(skills).values(insertData).returning();
     return result[0];
@@ -682,6 +684,7 @@ export class DbStorage implements IStorage {
     if (skill.plannedDate !== undefined) updateData.plannedDate = skill.plannedDate;
     if (skill.plannedDuration !== undefined) updateData.plannedDuration = skill.plannedDuration;
     if (skill.plannedDurationManual !== undefined) updateData.plannedDurationManual = skill.plannedDurationManual;
+    if (skill.plannedDeadline !== undefined) updateData.plannedDeadline = skill.plannedDeadline;
     if (skill.completedAt !== undefined) updateData.completedAt = skill.completedAt;
 
     const result = await db.update(skills).set(updateData).where(eq(skills.id, id)).returning();
@@ -3548,7 +3551,7 @@ export class DbStorage implements IStorage {
 
   // Si la copia del día salió de un sub-paso permanente de un hábito, el nombre, el tiempo y el
   // orden también se guardan en la plantilla (el "hecho" es solo de ese día).
-  async updateTodayTaskSubstep(id: string, updates: { title?: string; done?: 0 | 1; sortOrder?: number; minutes?: number | null; minutesManual?: 0 | 1 }): Promise<TodayTaskSubstep | undefined> {
+  async updateTodayTaskSubstep(id: string, updates: { title?: string; done?: 0 | 1; sortOrder?: number; minutes?: number | null; minutesManual?: 0 | 1; deadline?: string | null }): Promise<TodayTaskSubstep | undefined> {
     const result = await db.update(todayTaskSubsteps).set(updates).where(eq(todayTaskSubsteps.id, id)).returning();
     const row = result[0];
     if (row?.templateId) {
@@ -3667,9 +3670,10 @@ export class DbStorage implements IStorage {
     return result[0];
   }
 
-  async updateManualTodayTask(id: string, updates: Partial<Pick<InsertManualTodayTask, "title" | "done" | "date" | "minutes" | "linkedSkillId">>): Promise<ManualTodayTask | undefined> {
+  async updateManualTodayTask(id: string, updates: Partial<Pick<InsertManualTodayTask, "title" | "done" | "date" | "minutes" | "linkedSkillId" | "deadline">>): Promise<ManualTodayTask | undefined> {
     const updateData: Record<string, unknown> = {};
     if (updates.minutes !== undefined) updateData.minutes = updates.minutes;
+    if (updates.deadline !== undefined) updateData.deadline = updates.deadline;
     if (updates.title !== undefined) updateData.title = updates.title;
     if (updates.done !== undefined) updateData.done = updates.done;
     if (updates.date !== undefined) updateData.date = updates.date;

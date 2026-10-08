@@ -77,6 +77,9 @@ export const skills = pgTable("skills", {
   // 1 = plannedDuration lo puso el usuario a mano; 0 = vino del reparto automático del tiempo de
   // su nodo padre en "Tareas de hoy" (los repartos nunca tocan los puestos a mano).
   plannedDurationManual: integer("planned_duration_manual").$type<0 | 1>().default(0),
+  // Hora límite ("HH:MM") con la que se calculó plannedDuration en "Tareas de hoy" (minutos que
+  // faltaban desde ese momento hasta esa hora). Se muestra como "· 60min (hasta 5pm)".
+  plannedDeadline: varchar("planned_deadline"),
   completedAt: timestamp("completed_at"),
 });
 
@@ -801,6 +804,7 @@ export const todayTaskSubsteps = pgTable("today_task_substeps", {
   minutes: integer("minutes"), // Tiempo estimado asignado desde "Tareas de hoy" (se muestra como "· Xmin")
   // 1 = minutes puesto a mano; 0 = vino del reparto automático del tiempo de la tarea padre.
   minutesManual: integer("minutes_manual").$type<0 | 1>().notNull().default(0),
+  deadline: varchar("deadline"), // Hora límite ("HH:MM") con la que se calcularon los minutos
   // Sub-paso permanente de un hábito (habitSubsteps) del que salió esta copia del día. Editar o
   // borrar la copia también edita/borra la plantilla.
   templateId: varchar("template_id"),
@@ -834,6 +838,7 @@ export const manualTodayTasks = pgTable("manual_today_tasks", {
   kind: text("kind").$type<"task" | "event">().notNull().default("task"),
   done: integer("done").$type<0 | 1>().notNull().default(0),
   minutes: integer("minutes"), // Tiempo estimado asignado desde "Tareas de hoy" (se muestra como "· Xmin")
+  deadline: varchar("deadline"), // Hora límite ("HH:MM") con la que se calcularon los minutos
   // Evento asociado a un área/quest: el día del evento se crea un nodo con su nombre en el
   // lugar del nodo desbloqueado de ese árbol (linkedSkillId queda apuntando a ese nodo), y
   // confirmar el evento confirma el nodo.
