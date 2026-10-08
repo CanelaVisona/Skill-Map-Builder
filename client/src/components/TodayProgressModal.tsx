@@ -995,15 +995,13 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // Al confirmar el padre, si tenía tiempo de sobra respecto de sus hijos, pasa a la suma del
   // tiempo de sus hijos (lo que realmente llevó). Hábitos y prácticas no: su tiempo es la
   // configuración del hábito/práctica, no algo de este día.
-  // Si algún hijo no tiene tiempo, no se puede saber cuánto llevó: el padre queda sin tiempo.
+  // Si algún hijo no tiene tiempo, la suma no dice cuánto llevó: el padre conserva su propio
+  // tiempo. (Un padre sin tiempo propio, en ese caso, deja de mostrar la suma: parentMinutesProps.)
   const shrinkParentToChildrenSum = (parent: TodayItem, childMinutes: (number | null | undefined)[]) => {
     if (parent.type !== "node" && parent.type !== "manual") return;
     const own = currentMinutes(parent);
     if (!own || childMinutes.length === 0) return;
-    if (childMinutes.some((m) => !m || m <= 0)) {
-      saveItemMinutes(parent, null, null);
-      return;
-    }
+    if (childMinutes.some((m) => !m || m <= 0)) return;
     const sum = sumChildMinutes(childMinutes);
     if (sum && sum < own) saveItemMinutes(parent, sum, null);
   };
