@@ -117,12 +117,10 @@ function sumChildMinutes(childMinutes: (number | null | undefined)[]): number | 
   return sum > 0 ? sum : null;
 }
 
-// "HH:MM" → "5pm" / "5:30pm" (como se escribe la hora límite junto al tiempo de una tarea).
+// "HH:MM" en 24 h (p.ej. "16:18"), como se escribe la hora límite junto al tiempo de una tarea.
 function formatDeadline(deadline: string): string {
   const [h, m] = deadline.split(":").map(Number);
-  const suffix = h >= 12 ? "pm" : "am";
-  const hour12 = h % 12 === 0 ? 12 : h % 12;
-  return m ? `${hour12}:${String(m).padStart(2, "0")}${suffix}` : `${hour12}${suffix}`;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
 // Minutos que faltan desde ahora hasta la hora límite de hoy ("HH:MM"). null si ya pasó.
@@ -135,11 +133,34 @@ function minutesUntilDeadline(deadline: string): number | null {
   return diff > 0 ? diff : null;
 }
 
-function MinutesSuffix({ minutes, deadline }: { minutes?: number | null; deadline?: string | null }) {
+// showRemaining: con hora límite, muestra también el tiempo que queda hasta esa hora (se
+// actualiza solo cada minuto). Solo tiene sentido viendo hoy y con la tarea sin hacer.
+function MinutesSuffix({
+  minutes,
+  deadline,
+  showRemaining,
+}: {
+  minutes?: number | null;
+  deadline?: string | null;
+  showRemaining?: boolean;
+}) {
+  const live = !!deadline && !!showRemaining;
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!live) return;
+    const id = setInterval(() => setTick((t) => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, [live]);
   if (!minutes) return null;
+  // Un marco para avanzar, no una alarma: cada número dice qué es ("10 min · hasta 16:18 ·
+  // tengo 5 min"), todo en el mismo tono tranquilo. Cuando la hora ya pasó, simplemente deja de
+  // mostrarse cuánto queda (sin rojo ni "atrasado").
+  const remaining = live ? minutesUntilDeadline(deadline!) : null;
   return (
     <span className="text-muted-foreground">
-      {" "}· {minutes}min{deadline ? ` (hasta ${formatDeadline(deadline)})` : ""}
+      {" "}· {minutes} min
+      {deadline && <> · hasta {formatDeadline(deadline)}</>}
+      {remaining !== null && <> · tengo {remaining} min</>}
     </span>
   );
 }
@@ -761,7 +782,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       label: (
         <>
           {stripLeadingEmoji(n.title)} <span className="text-muted-foreground">· {n.parentName}</span>
-          <MinutesSuffix minutes={n.plannedDuration} deadline={n.plannedDeadline} />
+          <MinutesSuffix minutes={n.plannedDuration} deadline={n.plannedDeadline} showRemaining={!n.done && effectiveDate === todayStr} />
         </>
       ),
       done: n.done,
@@ -787,7 +808,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       label: (
         <>
           {t.kind === "event" ? <>📅 {stripLeadingEmoji(t.title)}</> : stripLeadingEmoji(t.title)}
-          <MinutesSuffix minutes={t.minutes} deadline={t.deadline} />
+          <MinutesSuffix minutes={t.minutes} deadline={t.deadline} showRemaining={t.done !== 1 && effectiveDate === todayStr} />
         </>
       ),
       done: t.done === 1,
@@ -1109,6 +1130,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
               }}
               minutes={sub.plannedDuration}
               deadline={sub.plannedDeadline}
+              showRemaining={effectiveDate === todayStr}
               onAssignTime={() =>
                 openTimeDialog(
                   { key: `node:${sub.id}`, type: "node", id: sub.id, label: sub.title, done: sub.status === "mastered" },
@@ -1371,6 +1393,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         onDelete={() => deleteSubstep.mutate({ id: st.id, date: effectiveDate })}
         minutes={st.minutes}
         deadline={st.deadline}
+        showRemaining={effectiveDate === todayStr}
         onAssignTime={() => openSubstepTimeDialog(st.id, st.minutes, parentTimeRef(item, steps.map((x) => x.minutes), i), st.deadline)}
         deleteLabel="sub-paso"
       />
@@ -3250,10 +3273,10 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
               className="h-7 w-28 text-xs"
             />
             {newTaskDeadline && (
-              <span className={`text-xs ${minutesUntilDeadline(newTaskDeadline) ? "text-muted-foreground" : "text-destructive"}`}>
+              <span className="text-xs text-muted-foreground">
                 {minutesUntilDeadline(newTaskDeadline)
-                  ? `${minutesUntilDeadline(newTaskDeadline)} minutos (hasta ${formatDeadline(newTaskDeadline)})`
-                  : "Esa hora ya pasó"}
+                  ? `${minutesUntilDeadline(newTaskDeadline)} min · hasta ${formatDeadline(newTaskDeadline)}`
+                  : "Elegí una hora que todavía no pasó"}
               </span>
             )}
           </div>
@@ -3604,10 +3627,10 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
             </div>
           )}
           {timeDeadline && (
-            <p className={`text-xs ${minutesUntilDeadline(timeDeadline) ? "text-muted-foreground" : "text-destructive"}`}>
+            <p className="text-xs text-muted-foreground">
               {minutesUntilDeadline(timeDeadline)
-                ? `${minutesUntilDeadline(timeDeadline)} minutos (hasta ${formatDeadline(timeDeadline)})`
-                : "Esa hora ya pasó"}
+                ? `${minutesUntilDeadline(timeDeadline)} min · hasta ${formatDeadline(timeDeadline)}`
+                : "Elegí una hora que todavía no pasó"}
             </p>
           )}
         </div>
@@ -3669,6 +3692,7 @@ function TodaySubRow({
   onAssignTime,
   minutes,
   deadline,
+  showRemaining,
   onAddChild,
   depth = 0,
   onDelete,
@@ -3685,8 +3709,10 @@ function TodaySubRow({
   // Abre el diálogo de tiempo estimado (sub-nodo: su plannedDuration; sub-paso: sus minutos del día).
   onAssignTime?: () => void;
   minutes?: number | null;
-  // Hora límite con la que se calcularon los minutos (se muestra "(hasta 5pm)").
+  // Hora límite con la que se calcularon los minutos (se muestra "(hasta 16:18)").
   deadline?: string | null;
+  // Mostrar el tiempo que queda hasta la hora límite (solo viendo hoy).
+  showRemaining?: boolean;
   // Agregarle un sub-nodo a este sub-nodo (se muestra anidado adentro de él).
   onAddChild?: () => void;
   // 1 = sub-nodo de un sub-nodo: un nivel más de sangría.
@@ -3703,7 +3729,7 @@ function TodaySubRow({
       }`}
     >
       {title}
-      <MinutesSuffix minutes={minutes} deadline={deadline} />
+      <MinutesSuffix minutes={minutes} deadline={deadline} showRemaining={showRemaining && !done} />
     </span>
   );
   return (
