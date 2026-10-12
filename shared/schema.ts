@@ -562,7 +562,8 @@ export const budgetQuarters = pgTable("budget_quarters", {
 
 // Un mes cargado dentro de una categoría de presupuesto libre (segundo gráfico: "Presupuesto
 // por categorías"). A diferencia de budgetQuarters, cada categoría es su propio registro con
-// nombre propio, para poder agregarlas de a una vía long-press en el título del gráfico.
+// nombre propio, para poder agregarlas de a una vía long-press en el título del gráfico. Guarda
+// el historial completo mes a mes (el promedio usa la ventana de 3 meses que corresponda).
 export interface BudgetCategoryMonthEntry {
   year: number;
   month: number; // 0-11
@@ -1091,7 +1092,7 @@ export const insertBudgetCategorySchema = createInsertSchema(budgetCategories).o
     year: z.number(),
     month: z.number(),
     amount: z.number(),
-  })).length(3),
+  })).min(1),
 });
 export type InsertBudgetCategory = z.infer<typeof insertBudgetCategorySchema>;
 export type BudgetCategory = typeof budgetCategories.$inferSelect;

@@ -254,6 +254,15 @@ function monthQuarterMap(quarters: BudgetQuarter[]): Map<string, BudgetQuarter> 
   sorted.forEach((q) => q.months.forEach((m) => map.set(`${m.year}-${m.month}`, q)));
   return map;
 }
+// Lo guardado para cada mes puntual ("año-mes"), tomado de la carga más reciente que lo incluye.
+function budgetMonthEntryMap(quarters: BudgetQuarter[]): Map<string, BudgetMonthEntry> {
+  const out = new Map<string, BudgetMonthEntry>();
+  monthQuarterMap(quarters).forEach((q, key) => {
+    const entry = q.months.find((m) => `${m.year}-${m.month}` === key);
+    if (entry) out.set(key, entry);
+  });
+  return out;
+}
 
 // ---------- horizonte de metas (corto / mediano / largo plazo) ----------
 
@@ -1466,16 +1475,11 @@ function SavingMissionFormDialog({
 function quarterTotalAvg(q: BudgetQuarter): number {
   return budgetAvg(q, "fixed") + budgetAvg(q, "variable") + budgetAvg(q, "savings");
 }
-// Lo mínimo que comparten una categoría de presupuesto y una fuente de ingreso: nombre + 3 meses.
+// Lo mínimo que comparten una categoría de presupuesto y una fuente de ingreso: nombre + meses.
+// Las dos guardan el historial completo mes a mes: lo cargado en un mes queda fijo y se
+// reutiliza en el promedio de cualquier otro mes cuya ventana de 3 meses lo incluya.
 type MonthlyItem = Pick<BudgetCategory, "id" | "name" | "months">;
 
-function categoryAvg(c: MonthlyItem): number {
-  if (!c.months.length) return 0;
-  return c.months.reduce((s, m) => s + (Number(m.amount) || 0), 0) / c.months.length;
-}
-
-// Las fuentes de ingreso guardan el historial completo mes a mes: lo cargado en un mes queda fijo
-// y se reutiliza en el promedio de cualquier otro mes cuya ventana de 3 meses lo incluya.
 function findMonthEntry(c: MonthlyItem, year: number, month: number): BudgetCategoryMonthEntry | undefined {
   return c.months.find((m) => m.year === year && m.month === month);
 }
@@ -1495,12 +1499,12 @@ function latestMonthOf(c: MonthlyItem): { year: number; month: number } | null {
   if (!c.months.length) return null;
   return c.months.reduce((a, b) => (a.year * 12 + a.month >= b.year * 12 + b.month ? a : b));
 }
-// Promedio "actual" de una fuente: la ventana de 3 meses que termina en su último mes cargado.
-function incomeAvg(c: MonthlyItem): number {
+// Promedio "actual" de un ítem: la ventana de 3 meses que termina en su último mes cargado.
+function categoryAvg(c: MonthlyItem): number {
   const last = latestMonthOf(c);
   return last ? windowAvg(c, last.year, last.month) : 0;
 }
-function incomeLatestWindow(c: MonthlyItem): BudgetCategoryMonthEntry[] {
+function latestWindow(c: MonthlyItem): BudgetCategoryMonthEntry[] {
   const last = latestMonthOf(c);
   return last ? windowEntries(c, last.year, last.month) : [];
 }
@@ -1509,6 +1513,28 @@ function mergeMonths(history: BudgetCategoryMonthEntry[], updates: BudgetCategor
   const map = new Map(history.map((m) => [`${m.year}-${m.month}`, m]));
   updates.forEach((m) => map.set(`${m.year}-${m.month}`, m));
   return Array.from(map.values()).sort((a, b) => a.year * 12 + a.month - (b.year * 12 + b.month));
+}
+// Suma al historial lo cargado en el formulario: los meses vacíos que nunca se habían cargado no
+// se guardan (para no meter ceros en el promedio de otros meses).
+function mergeIntoHistory(item: MonthlyItem, months: BudgetCategoryMonthEntry[]): BudgetCategoryMonthEntry[] {
+  return mergeMonths(item.months, months.filter((m) => m.amount || findMonthEntry(item, m.year, m.month)));
+}
+// Para crear un ítem nuevo: solo los meses con monto (si están todos vacíos, se guardan igual).
+function filledMonths(months: BudgetCategoryMonthEntry[]): BudgetCategoryMonthEntry[] {
+  const filled = months.filter((m) => m.amount);
+  return filled.length ? filled : months;
+}
+// Los 3 meses que terminan en (year, month), o los del último mes cargado del ítem si no se elige.
+function editWindowFor(item: MonthlyItem, year?: number, month?: number) {
+  const end = year !== undefined && month !== undefined ? { year, month } : latestMonthOf(item);
+  return end ? threeMonthsEnding(end.year, end.month) : lastThreeMonths();
+}
+// Montos ya guardados del ítem para los meses de la ventana, listos para un input.
+function storedWindowValues(item: MonthlyItem, months: { year: number; month: number }[]): string[] {
+  return months.map((m) => {
+    const amount = findMonthEntry(item, m.year, m.month)?.amount;
+    return amount ? moneyFormatter.format(amount) : "";
+  });
 }
 
 function BudgetPieSlide({
@@ -1850,7 +1876,8 @@ function BudgetCategoriesDetailDialog({
               {categories.map((c, i) => (
                 <BudgetCategoryRow
                   key={c.id}
-                  category={c}
+                  category={{ ...c, months: latestWindow(c) }}
+                  avg={categoryAvg(c)}
                   color={PALETTE[i % PALETTE.length]}
                   onRename={() => onRenameCategory(c)}
                   onDelete={() => onDeleteCategory(c)}
@@ -1869,6 +1896,7 @@ function BudgetFormDialog({
   open,
   onOpenChange,
   quarter,
+  quarters,
   lastQuarter,
   months: windowMonths,
   onSubmit,
@@ -1876,6 +1904,7 @@ function BudgetFormDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   quarter: BudgetQuarter | null;
+  quarters: BudgetQuarter[];
   lastQuarter: BudgetQuarter | null;
   months: { year: number; month: number; label: string }[];
   onSubmit: (data: { months: BudgetMonthEntry[] }) => void;
@@ -1888,29 +1917,32 @@ function BudgetFormDialog({
   useEffect(() => {
     if (!open) return;
     setAmountCurrency("usd");
+    const fmt = (n: number) => (n ? moneyFormatter.format(n) : "");
     if (quarter) {
       const v: Record<string, string> = {};
       quarter.months.forEach((m, idx) => {
-        v[`fixed-${idx}`] = m.fixed ? moneyFormatter.format(m.fixed) : "";
-        v[`variable-${idx}`] = m.variable ? moneyFormatter.format(m.variable) : "";
-        v[`savings-${idx}`] = m.savings ? moneyFormatter.format(m.savings) : "";
+        v[`fixed-${idx}`] = fmt(m.fixed);
+        v[`variable-${idx}`] = fmt(m.variable);
+        v[`savings-${idx}`] = fmt(m.savings);
       });
       setValues(v);
-    } else if (lastQuarter && lastQuarter.months.length) {
-      // Sin una carga previa para estos meses puntuales: se parte del último número
-      // guardado (el mes más reciente de la última carga) como punto de partida editable.
-      const last = lastQuarter.months[lastQuarter.months.length - 1];
-      const v: Record<string, string> = {};
-      windowMonths.forEach((_, idx) => {
-        v[`fixed-${idx}`] = last.fixed ? moneyFormatter.format(last.fixed) : "";
-        v[`variable-${idx}`] = last.variable ? moneyFormatter.format(last.variable) : "";
-        v[`savings-${idx}`] = last.savings ? moneyFormatter.format(last.savings) : "";
-      });
-      setValues(v);
-    } else {
-      setValues({});
+      return;
     }
-  }, [open, quarter, lastQuarter]);
+    // Cada mes que ya estaba cargado en otra carga trae ese mismo número (así el promedio de
+    // este mes nuevo usa lo que ya se había guardado). Los meses sin carga previa parten del
+    // último número guardado (el mes más reciente de la última carga) como punto editable.
+    const stored = budgetMonthEntryMap(quarters);
+    const last = lastQuarter && lastQuarter.months.length ? lastQuarter.months[lastQuarter.months.length - 1] : null;
+    const v: Record<string, string> = {};
+    windowMonths.forEach((m, idx) => {
+      const src = stored.get(`${m.year}-${m.month}`) || last;
+      if (!src) return;
+      v[`fixed-${idx}`] = fmt(src.fixed);
+      v[`variable-${idx}`] = fmt(src.variable);
+      v[`savings-${idx}`] = fmt(src.savings);
+    });
+    setValues(v);
+  }, [open, quarter, lastQuarter, windowMonths]);
 
   const getVal = (cat: string, idx: number) => values[`${cat}-${idx}`] || "";
   const setVal = (cat: string, idx: number, v: string) => setValues((s) => ({ ...s, [`${cat}-${idx}`]: v }));
@@ -1980,16 +2012,18 @@ function BudgetCategoryFormDialog({
   open,
   onOpenChange,
   category,
+  categories,
   months: windowMonths,
   onSubmit,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   category: BudgetCategory | null;
+  categories: BudgetCategory[];
   months: { year: number; month: number; label: string }[];
   onSubmit: (data: { name: string; months: BudgetCategoryMonthEntry[] }) => void;
 }) {
-  const months = category ? category.months.map((m) => ({ year: m.year, month: m.month, label: monthLabel(m.year, m.month) })) : windowMonths;
+  const months = windowMonths;
   const [name, setName] = useState("");
   const [values, setValues] = useState<string[]>(["", "", ""]);
   const [nameErr, setNameErr] = useState(false);
@@ -2001,13 +2035,22 @@ function BudgetCategoryFormDialog({
     setAmountCurrency("usd");
     if (category) {
       setName(category.name);
-      setValues(category.months.map((m) => (m.amount ? moneyFormatter.format(m.amount) : "")));
+      setValues(storedWindowValues(category, months));
     } else {
       setName("");
       setValues(["", "", ""]);
     }
     setNameErr(false);
-  }, [open, category]);
+  }, [open, category, windowMonths]);
+
+  // Al crear desde otro mes con el nombre de una categoría existente, se precargan los meses que
+  // ya estaban guardados para que el promedio use esos mismos números.
+  const nameMatch = !category && name.trim() ? categories.find((c) => c.name.trim().toLowerCase() === name.trim().toLowerCase()) : undefined;
+  useEffect(() => {
+    if (!open || !nameMatch) return;
+    const stored = storedWindowValues(nameMatch, months);
+    setValues((v) => v.map((x, i) => x || stored[i]));
+  }, [open, nameMatch?.id]);
 
   const handleSave = () => {
     const trimmed = name.trim();
@@ -2223,8 +2266,8 @@ function BudgetCategoriesCalendarDialog<T extends MonthlyItem>({
   onCreateForMonth,
   colorFor = (_c, i) => PALETTE[i % PALETTE.length],
   text = CATEGORIES_CALENDAR_TEXT,
-  windowFor = (c) => c.months,
-  avgFor = (c) => categoryAvg(c),
+  windowFor = (c, y, m) => windowEntries(c, y, m).filter((e) => findMonthEntry(c, e.year, e.month)),
+  avgFor = windowAvg,
 }: {
   categories: T[];
   open: boolean;
@@ -2233,7 +2276,7 @@ function BudgetCategoriesCalendarDialog<T extends MonthlyItem>({
   onCreateForMonth: (year: number, month: number) => void;
   colorFor?: (category: T, index: number) => string;
   text?: typeof CATEGORIES_CALENDAR_TEXT;
-  // Meses y promedio a mostrar para un ítem al elegir un mes (por defecto, sus 3 meses guardados).
+  // Meses y promedio a mostrar para un ítem al elegir un mes (por defecto, la ventana de 3 meses que termina en el mes elegido).
   windowFor?: (category: T, year: number, month: number) => BudgetCategoryMonthEntry[];
   avgFor?: (category: T, year: number, month: number) => number;
 }) {
@@ -2390,7 +2433,7 @@ function IncomeCard({
 }) {
   const chartPress = useLongPress(onOpenDetail, () => {});
   const groups = INCOME_KINDS.map((k) => {
-    const items = sources.filter((s) => s.kind === k.key).map((s) => ({ source: s, avg: incomeAvg(s) }));
+    const items = sources.filter((s) => s.kind === k.key).map((s) => ({ source: s, avg: categoryAvg(s) }));
     return { ...k, items, total: items.reduce((a, i) => a + i.avg, 0) };
   });
   const data = groups.filter((g) => g.total > 0).map((g) => ({ name: g.label, value: g.total, color: g.color }));
@@ -2461,7 +2504,7 @@ function IncomeDetailDialog({
   onUpdateMonths: (source: IncomeSource, months: BudgetCategoryMonthEntry[]) => void;
 }) {
   const titleLongPress = useLongPress(onAdd, () => {});
-  const total = sources.reduce((a, s) => a + incomeAvg(s), 0);
+  const total = sources.reduce((a, s) => a + categoryAvg(s), 0);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -2484,7 +2527,7 @@ function IncomeDetailDialog({
             {INCOME_KINDS.map((k) => {
               const items = sources.filter((s) => s.kind === k.key);
               if (!items.length) return null;
-              const kindTotal = items.reduce((a, s) => a + incomeAvg(s), 0);
+              const kindTotal = items.reduce((a, s) => a + categoryAvg(s), 0);
               return (
                 <div key={k.key} className="space-y-2">
                   <div className="flex items-center justify-between text-xs uppercase tracking-wide text-muted-foreground px-0.5">
@@ -2497,8 +2540,8 @@ function IncomeDetailDialog({
                   {items.map((s) => (
                     <BudgetCategoryRow
                       key={s.id}
-                      category={{ ...s, months: incomeLatestWindow(s) }}
-                      avg={incomeAvg(s)}
+                      category={{ ...s, months: latestWindow(s) }}
+                      avg={categoryAvg(s)}
                       color={k.color}
                       renameLabel="Editar"
                       onRename={() => onEdit(s)}
@@ -3943,6 +3986,20 @@ export default function FinancialGoals() {
     } else {
       createBudgetQuarter.mutate(data);
     }
+    // Un mismo mes puede estar en varias cargas (se solapan): las otras cargas que lo incluyen
+    // reciben el mismo número, para que todos los promedios usen lo que se guardó para ese mes.
+    const byKey = new Map(data.months.map((m) => [`${m.year}-${m.month}`, m]));
+    budgetQuarters.forEach((q) => {
+      if (q.id === budgetFormTarget?.id) return;
+      let changed = false;
+      const months = q.months.map((m) => {
+        const upd = byKey.get(`${m.year}-${m.month}`);
+        if (!upd || (upd.fixed === m.fixed && upd.variable === m.variable && upd.savings === m.savings)) return m;
+        changed = true;
+        return { ...m, fixed: upd.fixed, variable: upd.variable, savings: upd.savings };
+      });
+      if (changed) updateBudgetQuarter.mutate({ id: q.id, data: { months } });
+    });
   };
 
   const { data: budgetCategories = [] } = useQuery<BudgetCategory[]>({
@@ -3992,8 +4049,10 @@ export default function FinancialGoals() {
     setBudgetCategoriesDetailOpen(false);
     setBudgetRenameOpen(true);
   };
-  const openBudgetCategoryEditFull = (category: BudgetCategory) => {
+  // Desde el calendario se editan los 3 meses que terminan en el mes tocado.
+  const openBudgetCategoryEditFull = (category: BudgetCategory, year?: number, month?: number) => {
     setBudgetCategoryFormTarget(category);
+    setBudgetCategoryFormMonths(editWindowFor(category, year, month));
     setBudgetCategoriesCalendarOpen(false);
     setBudgetCategoryFormOpen(true);
   };
@@ -4005,15 +4064,12 @@ export default function FinancialGoals() {
   };
 
   const handleBudgetCategorySubmit = (data: { name: string; months: BudgetCategoryMonthEntry[] }) => {
-    if (budgetCategoryFormTarget) {
-      updateBudgetCategory.mutate({ id: budgetCategoryFormTarget.id, data });
-      return;
-    }
-    const existing = budgetCategories.find((c) => c.name.trim().toLowerCase() === data.name.trim().toLowerCase());
+    const existing =
+      budgetCategoryFormTarget || budgetCategories.find((c) => c.name.trim().toLowerCase() === data.name.trim().toLowerCase());
     if (existing) {
-      updateBudgetCategory.mutate({ id: existing.id, data: { months: data.months } });
+      updateBudgetCategory.mutate({ id: existing.id, data: { name: data.name, months: mergeIntoHistory(existing, data.months) } });
     } else {
-      createBudgetCategory.mutate(data);
+      createBudgetCategory.mutate({ ...data, months: filledMonths(data.months) });
     }
   };
 
@@ -4039,7 +4095,7 @@ export default function FinancialGoals() {
   };
 
   const handleBudgetCategoryUpdateMonths = (category: BudgetCategory, months: BudgetCategoryMonthEntry[]) => {
-    updateBudgetCategory.mutate({ id: category.id, data: { months } });
+    updateBudgetCategory.mutate({ id: category.id, data: { months: mergeIntoHistory(category, months) } });
   };
 
   const { data: incomeSources = [] } = useQuery<IncomeSource[]>({
@@ -4110,19 +4166,13 @@ export default function FinancialGoals() {
     setIncomeFormOpen(true);
   };
 
-  // Suma los meses cargados al historial del ingreso: los meses vacíos que nunca se habían
-  // cargado no se guardan (para no meter ceros en el promedio de otros meses).
-  const mergeIncomeMonths = (source: IncomeSource, months: BudgetCategoryMonthEntry[]) =>
-    mergeMonths(source.months, months.filter((m) => m.amount || findMonthEntry(source, m.year, m.month)));
-
   const handleIncomeSubmit = (data: { name: string; kind: IncomeSourceKind; months: BudgetCategoryMonthEntry[] }) => {
     const existing =
       incomeFormTarget || incomeSources.find((s) => s.name.trim().toLowerCase() === data.name.trim().toLowerCase());
     if (existing) {
-      updateIncomeSource.mutate({ id: existing.id, data: { name: data.name, kind: data.kind, months: mergeIncomeMonths(existing, data.months) } });
+      updateIncomeSource.mutate({ id: existing.id, data: { name: data.name, kind: data.kind, months: mergeIntoHistory(existing, data.months) } });
     } else {
-      const filled = data.months.filter((m) => m.amount);
-      createIncomeSource.mutate({ ...data, months: filled.length ? filled : data.months });
+      createIncomeSource.mutate({ ...data, months: filledMonths(data.months) });
     }
   };
 
@@ -4469,6 +4519,7 @@ export default function FinancialGoals() {
           if (!v) setBudgetFormTarget(null);
         }}
         quarter={budgetFormTarget}
+        quarters={budgetQuarters}
         lastQuarter={latestBudgetQuarter(budgetQuarters)}
         months={budgetFormMonths}
         onSubmit={handleBudgetFormSubmit}
@@ -4489,6 +4540,7 @@ export default function FinancialGoals() {
           if (!v) setBudgetCategoryFormTarget(null);
         }}
         category={budgetCategoryFormTarget}
+        categories={budgetCategories}
         months={budgetCategoryFormMonths}
         onSubmit={handleBudgetCategorySubmit}
       />
@@ -4524,7 +4576,7 @@ export default function FinancialGoals() {
         onAdd={openIncomeCreate}
         onEdit={openIncomeEdit}
         onDelete={handleIncomeDelete}
-        onUpdateMonths={(source, months) => updateIncomeSource.mutate({ id: source.id, data: { months: mergeIncomeMonths(source, months) } })}
+        onUpdateMonths={(source, months) => updateIncomeSource.mutate({ id: source.id, data: { months: mergeIntoHistory(source, months) } })}
       />
       <IncomeFormDialog
         open={incomeFormOpen}
@@ -4544,8 +4596,6 @@ export default function FinancialGoals() {
         onEditCategory={openIncomeEdit}
         onCreateForMonth={openIncomeCreateForMonth}
         colorFor={(s) => incomeKindColor(s.kind)}
-        windowFor={(s, y, m) => windowEntries(s, y, m).filter((e) => findMonthEntry(s, e.year, e.month))}
-        avgFor={windowAvg}
         text={INCOME_CALENDAR_TEXT}
       />
       <DollarActionSheet
