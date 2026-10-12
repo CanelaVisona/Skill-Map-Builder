@@ -2369,12 +2369,14 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                               )}
 
                               <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                                {registro.fecha} · <span className={bugResultColor[registro.resultado]}>{bugResultLabel[registro.resultado]}</span>
+                                {registro.fecha || "Fecha no definida"} · <span className={bugResultColor[registro.resultado]}>{bugResultLabel[registro.resultado]}</span>
                               </p>
                               {registro.skillName && (
                                 <p className="text-[11px] text-blue-500 mt-0.5">Skill: {registro.skillName}</p>
                               )}
-                              <p className="text-xs mt-1"><span className="text-muted-foreground">Situación:</span> {registro.situacion}</p>
+                              {registro.situacion && (
+                                <p className="text-xs mt-1"><span className="text-muted-foreground">Situación:</span> {registro.situacion}</p>
+                              )}
                               {registro.disparador && (
                                 <p className="text-xs"><span className="text-muted-foreground">Disparador:</span> {registro.disparador}</p>
                               )}
@@ -2610,8 +2612,17 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                 id="bug-record-fecha"
                 type="date"
                 value={recordFecha}
+                disabled={!recordFecha}
                 onChange={(e) => setRecordFecha(e.target.value)}
               />
+              <label className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={!recordFecha}
+                  onChange={(e) => setRecordFecha(e.target.checked ? "" : new Date().toISOString().slice(0, 10))}
+                />
+                No definida
+              </label>
             </div>
 
             <div>

@@ -7001,7 +7001,13 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
   const [bugEditAparece, setBugEditAparece] = useState<string[]>([]);
   const [bugEditDisparadores, setBugEditDisparadores] = useState<string[]>([]);
   const [bugEditError, setBugEditError] = useState<string | null>(null);
+  // Bug que se está editando (puede venir del detalle o de un long-press en la lista).
+  const [bugEditTargetId, setBugEditTargetId] = useState<string | null>(null);
   const bugTitleLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Long-press sobre un bug en la lista (previsualización) -> menú Editar / Eliminar.
+  const [bugCardMenuId, setBugCardMenuId] = useState<string | null>(null);
+  const bugCardLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bugCardLongPressCompleted = useRef(false);
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
   const [recordContextMenuId, setRecordContextMenuId] = useState<string | null>(null);
   const [isRecordFormOpen, setIsRecordFormOpen] = useState(false);
@@ -7163,6 +7169,22 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
     },
     onError: (error: Error) => {
       setBugEditError(error.message || "No se pudo guardar el bug");
+    },
+  });
+
+  const deleteBug = useMutation({
+    mutationFn: async ({ id }: { id: string; registros: SourceBugRecord[] }) => {
+      const res = await fetch(`/api/source-bugs/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("No se pudo eliminar el bug");
+    },
+    onSuccess: async (_data, variables) => {
+      await queryClient.invalidateQueries({ queryKey: ["all-area-bugs"] });
+      // Borrar el bug elimina en cascada sus registros; se revierte el cuerpo sumado por cada uno.
+      variables.registros.forEach((registro) => {
+        (registro.bodyLinks ?? []).forEach((link) => addBodyBlock(link.zone, link.dimension, -1));
+      });
+      setBugCardMenuId(null);
+      if (selectedBugRef?.bugId === variables.id) setSelectedBugRef(null);
     },
   });
 
@@ -7337,6 +7359,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
   useEffect(() => {
     if (!open) {
       setSelectedBugRef(null);
+      setBugCardMenuId(null);
       setEditingRecordId(null);
       setRecordContextMenuId(null);
       setIsRecordFormOpen(false);
@@ -7385,10 +7408,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
 
   const handleCreateRecord = () => {
     if (!selectedBug) return;
-    if (!recordFecha.trim() || !recordSituacion.trim() || (!recordDisparador.trim() && !recordEstrategia.trim())) {
-      setRecordFormError("Completá fecha, situación y al menos un disparador o estrategia.");
-      return;
-    }
+    // Solo el resultado es obligatorio (siempre tiene valor); el resto es opcional.
     setRecordFormError(null);
 
     // Un disparador/estrategia nuevo (tipeado) se agrega a la lista del bug para el próximo registro.
@@ -7503,25 +7523,27 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
   const cleanItems = (items: string[]) =>
     Array.from(new Set(items.map((item) => item.trim()).filter(Boolean)));
 
-  const openBugEdit = () => {
-    if (!selectedBug) return;
-    setBugEditNombre(selectedBug.nombre);
-    setBugEditDesc(selectedBug.desc ?? "");
-    setBugEditEstrategias([...(selectedBug.estrategias ?? [])]);
-    setBugEditAparece([...(selectedBug.aparece ?? [])]);
-    setBugEditDisparadores([...(selectedBug.disparadores ?? [])]);
+  const openBugEdit = (bug: SourceBug | null = selectedBug) => {
+    if (!bug) return;
+    setBugEditTargetId(bug.id);
+    setBugEditNombre(bug.nombre);
+    setBugEditDesc(bug.desc ?? "");
+    setBugEditEstrategias([...(bug.estrategias ?? [])]);
+    setBugEditAparece([...(bug.aparece ?? [])]);
+    setBugEditDisparadores([...(bug.disparadores ?? [])]);
     setBugEditError(null);
+    setBugCardMenuId(null);
     setIsBugEditOpen(true);
   };
 
   const handleSaveBugEdit = () => {
-    if (!selectedBug) return;
+    if (!bugEditTargetId) return;
     if (!bugEditNombre.trim()) {
       setBugEditError("El nombre no puede quedar vacío.");
       return;
     }
     updateBug.mutate({
-      id: selectedBug.id,
+      id: bugEditTargetId,
       data: {
         nombre: bugEditNombre.trim(),
         desc: bugEditDesc.trim(),
@@ -7546,6 +7568,25 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
     if (bugTitleLongPressTimer.current) {
       clearTimeout(bugTitleLongPressTimer.current);
       bugTitleLongPressTimer.current = null;
+    }
+  };
+
+  const startBugCardLongPress = (bugId: string) => {
+    bugCardLongPressCompleted.current = false;
+    if (bugCardLongPressTimer.current) {
+      clearTimeout(bugCardLongPressTimer.current);
+    }
+    bugCardLongPressTimer.current = setTimeout(() => {
+      bugCardLongPressTimer.current = null;
+      bugCardLongPressCompleted.current = true;
+      setBugCardMenuId((prev) => (prev === bugId ? null : bugId));
+    }, 600);
+  };
+
+  const endBugCardLongPress = () => {
+    if (bugCardLongPressTimer.current) {
+      clearTimeout(bugCardLongPressTimer.current);
+      bugCardLongPressTimer.current = null;
     }
   };
 
@@ -7586,74 +7627,6 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                       </h4>
                     </div>
                   </div>
-
-                  {isBugEditOpen && createPortal(
-                    <div
-                      className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-black/70 p-4 py-10"
-                      onClick={() => setIsBugEditOpen(false)}
-                    >
-                      <div
-                        className="w-full max-w-lg rounded-xl border border-border/60 bg-background p-5 space-y-3 shadow-2xl"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <h5 className="text-sm font-semibold uppercase tracking-wide text-foreground">Editar bug</h5>
-                        <div>
-                          <Label htmlFor="global-bug-nombre" className="text-xs text-muted-foreground">Nombre</Label>
-                          <Input
-                            id="global-bug-nombre"
-                            value={bugEditNombre}
-                            onChange={(e) => setBugEditNombre(e.target.value.toUpperCase())}
-                            className="uppercase"
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="global-bug-desc" className="text-xs text-muted-foreground">Descripción</Label>
-                          <Textarea
-                            id="global-bug-desc"
-                            rows={3}
-                            placeholder="¿Qué patrón/comportamiento es este bug?"
-                            value={bugEditDesc}
-                            onChange={(e) => setBugEditDesc(e.target.value)}
-                          />
-                        </div>
-                        <BugListEditor
-                          label="Estrategias"
-                          addLabel="Agregar estrategia"
-                          placeholder="Estrategia"
-                          items={bugEditEstrategias}
-                          onChange={setBugEditEstrategias}
-                        />
-                        <BugListEditor
-                          label="Cuándo aparece"
-                          addLabel="Agregar situación"
-                          placeholder="Cuándo aparece"
-                          items={bugEditAparece}
-                          onChange={setBugEditAparece}
-                        />
-                        <BugListEditor
-                          label="Disparadores"
-                          addLabel="Agregar disparador"
-                          placeholder="Disparador"
-                          items={bugEditDisparadores}
-                          onChange={setBugEditDisparadores}
-                        />
-
-                        {bugEditError && (
-                          <p className="text-xs text-red-500">{bugEditError}</p>
-                        )}
-
-                        <div className="flex justify-end gap-2">
-                          <Button type="button" variant="outline" onClick={() => setIsBugEditOpen(false)}>
-                            Cancelar
-                          </Button>
-                          <Button type="button" onClick={handleSaveBugEdit} disabled={updateBug.isPending}>
-                            {updateBug.isPending ? "Guardando..." : "Guardar cambios"}
-                          </Button>
-                        </div>
-                      </div>
-                    </div>,
-                    document.body
-                  )}
 
                   <section className="rounded-xl border border-border/50 bg-muted/10 p-4 space-y-3">
                     <div className="flex items-center justify-between gap-2">
@@ -7732,7 +7705,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                           >
                             <div className="flex items-start justify-between gap-2 min-w-0">
                               <p className="text-[11px] uppercase tracking-wide text-muted-foreground min-w-0 pr-10 break-words">
-                                {registro.fecha} · <span className={bugResultColor[registro.resultado]}>{bugResultLabel[registro.resultado]}</span>
+                                {registro.fecha || "Fecha no definida"} · <span className={bugResultColor[registro.resultado]}>{bugResultLabel[registro.resultado]}</span>
                               </p>
                             </div>
 
@@ -7761,7 +7734,9 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                               </div>
                             )}
 
-                            <p className="text-xs mt-1 break-words"><span className="text-muted-foreground">Situacion:</span> {registro.situacion}</p>
+                            {registro.situacion && (
+                              <p className="text-xs mt-1 break-words"><span className="text-muted-foreground">Situacion:</span> {registro.situacion}</p>
+                            )}
                             {(registro.skillNames?.length ? registro.skillNames : registro.skillName ? [registro.skillName] : []).length > 0 && (
                               <p className="text-[11px] text-blue-500 mt-0.5 break-words">
                                 Skills: {(registro.skillNames?.length ? registro.skillNames : [registro.skillName]).join(", ")}
@@ -7810,8 +7785,17 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                           id="global-record-fecha"
                           type="date"
                           value={recordFecha}
+                          disabled={!recordFecha}
                           onChange={(e) => setRecordFecha(e.target.value)}
                         />
+                        <label className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={!recordFecha}
+                            onChange={(e) => setRecordFecha(e.target.checked ? "" : new Date().toISOString().slice(0, 10))}
+                          />
+                          No definida
+                        </label>
                       </div>
                       <div>
                         <Label htmlFor="global-record-resultado" className="text-xs text-muted-foreground">Resultado</Label>
@@ -7965,9 +7949,56 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                           {group.bugs.map((bug) => (
                             <article
                               key={bug.id}
-                              className="rounded-lg border border-border/50 bg-background/60 p-3 cursor-pointer hover:bg-background min-w-0"
-                              onClick={() => setSelectedBugRef({ areaId: group.areaId, bugId: bug.id })}
+                              className="relative rounded-lg border border-border/50 bg-background/60 p-3 cursor-pointer select-none hover:bg-background min-w-0"
+                              onMouseDown={() => startBugCardLongPress(bug.id)}
+                              onMouseUp={endBugCardLongPress}
+                              onMouseLeave={endBugCardLongPress}
+                              onTouchStart={() => startBugCardLongPress(bug.id)}
+                              onTouchEnd={endBugCardLongPress}
+                              onTouchMove={endBugCardLongPress}
+                              onContextMenu={(e) => e.preventDefault()}
+                              onClick={() => {
+                                if (bugCardLongPressCompleted.current) {
+                                  bugCardLongPressCompleted.current = false;
+                                  return;
+                                }
+                                if (bugCardMenuId) {
+                                  setBugCardMenuId(null);
+                                  return;
+                                }
+                                setSelectedBugRef({ areaId: group.areaId, bugId: bug.id });
+                              }}
                             >
+                              {bugCardMenuId === bug.id && (
+                                <div
+                                  className="absolute right-2 top-2 z-20 flex items-center gap-1 border rounded-md bg-background p-1 shadow"
+                                  onClick={(e) => e.stopPropagation()}
+                                  onMouseDown={(e) => e.stopPropagation()}
+                                  onTouchStart={(e) => e.stopPropagation()}
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={() => openBugEdit(bug)}
+                                    className="p-1 hover:bg-muted rounded"
+                                    title="Editar"
+                                  >
+                                    <Pencil className="h-3 w-3 text-muted-foreground" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (window.confirm(`¿Eliminar el bug "${bug.nombre}" y todos sus registros?`)) {
+                                        deleteBug.mutate({ id: bug.id, registros: bug.registros ?? [] });
+                                      }
+                                    }}
+                                    className="p-1 hover:bg-destructive/20 rounded"
+                                    title="Eliminar"
+                                    disabled={deleteBug.isPending}
+                                  >
+                                    <Trash2 className="h-3 w-3 text-destructive" />
+                                  </button>
+                                </div>
+                              )}
                               {(() => {
                                 const progressCount = bug.status === "debugueado" ? 5 : Math.min(5, bug.victoryCount ?? 0);
                                 const progressPercent = Math.max(0, Math.min(100, (progressCount / 5) * 100));
@@ -8039,6 +8070,73 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                     );
                   })}
                 </div>
+              )}
+              {isBugEditOpen && createPortal(
+                <div
+                  className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-black/70 p-4 py-10"
+                  onClick={() => setIsBugEditOpen(false)}
+                >
+                  <div
+                    className="w-full max-w-lg rounded-xl border border-border/60 bg-background p-5 space-y-3 shadow-2xl"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <h5 className="text-sm font-semibold uppercase tracking-wide text-foreground">Editar bug</h5>
+                    <div>
+                      <Label htmlFor="global-bug-nombre" className="text-xs text-muted-foreground">Nombre</Label>
+                      <Input
+                        id="global-bug-nombre"
+                        value={bugEditNombre}
+                        onChange={(e) => setBugEditNombre(e.target.value.toUpperCase())}
+                        className="uppercase"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="global-bug-desc" className="text-xs text-muted-foreground">Descripción</Label>
+                      <Textarea
+                        id="global-bug-desc"
+                        rows={3}
+                        placeholder="¿Qué patrón/comportamiento es este bug?"
+                        value={bugEditDesc}
+                        onChange={(e) => setBugEditDesc(e.target.value)}
+                      />
+                    </div>
+                    <BugListEditor
+                      label="Estrategias"
+                      addLabel="Agregar estrategia"
+                      placeholder="Estrategia"
+                      items={bugEditEstrategias}
+                      onChange={setBugEditEstrategias}
+                    />
+                    <BugListEditor
+                      label="Cuándo aparece"
+                      addLabel="Agregar situación"
+                      placeholder="Cuándo aparece"
+                      items={bugEditAparece}
+                      onChange={setBugEditAparece}
+                    />
+                    <BugListEditor
+                      label="Disparadores"
+                      addLabel="Agregar disparador"
+                      placeholder="Disparador"
+                      items={bugEditDisparadores}
+                      onChange={setBugEditDisparadores}
+                    />
+
+                    {bugEditError && (
+                      <p className="text-xs text-red-500">{bugEditError}</p>
+                    )}
+
+                    <div className="flex justify-end gap-2">
+                      <Button type="button" variant="outline" onClick={() => setIsBugEditOpen(false)}>
+                        Cancelar
+                      </Button>
+                      <Button type="button" onClick={handleSaveBugEdit} disabled={updateBug.isPending}>
+                        {updateBug.isPending ? "Guardando..." : "Guardar cambios"}
+                      </Button>
+                    </div>
+                  </div>
+                </div>,
+                document.body
               )}
             </>
   );

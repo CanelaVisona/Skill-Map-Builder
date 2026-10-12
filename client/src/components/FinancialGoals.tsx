@@ -422,9 +422,19 @@ function useLongPress(onLongPress: () => void, onTap?: () => void, duration = 48
 
 // ---------- detalle de la línea de tiempo mensual (ahorro por mes) ----------
 
+// Instrumentos que se pueden elegir al cargar un mes. Si la meta todavía no tiene ninguno, se
+// ofrece uno nuevo ("Aportes mensuales") que se crea al guardar.
+const NEW_MONTHLY_HOLDING_ID = "__new__";
+function monthHoldingOptions(holdings: FinancialGoalHolding[]): { id: string; label: string }[] {
+  if (!holdings.length) return [{ id: NEW_MONTHLY_HOLDING_ID, label: "Aportes mensuales" }];
+  return holdings.map((h) => ({ id: h.id, label: h.broker ? `${h.instrument} · ${h.broker}` : h.instrument }));
+}
+
 function GoalMonthCell({
   m,
   amount,
+  holdingId,
+  holdings,
   isPast,
   isCurrent,
   flowAmount,
@@ -434,24 +444,31 @@ function GoalMonthCell({
 }: {
   m: { year: number; month: number };
   amount: number;
+  holdingId?: string;
+  holdings: FinancialGoalHolding[];
   isPast: boolean;
   isCurrent: boolean;
   flowAmount: number;
   shortfall: number;
   repaid: boolean;
-  onSave: (amount: number) => void;
+  onSave: (amount: number, holdingId: string) => void;
 }) {
-  const { toast } = useToast();
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState("");
+  const options = monthHoldingOptions(holdings);
+  // Sin instrumento guardado (cargas viejas o mes vacío) se usa el primero.
+  const currentHoldingId = options.some((o) => o.id === holdingId) ? holdingId! : options[0].id;
+  const [selHolding, setSelHolding] = useState(currentHoldingId);
   const longPress = useLongPress(
     () => {
       setText(amount ? moneyFormatter.format(amount) : "");
+      setSelHolding(currentHoldingId);
       setEditing(true);
     },
     () => {}
   );
   const hitFlow = (flowAmount > 0 && amount >= flowAmount) || repaid;
+  const holdingName = holdings.find((h) => h.id === currentHoldingId)?.instrument;
 
   return (
     <div className="flex flex-col items-center gap-1 shrink-0" style={{ width: 76 }}>
@@ -474,10 +491,8 @@ function GoalMonthCell({
           <button
             type="button"
             onClick={() => {
-              const parsed = parseMoney(text);
               setEditing(false);
-              onSave(parsed);
-              toast({ title: `Guardado: ${moneyUsd(parsed)}` });
+              onSave(parseMoney(text));
             }}
             className="h-6 text-[10px] px-1 rounded-md bg-primary text-primary-foreground font-medium"
           >
@@ -656,8 +671,11 @@ function nextMilestone(goal: FinancialGoal): Milestone | null {
   return goalMilestones(goal).find((m) => m.amount > saved) || null;
 }
 
-function GoalMilestoneBar({ goal, size = "sm", className = "" }: { goal: FinancialGoal; size?: "sm" | "lg"; className?: string }) {
-  const saved = goalSaved(goal);
+// `animSaved`: saldo intermedio mientras la barra crece animada; sin transición CSS para que el
+// relleno siga cuadro a cuadro al número y los hitos se enciendan justo cuando la línea los alcanza.
+function GoalMilestoneBar({ goal, size = "sm", className = "", animSaved }: { goal: FinancialGoal; size?: "sm" | "lg"; className?: string; animSaved?: number | null }) {
+  const animating = animSaved !== undefined && animSaved !== null;
+  const saved = animating ? animSaved : goalSaved(goal);
   const target = goal.target || 0;
   if (target <= 0) return null;
   const fill = Math.min(100, (saved / target) * 100);
@@ -669,7 +687,10 @@ function GoalMilestoneBar({ goal, size = "sm", className = "" }: { goal: Financi
   return (
     <div className={`relative ${lg ? "h-6" : "h-3.5"} ${className}`}>
       <div className={`absolute inset-x-0 top-1/2 -translate-y-1/2 ${lg ? "h-2.5" : "h-2"} rounded-full bg-muted overflow-hidden`}>
-        <div className="h-full rounded-full transition-all duration-700" style={{ width: `${fill}%`, background: goal.color }} />
+        <div
+          className={`h-full rounded-full ${animating ? "" : "transition-all duration-700"}`}
+          style={{ width: `${fill}%`, background: goal.color, boxShadow: animating ? `0 0 10px ${goal.color}` : undefined }}
+        />
       </div>
       {milestones.map((m) => {
         const reached = saved >= m.amount;
@@ -767,18 +788,69 @@ function HorizonHeader({
 
 // ---------- preview card (grid view) ----------
 
-function GoalPreviewCard({ goal, onTap, onLongPress, onOpenTimeline }: { goal: FinancialGoal; onTap: () => void; onLongPress: () => void; onOpenTimeline: () => void }) {
+// Crecimiento animado del saldo de una meta (después de cargar un mes en la línea de tiempo).
+interface GoalGrow {
+  goalId: string;
+  from: number;
+  to: number;
+  key: number;
+}
+const GOAL_GROW_MS = 1400;
+
+// Valor que va de `from` a `to` con ease-out mientras dura la animación; null cuando no anima.
+function useGrowValue(grow: GoalGrow | null | undefined): number | null {
+  const [value, setValue] = useState<number | null>(null);
+  useEffect(() => {
+    if (!grow) return;
+    let raf = 0;
+    const start = performance.now();
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / GOAL_GROW_MS);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setValue(grow.from + (grow.to - grow.from) * eased);
+      if (t < 1) raf = requestAnimationFrame(tick);
+      else setValue(null);
+    };
+    setValue(grow.from);
+    raf = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(raf);
+      setValue(null);
+    };
+  }, [grow?.key]);
+  return value;
+}
+
+function GoalPreviewCard({
+  goal,
+  grow,
+  onTap,
+  onLongPress,
+  onOpenTimeline,
+}: {
+  goal: FinancialGoal;
+  grow?: GoalGrow | null;
+  onTap: () => void;
+  onLongPress: () => void;
+  onOpenTimeline: () => void;
+}) {
   const longPress = useLongPress(onLongPress, onTap);
-  const saved = goalSaved(goal);
+  const animSaved = useGrowValue(grow);
+  const cardRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (grow) cardRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [grow?.key]);
+  const saved = animSaved ?? goalSaved(goal);
   const has = (goal.target || 0) > 0;
   const pct = has ? Math.round((saved / goal.target) * 100) : 0;
   const ringPct = Math.min(100, pct);
   const done = has && saved >= goal.target;
-  const next = has ? nextMilestone(goal) : null;
+  const next = has ? goalMilestones(goal).find((m) => m.amount > saved) || null : null;
   const ringBg = has ? `conic-gradient(${goal.color} ${ringPct}%, hsl(var(--muted)) 0)` : "hsl(var(--muted))";
 
   return (
     <motion.div
+      ref={cardRef}
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       className="rounded-2xl border border-border bg-card p-4 cursor-pointer select-none hover:border-foreground/20 transition-colors"
@@ -801,7 +873,7 @@ function GoalPreviewCard({ goal, onTap, onLongPress, onOpenTimeline }: { goal: F
       </div>
       {has ? (
         <div className="mb-3">
-          <GoalMilestoneBar goal={goal} />
+          <GoalMilestoneBar goal={goal} animSaved={animSaved} />
           {next && (
             <div className="text-[11px] text-muted-foreground mt-1.5 truncate">
               Próximo hito: {next.emoji || "⭐"} {next.name || "Hito"} · faltan <Money usd={next.amount - saved} />
@@ -1384,6 +1456,43 @@ function categoryAvg(c: MonthlyItem): number {
   return c.months.reduce((s, m) => s + (Number(m.amount) || 0), 0) / c.months.length;
 }
 
+// Las fuentes de ingreso guardan el historial completo mes a mes: lo cargado en un mes queda fijo
+// y se reutiliza en el promedio de cualquier otro mes cuya ventana de 3 meses lo incluya.
+function findMonthEntry(c: MonthlyItem, year: number, month: number): BudgetCategoryMonthEntry | undefined {
+  return c.months.find((m) => m.year === year && m.month === month);
+}
+// Los 3 meses que terminan en (year, month); los que no están cargados vienen en 0.
+function windowEntries(c: MonthlyItem, year: number, month: number): BudgetCategoryMonthEntry[] {
+  return threeMonthsEnding(year, month).map((w) => findMonthEntry(c, w.year, w.month) || { year: w.year, month: w.month, amount: 0 });
+}
+// Promedio de los meses cargados dentro de la ventana de 3 meses que termina en (year, month).
+function windowAvg(c: MonthlyItem, year: number, month: number): number {
+  const recorded = threeMonthsEnding(year, month)
+    .map((w) => findMonthEntry(c, w.year, w.month))
+    .filter((m): m is BudgetCategoryMonthEntry => !!m);
+  if (!recorded.length) return 0;
+  return recorded.reduce((s, m) => s + (Number(m.amount) || 0), 0) / recorded.length;
+}
+function latestMonthOf(c: MonthlyItem): { year: number; month: number } | null {
+  if (!c.months.length) return null;
+  return c.months.reduce((a, b) => (a.year * 12 + a.month >= b.year * 12 + b.month ? a : b));
+}
+// Promedio "actual" de una fuente: la ventana de 3 meses que termina en su último mes cargado.
+function incomeAvg(c: MonthlyItem): number {
+  const last = latestMonthOf(c);
+  return last ? windowAvg(c, last.year, last.month) : 0;
+}
+function incomeLatestWindow(c: MonthlyItem): BudgetCategoryMonthEntry[] {
+  const last = latestMonthOf(c);
+  return last ? windowEntries(c, last.year, last.month) : [];
+}
+// Suma los meses nuevos al historial: pisa los meses que ya existían y conserva todos los demás.
+function mergeMonths(history: BudgetCategoryMonthEntry[], updates: BudgetCategoryMonthEntry[]): BudgetCategoryMonthEntry[] {
+  const map = new Map(history.map((m) => [`${m.year}-${m.month}`, m]));
+  updates.forEach((m) => map.set(`${m.year}-${m.month}`, m));
+  return Array.from(map.values()).sort((a, b) => a.year * 12 + a.month - (b.year * 12 + b.month));
+}
+
 function BudgetPieSlide({
   title,
   hint,
@@ -1531,6 +1640,7 @@ function BudgetCategoryRow({
   category,
   color,
   renameLabel = "Nombre",
+  avg: avgOverride,
   onRename,
   onDelete,
   onUpdateMonths,
@@ -1538,18 +1648,21 @@ function BudgetCategoryRow({
   category: MonthlyItem;
   color: string;
   renameLabel?: string;
+  avg?: number;
   onRename: () => void;
   onDelete: () => void;
   onUpdateMonths: (months: BudgetCategoryMonthEntry[]) => void;
 }) {
   const [showActions, setShowActions] = useState(false);
   const rowLongPress = useLongPress(() => setShowActions((v) => !v), () => {});
-  const avg = categoryAvg(category);
+  const avg = avgOverride ?? categoryAvg(category);
   const [values, setValues] = useState<string[]>(() => category.months.map((m) => (m.amount ? moneyFormatter.format(m.amount) : "")));
 
+  // Firma por contenido: el detalle de ingresos le pasa una ventana de meses recalculada en cada render.
+  const monthsSig = category.months.map((m) => `${m.year}-${m.month}-${m.amount}`).join("|");
   useEffect(() => {
     setValues(category.months.map((m) => (m.amount ? moneyFormatter.format(m.amount) : "")));
-  }, [category.id, category.months]);
+  }, [category.id, monthsSig]);
 
   const handleBlurSave = () => {
     const changed = category.months.some((m, idx) => parseMoney(values[idx] || "") !== (m.amount || 0));
@@ -2092,14 +2205,19 @@ function BudgetCategoriesCalendarDialog<T extends MonthlyItem>({
   onCreateForMonth,
   colorFor = (_c, i) => PALETTE[i % PALETTE.length],
   text = CATEGORIES_CALENDAR_TEXT,
+  windowFor = (c) => c.months,
+  avgFor = (c) => categoryAvg(c),
 }: {
   categories: T[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onEditCategory: (category: T) => void;
+  onEditCategory: (category: T, year: number, month: number) => void;
   onCreateForMonth: (year: number, month: number) => void;
   colorFor?: (category: T, index: number) => string;
   text?: typeof CATEGORIES_CALENDAR_TEXT;
+  // Meses y promedio a mostrar para un ítem al elegir un mes (por defecto, sus 3 meses guardados).
+  windowFor?: (category: T, year: number, month: number) => BudgetCategoryMonthEntry[];
+  avgFor?: (category: T, year: number, month: number) => number;
 }) {
   const [year, setYear] = useState(() => new Date().getFullYear());
   const [selMonth, setSelMonth] = useState<number | null>(null);
@@ -2124,7 +2242,7 @@ function BudgetCategoriesCalendarDialog<T extends MonthlyItem>({
   });
 
   const selEntries = selMonth !== null ? monthMap.get(`${year}-${selMonth}`) || [] : [];
-  const selTotal = selEntries.reduce((a, e) => a + categoryAvg(e.category), 0);
+  const selTotal = selMonth !== null ? selEntries.reduce((a, e) => a + avgFor(e.category, year, selMonth), 0) : 0;
   const selCategoryIds = new Set(selEntries.map((e) => e.category.id));
 
   return (
@@ -2200,16 +2318,16 @@ function BudgetCategoriesCalendarDialog<T extends MonthlyItem>({
                   <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: e.color }} />
                   {e.category.name}
                 </div>
-                <div className="text-xs text-muted-foreground">{text.sameAs}: {e.category.months.map((m) => MONTH_NAMES[m.month]).join(", ")}</div>
+                <div className="text-xs text-muted-foreground">{text.sameAs}: {windowFor(e.category, year, selMonth).map((m) => MONTH_NAMES[m.month]).join(", ")}</div>
                 <div className="flex items-center justify-between text-sm pt-1 border-t border-border/60">
                   <span className="text-muted-foreground">Registrado en {MONTH_NAMES[selMonth]}</span>
                   <span className="font-semibold"><Money usd={e.amount} year={year} month={selMonth} /></span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Promedio de 3 meses</span>
-                  <span className="font-semibold"><Money usd={categoryAvg(e.category)} /></span>
+                  <span className="font-semibold"><Money usd={avgFor(e.category, year, selMonth)} /></span>
                 </div>
-                <Button type="button" size="sm" variant="outline" className="w-full mt-1" onClick={() => onEditCategory(e.category)}>
+                <Button type="button" size="sm" variant="outline" className="w-full mt-1" onClick={() => onEditCategory(e.category, year, selMonth)}>
                   <Pencil className="h-3.5 w-3.5" /> Editar
                 </Button>
               </div>
@@ -2254,7 +2372,7 @@ function IncomeCard({
 }) {
   const chartPress = useLongPress(onOpenDetail, () => {});
   const groups = INCOME_KINDS.map((k) => {
-    const items = sources.filter((s) => s.kind === k.key).map((s) => ({ source: s, avg: categoryAvg(s) }));
+    const items = sources.filter((s) => s.kind === k.key).map((s) => ({ source: s, avg: incomeAvg(s) }));
     return { ...k, items, total: items.reduce((a, i) => a + i.avg, 0) };
   });
   const data = groups.filter((g) => g.total > 0).map((g) => ({ name: g.label, value: g.total, color: g.color }));
@@ -2325,7 +2443,7 @@ function IncomeDetailDialog({
   onUpdateMonths: (source: IncomeSource, months: BudgetCategoryMonthEntry[]) => void;
 }) {
   const titleLongPress = useLongPress(onAdd, () => {});
-  const total = sources.reduce((a, s) => a + categoryAvg(s), 0);
+  const total = sources.reduce((a, s) => a + incomeAvg(s), 0);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -2348,7 +2466,7 @@ function IncomeDetailDialog({
             {INCOME_KINDS.map((k) => {
               const items = sources.filter((s) => s.kind === k.key);
               if (!items.length) return null;
-              const kindTotal = items.reduce((a, s) => a + categoryAvg(s), 0);
+              const kindTotal = items.reduce((a, s) => a + incomeAvg(s), 0);
               return (
                 <div key={k.key} className="space-y-2">
                   <div className="flex items-center justify-between text-xs uppercase tracking-wide text-muted-foreground px-0.5">
@@ -2361,7 +2479,8 @@ function IncomeDetailDialog({
                   {items.map((s) => (
                     <BudgetCategoryRow
                       key={s.id}
-                      category={s}
+                      category={{ ...s, months: incomeLatestWindow(s) }}
+                      avg={incomeAvg(s)}
                       color={k.color}
                       renameLabel="Editar"
                       onRename={() => onEdit(s)}
@@ -2383,22 +2502,29 @@ function IncomeFormDialog({
   open,
   onOpenChange,
   source,
+  sources,
   months: windowMonths,
   onSubmit,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   source: IncomeSource | null;
+  sources: IncomeSource[];
   months: { year: number; month: number; label: string }[];
   onSubmit: (data: { name: string; kind: IncomeSourceKind; months: BudgetCategoryMonthEntry[] }) => void;
 }) {
-  const months = source ? source.months.map((m) => ({ year: m.year, month: m.month, label: monthLabel(m.year, m.month) })) : windowMonths;
+  const months = windowMonths;
   const [name, setName] = useState("");
   const [kind, setKind] = useState<IncomeSourceKind>("activo");
   const [values, setValues] = useState<string[]>(["", "", ""]);
   const [nameErr, setNameErr] = useState(false);
   const [amountCurrency, setAmountCurrency] = useState<AmountCurrency>("usd");
   const rates = useDollarRates();
+  const storedValues = (s: IncomeSource) =>
+    months.map((m) => {
+      const amount = findMonthEntry(s, m.year, m.month)?.amount;
+      return amount ? moneyFormatter.format(amount) : "";
+    });
 
   useEffect(() => {
     if (!open) return;
@@ -2406,14 +2532,24 @@ function IncomeFormDialog({
     if (source) {
       setName(source.name);
       setKind(source.kind === "pasivo" ? "pasivo" : "activo");
-      setValues(source.months.map((m) => (m.amount ? moneyFormatter.format(m.amount) : "")));
+      setValues(storedValues(source));
     } else {
       setName("");
       setKind("activo");
       setValues(["", "", ""]);
     }
     setNameErr(false);
-  }, [open, source]);
+  }, [open, source, windowMonths]);
+
+  // Al crear desde otro mes con el nombre de un ingreso existente, se precargan los meses que ya
+  // estaban guardados para que el promedio use esos mismos números.
+  const nameMatch = !source ? sources.find((s) => s.name.trim().toLowerCase() === name.trim().toLowerCase() && name.trim()) : undefined;
+  useEffect(() => {
+    if (!open || !nameMatch) return;
+    const stored = storedValues(nameMatch);
+    setValues((v) => v.map((x, i) => x || stored[i]));
+    setKind(nameMatch.kind === "pasivo" ? "pasivo" : "activo");
+  }, [open, nameMatch?.id]);
 
   const handleSave = () => {
     const trimmed = name.trim();
@@ -3546,6 +3682,7 @@ export default function FinancialGoals() {
   const [formInitialDate, setFormInitialDate] = useState("");
   const [detailGoalId, setDetailGoalId] = useState<string | null>(null);
   const [timelineGoalId, setTimelineGoalId] = useState<string | null>(null);
+  const [goalGrow, setGoalGrow] = useState<GoalGrow | null>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [budgetFormOpen, setBudgetFormOpen] = useState(false);
   const [budgetFormTarget, setBudgetFormTarget] = useState<BudgetQuarter | null>(null);
@@ -3937,8 +4074,13 @@ export default function FinancialGoals() {
     setIncomeDetailOpen(false);
     setIncomeFormOpen(true);
   };
-  const openIncomeEdit = (source: IncomeSource) => {
+  // Sin mes elegido (desde el detalle) se editan los últimos 3 meses cargados; desde el calendario,
+  // los 3 meses que terminan en el mes tocado.
+  const openIncomeEdit = (source: IncomeSource, year?: number, month?: number) => {
+    const last = latestMonthOf(source);
+    const end = year !== undefined && month !== undefined ? { year, month } : last;
     setIncomeFormTarget(source);
+    setIncomeFormMonths(end ? threeMonthsEnding(end.year, end.month) : lastThreeMonths());
     setIncomeDetailOpen(false);
     setIncomeCalendarOpen(false);
     setIncomeFormOpen(true);
@@ -3950,16 +4092,19 @@ export default function FinancialGoals() {
     setIncomeFormOpen(true);
   };
 
+  // Suma los meses cargados al historial del ingreso: los meses vacíos que nunca se habían
+  // cargado no se guardan (para no meter ceros en el promedio de otros meses).
+  const mergeIncomeMonths = (source: IncomeSource, months: BudgetCategoryMonthEntry[]) =>
+    mergeMonths(source.months, months.filter((m) => m.amount || findMonthEntry(source, m.year, m.month)));
+
   const handleIncomeSubmit = (data: { name: string; kind: IncomeSourceKind; months: BudgetCategoryMonthEntry[] }) => {
-    if (incomeFormTarget) {
-      updateIncomeSource.mutate({ id: incomeFormTarget.id, data });
-      return;
-    }
-    const existing = incomeSources.find((s) => s.name.trim().toLowerCase() === data.name.trim().toLowerCase());
+    const existing =
+      incomeFormTarget || incomeSources.find((s) => s.name.trim().toLowerCase() === data.name.trim().toLowerCase());
     if (existing) {
-      updateIncomeSource.mutate({ id: existing.id, data: { kind: data.kind, months: data.months } });
+      updateIncomeSource.mutate({ id: existing.id, data: { name: data.name, kind: data.kind, months: mergeIncomeMonths(existing, data.months) } });
     } else {
-      createIncomeSource.mutate(data);
+      const filled = data.months.filter((m) => m.amount);
+      createIncomeSource.mutate({ ...data, months: filled.length ? filled : data.months });
     }
   };
 
@@ -3981,26 +4126,28 @@ export default function FinancialGoals() {
     },
   });
 
+  // Si el saldo cruzó algún hito (o el objetivo), lo celebramos.
+  const celebrateGoal = (goal: FinancialGoal, before: number, after: number) => {
+    if ((goal.target || 0) <= 0) return;
+    const unlocked = goalMilestones(goal).filter((m) => before < m.amount && after >= m.amount);
+    if (before < goal.target && after >= goal.target) {
+      toast({ title: `🏆 ¡Meta completada! ${goal.emoji} ${goal.name}` });
+    } else if (unlocked.length) {
+      const m = unlocked[unlocked.length - 1];
+      toast({ title: `${m.emoji || "⭐"} ¡Hito desbloqueado!`, description: `${m.name || "Hito"} · ${goal.name}` });
+    }
+  };
+
   const updateGoal = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+    // celebrate=false: quien llama celebra por su cuenta (p. ej. al terminar la animación de crecimiento).
+    mutationFn: async ({ id, data }: { id: string; data: any; celebrate?: boolean }) => {
       const res = await fetch(`/api/financial-goals/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
       if (!res.ok) throw new Error("Failed to update goal");
       return res.json();
     },
-    onSuccess: (updated: FinancialGoal, { id }) => {
-      // Si el nuevo saldo cruzó algún hito (o el objetivo), lo celebramos.
+    onSuccess: (updated: FinancialGoal, { id, celebrate = true }) => {
       const prev = goals.find((g) => g.id === id);
-      if (prev && updated && (updated.target || 0) > 0) {
-        const before = goalSaved(prev);
-        const after = goalSaved(updated);
-        const unlocked = goalMilestones(updated).filter((m) => before < m.amount && after >= m.amount);
-        if (before < updated.target && after >= updated.target) {
-          toast({ title: `🏆 ¡Meta completada! ${updated.emoji} ${updated.name}` });
-        } else if (unlocked.length) {
-          const m = unlocked[unlocked.length - 1];
-          toast({ title: `${m.emoji || "⭐"} ¡Hito desbloqueado!`, description: `${m.name || "Hito"} · ${updated.name}` });
-        }
-      }
+      if (celebrate && prev && updated) celebrateGoal(updated, goalSaved(prev), goalSaved(updated));
       queryClient.invalidateQueries({ queryKey: ["/api/financial-goals"] });
       setFormOpen(false);
     },
@@ -4085,14 +4232,50 @@ export default function FinancialGoals() {
     updateGoal.mutate({ id: detailGoal.id, data: { flow: { ...detailGoal.flow, anchor: timestamp } } });
   };
 
+  // Lo cargado en un mes de la línea de tiempo también suma al saldo de la meta: se aplica la
+  // diferencia con lo que ya tenía ese mes (si se corrige un mes, se ajusta en vez de duplicar).
+  // Secuencia: popup "Agregaste…" → se cierra el detalle → la barra de la meta crece animada.
   const handleSaveMonthlyAmount = (year: number, month: number, amount: number) => {
     if (!timelineGoal) return;
-    const existing = Array.isArray(timelineGoal.monthlyProgress) ? timelineGoal.monthlyProgress : [];
+    const goal = timelineGoal;
+    const existing = Array.isArray(goal.monthlyProgress) ? goal.monthlyProgress : [];
     const idx = existing.findIndex((e) => e.year === year && e.month === month);
+    const delta = amount - (idx >= 0 ? existing[idx].amount || 0 : 0);
     const next: FinancialGoalMonthlyEntry[] = [...existing];
     if (idx >= 0) next[idx] = { year, month, amount };
     else next.push({ year, month, amount });
-    updateGoal.mutate({ id: timelineGoal.id, data: { monthlyProgress: next } });
+
+    if (delta === 0) {
+      updateGoal.mutate({ id: goal.id, data: { monthlyProgress: next } });
+      return;
+    }
+
+    const holding = goal.holdings[0] || { id: genId(), instrument: "Aportes mensuales", broker: "", amount: 0 };
+    const holdings = goal.holdings.length
+      ? goal.holdings.map((h) => (h.id === holding.id ? { ...h, amount: Math.max(0, (h.amount || 0) + delta) } : h))
+      : [{ ...holding, amount: Math.max(0, delta) }];
+    const note = `Mes ${monthLabel(year, month)}`;
+    const history = [...(goal.history || []), { id: genId(), amount: delta, date: Date.now(), note, inst: holding.instrument, holdingId: holding.id }];
+    const before = goalSaved(goal);
+    const after = holdings.reduce((a, h) => a + (Number(h.amount) || 0), 0);
+    updateGoal.mutate({ id: goal.id, data: { monthlyProgress: next, holdings, history }, celebrate: false });
+
+    const popup = toast({
+      title: delta > 0 ? `Agregaste ${moneyPairText(delta, dollarRates)}` : `Ajustaste ${moneyPairText(-delta, dollarRates)} menos`,
+      description: `${goal.emoji} ${goal.name} · ${note}`,
+    });
+    setTimeout(() => {
+      popup.dismiss();
+      setTimelineGoalId(null);
+      // Esperamos a que termine de cerrarse el diálogo para que el crecimiento se vea entero.
+      setTimeout(() => {
+        setGoalGrow({ goalId: goal.id, from: before, to: after, key: Date.now() });
+        setTimeout(() => {
+          setGoalGrow((g) => (g && g.goalId === goal.id ? null : g));
+          celebrateGoal(goal, before, after);
+        }, GOAL_GROW_MS + 100);
+      }, 250);
+    }, 1600);
   };
 
   const titleLongPress = useLongPress(
@@ -4144,7 +4327,7 @@ export default function FinancialGoals() {
                   {isOpen && (
                     <div className="grid grid-cols-1 gap-3">
                       {goalsInHorizon.map((g) => (
-                        <GoalPreviewCard key={g.id} goal={g} onTap={() => setDetailGoalId(g.id)} onLongPress={() => openEdit(g)} onOpenTimeline={() => setTimelineGoalId(g.id)} />
+                        <GoalPreviewCard key={g.id} goal={g} grow={goalGrow?.goalId === g.id ? goalGrow : null} onTap={() => setDetailGoalId(g.id)} onLongPress={() => openEdit(g)} onOpenTimeline={() => setTimelineGoalId(g.id)} />
                       ))}
                       {!goalsInHorizon.length && (
                         <p className="text-xs text-muted-foreground px-0.5">Sin objetivos todavía · mantené presionado el título para agregar uno</p>
@@ -4292,7 +4475,7 @@ export default function FinancialGoals() {
         onAdd={openIncomeCreate}
         onEdit={openIncomeEdit}
         onDelete={handleIncomeDelete}
-        onUpdateMonths={(source, months) => updateIncomeSource.mutate({ id: source.id, data: { months } })}
+        onUpdateMonths={(source, months) => updateIncomeSource.mutate({ id: source.id, data: { months: mergeIncomeMonths(source, months) } })}
       />
       <IncomeFormDialog
         open={incomeFormOpen}
@@ -4301,6 +4484,7 @@ export default function FinancialGoals() {
           if (!v) setIncomeFormTarget(null);
         }}
         source={incomeFormTarget}
+        sources={incomeSources}
         months={incomeFormMonths}
         onSubmit={handleIncomeSubmit}
       />
@@ -4311,6 +4495,8 @@ export default function FinancialGoals() {
         onEditCategory={openIncomeEdit}
         onCreateForMonth={openIncomeCreateForMonth}
         colorFor={(s) => incomeKindColor(s.kind)}
+        windowFor={(s, y, m) => windowEntries(s, y, m).filter((e) => findMonthEntry(s, e.year, e.month))}
+        avgFor={windowAvg}
         text={INCOME_CALENDAR_TEXT}
       />
       <DollarActionSheet

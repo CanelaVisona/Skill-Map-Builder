@@ -836,14 +836,6 @@ function HouseCard({
   );
 }
 
-// Ya en casa primero, pendientes de compra despues — nunca intercalados.
-function sortHaveFirst(items: HouseItem[]) {
-  return [...items].sort((a, b) => {
-    if (a.status === b.status) return 0;
-    return a.status === "have" ? -1 : 1;
-  });
-}
-
 function GroupSection({
   group,
   items,
@@ -861,8 +853,10 @@ function GroupSection({
   onConfirmPurchase: (id: number) => void;
   onStartEdit: (item: HouseItem) => void;
 }) {
-  const haveCount = items.filter((i) => i.status === "have").length;
-  const orderedItems = sortHaveFirst(items);
+  // El inventario muestra solo lo que ya esta en casa -- lo pendiente vive en la
+  // Lista de prioridades y aparece aca recien cuando se compra. El contador del
+  // header sigue siendo tenidos/total de la categoria.
+  const ownedItems = items.filter((i) => i.status === "have");
 
   return (
     <div style={{ marginBottom: "16px" }} onPointerDown={(e) => e.stopPropagation()}>
@@ -890,11 +884,11 @@ function GroupSection({
           {group}
         </span>
         <span style={{ fontSize: "10px", color: colors.subtitle }}>
-          ({haveCount}/{items.length})
+          ({ownedItems.length}/{items.length})
         </span>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(78px, 1fr))", gap: "8px" }}>
-        {orderedItems.map((item) => (
+        {ownedItems.map((item) => (
           <HouseCard
             key={item.id}
             item={item}
@@ -1054,7 +1048,9 @@ export default function HouseInventory({
     };
   }, []);
 
-  const groupsPresent = HOUSE_GROUP_ORDER.filter((g) => items.some((i) => i.group === g));
+  // Solo categorias con algo ya comprado -- las que tienen todo pendiente no se
+  // muestran aca, sus objetos estan en la Lista de prioridades.
+  const groupsPresent = HOUSE_GROUP_ORDER.filter((g) => items.some((i) => i.group === g && i.status === "have"));
 
   const openAddForm = () => {
     setEditingId(null);
@@ -1082,7 +1078,9 @@ export default function HouseInventory({
       importance: addForm.importance,
     };
 
-    setItems((prev) => [nextItem, ...prev]);
+    // Un objeto "Falta comprar" va al final de la Lista de prioridades (igual que
+    // si se agrega desde ahi) en vez de saltar al primer puesto.
+    setItems((prev) => (nextItem.status === "have" ? [nextItem, ...prev] : [...prev, nextItem]));
     setIsAddFormOpen(false);
     setAddForm(EMPTY_FORM);
   }, [addForm, setItems]);
@@ -1194,7 +1192,7 @@ export default function HouseInventory({
         onContextMenu={(e) => e.preventDefault()}
       >
         <p style={{ color: colors.subtitle, fontSize: "11px", marginBottom: "12px" }}>
-          Apreta Comprar para confirmar una compra. Long press sobre un objeto para editarlo (ahi tambien podes deshacer una compra). Long press en el fondo para agregar uno nuevo.
+          Aca estan las cosas que ya tenes; lo que compres desde la Lista de prioridades aparece aca. Long press sobre un objeto para editarlo (ahi tambien podes deshacer una compra). Long press en el fondo para agregar uno nuevo.
         </p>
 
         <HouseSummaryPanel items={items} colors={colors} isDark={isDark} />
@@ -1252,7 +1250,7 @@ export default function HouseInventory({
         )}
 
         {visibleGroups.length === 0 && (
-          <p style={{ color: colors.subtitle, fontSize: "11px" }}>No hay objetos todavia. Long press en el fondo para agregar el primero.</p>
+          <p style={{ color: colors.subtitle, fontSize: "11px" }}>Todavia no hay objetos comprados. Long press en el fondo para agregar uno que ya tengas.</p>
         )}
 
         {visibleGroups.map((group) => (

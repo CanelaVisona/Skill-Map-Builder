@@ -512,12 +512,14 @@ export interface FinancialGoalFlow {
 }
 
 // Cuánto se ahorró en un mes puntual para esta meta, cargado a mano desde el detalle de la
-// línea de tiempo mensual. Independiente de holdings/history: es un registro manual de
-// seguimiento, no mueve el saldo de ningún instrumento.
+// línea de tiempo mensual. Al guardarlo, el cliente también suma ese monto al instrumento
+// elegido para el mes (y lo anota en history), así mueve el saldo de la meta.
 export interface FinancialGoalMonthlyEntry {
   year: number;
   month: number; // 0-11
   amount: number;
+  // Instrumento al que se sumó el monto del mes. Sin valor (cargas viejas) = primer instrumento.
+  holdingId?: string;
 }
 
 export const financialGoals = pgTable("financial_goals", {
@@ -578,7 +580,9 @@ export const budgetCategories = pgTable("budget_categories", {
 
 // Una fuente de ingresos (gráfico "Ingresos" en Metas financieras). Cada fuente es activa
 // (requiere trabajo: sueldo, freelance) o pasiva (alquileres, dividendos, intereses) y guarda
-// lo cobrado en 3 meses; el gráfico muestra el promedio, agrupado en activos vs pasivos.
+// lo cobrado mes a mes como historial completo: cada mes cargado queda guardado y se reutiliza en
+// el promedio de 3 meses de cualquier otro mes que lo incluya. El gráfico muestra el promedio de
+// los últimos 3 meses cargados, agrupado en activos vs pasivos.
 export type IncomeSourceKind = "activo" | "pasivo";
 
 export const incomeSources = pgTable("income_sources", {
@@ -1064,6 +1068,7 @@ export const insertFinancialGoalSchema = createInsertSchema(financialGoals).omit
     year: z.number(),
     month: z.number(),
     amount: z.number(),
+    holdingId: z.string().optional(),
   })).optional().default([]),
 });
 export type InsertFinancialGoal = z.infer<typeof insertFinancialGoalSchema>;
@@ -1097,7 +1102,7 @@ export const insertIncomeSourceSchema = createInsertSchema(incomeSources).omit({
     year: z.number(),
     month: z.number(),
     amount: z.number(),
-  })).length(3),
+  })).min(1),
 });
 export type InsertIncomeSource = z.infer<typeof insertIncomeSourceSchema>;
 export type IncomeSource = typeof incomeSources.$inferSelect;

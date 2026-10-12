@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useSkillTree } from "@/lib/skill-context";
 
@@ -42,16 +41,6 @@ export function RadarSkillMapModal({ open, onOpenChange }: { open: boolean; onOp
             className="relative overflow-hidden rounded-3xl border border-border/50 bg-background max-w-5xl w-full h-[90dvh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="px-5 py-3 border-b border-border/50 flex items-center justify-between gap-3">
-              <span className="text-sm font-medium">Mapa de habilidades</span>
-              <button
-                className="h-7 w-7 rounded-lg border border-border text-muted-foreground hover:text-foreground flex items-center justify-center"
-                onClick={() => onOpenChange(false)}
-                title="Cerrar"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
             <iframe key={src} src={src} title="Mapa de habilidades" className="flex-1 w-full border-0" />
           </motion.div>
         </motion.div>
