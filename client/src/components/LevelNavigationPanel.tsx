@@ -52,7 +52,7 @@ export function LevelNavigationPanel({
         <nav
           className={[
             "max-h-[62vh] overflow-y-auto overflow-x-hidden",
-            "minimal-scrollbar",
+            "scrollbar-hide",
           ].join(" ")}
         >
           <ul className="flex flex-col gap-2 py-2">

@@ -31,7 +31,7 @@ import HousePriorityList from "../components/HousePriorityList";
 import HouseRepairsList from "../components/HouseRepairsList";
 import { EvidenceBoardModalWrapper } from "@/components/EvidenceBoardModal";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, User, Menu, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Utensils, Swords, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt, OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation, Check, HelpCircle, PiggyBank, Search, X } from "lucide-react";
+import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, User, Menu, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Utensils, Swords, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt, OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation, Check, HelpCircle, PiggyBank, Search, X, Pentagon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -72,6 +72,7 @@ import { SkillsGridJournal } from "@/components/SkillsGridJournal";
 import { BodyStrengthPanel } from "@/components/BodyStrengthPanel";
 import { LevelNavigationPanel, type LevelNavItem } from "@/components/LevelNavigationPanel";
 import { GoalsButton, CompletedGoalsJournal } from "@/components/GoalsPanel";
+import { RadarSkillMapModal } from "@/components/RadarSkillMapModal";
 
 function SkillsSparkIcon({ className }: { className?: string }) {
   return (
@@ -136,7 +137,7 @@ function calculateVisibleLevels(skills: Skill[], endOfAreaLevel?: number): Set<n
   return visibleLevels;
 }
 
-function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpenMealTracker, onOpenQuestions, onOpenEvidenceBoard, onOpenFinancialGoals, onOpenBookTracker, onOpenAllAreaBugs, onOpenHomeNeeds, onOpenClothingInventory, onOpenTodayProgress }: { onOpenDesigner: () => void; onOpenHabits: () => void; onOpenStrength: () => void; onOpenMealTracker: () => void; onOpenQuestions: () => void; onOpenEvidenceBoard: () => void; onOpenFinancialGoals: () => void; onOpenBookTracker: () => void; onOpenAllAreaBugs: () => void; onOpenHomeNeeds: () => void; onOpenClothingInventory: () => void; onOpenTodayProgress: () => void }) {
+function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpenMealTracker, onOpenQuestions, onOpenEvidenceBoard, onOpenFinancialGoals, onOpenBookTracker, onOpenAllAreaBugs, onOpenHomeNeeds, onOpenClothingInventory, onOpenTodayProgress, onOpenRadarMap }: { onOpenDesigner: () => void; onOpenHabits: () => void; onOpenStrength: () => void; onOpenMealTracker: () => void; onOpenQuestions: () => void; onOpenEvidenceBoard: () => void; onOpenFinancialGoals: () => void; onOpenBookTracker: () => void; onOpenAllAreaBugs: () => void; onOpenHomeNeeds: () => void; onOpenClothingInventory: () => void; onOpenTodayProgress: () => void; onOpenRadarMap: () => void }) {
   const { theme, setTheme, resolvedTheme } = useTheme();
   const currentTheme = resolvedTheme || theme;
   const { openDiary } = useDiary();
@@ -254,7 +255,7 @@ function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpen
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.16, ease: "easeOut" }}
-            className="flex flex-col items-end gap-2 rounded-2xl border border-border/40 bg-background/65 p-2 backdrop-blur-md"
+            className="flex max-h-[calc(100dvh-4.5rem)] flex-col items-end gap-2 overflow-y-auto overscroll-contain scrollbar-hide [&>*]:shrink-0 rounded-2xl border border-border/40 bg-background/65 p-2 backdrop-blur-md"
           >
             <button
               className="h-8 w-8 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
@@ -316,6 +317,13 @@ function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpen
                   {pendingSpaceRepCount > 99 ? "99+" : pendingSpaceRepCount}
                 </span>
               )}
+            </button>
+            <button
+              className="h-8 w-8 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
+              onClick={() => handleAction(onOpenRadarMap)}
+              title="Mapa de habilidades"
+            >
+              <Pentagon className="h-4 w-4 mx-auto" />
             </button>
             <button
               className="h-8 w-8 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
@@ -9137,7 +9145,7 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
         <QuestCompletedCelebration celebration={questCompletedCelebration} />
         <QuestUpdatedCelebration text={questCelebrationText} />
         <QuestUpdatedPopup show={showQuestUpdatedPopup} onClose={hideQuestUpdatedPopup} />
-        <div className="flex-1 overflow-y-auto p-8 scroll-smooth scrollbar-thin-on-scroll" data-skill-canvas-scroll="true">
+        <div className="flex-1 overflow-y-auto p-8 scroll-smooth scrollbar-hide" data-skill-canvas-scroll="true">
           <div className="w-full relative max-w-4xl mx-auto mt-2 min-h-full">
             
             <div className="absolute top-0 left-0 z-10">
@@ -9409,7 +9417,7 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
       <QuestCompletedCelebration celebration={questCompletedCelebration} />
       <QuestUpdatedCelebration text={questCelebrationText} />
       <QuestUpdatedPopup show={showQuestUpdatedPopup} onClose={hideQuestUpdatedPopup} />
-      <div className="flex-1 overflow-y-auto p-8 scroll-smooth scrollbar-thin-on-scroll" data-skill-canvas-scroll="true">
+      <div className="flex-1 overflow-y-auto p-8 scroll-smooth scrollbar-hide" data-skill-canvas-scroll="true">
         <div className="w-full relative max-w-4xl mx-auto min-h-full">
           
           {/* Sticky Progress Bar */}
@@ -9847,6 +9855,7 @@ export default function SkillTreePage() {
   const [isAllAreaBugsOpen, setIsAllAreaBugsOpen] = useState(false);
   const [isHomeNeedsOpen, setIsHomeNeedsOpen] = useState(false);
   const [isClothingInventoryOpen, setIsClothingInventoryOpen] = useState(false);
+  const [isRadarMapOpen, setIsRadarMapOpen] = useState(false);
   const [isTodayProgressOpen, setIsTodayProgressOpen] = useState(false);
   
   const handleCompleteOnboarding = () => {
@@ -9873,7 +9882,7 @@ export default function SkillTreePage() {
           <PendingRewardsProvider>
             <MenuProvider>
               <div className="flex h-screen w-full bg-background text-foreground overflow-hidden font-body selection:bg-primary/30">
-                <TopRightControls onOpenDesigner={() => setIsDesignerOpen(true)} onOpenHabits={() => setIsHabitsOpen(true)} onOpenStrength={() => setIsStrengthOpen(true)} onOpenMealTracker={() => setIsMealTrackerOpen(true)} onOpenQuestions={() => setIsQuestionsOpen(true)} onOpenEvidenceBoard={() => setIsEvidenceBoardOpen(true)} onOpenFinancialGoals={() => setIsFinancialGoalsOpen(true)} onOpenBookTracker={() => setIsBookTrackerOpen(true)} onOpenAllAreaBugs={() => setIsAllAreaBugsOpen(true)} onOpenHomeNeeds={() => setIsHomeNeedsOpen(true)} onOpenClothingInventory={() => setIsClothingInventoryOpen(true)} onOpenTodayProgress={() => setIsTodayProgressOpen(true)} />
+                <TopRightControls onOpenDesigner={() => setIsDesignerOpen(true)} onOpenHabits={() => setIsHabitsOpen(true)} onOpenStrength={() => setIsStrengthOpen(true)} onOpenMealTracker={() => setIsMealTrackerOpen(true)} onOpenQuestions={() => setIsQuestionsOpen(true)} onOpenEvidenceBoard={() => setIsEvidenceBoardOpen(true)} onOpenFinancialGoals={() => setIsFinancialGoalsOpen(true)} onOpenBookTracker={() => setIsBookTrackerOpen(true)} onOpenAllAreaBugs={() => setIsAllAreaBugsOpen(true)} onOpenHomeNeeds={() => setIsHomeNeedsOpen(true)} onOpenClothingInventory={() => setIsClothingInventoryOpen(true)} onOpenTodayProgress={() => setIsTodayProgressOpen(true)} onOpenRadarMap={() => setIsRadarMapOpen(true)} />
                 <ProgressModal open={isProgressOpen} onOpenChange={setIsProgressOpen} />
                 <TodayProgressModal open={isTodayProgressOpen} onOpenChange={setIsTodayProgressOpen} />
                 <SkillDesigner open={isDesignerOpen} onOpenChange={setIsDesignerOpen} />
@@ -9887,6 +9896,7 @@ export default function SkillTreePage() {
                 <AllAreaBugsModalWrapper open={isAllAreaBugsOpen} onOpenChange={setIsAllAreaBugsOpen} />
                 <HomeNeedsModalWrapper open={isHomeNeedsOpen} onOpenChange={setIsHomeNeedsOpen} />
                 <ClothingInventoryModalWrapper open={isClothingInventoryOpen} onOpenChange={setIsClothingInventoryOpen} />
+                <RadarSkillMapModal open={isRadarMapOpen} onOpenChange={setIsRadarMapOpen} />
                 <AreaMenu />
                 <SkillCanvas onOpenProgress={() => setIsProgressOpen(true)} />
                 <QuestDiary />
