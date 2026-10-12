@@ -425,7 +425,7 @@ function useLongPress(onLongPress: () => void, onTap?: () => void, duration = 48
 // Instrumentos que se pueden elegir al cargar un mes. Si la meta todavía no tiene ninguno, se
 // ofrece uno nuevo ("Aportes mensuales") que se crea al guardar.
 const NEW_MONTHLY_HOLDING_ID = "__new__";
-function monthHoldingOptions(holdings: FinancialGoalHolding[]): { id: string; label: string }[] {
+function monthHoldingOptions(holdings: Holding[]): { id: string; label: string }[] {
   if (!holdings.length) return [{ id: NEW_MONTHLY_HOLDING_ID, label: "Aportes mensuales" }];
   return holdings.map((h) => ({ id: h.id, label: h.broker ? `${h.instrument} · ${h.broker}` : h.instrument }));
 }
@@ -445,7 +445,7 @@ function GoalMonthCell({
   m: { year: number; month: number };
   amount: number;
   holdingId?: string;
-  holdings: FinancialGoalHolding[];
+  holdings: Holding[];
   isPast: boolean;
   isCurrent: boolean;
   flowAmount: number;
@@ -471,7 +471,7 @@ function GoalMonthCell({
   const holdingName = holdings.find((h) => h.id === currentHoldingId)?.instrument;
 
   return (
-    <div className="flex flex-col items-center gap-1 shrink-0" style={{ width: 76 }}>
+    <div className="flex flex-col items-center gap-1 shrink-0 transition-[width] duration-200" style={{ width: editing ? 116 : 76 }}>
       <div
         className="h-1.5 w-full rounded-full"
         style={{
@@ -488,11 +488,23 @@ function GoalMonthCell({
           className="w-full rounded-lg border border-border/60 bg-muted/30 px-1 py-1.5 flex flex-col gap-1 min-h-[52px] justify-center"
         >
           <Input value={text} onChange={(e) => setText(e.target.value)} className="h-7 text-[10px] px-1.5" inputMode="decimal" placeholder="0" autoFocus />
+          <select
+            value={selHolding}
+            onChange={(e) => setSelHolding(e.target.value)}
+            title="Instrumento al que se suma este mes"
+            className="h-7 w-full rounded-md border border-input bg-card px-1 text-[10px] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            {options.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.label}
+              </option>
+            ))}
+          </select>
           <button
             type="button"
             onClick={() => {
               setEditing(false);
-              onSave(parseMoney(text));
+              onSave(parseMoney(text), selHolding);
             }}
             className="h-6 text-[10px] px-1 rounded-md bg-primary text-primary-foreground font-medium"
           >
@@ -506,6 +518,9 @@ function GoalMonthCell({
           className="w-full rounded-lg border border-border/60 bg-muted/30 px-1 py-1.5 flex flex-col items-center gap-0.5 min-h-[52px] justify-center cursor-pointer select-none"
         >
           <span className="text-xs font-semibold text-center leading-tight">{amount > 0 ? <Money usd={amount} /> : <span className="text-muted-foreground">—</span>}</span>
+          {amount > 0 && holdingName && holdings.length > 1 && (
+            <span className="text-[9px] text-muted-foreground leading-none truncate max-w-full">{holdingName}</span>
+          )}
           {hitFlow && <span className="text-sm leading-none">🔥</span>}
         </div>
       )}
@@ -529,7 +544,7 @@ function GoalTimelineDetailDialog({
   goal: FinancialGoal | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSaveMonth: (year: number, month: number, amount: number) => void;
+  onSaveMonth: (year: number, month: number, amount: number, holdingId: string) => void;
 }) {
   if (!goal || !goal.targetDate) return null;
 
@@ -597,6 +612,7 @@ function GoalTimelineDetailDialog({
               const isPast = key < nowKey || (nowKey > targetKey && key <= targetKey);
               const isCurrent = key === nowKey;
               const amount = monthlyMap.get(`${m.year}-${m.month}`) || 0;
+              const entry = (goal.monthlyProgress || []).find((e) => e.year === m.year && e.month === m.month);
               return (
                 <GoalMonthCell
                   key={i}
@@ -607,7 +623,9 @@ function GoalTimelineDetailDialog({
                   flowAmount={flowAmount}
                   shortfall={shortfallByKey.get(key) || 0}
                   repaid={repaidKeys.has(key)}
-                  onSave={(amt) => onSaveMonth(m.year, m.month, amt)}
+                  holdingId={entry?.holdingId}
+                  holdings={goal.holdings}
+                  onSave={(amt, hid) => onSaveMonth(m.year, m.month, amt, hid)}
                 />
               );
             })}
@@ -4232,36 +4250,67 @@ export default function FinancialGoals() {
     updateGoal.mutate({ id: detailGoal.id, data: { flow: { ...detailGoal.flow, anchor: timestamp } } });
   };
 
-  // Lo cargado en un mes de la línea de tiempo también suma al saldo de la meta: se aplica la
-  // diferencia con lo que ya tenía ese mes (si se corrige un mes, se ajusta en vez de duplicar).
+  // Lo cargado en un mes de la línea de tiempo también suma al saldo de la meta, en el
+  // instrumento elegido para ese mes. Si el mes ya tenía monto, primero se le saca al instrumento
+  // donde estaba y después se suma el nuevo (así corregir o cambiar de instrumento no duplica).
   // Secuencia: popup "Agregaste…" → se cierra el detalle → la barra de la meta crece animada.
-  const handleSaveMonthlyAmount = (year: number, month: number, amount: number) => {
+  const handleSaveMonthlyAmount = (year: number, month: number, amount: number, holdingId: string) => {
     if (!timelineGoal) return;
     const goal = timelineGoal;
     const existing = Array.isArray(goal.monthlyProgress) ? goal.monthlyProgress : [];
     const idx = existing.findIndex((e) => e.year === year && e.month === month);
-    const delta = amount - (idx >= 0 ? existing[idx].amount || 0 : 0);
-    const next: FinancialGoalMonthlyEntry[] = [...existing];
-    if (idx >= 0) next[idx] = { year, month, amount };
-    else next.push({ year, month, amount });
+    const prevEntry = idx >= 0 ? existing[idx] : null;
+    const prevAmount = prevEntry?.amount || 0;
 
-    if (delta === 0) {
+    // Meta sin instrumentos: se crea "Aportes mensuales" para recibir el monto.
+    let holdings = [...goal.holdings];
+    let target = holdings.find((h) => h.id === holdingId);
+    if (!target) {
+      target = holdings[0] || { id: genId(), instrument: "Aportes mensuales", broker: "", amount: 0 };
+      if (!holdings.length) holdings = [target];
+    }
+    const targetHolding = target;
+    // Cargas viejas sin instrumento guardado se habían sumado al primero.
+    const prevHolding = prevAmount ? holdings.find((h) => h.id === prevEntry?.holdingId) || holdings[0] : null;
+
+    const next: FinancialGoalMonthlyEntry[] = [...existing];
+    const entry: FinancialGoalMonthlyEntry = { year, month, amount, holdingId: targetHolding.id };
+    if (idx >= 0) next[idx] = entry;
+    else next.push(entry);
+
+    const moved = !!prevHolding && prevHolding.id !== targetHolding.id;
+    const delta = amount - prevAmount;
+    if (delta === 0 && !moved) {
       updateGoal.mutate({ id: goal.id, data: { monthlyProgress: next } });
       return;
     }
 
-    const holding = goal.holdings[0] || { id: genId(), instrument: "Aportes mensuales", broker: "", amount: 0 };
-    const holdings = goal.holdings.length
-      ? goal.holdings.map((h) => (h.id === holding.id ? { ...h, amount: Math.max(0, (h.amount || 0) + delta) } : h))
-      : [{ ...holding, amount: Math.max(0, delta) }];
+    const adjust = (id: string, by: number) => {
+      holdings = holdings.map((h) => (h.id === id ? { ...h, amount: Math.max(0, (h.amount || 0) + by) } : h));
+    };
     const note = `Mes ${monthLabel(year, month)}`;
-    const history = [...(goal.history || []), { id: genId(), amount: delta, date: Date.now(), note, inst: holding.instrument, holdingId: holding.id }];
+    const history = [...(goal.history || [])];
+    const log = (h: Holding, by: number) => history.push({ id: genId(), amount: by, date: Date.now(), note, inst: h.instrument, holdingId: h.id });
+    if (moved) {
+      adjust(prevHolding!.id, -prevAmount);
+      log(prevHolding!, -prevAmount);
+      adjust(targetHolding.id, amount);
+      if (amount) log(targetHolding, amount);
+    } else {
+      adjust(targetHolding.id, delta);
+      log(targetHolding, delta);
+    }
+
     const before = goalSaved(goal);
     const after = holdings.reduce((a, h) => a + (Number(h.amount) || 0), 0);
     updateGoal.mutate({ id: goal.id, data: { monthlyProgress: next, holdings, history }, celebrate: false });
 
+    const shown = moved ? amount : delta;
     const popup = toast({
-      title: delta > 0 ? `Agregaste ${moneyPairText(delta, dollarRates)}` : `Ajustaste ${moneyPairText(-delta, dollarRates)} menos`,
+      title:
+        shown >= 0
+          ? `Agregaste ${moneyPairText(shown, dollarRates)} en ${targetHolding.instrument}`
+          : `Ajustaste ${moneyPairText(-shown, dollarRates)} menos en ${targetHolding.instrument}`,
       description: `${goal.emoji} ${goal.name} · ${note}`,
     });
     setTimeout(() => {
