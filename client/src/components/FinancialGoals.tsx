@@ -254,13 +254,18 @@ function monthQuarterMap(quarters: BudgetQuarter[]): Map<string, BudgetQuarter> 
   sorted.forEach((q) => q.months.forEach((m) => map.set(`${m.year}-${m.month}`, q)));
   return map;
 }
-// Lo guardado para cada mes puntual ("año-mes"), tomado de la carga más reciente que lo incluye.
+function budgetEntryEmpty(m: BudgetMonthEntry): boolean {
+  return !m.fixed && !m.variable && !m.savings;
+}
+// Lo guardado para cada mes puntual ("año-mes"), tomado de la carga más reciente que lo tiene
+// completo: un mes que quedó vacío en una carga nueva no tapa lo que se cargó en otra.
 function budgetMonthEntryMap(quarters: BudgetQuarter[]): Map<string, BudgetMonthEntry> {
   const out = new Map<string, BudgetMonthEntry>();
-  monthQuarterMap(quarters).forEach((q, key) => {
-    const entry = q.months.find((m) => `${m.year}-${m.month}` === key);
-    if (entry) out.set(key, entry);
-  });
+  [...quarters]
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+    .forEach((q) => q.months.forEach((m) => {
+      if (!budgetEntryEmpty(m)) out.set(`${m.year}-${m.month}`, m);
+    }));
   return out;
 }
 
@@ -1918,12 +1923,15 @@ function BudgetFormDialog({
     if (!open) return;
     setAmountCurrency("usd");
     const fmt = (n: number) => (n ? moneyFormatter.format(n) : "");
+    const stored = budgetMonthEntryMap(quarters);
     if (quarter) {
+      // Un mes que quedó vacío en esta carga muestra lo que se completó para ese mes en otra.
       const v: Record<string, string> = {};
       quarter.months.forEach((m, idx) => {
-        v[`fixed-${idx}`] = fmt(m.fixed);
-        v[`variable-${idx}`] = fmt(m.variable);
-        v[`savings-${idx}`] = fmt(m.savings);
+        const src = budgetEntryEmpty(m) ? stored.get(`${m.year}-${m.month}`) || m : m;
+        v[`fixed-${idx}`] = fmt(src.fixed);
+        v[`variable-${idx}`] = fmt(src.variable);
+        v[`savings-${idx}`] = fmt(src.savings);
       });
       setValues(v);
       return;
@@ -1931,7 +1939,6 @@ function BudgetFormDialog({
     // Cada mes que ya estaba cargado en otra carga trae ese mismo número (así el promedio de
     // este mes nuevo usa lo que ya se había guardado). Los meses sin carga previa parten del
     // último número guardado (el mes más reciente de la última carga) como punto editable.
-    const stored = budgetMonthEntryMap(quarters);
     const last = lastQuarter && lastQuarter.months.length ? lastQuarter.months[lastQuarter.months.length - 1] : null;
     const v: Record<string, string> = {};
     windowMonths.forEach((m, idx) => {
@@ -2148,7 +2155,9 @@ function BudgetCalendarDialog({
   const colorForQuarter = (id: string) => PALETTE[distinctIds.indexOf(id) % PALETTE.length];
 
   const selQuarter = selMonth !== null ? map.get(`${year}-${selMonth}`) : undefined;
-  const selMonthEntry = selQuarter?.months.find((m) => m.year === year && m.month === selMonth);
+  const ownEntry = selQuarter?.months.find((m) => m.year === year && m.month === selMonth);
+  // Si en esta carga el mes quedó vacío, se muestra lo que se completó para ese mes en otra carga.
+  const selMonthEntry = ownEntry && budgetEntryEmpty(ownEntry) ? budgetMonthEntryMap(quarters).get(`${year}-${selMonth}`) || ownEntry : ownEntry;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -3988,7 +3997,8 @@ export default function FinancialGoals() {
     }
     // Un mismo mes puede estar en varias cargas (se solapan): las otras cargas que lo incluyen
     // reciben el mismo número, para que todos los promedios usen lo que se guardó para ese mes.
-    const byKey = new Map(data.months.map((m) => [`${m.year}-${m.month}`, m]));
+    // Los meses que quedaron vacíos no se copian (no deben borrar lo cargado en otra carga).
+    const byKey = new Map(data.months.filter((m) => !budgetEntryEmpty(m)).map((m) => [`${m.year}-${m.month}`, m]));
     budgetQuarters.forEach((q) => {
       if (q.id === budgetFormTarget?.id) return;
       let changed = false;
