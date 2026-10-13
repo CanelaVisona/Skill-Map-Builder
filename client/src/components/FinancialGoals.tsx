@@ -257,14 +257,22 @@ function monthQuarterMap(quarters: BudgetQuarter[]): Map<string, BudgetQuarter> 
 function budgetEntryEmpty(m: BudgetMonthEntry): boolean {
   return !m.fixed && !m.variable && !m.savings;
 }
-// Lo guardado para cada mes puntual ("año-mes"), tomado de la carga más reciente que lo tiene
-// completo: un mes que quedó vacío en una carga nueva no tapa lo que se cargó en otra.
+// Lo guardado para cada mes puntual ("año-mes"), campo por campo: cada uno (fijos, variables,
+// ahorro) sale de la carga más reciente que lo tiene completo. Así un campo que quedó en 0 en
+// una carga (vieja o nueva) no tapa lo que se cargó para ese mes en otra.
 function budgetMonthEntryMap(quarters: BudgetQuarter[]): Map<string, BudgetMonthEntry> {
   const out = new Map<string, BudgetMonthEntry>();
   [...quarters]
     .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
     .forEach((q) => q.months.forEach((m) => {
-      if (!budgetEntryEmpty(m)) out.set(`${m.year}-${m.month}`, m);
+      const key = `${m.year}-${m.month}`;
+      const prev = out.get(key) || { year: m.year, month: m.month, fixed: 0, variable: 0, savings: 0 };
+      out.set(key, {
+        ...prev,
+        fixed: m.fixed || prev.fixed,
+        variable: m.variable || prev.variable,
+        savings: m.savings || prev.savings,
+      });
     }));
   return out;
 }
@@ -928,11 +936,24 @@ function GoalPreviewCard({
 // ---------- dashboard side: distribution ----------
 
 function DistributionCard({ goals }: { goals: FinancialGoal[] }) {
-  const byInst = new Map<string, number>();
+  // Se agrupa por instrumento + broker: el mismo instrumento en dos brokers son porciones distintas.
+  const byInst = new Map<string, { instrument: string; broker: string; value: number }>();
   goals.forEach((g) => g.holdings.forEach((h) => {
-    if (h.amount > 0) byInst.set(h.instrument, (byInst.get(h.instrument) || 0) + h.amount);
+    if (!(h.amount > 0)) return;
+    const instrument = h.instrument.trim();
+    const broker = (h.broker || "").trim();
+    const key = `${instrument.toLowerCase()}|${broker.toLowerCase()}`;
+    const prev = byInst.get(key);
+    if (prev) prev.value += h.amount;
+    else byInst.set(key, { instrument, broker, value: h.amount });
   }));
-  const data = Array.from(byInst.entries()).map(([name, value], i) => ({ name, value, color: PALETTE[i % PALETTE.length] }));
+  const data = Array.from(byInst.values()).map((d, i) => ({
+    name: d.broker ? `${d.instrument} · ${d.broker}` : d.instrument,
+    instrument: d.instrument,
+    broker: d.broker,
+    value: d.value,
+    color: PALETTE[i % PALETTE.length],
+  }));
   const total = data.reduce((a, d) => a + d.value, 0);
 
   return (
@@ -963,7 +984,10 @@ function DistributionCard({ goals }: { goals: FinancialGoal[] }) {
             {data.map((d, i) => (
               <div key={i} className="flex items-center gap-2 text-sm flex-wrap">
                 <span className="h-2.5 w-2.5 rounded-sm shrink-0" style={{ background: d.color }} />
-                <span className="flex-1 min-w-0 truncate text-muted-foreground">{d.name}</span>
+                <span className="flex-1 min-w-0 truncate text-muted-foreground">
+                  {d.instrument}
+                  {d.broker && <span className="text-xs text-muted-foreground/70"> · {d.broker}</span>}
+                </span>
                 <span className="font-semibold"><Money usd={d.value} /></span>
                 <span className="text-xs text-muted-foreground w-9 text-right">{Math.round((d.value / (total || 1)) * 100)}%</span>
               </div>
@@ -1925,10 +1949,10 @@ function BudgetFormDialog({
     const fmt = (n: number) => (n ? moneyFormatter.format(n) : "");
     const stored = budgetMonthEntryMap(quarters);
     if (quarter) {
-      // Un mes que quedó vacío en esta carga muestra lo que se completó para ese mes en otra.
+      // Cada mes muestra lo último que se cargó para ese mes en cualquier carga (no solo en esta).
       const v: Record<string, string> = {};
       quarter.months.forEach((m, idx) => {
-        const src = budgetEntryEmpty(m) ? stored.get(`${m.year}-${m.month}`) || m : m;
+        const src = stored.get(`${m.year}-${m.month}`) || m;
         v[`fixed-${idx}`] = fmt(src.fixed);
         v[`variable-${idx}`] = fmt(src.variable);
         v[`savings-${idx}`] = fmt(src.savings);
@@ -2073,7 +2097,7 @@ function BudgetCategoryFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{category ? "Editar categoría" : "Nueva categoría"}</DialogTitle>
+          <DialogTitle>{category ? "Editar categoría" : nameMatch ? `Cargar meses en ${nameMatch.name}` : "Nueva categoría"}</DialogTitle>
           <DialogDescription>Cargá cuánto gastaste en esta categoría en esos 3 meses. El gráfico va a mostrar el promedio.</DialogDescription>
         </DialogHeader>
 
@@ -2091,6 +2115,37 @@ function BudgetCategoryFormDialog({
             </label>
             <Input id="bcat-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej: Comida, Transporte" maxLength={40} />
             {nameErr && <p className="text-xs text-destructive mt-1">Poné un nombre para la categoría.</p>}
+            {/* Categorías ya creadas: elegir una carga sus montos de estos meses en ella (con lo que ya tenía guardado). */}
+            {!category && categories.length > 0 && (
+              <div className="mt-2">
+                <span className="text-[11px] text-muted-foreground mb-1 block">O elegí una categoría existente</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {categories.map((c, i) => {
+                    const selected = nameMatch?.id === c.id;
+                    const color = PALETTE[i % PALETTE.length];
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => {
+                          setName(c.name);
+                          setNameErr(false);
+                          setValues(storedWindowValues(c, months));
+                        }}
+                        className="rounded-full border-[1.5px] px-2.5 py-1 text-xs font-medium flex items-center gap-1.5 transition-colors"
+                        style={{
+                          borderColor: selected ? color : "hsl(var(--border))",
+                          background: selected ? tint(color, 20) : undefined,
+                        }}
+                      >
+                        <span className="h-2 w-2 rounded-sm shrink-0" style={{ background: color }} />
+                        {c.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
           <div>
             <span className="text-sm font-medium mb-1.5 block">Gasto por mes</span>
@@ -2156,8 +2211,8 @@ function BudgetCalendarDialog({
 
   const selQuarter = selMonth !== null ? map.get(`${year}-${selMonth}`) : undefined;
   const ownEntry = selQuarter?.months.find((m) => m.year === year && m.month === selMonth);
-  // Si en esta carga el mes quedó vacío, se muestra lo que se completó para ese mes en otra carga.
-  const selMonthEntry = ownEntry && budgetEntryEmpty(ownEntry) ? budgetMonthEntryMap(quarters).get(`${year}-${selMonth}`) || ownEntry : ownEntry;
+  // Lo último cargado para ese mes en cualquier carga (un campo en 0 en esta no tapa otra).
+  const selMonthEntry = ownEntry ? budgetMonthEntryMap(quarters).get(`${year}-${selMonth}`) || ownEntry : ownEntry;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -3997,16 +4052,18 @@ export default function FinancialGoals() {
     }
     // Un mismo mes puede estar en varias cargas (se solapan): las otras cargas que lo incluyen
     // reciben el mismo número, para que todos los promedios usen lo que se guardó para ese mes.
-    // Los meses que quedaron vacíos no se copian (no deben borrar lo cargado en otra carga).
+    // Los campos que quedaron en 0 no se copian (no deben borrar lo cargado en otra carga).
     const byKey = new Map(data.months.filter((m) => !budgetEntryEmpty(m)).map((m) => [`${m.year}-${m.month}`, m]));
     budgetQuarters.forEach((q) => {
       if (q.id === budgetFormTarget?.id) return;
       let changed = false;
       const months = q.months.map((m) => {
         const upd = byKey.get(`${m.year}-${m.month}`);
-        if (!upd || (upd.fixed === m.fixed && upd.variable === m.variable && upd.savings === m.savings)) return m;
+        if (!upd) return m;
+        const merged = { ...m, fixed: upd.fixed || m.fixed, variable: upd.variable || m.variable, savings: upd.savings || m.savings };
+        if (merged.fixed === m.fixed && merged.variable === m.variable && merged.savings === m.savings) return m;
         changed = true;
-        return { ...m, fixed: upd.fixed, variable: upd.variable, savings: upd.savings };
+        return merged;
       });
       if (changed) updateBudgetQuarter.mutate({ id: q.id, data: { months } });
     });
