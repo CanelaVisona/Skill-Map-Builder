@@ -231,7 +231,23 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
   var $=function(id){return document.getElementById(id)}, svg=$('svg');
   var reduce=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  function save(){ try{localStorage.setItem(KEY,JSON.stringify({areas:zones,sa:sa,sm:sel}))}catch(e){} }
+  /* Dentro de la app los datos viven en el servidor (por usuario) para que se vean igual en todos los
+     dispositivos; localStorage queda como copia local y para cuando no hay conexión. */
+  var API=HOST?'/api/radar-maps':null, ready=false, sending=false, queued=null;
+  function setDirty(v){ try{ if(v) localStorage.setItem(KEY+'-dirty','1'); else localStorage.removeItem(KEY+'-dirty') }catch(e){} }
+  function push(s){
+    if(!API) return; if(sending){ queued=s; return } sending=true;
+    var body='{"data":'+s+'}';
+    fetch(API,{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'same-origin',keepalive:body.length<60000,body:body})
+      .then(function(r){ setDirty(!r.ok) },function(){ setDirty(true) })
+      .then(function(){ sending=false; if(queued!=null){ var q=queued; queued=null; push(q) } });
+  }
+  function save(){
+    if(!ready) return;
+    var s=JSON.stringify({areas:zones,sa:sa,sm:sel,bar:!document.body.classList.contains('barc')});
+    try{ localStorage.setItem(KEY,s) }catch(e){}
+    setDirty(true); push(s);
+  }
   function leafOK(a){ return a&&a.name&&Array.isArray(a.tiers)&&Array.isArray(a.tiers[a.tier])&&a.tiers.every(function(t){return t.length===PER}) }
   function rootOK(d){ return d&&d.name&&Array.isArray(d.children)&&d.children.length>=3&&d.children.every(function(a){
     return a&&a.name&&(Array.isArray(a.children)?a.children.length>=3&&a.children.every(leafOK):leafOK(a)) }) }
@@ -250,11 +266,10 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
   function freeAreas(keep){ return (HOST||[]).filter(function(s){ return !zones.some(function(Z,i){return i!==keep&&Z.name===s}) }) }
   function canAddArea(){ return !HOST||freeAreas(-1).length>0 }
   function cl(v,n){ return Math.min(Math.max(0,v|0),n-1) }
-  function loadAll(){
-    try{ var d=JSON.parse(localStorage.getItem(KEY));
-      if(d&&Array.isArray(d.areas)&&d.areas.length&&d.areas.every(function(Z){return Z&&Z.name&&Array.isArray(Z.maps)&&Z.maps.length&&Z.maps.every(rootOK)})){
-        zones=d.areas; sa=cl(d.sa,zones.length); maps=zones[sa].maps; sel=cl(d.sm,maps.length); return }
-    }catch(e){}
+  function savedOK(d){ return !!(d&&Array.isArray(d.areas)&&d.areas.length&&d.areas.every(function(Z){return Z&&Z.name&&Array.isArray(Z.maps)&&Z.maps.length&&Z.maps.every(rootOK)})) }
+  function readLocal(){ try{ return JSON.parse(localStorage.getItem(KEY)) }catch(e){ return null } }
+  function loadAll(d){
+    if(savedOK(d)){ zones=d.areas; sa=cl(d.sa,zones.length); maps=zones[sa].maps; sel=cl(d.sm,maps.length); return }
     var list=null;
     try{ var v7=JSON.parse(localStorage.getItem(OLD7)); if(v7&&Array.isArray(v7.maps)&&v7.maps.length&&v7.maps.every(rootOK)) list=v7.maps }catch(e){}
     if(!list){ var old=null; try{ old=JSON.parse(localStorage.getItem(OLD)) }catch(e){} list=[rootOK(old)?old:ejemplo(), musica()] }
@@ -801,13 +816,30 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
     b.classList.toggle('barc',!open); $('bar').setAttribute('aria-hidden',open?'false':'true');
     if(open) $('bar').removeAttribute('inert'); else $('bar').setAttribute('inert','');
     t.setAttribute('aria-expanded',open?'true':'false'); t.setAttribute('aria-label',lbl); t.title=lbl;
-    try{ localStorage.setItem(KEY+'-bar',open?'1':'0') }catch(e){}
+    save();
   }
   $('barTog').addEventListener('click',function(){ closeEdit(); closeMenu(); setBar(document.body.classList.contains('barc')) });
-  var barOpen=true; try{ barOpen=localStorage.getItem(KEY+'-bar')!=='0' }catch(e){}
-  setBar(barOpen);
 
-  loadAll(); barA=sa; data=maps[sel]; renderBar(); go(null);
+  function boot(d){
+    loadAll(d); setBar(!(d&&d.bar===false)); ready=true;
+    barA=sa; data=maps[sel]; renderBar(); go(null);
+  }
+  var local=readLocal(), dirty=false; try{ dirty=localStorage.getItem(KEY+'-dirty')==='1' }catch(e){}
+  if(!API) boot(local);
+  else fetch(API,{credentials:'same-origin',cache:'no-store'})
+    .then(function(r){ if(!r.ok) throw r; return r.json() })
+    .then(function(j){
+      var srv=j&&j.data;
+      if(savedOK(srv)&&!(dirty&&savedOK(local))){
+        /* Gana el servidor; si la copia local era distinta queda guardada como respaldo. */
+        try{ var ls=JSON.stringify(local), ss=JSON.stringify(srv); if(savedOK(local)&&ls!==ss) localStorage.setItem(KEY+'-backup',ls); localStorage.setItem(KEY,ss) }catch(e){}
+        boot(srv);
+      } else {
+        /* Primera vez en el servidor, o cambios locales que no se llegaron a subir: se suben ahora. */
+        boot(local); if(savedOK(local)) save();
+      }
+    })
+    .catch(function(){ boot(local) });
 })();
 </script>
 </body>

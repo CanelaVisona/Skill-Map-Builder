@@ -484,6 +484,34 @@ export async function registerRoutes(
     }
   });
 
+  // Mapa de habilidades radial, compartido entre dispositivos (antes vivía solo en localStorage).
+  app.get("/api/radar-maps", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUserById(req.userId!);
+      res.json({ data: user?.radarMaps ?? null });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/radar-maps", requireAuth, async (req, res) => {
+    try {
+      const { data } = req.body;
+      if (!data || typeof data !== "object" || Array.isArray(data) || !Array.isArray(data.areas)) {
+        res.status(400).json({ message: "data debe ser un objeto con un array areas" });
+        return;
+      }
+      const updatedUser = await storage.updateUserRadarMaps(req.userId!, data);
+      if (!updatedUser) {
+        res.status(404).json({ message: "Usuario no encontrado" });
+        return;
+      }
+      res.json({ ok: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Areas (protected)
   app.get("/api/areas", requireAuth, async (req, res) => {
     try {

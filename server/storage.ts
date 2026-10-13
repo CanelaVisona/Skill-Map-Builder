@@ -20,6 +20,7 @@ export interface IStorage {
   setUserPassword(userId: string, password: string): Promise<User | undefined>;
   updateUserProfile(userId: string, profile: { profileMission?: string; profileValues?: string; profileLikes?: string; profileAbout?: string }): Promise<User | undefined>;
   updateUserTrackerOrder(userId: string, order: string[]): Promise<User | undefined>;
+  updateUserRadarMaps(userId: string, data: Record<string, unknown>): Promise<User | undefined>;
 
   // Sessions
   createSession(userId: string, expiresAt: Date): Promise<Session>;
@@ -413,6 +414,11 @@ export class DbStorage implements IStorage {
 
   async updateUserTrackerOrder(userId: string, order: string[]): Promise<User | undefined> {
     const result = await db.update(users).set({ trackerOrder: order }).where(eq(users.id, userId)).returning();
+    return result[0];
+  }
+
+  async updateUserRadarMaps(userId: string, data: Record<string, unknown>): Promise<User | undefined> {
+    const result = await db.update(users).set({ radarMaps: data }).where(eq(users.id, userId)).returning();
     return result[0];
   }
 

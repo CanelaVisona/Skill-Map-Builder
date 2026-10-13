@@ -22,6 +22,9 @@ export const users = pgTable("users", {
   // Orden manual del Progress Tracker (claves `${type}-${id}`). Vive en el servidor para
   // que el tracker y el menú de áreas se vean igual en todos los dispositivos.
   trackerOrder: jsonb("tracker_order").notNull().$type<string[]>().default([]),
+  // Mapa de habilidades radial (public/mapa-habilidades.html): áreas, mapas y selección actual.
+  // Vive en el servidor para que los cambios hechos en un dispositivo aparezcan en los demás.
+  radarMaps: jsonb("radar_maps").$type<Record<string, unknown>>(),
 });
 
 export const sessions = pgTable("sessions", {

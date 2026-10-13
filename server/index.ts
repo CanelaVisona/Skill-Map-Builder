@@ -112,6 +112,15 @@ app.use((req, res, next) => {
     console.error("⚠ life_goals.short_term migration warning:", error.message);
   }
 
+  // Mapa de habilidades radial por usuario, para compartirlo entre dispositivos.
+  try {
+    await db.execute(sql`
+      ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "radar_maps" jsonb;
+    `);
+  } catch (error: any) {
+    console.error("⚠ users.radar_maps migration warning:", error.message);
+  }
+
   // Tiempo estimado de una tarea manual de "Tareas de hoy", agregado después de crear la tabla.
   try {
     await db.execute(sql`
