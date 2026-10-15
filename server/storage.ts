@@ -1,7 +1,7 @@
 import { eq, and, or, asc, sql, inArray, gte, lte } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db, pool } from "./db";
-import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type JournalShadowPage, type InsertJournalShadowPage, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourceObjective, type InsertSourceObjective, type SourceBelief, type InsertSourceBelief, type SourceVision, type InsertSourceVision, type SourcePowers, type InsertSourcePowers, type SourceBug, type InsertSourceBug, type SourceBugRecord, type InsertSourceBugRecord, type NodeError, type InsertNodeError, type NodeErrorRecord, type InsertNodeErrorRecord, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type BookWishlistItem, type InsertBookWishlistItem, type FinancialGoal, type InsertFinancialGoal, type BudgetQuarter, type InsertBudgetQuarter, type BudgetCategory, type InsertBudgetCategory, type IncomeSource, type InsertIncomeSource, type DollarRate, type InsertDollarRate, type PersonalIncome, type InsertPersonalIncome, type SavingMission, type InsertSavingMission, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, type BodyProgressRow, type InsertBodyProgress, type TodayTaskSlot, type InsertTodayTaskSlot, type TodayTaskSubstep, type HabitSubstep, type ManualTodayTask, type InsertManualTodayTask, type MealTrackerDay, type InsertMealTrackerDay, type MealTrackerCustomOption, type InsertMealTrackerCustomOption, type MealTrackerDish, type InsertMealTrackerDish, type MealTrackerMeta, type QuestionProblem, type InsertQuestionProblem, type QuestionItem, type InsertQuestionItem, type QuestionProblemWithItems, type EvidenceBoardRow, evidenceBoards, type LifeGoalsRow, type LifeGoalItem, type CompletedLifeGoal, lifeGoals, questionProblems, questionItems, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, journalShadowPages, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourceObjectives, sourceBeliefs, sourceVision, sourcePowers, sourceBugs, sourceBugRecords, nodeErrors, nodeErrorRecords, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, bookWishlist, financialGoals, budgetQuarters, budgetCategories, incomeSources, dollarRates, personalIncomes, savingMissions, rewiringTrackers, rewiringTrackerRecords, bodyProgress, todayTaskSlots, todayTaskSubsteps, habitSubsteps, todayPriorities, manualTodayTasks, mealTrackerDays, mealTrackerCustomOptions, mealTrackerDishes, mealTrackerMeta } from "@shared/schema";
+import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type JournalShadowPage, type InsertJournalShadowPage, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourceObjective, type InsertSourceObjective, type SourceBelief, type InsertSourceBelief, type SourceVision, type InsertSourceVision, type SourcePowers, type InsertSourcePowers, type SourceBug, type InsertSourceBug, type SourceBugReflexion, type SourceBugRecord, type InsertSourceBugRecord, type NodeError, type InsertNodeError, type NodeErrorRecord, type InsertNodeErrorRecord, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type BookWishlistItem, type InsertBookWishlistItem, type FinancialGoal, type InsertFinancialGoal, type BudgetQuarter, type InsertBudgetQuarter, type BudgetCategory, type InsertBudgetCategory, type IncomeSource, type InsertIncomeSource, type DollarRate, type InsertDollarRate, type PersonalIncome, type InsertPersonalIncome, type SavingMission, type InsertSavingMission, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, type BodyProgressRow, type InsertBodyProgress, type TodayTaskSlot, type InsertTodayTaskSlot, type TodayTaskSubstep, type HabitSubstep, type ManualTodayTask, type InsertManualTodayTask, type MealTrackerDay, type InsertMealTrackerDay, type MealTrackerCustomOption, type InsertMealTrackerCustomOption, type MealTrackerDish, type InsertMealTrackerDish, type MealTrackerMeta, type QuestionProblem, type InsertQuestionProblem, type QuestionItem, type InsertQuestionItem, type QuestionProblemWithItems, type EvidenceBoardRow, evidenceBoards, type LifeGoalsRow, type LifeGoalItem, type CompletedLifeGoal, lifeGoals, questionProblems, questionItems, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, journalShadowPages, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourceObjectives, sourceBeliefs, sourceVision, sourcePowers, sourceBugs, sourceBugRecords, nodeErrors, nodeErrorRecords, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, bookWishlist, financialGoals, budgetQuarters, budgetCategories, incomeSources, dollarRates, personalIncomes, savingMissions, rewiringTrackers, rewiringTrackerRecords, bodyProgress, todayTaskSlots, todayTaskSubsteps, habitSubsteps, todayPriorities, manualTodayTasks, mealTrackerDays, mealTrackerCustomOptions, mealTrackerDishes, mealTrackerMeta } from "@shared/schema";
 
 const normalizeSourceBugStatus = (status: string): "identificado" | "debugueando" | "debugueado" => {
   if (status === "activo") return "identificado";
@@ -1938,7 +1938,12 @@ export class DbStorage implements IStorage {
       aparece: Array.isArray(entry.aparece) ? (entry.aparece as string[]) : [],
       disparadores: Array.isArray(entry.disparadores) ? (entry.disparadores as string[]) : [],
       estrategias: Array.isArray(entry.estrategias) ? (entry.estrategias as string[]) : [],
+      categoria: entry.categoria ?? "",
+      barMode: entry.barMode ?? "victorias",
+      manualDebugueado: entry.manualDebugueado ?? 0,
+      reflexiones: Array.isArray(entry.reflexiones) ? (entry.reflexiones as SourceBugReflexion[]) : [],
     };
+    if (insertData.manualDebugueado === 1) insertData.status = "debugueado";
     const result = await db.insert(sourceBugs).values(insertData).returning();
     return result[0];
   }
@@ -1955,6 +1960,10 @@ export class DbStorage implements IStorage {
     if (entry.aparece !== undefined) updateData.aparece = Array.isArray(entry.aparece) ? (entry.aparece as string[]) : [];
     if (entry.disparadores !== undefined) updateData.disparadores = Array.isArray(entry.disparadores) ? (entry.disparadores as string[]) : [];
     if (entry.estrategias !== undefined) updateData.estrategias = Array.isArray(entry.estrategias) ? (entry.estrategias as string[]) : [];
+    if (entry.categoria !== undefined) updateData.categoria = entry.categoria;
+    if (entry.barMode !== undefined) updateData.barMode = entry.barMode;
+    if (entry.manualDebugueado !== undefined) updateData.manualDebugueado = entry.manualDebugueado ? 1 : 0;
+    if (entry.reflexiones !== undefined) updateData.reflexiones = Array.isArray(entry.reflexiones) ? (entry.reflexiones as SourceBugReflexion[]) : [];
 
     const result = await db
       .update(sourceBugs)
@@ -1968,6 +1977,12 @@ export class DbStorage implements IStorage {
       const bug = result[0];
       const mirroredPoints = bug.status === "debugueado" ? 50 : Math.max(-50, Math.min(50, (bug.victoryCount || 0) * 10));
       await db.update(nodeErrors).set({ points: mirroredPoints, updatedAt: new Date() }).where(eq(nodeErrors.bugId, id));
+    }
+
+    // Marcar/desmarcar debugueado a mano recalcula el status desde los registros.
+    if (result[0] && entry.manualDebugueado !== undefined && entry.status === undefined) {
+      await this.recalculateSourceBugProgress(id);
+      return this.getSourceBug(id);
     }
 
     return result[0];
@@ -1994,8 +2009,12 @@ export class DbStorage implements IStorage {
     }
 
     const victoryCount = Math.max(0, Math.round(points / 10));
+    // Debugueado a mano (desde un registro o la edición del error) gana sobre la barra.
+    const [bugRow] = await db.select({ manualDebugueado: sourceBugs.manualDebugueado }).from(sourceBugs).where(eq(sourceBugs.id, bugId));
+    const manual = bugRow?.manualDebugueado === 1;
     const status: "identificado" | "debugueando" | "debugueado" =
-      points >= 50 ? "debugueado" : records.length > 0 ? "debugueando" : "identificado";
+      manual || points >= 50 ? "debugueado" : records.length > 0 ? "debugueando" : "identificado";
+    if (manual) points = 50;
 
     await db
       .update(sourceBugs)

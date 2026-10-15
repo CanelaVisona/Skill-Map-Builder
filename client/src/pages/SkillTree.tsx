@@ -49,7 +49,7 @@ import { LevelUpCelebrationProvider } from "@/lib/level-up-celebration-context";
 import { PowerCelebrationProvider } from "@/lib/power-celebration-context";
 import { TodayProgressPopupProvider } from "@/lib/today-progress-popup-context";
 import { PendingRewardsProvider } from "@/lib/pending-rewards-context";
-import { BodyLinkPicker, type BodyLink } from "@/components/BodyLinkPicker";
+import { type BodyLink } from "@/components/BodyLinkPicker";
 import { SkillLinkPicker } from "@/components/SkillLinkPicker";
 import { EntryLinkPicker } from "@/components/EntryLinkPicker";
 import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -327,6 +327,13 @@ function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpen
             </button>
             <button
               className="h-8 w-8 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
+              onClick={() => handleAction(onOpenAllAreaBugs)}
+              title="Errores"
+            >
+              <Circle className="h-4 w-4 mx-auto" />
+            </button>
+            <button
+              className="h-8 w-8 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
               onClick={() => handleAction(onOpenMealTracker)}
               title="Comida"
             >
@@ -363,13 +370,6 @@ function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpen
             </button>
             <button
               className="h-8 w-8 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
-              onClick={() => handleAction(onOpenAllAreaBugs)}
-              title="Rewiring / bugs"
-            >
-              <Circle className="h-4 w-4 mx-auto" />
-            </button>
-            <button
-              className="h-8 w-8 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
               onClick={() => handleAction(onOpenHomeNeeds)}
               title="Necesidades de tu casa"
             >
@@ -402,6 +402,8 @@ interface SourceBugRecord {
   disparador: string;
   estrategia: string;
   resultado: "victoria" | "empate" | "derrota";
+  reflexion?: string;
+  aprendizaje?: string;
 }
 
 interface LinkedGlobalSkill {
@@ -445,8 +447,30 @@ interface SourceBug {
   aparece: string[];
   disparadores: string[];
   estrategias: string[];
+  categoria?: BugCategoria;
+  barMode?: BugBarMode;
+  manualDebugueado?: 0 | 1;
+  reflexiones?: Array<{ id: string; texto: string; fecha: string }>;
   registros: SourceBugRecord[];
 }
+
+type BugCategoria = "" | "ups" | "stretch" | "alto-riesgo" | "aha";
+type BugBarMode = "victorias" | "ved" | "ninguna";
+
+// Orden en que se agrupan los errores dentro de cada área ("" = sin categoría, al final).
+const BUG_CATEGORIES: Array<{ value: BugCategoria; label: string }> = [
+  { value: "ups", label: "Ups" },
+  { value: "stretch", label: "Stretch" },
+  { value: "alto-riesgo", label: "Alto-riesgo" },
+  { value: "aha", label: "Aha" },
+  { value: "", label: "Sin categoría" },
+];
+
+const BUG_BAR_MODES: Array<{ value: BugBarMode; label: string; desc: string }> = [
+  { value: "victorias", label: "Barra de 5 victorias", desc: "Se debuguea al llegar a 5 victorias netas." },
+  { value: "ved", label: "Victorias, empates y derrotas", desc: "Barra que solo cuenta cada resultado." },
+  { value: "ninguna", label: "Sin barra", desc: "Los registros llevan victoria, empate o derrota, sin mostrar barra." },
+];
 
 type JournalEntry = JournalCharacter | JournalPlace | JournalShadow;
 
@@ -6981,8 +7005,192 @@ function BugListEditor({
   );
 }
 
+const newReflexion = (texto: string) => ({
+  id: typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+  texto,
+  fecha: new Date().toISOString().slice(0, 10),
+});
+
+// Barra del error según el modo elegido al crearlo/editarlo: 5 victorias netas, conteo de
+// victorias/empates/derrotas, o nada (solo registros escritos).
+function BugProgressBar({ bug }: { bug: SourceBug }) {
+  const mode = bug.barMode ?? "victorias";
+  if (mode === "ninguna") return null;
+
+  if (mode === "ved") {
+    const counts = { victoria: 0, empate: 0, derrota: 0 };
+    (bug.registros ?? []).forEach((r) => { counts[r.resultado] += 1; });
+    const total = counts.victoria + counts.empate + counts.derrota;
+    return (
+      <div className="mt-2">
+        <div className="flex w-full h-2 bg-muted rounded-full overflow-hidden">
+          {total > 0 && (
+            <>
+              <div className="h-full bg-emerald-400" style={{ width: `${(counts.victoria / total) * 100}%` }} />
+              <div className="h-full bg-amber-400" style={{ width: `${(counts.empate / total) * 100}%` }} />
+              <div className="h-full bg-red-400" style={{ width: `${(counts.derrota / total) * 100}%` }} />
+            </>
+          )}
+        </div>
+        <div className="mt-1 flex gap-3 text-[10px] uppercase tracking-wide text-muted-foreground">
+          <span className="text-emerald-400">{counts.victoria} V</span>
+          <span className="text-amber-400">{counts.empate} E</span>
+          <span className="text-red-400">{counts.derrota} D</span>
+        </div>
+      </div>
+    );
+  }
+
+  const progressCount = bug.status === "debugueado" ? 5 : Math.min(5, bug.victoryCount ?? 0);
+  const progressPercent = Math.max(0, Math.min(100, (progressCount / 5) * 100));
+  return (
+    <div className="mt-2 w-full h-2 bg-muted rounded-full overflow-hidden">
+      <div className="h-full bg-blue-500 rounded-full transition-all duration-300" style={{ width: `${progressPercent}%` }} />
+    </div>
+  );
+}
+
+function BugCategoriaPicker({ value, onChange }: { value: BugCategoria; onChange: (value: BugCategoria) => void }) {
+  return (
+    <div>
+      <Label className="text-xs text-muted-foreground">Categoría</Label>
+      <div className="mt-1 grid grid-cols-2 gap-2">
+        {BUG_CATEGORIES.map((category) => (
+          <button
+            key={category.value || "sin-categoria"}
+            type="button"
+            className={`rounded-md border px-3 py-2 text-xs transition-colors ${category.value === "" ? "col-span-2" : ""} ${value === category.value ? "border-foreground bg-muted/60 text-foreground" : "border-border/60 text-muted-foreground hover:bg-muted/40"}`}
+            onClick={() => onChange(category.value)}
+          >
+            {category.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BugBarModePicker({ value, onChange }: { value: BugBarMode; onChange: (value: BugBarMode) => void }) {
+  return (
+    <div>
+      <Label className="text-xs text-muted-foreground">Barra</Label>
+      <div className="mt-1 grid gap-2">
+        {BUG_BAR_MODES.map((mode) => (
+          <button
+            key={mode.value}
+            type="button"
+            className={`rounded-md border px-3 py-2 text-left transition-colors ${value === mode.value ? "border-foreground bg-muted/60" : "border-border/60 hover:bg-muted/40"}`}
+            onClick={() => onChange(mode.value)}
+          >
+            <p className={`text-xs ${value === mode.value ? "text-foreground" : "text-muted-foreground"}`}>{mode.label}</p>
+            <p className="text-[11px] text-muted-foreground">{mode.desc}</p>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function WizardStepDots({ step, total, labels }: { step: number; total: number; labels: string[] }) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+        Paso {step + 1} de {total} · {labels[step]}
+      </p>
+      <div className="flex gap-1">
+        {Array.from({ length: total }).map((_, i) => (
+          <span key={i} className={`h-1.5 w-4 rounded-full ${i <= step ? "bg-foreground" : "bg-muted"}`} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Línea vertical de reflexiones del error: un nodo por reflexión (sueltas + las de los
+// registros, por fecha) y al final un nodo "+" para agregar una nueva.
+function BugReflexionesTimeline({
+  bug,
+  onAdd,
+  isSaving,
+}: {
+  bug: SourceBug;
+  onAdd: (texto: string) => Promise<unknown>;
+  isSaving: boolean;
+}) {
+  const [isAdding, setIsAdding] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  const items = React.useMemo(() => {
+    const sueltas = (bug.reflexiones ?? []).map((r) => ({ id: r.id, texto: r.texto, fecha: r.fecha, deRegistro: false }));
+    const deRegistros = (bug.registros ?? [])
+      .filter((r) => r.reflexion?.trim())
+      .map((r) => ({ id: r.id, texto: r.reflexion!.trim(), fecha: r.fecha, deRegistro: true }));
+    return [...sueltas, ...deRegistros].sort((a, b) => (a.fecha || "").localeCompare(b.fecha || ""));
+  }, [bug.reflexiones, bug.registros]);
+
+  const save = async () => {
+    if (!draft.trim()) return;
+    await onAdd(draft.trim());
+    setDraft("");
+    setIsAdding(false);
+  };
+
+  return (
+    <div>
+      <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Reflexiones</p>
+      <div className="relative pl-6">
+        <span className="absolute left-[7px] top-1 bottom-3 w-px bg-border" />
+        <div className="space-y-3">
+          {items.map((item) => (
+            <div key={item.id} className="relative min-w-0">
+              <span className="absolute -left-6 top-1 h-3.5 w-3.5 rounded-full border-2 border-foreground/70 bg-background" />
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                {item.fecha || "Sin fecha"}{item.deRegistro ? " · registro" : ""}
+              </p>
+              <p className="text-xs break-words whitespace-pre-wrap">{item.texto}</p>
+            </div>
+          ))}
+          <div className="relative min-w-0">
+            <button
+              type="button"
+              className="absolute -left-[26px] top-0 flex h-[18px] w-[18px] items-center justify-center rounded-full border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              onClick={() => setIsAdding((prev) => !prev)}
+              title="Agregar reflexión"
+              data-testid="all-bugs-add-reflexion"
+            >
+              <Plus className="h-3 w-3" />
+            </button>
+            {isAdding ? (
+              <div className="space-y-2">
+                <Textarea
+                  rows={2}
+                  autoFocus
+                  placeholder="Nueva reflexión"
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  className="text-xs"
+                />
+                <div className="flex justify-end gap-2">
+                  <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setIsAdding(false); setDraft(""); }}>
+                    Cancelar
+                  </Button>
+                  <Button type="button" size="sm" className="h-7 text-xs" disabled={!draft.trim() || isSaving} onClick={save}>
+                    {isSaving ? "Guardando..." : "Agregar"}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground pt-0.5">{items.length === 0 ? "Sin reflexiones todavía" : " "}</p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyResolved = false }: { open: boolean; onOpenChange?: (open: boolean) => void; embedded?: boolean; onlyResolved?: boolean }) {
-  const { areas } = useSkillTree();
+  const { areas, refreshSkillTrees } = useSkillTree();
   const { showXpPopup, hideXpPopup } = useXpPopup();
   const { addBodyBlock } = useBodyProgress();
   const { showBodyGainPopup, hideBodyGainPopup } = useBodyGainPopup();
@@ -6993,6 +7201,11 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
   const [addBugAreaId, setAddBugAreaId] = useState<string | null>(null);
   const [newBugNombre, setNewBugNombre] = useState("");
   const [newBugDesc, setNewBugDesc] = useState("");
+  // El alta de un error nuevo va en pasos (nombre -> categoría -> barra -> reflexión).
+  const [newBugStep, setNewBugStep] = useState(0);
+  const [newBugCategoria, setNewBugCategoria] = useState<BugCategoria>("");
+  const [newBugBarMode, setNewBugBarMode] = useState<BugBarMode>("victorias");
+  const [newBugReflexion, setNewBugReflexion] = useState("");
   // Edición del bug seleccionado (long-press sobre el título en el detalle).
   const [isBugEditOpen, setIsBugEditOpen] = useState(false);
   const [bugEditNombre, setBugEditNombre] = useState("");
@@ -7000,6 +7213,10 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
   const [bugEditEstrategias, setBugEditEstrategias] = useState<string[]>([]);
   const [bugEditAparece, setBugEditAparece] = useState<string[]>([]);
   const [bugEditDisparadores, setBugEditDisparadores] = useState<string[]>([]);
+  const [bugEditCategoria, setBugEditCategoria] = useState<BugCategoria>("");
+  const [bugEditBarMode, setBugEditBarMode] = useState<BugBarMode>("victorias");
+  const [bugEditDebugueado, setBugEditDebugueado] = useState(false);
+  const [bugEditReflexion, setBugEditReflexion] = useState("");
   const [bugEditError, setBugEditError] = useState<string | null>(null);
   // Bug que se está editando (puede venir del detalle o de un long-press en la lista).
   const [bugEditTargetId, setBugEditTargetId] = useState<string | null>(null);
@@ -7022,7 +7239,14 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
   const [recordSkillIds, setRecordSkillIds] = useState<string[]>([]);
   const [recordBodyLinks, setRecordBodyLinks] = useState<BodyLink[]>([]);
   const [recordResultado, setRecordResultado] = useState<"victoria" | "empate" | "derrota">("victoria");
-  const [expandedAreaId, setExpandedAreaId] = useState<string | null>(null);
+  const [recordReflexion, setRecordReflexion] = useState("");
+  const [recordAprendizaje, setRecordAprendizaje] = useState("");
+  const [recordAprendizajeDetalle, setRecordAprendizajeDetalle] = useState("");
+  const [recordMarcarDebugueado, setRecordMarcarDebugueado] = useState(false);
+  // El formulario de registro va en pasos, igual que el alta de un error.
+  const [recordStep, setRecordStep] = useState(0);
+  // Acordeones de área abiertos por default: se guardan los que el usuario cerró.
+  const [collapsedAreaIds, setCollapsedAreaIds] = useState<Set<string>>(() => new Set());
   const [recordFormError, setRecordFormError] = useState<string | null>(null);
 
   // Bugs y errores son lo mismo: todo registro de bug hace crecer SIEMPRE la flexibilidad
@@ -7132,25 +7356,32 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
   }, [areaBugs, onlyResolved, embedded]);
 
   const createBug = useMutation({
-    mutationFn: async ({ areaId, nombre, desc }: { areaId: string; nombre: string; desc: string }) => {
+    mutationFn: async (data: {
+      areaId: string;
+      nombre: string;
+      desc: string;
+      categoria: BugCategoria;
+      barMode: BugBarMode;
+      reflexiones: Array<{ id: string; texto: string; fecha: string }>;
+    }) => {
       const res = await fetch("/api/source-bugs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ areaId, nombre, desc }),
+        body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("No se pudo crear el bug");
+      if (!res.ok) throw new Error("No se pudo crear el error");
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["all-area-bugs"] });
-      setAddBugAreaId(null);
-      setNewBugNombre("");
-      setNewBugDesc("");
+      // El server agregó un nodo SideQuest al área.
+      refreshSkillTrees();
+      closeNewBugWizard();
     },
   });
 
   const updateBug = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<Pick<SourceBug, "nombre" | "desc" | "aparece" | "disparadores" | "estrategias">> }) => {
+    mutationFn: async ({ id, data }: { id: string; data: Partial<Pick<SourceBug, "nombre" | "desc" | "aparece" | "disparadores" | "estrategias" | "categoria" | "barMode" | "manualDebugueado" | "reflexiones">> }) => {
       const res = await fetch(`/api/source-bugs/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -7170,6 +7401,20 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
     onError: (error: Error) => {
       setBugEditError(error.message || "No se pudo guardar el bug");
     },
+  });
+
+  // "+" de la línea de reflexiones: agrega una reflexión suelta al error.
+  const addBugReflexion = useMutation({
+    mutationFn: async ({ bug, texto }: { bug: SourceBug; texto: string }) => {
+      const res = await fetch(`/api/source-bugs/${bug.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reflexiones: [...(bug.reflexiones ?? []), newReflexion(texto)] }),
+      });
+      if (!res.ok) throw new Error("No se pudo guardar la reflexión");
+      return res.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["all-area-bugs"] }),
   });
 
   const deleteBug = useMutation({
@@ -7223,6 +7468,10 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
         skillIds?: string[];
         bodyLinks?: BodyLink[];
         resultado: "victoria" | "empate" | "derrota";
+        reflexion?: string;
+        aprendizaje?: string;
+        aprendizajeDetalle?: string;
+        marcarDebugueado?: boolean;
       };
     }): Promise<BugRecordCreateResponse> => {
       const res = await fetch(`/api/source-bugs/${bugId}/records`, {
@@ -7239,6 +7488,9 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
     onSuccess: async (createdRecord, variables) => {
       await queryClient.invalidateQueries({ queryKey: ["all-area-bugs"] });
       await queryClient.invalidateQueries({ predicate: (query) => (query.queryKey[0] as string)?.startsWith?.("/api/global-skills/") });
+      // El server agregó un nodo SideQuest al área y, si hubo, un aprendizaje al Journal.
+      refreshSkillTrees();
+      if (variables.data.aprendizaje) queryClient.invalidateQueries({ queryKey: ["/api/journal/learnings"] });
 
       // Orden de los pop-ups: (1) flexibilidad mental, (2) progreso del bug, (3) lo que ya
       // existía (XP de skills, crecimiento de cuerpo linkeado). Cada uno espera a que el
@@ -7257,15 +7509,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
         runXpAndBodyPopups();
       }
 
-      setRecordFormError(null);
-      setIsRecordFormOpen(false);
-      setRecordFecha(new Date().toISOString().slice(0, 10));
-      setRecordSituacion("");
-      setRecordDisparador("");
-      setRecordEstrategia("");
-      setRecordSkillIds([]);
-      setRecordBodyLinks([]);
-      setRecordResultado("victoria");
+      resetRecordForm();
     },
     onError: (error: Error) => {
       setRecordFormError(error.message || "No se pudo crear el registro");
@@ -7287,6 +7531,10 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
         skillIds?: string[];
         bodyLinks?: BodyLink[];
         resultado?: "victoria" | "empate" | "derrota";
+        reflexion?: string;
+        aprendizaje?: string;
+        aprendizajeDetalle?: string;
+        marcarDebugueado?: boolean;
       };
     }): Promise<BugRecordCreateResponse> => {
       const res = await fetch(`/api/source-bug-records/${id}`, {
@@ -7313,15 +7561,8 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
         showBugRecordXpAwards(updatedRecord?.xpAwards, false);
       }
 
-      setRecordFormError(null);
-      setEditingRecordId(null);
-      setIsRecordFormOpen(false);
-      setRecordFecha(new Date().toISOString().slice(0, 10));
-      setRecordSituacion("");
-      setRecordDisparador("");
-      setRecordEstrategia("");
-      setRecordSkillIds([]);
-      setRecordResultado("victoria");
+      if (variables.data.aprendizaje) queryClient.invalidateQueries({ queryKey: ["/api/journal/learnings"] });
+      resetRecordForm();
     },
     onError: (error: Error) => {
       setRecordFormError(error.message || "No se pudo actualizar el registro");
@@ -7345,13 +7586,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
         variables.bodyLinks.forEach((link) => addBodyBlock(link.zone, link.dimension, -1));
       }
       if (editingRecordId) {
-        setEditingRecordId(null);
-        setRecordFecha(new Date().toISOString().slice(0, 10));
-        setRecordSituacion("");
-        setRecordDisparador("");
-        setRecordEstrategia("");
-        setRecordSkillIds([]);
-        setRecordResultado("victoria");
+        resetRecordForm();
       }
     },
   });
@@ -7362,14 +7597,9 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
       setBugCardMenuId(null);
       setEditingRecordId(null);
       setRecordContextMenuId(null);
-      setIsRecordFormOpen(false);
-      setExpandedAreaId(null);
-      setRecordFecha(new Date().toISOString().slice(0, 10));
-      setRecordSituacion("");
-      setRecordDisparador("");
-      setRecordEstrategia("");
-      setRecordResultado("victoria");
-      setRecordFormError(null);
+      setCollapsedAreaIds(new Set());
+      resetRecordForm();
+      closeNewBugWizard();
     }
   }, [open]);
 
@@ -7427,35 +7657,32 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
       }).then(() => queryClient.invalidateQueries({ queryKey: ["all-area-bugs"] })).catch(() => {});
     }
 
+    const resultado = recordResultado;
+    const shared = {
+      fecha: recordFecha,
+      situacion: recordSituacion.trim(),
+      disparador: recordDisparador.trim(),
+      estrategia: recordEstrategia.trim(),
+      skillId: recordSkillIds[0] ?? null,
+      skillIds: recordSkillIds,
+      bodyLinks: recordBodyLinks,
+      resultado,
+      reflexion: recordReflexion.trim(),
+      aprendizaje: recordAprendizaje.trim(),
+      aprendizajeDetalle: recordAprendizajeDetalle.trim(),
+    };
+
     if (editingRecordId) {
       updateBugRecord.mutate({
         id: editingRecordId,
-        data: {
-          fecha: recordFecha,
-          situacion: recordSituacion.trim(),
-          disparador: recordDisparador.trim(),
-          estrategia: recordEstrategia.trim(),
-          skillId: recordSkillIds[0] ?? null,
-          skillIds: recordSkillIds,
-          bodyLinks: recordBodyLinks,
-          resultado: recordResultado,
-        },
+        data: { ...shared, marcarDebugueado: recordMarcarDebugueado },
       });
       return;
     }
 
     createBugRecord.mutate({
       bugId: selectedBug.id,
-      data: {
-        fecha: recordFecha,
-        situacion: recordSituacion.trim(),
-        disparador: recordDisparador.trim(),
-        estrategia: recordEstrategia.trim(),
-        skillId: recordSkillIds[0] ?? null,
-        skillIds: recordSkillIds,
-        bodyLinks: recordBodyLinks,
-        resultado: recordResultado,
-      },
+      data: { ...shared, ...(recordMarcarDebugueado ? { marcarDebugueado: true } : {}) },
     });
   };
 
@@ -7473,6 +7700,11 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
     setRecordSkillIds(record.skillIds?.length ? record.skillIds : record.skillId ? [record.skillId] : []);
     setRecordBodyLinks(Array.isArray(record.bodyLinks) ? record.bodyLinks : []);
     setRecordResultado(record.resultado);
+    setRecordReflexion(record.reflexion ?? "");
+    setRecordAprendizaje(record.aprendizaje ?? "");
+    setRecordAprendizajeDetalle("");
+    setRecordMarcarDebugueado(selectedBug?.manualDebugueado === 1);
+    setRecordStep(0);
   };
 
   const resetRecordForm = () => {
@@ -7488,20 +7720,49 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
     setRecordSkillIds([]);
     setRecordBodyLinks([]);
     setRecordResultado("victoria");
+    setRecordReflexion("");
+    setRecordAprendizaje("");
+    setRecordAprendizajeDetalle("");
+    setRecordMarcarDebugueado(false);
+    setRecordStep(0);
   };
 
   const openNewRecordForm = () => {
-    setRecordFormError(null);
-    setEditingRecordId(null);
+    resetRecordForm();
     setRecordContextMenuId(null);
     setIsRecordFormOpen(true);
-    setRecordFecha(new Date().toISOString().slice(0, 10));
-    setRecordSituacion("");
-    setRecordDisparador("");
-    setRecordEstrategia("");
-    setRecordSkillIds([]);
-    setRecordBodyLinks([]);
-    setRecordResultado("victoria");
+  };
+
+  const openNewBugWizard = (areaId: string) => {
+    setAddBugAreaId(areaId);
+    setNewBugStep(0);
+    setNewBugNombre("");
+    setNewBugDesc("");
+    setNewBugCategoria("");
+    setNewBugBarMode("victorias");
+    setNewBugReflexion("");
+  };
+
+  function closeNewBugWizard() {
+    setAddBugAreaId(null);
+    setNewBugStep(0);
+    setNewBugNombre("");
+    setNewBugDesc("");
+    setNewBugCategoria("");
+    setNewBugBarMode("victorias");
+    setNewBugReflexion("");
+  }
+
+  const handleCreateBug = () => {
+    if (!addBugAreaId || !newBugNombre.trim()) return;
+    createBug.mutate({
+      areaId: addBugAreaId,
+      nombre: newBugNombre.trim(),
+      desc: newBugDesc.trim(),
+      categoria: newBugCategoria,
+      barMode: newBugBarMode,
+      reflexiones: newBugReflexion.trim() ? [newReflexion(newBugReflexion.trim())] : [],
+    });
   };
 
   const startRecordItemLongPress = (recordId: string) => {
@@ -7531,6 +7792,10 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
     setBugEditEstrategias([...(bug.estrategias ?? [])]);
     setBugEditAparece([...(bug.aparece ?? [])]);
     setBugEditDisparadores([...(bug.disparadores ?? [])]);
+    setBugEditCategoria(bug.categoria ?? "");
+    setBugEditBarMode(bug.barMode ?? "victorias");
+    setBugEditDebugueado(bug.manualDebugueado === 1);
+    setBugEditReflexion("");
     setBugEditError(null);
     setBugCardMenuId(null);
     setIsBugEditOpen(true);
@@ -7538,6 +7803,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
 
   const handleSaveBugEdit = () => {
     if (!bugEditTargetId) return;
+    const editTarget = areaBugs.flatMap((group) => group.bugs).find((bug) => bug.id === bugEditTargetId);
     if (!bugEditNombre.trim()) {
       setBugEditError("El nombre no puede quedar vacío.");
       return;
@@ -7550,6 +7816,12 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
         estrategias: cleanItems(bugEditEstrategias),
         aparece: cleanItems(bugEditAparece),
         disparadores: cleanItems(bugEditDisparadores),
+        categoria: bugEditCategoria,
+        barMode: bugEditBarMode,
+        manualDebugueado: bugEditDebugueado ? 1 : 0,
+        ...(bugEditReflexion.trim() && editTarget
+          ? { reflexiones: [...(editTarget.reflexiones ?? []), newReflexion(bugEditReflexion.trim())] }
+          : {}),
       },
     });
   };
@@ -7593,11 +7865,11 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
   const panelBody = (
             <>
               {isLoading ? (
-                <div className="text-sm text-muted-foreground">Cargando bugs...</div>
+                <div className="text-sm text-muted-foreground">Cargando errores...</div>
               ) : isError ? (
-                <div className="text-sm text-red-500">No se pudieron cargar los bugs de las areas.</div>
+                <div className="text-sm text-red-500">No se pudieron cargar los errores de las areas.</div>
               ) : visibleGroups.length === 0 ? (
-                <div className="text-sm text-muted-foreground">{onlyResolved ? "Todavía no debugueaste ningún bug." : "No hay bugs registrados en tus areas."}</div>
+                <div className="text-sm text-muted-foreground">{onlyResolved ? "Todavía no debugueaste ningún error." : "No hay errores registrados en tus areas."}</div>
               ) : selectedBug && selectedAreaGroup ? (
                 <div className="space-y-4 min-w-0">
                   <div className="flex items-center justify-between gap-3 min-w-0">
@@ -7634,8 +7906,15 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                         <span className={`h-2 w-2 rounded-full ${bugStatusColor[selectedBug.status]}`} />
                         {bugStatusLabel[selectedBug.status]}
                       </span>
-                      <span className="text-[11px] text-muted-foreground">Registros: {selectedBug.registros?.length ?? 0}</span>
+                      <span className="inline-flex items-center gap-2">
+                        <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border text-muted-foreground">
+                          {BUG_CATEGORIES.find((c) => c.value === (selectedBug.categoria ?? ""))?.label}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground">Registros: {selectedBug.registros?.length ?? 0}</span>
+                      </span>
                     </div>
+
+                    <BugProgressBar bug={selectedBug} />
 
                     <p className="text-sm text-muted-foreground break-words">{selectedBug.desc || "Sin descripcion"}</p>
 
@@ -7671,6 +7950,12 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                         </div>
                       </div>
                     )}
+
+                    <BugReflexionesTimeline
+                      bug={selectedBug}
+                      isSaving={addBugReflexion.isPending}
+                      onAdd={(texto) => addBugReflexion.mutateAsync({ bug: selectedBug, texto })}
+                    />
                   </section>
 
                   <section className="rounded-xl border border-border/50 bg-muted/10 p-4 space-y-3">
@@ -7748,6 +8033,12 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                             {registro.estrategia && (
                               <p className="text-xs break-words"><span className="text-muted-foreground">Estrategia:</span> {registro.estrategia}</p>
                             )}
+                            {registro.reflexion && (
+                              <p className="text-xs break-words"><span className="text-muted-foreground">Reflexión:</span> {registro.reflexion}</p>
+                            )}
+                            {registro.aprendizaje && (
+                              <p className="text-xs break-words"><span className="text-muted-foreground">Aprendizaje:</span> {registro.aprendizaje}</p>
+                            )}
                           </article>
                         ))
                       )}
@@ -7778,146 +8069,226 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                         {editingRecordId ? "Editar registro" : "Nuevo registro"}
                       </h5>
                     </div>
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <div>
-                        <Label htmlFor="global-record-fecha" className="text-xs text-muted-foreground">Fecha</Label>
-                        <Input
-                          id="global-record-fecha"
-                          type="date"
-                          value={recordFecha}
-                          disabled={!recordFecha}
-                          onChange={(e) => setRecordFecha(e.target.value)}
-                        />
-                        <label className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
-                          <input
-                            type="checkbox"
-                            checked={!recordFecha}
-                            onChange={(e) => setRecordFecha(e.target.checked ? "" : new Date().toISOString().slice(0, 10))}
+                    <WizardStepDots step={recordStep} total={4} labels={["Resultado", "Situación", "Estrategia", "Reflexión"]} />
+
+                    {recordStep === 0 && (
+                      <>
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <div>
+                            <Label htmlFor="global-record-fecha" className="text-xs text-muted-foreground">Fecha</Label>
+                            <Input
+                              id="global-record-fecha"
+                              type="date"
+                              value={recordFecha}
+                              disabled={!recordFecha}
+                              onChange={(e) => setRecordFecha(e.target.value)}
+                            />
+                            <label className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                checked={!recordFecha}
+                                onChange={(e) => setRecordFecha(e.target.checked ? "" : new Date().toISOString().slice(0, 10))}
+                              />
+                              No definida
+                            </label>
+                          </div>
+                          <div>
+                            <Label htmlFor="global-record-resultado" className="text-xs text-muted-foreground">Resultado</Label>
+                            <select
+                              id="global-record-resultado"
+                              value={recordResultado}
+                              onChange={(e) => setRecordResultado(e.target.value as "victoria" | "empate" | "derrota")}
+                              className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                            >
+                              <option value="victoria">Victoria</option>
+                              <option value="empate">Empate</option>
+                              <option value="derrota">Derrota</option>
+                            </select>
+                          </div>
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">Estado del error</Label>
+                          <div className="mt-1 grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              className={`rounded-md border px-3 py-2 text-xs transition-colors ${!recordMarcarDebugueado ? "border-foreground bg-muted/60 text-foreground" : "border-border/60 text-muted-foreground hover:bg-muted/40"}`}
+                              onClick={() => setRecordMarcarDebugueado(false)}
+                            >
+                              Sigue debugueando
+                            </button>
+                            <button
+                              type="button"
+                              className={`inline-flex items-center justify-center gap-1.5 rounded-md border px-3 py-2 text-xs transition-colors ${recordMarcarDebugueado ? "border-emerald-400 bg-emerald-400/10 text-emerald-500" : "border-border/60 text-muted-foreground hover:bg-muted/40"}`}
+                              onClick={() => setRecordMarcarDebugueado(true)}
+                              data-testid="all-bugs-record-debugueado"
+                            >
+                              <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                              Debugueado
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    {recordStep === 1 && (
+                      <>
+                        <div>
+                          <Label htmlFor="global-record-situacion" className="text-xs text-muted-foreground">Situacion</Label>
+                          <Textarea
+                            id="global-record-situacion"
+                            rows={3}
+                            autoFocus
+                            value={recordSituacion}
+                            onChange={(e) => setRecordSituacion(e.target.value)}
                           />
-                          No definida
-                        </label>
-                      </div>
-                      <div>
-                        <Label htmlFor="global-record-resultado" className="text-xs text-muted-foreground">Resultado</Label>
-                        <select
-                          id="global-record-resultado"
-                          value={recordResultado}
-                          onChange={(e) => setRecordResultado(e.target.value as "victoria" | "empate" | "derrota")}
-                          className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
-                        >
-                          <option value="victoria">Victoria</option>
-                          <option value="empate">Empate</option>
-                          <option value="derrota">Derrota</option>
-                        </select>
-                      </div>
-                    </div>
+                        </div>
+                        <div>
+                          <Label htmlFor="global-record-disparador" className="text-xs text-muted-foreground">Disparador</Label>
+                          <select
+                            id="global-record-disparador"
+                            value={recordDisparadorMode === "new" ? "__new__" : recordDisparador}
+                            onChange={(e) => {
+                              if (e.target.value === "__new__") {
+                                setRecordDisparadorMode("new");
+                                setRecordDisparador("");
+                              } else {
+                                setRecordDisparadorMode("select");
+                                setRecordDisparador(e.target.value);
+                              }
+                            }}
+                            className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                          >
+                            <option value="">Sin disparador</option>
+                            {(selectedBug?.disparadores ?? []).map((item) => (
+                              <option key={item} value={item}>{item}</option>
+                            ))}
+                            <option value="__new__">＋ nuevo disparador</option>
+                          </select>
+                          {recordDisparadorMode === "new" && (
+                            <Textarea
+                              className="mt-2"
+                              rows={2}
+                              placeholder="Nuevo disparador"
+                              value={recordDisparador}
+                              onChange={(e) => setRecordDisparador(e.target.value)}
+                            />
+                          )}
+                        </div>
+                      </>
+                    )}
 
-                    <div>
-                      <Label htmlFor="global-record-situacion" className="text-xs text-muted-foreground">Situacion</Label>
-                      <Textarea
-                        id="global-record-situacion"
-                        rows={2}
-                        value={recordSituacion}
-                        onChange={(e) => setRecordSituacion(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="global-record-disparador" className="text-xs text-muted-foreground">Disparador</Label>
-                      <select
-                        id="global-record-disparador"
-                        value={recordDisparadorMode === "new" ? "__new__" : recordDisparador}
-                        onChange={(e) => {
-                          if (e.target.value === "__new__") {
-                            setRecordDisparadorMode("new");
-                            setRecordDisparador("");
-                          } else {
-                            setRecordDisparadorMode("select");
-                            setRecordDisparador(e.target.value);
-                          }
-                        }}
-                        className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
-                      >
-                        <option value="">Sin disparador</option>
-                        {(selectedBug?.disparadores ?? []).map((item) => (
-                          <option key={item} value={item}>{item}</option>
-                        ))}
-                        <option value="__new__">＋ nuevo disparador</option>
-                      </select>
-                      {recordDisparadorMode === "new" && (
-                        <Textarea
-                          className="mt-2"
-                          rows={2}
-                          placeholder="Nuevo disparador"
-                          value={recordDisparador}
-                          onChange={(e) => setRecordDisparador(e.target.value)}
-                        />
-                      )}
-                    </div>
-                    <div>
-                      <Label htmlFor="global-record-skill" className="text-xs text-muted-foreground">Skills linkeados</Label>
-                      <div className="mt-1" id="global-record-skill">
-                        <SkillLinkPicker skills={selectedAreaSkills} value={recordSkillIds} onChange={setRecordSkillIds} emptyLabel="Sin skills disponibles" areas={areas} currentAreaId={selectedAreaGroup?.areaId ?? null} />
-                      </div>
-                    </div>
-                    <div>
-                      <Label htmlFor="global-record-body" className="text-xs text-muted-foreground">Componente corporal a linkear</Label>
-                      <div className="mt-1" id="global-record-body">
-                        <BodyLinkPicker value={recordBodyLinks} onChange={setRecordBodyLinks} />
-                      </div>
-                    </div>
+                    {recordStep === 2 && (
+                      <>
+                        <div>
+                          <Label htmlFor="global-record-estrategia" className="text-xs text-muted-foreground">Estrategia</Label>
+                          <select
+                            id="global-record-estrategia"
+                            value={recordEstrategiaMode === "new" ? "__new__" : recordEstrategia}
+                            onChange={(e) => {
+                              if (e.target.value === "__new__") {
+                                setRecordEstrategiaMode("new");
+                                setRecordEstrategia("");
+                              } else {
+                                setRecordEstrategiaMode("select");
+                                setRecordEstrategia(e.target.value);
+                              }
+                            }}
+                            className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                          >
+                            <option value="">Sin estrategia</option>
+                            {(selectedBug?.estrategias ?? []).map((item) => (
+                              <option key={item} value={item}>{item}</option>
+                            ))}
+                            <option value="__new__">＋ nueva estrategia</option>
+                          </select>
+                          {recordEstrategiaMode === "new" && (
+                            <Textarea
+                              className="mt-2"
+                              rows={2}
+                              placeholder="Nueva estrategia"
+                              value={recordEstrategia}
+                              onChange={(e) => setRecordEstrategia(e.target.value)}
+                            />
+                          )}
+                        </div>
+                        <div>
+                          <Label htmlFor="global-record-skill" className="text-xs text-muted-foreground">Skills linkeados</Label>
+                          <div className="mt-1" id="global-record-skill">
+                            <SkillLinkPicker skills={selectedAreaSkills} value={recordSkillIds} onChange={setRecordSkillIds} emptyLabel="Sin skills disponibles" areas={areas} currentAreaId={selectedAreaGroup?.areaId ?? null} />
+                          </div>
+                        </div>
+                      </>
+                    )}
 
-                    <div>
-                      <Label htmlFor="global-record-estrategia" className="text-xs text-muted-foreground">Estrategia</Label>
-                      <select
-                        id="global-record-estrategia"
-                        value={recordEstrategiaMode === "new" ? "__new__" : recordEstrategia}
-                        onChange={(e) => {
-                          if (e.target.value === "__new__") {
-                            setRecordEstrategiaMode("new");
-                            setRecordEstrategia("");
-                          } else {
-                            setRecordEstrategiaMode("select");
-                            setRecordEstrategia(e.target.value);
-                          }
-                        }}
-                        className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
-                      >
-                        <option value="">Sin estrategia</option>
-                        {(selectedBug?.estrategias ?? []).map((item) => (
-                          <option key={item} value={item}>{item}</option>
-                        ))}
-                        <option value="__new__">＋ nueva estrategia</option>
-                      </select>
-                      {recordEstrategiaMode === "new" && (
-                        <Textarea
-                          className="mt-2"
-                          rows={2}
-                          placeholder="Nueva estrategia"
-                          value={recordEstrategia}
-                          onChange={(e) => setRecordEstrategia(e.target.value)}
-                        />
-                      )}
-                    </div>
+                    {recordStep === 3 && (
+                      <>
+                        <div>
+                          <Label htmlFor="global-record-reflexion" className="text-xs text-muted-foreground">Reflexión</Label>
+                          <Textarea
+                            id="global-record-reflexion"
+                            rows={3}
+                            autoFocus
+                            placeholder="¿Qué te deja este registro?"
+                            value={recordReflexion}
+                            onChange={(e) => setRecordReflexion(e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="global-record-aprendizaje" className="text-xs text-muted-foreground">Nuevo aprendizaje</Label>
+                          {editingRecordId && selectedBug.registros.find((r) => r.id === editingRecordId)?.aprendizaje ? (
+                            <p className="mt-1 text-xs break-words">{recordAprendizaje}</p>
+                          ) : (
+                            <>
+                              <Input
+                                id="global-record-aprendizaje"
+                                placeholder="Título del aprendizaje (se suma al Journal)"
+                                value={recordAprendizaje}
+                                onChange={(e) => setRecordAprendizaje(e.target.value)}
+                              />
+                              {recordAprendizaje.trim() && (
+                                <Textarea
+                                  className="mt-2"
+                                  rows={2}
+                                  placeholder="Detalle (opcional)"
+                                  value={recordAprendizajeDetalle}
+                                  onChange={(e) => setRecordAprendizajeDetalle(e.target.value)}
+                                />
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </>
+                    )}
 
                     {recordFormError && (
                       <p className="text-xs text-red-500">{recordFormError}</p>
                     )}
 
-                    <div className="flex justify-end gap-2">
-                      <Button type="button" variant="outline" onClick={resetRecordForm}>
-                        Cancelar
-                      </Button>
+                    <div className="flex justify-between gap-2">
                       <Button
                         type="button"
-                        onClick={handleCreateRecord}
-                        disabled={createBugRecord.isPending || updateBugRecord.isPending}
+                        variant="outline"
+                        onClick={() => (recordStep === 0 ? resetRecordForm() : setRecordStep((prev) => prev - 1))}
                       >
-                        {createBugRecord.isPending || updateBugRecord.isPending
-                          ? "Guardando..."
-                          : editingRecordId
-                            ? "Guardar cambios"
-                            : "Agregar registro"}
+                        {recordStep === 0 ? "Cancelar" : "Atrás"}
                       </Button>
+                      {recordStep < 3 ? (
+                        <Button type="button" onClick={() => setRecordStep((prev) => prev + 1)}>
+                          Siguiente
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          onClick={handleCreateRecord}
+                          disabled={createBugRecord.isPending || updateBugRecord.isPending}
+                        >
+                          {createBugRecord.isPending || updateBugRecord.isPending
+                            ? "Guardando..."
+                            : editingRecordId
+                              ? "Guardar cambios"
+                              : "Agregar registro"}
+                        </Button>
+                      )}
                     </div>
                     </div>
                     </div>,
@@ -7927,26 +8298,42 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
               ) : (
                 <div className="space-y-4 min-w-0">
                   {visibleGroups.map((group) => {
-                    const isAddingHere = addBugAreaId === group.areaId;
+                    const isExpanded = !collapsedAreaIds.has(group.areaId);
+                    const categoryGroups = BUG_CATEGORIES
+                      .map((category) => ({
+                        ...category,
+                        bugs: group.bugs.filter((bug) => (bug.categoria ?? "") === category.value),
+                      }))
+                      .filter((category) => category.bugs.length > 0);
                     return (
                     <section key={group.areaId} className="rounded-xl border border-border/50 bg-muted/10 min-w-0 overflow-hidden">
                       <button
                         type="button"
                         className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left border-b border-border/40"
-                        onClick={() => setExpandedAreaId((prev) => (prev === group.areaId ? null : group.areaId))}
+                        onClick={() => setCollapsedAreaIds((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(group.areaId)) next.delete(group.areaId);
+                          else next.add(group.areaId);
+                          return next;
+                        })}
                       >
                         <h4 className="text-sm font-medium text-foreground min-w-0 truncate pr-2">{group.areaName}</h4>
                         <span className="inline-flex items-center gap-2 shrink-0">
-                          <span className="text-xs text-muted-foreground">{group.bugs.length} bugs</span>
+                          <span className="text-xs text-muted-foreground">{group.bugs.length} {group.bugs.length === 1 ? "error" : "errores"}</span>
                           <ChevronDown
-                            className={`h-4 w-4 text-muted-foreground transition-transform ${expandedAreaId === group.areaId ? "rotate-180" : ""}`}
+                            className={`h-4 w-4 text-muted-foreground transition-transform ${isExpanded ? "rotate-180" : ""}`}
                           />
                         </span>
                       </button>
 
-                      {expandedAreaId === group.areaId && (
-                        <div className="p-3 grid gap-2">
-                          {group.bugs.map((bug) => (
+                      {isExpanded && (
+                        <div className="p-3 grid gap-3">
+                          {categoryGroups.map((category) => (
+                            <div key={category.value || "sin-categoria"} className="grid gap-2 min-w-0">
+                              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                {category.label} · {category.bugs.length}
+                              </p>
+                          {category.bugs.map((bug) => (
                             <article
                               key={bug.id}
                               className="relative rounded-lg border border-border/50 bg-background/60 p-3 cursor-pointer select-none hover:bg-background min-w-0"
@@ -7987,7 +8374,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      if (window.confirm(`¿Eliminar el bug "${bug.nombre}" y todos sus registros?`)) {
+                                      if (window.confirm(`¿Eliminar el error "${bug.nombre}" y todos sus registros?`)) {
                                         deleteBug.mutate({ id: bug.id, registros: bug.registros ?? [] });
                                       }
                                     }}
@@ -7999,77 +8386,130 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                                   </button>
                                 </div>
                               )}
-                              {(() => {
-                                const progressCount = bug.status === "debugueado" ? 5 : Math.min(5, bug.victoryCount ?? 0);
-                                const progressPercent = Math.max(0, Math.min(100, (progressCount / 5) * 100));
-
-                                return (
-                                  <>
-                                    <div className="flex items-center justify-between gap-2 min-w-0">
-                                      <p className="text-xs font-medium uppercase tracking-wide text-foreground truncate min-w-0 flex-1">{bug.nombre}</p>
-                                      <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground shrink-0">
-                                        <span className={`h-2 w-2 rounded-full ${bugStatusColor[bug.status]}`} />
-                                        {bugStatusLabel[bug.status]}
-                                      </span>
-                                    </div>
-
-                                    <div className="mt-2 w-full h-2 bg-muted rounded-full overflow-hidden">
-                                      <div
-                                        className="h-full bg-blue-500 rounded-full transition-all duration-300"
-                                        style={{ width: `${progressPercent}%` }}
-                                      />
-                                    </div>
-                                  </>
-                                );
-                              })()}
+                              <div className="flex items-center justify-between gap-2 min-w-0">
+                                <p className="text-xs font-medium uppercase tracking-wide text-foreground truncate min-w-0 flex-1">{bug.nombre}</p>
+                                <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground shrink-0">
+                                  <span className={`h-2 w-2 rounded-full ${bugStatusColor[bug.status]}`} />
+                                  {bugStatusLabel[bug.status]}
+                                </span>
+                              </div>
+                              <BugProgressBar bug={bug} />
                             </article>
                           ))}
-
-                          {!onlyResolved && (isAddingHere ? (
-                            <div className="rounded-lg border border-dashed border-border/60 bg-background/40 p-3 space-y-2">
-                              <Input
-                                placeholder="NOMBRE"
-                                value={newBugNombre}
-                                onChange={(e) => setNewBugNombre(e.target.value.toUpperCase())}
-                                className="uppercase h-8 text-xs"
-                                autoFocus
-                              />
-                              <Textarea
-                                placeholder="¿Qué patrón/comportamiento es este bug?"
-                                rows={2}
-                                value={newBugDesc}
-                                onChange={(e) => setNewBugDesc(e.target.value)}
-                                className="text-xs resize-none"
-                              />
-                              <div className="flex justify-end gap-2">
-                                <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setAddBugAreaId(null); setNewBugNombre(""); setNewBugDesc(""); }}>Cancelar</Button>
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  className="h-7 text-xs"
-                                  disabled={!newBugNombre.trim() || createBug.isPending}
-                                  onClick={() => createBug.mutate({ areaId: group.areaId, nombre: newBugNombre.trim(), desc: newBugDesc.trim() })}
-                                >
-                                  Crear bug
-                                </Button>
-                              </div>
                             </div>
-                          ) : (
+                          ))}
+
+                          {!onlyResolved && (
                             <button
                               type="button"
                               className="flex w-full items-center justify-center rounded-lg border border-dashed border-border/60 bg-background/40 py-2 text-xs text-muted-foreground hover:bg-muted/40 transition-colors"
-                              onClick={() => { setAddBugAreaId(group.areaId); setNewBugNombre(""); setNewBugDesc(""); }}
+                              onClick={() => openNewBugWizard(group.areaId)}
                               data-testid="all-bugs-add-bug"
                             >
-                              <Plus className="h-3.5 w-3.5 mr-1" /> Nuevo bug
+                              <Plus className="h-3.5 w-3.5 mr-1" /> Nuevo error
                             </button>
-                          ))}
+                          )}
                         </div>
                       )}
                     </section>
                     );
                   })}
                 </div>
+              )}
+              {addBugAreaId && createPortal(
+                <div
+                  className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-black/70 p-4 py-10"
+                  onClick={closeNewBugWizard}
+                >
+                  <div
+                    className="w-full max-w-lg rounded-xl border border-border/60 bg-background p-5 space-y-3 shadow-2xl"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="flex items-center justify-between gap-2 min-w-0">
+                      <h5 className="text-sm font-semibold uppercase tracking-wide text-foreground">Nuevo error</h5>
+                      <span className="text-[11px] uppercase tracking-wide text-muted-foreground truncate">
+                        {areaBugs.find((group) => group.areaId === addBugAreaId)?.areaName}
+                      </span>
+                    </div>
+                    <WizardStepDots step={newBugStep} total={4} labels={["Error", "Categoría", "Barra", "Reflexión"]} />
+
+                    {newBugStep === 0 && (
+                      <>
+                        <div>
+                          <Label htmlFor="new-bug-nombre" className="text-xs text-muted-foreground">Nombre</Label>
+                          <Input
+                            id="new-bug-nombre"
+                            placeholder="NOMBRE"
+                            value={newBugNombre}
+                            onChange={(e) => setNewBugNombre(e.target.value.toUpperCase())}
+                            className="uppercase"
+                            autoFocus
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="new-bug-desc" className="text-xs text-muted-foreground">Descripción</Label>
+                          <Textarea
+                            id="new-bug-desc"
+                            placeholder="¿Qué patrón/comportamiento es este error?"
+                            rows={3}
+                            value={newBugDesc}
+                            onChange={(e) => setNewBugDesc(e.target.value)}
+                          />
+                        </div>
+                      </>
+                    )}
+
+                    {newBugStep === 1 && (
+                      <BugCategoriaPicker value={newBugCategoria} onChange={setNewBugCategoria} />
+                    )}
+
+                    {newBugStep === 2 && (
+                      <BugBarModePicker value={newBugBarMode} onChange={setNewBugBarMode} />
+                    )}
+
+                    {newBugStep === 3 && (
+                      <div>
+                        <Label htmlFor="new-bug-reflexion" className="text-xs text-muted-foreground">Reflexión (opcional)</Label>
+                        <Textarea
+                          id="new-bug-reflexion"
+                          rows={3}
+                          autoFocus
+                          placeholder="¿Qué ves en este error?"
+                          value={newBugReflexion}
+                          onChange={(e) => setNewBugReflexion(e.target.value)}
+                        />
+                      </div>
+                    )}
+
+                    {createBug.isError && (
+                      <p className="text-xs text-red-500">No se pudo crear el error.</p>
+                    )}
+
+                    <div className="flex justify-between gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => (newBugStep === 0 ? closeNewBugWizard() : setNewBugStep((prev) => prev - 1))}
+                      >
+                        {newBugStep === 0 ? "Cancelar" : "Atrás"}
+                      </Button>
+                      {newBugStep < 3 ? (
+                        <Button
+                          type="button"
+                          disabled={newBugStep === 0 && !newBugNombre.trim()}
+                          onClick={() => setNewBugStep((prev) => prev + 1)}
+                        >
+                          Siguiente
+                        </Button>
+                      ) : (
+                        <Button type="button" disabled={!newBugNombre.trim() || createBug.isPending} onClick={handleCreateBug}>
+                          {createBug.isPending ? "Creando..." : "Crear error"}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>,
+                document.body
               )}
               {isBugEditOpen && createPortal(
                 <div
@@ -8080,7 +8520,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                     className="w-full max-w-lg rounded-xl border border-border/60 bg-background p-5 space-y-3 shadow-2xl"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <h5 className="text-sm font-semibold uppercase tracking-wide text-foreground">Editar bug</h5>
+                    <h5 className="text-sm font-semibold uppercase tracking-wide text-foreground">Editar error</h5>
                     <div>
                       <Label htmlFor="global-bug-nombre" className="text-xs text-muted-foreground">Nombre</Label>
                       <Input
@@ -8095,9 +8535,29 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                       <Textarea
                         id="global-bug-desc"
                         rows={3}
-                        placeholder="¿Qué patrón/comportamiento es este bug?"
+                        placeholder="¿Qué patrón/comportamiento es este error?"
                         value={bugEditDesc}
                         onChange={(e) => setBugEditDesc(e.target.value)}
+                      />
+                    </div>
+                    <BugCategoriaPicker value={bugEditCategoria} onChange={setBugEditCategoria} />
+                    <BugBarModePicker value={bugEditBarMode} onChange={setBugEditBarMode} />
+                    <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={bugEditDebugueado}
+                        onChange={(e) => setBugEditDebugueado(e.target.checked)}
+                      />
+                      Marcar como debugueado
+                    </label>
+                    <div>
+                      <Label htmlFor="global-bug-reflexion" className="text-xs text-muted-foreground">Nueva reflexión</Label>
+                      <Textarea
+                        id="global-bug-reflexion"
+                        rows={2}
+                        placeholder="Se suma a la línea de reflexiones"
+                        value={bugEditReflexion}
+                        onChange={(e) => setBugEditReflexion(e.target.value)}
                       />
                     </div>
                     <BugListEditor
@@ -8164,7 +8624,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-5 py-4 border-b border-border/50 flex items-center justify-between">
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-foreground">Rewiring / bugs</h3>
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-foreground">Errores</h3>
             </div>
 
             <div className="p-4 sm:p-5 overflow-y-auto overflow-x-hidden max-h-[calc(85dvh-70px)]">

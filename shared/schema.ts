@@ -249,9 +249,19 @@ export const sourceBugs = pgTable("source_bugs", {
   aparece: jsonb("aparece").notNull().$type<string[]>().default([]),
   disparadores: jsonb("disparadores").notNull().$type<string[]>().default([]),
   estrategias: jsonb("estrategias").notNull().$type<string[]>().default([]),
+  // "" = sin categoría.
+  categoria: text("categoria").$type<"" | "ups" | "stretch" | "alto-riesgo" | "aha">().notNull().default(""),
+  // Qué barra muestra: 5 victorias, conteo victorias/empates/derrotas, o ninguna (solo registros).
+  barMode: text("bar_mode").$type<"victorias" | "ved" | "ninguna">().notNull().default("victorias"),
+  // Marcado a mano como debugueado (desde un registro o la edición): gana sobre la barra.
+  manualDebugueado: integer("manual_debugueado").$type<0 | 1>().notNull().default(0),
+  // Reflexiones sueltas del error (las de los registros viven en source_bug_records.reflexion).
+  reflexiones: jsonb("reflexiones").notNull().$type<SourceBugReflexion[]>().default([]),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
+export type SourceBugReflexion = { id: string; texto: string; fecha: string };
 
 export const sourceBugRecords = pgTable("source_bug_records", {
   id: varchar("id").primaryKey(),
@@ -267,6 +277,9 @@ export const sourceBugRecords = pgTable("source_bug_records", {
   disparador: text("disparador").notNull().default(""),
   estrategia: text("estrategia").notNull().default(""),
   resultado: text("resultado").$type<"victoria" | "empate" | "derrota">().notNull().default("empate"),
+  reflexion: text("reflexion").notNull().default(""),
+  // Título del aprendizaje que se cargó con el registro (también queda en journal_learnings).
+  aprendizaje: text("aprendizaje").notNull().default(""),
   // Si el registro se generó desde un +10/-10 de un error de nodo, guarda el id de ese
   // node_error_records para no volver a insertarlo si el confirm se reintenta.
   nodeErrorRecordId: varchar("node_error_record_id"),
@@ -933,6 +946,10 @@ export const insertSourceBugSchema = createInsertSchema(sourceBugs)
   .omit({ id: true, createdAt: true, updatedAt: true })
   .extend({
     status: z.enum(["identificado", "debugueando", "debugueado"]).optional(),
+    categoria: z.enum(["", "ups", "stretch", "alto-riesgo", "aha"]).optional(),
+    barMode: z.enum(["victorias", "ved", "ninguna"]).optional(),
+    manualDebugueado: z.union([z.literal(0), z.literal(1)]).optional(),
+    reflexiones: z.array(z.object({ id: z.string(), texto: z.string(), fecha: z.string() })).optional(),
   });
 export const insertSourceBugRecordSchema = createInsertSchema(sourceBugRecords)
   .omit({ id: true, createdAt: true })
@@ -941,6 +958,8 @@ export const insertSourceBugRecordSchema = createInsertSchema(sourceBugRecords)
     skillIds: z.array(z.string()).optional().default([]),
     disparador: z.string().optional().default(""),
     estrategia: z.string().optional().default(""),
+    reflexion: z.string().optional().default(""),
+    aprendizaje: z.string().optional().default(""),
     nodeErrorRecordId: z.string().optional().nullable(),
   });
 export type InsertSourceDescription = z.infer<typeof insertSourceDescriptionSchema>;

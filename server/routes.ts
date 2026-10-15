@@ -145,20 +145,20 @@ async function createLoggedSideQuestNode(
   link: { areaId?: string | null; projectId?: string | null },
   userId: string,
   title: string,
-): Promise<void> {
+): Promise<string | null> {
   const areaId = link.areaId || undefined;
   const projectId = areaId ? undefined : (link.projectId || undefined);
-  if (!areaId && !projectId) return;
+  if (!areaId && !projectId) return null;
 
   const owner = areaId ? await storage.getArea(areaId) : await storage.getProject(projectId!);
-  if (!owner || owner.userId !== userId) return;
+  if (!owner || owner.userId !== userId) return null;
 
   const tree = (areaId ? await storage.getSkills(areaId) : await storage.getProjectSkills(projectId!))
     .filter(s => !s.parentSkillId)
     .sort((a, b) => (a.level - b.level) || ((a.levelPosition ?? 0) - (b.levelPosition ?? 0)));
   const available = tree.find(s => s.status === "available" && (s.levelPosition ?? 0) > 1);
   const anchor = available ?? [...tree].reverse().find(s => s.status === "mastered");
-  if (!anchor) return;
+  if (!anchor) return null;
 
   const level = anchor.level;
   const skill = await storage.createSkill({
@@ -187,6 +187,7 @@ async function createLoggedSideQuestNode(
   }
   await storage.recalculateYCoordinates({ areaId, projectId });
   await storage.recalculateAvailableStatus(level, { areaId, projectId, excludeSkillId: skill.id });
+  return skill.id;
 }
 
 export async function registerRoutes(
@@ -4410,6 +4411,12 @@ export async function registerRoutes(
       const data = { ...req.body, userId: req.userId };
       const validated = insertSourceBugSchema.parse(data);
       const bug = await storage.createSourceBug(validated);
+      // Un error nuevo queda registrado como nodo SideQuest en su área/proyecto.
+      try {
+        await createLoggedSideQuestNode({ areaId: bug.areaId, projectId: bug.projectId }, req.userId!, `Error: ${bug.nombre}`);
+      } catch (sideQuestError) {
+        console.error("[POST /api/source-bugs] SideQuest node error:", sideQuestError);
+      }
       res.status(201).json(bug);
     } catch (error: any) {
       const validationError = fromError(error);
@@ -4441,13 +4448,18 @@ export async function registerRoutes(
 
   app.post("/api/source-bugs/:id/records", requireAuth, async (req, res) => {
     try {
-      const data = { ...req.body, bugId: req.params.id, userId: req.userId };
+      const { marcarDebugueado, aprendizajeDetalle, ...body } = req.body ?? {};
+      const data = { ...body, bugId: req.params.id, userId: req.userId };
       const validated = insertSourceBugRecordSchema.parse(data);
 
       const bugBefore = await storage.getSourceBug(req.params.id);
       if (!bugBefore || bugBefore.userId !== req.userId) {
         res.status(404).json({ message: "Source bug not found" });
         return;
+      }
+      // "Debugueado" elegido en el registro: queda marcado antes de recalcular con el registro.
+      if (marcarDebugueado === true && bugBefore.manualDebugueado !== 1) {
+        await storage.updateSourceBug(req.params.id, { manualDebugueado: 1 });
       }
 
       const effectiveSkillIds = Array.from(new Set(
@@ -4474,6 +4486,28 @@ export async function registerRoutes(
         skillId: effectiveSkillIds[0] ?? null,
         skillIds: effectiveSkillIds,
       });
+
+      // Cada registro queda como nodo SideQuest en el área/proyecto del error; el aprendizaje
+      // nuevo (si hay) va al Journal colgado de ese nodo.
+      let sideQuestSkillId: string | null = null;
+      try {
+        sideQuestSkillId = await createLoggedSideQuestNode(
+          { areaId: bugBefore.areaId, projectId: bugBefore.projectId },
+          req.userId!,
+          `${bugBefore.nombre}: registro`,
+        );
+      } catch (sideQuestError) {
+        console.error("[POST /api/source-bugs/:id/records] SideQuest node error:", sideQuestError);
+      }
+      const aprendizajeTitle = typeof validated.aprendizaje === "string" ? validated.aprendizaje.trim() : "";
+      if (aprendizajeTitle) {
+        await storage.createJournalLearning({
+          userId: req.userId!,
+          skillId: sideQuestSkillId,
+          title: aprendizajeTitle,
+          sentence: typeof aprendizajeDetalle === "string" ? aprendizajeDetalle.trim() : "",
+        } as any);
+      }
 
       const bugAfter = await storage.getSourceBug(req.params.id);
       const bugProgress = {
@@ -4569,9 +4603,24 @@ export async function registerRoutes(
         }
       }
 
+      const { marcarDebugueado, aprendizajeDetalle, ...recordBody } = req.body ?? {};
+      if (typeof marcarDebugueado === "boolean" && (bug.manualDebugueado === 1) !== marcarDebugueado) {
+        await storage.updateSourceBug(existing.bugId, { manualDebugueado: marcarDebugueado ? 1 : 0 });
+      }
+      // Aprendizaje agregado recién al editar: también va al Journal.
+      const nextAprendizaje = typeof recordBody.aprendizaje === "string" ? recordBody.aprendizaje.trim() : "";
+      if (nextAprendizaje && !existing.aprendizaje) {
+        await storage.createJournalLearning({
+          userId: req.userId!,
+          skillId: null,
+          title: nextAprendizaje,
+          sentence: typeof aprendizajeDetalle === "string" ? aprendizajeDetalle.trim() : "",
+        } as any);
+      }
+
       const updatePayload = hasSkillInPayload
-        ? { ...req.body, skillId: nextSkillIds[0] ?? null, skillIds: nextSkillIds }
-        : req.body;
+        ? { ...recordBody, skillId: nextSkillIds[0] ?? null, skillIds: nextSkillIds }
+        : recordBody;
 
       const updated = await storage.updateSourceBugRecord(req.params.id, updatePayload);
       if (!updated) {

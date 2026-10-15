@@ -112,6 +112,19 @@ app.use((req, res, next) => {
     console.error("⚠ life_goals.short_term migration warning:", error.message);
   }
 
+  // Errores (ex "Rewiring / bugs"): categoría, tipo de barra, debugueado a mano, reflexiones
+  // sueltas del error, y reflexión/aprendizaje de cada registro.
+  try {
+    await db.execute(sql`ALTER TABLE "source_bugs" ADD COLUMN IF NOT EXISTS "categoria" text DEFAULT '' NOT NULL;`);
+    await db.execute(sql`ALTER TABLE "source_bugs" ADD COLUMN IF NOT EXISTS "bar_mode" text DEFAULT 'victorias' NOT NULL;`);
+    await db.execute(sql`ALTER TABLE "source_bugs" ADD COLUMN IF NOT EXISTS "manual_debugueado" integer DEFAULT 0 NOT NULL;`);
+    await db.execute(sql`ALTER TABLE "source_bugs" ADD COLUMN IF NOT EXISTS "reflexiones" jsonb DEFAULT '[]'::jsonb NOT NULL;`);
+    await db.execute(sql`ALTER TABLE "source_bug_records" ADD COLUMN IF NOT EXISTS "reflexion" text DEFAULT '' NOT NULL;`);
+    await db.execute(sql`ALTER TABLE "source_bug_records" ADD COLUMN IF NOT EXISTS "aprendizaje" text DEFAULT '' NOT NULL;`);
+  } catch (error: any) {
+    console.error("⚠ source_bugs errores migration warning:", error.message);
+  }
+
   // Mapa de habilidades radial por usuario, para compartirlo entre dispositivos.
   try {
     await db.execute(sql`
