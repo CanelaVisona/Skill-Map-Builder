@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTheme } from "next-themes";
 import { useSkillTree } from "@/lib/skill-context";
@@ -7,8 +7,17 @@ import { useSkillTree } from "@/lib/skill-context";
 // y se muestra en un iframe. Las áreas del skill tree viajan en el hash para que el mapa solo
 // deje elegir áreas que ya existen en vez de escribirlas a mano.
 export function RadarSkillMapModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const { areas } = useSkillTree();
+  const { areas, refreshSkillTrees } = useSkillTree();
   const { resolvedTheme } = useTheme();
+
+  // Al lograr un subskill el mapa crea un nodo SideQuest en el área y avisa para recargar los árboles.
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      if (e.origin === window.location.origin && e.data?.type === "radar-side-quest") refreshSkillTrees();
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [refreshSkillTrees]);
 
   const areaNames = (Array.isArray(areas) ? areas : [])
     .filter((a) => !a.upcoming)

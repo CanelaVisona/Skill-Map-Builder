@@ -406,8 +406,8 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
           el('title',{},an).textContent=x.n;
           el('rect',{class:'dot',x:ap[0]-4.5,y:ap[1]-4.5,width:9,height:9,transform:'rotate(45 '+ap[0].toFixed(1)+' '+ap[1].toFixed(1)+')'},an);
           el('circle',{class:'hit',cx:ap[0],cy:ap[1],r:8},an); top.push(an);
-          if(shown==='a'+i+'-'+k){ el('text',Object.assign({class:'nlbl'},place(i,ap,true)),an).textContent=x.n; top.push(an) }
-          press(an,function(){ var nuevo=!x.d, key='a'+i+'-'+k; x.d=true; shown=(!nuevo&&shown===key)?null:key; save(); closeEdit(); if(nuevo) burst(ap); render(); if(nuevo) flash($('pReal')) },function(){ openEdit(x.d?{i:i,j:a.level,k:k,actLock:true}:{i:i,j:a.level,k:k},ap) });
+          el('text',Object.assign({class:'nlbl'},place(i,ap,true)),an).textContent=x.n;
+          press(an,function(){ var nuevo=!x.d; x.d=true; save(); closeEdit(); if(nuevo) burst(ap); render(); if(nuevo) flash($('pReal')) },function(){ openEdit(x.d?{i:i,j:a.level,k:k,actLock:true}:{i:i,j:a.level,k:k},ap) });
         });
       }
       if(grp&&gPend(a)&&!gReady(a)){
@@ -418,7 +418,7 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
         el('circle',{class:'dot',cx:zp[0],cy:zp[1],r:10},zn);
         el('circle',{class:'hit',cx:zp[0],cy:zp[1],r:17},zn);
         el('text',Object.assign({class:'zlbl'},place(i,zp)),zn).textContent=nm;
-        press(zn,function(){ nx.level++; shown=null; save(); closeEdit(); burst(pt(i,rad(gAvg(a)))); render(); flash($('pReal')) },function(){});
+        press(zn,function(){ nx.level++; sideQuest(nm); shown=null; save(); closeEdit(); burst(pt(i,rad(gAvg(a)))); render(); flash($('pReal')) },function(){});
         top.push(zn);
       }
       var ready=grp?gReady(a):a.level>=skills.length, rp=pt(i,rad(skills.length)+34), lvl=grp?gTier(a)+1:a.tier+1;
@@ -455,9 +455,16 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
   function flash(elm){ elm.classList.remove('flash'); void elm.getBoundingClientRect(); elm.classList.add('flash') }
   function burst(p){ var b=el('circle',{class:'burst',cx:p[0],cy:p[1],r:14},$('gFx')); setTimeout(function(){ if(b.parentNode) b.parentNode.removeChild(b) },900) }
 
+  /* Un subskill logrado crea un nodo SideQuest confirmado en el skill tree del área de la app con el
+     mismo nombre que la zona actual; después se avisa a la app para que recargue los árboles. */
+  function sideQuest(title){
+    if(!API||!zones[sa]||!title) return;
+    fetch(API+'/side-quest',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({area:zones[sa].name,title:title})})
+      .then(function(r){ if(r.ok) try{ parent.postMessage({type:'radar-side-quest'},location.origin) }catch(e){} },function(){});
+  }
   function unlock(i){
     var a=areas[i]; if(a.level>=sk(a).length) return;
-    a.level++; shown=null; save(); closeEdit();
+    a.level++; sideQuest(sk(a)[a.level-1]); shown=null; save(); closeEdit();
     burst(pt(i,rad(a.level))); render(); flash($('pReal'));
   }
   function levelUp(i){

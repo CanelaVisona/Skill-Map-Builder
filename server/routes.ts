@@ -512,6 +512,29 @@ export async function registerRoutes(
     }
   });
 
+  // Un subskill logrado en el mapa de habilidades se registra como nodo SideQuest confirmado en el
+  // skill tree del área con el mismo nombre que la zona del mapa.
+  app.post("/api/radar-maps/side-quest", requireAuth, async (req, res) => {
+    try {
+      const area = typeof req.body?.area === "string" ? req.body.area.trim().toLowerCase() : "";
+      const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
+      if (!area || !title) {
+        res.status(400).json({ message: "area y title son obligatorios" });
+        return;
+      }
+      const match = (await storage.getAreas(req.userId!))
+        .find(a => !a.archived && a.name.trim().toLowerCase() === area);
+      if (!match) {
+        res.status(404).json({ message: "Área no encontrada" });
+        return;
+      }
+      await createLoggedSideQuestNode({ areaId: match.id }, req.userId!, title);
+      res.json({ ok: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Areas (protected)
   app.get("/api/areas", requireAuth, async (req, res) => {
     try {
