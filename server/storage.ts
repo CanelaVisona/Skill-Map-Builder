@@ -1939,6 +1939,7 @@ export class DbStorage implements IStorage {
       disparadores: Array.isArray(entry.disparadores) ? (entry.disparadores as string[]) : [],
       estrategias: Array.isArray(entry.estrategias) ? (entry.estrategias as string[]) : [],
       categoria: entry.categoria ?? "",
+      accion: entry.accion ?? "",
       barMode: entry.barMode ?? "victorias",
       manualDebugueado: entry.manualDebugueado ?? 0,
       reflexiones: Array.isArray(entry.reflexiones) ? (entry.reflexiones as SourceBugReflexion[]) : [],
@@ -1961,6 +1962,7 @@ export class DbStorage implements IStorage {
     if (entry.disparadores !== undefined) updateData.disparadores = Array.isArray(entry.disparadores) ? (entry.disparadores as string[]) : [];
     if (entry.estrategias !== undefined) updateData.estrategias = Array.isArray(entry.estrategias) ? (entry.estrategias as string[]) : [];
     if (entry.categoria !== undefined) updateData.categoria = entry.categoria;
+    if (entry.accion !== undefined) updateData.accion = entry.accion;
     if (entry.barMode !== undefined) updateData.barMode = entry.barMode;
     if (entry.manualDebugueado !== undefined) updateData.manualDebugueado = entry.manualDebugueado ? 1 : 0;
     if (entry.reflexiones !== undefined) updateData.reflexiones = Array.isArray(entry.reflexiones) ? (entry.reflexiones as SourceBugReflexion[]) : [];

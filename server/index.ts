@@ -116,6 +116,7 @@ app.use((req, res, next) => {
   // sueltas del error, y reflexión/aprendizaje de cada registro.
   try {
     await db.execute(sql`ALTER TABLE "source_bugs" ADD COLUMN IF NOT EXISTS "categoria" text DEFAULT '' NOT NULL;`);
+    await db.execute(sql`ALTER TABLE "source_bugs" ADD COLUMN IF NOT EXISTS "accion" text DEFAULT '' NOT NULL;`);
     await db.execute(sql`ALTER TABLE "source_bugs" ADD COLUMN IF NOT EXISTS "bar_mode" text DEFAULT 'victorias' NOT NULL;`);
     await db.execute(sql`ALTER TABLE "source_bugs" ADD COLUMN IF NOT EXISTS "manual_debugueado" integer DEFAULT 0 NOT NULL;`);
     await db.execute(sql`ALTER TABLE "source_bugs" ADD COLUMN IF NOT EXISTS "reflexiones" jsonb DEFAULT '[]'::jsonb NOT NULL;`);

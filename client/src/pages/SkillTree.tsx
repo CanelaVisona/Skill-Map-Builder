@@ -31,7 +31,7 @@ import HousePriorityList from "../components/HousePriorityList";
 import HouseRepairsList from "../components/HouseRepairsList";
 import { EvidenceBoardModalWrapper } from "@/components/EvidenceBoardModal";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, User, Menu, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Utensils, Swords, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt, OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation, Check, HelpCircle, PiggyBank, Search, X, Pentagon } from "lucide-react";
+import { ArrowLeft, ArrowRight, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, User, Menu, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Utensils, Swords, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt, OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation, Check, HelpCircle, PiggyBank, Search, X, Pentagon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -447,6 +447,7 @@ interface SourceBug {
   aparece: string[];
   disparadores: string[];
   estrategias: string[];
+  accion?: string;
   categoria?: BugCategoria;
   barMode?: BugBarMode;
   manualDebugueado?: 0 | 1;
@@ -7050,6 +7051,68 @@ function BugProgressBar({ bug }: { bug: SourceBug }) {
   );
 }
 
+// Título del error: el nombre (más opaco) -> la acción que lo reemplaza.
+function BugTitle({ bug }: { bug: Pick<SourceBug, "nombre" | "accion"> }) {
+  const accion = bug.accion?.trim();
+  return (
+    <>
+      <span className="opacity-50">{bug.nombre}</span>
+      {accion && (
+        <>
+          <span className="opacity-50 mx-1.5">→</span>
+          <span>{accion}</span>
+        </>
+      )}
+    </>
+  );
+}
+
+// Nombre del error, flecha, y la acción que se busca para reemplazarlo.
+function BugNombreAccionInputs({
+  nombre,
+  accion,
+  onNombreChange,
+  onAccionChange,
+  idPrefix,
+  autoFocus,
+}: {
+  nombre: string;
+  accion: string;
+  onNombreChange: (value: string) => void;
+  onAccionChange: (value: string) => void;
+  idPrefix: string;
+  autoFocus?: boolean;
+}) {
+  return (
+    <div>
+      <div className="flex items-end gap-2">
+        <div className="min-w-0 flex-1">
+          <Label htmlFor={`${idPrefix}-nombre`} className="text-xs text-muted-foreground">Error</Label>
+          <Input
+            id={`${idPrefix}-nombre`}
+            placeholder="ERROR"
+            value={nombre}
+            onChange={(e) => onNombreChange(e.target.value.toUpperCase())}
+            className="uppercase"
+            autoFocus={autoFocus}
+          />
+        </div>
+        <ArrowRight className="mb-3 h-4 w-4 shrink-0 text-muted-foreground" />
+        <div className="min-w-0 flex-1">
+          <Label htmlFor={`${idPrefix}-accion`} className="text-xs text-muted-foreground">Acción</Label>
+          <Input
+            id={`${idPrefix}-accion`}
+            placeholder="ACCIÓN"
+            value={accion}
+            onChange={(e) => onAccionChange(e.target.value.toUpperCase())}
+            className="uppercase"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BugCategoriaPicker({ value, onChange }: { value: BugCategoria; onChange: (value: BugCategoria) => void }) {
   return (
     <div>
@@ -7200,6 +7263,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
   // Alta de un bug nuevo directo a un área (mismo lugar en el modal y en el Journal).
   const [addBugAreaId, setAddBugAreaId] = useState<string | null>(null);
   const [newBugNombre, setNewBugNombre] = useState("");
+  const [newBugAccion, setNewBugAccion] = useState("");
   const [newBugDesc, setNewBugDesc] = useState("");
   // El alta de un error nuevo va en pasos (nombre -> categoría -> barra -> reflexión).
   const [newBugStep, setNewBugStep] = useState(0);
@@ -7209,6 +7273,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
   // Edición del bug seleccionado (long-press sobre el título en el detalle).
   const [isBugEditOpen, setIsBugEditOpen] = useState(false);
   const [bugEditNombre, setBugEditNombre] = useState("");
+  const [bugEditAccion, setBugEditAccion] = useState("");
   const [bugEditDesc, setBugEditDesc] = useState("");
   const [bugEditEstrategias, setBugEditEstrategias] = useState<string[]>([]);
   const [bugEditAparece, setBugEditAparece] = useState<string[]>([]);
@@ -7359,6 +7424,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
     mutationFn: async (data: {
       areaId: string;
       nombre: string;
+      accion: string;
       desc: string;
       categoria: BugCategoria;
       barMode: BugBarMode;
@@ -7381,7 +7447,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
   });
 
   const updateBug = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<Pick<SourceBug, "nombre" | "desc" | "aparece" | "disparadores" | "estrategias" | "categoria" | "barMode" | "manualDebugueado" | "reflexiones">> }) => {
+    mutationFn: async ({ id, data }: { id: string; data: Partial<Pick<SourceBug, "nombre" | "accion" | "desc" | "aparece" | "disparadores" | "estrategias" | "categoria" | "barMode" | "manualDebugueado" | "reflexiones">> }) => {
       const res = await fetch(`/api/source-bugs/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -7737,6 +7803,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
     setAddBugAreaId(areaId);
     setNewBugStep(0);
     setNewBugNombre("");
+    setNewBugAccion("");
     setNewBugDesc("");
     setNewBugCategoria("");
     setNewBugBarMode("victorias");
@@ -7747,6 +7814,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
     setAddBugAreaId(null);
     setNewBugStep(0);
     setNewBugNombre("");
+    setNewBugAccion("");
     setNewBugDesc("");
     setNewBugCategoria("");
     setNewBugBarMode("victorias");
@@ -7758,6 +7826,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
     createBug.mutate({
       areaId: addBugAreaId,
       nombre: newBugNombre.trim(),
+      accion: newBugAccion.trim(),
       desc: newBugDesc.trim(),
       categoria: newBugCategoria,
       barMode: newBugBarMode,
@@ -7788,6 +7857,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
     if (!bug) return;
     setBugEditTargetId(bug.id);
     setBugEditNombre(bug.nombre);
+    setBugEditAccion(bug.accion ?? "");
     setBugEditDesc(bug.desc ?? "");
     setBugEditEstrategias([...(bug.estrategias ?? [])]);
     setBugEditAparece([...(bug.aparece ?? [])]);
@@ -7812,6 +7882,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
       id: bugEditTargetId,
       data: {
         nombre: bugEditNombre.trim(),
+        accion: bugEditAccion.trim(),
         desc: bugEditDesc.trim(),
         estrategias: cleanItems(bugEditEstrategias),
         aparece: cleanItems(bugEditAparece),
@@ -7895,7 +7966,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                         onContextMenu={(e) => e.preventDefault()}
                         data-testid="all-bugs-bug-title"
                       >
-                        {selectedBug.nombre}
+                        <BugTitle bug={selectedBug} />
                       </h4>
                     </div>
                   </div>
@@ -8387,7 +8458,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                                 </div>
                               )}
                               <div className="flex items-center justify-between gap-2 min-w-0">
-                                <p className="text-xs font-medium uppercase tracking-wide text-foreground truncate min-w-0 flex-1">{bug.nombre}</p>
+                                <p className="text-xs font-medium uppercase tracking-wide text-foreground truncate min-w-0 flex-1"><BugTitle bug={bug} /></p>
                                 <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground shrink-0">
                                   <span className={`h-2 w-2 rounded-full ${bugStatusColor[bug.status]}`} />
                                   {bugStatusLabel[bug.status]}
@@ -8435,17 +8506,14 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
 
                     {newBugStep === 0 && (
                       <>
-                        <div>
-                          <Label htmlFor="new-bug-nombre" className="text-xs text-muted-foreground">Nombre</Label>
-                          <Input
-                            id="new-bug-nombre"
-                            placeholder="NOMBRE"
-                            value={newBugNombre}
-                            onChange={(e) => setNewBugNombre(e.target.value.toUpperCase())}
-                            className="uppercase"
-                            autoFocus
-                          />
-                        </div>
+                        <BugNombreAccionInputs
+                          idPrefix="new-bug"
+                          nombre={newBugNombre}
+                          accion={newBugAccion}
+                          onNombreChange={setNewBugNombre}
+                          onAccionChange={setNewBugAccion}
+                          autoFocus
+                        />
                         <div>
                           <Label htmlFor="new-bug-desc" className="text-xs text-muted-foreground">Descripción</Label>
                           <Textarea
@@ -8521,15 +8589,13 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                     onClick={(e) => e.stopPropagation()}
                   >
                     <h5 className="text-sm font-semibold uppercase tracking-wide text-foreground">Editar error</h5>
-                    <div>
-                      <Label htmlFor="global-bug-nombre" className="text-xs text-muted-foreground">Nombre</Label>
-                      <Input
-                        id="global-bug-nombre"
-                        value={bugEditNombre}
-                        onChange={(e) => setBugEditNombre(e.target.value.toUpperCase())}
-                        className="uppercase"
-                      />
-                    </div>
+                    <BugNombreAccionInputs
+                      idPrefix="global-bug"
+                      nombre={bugEditNombre}
+                      accion={bugEditAccion}
+                      onNombreChange={setBugEditNombre}
+                      onAccionChange={setBugEditAccion}
+                    />
                     <div>
                       <Label htmlFor="global-bug-desc" className="text-xs text-muted-foreground">Descripción</Label>
                       <Textarea

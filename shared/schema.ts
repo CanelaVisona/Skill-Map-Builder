@@ -243,6 +243,8 @@ export const sourceBugs = pgTable("source_bugs", {
   areaId: varchar("area_id"),
   projectId: varchar("project_id"),
   nombre: text("nombre").notNull(),
+  // Acción que se busca para reemplazar el error (el título se lee "NOMBRE → ACCIÓN").
+  accion: text("accion").notNull().default(""),
   status: text("status").$type<"identificado" | "debugueando" | "debugueado">().notNull().default("identificado"),
   victoryCount: integer("victory_count").notNull().default(0),
   desc: text("desc").notNull().default(""),
