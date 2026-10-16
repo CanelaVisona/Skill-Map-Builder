@@ -7067,10 +7067,12 @@ function BugTitle({ bug }: { bug: Pick<SourceBug, "nombre" | "accion"> }) {
   );
 }
 
-// Nombre del error, flecha, y la acción que se busca para reemplazarlo.
+// Nombre del error, flecha, y la estrategia elegida para reemplazarlo (de las del error, o una
+// nueva que se suma a su lista de estrategias al guardar).
 function BugNombreAccionInputs({
   nombre,
   accion,
+  estrategias,
   onNombreChange,
   onAccionChange,
   idPrefix,
@@ -7078,11 +7080,15 @@ function BugNombreAccionInputs({
 }: {
   nombre: string;
   accion: string;
+  estrategias: string[];
   onNombreChange: (value: string) => void;
   onAccionChange: (value: string) => void;
   idPrefix: string;
   autoFocus?: boolean;
 }) {
+  const options = Array.from(new Set(estrategias.map((item) => item.trim()).filter(Boolean)));
+  // Sin estrategias cargadas (error nuevo) se arranca directo escribiendo una.
+  const [isNew, setIsNew] = useState(() => options.length === 0 || (!!accion.trim() && !options.includes(accion.trim())));
   return (
     <div>
       <div className="flex items-end gap-2">
@@ -7099,16 +7105,37 @@ function BugNombreAccionInputs({
         </div>
         <ArrowRight className="mb-3 h-4 w-4 shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1">
-          <Label htmlFor={`${idPrefix}-accion`} className="text-xs text-muted-foreground">Acción</Label>
-          <Input
+          <Label htmlFor={`${idPrefix}-accion`} className="text-xs text-muted-foreground">Estrategia</Label>
+          <select
             id={`${idPrefix}-accion`}
-            placeholder="ACCIÓN"
-            value={accion}
-            onChange={(e) => onAccionChange(e.target.value.toUpperCase())}
-            className="uppercase"
-          />
+            value={isNew ? "__new__" : accion}
+            onChange={(e) => {
+              if (e.target.value === "__new__") {
+                setIsNew(true);
+                onAccionChange("");
+              } else {
+                setIsNew(false);
+                onAccionChange(e.target.value);
+              }
+            }}
+            className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+          >
+            <option value="">Sin estrategia</option>
+            {options.map((item) => (
+              <option key={item} value={item}>{item}</option>
+            ))}
+            <option value="__new__">＋ nueva estrategia</option>
+          </select>
         </div>
       </div>
+      {isNew && (
+        <Input
+          className="mt-2"
+          placeholder="Nueva estrategia"
+          value={accion}
+          onChange={(e) => onAccionChange(e.target.value)}
+        />
+      )}
     </div>
   );
 }
@@ -7425,6 +7452,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
       areaId: string;
       nombre: string;
       accion: string;
+      estrategias: string[];
       desc: string;
       categoria: BugCategoria;
       barMode: BugBarMode;
@@ -7827,6 +7855,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
       areaId: addBugAreaId,
       nombre: newBugNombre.trim(),
       accion: newBugAccion.trim(),
+      estrategias: newBugAccion.trim() ? [newBugAccion.trim()] : [],
       desc: newBugDesc.trim(),
       categoria: newBugCategoria,
       barMode: newBugBarMode,
@@ -7884,7 +7913,8 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
         nombre: bugEditNombre.trim(),
         accion: bugEditAccion.trim(),
         desc: bugEditDesc.trim(),
-        estrategias: cleanItems(bugEditEstrategias),
+        // La estrategia elegida como reemplazo queda siempre en la lista del error.
+        estrategias: cleanItems([...bugEditEstrategias, bugEditAccion]),
         aparece: cleanItems(bugEditAparece),
         disparadores: cleanItems(bugEditDisparadores),
         categoria: bugEditCategoria,
@@ -8512,6 +8542,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                           accion={newBugAccion}
                           onNombreChange={setNewBugNombre}
                           onAccionChange={setNewBugAccion}
+                          estrategias={[]}
                           autoFocus
                         />
                         <div>
@@ -8595,6 +8626,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                       accion={bugEditAccion}
                       onNombreChange={setBugEditNombre}
                       onAccionChange={setBugEditAccion}
+                      estrategias={bugEditEstrategias}
                     />
                     <div>
                       <Label htmlFor="global-bug-desc" className="text-xs text-muted-foreground">Descripción</Label>
