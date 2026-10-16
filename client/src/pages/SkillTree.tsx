@@ -8008,9 +8008,11 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                         {bugStatusLabel[selectedBug.status]}
                       </span>
                       <span className="inline-flex items-center gap-2">
-                        <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border text-muted-foreground">
-                          {BUG_CATEGORIES.find((c) => c.value === (selectedBug.categoria ?? ""))?.label}
-                        </span>
+                        {selectedBug.categoria && (
+                          <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border text-muted-foreground">
+                            {BUG_CATEGORIES.find((c) => c.value === selectedBug.categoria)?.label}
+                          </span>
+                        )}
                         <span className="text-[11px] text-muted-foreground">Registros: {selectedBug.registros?.length ?? 0}</span>
                       </span>
                     </div>
@@ -8431,9 +8433,11 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                         <div className="p-3 grid gap-3">
                           {categoryGroups.map((category) => (
                             <div key={category.value || "sin-categoria"} className="grid gap-2 min-w-0">
-                              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                                {category.label} · {category.bugs.length}
-                              </p>
+                              {category.value !== "" && (
+                                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                  {category.label} · {category.bugs.length}
+                                </p>
+                              )}
                           {category.bugs.map((bug) => (
                             <article
                               key={bug.id}
