@@ -298,6 +298,18 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const todayStr = getDateStr(new Date());
   const effectiveDate = previewDate ?? todayStr;
   const isPreview = previewDate !== null;
+  // Día pasado: es un registro de lo que pasó, no hay "tarea que toca ahora". Nada se atenúa
+  // (en hoy, lo que todavía no toca queda tenue), para que se lea todo lo de ese día.
+  const isPastDay = effectiveDate < todayStr;
+  // Confirmar algo mientras se edita un día pasado lo registra ese día (a la hora actual, para
+  // no cambiar el orden), no el día en que se toca. undefined = hoy/futuro: el server usa "ahora".
+  const pastDayCompletedAt = (): string | undefined => {
+    if (!isPastDay) return undefined;
+    const [y, m, d] = effectiveDate.split("-").map(Number);
+    const at = new Date();
+    at.setFullYear(y, m - 1, d);
+    return at.toISOString();
+  };
 
   // Al cerrar el modal, se vuelve siempre a "hoy" en la vista de progreso — no se queda
   // trabada en la previsualización de un día futuro de la sesión anterior.
@@ -464,7 +476,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   ];
 
   const patchSubSkill = useMutation({
-    mutationFn: async ({ id, updates }: { id: string; updates: { plannedDate?: string | null; plannedDuration?: number | null; plannedDurationManual?: 0 | 1; plannedDeadline?: string | null; status?: string } }) => {
+    mutationFn: async ({ id, updates }: { id: string; updates: { plannedDate?: string | null; plannedDuration?: number | null; plannedDurationManual?: 0 | 1; plannedDeadline?: string | null; status?: string; completedAt?: string } }) => {
       const res = await fetch(`/api/skills/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -800,6 +812,11 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         </>
       ),
       done,
+      // Confirmada: cae en la franja de la hora en que se confirmó (como los nodos extra), salvo
+      // que se la haya puesto a mano en otra.
+      defaultSlot: done && (p.lastConfirmedAt || p.updatedAt)
+        ? getTimeSlotKeyForDate(new Date((p.lastConfirmedAt || p.updatedAt)!))
+        : undefined,
     })),
     ...visibleManualTasks.map((t) => ({
       key: `manual:${t.id}`,
@@ -1010,7 +1027,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     if (subNodeBusy) return;
     setSubNodeBusy(true);
     try {
-      await toggleSubSkillFromToday(parentId, sub);
+      await toggleSubSkillFromToday(parentId, sub, pastDayCompletedAt());
       await refreshSkillTrees();
     } catch (error) {
       console.error("Error confirmando sub-nodo desde Tareas de hoy:", error);
@@ -1086,7 +1103,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
             title={stripLeadingEmoji(kid.title || "Sin nombre")}
             done={kid.status === "mastered"}
             current={kidIsCurrent}
-            dimmed={!kidIsCurrent}
+            dimmed={!isPastDay && !kidIsCurrent}
             onToggleDone={
               !parentConfirmed && sub.status === "available" && (k === kidFirstUndone || k === kidLastDone)
                 ? () => toggleSubNode(sub.id, kid)
@@ -1121,7 +1138,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
               title={stripLeadingEmoji(sub.title || "Sin nombre")}
               done={sub.status === "mastered"}
               current={isCurrentSub && !pendingKids}
-              dimmed={!(isCurrentSub && !pendingKids)}
+              dimmed={!isPastDay && !(isCurrentSub && !pendingKids)}
               onToggleDone={
                 !parentConfirmed && !pendingKids && (i === firstUndone || i === lastDone)
                   ? () => toggleSubNode(item.id, sub)
@@ -1197,11 +1214,11 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       <React.Fragment key={item.key}>
         <div className="flex items-center gap-2 text-sm">
           {item.dotEmoji && (
-            <span className="opacity-60">
+            <span className={isPastDay ? "" : "opacity-60"}>
               <TaskDot emoji={item.dotEmoji} color={item.dotColor || NODE_COLOR} size="md" />
             </span>
           )}
-          <span className="flex-1 opacity-60">{item.label}</span>
+          <span className={`flex-1 ${isPastDay ? "" : "opacity-60"}`}>{item.label}</span>
           <button
             type="button"
             onClick={toggleExpanded}
@@ -1392,7 +1409,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         title={stripLeadingEmoji(st.title)}
         done={st.done === 1}
         current={parentIsCurrent && i === firstUndone}
-        dimmed={!(parentIsCurrent && i === firstUndone)}
+        dimmed={!isPastDay && !(parentIsCurrent && i === firstUndone)}
         onToggleDone={
           i === firstUndone || i === lastDone
             ? () => updateSubstep.mutate({ id: st.id, date: effectiveDate, updates: { done: st.done === 1 ? 0 : 1 } })
@@ -1447,6 +1464,9 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     : null;
   // undefined = el usuario no tocó nada (se usa el default); null = cerró la sección extra.
   const [manualExtraSlotSection, setManualExtraSlotSection] = useState<string | null | undefined>(undefined);
+  // Día pasado: se abren de entrada todas las secciones con algo, y se abren/cierran libremente
+  // (sin el límite de una sola extra), para ver el registro del día completo de un vistazo.
+  const [manualPastDaySections, setManualPastDaySections] = useState<string[] | undefined>(undefined);
   // Al cambiar de día (previsualización) se descarta la elección manual y se vuelve a calcular
   // la sección por defecto para ese día — abrir "Sin asignar" en un día no tiene por qué seguir
   // abierto al pasar a previsualizar otro.
@@ -1454,12 +1474,21 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   if (effectiveDate !== lastSlotSectionDate) {
     setLastSlotSectionDate(effectiveDate);
     setManualExtraSlotSection(undefined);
+    setManualPastDaySections(undefined);
   }
   const extraSlotSection = manualExtraSlotSection !== undefined ? manualExtraSlotSection : defaultExtraSlotSection;
-  const openSlotSections = Array.from(
-    new Set([lockedSlotKey, extraSlotSection].filter((v): v is string => !!v))
-  );
+  const pastDayDefaultSections = [
+    ...(itemBuckets.unassigned.length > 0 ? ["unassigned"] : []),
+    ...TIME_SLOTS.filter((s) => itemBuckets[s.key].length > 0).map((s) => s.key),
+  ];
+  const openSlotSections = isPastDay
+    ? manualPastDaySections ?? pastDayDefaultSections
+    : Array.from(new Set([lockedSlotKey, extraSlotSection].filter((v): v is string => !!v)));
   const handleSlotSectionsChange = (values: string[]) => {
+    if (isPastDay) {
+      setManualPastDaySections(values);
+      return;
+    }
     const others = values.filter((v) => v !== lockedSlotKey);
     // Si se abrió una sección nueva, reemplaza a la extra anterior (nunca más de una extra).
     const next = others.find((v) => v !== extraSlotSection) ?? others[0] ?? null;
@@ -1617,7 +1646,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       // Sub-nodo: no está en el contexto, se marca directo en el server (que igual estampa
       // completedAt, suma XP al padre y desbloquea el siguiente del nivel).
       if (datedSubSkills.some((s) => s.id === item.id)) {
-        patchSubSkill.mutate({ id: item.id, updates: { status: item.done ? "available" : "mastered" } });
+        patchSubSkill.mutate({ id: item.id, updates: item.done ? { status: "available" } : { status: "mastered", completedAt: pastDayCompletedAt() } });
       }
       return;
     }
@@ -1684,7 +1713,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       if (!item.done && subNodesFor(item).length > 0) {
         if (hasPendingSubNodes(item)) return;
         shrinkParentToChildrenSum(item, subNodesFor(item).map((sub) => sub.plannedDuration));
-        masterWholeSubSkillTree(item.id)
+        masterWholeSubSkillTree(item.id, pastDayCompletedAt())
           .catch((error) => console.error("Error confirmando el sub-árbol:", error))
           .finally(() => toggleNodeDone(item));
         return;
@@ -2510,6 +2539,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
             </div>
           ),
           fallback: "unassigned",
+          defaultSlot: p.lastConfirmedAt || p.updatedAt ? getTimeSlotKeyForDate(new Date((p.lastConfirmedAt || p.updatedAt)!)) : undefined,
         })
       );
       selectedDayDetails.manualDone.forEach((t) =>
@@ -2668,7 +2698,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                   <React.Fragment key={item.key}>
                                   <TodayTaskRow
                                     item={item}
-                                    pastDay={effectiveDate < todayStr}
+                                    pastDay={isPastDay}
                                     onMove={(slot) => moveItemToSlot(item, slot)}
                                     onHide={item.type !== "manual" || isDefaultManualTask(item.id) ? () => hideItemFromToday(item) : undefined}
                                     onDelete={item.type === "manual" && !isDefaultManualTask(item.id) ? () => deleteManualItem(item) : undefined}
@@ -2758,9 +2788,9 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                       <React.Fragment key={item.key}>
                                       <TodayTaskRow
                                         item={item}
-                                        dimmed={idx !== firstUndoneIdx}
+                                        dimmed={!isPastDay && idx !== firstUndoneIdx}
                                         current={isCurrent && !hasPendingSubsteps(item) && !hasPendingSubNodes(item)}
-                                        pastDay={effectiveDate < todayStr}
+                                        pastDay={isPastDay}
                                         onMove={(slot) => moveItemToSlot(item, slot)}
                                         onClear={() => unassignItem(item)}
                                         onHide={item.type !== "manual" || isDefaultManualTask(item.id) ? () => hideItemFromToday(item) : undefined}
@@ -2806,7 +2836,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                 <React.Fragment key={item.key}>
                                 <TodayTaskRow
                                   item={item}
-                                  pastDay={effectiveDate < todayStr}
+                                  pastDay={isPastDay}
                                   onMove={(slot) => moveItemToSlot(item, slot)}
                                   onDuplicate={canDuplicate(item) ? () => duplicateItem(item) : undefined}
                                   onToggleDone={canToggleDone(item) ? () => toggleItemDone(item) : undefined}
@@ -3345,7 +3375,11 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
             <SelectTrigger className="border-0 bg-muted/50 focus:ring-0">
               <SelectValue placeholder="Área o quest" />
             </SelectTrigger>
-            <SelectContent className="border-0 minimal-scrollbar">
+            <SelectContent
+              className="border-0 minimal-scrollbar touch-pan-y"
+              onWheel={(e) => e.stopPropagation()}
+              onTouchMove={(e) => e.stopPropagation()}
+            >
               <SelectItem value="__none__">Sin área ni quest</SelectItem>
               {areas.length > 0 && (
                 <SelectGroup>
@@ -3800,7 +3834,12 @@ function TodaySubRow({
           {hasMenu ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>{titleNode}</DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent
+                align="end"
+                className="max-h-[min(60vh,var(--radix-dropdown-menu-content-available-height))] overflow-y-auto overscroll-contain touch-pan-y minimal-scrollbar"
+                onWheel={(e) => e.stopPropagation()}
+                onTouchMove={(e) => e.stopPropagation()}
+              >
                 {onAssignTime && (
                   <>
                     <DropdownMenuItem onClick={onAssignTime}>Asignar tiempo</DropdownMenuItem>
@@ -4004,9 +4043,13 @@ function TodayTaskRow({
               )}
             </span>
           </DropdownMenuTrigger>
+          {/* Scroll táctil: el bloqueo de scroll del diálogo de afuera se come el touchmove/wheel
+              del menú (va en un portal) — se cortan acá, igual que en los menús de SkillNode. */}
           <DropdownMenuContent
             align="end"
-            className="max-h-[min(60vh,var(--radix-dropdown-menu-content-available-height))] overflow-y-auto overscroll-contain minimal-scrollbar"
+            className="max-h-[min(60vh,var(--radix-dropdown-menu-content-available-height))] overflow-y-auto overscroll-contain touch-pan-y minimal-scrollbar"
+            onWheel={(e) => e.stopPropagation()}
+            onTouchMove={(e) => e.stopPropagation()}
           >
             {onAssignTime && (
               <>

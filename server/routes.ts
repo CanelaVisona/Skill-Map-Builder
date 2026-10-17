@@ -126,6 +126,55 @@ async function removeOneDefaultPlaceholder(
   return { allSkills: refreshed, removedPosition: removable.levelPosition ?? null };
 }
 
+// Moving the unlocked level's last non-confirmed node (typically its "available" final
+// node) out of it leaves that level fully mastered - i.e. completed. Run the same
+// level-up the regular "confirm final node" flow does: bump unlockedLevel and make the
+// next level's first real node available, instead of leaving the next level visible
+// but with every node locked. Starred levels (endOfAreaLevel) are left alone - that's
+// quest completion, not a level-up. Returns the opened level, or null.
+async function openNextLevelIfSourceCompleted(
+  sourceLevel: number,
+  parentType: "area" | "project",
+  parentId: string,
+): Promise<number | null> {
+  const parent = parentType === "area"
+    ? await storage.getArea(parentId)
+    : await storage.getProject(parentId);
+  if (!parent || parent.unlockedLevel !== sourceLevel) return null;
+  if (parent.endOfAreaLevel === sourceLevel) return null;
+
+  const allSkills = parentType === "area"
+    ? await storage.getSkills(parentId)
+    : await storage.getProjectSkills(parentId);
+  const sourceSkills = allSkills.filter(s => s.level === sourceLevel);
+  if (sourceSkills.length === 0 || sourceSkills.some(s => s.status !== "mastered")) return null;
+
+  const nextLevel = sourceLevel + 1;
+  if (!allSkills.some(s => s.level === nextLevel)) {
+    if (parentType === "area") {
+      await storage.generateLevelWithSkills(parentId, nextLevel, 0);
+    } else {
+      await storage.generateProjectLevelWithSkills(parentId, nextLevel, 0);
+    }
+  }
+
+  const nextLevelToAssign = Math.max(parent.nextLevelToAssign ?? 0, nextLevel + 3);
+  if (parentType === "area") {
+    await storage.updateArea(parentId, { unlockedLevel: nextLevel, nextLevelToAssign });
+  } else {
+    await storage.updateProject(parentId, { unlockedLevel: nextLevel, nextLevelToAssign });
+  }
+
+  const parentInfo = {
+    areaId: parentType === "area" ? parentId : undefined,
+    projectId: parentType === "project" ? parentId : undefined,
+  };
+  await storage.recalculateYCoordinates(parentInfo);
+  await storage.recalculateFinalNodes(nextLevel, parentInfo);
+  await storage.recalculateAvailableStatus(nextLevel, parentInfo);
+  return nextLevel;
+}
+
 // Target-level order after a move: the moved node takes the exact slot of the placeholder
 // it replaced (so it fills the top-most generic node first); with no placeholder replaced
 // it's appended at the end.
@@ -1227,9 +1276,15 @@ export async function registerRoutes(
 
       // Stamp completedAt when a node transitions into "mastered" (so it can be reported as
       // "done today" even when it wasn't planned for today); clear it when un-mastered.
+      // A client-provided completedAt (confirming from a past day in "Tareas de hoy") records
+      // the confirmation on that day instead of now; it's only honored when it's not in the future.
       const skillUpdate = { ...req.body };
+      delete skillUpdate.completedAt;
       if (req.body.status === "mastered" && existingSkill.status !== "mastered") {
-        skillUpdate.completedAt = new Date();
+        const requested = req.body.completedAt ? new Date(req.body.completedAt) : null;
+        skillUpdate.completedAt = requested && !isNaN(requested.getTime()) && requested.getTime() <= Date.now()
+          ? requested
+          : new Date();
       } else if (req.body.status === "available" && existingSkill.status === "mastered") {
         skillUpdate.completedAt = null;
       }
@@ -1636,6 +1691,7 @@ export async function registerRoutes(
       await storage.recalculateFinalNodes(targetLevel, parentInfo);
       await storage.recalculateNodeStatuses(currentLevel, parentInfo);
       await storage.recalculateNodeStatuses(targetLevel, parentInfo);
+      const openedLevel = await openNextLevelIfSourceCompleted(currentLevel, parentType, parentId);
 
       // Fetch final updated state of both levels to include correct statuses
       const finalAllSkills = parentType === "area" 
@@ -1653,10 +1709,11 @@ export async function registerRoutes(
       // Return the final repositioned moved skill
       const finalMovedSkill = finalTargetSkills.find(s => s.id === req.params.id);
 
-      res.json({ 
-        movedSkill: finalMovedSkill || movedSkill, 
+      res.json({
+        movedSkill: finalMovedSkill || movedSkill,
         sourceLevel: { skills: finalSourceSkills },
-        targetLevel: { skills: finalTargetSkills }
+        targetLevel: { skills: finalTargetSkills },
+        openedLevel,
       });
     } catch (error: any) {
       console.error("Error in move skill endpoint:", error);
@@ -1883,6 +1940,7 @@ export async function registerRoutes(
       // A non-mastered moved node goes through the normal recalculation, so if it took the
       // slot of the unlocked level's "available" placeholder it becomes available itself.
       await storage.recalculateAvailableStatus(targetLevel, newStatus === "mastered" ? { ...parentInfo, excludeSkillId: req.params.id } : parentInfo);
+      const openedLevel = await openNextLevelIfSourceCompleted(currentLevel, parentType, parentId);
 
       const finalAllSkills = parentType === "area"
         ? await storage.getSkills(parentId)
@@ -1893,6 +1951,7 @@ export async function registerRoutes(
         movedSkill: finalMovedSkill,
         sourceLevel: { skills: finalAllSkills.filter(s => s.level === currentLevel).sort((a, b) => a.levelPosition - b.levelPosition) },
         targetLevel: { skills: finalAllSkills.filter(s => s.level === targetLevel).sort((a, b) => a.levelPosition - b.levelPosition) },
+        openedLevel,
       });
     } catch (error: any) {
       console.error("Error in change-level endpoint:", error);

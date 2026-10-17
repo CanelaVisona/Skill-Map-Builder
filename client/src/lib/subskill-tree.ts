@@ -95,9 +95,10 @@ export async function addSubSkillFromToday(parentSkillId: string, title: string)
 // siguiente sub-nodo (y lo vuelve a bloquear al desconfirmar). Cuando ya no queda ningún
 // sub-nodo sin confirmar, se desbloquea el nodo padre (mismo efecto que completar el sub-árbol
 // desde el árbol).
-export async function toggleSubSkillFromToday(parentSkillId: string, sub: Skill) {
+// completedAt: al confirmar desde un día pasado, el día (ISO) en que queda registrado.
+export async function toggleSubSkillFromToday(parentSkillId: string, sub: Skill, completedAt?: string) {
   const confirming = sub.status !== "mastered";
-  const res = await patchSkill(sub.id, { status: confirming ? "mastered" : "available" });
+  const res = await patchSkill(sub.id, confirming ? { status: "mastered", ...(completedAt ? { completedAt } : {}) } : { status: "available" });
   if (!res.ok || !confirming) return;
 
   const remaining = (await fetchSubSkills(parentSkillId)).filter(s => s.status !== "mastered" && !isSubSkillPlaceholder(s));
@@ -108,10 +109,10 @@ export async function toggleSubSkillFromToday(parentSkillId: string, sub: Skill)
 
 // Al confirmar el nodo padre se confirma todo su sub-árbol: cualquier sub-nodo que haya quedado
 // sin confirmar (pasos de relleno, otros niveles) se marca como confirmado, en orden.
-export async function masterWholeSubSkillTree(parentSkillId: string) {
+export async function masterWholeSubSkillTree(parentSkillId: string, completedAt?: string) {
   const pending = (await fetchSubSkills(parentSkillId)).filter(s => s.status !== "mastered").sort(byOrder);
   for (const s of pending) {
-    await patchSkill(s.id, { status: "mastered", fromLevelReset: true });
+    await patchSkill(s.id, { status: "mastered", fromLevelReset: true, ...(completedAt ? { completedAt } : {}) });
   }
 }
 

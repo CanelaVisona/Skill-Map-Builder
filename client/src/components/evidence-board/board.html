@@ -134,6 +134,8 @@ button,input,select,textarea{font:inherit;color:inherit}
 .field label,.lbl{font-size:13px;color:var(--muted);font-weight:500}
 .field input,.field select,.field textarea,.kv input{border:1px solid var(--line);background:var(--chrome);border-radius:4px;padding:6px 8px;width:100%;min-width:0}
 .field textarea{min-height:90px;resize:vertical;font-family:var(--type);font-size:14px;line-height:1.45}
+.when-edit{display:grid;grid-template-columns:1fr 1.2fr 1.3fr 1.4fr;gap:4px}
+.when-edit input,.when-edit select{border:1px solid var(--line);background:var(--chrome);border-radius:4px;padding:6px 4px;width:100%;min-width:0}
 .kv{display:grid;grid-template-columns:1fr 1.4fr 30px;gap:4px;margin-bottom:4px}
 .kv button{border:0;background:none;cursor:pointer;color:var(--muted);font-size:18px}
 .conns{display:flex;flex-direction:column;gap:3px;margin:4px 0 12px}
@@ -451,8 +453,20 @@ function updateNav(){
 function navigate(dir){if(!focused)return;const n=neighbor(focused,dir);if(!n)return;if(sel)select(null);focusCard(n)}
 
 /* ---------- Rendering ---------- */
-function fmtTime(t){if(!t)return'';const d=new Date(t);if(isNaN(d))return t;
-  return d.toLocaleDateString('es',{day:'numeric',month:'short'})+', '+d.toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'})}
+/* Fecha y hora de una pista: cada parte es opcional (solo el año, mes y año, solo la hora...).
+   Se guarda como "AAAA-MM-DDTHH:MM" con "?" en lo que falta, así sigue ordenando como texto
+   (lo desconocido queda después de lo conocido); las pistas viejas con fecha completa no cambian. */
+const MONTHS=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+function parseWhen(t){const m=/^([\d?]{4})-([\d?]{2})-([\d?]{2})T([\d?]{2}:[\d?]{2})/.exec(t||'');
+  if(!m)return{y:'',mo:'',d:'',hm:''};const k=v=>v.includes('?')?'':v;
+  return{y:k(m[1]),mo:k(m[2]),d:k(m[3]),hm:k(m[4])}}
+function composeWhen({y,mo,d,hm}){if(!y&&!mo&&!d&&!hm)return'';
+  const p=(v,n)=>v?String(v).padStart(n,'0'):'?'.repeat(n);
+  return `${p(y,4)}-${p(mo,2)}-${p(d,2)}T${hm||'??:??'}`}
+function fmtTime(t){if(!t)return'';const w=parseWhen(t);
+  if(!w.y&&!w.mo&&!w.d&&!w.hm)return t;
+  const date=[w.d?String(+w.d):'',w.mo?MONTHS[+w.mo-1]||'':'',w.y].filter(Boolean).join(' ');
+  return [date,w.hm].filter(Boolean).join(', ')}
 function matches(c){if(!query)return true;const q=query.toLowerCase();
   return [c.title,c.body,...c.fields.map(f=>f.k+' '+f.v)].join(' ').toLowerCase().includes(q)}
 
@@ -575,7 +589,12 @@ function renderInspector(){
     <div class="imgedit">${picHTML(c,'epic')}
       <div class="row">${canUpload()?`<label class="btn" for="fImg">${c.img?'Cambiar imagen':'Subir imagen'}</label><input id="fImg" type="file" accept="image/*" hidden>`:'<span class="muted">No tienes permiso para subir imágenes aquí.</span>'}${c.img?'<button class="btn" data-act="rmimg">Quitar imagen</button>':''}</div>
       <span class="muted" id="imgMsg" aria-live="polite"></span></div>
-    <div class="field"><label for="fTime">Fecha y hora</label><input id="fTime" type="datetime-local" value="${esc(c.time||'')}"></div>
+    <div class="field"><label for="fDay">Fecha y hora <span class="muted">(opcional, completá lo que sepas)</span></label>
+      <div class="when-edit">${(()=>{const w=parseWhen(c.time);return `
+        <input id="fDay" type="number" inputmode="numeric" min="1" max="31" placeholder="Día" aria-label="Día" value="${esc(w.d?String(+w.d):'')}">
+        <select id="fMonth" aria-label="Mes"><option value="">Mes</option>${MONTHS.map((n,i)=>`<option value="${i+1}"${+w.mo===i+1?' selected':''}>${n}</option>`).join('')}</select>
+        <input id="fYear" type="number" inputmode="numeric" min="1" max="9999" placeholder="Año" aria-label="Año" value="${esc(w.y?String(+w.y):'')}">
+        <input id="fHour" type="time" aria-label="Hora" value="${esc(w.hm)}">`})()}</div></div>
     <div class="field"><label for="fBody">Notas</label><textarea id="fBody">${esc(c.body)}</textarea></div>
     <div class="lbl">Datos</div>
     <div id="kvs" style="margin:4px 0 6px">${c.fields.map((f,i)=>`<div class="kv"><input data-kk="${i}" value="${esc(f.k)}" aria-label="Campo"><input data-kv="${i}" value="${esc(f.v)}" aria-label="Valor de ${esc(f.k)}"><button data-delkv="${i}" aria-label="Quitar campo">×</button></div>`).join('')}</div>
@@ -595,7 +614,10 @@ function renderInspector(){
   ins.querySelector('#fTitle').oninput=e=>upd('title',e.target.value);
   ins.querySelector('#fStatus').onchange=e=>upd('status',e.target.value);
   const fi=ins.querySelector('#fImg');if(fi)fi.onchange=e=>{const f=e.target.files[0];if(f)setImage(c.id,f)};
-  ins.querySelector('#fTime').onchange=e=>upd('time',e.target.value);
+  const updWhen=()=>{const v=id=>ins.querySelector(id).value.trim();
+    const day=Math.min(31,Math.max(0,parseInt(v('#fDay'))||0)),yr=Math.min(9999,Math.max(0,parseInt(v('#fYear'))||0));
+    upd('time',composeWhen({y:yr||'',mo:v('#fMonth'),d:day||'',hm:v('#fHour')}))};
+  ['#fDay','#fMonth','#fYear','#fHour'].forEach(id=>ins.querySelector(id).onchange=updWhen);
   ins.querySelector('#fBody').oninput=e=>upd('body',e.target.value);
   ins.querySelectorAll('[data-kk]').forEach(i=>i.oninput=e=>{c.fields[+i.dataset.kk].k=e.target.value;refreshCard(c.id);scheduleSave()});
   ins.querySelectorAll('[data-kv]').forEach(i=>i.oninput=e=>{c.fields[+i.dataset.kv].v=e.target.value;refreshCard(c.id);scheduleSave()});

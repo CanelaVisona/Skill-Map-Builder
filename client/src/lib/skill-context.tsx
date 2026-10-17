@@ -4597,7 +4597,11 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         return false;
       }
 
+      // Moving the unlocked level's last pending node out completes that level, and the
+      // server opens the next one (openedLevel) - celebrate it like a regular level-up.
+      const { openedLevel } = await response.json().catch(() => ({}));
       await refreshAllAreas();
+      if (openedLevel) triggerLevelUpBanner();
       return true;
     } catch (error) {
       console.error("Error changing skill level:", error);
@@ -4916,7 +4920,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         return false;
       }
 
+      const { openedLevel } = await response.json().catch(() => ({}));
       await refreshAllProjects();
+      if (openedLevel) triggerLevelUpBanner();
       return true;
     } catch (error) {
       console.error("Error changing project skill level:", error);
