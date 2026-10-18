@@ -31,7 +31,7 @@ import HousePriorityList from "../components/HousePriorityList";
 import HouseRepairsList from "../components/HouseRepairsList";
 import { EvidenceBoardModalWrapper } from "@/components/EvidenceBoardModal";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, ArrowRight, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, User, Menu, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Utensils, Swords, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt, OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation, Check, HelpCircle, PiggyBank, Search, X, Pentagon } from "lucide-react";
+import { ArrowLeft, ArrowRight, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, User, Menu, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Utensils, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt, OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation, Check, HelpCircle, PiggyBank, Search, X, Pentagon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -283,7 +283,7 @@ function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpen
               onClick={() => handleAction(onOpenDesigner)}
               title="Skill Designer"
             >
-              <Menu className="h-4 w-4 mx-auto" />
+              <Scroll className="h-4 w-4 mx-auto" />
             </button>
             <button
               className="relative h-8 w-8 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
@@ -9285,7 +9285,7 @@ function QuestDiary() {
                 <Target className="h-5 w-5" />
               </TabsTrigger>
               <TabsTrigger value="powers" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-powers" title="Poderes">
-                <Swords className="h-5 w-5" />
+                <Shield className="h-5 w-5" />
               </TabsTrigger>
               <TabsTrigger value="errores" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-errores" title="Bugs">
                 <Circle className="h-5 w-5" />

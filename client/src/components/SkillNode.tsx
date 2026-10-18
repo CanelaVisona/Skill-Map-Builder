@@ -2,7 +2,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { type Skill, type GlobalSkill, useSkillTree } from "@/lib/skill-context";
 import { type JournalThought, type JournalLearning, type JournalTool } from "@shared/schema";
 import { cn } from "@/lib/utils";
-import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus, Star, ChevronRight, ChevronLeft, Wrench, Lightbulb, BicepsFlexed, Zap, Bug, OctagonAlert, X } from "lucide-react";
+import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus, Star, ChevronRight, ChevronLeft, Wrench, Lightbulb, BicepsFlexed, Shield, Bug, OctagonAlert, X } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { type ExperienceGainSnapshot } from "./ExperienceGainPopup";
@@ -4475,7 +4475,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                       Fuerza
                     </TabsTrigger>
                     <TabsTrigger value="powers" className="text-xs" data-testid="step3-tab-powers">
-                      <Zap className="h-3 w-3 mr-1" />
+                      <Shield className="h-3 w-3 mr-1" />
                       Poderes
                     </TabsTrigger>
                     <TabsTrigger value="learning" className="text-xs" data-testid="step3-tab-learning">

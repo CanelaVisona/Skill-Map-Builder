@@ -1426,6 +1426,19 @@ export async function registerRoutes(
         s.level === deletedLevel && s.id !== req.params.id
       );
 
+      // Rewire anything that depended on the deleted node onto its own dependencies, here
+      // against current DB state - the client's snapshot can be stale when several nodes are
+      // deleted back-to-back, which left nodes depending on already-deleted ones.
+      const inheritedDeps: string[] = Array.isArray(existingSkill.dependencies) ? existingSkill.dependencies : [];
+      for (const dependent of siblingSkilsBeforeDeletion) {
+        if (dependent.id === req.params.id || !Array.isArray(dependent.dependencies) || !dependent.dependencies.includes(req.params.id)) continue;
+        const rewired = Array.from(new Set([
+          ...dependent.dependencies.filter((d: string) => d !== req.params.id),
+          ...inheritedDeps,
+        ]));
+        await storage.updateSkill(dependent.id, { dependencies: rewired });
+      }
+
       // Delete the skill
       await storage.deleteSkill(req.params.id);
       

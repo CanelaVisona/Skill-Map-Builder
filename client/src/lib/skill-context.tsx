@@ -1937,10 +1937,6 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     const skillToDelete = area.skills.find(s => s.id === skillId);
     if (!skillToDelete) return;
 
-    // Find children (nodes that depend on this skill)
-    const children = area.skills.filter(s => ensureDependenciesArray(s.dependencies).includes(skillId));
-    const newDependencies = skillToDelete.dependencies;
-
     // Check if we're deleting a final node - need to mark the previous one as final.
     // Computed from actual position (is any other node in this level below it?), not the
     // stored isFinalNode flag: that flag is only reassigned by the add/move/delete paths and
@@ -1967,89 +1963,16 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         throw new Error(`Error al eliminar skill: ${deleteResponse.status}`);
       }
 
-      // Update children's dependencies
-      for (const child of children) {
-        const updatedDeps = child.dependencies
-          .filter(d => d !== skillId)
-          .concat(newDependencies);
-        
-        const patchResponse = await fetch(`/api/skills/${child.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ dependencies: updatedDeps }),
-        });
-        // A 404 here means this child was already removed by a concurrent delete
-        // (e.g. deleting two nodes in the same dependency chain back-to-back before
-        // React state caught up) — nothing left to update, so it's not an error.
-        if (!patchResponse.ok && patchResponse.status !== 404) {
-          throw new Error(`Error al actualizar dependencias: ${patchResponse.status}`);
-        }
-      }
+      // Dependents are rewired server-side by the DELETE endpoint (against current DB state).
 
-      // Shift nodes below up by 150px. Nodes in the deleted skill's own level also need
-      // levelPosition decremented so they stay contiguous (1,2,3...) instead of leaving a
-      // gap (e.g. 1,2,5) — the distance-based opacity in SkillNode reads levelPosition, not
-      // y, so without this a node that visually moved right next to the active node would
-      // still be rendered as if it were still several nodes away.
-      const nodesToShift = area.skills.filter(s => s.y > skillToDelete.y);
-      for (const node of nodesToShift) {
-        const patchBody: { y: number; levelPosition?: number } = { y: node.y - 150 };
-        if (node.level === skillToDelete.level) {
-          patchBody.levelPosition = (node.levelPosition || 0) - 1;
-        }
-        const shiftResponse = await fetch(`/api/skills/${node.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(patchBody),
-        });
-        if (!shiftResponse.ok && shiftResponse.status !== 404) {
-          throw new Error(`Error al reposicionar skill: ${shiftResponse.status}`);
-        }
-      }
-
-      // Mark new final node if needed
-      if (newFinalNodeId) {
-        const finalResponse = await fetch(`/api/skills/${newFinalNodeId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ isFinalNode: 1 }),
-        });
-        if (!finalResponse.ok && finalResponse.status !== 404) {
-          throw new Error(`Error al marcar nodo final: ${finalResponse.status}`);
-        }
-      }
-
-      // Update local state
-      setAreas(prev => prev.map(area => {
-        if (area.id !== areaId) return area;
-
-        const updatedSkills = area.skills
-          .filter(s => s.id !== skillId)
-          .map(s => {
-            let updated = { ...s };
-            
-            if (children.find(c => c.id === s.id)) {
-              updated.dependencies = s.dependencies
-                .filter(d => d !== skillId)
-                .concat(newDependencies);
-            }
-            
-            if (s.y > skillToDelete.y) {
-              updated.y = s.y - 150;
-              if (s.level === skillToDelete.level) {
-                updated.levelPosition = (s.levelPosition || 0) - 1;
-              }
-            }
-
-            if (s.id === newFinalNodeId) {
-              updated.isFinalNode = 1;
-            }
-
-            return updated;
-          });
-
-        return { ...area, skills: updatedSkills };
-      }));
+      // levelPosition, y and the final-node flag are NOT patched from here: the DELETE
+      // endpoint already renumbers the level (consolidateLevelPositions), recalculates every
+      // y in the area (recalculateYCoordinates) and reassigns the final node. Shifting again
+      // from this client snapshot used to stack on top of that - and when two nodes were
+      // deleted back-to-back before state refreshed, the second delete patched stale y /
+      // levelPosition values, leaving a duplicated gap (and repeated positions) in the tree.
+      setAreas(prev => prev.map(a => a.id !== areaId ? a : { ...a, skills: a.skills.filter(s => s.id !== skillId) }));
+      await refreshAllAreas();
 
       // If the node that just inherited final-node status was already mastered, the level
       // was effectively already completed - it just never got the "confirm final node" pass
@@ -2320,9 +2243,6 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     const skillToDelete = project.skills.find(s => s.id === skillId);
     if (!skillToDelete) return;
 
-    const children = project.skills.filter(s => ensureDependenciesArray(s.dependencies).includes(skillId));
-    const newDependencies = skillToDelete.dependencies;
-
     // Computed from actual position, not the stored isFinalNode flag -- see matching comment
     // in deleteSkill for why the flag goes stale and silently skips the level-up cascade.
     const levelSkills = project.skills.filter(s => s.level === skillToDelete.level);
@@ -2344,84 +2264,11 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         throw new Error(`Error al eliminar skill: ${deleteResponse.status}`);
       }
 
-      for (const child of children) {
-        const updatedDeps = child.dependencies
-          .filter(d => d !== skillId)
-          .concat(newDependencies);
-        
-        const patchResponse = await fetch(`/api/skills/${child.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ dependencies: updatedDeps }),
-        });
-        // A 404 here means this child was already removed by a concurrent delete
-        // (e.g. deleting two nodes in the same dependency chain back-to-back before
-        // React state caught up) — nothing left to update, so it's not an error.
-        if (!patchResponse.ok && patchResponse.status !== 404) {
-          throw new Error(`Error al actualizar dependencias: ${patchResponse.status}`);
-        }
-      }
+      // Dependents are rewired server-side by the DELETE endpoint - see deleteSkill.
 
-      // Nodes in the deleted skill's own level also need levelPosition decremented so they
-      // stay contiguous (1,2,3...) — see comment in deleteSkill for why this matters for
-      // the distance-based locked-node opacity.
-      const nodesToShift = project.skills.filter(s => s.y > skillToDelete.y);
-      for (const node of nodesToShift) {
-        const patchBody: { y: number; levelPosition?: number } = { y: node.y - 150 };
-        if (node.level === skillToDelete.level) {
-          patchBody.levelPosition = (node.levelPosition || 0) - 1;
-        }
-        const shiftResponse = await fetch(`/api/skills/${node.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(patchBody),
-        });
-        if (!shiftResponse.ok && shiftResponse.status !== 404) {
-          throw new Error(`Error al reposicionar skill: ${shiftResponse.status}`);
-        }
-      }
-
-      if (newFinalNodeId) {
-        const finalResponse = await fetch(`/api/skills/${newFinalNodeId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ isFinalNode: 1 }),
-        });
-        if (!finalResponse.ok && finalResponse.status !== 404) {
-          throw new Error(`Error al marcar nodo final: ${finalResponse.status}`);
-        }
-      }
-
-      setProjects(prev => prev.map(project => {
-        if (project.id !== projectId) return project;
-
-        const updatedSkills = project.skills
-          .filter(s => s.id !== skillId)
-          .map(s => {
-            let updated = { ...s };
-            
-            if (children.find(c => c.id === s.id)) {
-              updated.dependencies = s.dependencies
-                .filter(d => d !== skillId)
-                .concat(newDependencies);
-            }
-            
-            if (s.y > skillToDelete.y) {
-              updated.y = s.y - 150;
-              if (s.level === skillToDelete.level) {
-                updated.levelPosition = (s.levelPosition || 0) - 1;
-              }
-            }
-
-            if (s.id === newFinalNodeId) {
-              updated.isFinalNode = 1;
-            }
-
-            return updated;
-          });
-
-        return { ...project, skills: updatedSkills };
-      }));
+      // Positions, y and the final-node flag come from the server - see deleteSkill.
+      setProjects(prev => prev.map(p => p.id !== projectId ? p : { ...p, skills: p.skills.filter(s => s.id !== skillId) }));
+      await refreshAllProjects();
 
       // If the node that just inherited final-node status was already mastered, the level
       // was effectively already completed - see matching comment in deleteSkill. Guarded to
@@ -3288,9 +3135,6 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     const skillToDelete = subSkills.find(s => s.id === skillId);
     if (!skillToDelete) return;
 
-    const children = subSkills.filter(s => ensureDependenciesArray(s.dependencies).includes(skillId));
-    const newDependencies = skillToDelete.dependencies;
-
     // Computed from actual position, not the stored isFinalNode flag -- see matching comment
     // in deleteSkill for why the flag goes stale and silently skips the completion cascade.
     const levelSkills = subSkills.filter(s => s.level === skillToDelete.level);
@@ -3312,80 +3156,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         throw new Error(`Error al eliminar sub-skill: ${deleteResponse.status}`);
       }
 
-      for (const child of children) {
-        const updatedDeps = child.dependencies
-          .filter(d => d !== skillId)
-          .concat(newDependencies);
-        
-        const patchResponse = await fetch(`/api/skills/${child.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ dependencies: updatedDeps }),
-        });
-        // A 404 here means this child was already removed by a concurrent delete
-        // (e.g. deleting two nodes in the same dependency chain back-to-back before
-        // React state caught up) — nothing left to update, so it's not an error.
-        if (!patchResponse.ok && patchResponse.status !== 404) {
-          throw new Error(`Error al actualizar dependencias: ${patchResponse.status}`);
-        }
-      }
-
-      // Nodes in the deleted skill's own level also need levelPosition decremented so they
-      // stay contiguous (1,2,3...) — see comment in deleteSkill for why this matters for
-      // the distance-based locked-node opacity.
-      const nodesToShift = subSkills.filter(s => s.y > skillToDelete.y);
-      for (const node of nodesToShift) {
-        const patchBody: { y: number; levelPosition?: number } = { y: node.y - 150 };
-        if (node.level === skillToDelete.level) {
-          patchBody.levelPosition = (node.levelPosition || 0) - 1;
-        }
-        const shiftResponse = await fetch(`/api/skills/${node.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(patchBody),
-        });
-        if (!shiftResponse.ok && shiftResponse.status !== 404) {
-          throw new Error(`Error al reposicionar skill: ${shiftResponse.status}`);
-        }
-      }
-
-      if (newFinalNodeId) {
-        const finalResponse = await fetch(`/api/skills/${newFinalNodeId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ isFinalNode: 1 }),
-        });
-        if (!finalResponse.ok && finalResponse.status !== 404) {
-          throw new Error(`Error al marcar nodo final: ${finalResponse.status}`);
-        }
-      }
-
-      setSubSkills(prev => {
-        return prev
-          .filter(s => s.id !== skillId)
-          .map(s => {
-            let updated = { ...s };
-            
-            if (children.find(c => c.id === s.id)) {
-              updated.dependencies = s.dependencies
-                .filter(d => d !== skillId)
-                .concat(newDependencies);
-            }
-            
-            if (s.y > skillToDelete.y) {
-              updated.y = s.y - 150;
-              if (s.level === skillToDelete.level) {
-                updated.levelPosition = (s.levelPosition || 0) - 1;
-              }
-            }
-
-            if (s.id === newFinalNodeId) {
-              updated.isFinalNode = 1;
-            }
-
-            return updated;
-          });
-      });
+      // Dependents, positions, y and the final-node flag all come from the server - see
+      // deleteSkill (patching them from this snapshot left gaps on back-to-back deletes).
+      setSubSkills(prev => prev.filter(s => s.id !== skillId));
+      if (activeParentSkillId) setSubSkills(await fetchSubSkills(activeParentSkillId));
 
       // If the node that just inherited final-node status was already mastered, the tree
       // was effectively already completed - see matching comment in deleteSkill. Sub-skill

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronUp, Plus, RotateCcw, Scroll, Star, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Plus, RotateCcw, Menu, Star, Trash2, X } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { apiRequest } from "@/lib/queryClient";
 import { useSkillTree, type Skill } from "@/lib/skill-context";
@@ -683,7 +683,7 @@ export function GoalsButton() {
         data-testid="button-goals-toggle"
         title="Objetivos"
       >
-        <Scroll className="h-4 w-4" />
+        <Menu className="h-4 w-4" />
       </button>
       {createPortal(
         <AnimatePresence>
