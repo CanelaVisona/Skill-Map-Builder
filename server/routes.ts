@@ -568,6 +568,7 @@ export async function registerRoutes(
     try {
       const area = typeof req.body?.area === "string" ? req.body.area.trim().toLowerCase() : "";
       const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
+      const description = typeof req.body?.description === "string" ? req.body.description.trim() : "";
       if (!area || !title) {
         res.status(400).json({ message: "area y title son obligatorios" });
         return;
@@ -585,7 +586,7 @@ export async function registerRoutes(
       const alreadyExists = existingPowers.some(p => p.name.trim().toLowerCase() === title.toLowerCase());
       let power = null;
       if (!alreadyExists) {
-        const created = await storage.createSourcePower({ userId: req.userId!, areaId: match.id, name: title, description: "" });
+        const created = await storage.createSourcePower({ userId: req.userId!, areaId: match.id, name: title, description });
         power = (await storage.updateSourcePower(created.id, { isUnlocked: 2 })) ?? created;
       }
       res.json({ ok: true, power });

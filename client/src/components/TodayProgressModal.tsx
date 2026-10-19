@@ -8,7 +8,6 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar, ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Pencil, Plus, Star } from "lucide-react";
 import { useSkillTree, type Area, type Project, type Skill } from "@/lib/skill-context";
 import { useHabits, useUpdateHabitRecord } from "@/lib/useHabits";
@@ -1624,8 +1623,34 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       if (node && (node.status === "mastered") !== (newDone === 1)) {
         toggleNodeDone({ ...item, type: "node", id: node.id, key: `node:${node.id}`, done: node.status === "mastered" });
       }
+    } else if (newDone === 1 && task.linkedKind && task.linkedParentId) {
+      // Vinculada a un área/quest pero su nodo todavía no existe (ver submitNewTask): se crea
+      // ahora, y el efecto de abajo lo confirma cuando el árbol ya lo tiene.
+      pendingLinkedNodeConfirmIds.current.add(task.id);
+      materializePendingEventNodes().then(() =>
+        queryClient.invalidateQueries({ queryKey: ["manual-today-tasks", effectiveDate] })
+      );
     }
   };
+
+  // Tareas completadas cuyo nodo se acaba de crear al completarlas: se confirma el nodo acá y
+  // no en toggleManualDone, porque ahí el árbol (areas/projects) todavía no lo tiene.
+  const pendingLinkedNodeConfirmIds = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (pendingLinkedNodeConfirmIds.current.size === 0) return;
+    for (const task of manualTasks) {
+      if (!pendingLinkedNodeConfirmIds.current.has(task.id) || !task.linkedSkillId) continue;
+      const parent = findNodeParent(task.linkedSkillId);
+      if (!parent) continue; // El árbol todavía no se refrescó con el nodo nuevo.
+      pendingLinkedNodeConfirmIds.current.delete(task.id);
+      const parentTree = (parent.kind === "area" ? areas : projects).find((p) => p.id === parent.parentId);
+      const node = parentTree?.skills?.find((s: Skill) => s.id === task.linkedSkillId);
+      if (task.done !== 1 || !node || node.status === "mastered") continue;
+      if (parent.kind === "area") toggleSkillStatus(parent.parentId, node.id);
+      else toggleProjectSkillStatus(parent.parentId, node.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [manualTasks, areas, projects]);
 
   // Busca el área/proyecto dueño de un nodo por su id de skill, sin depender de que el ítem
   // tenga parentId/kind propios (los nodos "extra" de "Más" no los tienen — ver PlannedNode).
@@ -2191,8 +2216,18 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     if (newTaskKind === "task" && newTaskParent) {
       const [parentKind, parentId] = newTaskParent.split(":") as ["area" | "project", string];
       const node = await addSkillInPlaceOfAvailable(parentKind, parentId, title, { plannedDate: effectiveDate, plannedDuration: minutes, plannedDeadline: deadline });
-      if (node && addTaskTargetSlot) {
-        setTaskSlot.mutate({ date: effectiveDate, taskType: "node", taskId: node.id, slot: addTaskTargetSlot });
+      if (node) {
+        if (addTaskTargetSlot) {
+          setTaskSlot.mutate({ date: effectiveDate, taskType: "node", taskId: node.id, slot: addTaskTargetSlot });
+        }
+        return;
+      }
+      // No se pudo crear el nodo (error de red, árbol sin lugar donde ubicarlo…): la tarea no
+      // se pierde, queda como tarea manual vinculada al área/quest — igual que un evento — y el
+      // nodo se vuelve a intentar al cargar (materializePendingEventNodes) y al completarla.
+      const created = await createManualTask.mutateAsync({ date: effectiveDate, title, kind: "task", linkedKind: parentKind, linkedParentId: parentId, minutes, deadline });
+      if (addTaskTargetSlot) {
+        setTaskSlot.mutate({ date: effectiveDate, taskType: "manual", taskId: created.id, slot: addTaskTargetSlot });
       }
       return;
     }
@@ -3371,34 +3406,40 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
               )}
             </button>
             {newTaskParentOpen && (
-          <Select value={newTaskParent || "__none__"} onValueChange={(v) => setNewTaskParent(v === "__none__" ? "" : v)}>
-            <SelectTrigger className="border-0 bg-muted/50 focus:ring-0">
-              <SelectValue placeholder="Área o quest" />
-            </SelectTrigger>
-            <SelectContent
-              className="border-0 minimal-scrollbar touch-pan-y"
-              onWheel={(e) => e.stopPropagation()}
-              onTouchMove={(e) => e.stopPropagation()}
-            >
-              <SelectItem value="__none__">Sin área ni quest</SelectItem>
-              {areas.length > 0 && (
-                <SelectGroup>
-                  <SelectLabel>Áreas</SelectLabel>
-                  {areas.map((a) => (
-                    <SelectItem key={a.id} value={`area:${a.id}`}>{a.name}</SelectItem>
-                  ))}
-                </SelectGroup>
-              )}
-              {projects.length > 0 && (
-                <SelectGroup>
-                  <SelectLabel>Quests</SelectLabel>
-                  {projects.map((p) => (
-                    <SelectItem key={p.id} value={`project:${p.id}`}>{p.name}</SelectItem>
-                  ))}
-                </SelectGroup>
-              )}
-            </SelectContent>
-          </Select>
+          // Lista inline (no un Select en portal): así scrollea dentro del diálogo con la rueda y
+          // con el dedo, sin barra visible, y tocar la opción ya elegida la deselecciona.
+          <div
+            className="scrollbar-hide max-h-48 overflow-y-auto overscroll-contain touch-pan-y rounded-md bg-muted/50 p-1"
+            onWheel={(e) => e.stopPropagation()}
+            onTouchMove={(e) => e.stopPropagation()}
+          >
+            {[
+              { label: "Áreas", options: areas.map((a) => ({ value: `area:${a.id}`, name: a.name })) },
+              { label: "Quests", options: projects.map((p) => ({ value: `project:${p.id}`, name: p.name })) },
+            ]
+              .filter((group) => group.options.length > 0)
+              .map((group) => (
+                <div key={group.label}>
+                  <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">{group.label}</div>
+                  {group.options.map((opt) => {
+                    const selected = newTaskParent === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setNewTaskParent(selected ? "" : opt.value)}
+                        className={`flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors ${
+                          selected ? "bg-accent text-accent-foreground font-medium" : "hover:bg-accent/60"
+                        }`}
+                      >
+                        <span className="truncate">{opt.name}</span>
+                        {selected && <Check className="h-4 w-4 shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+          </div>
             )}
           </div>
         )}

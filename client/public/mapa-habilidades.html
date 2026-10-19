@@ -121,6 +121,11 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
 .wiz button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .wiz .wiz-x{background:transparent;border:none;color:var(--muted);font-size:1.6rem;line-height:1;padding:0 4px}
 @media (prefers-reduced-motion:reduce){ .wiz-track{transition:none} }
+.wiz textarea{width:100%;font:400 14px var(--display);padding:8px 11px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;resize:vertical;min-height:52px}
+.wiz textarea:focus-visible{outline:2px solid var(--zdp);outline-offset:1px}
+.nrow{display:flex;gap:8px;align-items:flex-start;margin-bottom:14px}
+.nrow .num{flex:none;width:20px;text-align:right;color:var(--muted);font-variant-numeric:tabular-nums;font-size:.85rem;padding-top:11px}
+.nrow .ncol{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
 .menu{position:fixed;z-index:6;min-width:220px;max-width:calc(100% - 16px);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;box-shadow:0 12px 30px rgba(0,0,0,.35);-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .menu-cap{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:4px 10px 6px}
 .mitem{display:block;width:100%;text-align:left;font:600 .95rem var(--display);padding:10px;border-radius:6px;border:none;background:transparent;color:var(--ink);cursor:pointer}
@@ -142,11 +147,14 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
 .pop{position:fixed;width:260px;max-width:calc(100% - 16px);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px;display:flex;flex-direction:column;gap:10px;box-shadow:0 10px 30px rgba(0,0,0,.35);z-index:5}
 .pop label{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
 .pop input,.pop select{width:100%;font:600 16px var(--display);padding:8px 10px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:4px}
+.pop textarea{width:100%;font:400 15px var(--display);padding:8px 10px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:4px;resize:vertical;min-height:64px}
+.pop .desc-view{margin:0;font-size:.92rem;line-height:1.4;color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere;max-height:40vh;overflow:auto}
+.pop .desc-view.empty{color:var(--muted);font-style:italic}
 .pop .btns{display:flex;flex-wrap:wrap;gap:8px}
 .pop button{font:600 .85rem var(--display);border-radius:4px;padding:7px 12px;cursor:pointer;border:2px solid var(--zdp);background:var(--zdp);color:var(--bg)}
 .pop button.ghost{background:transparent;color:var(--muted);border-color:var(--line)}
 .pop button.danger{background:transparent;color:var(--real2);border-color:var(--real2)}
-.pop input:focus-visible,.pop select:focus-visible,.pop button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.pop input:focus-visible,.pop select:focus-visible,.pop textarea:focus-visible,.pop button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 [hidden]{display:none !important}
 </style>
 </head>
@@ -185,6 +193,20 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
     </div>
   </div>
 </div>
+<div class="wiz" id="nxt" hidden role="dialog" aria-modal="true" aria-labelledby="nxtTitle">
+  <div class="wiz-box">
+    <div class="wiz-head">
+      <div><div class="wiz-step" id="nxtStep"></div><h2 id="nxtTitle"></h2></div>
+      <button type="button" class="wiz-x" id="nxtX" aria-label="Cancelar">×</button>
+    </div>
+    <div class="wiz-pane" id="nxtBody"></div>
+    <div class="wiz-foot">
+      <p class="wiz-err"></p>
+      <button type="button" class="ghost" id="nxtCancel">Cancelar</button>
+      <button type="button" id="nxtSave">Guardar</button>
+    </div>
+  </div>
+</div>
 <div class="menu" id="menu" hidden role="menu">
   <div class="menu-cap" id="menuCap"></div>
   <div id="menuList"></div>
@@ -194,11 +216,14 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
   <label for="popName" id="popCap">Habilidad</label>
   <input id="popName" type="text" maxlength="40" autocomplete="off">
   <select id="popSel" hidden aria-labelledby="popCap"></select>
+  <textarea id="popDesc" rows="3" maxlength="400" placeholder="Descripción" aria-label="Descripción de la habilidad" hidden></textarea>
+  <p id="popDescView" class="desc-view" hidden></p>
   <div class="btns">
     <button type="button" id="popSave">Guardar</button>
     <button type="button" class="ghost" id="popLock">Volver a bloquear</button>
     <button type="button" class="ghost" id="popAdd">Agregar eje</button>
     <button type="button" class="ghost" id="popSub">Dividir en subskills</button>
+    <button type="button" class="ghost" id="popNext" hidden>Preparar próximo nivel</button>
     <button type="button" class="danger" id="popDel">Eliminar eje</button>
     <button type="button" class="ghost" id="popClose">Cerrar</button>
   </div>
@@ -306,6 +331,9 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
     render();
   }
   function setName(a,j,v){ a.tiers[Math.floor(j/PER)][j%PER]=v }
+  /* Descripción de cada habilidad, aparte de tiers (que siguen siendo solo los títulos): a.descs[j]. */
+  function getDesc(a,j){ return (a.descs&&a.descs[j])||'' }
+  function setDesc(a,j,v){ a.descs=a.descs||{}; if(v) a.descs[j]=v; else delete a.descs[j] }
   function blanks(){ var o=[]; for(var k=1;k<=PER;k++) o.push('Habilidad '+k); return o }
   function labelPos(i){
     var lp=pt(i,rad(Math.max(PER,sk(areas[i]).length))+88), sn=Math.sin(ang(i));
@@ -388,7 +416,7 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
         if(grp){ var gp=pt(i,rad(j+1)); el('circle',{class:'gdot'+(j+1<=gVal(a)+1e-9?' on':''),cx:gp[0],cy:gp[1],r:6},gn); return }
         var st=j<a.level?'done':(j===a.level?'zdp':'locked');
         var p=pt(i,rad(j+1)), node=el('g',{class:'node '+st+(j%PER===PER-1?' last':''),tabindex:'0',role:'button'},gn);
-        el('title',{},node).textContent=s;
+        el('title',{},node).textContent=s+(getDesc(a,j)?' · '+getDesc(a,j):'');
         if(st==='zdp'){ el('circle',{class:'halo',cx:p[0],cy:p[1],r:16},node); top.push(node) }
         var r=st==='locked'?Math.min(7,sp*0.3):(st==='zdp'?Math.min(10,sp*0.55):Math.min(8,sp*0.4));
         el('circle',{class:'dot'+(st==='done'?' '+tcls(Math.floor(j/PER)):''),cx:p[0],cy:p[1],r:r},node);
@@ -397,7 +425,7 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
         else if(shown===i+'-'+j){ el('text',Object.assign({class:'nlbl'},place(i,p)),node).textContent=s; top.push(node) }
         node.setAttribute('aria-label',s+(st==='done'?' (lograda)':st==='zdp'?' (tocá para desbloquear)':' (bloqueada)'));
         press(node, st==='zdp'?function(){unlock(i)}:function(){ shown=(shown===i+'-'+j)?null:i+'-'+j; render() },
-          function(){ if(st!=='done') openEdit({i:i,j:j},p); else if(j===a.level-1) openEdit({i:i,j:j,lock:true},p) });
+          function(){ if(st!=='done') openEdit({i:i,j:j},p); else openEdit({i:i,j:j,done:true,lock:j===a.level-1},p) });
       });
 
       if(!grp&&a.level<skills.length){ var ac=getActs(a), r0=rad(a.level), r1=rad(a.level+1);
@@ -418,7 +446,7 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
         el('circle',{class:'dot',cx:zp[0],cy:zp[1],r:10},zn);
         el('circle',{class:'hit',cx:zp[0],cy:zp[1],r:17},zn);
         el('text',Object.assign({class:'zlbl'},place(i,zp)),zn).textContent=nm;
-        press(zn,function(){ nx.level++; sideQuest(nm); shown=null; save(); closeEdit(); burst(pt(i,rad(gAvg(a)))); render(); flash($('pReal')) },function(){});
+        press(zn,function(){ var nd=getDesc(nx,nx.level); nx.level++; sideQuest(nm,nd); shown=null; save(); closeEdit(); burst(pt(i,rad(gAvg(a)))); render(); flash($('pReal')) },function(){});
         top.push(zn);
       }
       var ready=grp?gReady(a):a.level>=skills.length, rp=pt(i,rad(skills.length)+34), lvl=grp?gTier(a)+1:a.tier+1;
@@ -457,16 +485,16 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
 
   /* Un subskill logrado crea un nodo SideQuest confirmado en el skill tree del área de la app con el
      mismo nombre que la zona actual; después se avisa a la app para que recargue los árboles. */
-  function sideQuest(title){
+  function sideQuest(title,desc){
     if(!API||!zones[sa]||!title) return;
-    fetch(API+'/side-quest',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({area:zones[sa].name,title:title})})
+    fetch(API+'/side-quest',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({area:zones[sa].name,title:title,description:desc||''})})
       .then(function(r){ if(!r.ok) return; return r.json().then(function(d){ return d },function(){ return {} }).then(function(d){
         try{ parent.postMessage({type:'radar-side-quest',power:d&&d.power?{name:d.power.name}:null},location.origin) }catch(e){}
       }) },function(){});
   }
   function unlock(i){
     var a=areas[i]; if(a.level>=sk(a).length) return;
-    a.level++; sideQuest(sk(a)[a.level-1]); shown=null; save(); closeEdit();
+    a.level++; sideQuest(sk(a)[a.level-1],getDesc(a,a.level-1)); shown=null; save(); closeEdit();
     burst(pt(i,rad(a.level))); render(); flash($('pReal'));
   }
   function levelUp(i){
@@ -482,16 +510,22 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
   function openEdit(target,p){
     edit=target; delArmed=false;
     var a=areas[target.i], pop=$('pop'), isArea=target.j<0, lock=!!(target.lock||target.actLock), isAct=target.k!=null, inp=$('popName');
-    $('popCap').textContent=isAct?(lock?a.name+' · '+getActs(a)[target.k].n:a.name+' · actividad'):isArea?'Nombre del eje':(lock?a.name+' · '+sk(a)[target.j]:a.name+' · habilidad');
+    var isSkill=!isArea&&!isAct, ro=lock||!!target.done;
+    $('popCap').textContent=isAct?(lock?a.name+' · '+getActs(a)[target.k].n:a.name+' · actividad'):isArea?'Nombre del eje':(ro?a.name+' · '+sk(a)[target.j]:a.name+' · habilidad');
     inp.value=isAct?getActs(a)[target.k].n:isArea?a.name:sk(a)[target.j];
-    inp.hidden=lock; $('popSel').hidden=true; $('popSave').hidden=lock; $('popLock').hidden=!lock;
+    inp.hidden=ro; $('popSel').hidden=true; $('popSave').hidden=ro; $('popLock').hidden=!lock;
+    /* Habilidad: la descripción se edita en las bloqueadas/pendientes y solo se lee en las logradas. */
+    var dsc=isSkill?getDesc(a,target.j):'', dv=$('popDescView');
+    $('popDesc').hidden=!isSkill||ro; $('popDesc').value=dsc;
+    dv.hidden=!isSkill||!target.done; dv.textContent=dsc||'Sin descripción'; dv.classList.toggle('empty',!dsc);
     var canAct=!isArea&&!isAct&&!lock&&target.j===a.level&&getActs(a).length<3;
     $('popAdd').hidden=isArea?areas.length>=12:!canAct; $('popAdd').textContent=isArea?'Agregar eje':'Agregar actividad';
     $('popDel').hidden=isAct?lock:(!isArea||areas.length<=3); $('popDel').textContent=isAct?'Eliminar actividad':'Eliminar eje';
-    $('popSave').textContent='Guardar'; inp.placeholder='';
+    $('popSave').textContent='Guardar'; inp.placeholder=isSkill?'Título':'';
     $('popSub').hidden=!(isArea&&cur===null&&!isG(a));
+    $('popNext').hidden=!(isArea&&!isG(a)); $('popNext').textContent='Preparar Nv '+(a.tier+2);
     var m=svg.getScreenCTM(); placePop(m.a*p[0]+m.e, m.d*p[1]+m.f);
-    if(lock) $('popLock').focus(); else { inp.focus(); inp.select() }
+    if(lock) $('popLock').focus(); else if(ro) $('popClose').focus(); else { inp.focus(); inp.select() }
   }
   function placePop(x,y){
     var pop=$('pop'); pop.hidden=false; var w=pop.offsetWidth, h=pop.offsetHeight;
@@ -500,7 +534,7 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
     pop.style.left=left+'px'; pop.style.top=top+'px';
   }
   function popMode(o){
-    ['popName','popSel','popSave','popLock','popAdd','popDel','popSub'].forEach(function(id){ $(id).hidden=!o[id] });
+    ['popName','popSel','popDesc','popDescView','popSave','popLock','popAdd','popDel','popSub','popNext'].forEach(function(id){ $(id).hidden=!o[id] });
     for(var id in o) if(typeof o[id]==='string') $(id).textContent=o[id];
   }
   function fillSel(opts,val){
@@ -548,6 +582,7 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
   function applyName(){
     var v=$('popName').value.trim(), a=areas[edit.i];
     if(v&&edit.k!=null){ getActs(a)[edit.k].n=v; return }
+    if(!edit.lock&&!edit.done&&edit.j>=a.level&&edit.k==null) setDesc(a,edit.j,$('popDesc').value.trim());
     if(v&&!edit.lock){ if(edit.j<0) a.name=v; else if(edit.j>=a.level) setName(a,edit.j,v) }
   }
   function saveEdit(){
@@ -570,6 +605,7 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
   $('popSave').addEventListener('click',saveEdit);
   $('popClose').addEventListener('click',closeEdit);
   $('popName').addEventListener('keydown',function(ev){ if(ev.key==='Enter') saveEdit(); else if(ev.key==='Escape') closeEdit() });
+  $('popDesc').addEventListener('keydown',function(ev){ if(ev.key==='Escape') closeEdit(); else if(ev.key==='Enter'&&(ev.ctrlKey||ev.metaKey)) saveEdit() });
   $('popSel').addEventListener('keydown',function(ev){ if(ev.key==='Enter'){ ev.preventDefault(); saveEdit() } else if(ev.key==='Escape') closeEdit() });
   $('popLock').addEventListener('click',function(){
     if(!edit) return; var a=areas[edit.i];
@@ -579,10 +615,36 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
   });
   $('popSub').addEventListener('click',function(){
     if(!edit||edit.j!==-1||cur!==null) return; var i=edit.i, a=areas[i]; if(isG(a)) return; applyName();
-    var first={name:'Subskill 1',level:a.level,tier:a.tier,tiers:a.tiers}; if(a.acts) first.acts=a.acts;
+    var first={name:'Subskill 1',level:a.level,tier:a.tier,tiers:a.tiers}; if(a.acts) first.acts=a.acts; if(a.descs) first.descs=a.descs;
     areas[i]={name:a.name,tier:0,children:[first,blankLeaf('Subskill 2'),blankLeaf('Subskill 3')]};
     save(); closeEdit(); go(i);
   });
+  /* Próximo nivel de un eje: se cargan de antemano los títulos y descripciones de sus skills.
+     Quedan en a.tiers[a.tier+1], así que levelUp/gLevelUp los usan en vez de crear "Habilidad N". */
+  var nxt=null;
+  function openNext(i){
+    var a=areas[i], t=a.tier+1, row=a.tiers[t]||[], body=$('nxtBody'); nxt={a:a,t:t};
+    $('nxtStep').textContent=a.name+' · Nv '+(t+1); $('nxtTitle').textContent='Skills del próximo nivel';
+    body.textContent='';
+    body.appendChild(h('p',{text:'Aparecen en el eje cuando completes el nivel actual y lo subas. Las que dejes sin título quedan como "Habilidad N".'}));
+    for(var k=0;k<PER;k++){
+      var nm=row[k]&&row[k]!=='Habilidad '+(k+1)?row[k]:'';
+      var ti=h('input',{type:'text',id:'nxtT'+k,placeholder:'Título',maxlength:'40',autocomplete:'off','aria-label':'Título de la skill '+(k+1)}); ti.value=nm;
+      var de=h('textarea',{id:'nxtD'+k,rows:'2',maxlength:'400',placeholder:'Descripción','aria-label':'Descripción de la skill '+(k+1)}); de.value=getDesc(a,t*PER+k);
+      body.appendChild(h('div',{class:'nrow'},[h('span',{class:'num',text:k+1}),h('div',{class:'ncol'},[ti,de])]));
+    }
+    $('nxt').hidden=false; $('nxtT0').focus();
+  }
+  function closeNext(){ $('nxt').hidden=true; nxt=null }
+  $('nxtSave').addEventListener('click',function(){
+    if(!nxt) return; var a=nxt.a, t=nxt.t, row=[];
+    for(var k=0;k<PER;k++){ row.push($('nxtT'+k).value.trim()||'Habilidad '+(k+1)); setDesc(a,t*PER+k,$('nxtD'+k).value.trim()) }
+    a.tiers[t]=row; closeNext(); save(); render();
+  });
+  $('nxtX').addEventListener('click',closeNext);
+  $('nxtCancel').addEventListener('click',closeNext);
+  $('nxt').addEventListener('keydown',function(ev){ if(ev.key==='Escape') closeNext() });
+  $('popNext').addEventListener('click',function(){ if(!edit||edit.j!==-1) return; var i=edit.i; if(isG(areas[i])) return; applyName(); save(); closeEdit(); openNext(i) });
   $('popAdd').addEventListener('click',function(){
     if(!edit) return;
     if(edit.zone!=null||(edit.barbg&&edit.area===null)){ var r=$('pop').getBoundingClientRect(); closeEdit(); openAreaEdit('new',r.left+r.width/2,r.top-22); return }
