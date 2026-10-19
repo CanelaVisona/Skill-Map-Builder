@@ -460,7 +460,9 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
   function sideQuest(title){
     if(!API||!zones[sa]||!title) return;
     fetch(API+'/side-quest',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({area:zones[sa].name,title:title})})
-      .then(function(r){ if(r.ok) try{ parent.postMessage({type:'radar-side-quest'},location.origin) }catch(e){} },function(){});
+      .then(function(r){ if(!r.ok) return; return r.json().then(function(d){ return d },function(){ return {} }).then(function(d){
+        try{ parent.postMessage({type:'radar-side-quest',power:d&&d.power?{name:d.power.name}:null},location.origin) }catch(e){}
+      }) },function(){});
   }
   function unlock(i){
     var a=areas[i]; if(a.level>=sk(a).length) return;

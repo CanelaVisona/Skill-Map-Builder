@@ -2,6 +2,8 @@ import { useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTheme } from "next-themes";
 import { useSkillTree } from "@/lib/skill-context";
+import { usePowerCelebration } from "@/lib/power-celebration-context";
+import { queryClient } from "@/lib/queryClient";
 
 // Mapa de habilidades radial: vive en /mapa-habilidades.html (JS propio, guarda en localStorage)
 // y se muestra en un iframe. Las áreas del skill tree viajan en el hash para que el mapa solo
@@ -9,15 +11,23 @@ import { useSkillTree } from "@/lib/skill-context";
 export function RadarSkillMapModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { areas, refreshSkillTrees } = useSkillTree();
   const { resolvedTheme } = useTheme();
+  const { showPowerCelebration } = usePowerCelebration();
 
-  // Al lograr un subskill el mapa crea un nodo SideQuest en el área y avisa para recargar los árboles.
+  // Al lograr un subskill el mapa crea un nodo SideQuest y un poder en el área y avisa para
+  // recargar los árboles (y los poderes) y mostrar el pop-up de nuevo poder.
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
-      if (e.origin === window.location.origin && e.data?.type === "radar-side-quest") refreshSkillTrees();
+      if (e.origin !== window.location.origin || e.data?.type !== "radar-side-quest") return;
+      refreshSkillTrees();
+      const powerName = e.data?.power?.name;
+      if (typeof powerName === "string" && powerName) {
+        queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0] ?? "").startsWith("/api/source-powers/") });
+        showPowerCelebration({ name: powerName, kind: "confirmed" });
+      }
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [refreshSkillTrees]);
+  }, [refreshSkillTrees, showPowerCelebration]);
 
   const areaNames = (Array.isArray(areas) ? areas : [])
     .filter((a) => !a.upcoming)

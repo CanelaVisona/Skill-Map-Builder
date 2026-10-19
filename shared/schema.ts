@@ -568,9 +568,9 @@ export interface BudgetMonthEntry {
   savings: number;
 }
 
-// Cada carga de presupuesto cubre los últimos 3 meses al momento de guardarla; el calendario
-// anual usa `months` para saber a qué meses del año corresponde esta misma carga. El presupuesto
-// total no se guarda: se calcula siempre como el promedio de fijos + variables + ahorro.
+// Cada carga de presupuesto guarda uno o más meses (los últimos 3 al cargarlo desde el gráfico, o
+// un solo mes al editarlo desde el calendario). Lo que vale para cada mes se arma juntando todas
+// las cargas, y el promedio de un mes se calcula con ese mes y los 2 anteriores que estén cargados.
 export const budgetQuarters = pgTable("budget_quarters", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
@@ -1106,7 +1106,7 @@ export const insertBudgetQuarterSchema = createInsertSchema(budgetQuarters).omit
     fixed: z.number(),
     variable: z.number(),
     savings: z.number(),
-  })).length(3),
+  })).min(1),
 });
 export type InsertBudgetQuarter = z.infer<typeof insertBudgetQuarterSchema>;
 export type BudgetQuarter = typeof budgetQuarters.$inferSelect;

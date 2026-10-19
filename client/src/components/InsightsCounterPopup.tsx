@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { createPortal } from "react-dom";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Lightbulb, Pencil, Wrench } from "lucide-react";
 import { usePopupPalette, type PopupPalette } from "@/lib/popup-theme";
 import { playProgressAdvanceSound } from "@/lib/sound";
@@ -20,17 +20,62 @@ const KIND_META: Record<InsightsCounterKind, { icon: typeof Lightbulb; label: st
   tool: { icon: Wrench, label: "Herramientas" },
 };
 
-function StaticNumber({ value, palette }: { value: number; palette: PopupPalette }) {
-  return <span style={{ color: palette.text }}>{Math.max(0, value)}</span>;
+// Tiempo que se muestra el valor anterior antes de saltar al nuevo con el "+1".
+const COUNT_CHANGE_DELAY_MS = 650;
+
+// Arranca en countBefore y, tras un instante, salta directo a countAfter (sin "rodar" por
+// valores intermedios) mientras un "+1" sube y se desvanece junto al número.
+function CountChange({ before, after, palette }: { before: number; after: number; palette: PopupPalette }) {
+  const [changed, setChanged] = useState(false);
+
+  useEffect(() => {
+    setChanged(false);
+    const timer = setTimeout(() => setChanged(true), COUNT_CHANGE_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [before, after]);
+
+  const value = Math.max(0, changed ? after : before);
+  const delta = after - before;
+
+  return (
+    <span className="relative inline-flex items-center">
+      <AnimatePresence mode="popLayout" initial={false}>
+        <motion.span
+          key={value}
+          initial={{ opacity: 0, y: 10, scale: 1.25 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -10 }}
+          transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
+          style={{ color: palette.text, display: "inline-block" }}
+        >
+          {value}
+        </motion.span>
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {changed && delta > 0 && (
+          <motion.span
+            key="plus-one"
+            className="pointer-events-none absolute left-full top-0 ml-2 text-[16px] font-semibold"
+            style={{ color: palette.text }}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: [0, 1, 1, 0], y: [6, -4, -10, -18] }}
+            transition={{ duration: 1.4, times: [0, 0.15, 0.7, 1], ease: "easeOut" }}
+          >
+            +{delta}
+          </motion.span>
+        )}
+      </AnimatePresence>
+    </span>
+  );
 }
 
 // Pop-up que muestra el conteo propio de un tipo (pensamientos, aprendizajes o herramientas --
 // nunca mezclados) en vez de hacer crecer la barra de progreso del área/proyecto activo, que es
 // lo que hacían antes estas tres acciones. Misma "carcasa" que AreaLevelGainPopup/
-// TodayProgressGainPopup. El número central se muestra estático en countAfter (el valor ya
-// actualizado) desde el instante en que aparece -- antes "rodaba" desde countBefore, pero ese
-// intermedio se leía como un valor incorrecto/bugueado, así que ahora se salta directo al
-// número final.
+// TodayProgressGainPopup. El número central aparece en countBefore y salta directo a countAfter
+// con un "+1" flotante (ver CountChange) -- sin "rodar" por valores intermedios, que se leían
+// como un valor bugueado.
 export function InsightsCounterPopup({ snapshot, onClose }: InsightsCounterPopupProps) {
   const palette = usePopupPalette();
 
@@ -116,7 +161,7 @@ export function InsightsCounterPopup({ snapshot, onClose }: InsightsCounterPopup
             </div>
 
             <div className="mt-3 flex items-center justify-center text-[32px] font-semibold leading-none" style={{ fontVariantNumeric: "tabular-nums" }}>
-              <StaticNumber value={snapshot.countAfter} palette={palette} />
+              <CountChange before={snapshot.countBefore} after={snapshot.countAfter} palette={palette} />
             </div>
           </motion.div>
         </div>

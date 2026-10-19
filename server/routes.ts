@@ -579,7 +579,16 @@ export async function registerRoutes(
         return;
       }
       await createLoggedSideQuestNode({ areaId: match.id }, req.userId!, title);
-      res.json({ ok: true });
+      // El subskill confirmado también nace como poder del área, directamente dominado.
+      // Si ya hay uno con ese nombre no se duplica.
+      const existingPowers = await storage.getSourcePowers(req.userId!, "area", match.id);
+      const alreadyExists = existingPowers.some(p => p.name.trim().toLowerCase() === title.toLowerCase());
+      let power = null;
+      if (!alreadyExists) {
+        const created = await storage.createSourcePower({ userId: req.userId!, areaId: match.id, name: title, description: "" });
+        power = (await storage.updateSourcePower(created.id, { isUnlocked: 2 })) ?? created;
+      }
+      res.json({ ok: true, power });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

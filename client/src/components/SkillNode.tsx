@@ -2,7 +2,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { type Skill, type GlobalSkill, useSkillTree } from "@/lib/skill-context";
 import { type JournalThought, type JournalLearning, type JournalTool } from "@shared/schema";
 import { cn } from "@/lib/utils";
-import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus, Star, ChevronRight, ChevronLeft, Wrench, Lightbulb, BicepsFlexed, Shield, Bug, OctagonAlert, X } from "lucide-react";
+import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus, Star, ChevronRight, ChevronLeft, Wrench, Lightbulb, Bug, X } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { type ExperienceGainSnapshot } from "./ExperienceGainPopup";
@@ -25,6 +25,8 @@ import { masterWholeSubSkillTree } from "@/lib/subskill-tree";
 import { useToast } from "@/hooks/use-toast";
 import { SkillLinkPicker } from "@/components/SkillLinkPicker";
 import { BodyLinkPicker, type BodyLink } from "@/components/BodyLinkPicker";
+import { SkillPickerList, ChipListInput } from "@/components/skill-node-pickers";
+import { NodeConfirmFeedbackModal, isNodeFeedbackDraftEmpty, type NodeFeedbackDraft } from "@/components/NodeConfirmFeedbackModal";
 import {
   Popover,
   PopoverContent,
@@ -141,337 +143,6 @@ function getQuickDateOptions(): QuickDateOption[] {
   }
 
   return options;
-}
-
-// Shared body of the "select skill" popover used both by the node long-press Journal's
-// Experience tab and by the title long-press edit dialog's Step 3 (Paso 3: XP). Besides the
-// legacy/global skills already scoped to the current area/quest, it offers an "Otra área"
-// escape hatch: pick any other area or quest, then pick one of its skills, for cases where the
-// XP earned here actually belongs to a skill tracked elsewhere.
-interface CrossAreaTarget {
-  type: "area" | "project";
-  id: string;
-  name: string;
-}
-
-interface SkillPickerListProps {
-  // Several skills can be picked at once -- picking toggles membership instead of
-  // replacing the selection, and the popover stays open so more can be picked.
-  selectedSkillIds: string[];
-  onToggle: (id: string) => void;
-  legacySkills: string[];
-  scopedGlobalSkills: GlobalSkill[];
-  areas: Array<{ id: string; name: string }>;
-  projects: Array<{ id: string; name: string }>;
-  currentAreaId?: string;
-  currentProjectId?: string;
-  getGlobalSkillsForArea: (areaId: string) => GlobalSkill[];
-  getGlobalSkillsForProject: (projectId: string) => GlobalSkill[];
-  testIdPrefix: string;
-}
-
-function SkillPickerList({
-  selectedSkillIds,
-  onToggle,
-  legacySkills,
-  scopedGlobalSkills,
-  areas,
-  projects,
-  currentAreaId,
-  currentProjectId,
-  getGlobalSkillsForArea,
-  getGlobalSkillsForProject,
-  testIdPrefix,
-}: SkillPickerListProps) {
-  const [otherAreaTarget, setOtherAreaTarget] = useState<CrossAreaTarget | null>(null);
-  const [browsingOtherAreas, setBrowsingOtherAreas] = useState(false);
-
-  // Doesn't close the popover or reset the current browsing view -- multi-select relies on
-  // staying put so several skills (including several from the same "Otra área") can be picked
-  // in a row.
-  const pick = (id: string) => {
-    onToggle(id);
-  };
-
-  // Skills of the chosen other area/quest
-  if (otherAreaTarget) {
-    const skillsThere = otherAreaTarget.type === "area"
-      ? getGlobalSkillsForArea(otherAreaTarget.id)
-      : getGlobalSkillsForProject(otherAreaTarget.id);
-
-    return (
-      <div
-        className="max-h-56 overflow-y-auto overscroll-contain touch-pan-y"
-        style={{ WebkitOverflowScrolling: "touch" }}
-        onWheel={(e) => e.stopPropagation()}
-        onTouchMove={(e) => e.stopPropagation()}
-      >
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-full justify-start h-7 px-2 mb-1 text-xs text-muted-foreground hover:bg-muted/50"
-          onClick={() => setOtherAreaTarget(null)}
-          data-testid={`${testIdPrefix}-button-other-area-skills-back`}
-        >
-          <ChevronLeft className="h-3 w-3 mr-1" /> {otherAreaTarget.name}
-        </Button>
-        {skillsThere.length === 0 ? (
-          <p className="text-xs text-muted-foreground px-2 py-3">No hay skills en {otherAreaTarget.name}</p>
-        ) : (
-          <div className="space-y-1">
-            {skillsThere.filter(s => !s.parentSkillId).map((gSkill) => (
-              <div key={gSkill.id}>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className={`w-full justify-start h-8 px-3 text-xs font-medium ${
-                    selectedSkillIds.includes(gSkill.id) ? "bg-muted text-foreground" : "hover:bg-muted/50"
-                  }`}
-                  onClick={() => pick(gSkill.id)}
-                  data-testid={`${testIdPrefix}-button-select-otherarea-skill-${gSkill.id}`}
-                >
-                  {selectedSkillIds.includes(gSkill.id) ? "✓ " : ""}{gSkill.name}
-                  <span className="ml-auto text-muted-foreground">Lv.{gSkill.level}</span>
-                </Button>
-                {skillsThere
-                  .filter(s => s.parentSkillId === gSkill.id)
-                  .map((subSkill) => (
-                    <Button
-                      key={subSkill.id}
-                      variant="ghost"
-                      size="sm"
-                      className={`w-full justify-start h-7 px-3 pl-6 text-xs font-normal ${
-                        selectedSkillIds.includes(subSkill.id) ? "bg-muted text-foreground" : "hover:bg-muted/50 text-muted-foreground"
-                      }`}
-                      onClick={() => pick(subSkill.id)}
-                      data-testid={`${testIdPrefix}-button-select-otherarea-subskill-${subSkill.id}`}
-                    >
-                      ↳ {selectedSkillIds.includes(subSkill.id) ? "✓ " : ""}{subSkill.name}
-                      <span className="ml-auto">Lv.{subSkill.level}</span>
-                    </Button>
-                  ))
-                }
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // List of other areas/quests to browse into
-  if (browsingOtherAreas) {
-    const otherAreas = areas.filter(a => a.id !== currentAreaId);
-    const otherProjects = projects.filter(p => p.id !== currentProjectId);
-
-    return (
-      <div
-        className="max-h-56 overflow-y-auto overscroll-contain touch-pan-y"
-        style={{ WebkitOverflowScrolling: "touch" }}
-        onWheel={(e) => e.stopPropagation()}
-        onTouchMove={(e) => e.stopPropagation()}
-      >
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-full justify-start h-7 px-2 mb-1 text-xs text-muted-foreground hover:bg-muted/50"
-          onClick={() => setBrowsingOtherAreas(false)}
-          data-testid={`${testIdPrefix}-button-other-area-list-back`}
-        >
-          <ChevronLeft className="h-3 w-3 mr-1" /> Volver
-        </Button>
-        {otherAreas.length === 0 && otherProjects.length === 0 ? (
-          <p className="text-xs text-muted-foreground px-2 py-3">No hay otras áreas o quests</p>
-        ) : (
-          <div className="space-y-1">
-            {otherAreas.map((area) => (
-              <Button
-                key={area.id}
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start h-8 px-3 text-xs font-normal hover:bg-muted/50"
-                onClick={() => setOtherAreaTarget({ type: "area", id: area.id, name: area.name })}
-                data-testid={`${testIdPrefix}-button-other-area-${area.id}`}
-              >
-                {area.name}
-              </Button>
-            ))}
-            {otherProjects.map((project) => (
-              <Button
-                key={project.id}
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start h-8 px-3 text-xs font-normal hover:bg-muted/50"
-                onClick={() => setOtherAreaTarget({ type: "project", id: project.id, name: project.name })}
-                data-testid={`${testIdPrefix}-button-other-quest-${project.id}`}
-              >
-                {project.name}
-              </Button>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // Default view: skills already scoped to the current area/quest, plus the "Otra área" escape hatch
-  return (
-    <div
-      className="max-h-56 overflow-y-auto overscroll-contain touch-pan-y"
-      style={{ WebkitOverflowScrolling: "touch" }}
-      onWheel={(e) => e.stopPropagation()}
-      onTouchMove={(e) => e.stopPropagation()}
-    >
-      {/* Legacy skills (only those associated with this area/project) */}
-      {legacySkills.length > 0 && (
-        <div className="space-y-1 mb-2">
-          {legacySkills.map((skillName) => {
-            const optionId = `legacy:${skillName}`;
-            return (
-              <Button
-                key={skillName}
-                variant="ghost"
-                size="sm"
-                className={`w-full justify-start h-8 px-3 text-xs font-normal ${
-                  selectedSkillIds.includes(optionId) ? "bg-muted text-foreground" : "hover:bg-muted/50"
-                }`}
-                onClick={() => pick(optionId)}
-                data-testid={`${testIdPrefix}-button-select-legacy-${skillName}`}
-              >
-                {selectedSkillIds.includes(optionId) ? "✓ " : ""}{skillName}
-              </Button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* GlobalSkills for this area/quest */}
-      {scopedGlobalSkills.length > 0 && (
-        <>
-          <div className="border-t border-muted my-2" />
-          <div className="space-y-1">
-            {/* Parent skills (not subskills) */}
-            {scopedGlobalSkills.filter(s => !s.parentSkillId).map((gSkill) => (
-              <div key={gSkill.id}>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className={`w-full justify-start h-8 px-3 text-xs font-medium ${
-                    selectedSkillIds.includes(gSkill.id) ? "bg-muted text-foreground" : "hover:bg-muted/50"
-                  }`}
-                  onClick={() => pick(gSkill.id)}
-                  data-testid={`${testIdPrefix}-button-select-skill-${gSkill.id}`}
-                >
-                  {selectedSkillIds.includes(gSkill.id) ? "✓ " : ""}{gSkill.name}
-                  <span className="ml-auto text-muted-foreground">Lv.{gSkill.level}</span>
-                </Button>
-                {/* Subskills of this parent */}
-                {scopedGlobalSkills
-                  .filter(s => s.parentSkillId === gSkill.id)
-                  .map((subSkill) => (
-                    <Button
-                      key={subSkill.id}
-                      variant="ghost"
-                      size="sm"
-                      className={`w-full justify-start h-7 px-3 pl-6 text-xs font-normal ${
-                        selectedSkillIds.includes(subSkill.id) ? "bg-muted text-foreground" : "hover:bg-muted/50 text-muted-foreground"
-                      }`}
-                      onClick={() => pick(subSkill.id)}
-                      data-testid={`${testIdPrefix}-button-select-subskill-${subSkill.id}`}
-                    >
-                      ↳ {selectedSkillIds.includes(subSkill.id) ? "✓ " : ""}{subSkill.name}
-                      <span className="ml-auto">Lv.{subSkill.level}</span>
-                    </Button>
-                  ))
-                }
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-
-      <div className="border-t border-muted my-2" />
-      <Button
-        variant="ghost"
-        size="sm"
-        className="w-full justify-start h-8 px-3 text-xs font-normal text-muted-foreground hover:bg-muted/50"
-        onClick={() => setBrowsingOtherAreas(true)}
-        data-testid={`${testIdPrefix}-button-other-area`}
-      >
-        Otra área
-      </Button>
-    </div>
-  );
-}
-
-// Editor chico de "lista de chips de texto" -- usado tanto para las Estrategias/Disparadores
-// que ya tiene un error guardado (onAdd/onRemove pegan al servidor), como para las que se
-// cargan al vuelo en el formulario de "nuevo error" (onAdd/onRemove solo tocan estado local,
-// recién se mandan al crear el error).
-function ChipListInput({
-  label,
-  placeholder,
-  items,
-  draft,
-  onDraftChange,
-  onAdd,
-  onRemove,
-  addDisabled,
-  testIdPrefix,
-}: {
-  label: string;
-  placeholder: string;
-  items: string[];
-  draft: string;
-  onDraftChange: (value: string) => void;
-  onAdd: () => void;
-  onRemove: (index: number) => void;
-  addDisabled?: boolean;
-  testIdPrefix: string;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground block">{label}</Label>
-      {items.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {items.map((item, i) => (
-            <span key={i} className="inline-flex items-center gap-1 text-[11px] rounded border border-border/60 bg-muted/40 pl-2 pr-1 py-0.5">
-              {item}
-              <button
-                type="button"
-                onClick={() => onRemove(i)}
-                className="text-muted-foreground hover:text-foreground"
-                data-testid={`${testIdPrefix}-remove-${i}`}
-              >
-                <X className="h-2.5 w-2.5" />
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
-      <div className="flex items-center gap-1.5">
-        <Input
-          placeholder={placeholder}
-          value={draft}
-          onChange={(e) => onDraftChange(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onAdd(); } }}
-          className="h-7 text-[11px] border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
-          data-testid={`${testIdPrefix}-input`}
-        />
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={onAdd}
-          disabled={!draft.trim() || addDisabled}
-          className="h-7 px-2 bg-muted/50 hover:bg-muted shrink-0"
-          data-testid={`${testIdPrefix}-add`}
-        >
-          <Plus className="h-3 w-3" />
-        </Button>
-      </div>
-    </div>
-  );
 }
 
 interface SkillNodeProps {
@@ -656,7 +327,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   };
   
   const [isOpen, setIsOpen] = useState(false);
-  const [popoverStep, setPopoverStep] = useState(0); // 0 = menu, 1 = journal tabs
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editStep, setEditStep] = useState(0);
   const [editTitle, setEditTitle] = useState(skill.title);
@@ -2243,34 +1913,168 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     }
 
     // Each block's own preview row (below the title) disappears the instant its underlying
-    // pending state is cleared above; this just runs the block's actual mutation/API call and
-    // shows its celebration pop-up(s) right after. Wrapped in try/finally so a failed mutation
-    // (e.g. a dropped request while creating the learning) can't leave the popup chain stuck
-    // open forever -- which would otherwise silently block "Quest updated!"/the area pop-up/the
-    // level-up banner for every confirm from then on.
+    // pending state is cleared above; runRewardBlocks just runs the block's actual mutation/API
+    // call and shows its celebration pop-up(s) right after. Wrapped in try/finally so a failed
+    // mutation (e.g. a dropped request while creating the learning) can't leave the popup chain
+    // stuck open forever -- which would otherwise silently block "Quest updated!"/the area
+    // pop-up/the level-up banner for every confirm from then on.
     try {
-      for (const block of blocks) {
-        try {
-          const tasks: Array<() => void> = [];
-          await block.run((fn) => tasks.push(fn));
-          await runPopupQueueAsync(tasks);
-        } catch (error) {
-          console.error("[runConfirmSequence] Reward block failed:", block.label, error);
-        }
-        // Re-checks on every wake-up instead of computing the wait once -- a block that just
-        // finished can still have something trailing behind it that extends busy AFTER this is
-        // first computed (e.g. an xp block that leveled up the skill: ExperienceGainPopup only
-        // hands off to the full-screen "¡Subiste de nivel!" celebration -- re-marking busy for
-        // its own POPUP_VISIBLE_MS -- near the end of its own bar animation, well after
-        // runPopupQueueAsync above already resolved). A one-shot wait computed right after that
-        // resolves would miss that extension and let the next block (e.g. fuerza/flexibilidad)
-        // start while the level-up celebration is still on screen.
-        while (getPopupBusyDelay() > 0) {
-          await new Promise((resolve) => setTimeout(resolve, getPopupBusyDelay() + 150));
-        }
-      }
+      await runRewardBlocks(blocks, "runConfirmSequence");
     } finally {
       endPopupChain();
+    }
+  };
+
+  // Runs reward blocks one at a time: each block's mutation, then its pop-ups, then waits for
+  // the screen to clear before the next. Shared by runConfirmSequence and the post-confirm
+  // feedback modal (handleConfirmFeedbackFinish). Never throws -- a failed block is logged and
+  // skipped.
+  const runRewardBlocks = async (blocks: ConfirmRewardBlock[], logTag: string) => {
+    for (const block of blocks) {
+      try {
+        const tasks: Array<() => void> = [];
+        await block.run((fn) => tasks.push(fn));
+        await runPopupQueueAsync(tasks);
+      } catch (error) {
+        console.error(`[${logTag}] Reward block failed:`, block.label, error);
+      }
+      // Re-checks on every wake-up instead of computing the wait once -- a block that just
+      // finished can still have something trailing behind it that extends busy AFTER this is
+      // first computed (e.g. an xp block that leveled up the skill: ExperienceGainPopup only
+      // hands off to the full-screen "¡Subiste de nivel!" celebration -- re-marking busy for
+      // its own POPUP_VISIBLE_MS -- near the end of its own bar animation, well after
+      // runPopupQueueAsync above already resolved). A one-shot wait computed right after that
+      // resolves would miss that extension and let the next block (e.g. fuerza/flexibilidad)
+      // start while the level-up celebration is still on screen.
+      await waitForPopupsBusyClear();
+    }
+  };
+
+  const waitForPopupsBusyClear = async () => {
+    while (getPopupBusyDelay() > 0) {
+      await new Promise((resolve) => setTimeout(resolve, getPopupBusyDelay() + 150));
+    }
+  };
+
+  // Post-confirm feedback modal (NodeConfirmFeedbackModal): opens after the área/quest level
+  // bar pop-up (and any staged rewards) and before "Quest updated!". While it's pending/open it
+  // holds its own popup chain, so "Quest updated!"/"¡Subiste de nivel!" -- which wait on
+  // hasPendingPopupChain() -- stay queued behind it; the chain is released only once whatever
+  // was loaded has been saved and its pop-ups have played (or right away, if nothing was).
+  const [isConfirmFeedbackOpen, setIsConfirmFeedbackOpen] = useState(false);
+  const confirmFeedbackChainOpen = useRef(false);
+
+  const releaseConfirmFeedbackChain = () => {
+    if (!confirmFeedbackChainOpen.current) return;
+    confirmFeedbackChainOpen.current = false;
+    endPopupChain();
+  };
+
+  // If this node unmounts mid-flow (e.g. leaving the sub-skill tree), never leave the chain
+  // stuck open -- that would block every future "Quest updated!".
+  useEffect(() => () => releaseConfirmFeedbackChain(), []);
+
+  const handleConfirmFeedbackFinish = async (draft: NodeFeedbackDraft) => {
+    if (!isConfirmFeedbackOpen) return;
+    setIsConfirmFeedbackOpen(false);
+    if (isNodeFeedbackDraftEmpty(draft)) {
+      releaseConfirmFeedbackChain();
+      return;
+    }
+
+    const blocks: ConfirmRewardBlock[] = [];
+
+    for (const thought of draft.thoughts) {
+      blocks.push({
+        label: `+Pensamiento: ${thought.title}`,
+        run: async (enqueue) => {
+          const countBefore = await getJournalEntryCount("thoughts");
+          await createThought.mutateAsync({ title: thought.title, sentence: thought.sentence, skillId: skill.id });
+          enqueue(() => showInsightsCounterPopup({ type: "thought", countBefore, countAfter: countBefore + 1 }));
+        },
+      });
+    }
+
+    for (const learning of draft.learnings) {
+      blocks.push({
+        label: `+Aprendizaje: ${learning.title}`,
+        run: async (enqueue) => {
+          const countBefore = await getJournalEntryCount("learnings");
+          await createLearning.mutateAsync({ title: learning.title, sentence: learning.sentence, skillId: skill.id });
+          enqueue(() => showInsightsCounterPopup({ type: "learning", countBefore, countAfter: countBefore + 1 }));
+        },
+      });
+    }
+
+    for (const tool of draft.tools) {
+      blocks.push({
+        label: `+Herramienta: ${tool.title}`,
+        run: async (enqueue) => {
+          const countBefore = await getJournalEntryCount("tools");
+          await createTool.mutateAsync({ title: tool.title, sentence: tool.sentence, skillId: skill.id });
+          enqueue(() => showInsightsCounterPopup({ type: "tool", countBefore, countAfter: countBefore + 1 }));
+        },
+      });
+    }
+
+    // Nuevo error: se crea y se confirma de una -- confirmNodeError ya muestra su propio
+    // "¡Error nuevo detectado!" (vía runPopupQueue en su onSuccess), no hay que encolarlo acá.
+    for (const error of draft.errors) {
+      blocks.push({
+        label: `+Error: ${error.nombre}`,
+        run: async () => {
+          const created = await createNodeError.mutateAsync(error);
+          await confirmNodeError.mutateAsync(created.id);
+        },
+      });
+    }
+
+    // Cubo "Error" (ex "Bugs"): confirmar uno recién detectado o +10p/-10p sobre uno ya
+    // existente. Igual que en runConfirmSequence, cada mutación muestra sus propios pop-ups.
+    for (const action of draft.errorActions) {
+      blocks.push({
+        label: `Error: ${action.errorName}`,
+        run: async () => {
+          if (action.type === "confirm") {
+            await confirmNodeError.mutateAsync(action.errorId);
+            return;
+          }
+          const field = action.delta > 0 ? "estrategias" : "disparadores";
+          const target = nodeErrorsList.find((e) => e.id === action.errorId);
+          if (action.isNew && target && !target[field].includes(action.value)) {
+            await addNodeErrorListItem.mutateAsync({ id: target.id, field, items: [...target[field], action.value] });
+          }
+          await adjustNodeErrorPoints.mutateAsync({
+            id: action.errorId,
+            delta: action.delta,
+            estrategia: action.delta > 0 ? action.value : null,
+            disparador: action.delta < 0 ? action.value : null,
+          });
+        },
+      });
+    }
+
+    for (const xpSkillId of draft.xpSkillIds) {
+      blocks.push({
+        label: `+${FIXED_XP_AMOUNT}xp ${skillDisplayName(xpSkillId)}`,
+        run: (enqueue) => applyExperienceGain(xpSkillId, enqueue),
+      });
+    }
+
+    for (const powerId of draft.powerIds) {
+      const power = sourcePowers.find((p) => p.id === powerId);
+      if (power) {
+        blocks.push({
+          label: `+${power.name}`,
+          run: (enqueue) => applyPowerAction(power, enqueue),
+        });
+      }
+    }
+
+    try {
+      await runRewardBlocks(blocks, "confirmFeedback");
+    } finally {
+      releaseConfirmFeedbackChain();
     }
   };
 
@@ -2675,6 +2479,10 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   // in skill-context.tsx), running the staged-rewards sequence first if there's anything to
   // grant. `learningOverride` is threaded straight through to runConfirmSequence -- see there.
   const confirmNode = (learningOverride?: { title: string; sentence: string }) => {
+    // Only a real confirm (available -> mastered) gets the feedback modal -- not an
+    // un-confirm, and not the star node that completes (and archives) the whole area/quest,
+    // since this node unmounts a few seconds later along with the archived area.
+    const opensConfirmFeedback = skill.status === "available" && !(isStarActive && isLastNodeOfLevel && !isSubSkillView);
     // onClick() first: it's what runs skill-context.tsx's toggleSkillStatus, which -- for a
     // regular confirm -- synchronously claims the busy-gate for the area/quest "progress bar
     // filling up" pop-up before returning here. runConfirmSequence checks that busy-gate as
@@ -2686,9 +2494,29 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     if (isSubSkillView && skill.status === "available") {
       masterWholeSubSkillTree(skill.id).catch((error) => console.error("Error confirmando sub-nodos del sub-nodo:", error));
     }
-    if (hasPendingRewards) {
-      runConfirmSequence(learningOverride);
+    if (!opensConfirmFeedback) {
+      if (hasPendingRewards) runConfirmSequence(learningOverride);
+      return;
     }
+    // Claimed synchronously, in the same tick as onClick()'s own busy-gate claim, so "Quest
+    // updated!" knows from the very first instant that it has to wait for the modal.
+    if (!confirmFeedbackChainOpen.current) {
+      confirmFeedbackChainOpen.current = true;
+      beginPopupChain();
+    }
+    void (async () => {
+      // Staged rewards (Step 3 / Journal) play first, right after the área/quest level bar...
+      if (hasPendingRewards) await runConfirmSequence(learningOverride);
+      // ...then, once the screen is clear (that level bar pop-up included), the modal. Busy has
+      // to stay clear for a short beat: the level bar pop-up itself only fires ~150ms after
+      // its placeholder busy claim expires (runAfterBusyClears), so a single check right as
+      // busy clears would race it and open the modal on top of it.
+      do {
+        await waitForPopupsBusyClear();
+        await new Promise((resolve) => setTimeout(resolve, 400));
+      } while (getPopupBusyDelay() > 0);
+      if (confirmFeedbackChainOpen.current) setIsConfirmFeedbackOpen(true);
+    })();
   };
 
   const handleLearningFinalizeConfirm = () => {
@@ -2794,7 +2622,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const handleOpenChange = (open: boolean) => {
     if (!open) {
       setIsOpen(false);
-      setPopoverStep(0); // Reset to menu step when closing
       isLongPress.current = false;
     }
   };
@@ -2954,7 +2781,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               </svg>
             )}
             {hasUnlockedWithIncompleteSubtasks ? (
-              <Lock size={14} className="text-white" />
+              <Lock size={14} className="text-foreground" />
             ) : isLocked ? (
               <Lock size={14} />
             ) : isMastered ? (
@@ -3031,15 +2858,30 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 onMouseDown={handleTitleLongPressStart}
                 onMouseUp={handleTitleLongPressEnd}
                 onMouseLeave={handleTitleLongPressEnd}
-                animate={{ scale: shouldPulseTitle ? [1, 1.15, 1] : 1 }}
+                // Small scale + will-change keeps the title on its own compositor layer, so
+                // the browser scales it as one bitmap instead of re-hinting the glyphs at
+                // every intermediate font size (which made the letters wobble/deform). The
+                // CSS transition-transform is dropped while pulsing so it doesn't fight
+                // framer-motion's per-frame transform updates.
+                animate={{
+                  scale: shouldPulseTitle ? [1, 1.06, 1] : 1,
+                  opacity: shouldPulseTitle ? [1, 0.7, 1] : 1,
+                }}
                 transition={shouldPulseTitle ? {
-                  duration: 1.2,
+                  duration: 1.4,
+                  ease: "easeInOut",
                   repeat: Infinity,
                   repeatType: "loop"
                 } : { duration: 0.2 }}
-                style={{ transformOrigin: "left center" }}
+                style={{
+                  transformOrigin: "left center",
+                  willChange: shouldPulseTitle ? "transform, opacity" : undefined,
+                  backfaceVisibility: "hidden",
+                  WebkitFontSmoothing: "antialiased",
+                }}
                 className={cn(
-                  "whitespace-nowrap block transition-transform duration-150",
+                  "whitespace-nowrap block",
+                  !shouldPulseTitle && "transition-transform duration-150",
                   !isSubSkillView && !isLocked && !isInicioNode && !shouldPulseTitle && "cursor-pointer hover:translate-y-0.5 active:translate-y-1",
                   !isInicioNode && "cursor-pointer"
                 )}
@@ -3131,10 +2973,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       <PopoverContent 
         side="top" 
         collisionPadding={16} 
-        className={cn(
-          "border-border bg-popover/95 backdrop-blur-xl shadow-xl p-4 z-50",
-          popoverStep === 0 ? "w-64" : "w-96"
-        )}
+        className="border-border bg-popover/95 backdrop-blur-xl shadow-xl p-4 z-50 w-64"
       >
         {isFirstNodeOfLevel ? (
           // Node 1 of each level is always mastered and has no title; its only
@@ -3173,8 +3012,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               SideQuest
             </Button>
           </div>
-        ) : popoverStep === 0 ? (
-          // STEP 1: Menu (current)
+        ) : (
+          // Menu
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-2">
               {canMoveUp() === null ? (
@@ -3366,565 +3205,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                >
                  <Trash2 className="h-3 w-3" />
                </Button>
-
-               {/* Next button to go to journal tabs step */}
-               <Button 
-                 variant="ghost" 
-                 size="sm" 
-                 className="h-8 w-8 p-0 bg-muted/50 hover:bg-muted ml-auto"
-                 onClick={() => setPopoverStep(1)}
-                 title="Thoughts, Learnings, Experience, Fuerza, Tools"
-               >
-                 <ChevronRight className="h-4 w-4" />
-               </Button>
-            </div>
-          </div>
-        ) : (
-          // STEP 2: Journal Tabs (from previous Edit Dialog Step 3)
-          <div className="flex flex-col h-full">
-            <div className="mb-3">
-              <span className="text-xs font-medium text-muted-foreground">Journal</span>
-            </div>
-
-            <Tabs value={feedbackActiveTab} onValueChange={(v) => setFeedbackActiveTab(v as "thoughts" | "tools" | "learnings" | "experience" | "body" | "powers" | "bugs" | "errores")} className="w-full flex flex-col flex-1">
-              <TabsList className="w-full flex flex-nowrap items-center justify-start gap-1 overflow-x-auto minimal-scrollbar bg-muted/50">
-                <TabsTrigger value="thoughts" className="shrink-0 text-xs" data-testid="feedback-tab-thoughts">
-                  Thoughts
-                </TabsTrigger>
-                <TabsTrigger value="learnings" className="shrink-0 text-xs" data-testid="feedback-tab-learnings">
-                  Learnings
-                </TabsTrigger>
-                <TabsTrigger value="experience" className="shrink-0 text-xs" data-testid="feedback-tab-experience">
-                  Experiencia
-                </TabsTrigger>
-                <TabsTrigger value="body" className="shrink-0 text-xs" data-testid="feedback-tab-body" title="Fuerza / Flexibilidad">
-                  Fuerza
-                </TabsTrigger>
-                <TabsTrigger value="powers" className="shrink-0 text-xs" data-testid="feedback-tab-powers">
-                  Poderes
-                </TabsTrigger>
-                <TabsTrigger value="errores" className="shrink-0 text-xs" data-testid="feedback-tab-errores">
-                  Bugs
-                </TabsTrigger>
-                <TabsTrigger value="tools" className="shrink-0 text-xs" data-testid="feedback-tab-tools">
-                  Tools
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="thoughts" className="mt-4 space-y-3 flex flex-col flex-1">
-                <div className="flex-1">
-                  <Input
-                    placeholder="TITLE"
-                    value={thoughtTitle}
-                    onChange={(e) => setThoughtTitle(e.target.value.toUpperCase())}
-                    className="uppercase border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
-                    data-testid="input-thought-title"
-                  />
-                  <Textarea
-                    placeholder="Descripción, notas o reflexión..."
-                    value={thoughtSentence}
-                    onChange={(e) => setThoughtSentence(e.target.value)}
-                    rows={3}
-                    className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none mt-2"
-                    data-testid="input-thought-sentence"
-                  />
-                </div>
-                <div className="flex justify-end items-center gap-2 pt-2">
-                  
-                  <Button 
-                    variant="ghost" 
-                    size="sm"
-                    onClick={handleAddThought}
-                    disabled={!thoughtTitle.trim() || createThought.isPending}
-                    className="bg-muted/50 hover:bg-muted"
-                    data-testid="button-new-thought"
-                  >
-                    <Plus className="h-3 w-3 mr-1" />
-                    New Thought
-                  </Button>
-                </div>
-              </TabsContent>
-              
-              <TabsContent value="learnings" className="mt-4 space-y-3 flex flex-col flex-1">
-                <div className="flex-1">
-                  <Input
-                    placeholder="TITLE"
-                    value={learningTitle}
-                    onChange={(e) => setLearningTitle(e.target.value.toUpperCase())}
-                    className="uppercase border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
-                    data-testid="input-learning-title"
-                  />
-                  <Input
-                    placeholder="Description"
-                    value={learningSentence}
-                    onChange={(e) => setLearningSentence(e.target.value)}
-                    className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted mt-2"
-                    data-testid="input-learning-sentence"
-                  />
-                </div>
-                <div className="flex justify-end items-center gap-2 pt-2">
-                  
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleAddLearningNow}
-                    disabled={!learningTitle.trim() || createLearning.isPending}
-                    className="bg-muted/50 hover:bg-muted"
-                    data-testid="button-new-learning"
-                  >
-                    <Plus className="h-3 w-3 mr-1" />
-                    New Learning
-                  </Button>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="experience" className="mt-4 space-y-3 flex flex-col flex-1">
-                <div className="flex items-center justify-center gap-2 py-4">
-                  <div className="w-24 rounded-md bg-muted/50 px-3 py-2 text-center text-lg font-bold">
-                    {FIXED_XP_AMOUNT}
-                  </div>
-                  <span className="text-lg font-medium text-muted-foreground">xp</span>
-                </div>
-                <Popover open={showExperienceSkillSelector} onOpenChange={setShowExperienceSkillSelector}>
-                  <PopoverTrigger asChild>
-                    <Button 
-                      variant="ghost" 
-                      size="sm"
-                      className="bg-muted/50 hover:bg-muted w-full"
-                      data-testid="button-select-skill"
-                    >
-                      {experienceSelectedSkills.length > 0
-                        ? `✓ ${experienceSelectedSkills.map(skillDisplayName).join(", ")}`
-                        : "Seleccionar skill(s)"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent
-                    className="w-56 p-2 border-0 bg-background/95 backdrop-blur-sm z-[9999]"
-                    align="center"
-                    side="top"
-                    sideOffset={8}
-                    collisionPadding={16}
-                  >
-                    <SkillPickerList
-                      selectedSkillIds={experienceSelectedSkills}
-                      onToggle={toggleExperienceSkill}
-                      legacySkills={filteredLegacySkills}
-                      scopedGlobalSkills={availableGlobalSkills}
-                      areas={areas}
-                      projects={projects}
-                      currentAreaId={activeAreaId}
-                      currentProjectId={activeProjectId}
-                      getGlobalSkillsForArea={getGlobalSkillsForArea}
-                      getGlobalSkillsForProject={getGlobalSkillsForProject}
-                      testIdPrefix="feedback"
-                    />
-                  </PopoverContent>
-                </Popover>
-                <div className="flex justify-end items-center gap-2 pt-4">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleAddExperience}
-                    disabled={experienceSelectedSkills.length === 0}
-                    className="bg-muted/50 hover:bg-muted"
-                    data-testid="button-new-experience"
-                  >
-                    <Plus className="h-3 w-3 mr-1" />
-                    Experience
-                  </Button>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="body" className="mt-4 space-y-3 flex flex-col flex-1">
-                <div className="flex gap-2 justify-center">
-                  {(["fuerza", "flex"] as BodyDimension[]).map((dimension) => (
-                    <Button
-                      key={dimension}
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setSelectedBodyDimension(dimension)}
-                      className={selectedBodyDimension === dimension ? "bg-primary/20 text-foreground" : "bg-muted/50 hover:bg-muted text-muted-foreground"}
-                      data-testid={`button-body-dimension-${dimension}`}
-                    >
-                      {dimension === "fuerza" ? "Fuerza" : "Flexibilidad"}
-                    </Button>
-                  ))}
-                </div>
-                <Popover open={showBodyZoneSelector} onOpenChange={setShowBodyZoneSelector}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="bg-muted/50 hover:bg-muted w-full"
-                      data-testid="button-select-body-zone"
-                    >
-                      {selectedBodyZones.length > 0
-                        ? `✓ ${selectedBodyZones.map((z) => BODY_ZONE_LABELS[z]).join(", ")}`
-                        : "Seleccionar componente(s)"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent
-                    className="w-56 p-2 border-0 bg-background/95 backdrop-blur-sm z-[9999]"
-                    align="center"
-                    side="top"
-                    sideOffset={8}
-                    collisionPadding={16}
-                  >
-                    <div className="space-y-1">
-                      {BODY_ZONES.map((zone) => (
-                        <Button
-                          key={zone}
-                          variant="ghost"
-                          size="sm"
-                          className={`w-full justify-start h-8 px-3 text-xs font-normal ${
-                            selectedBodyZones.includes(zone) ? "bg-muted text-foreground" : "hover:bg-muted/50"
-                          }`}
-                          onClick={() => toggleBodyZone(zone)}
-                          data-testid={`button-select-body-zone-${zone}`}
-                        >
-                          {selectedBodyZones.includes(zone) ? "✓ " : ""}
-                          {BODY_ZONE_LABELS[zone]}
-                        </Button>
-                      ))}
-                    </div>
-                  </PopoverContent>
-                </Popover>
-                <div className="flex justify-end items-center gap-2 pt-4">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleAddBody}
-                    disabled={selectedBodyZones.length === 0}
-                    className="bg-muted/50 hover:bg-muted"
-                    data-testid="button-add-body"
-                  >
-                    <Plus className="h-3 w-3 mr-1" />
-                    Agregar {selectedBodyDimension === "fuerza" ? "fuerza" : "flexibilidad"}
-                  </Button>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="powers" className="mt-4 space-y-3 flex flex-col flex-1">
-                <div className="flex-1 space-y-3">
-                  {sourcePowers.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No hay poderes disponibles para este contexto todavía.</p>
-                  ) : (
-                    <>
-                      <div className="space-y-2">
-                        {sourcePowers.map((power) => {
-                          const isSelected = selectedPowerId === power.id;
-                          return (
-                            <button
-                              key={power.id}
-                              type="button"
-                              onClick={() => setSelectedPowerId(power.id)}
-                              className={cn(
-                                "w-full rounded-lg border p-3 text-left transition-colors",
-                                isSelected ? "border-primary/50 bg-primary/10" : "border-border/60 bg-muted/40 hover:bg-muted/60"
-                              )}
-                            >
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="min-w-0">
-                                  <p className="text-sm font-medium">{power.name}</p>
-                                  {power.description && (
-                                    <p className="mt-1 text-xs text-muted-foreground break-words">{power.description}</p>
-                                  )}
-                                </div>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      {selectedPower && (
-                        <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
-                          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Poder seleccionado</p>
-                          <p className="mt-1 text-sm font-medium">{selectedPower.name}</p>
-                          {selectedPower.description && (
-                            <p className="mt-1 text-sm text-muted-foreground">{selectedPower.description}</p>
-                          )}
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-                <div className="flex justify-end items-center gap-2 pt-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handlePowerAction}
-                    disabled={!selectedPower || selectedPower.isUnlocked === 2}
-                    className="bg-muted/50 hover:bg-muted"
-                    data-testid="button-power-action"
-                  >
-                    {selectedPower?.isUnlocked === 0 ? "Desbloquear" : selectedPower?.isUnlocked === 1 ? "Dominar" : "Dominado"}
-                  </Button>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="errores" className="mt-4 space-y-3 flex flex-col flex-1">
-                {isAddingNodeError ? (
-                  <div className="flex-1 space-y-3 overflow-y-auto">
-                    <Label className="text-[11px] text-muted-foreground uppercase tracking-wide block">Nuevo error</Label>
-                    <Input
-                      placeholder="NOMBRE"
-                      value={newErrorName}
-                      onChange={(e) => setNewErrorName(e.target.value.toUpperCase())}
-                      className="uppercase border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
-                      data-testid="input-new-error-name"
-                      autoFocus
-                    />
-
-                    <div className="space-y-1.5">
-                      <Label className="text-[11px] text-muted-foreground uppercase tracking-wide block">¿Cómo sí?</Label>
-                      <Textarea
-                        placeholder="En vez del error, ¿cómo sería la situación que sí querés?"
-                        value={newErrorComoSi}
-                        onChange={(e) => setNewErrorComoSi(e.target.value)}
-                        rows={2}
-                        className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
-                        data-testid="input-new-error-como-si"
-                      />
-                    </div>
-
-                    <ChipListInput
-                      label="Estrategias"
-                      placeholder="Nueva estrategia"
-                      items={newErrorEstrategias}
-                      draft={newErrorEstrategiaDraft}
-                      onDraftChange={setNewErrorEstrategiaDraft}
-                      onAdd={handleAddNewErrorEstrategia}
-                      onRemove={handleRemoveNewErrorEstrategia}
-                      testIdPrefix="new-error-estrategia"
-                    />
-
-                    <ChipListInput
-                      label="Disparadores"
-                      placeholder="Nuevo disparador"
-                      items={newErrorDisparadores}
-                      draft={newErrorDisparadorDraft}
-                      onDraftChange={setNewErrorDisparadorDraft}
-                      onAdd={handleAddNewErrorDisparador}
-                      onRemove={handleRemoveNewErrorDisparador}
-                      testIdPrefix="new-error-disparador"
-                    />
-
-                    <div className="space-y-1.5">
-                      <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground block">Skills a linkear</Label>
-                      <SkillLinkPicker
-                        skills={availableGlobalSkills.map((s) => ({ id: s.id, name: s.name }))}
-                        value={newErrorSkillIds}
-                        onChange={setNewErrorSkillIds}
-                        emptyLabel="No hay skills disponibles"
-                        areas={areas}
-                        currentAreaId={activeAreaId}
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground block">Componentes a linkear</Label>
-                      <BodyLinkPicker value={newErrorBodyLinks} onChange={setNewErrorBodyLinks} />
-                      <p className="text-[10px] text-muted-foreground/70">
-                        Flexibilidad mental crece siempre, no hace falta linkearla. Estos, y los skills de arriba, solo suman con +10p.
-                      </p>
-                    </div>
-
-                    <div className="flex justify-end items-center gap-2">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setIsAddingNodeError(false)}
-                        className="bg-muted/50 hover:bg-muted"
-                        data-testid="button-cancel-new-error"
-                      >
-                        Cancelar
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={handleCreateNodeError}
-                        disabled={!newErrorName.trim() || createNodeError.isPending}
-                        data-testid="button-create-error"
-                      >
-                        <Plus className="h-3 w-3 mr-1" />
-                        Crear error
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div
-                    className="flex-1 space-y-3"
-                    onTouchStart={startNodeErrorAddLongPress}
-                    onTouchEnd={endNodeErrorAddLongPress}
-                    onTouchCancel={endNodeErrorAddLongPress}
-                    onMouseDown={startNodeErrorAddLongPress}
-                    onMouseUp={endNodeErrorAddLongPress}
-                    onMouseLeave={endNodeErrorAddLongPress}
-                  >
-                    {nodeErrorsList.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No hay errores registrados para este nodo todavía. Mantené presionado acá para agregar uno.</p>
-                    ) : (
-                      <>
-                        <div className="space-y-2">
-                          {nodeErrorsList.map((error) => {
-                            const isSelected = selectedErrorId === error.id;
-                            return (
-                              <button
-                                key={error.id}
-                                type="button"
-                                onClick={() => {
-                                  if (isNodeErrorCardLongPress.current) {
-                                    isNodeErrorCardLongPress.current = false;
-                                    return;
-                                  }
-                                  setSelectedErrorId(isSelected ? null : error.id);
-                                }}
-                                onTouchStart={() => startNodeErrorCardLongPress(error.id)}
-                                onTouchEnd={endNodeErrorCardLongPress}
-                                onTouchCancel={endNodeErrorCardLongPress}
-                                onMouseDown={() => startNodeErrorCardLongPress(error.id)}
-                                onMouseUp={endNodeErrorCardLongPress}
-                                onMouseLeave={endNodeErrorCardLongPress}
-                                className={cn(
-                                  "w-full rounded-lg border p-3 text-left transition-colors",
-                                  isSelected ? "border-primary/50 bg-primary/10" : "border-border/60 bg-muted/40 hover:bg-muted/60"
-                                )}
-                              >
-                                <div className="flex items-center justify-between gap-2">
-                                  <p className="text-sm font-medium truncate">{error.nombre}</p>
-                                  <span className="text-[11px] text-muted-foreground shrink-0">{Math.abs(error.points)} / 50</span>
-                                </div>
-                              </button>
-                            );
-                          })}
-                        </div>
-
-                        {selectedNodeError && (
-                          <div className="rounded-lg border border-border/60 bg-muted/30 p-3 space-y-2">
-                            <p className="text-sm font-medium">{selectedNodeError.nombre}</p>
-
-                            {selectedNodeError.confirmed === 0 ? (
-                              <>
-                                <p className="text-xs text-muted-foreground">Error nuevo detectado</p>
-                                <div className="flex justify-end pt-1">
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    onClick={handleConfirmNodeError}
-                                    disabled={confirmNodeError.isPending}
-                                    data-testid="button-confirm-error"
-                                  >
-                                    Confirmar
-                                  </Button>
-                                </div>
-                              </>
-                            ) : (
-                              <>
-                                <div>
-                                  <div className="flex items-center justify-end mb-1">
-                                    <p className="text-[11px] text-muted-foreground">
-                                      {Math.abs(selectedNodeError.points)} / 50{selectedNodeError.points < 0 ? " (en contra)" : ""}
-                                    </p>
-                                  </div>
-                                  <div className="w-full h-2.5 flex gap-0.5">
-                                    {Array.from({ length: 5 }).map((_, index) => (
-                                      <div
-                                        key={index}
-                                        className={`flex-1 h-full rounded-sm transition-colors duration-300 ${
-                                          index < errorBar.count ? (errorBar.color === "red" ? "bg-red-500" : "bg-emerald-500") : "bg-muted"
-                                        }`}
-                                      />
-                                    ))}
-                                  </div>
-                                </div>
-                                <div className="flex justify-end items-center gap-2 pt-1">
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => openErrorPicker(selectedNodeError, "immediate", "disparador")}
-                                    disabled={selectedNodeError.points <= -50 || adjustNodeErrorPoints.isPending}
-                                    className="bg-muted/50 hover:bg-muted"
-                                    data-testid="button-error-minus-10"
-                                  >
-                                    -10p
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => openErrorPicker(selectedNodeError, "immediate", "estrategia")}
-                                    disabled={selectedNodeError.points >= 50 || adjustNodeErrorPoints.isPending}
-                                    className="bg-muted/50 hover:bg-muted"
-                                    data-testid="button-error-plus-10"
-                                  >
-                                    +10p
-                                  </Button>
-                                </div>
-
-                                {linkedBug && (
-                                  <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-2 mt-1">
-                                    <span className="text-[11px] uppercase tracking-wide text-muted-foreground">Bug</span>
-                                    <span className="text-[11px] px-2 py-0.5 rounded border uppercase tracking-wide text-muted-foreground">
-                                      {bugStatusLabel[linkedBug.status]}
-                                    </span>
-                                  </div>
-                                )}
-                              </>
-                            )}
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
-              </TabsContent>
-
-              <TabsContent value="tools" className="mt-4 space-y-3 flex flex-col flex-1">
-                <div className="flex-1">
-                  <Input
-                    placeholder="TITLE"
-                    value={toolTitle}
-                    onChange={(e) => setToolTitle(e.target.value.toUpperCase())}
-                    className="uppercase border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
-                    data-testid="input-tool-title"
-                  />
-                  <Input
-                    placeholder="Description"
-                    value={toolSentence}
-                    onChange={(e) => setToolSentence(e.target.value)}
-                    className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted mt-2"
-                    data-testid="input-tool-sentence"
-                  />
-                </div>
-                <div className="flex justify-end items-center gap-2 pt-2">
-                  
-                  <Button 
-                    variant="ghost" 
-                    size="sm"
-                    onClick={handleAddTool}
-                    disabled={!toolTitle.trim() || createTool.isPending}
-                    className="bg-muted/50 hover:bg-muted"
-                    data-testid="button-new-tool"
-                  >
-                    <Plus className="h-3 w-3 mr-1" />
-                    New Tool
-                  </Button>
-                </div>
-              </TabsContent>
-            </Tabs>
-
-            <div className="mt-auto pt-4">
-              <Button 
-                variant="ghost" 
-                size="icon"
-                onClick={() => setPopoverStep(0)}
-                className="h-8 w-8"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
             </div>
           </div>
         )}
@@ -4468,23 +3748,19 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 <Tabs value={pendingRewardsTab} onValueChange={(v) => setPendingRewardsTab(v as "experience" | "body" | "powers" | "learning" | "errores")} className="w-full flex flex-col flex-1">
                   <TabsList className="w-full grid grid-cols-5 bg-muted/50">
                     <TabsTrigger value="experience" className="text-xs" data-testid="step3-tab-experience">
-                      <span className="text-xs font-bold mr-1">XP</span>
+                      XP
                     </TabsTrigger>
                     <TabsTrigger value="body" className="text-xs" data-testid="step3-tab-body" title="Fuerza / Flexibilidad">
-                      <BicepsFlexed className="h-3 w-3 mr-1" />
                       Fuerza
                     </TabsTrigger>
                     <TabsTrigger value="powers" className="text-xs" data-testid="step3-tab-powers">
-                      <Shield className="h-3 w-3 mr-1" />
                       Poderes
                     </TabsTrigger>
                     <TabsTrigger value="learning" className="text-xs" data-testid="step3-tab-learning">
-                      <Lightbulb className="h-3 w-3 mr-1" />
                       Aprendizaje
                     </TabsTrigger>
                     <TabsTrigger value="errores" className="text-xs" data-testid="step3-tab-errores">
-                      <OctagonAlert className="h-3 w-3 mr-1" />
-                      Bugs
+                      Errores
                     </TabsTrigger>
                   </TabsList>
 
@@ -5370,6 +4646,23 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       </DialogContent>
     </Dialog>
 
+
+    <NodeConfirmFeedbackModal
+      open={isConfirmFeedbackOpen}
+      onFinish={handleConfirmFeedbackFinish}
+      xpAmount={FIXED_XP_AMOUNT}
+      skillDisplayName={skillDisplayName}
+      powers={sourcePowers}
+      errors={nodeErrorsList}
+      legacySkills={filteredLegacySkills}
+      scopedGlobalSkills={availableGlobalSkills}
+      areas={areas}
+      projects={projects}
+      currentAreaId={activeAreaId}
+      currentProjectId={activeProjectId}
+      getGlobalSkillsForArea={getGlobalSkillsForArea}
+      getGlobalSkillsForProject={getGlobalSkillsForProject}
+    />
 
     {/* Floating XP Animation */}
     <AnimatePresence>

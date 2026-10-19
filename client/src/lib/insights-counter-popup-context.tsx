@@ -12,8 +12,8 @@ export interface InsightsCounterPopupSnapshot {
 }
 
 // Este pop-up se queda visible más tiempo que el resto de la familia (POPUP_VISIBLE_MS, 1500ms):
-// el número se muestra estático (countAfter) desde que aparece, así que este tiempo extra es
-// sólo para que alcance a leerse con comodidad antes de que se cierre.
+// el número arranca en countBefore y cambia a countAfter con un "+1", así que este tiempo extra
+// es para que se vea el cambio y alcance a leerse con comodidad antes de que se cierre.
 export const INSIGHTS_POPUP_VISIBLE_MS = 2800;
 
 interface InsightsCounterPopupContextValue {
