@@ -807,12 +807,15 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
       if(W.skills.length<12) p.appendChild(h('button',{type:'button',class:'ghost',text:'+ Agregar skill',onclick:function(){ W.skills.push(''); buildWiz(); var el=$('wS'+(W.skills.length-1)); if(el) el.focus() }}));
     } else if(st[0]==='h'){
       var f=W.final[+st.slice(1)];
-      p.appendChild(h('p',{html:'Subskills del nivel 1 de <b>'+escH(f.name)+'</b>, de la más simple a la más compleja. Marcá las que ya lográs.'}));
+      p.appendChild(h('p',{html:'Subskills del nivel 1 de <b>'+escH(f.name)+'</b>, de la más simple a la más compleja, con una descripción opcional. Marcá las que ya lográs.'}));
       f.hechos.forEach(function(hv,k){
         var cb=h('input',{type:'checkbox','aria-label':'Ya logro la subskill '+(k+1)});
         cb.checked=k<f.done;
         cb.addEventListener('change',function(){ f.done=cb.checked?k+1:k; p.querySelectorAll('input[type=checkbox]').forEach(function(c,q){ c.checked=q<f.done }) });
-        p.appendChild(h('div',{class:'wrow'},[h('span',{class:'num',text:k+1}),txt('wH'+st+k,hv,'Subskill '+(k+1),function(v){f.hechos[k]=v}),h('label',{class:'ok'},[cb,h('span',{text:'Lo logro'})])]));
+        f.descs=f.descs||['','','','',''];
+        var de=h('textarea',{id:'wD'+st+k,rows:'2',maxlength:'400',placeholder:'Descripción','aria-label':'Descripción de la subskill '+(k+1),oninput:function(){ f.descs[k]=this.value }}); de.value=f.descs[k];
+        p.appendChild(h('div',{class:'nrow'},[h('span',{class:'num',text:k+1}),h('div',{class:'ncol'},[
+          h('div',{class:'wrow',style:'margin:0'},[txt('wH'+st+k,hv,'Subskill '+(k+1),function(v){f.hechos[k]=v}),h('label',{class:'ok'},[cb,h('span',{text:'Lo logro'})])]),de])]));
       });
     } else if(st==='acts'){
       p.appendChild(h('p',{text:'Opcional: hasta 3 actividades que te acercan a la próxima subskill de cada skill. Podés dejarlas vacías.'}));
@@ -867,6 +870,7 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
   function createFromWizard(){
     var root={name:W.name.trim(),children:W.final.map(function(f){
       var leaf={name:f.name,level:f.done,tier:0,tiers:[f.hechos.map(function(x,k){return x.trim()||'Subskill '+(k+1)})]};
+      (f.descs||[]).forEach(function(d,k){ if(d.trim()) setDesc(leaf,k,d.trim()) });
       var ac=f.acts.map(function(x){return x.trim()}).filter(Boolean);
       if(ac.length&&f.done<PER){ leaf.acts={}; leaf.acts[f.done]=ac.map(function(n){return {n:n,d:false}}) }
       return leaf })};
