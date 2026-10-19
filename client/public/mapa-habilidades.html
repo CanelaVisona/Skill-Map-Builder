@@ -39,7 +39,8 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
 .lbl:focus-visible{text-decoration:underline}
 .lbl-n{font-weight:500;font-size:24px;fill:var(--muted)}
 .zlbl,.nlbl{font-weight:600;font-size:21px;stroke:var(--bg);stroke-width:5px;paint-order:stroke;stroke-linejoin:round;pointer-events:none}
-.zlbl{fill:var(--zdp)} .nlbl{fill:var(--ink)} .zlbl.ulbl{fill:var(--real)}
+.zlbl{fill:var(--zdp)} .nlbl{fill:var(--ink)}
+.zlbl.tap,.nlbl.tap{pointer-events:auto;cursor:pointer} .zlbl.ulbl{fill:var(--real)}
 @media (max-width:560px){ .lbl{font-size:46px} .lbl-n{font-size:30px} .zlbl,.nlbl{font-size:30px} }
 
 .node{cursor:pointer;outline:none}
@@ -332,6 +333,13 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
   }
   function setName(a,j,v){ a.tiers[Math.floor(j/PER)][j%PER]=v }
   /* Descripción de cada habilidad, aparte de tiers (que siguen siendo solo los títulos): a.descs[j]. */
+  /* Títulos visibles en el gráfico: a.vis[j] (skills) y x.v (actividades) guardan lo que se tocó.
+     Sin valor guardado se ve el de la habilitada y el de las actividades; el resto arranca oculto. */
+  function isVis(a,j,def){ return a.vis&&a.vis[j]!=null?a.vis[j]:def }
+  function setVis(a,j,v){ a.vis=a.vis||{}; a.vis[j]=v }
+  function actVis(x){ return x.v!=null?x.v:true }
+  /* Tocar el título lo oculta (sin disparar el toque del nodo, que confirma). */
+  function tapLbl(t,onHide){ t.classList.add('tap'); t.addEventListener('click',function(ev){ ev.stopPropagation(); if(longFired||dragged){longFired=false;return} onHide(); save(); render() }) }
   function getDesc(a,j){ return (a.descs&&a.descs[j])||'' }
   function setDesc(a,j,v){ a.descs=a.descs||{}; if(v) a.descs[j]=v; else delete a.descs[j] }
   function blanks(){ var o=[]; for(var k=1;k<=PER;k++) o.push('Habilidad '+k); return o }
@@ -421,10 +429,10 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
         var r=st==='locked'?Math.min(7,sp*0.3):(st==='zdp'?Math.min(10,sp*0.55):Math.min(8,sp*0.4));
         el('circle',{class:'dot'+(st==='done'?' '+tcls(Math.floor(j/PER)):''),cx:p[0],cy:p[1],r:r},node);
         el('circle',{class:'hit',cx:p[0],cy:p[1],r:st==='zdp'?(getActs(a).length?11:17):Math.max(7,Math.min(17,sp/2))},node);
-        if(st==='zdp'){ el('text',Object.assign({class:'zlbl'},place(i,p)),node).textContent=s }
-        else if(shown===i+'-'+j){ el('text',Object.assign({class:'nlbl'},place(i,p)),node).textContent=s; top.push(node) }
+        var vis=isVis(a,j,st==='zdp');
+        if(vis){ var tl=el('text',Object.assign({class:st==='zdp'?'zlbl':'nlbl'},place(i,p)),node); tl.textContent=s; tapLbl(tl,function(){ setVis(a,j,false) }); if(st!=='zdp') top.push(node) }
         node.setAttribute('aria-label',s+(st==='done'?' (lograda)':st==='zdp'?' (tocá para desbloquear)':' (bloqueada)'));
-        press(node, st==='zdp'?function(){unlock(i)}:function(){ shown=(shown===i+'-'+j)?null:i+'-'+j; render() },
+        press(node, st==='zdp'?function(){ if(vis) unlock(i); else { setVis(a,j,true); save(); render() } }:function(){ setVis(a,j,!vis); save(); render() },
           function(){ if(st!=='done') openEdit({i:i,j:j},p); else openEdit({i:i,j:j,done:true,lock:j===a.level-1},p) });
       });
 
@@ -434,8 +442,11 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
           el('title',{},an).textContent=x.n;
           el('rect',{class:'dot',x:ap[0]-4.5,y:ap[1]-4.5,width:9,height:9,transform:'rotate(45 '+ap[0].toFixed(1)+' '+ap[1].toFixed(1)+')'},an);
           el('circle',{class:'hit',cx:ap[0],cy:ap[1],r:8},an); top.push(an);
-          el('text',Object.assign({class:'nlbl'},place(i,ap,true)),an).textContent=x.n;
-          press(an,function(){ var nuevo=!x.d; x.d=true; save(); closeEdit(); if(nuevo) burst(ap); render(); if(nuevo) flash($('pReal')) },function(){ openEdit(x.d?{i:i,j:a.level,k:k,actLock:true}:{i:i,j:a.level,k:k},ap) });
+          var av=actVis(x);
+          if(av){ var at=el('text',Object.assign({class:'nlbl'},place(i,ap,true)),an); at.textContent=x.n; tapLbl(at,function(){ x.v=false }) }
+          press(an,function(){
+            if(!av||x.d){ x.v=!av; save(); render(); return }
+            x.d=true; save(); closeEdit(); burst(ap); render(); flash($('pReal')) },function(){ openEdit(x.d?{i:i,j:a.level,k:k,actLock:true}:{i:i,j:a.level,k:k},ap) });
         });
       }
       if(grp&&gPend(a)&&!gReady(a)){
@@ -445,8 +456,9 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
         el('circle',{class:'halo',cx:zp[0],cy:zp[1],r:16},zn);
         el('circle',{class:'dot',cx:zp[0],cy:zp[1],r:10},zn);
         el('circle',{class:'hit',cx:zp[0],cy:zp[1],r:17},zn);
-        el('text',Object.assign({class:'zlbl'},place(i,zp)),zn).textContent=nm;
-        press(zn,function(){ var nd=getDesc(nx,nx.level); nx.level++; sideQuest(nm,nd); shown=null; save(); closeEdit(); burst(pt(i,rad(gAvg(a)))); render(); flash($('pReal')) },function(){});
+        var nj=nx.level, nv=isVis(nx,nj,true);
+        if(nv){ var nt=el('text',Object.assign({class:'zlbl'},place(i,zp)),zn); nt.textContent=nm; tapLbl(nt,function(){ setVis(nx,nj,false) }) }
+        press(zn,function(){ if(!nv){ setVis(nx,nj,true); save(); render(); return } var nd=getDesc(nx,nx.level); nx.level++; sideQuest(nm,nd); shown=null; save(); closeEdit(); burst(pt(i,rad(gAvg(a)))); render(); flash($('pReal')) },function(){});
         top.push(zn);
       }
       var ready=grp?gReady(a):a.level>=skills.length, rp=pt(i,rad(skills.length)+34), lvl=grp?gTier(a)+1:a.tier+1;
