@@ -2071,6 +2071,31 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       }
     }
 
+    // Poder nuevo: se crea bloqueado (mismo endpoint que createSourcePower, pero sin su onSuccess,
+    // que lo dejaría encolado como recompensa pendiente del nodo) y se desbloquea de una, igual
+    // que un poder creado en el Step 3 al confirmarse el nodo -- con su pop-up de "desbloqueado".
+    for (const newPower of draft.newPowers) {
+      blocks.push({
+        label: `+Poder: ${newPower.name}`,
+        run: async (enqueue) => {
+          if (!sourceType || !sourceId) return;
+          const res = await fetch("/api/source-powers", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: newPower.name,
+              description: newPower.description,
+              isUnlocked: 0,
+              ...(sourceType === "area" ? { areaId: sourceId } : { projectId: sourceId }),
+            }),
+          });
+          if (!res.ok) throw new Error("Failed to create power");
+          const created = (await res.json()) as SkillNodeSourcePower;
+          await applyPowerAction(created, enqueue);
+        },
+      });
+    }
+
     try {
       await runRewardBlocks(blocks, "confirmFeedback");
     } finally {

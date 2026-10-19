@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Brain, Lightbulb, AlertCircle, Target, Wrench, Zap, Star, Check, ChevronLeft, Plus } from "lucide-react";
+import { BookOpen, Lightbulb, Circle, Wrench, Shield, Check, ChevronLeft, Plus } from "lucide-react";
+import { SkillsSparkIcon } from "@/components/SkillsSparkIcon";
 import { type GlobalSkill } from "@/lib/skill-context";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -13,10 +14,12 @@ import { SkillPickerList, ChipListInput } from "@/components/skill-node-pickers"
 
 // Modal de "feedback" que aparece al confirmar un nodo: después del pop-up de la barra de nivel
 // del área/quest y antes de "Quest updated!" (ver confirmNode en SkillNode.tsx). Se divide en
-// cubos (pensamiento, aprendizaje, herramienta, error nuevo, error existente, XP, poder); cada cubo abre su formulario por pasos y,
-// al guardarlo, vuelve a los cubos. Nada se registra acá adentro: todo queda en un borrador que
-// se le entrega a onFinish al apretar "Listo" (o al cerrar el modal tocando afuera), y recién
-// ahí SkillNode lo guarda y muestra los pop-ups de lo que se cargó.
+// cubos (pensamiento, aprendizaje, herramienta, error, XP, poder); cada cubo abre su formulario
+// por pasos y, al guardarlo, vuelve a los cubos. Los cubos de error y poder sirven tanto para
+// elegir uno existente como para crear uno nuevo. En todos los formularios la descripción va
+// primero y el título después. Nada se registra acá adentro: todo queda en un borrador que se
+// le entrega a onFinish al apretar "Listo" (o al cerrar el modal tocando afuera), y recién ahí
+// SkillNode lo guarda y muestra los pop-ups de lo que se cargó.
 
 export interface NodeFeedbackEntry {
   title: string;
@@ -48,6 +51,11 @@ export interface NodeFeedbackExistingError {
   disparadores: string[];
 }
 
+export interface NodeFeedbackNewPower {
+  name: string;
+  description: string;
+}
+
 export interface NodeFeedbackDraft {
   thoughts: NodeFeedbackEntry[];
   learnings: NodeFeedbackEntry[];
@@ -56,6 +64,7 @@ export interface NodeFeedbackDraft {
   errorActions: NodeFeedbackErrorAction[];
   xpSkillIds: string[];
   powerIds: string[];
+  newPowers: NodeFeedbackNewPower[];
 }
 
 export interface NodeFeedbackPower {
@@ -65,7 +74,16 @@ export interface NodeFeedbackPower {
   isUnlocked: 0 | 1 | 2;
 }
 
-const EMPTY_DRAFT: NodeFeedbackDraft = { thoughts: [], learnings: [], tools: [], errors: [], errorActions: [], xpSkillIds: [], powerIds: [] };
+const EMPTY_DRAFT: NodeFeedbackDraft = {
+  thoughts: [],
+  learnings: [],
+  tools: [],
+  errors: [],
+  errorActions: [],
+  xpSkillIds: [],
+  powerIds: [],
+  newPowers: [],
+};
 
 export const isNodeFeedbackDraftEmpty = (draft: NodeFeedbackDraft) =>
   draft.thoughts.length === 0 &&
@@ -74,19 +92,43 @@ export const isNodeFeedbackDraftEmpty = (draft: NodeFeedbackDraft) =>
   draft.errors.length === 0 &&
   draft.errorActions.length === 0 &&
   draft.xpSkillIds.length === 0 &&
-  draft.powerIds.length === 0;
+  draft.powerIds.length === 0 &&
+  draft.newPowers.length === 0;
 
-type CubeId = "thought" | "learning" | "tool" | "error" | "errorAction" | "xp" | "power";
+type CubeId = "thought" | "learning" | "tool" | "error" | "xp" | "power";
 
-const CUBES: Array<{ id: CubeId; label: string; icon: typeof Brain }> = [
-  { id: "thought", label: "Nuevo pensamiento", icon: Brain },
+// Mismos íconos que el Journal (tabs de SkillTree.tsx): Learnings, Tools, Errores (círculo),
+// Skills (XP) y Poderes; pensamiento usa el BookOpen de la sección "Thoughts".
+const CUBES: Array<{ id: CubeId; label: string; icon: React.ComponentType<{ className?: string }> }> = [
+  { id: "thought", label: "Nuevo pensamiento", icon: BookOpen },
   { id: "learning", label: "Nuevo aprendizaje", icon: Lightbulb },
   { id: "tool", label: "Nueva herramienta", icon: Wrench },
-  { id: "error", label: "Nuevo error", icon: AlertCircle },
-  { id: "errorAction", label: "Error", icon: Target },
-  { id: "xp", label: "Nuevo XP", icon: Zap },
-  { id: "power", label: "Nuevo poder", icon: Star },
+  { id: "error", label: "Error", icon: Circle },
+  { id: "xp", label: "Nuevo XP", icon: SkillsSparkIcon },
+  { id: "power", label: "Poder", icon: Shield },
 ];
+
+// Cada paso de cada formulario. La lista de pasos de un cubo depende de lo elegido en su primer
+// paso (error/poder nuevo vs. existente) -- ver stepKeys.
+type StepKey =
+  | "description"
+  | "title"
+  | "errorPick"
+  | "errorComoSi"
+  | "errorName"
+  | "errorChips"
+  | "errorLinks"
+  | "errorConfirm"
+  | "errorDelta"
+  | "errorOption"
+  | "xpPick"
+  | "xpConfirm"
+  | "powerPick"
+  | "powerConfirm"
+  | "powerDescription"
+  | "powerName";
+
+const NEW = "__new__";
 
 interface NodeConfirmFeedbackModalProps {
   open: boolean;
@@ -105,6 +147,14 @@ interface NodeConfirmFeedbackModalProps {
   getGlobalSkillsForArea: (areaId: string) => GlobalSkill[];
   getGlobalSkillsForProject: (projectId: string) => GlobalSkill[];
 }
+
+const fieldLabel = "text-[11px] text-muted-foreground uppercase tracking-wide block";
+const inputClass = "border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted";
+const optionClass = (selected: boolean) =>
+  cn(
+    "w-full rounded-lg border p-3 text-left transition-colors",
+    selected ? "border-primary/50 bg-primary/10" : "border-border/60 bg-muted/40 hover:bg-muted/60"
+  );
 
 export function NodeConfirmFeedbackModal({
   open,
@@ -126,7 +176,9 @@ export function NodeConfirmFeedbackModal({
   const [activeCube, setActiveCube] = useState<CubeId | null>(null);
   const [step, setStep] = useState(0);
 
-  // Campos del formulario abierto (se resetean al abrir cada cubo).
+  // Campos del formulario abierto (se resetean al abrir cada cubo). title/sentence se usan para
+  // pensamiento/aprendizaje/herramienta, el nombre del error nuevo y el nombre/descripción del
+  // poder nuevo.
   const [title, setTitle] = useState("");
   const [sentence, setSentence] = useState("");
   const [errorComoSi, setErrorComoSi] = useState("");
@@ -137,8 +189,9 @@ export function NodeConfirmFeedbackModal({
   const [errorSkillIds, setErrorSkillIds] = useState<string[]>([]);
   const [errorBodyLinks, setErrorBodyLinks] = useState<BodyLink[]>([]);
   const [xpSkillIds, setXpSkillIds] = useState<string[]>([]);
-  const [powerId, setPowerId] = useState<string | null>(null);
-  const [actionErrorId, setActionErrorId] = useState<string | null>(null);
+  // Error/poder elegido en el primer paso de su cubo: el id de uno existente, o NEW.
+  const [errorTarget, setErrorTarget] = useState<string | null>(null);
+  const [powerTarget, setPowerTarget] = useState<string | null>(null);
   const [actionDelta, setActionDelta] = useState<10 | -10 | null>(null);
   const [actionValue, setActionValue] = useState<string | null>(null);
   const [actionNewValue, setActionNewValue] = useState("");
@@ -163,8 +216,8 @@ export function NodeConfirmFeedbackModal({
     setErrorSkillIds([]);
     setErrorBodyLinks([]);
     setXpSkillIds([]);
-    setPowerId(null);
-    setActionErrorId(null);
+    setErrorTarget(null);
+    setPowerTarget(null);
     setActionDelta(null);
     setActionValue(null);
     setActionNewValue("");
@@ -184,10 +237,9 @@ export function NodeConfirmFeedbackModal({
       case "thought": return draft.thoughts.length;
       case "learning": return draft.learnings.length;
       case "tool": return draft.tools.length;
-      case "error": return draft.errors.length;
-      case "errorAction": return draft.errorActions.length;
+      case "error": return draft.errors.length + draft.errorActions.length;
       case "xp": return draft.xpSkillIds.length;
-      case "power": return draft.powerIds.length;
+      case "power": return draft.powerIds.length + draft.newPowers.length;
     }
   };
 
@@ -204,9 +256,9 @@ export function NodeConfirmFeedbackModal({
   };
 
   const selectablePowers = powers.filter((p) => p.isUnlocked !== 2 && !draft.powerIds.includes(p.id));
-  const selectedPower = powers.find((p) => p.id === powerId) || null;
+  const selectedPower = powers.find((p) => p.id === powerTarget) || null;
 
-  const actionError = errors.find((e) => e.id === actionErrorId) || null;
+  const actionError = errors.find((e) => e.id === errorTarget) || null;
   // Lo ya encolado en este modal cuenta para los topes -50/50 y para "ya confirmado".
   const effectiveError = (error: NodeFeedbackExistingError) => {
     const actions = draft.errorActions.filter((a) => a.errorId === error.id);
@@ -220,32 +272,49 @@ export function NodeConfirmFeedbackModal({
     ? (actionDelta === 10 ? actionError.estrategias : actionError.disparadores)
     : [];
 
-  // "Error" sobre uno sin confirmar: elegir + confirmar (2 pasos). Confirmado: elegir, +10/-10,
-  // estrategia/disparador (3 pasos).
-  const stepCount = (cube: CubeId): number => {
+  const stepKeys = (cube: CubeId): StepKey[] => {
     switch (cube) {
+      case "thought":
+      case "learning":
+      case "tool":
+        return ["description", "title"];
       case "error":
-        return 4;
-      case "errorAction":
-        return actionErrorState && !actionErrorState.confirmed ? 2 : 3;
-      default:
-        return 2;
+        if (errorTarget === NEW) return ["errorPick", "errorComoSi", "errorName", "errorChips", "errorLinks"];
+        if (actionErrorState && !actionErrorState.confirmed) return ["errorPick", "errorConfirm"];
+        return ["errorPick", "errorDelta", "errorOption"];
+      case "xp":
+        return ["xpPick", "xpConfirm"];
+      case "power":
+        if (powerTarget === NEW) return ["powerPick", "powerDescription", "powerName"];
+        return ["powerPick", "powerConfirm"];
     }
   };
 
+  const keys = activeCube ? stepKeys(activeCube) : [];
+  const currentKey: StepKey | null = keys[step] ?? null;
+  const isLastStep = activeCube !== null && step === keys.length - 1;
+
   const canAdvance = (): boolean => {
-    if (!activeCube) return false;
-    if ((activeCube === "thought" || activeCube === "learning" || activeCube === "tool" || activeCube === "error") && step === 0) {
-      return !!title.trim();
+    switch (currentKey) {
+      case "title":
+      case "errorName":
+      case "powerName":
+        return !!title.trim();
+      case "errorPick":
+        return errorTarget === NEW || !!actionError;
+      case "errorDelta":
+        return actionDelta !== null;
+      case "errorOption":
+        return !!actionValue || !!actionNewValue.trim();
+      case "xpPick":
+        return xpSkillIds.length > 0;
+      case "powerPick":
+        return powerTarget === NEW || !!selectedPower;
+      case null:
+        return false;
+      default:
+        return true;
     }
-    if (activeCube === "xp" && step === 0) return xpSkillIds.length > 0;
-    if (activeCube === "power" && step === 0) return !!selectedPower;
-    if (activeCube === "errorAction") {
-      if (step === 0) return !!actionError;
-      if (step === 1 && actionErrorState?.confirmed) return actionDelta !== null;
-      if (step === 2) return !!actionValue || !!actionNewValue.trim();
-    }
-    return true;
   };
 
   const save = () => {
@@ -258,23 +327,27 @@ export function NodeConfirmFeedbackModal({
           return { ...prev, learnings: [...prev.learnings, { title: title.trim(), sentence: sentence.trim() }] };
         case "tool":
           return { ...prev, tools: [...prev.tools, { title: title.trim(), sentence: sentence.trim() }] };
-        case "error":
-          return {
-            ...prev,
-            errors: [...prev.errors, {
-              nombre: title.trim(),
-              comoSi: errorComoSi.trim(),
-              estrategias: withPendingChip(errorEstrategias, errorEstrategiaDraft),
-              disparadores: withPendingChip(errorDisparadores, errorDisparadorDraft),
-              skillIds: errorSkillIds,
-              bodyLinks: errorBodyLinks,
-            }],
-          };
         case "xp":
           return { ...prev, xpSkillIds: Array.from(new Set([...prev.xpSkillIds, ...xpSkillIds])) };
         case "power":
-          return powerId ? { ...prev, powerIds: [...prev.powerIds, powerId] } : prev;
-        case "errorAction": {
+          if (powerTarget === NEW) {
+            return { ...prev, newPowers: [...prev.newPowers, { name: title.trim(), description: sentence.trim() }] };
+          }
+          return powerTarget ? { ...prev, powerIds: [...prev.powerIds, powerTarget] } : prev;
+        case "error": {
+          if (errorTarget === NEW) {
+            return {
+              ...prev,
+              errors: [...prev.errors, {
+                nombre: title.trim(),
+                comoSi: errorComoSi.trim(),
+                estrategias: withPendingChip(errorEstrategias, errorEstrategiaDraft),
+                disparadores: withPendingChip(errorDisparadores, errorDisparadorDraft),
+                skillIds: errorSkillIds,
+                bodyLinks: errorBodyLinks,
+              }],
+            };
+          }
           if (!actionError || !actionErrorState) return prev;
           if (!actionErrorState.confirmed) {
             return { ...prev, errorActions: [...prev.errorActions, { type: "confirm", errorId: actionError.id, errorName: actionError.nombre }] };
@@ -301,8 +374,6 @@ export function NodeConfirmFeedbackModal({
     backToCubes();
   };
 
-  const isLastStep = activeCube !== null && step === stepCount(activeCube) - 1;
-
   const next = () => {
     if (!canAdvance()) return;
     if (isLastStep) save();
@@ -314,104 +385,125 @@ export function NodeConfirmFeedbackModal({
     else setStep((s) => s - 1);
   };
 
+  const submitOnEnter = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      next();
+    }
+  };
+
   const activeCubeMeta = CUBES.find((c) => c.id === activeCube) || null;
 
+  const renderTitleInput = (label: string, placeholder: string) => (
+    <div className="space-y-1.5">
+      <Label className={fieldLabel}>{label}</Label>
+      <Input
+        placeholder={placeholder}
+        value={title}
+        onChange={(e) => setTitle(e.target.value.toUpperCase())}
+        onKeyDown={submitOnEnter}
+        className={cn("uppercase", inputClass)}
+        data-testid={`confirm-feedback-${activeCube}-title`}
+        autoFocus
+      />
+    </div>
+  );
+
+  const renderDescriptionInput = (label: string, placeholder: string, value: string, onChange: (v: string) => void) => (
+    <div className="space-y-1.5">
+      <Label className={fieldLabel}>{label}</Label>
+      <Textarea
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        rows={3}
+        className={cn(inputClass, "resize-none")}
+        data-testid={`confirm-feedback-${activeCube}-description`}
+        autoFocus
+      />
+    </div>
+  );
+
+  // Botón "+ Nuevo ..." que va al final de la lista de existentes en los cubos de error/poder.
+  const renderNewOption = (label: string, selected: boolean, onSelect: () => void) => (
+    <button type="button" onClick={onSelect} className={cn(optionClass(selected), "flex items-center gap-2")} data-testid={`confirm-feedback-${activeCube}-new`}>
+      <Plus className="h-4 w-4 shrink-0" />
+      <span className="text-sm font-medium">{label}</span>
+    </button>
+  );
+
   const renderForm = () => {
-    switch (activeCube) {
-      case "thought":
-      case "learning":
-      case "tool":
-        return step === 0 ? (
-          <div className="space-y-1.5">
-            <Label className="text-[11px] text-muted-foreground uppercase tracking-wide block">Título</Label>
-            <Input
-              placeholder="TITLE"
-              value={title}
-              onChange={(e) => setTitle(e.target.value.toUpperCase())}
-              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); next(); } }}
-              className="uppercase border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
-              data-testid={`confirm-feedback-${activeCube}-title`}
-              autoFocus
-            />
+    switch (currentKey) {
+      case "description":
+        return renderDescriptionInput(
+          "Descripción",
+          activeCube === "thought" ? "Descripción, notas o reflexión..." : "Descripción",
+          sentence,
+          setSentence
+        );
+      case "title":
+        return renderTitleInput("Título", "TÍTULO");
+
+      // ----- Error -----
+      case "errorPick":
+        return (
+          <div className="space-y-2">
+            {errors.map((error) => {
+              const state = effectiveError(error);
+              return (
+                <button
+                  key={error.id}
+                  type="button"
+                  onClick={() => { setErrorTarget(error.id); setActionDelta(null); setActionValue(null); setActionNewValue(""); }}
+                  className={optionClass(errorTarget === error.id)}
+                  data-testid={`confirm-feedback-error-${error.id}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium truncate">{error.nombre}</p>
+                    <span className="text-[11px] text-muted-foreground shrink-0">
+                      {state.confirmed ? `${Math.abs(state.points)} / 50` : "Sin confirmar"}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+            {renderNewOption("Nuevo error", errorTarget === NEW, () => setErrorTarget(NEW))}
           </div>
-        ) : (
-          <div className="space-y-1.5">
-            <Label className="text-[11px] text-muted-foreground uppercase tracking-wide block">Descripción</Label>
-            <Textarea
-              placeholder={activeCube === "thought" ? "Descripción, notas o reflexión..." : "Descripción"}
-              value={sentence}
-              onChange={(e) => setSentence(e.target.value)}
-              rows={3}
-              className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
-              data-testid={`confirm-feedback-${activeCube}-sentence`}
-              autoFocus
+        );
+      case "errorComoSi":
+        return renderDescriptionInput("¿Cómo sí?", "En vez del error, ¿cómo sería la situación que sí querés?", errorComoSi, setErrorComoSi);
+      case "errorName":
+        return renderTitleInput("Nombre", "NOMBRE");
+      case "errorChips":
+        return (
+          <div className="space-y-3">
+            <ChipListInput
+              label="Estrategias"
+              placeholder="Nueva estrategia"
+              items={errorEstrategias}
+              draft={errorEstrategiaDraft}
+              onDraftChange={setErrorEstrategiaDraft}
+              onAdd={() => addChip(errorEstrategiaDraft, errorEstrategias, setErrorEstrategias, setErrorEstrategiaDraft)}
+              onRemove={(i) => setErrorEstrategias((prev) => prev.filter((_, idx) => idx !== i))}
+              testIdPrefix="confirm-feedback-error-estrategia"
+            />
+            <ChipListInput
+              label="Disparadores"
+              placeholder="Nuevo disparador"
+              items={errorDisparadores}
+              draft={errorDisparadorDraft}
+              onDraftChange={setErrorDisparadorDraft}
+              onAdd={() => addChip(errorDisparadorDraft, errorDisparadores, setErrorDisparadores, setErrorDisparadorDraft)}
+              onRemove={(i) => setErrorDisparadores((prev) => prev.filter((_, idx) => idx !== i))}
+              testIdPrefix="confirm-feedback-error-disparador"
             />
           </div>
         );
-
-      case "error":
-        if (step === 0) {
-          return (
-            <div className="space-y-1.5">
-              <Label className="text-[11px] text-muted-foreground uppercase tracking-wide block">Nombre</Label>
-              <Input
-                placeholder="NOMBRE"
-                value={title}
-                onChange={(e) => setTitle(e.target.value.toUpperCase())}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); next(); } }}
-                className="uppercase border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
-                data-testid="confirm-feedback-error-name"
-                autoFocus
-              />
-            </div>
-          );
-        }
-        if (step === 1) {
-          return (
-            <div className="space-y-1.5">
-              <Label className="text-[11px] text-muted-foreground uppercase tracking-wide block">¿Cómo sí?</Label>
-              <Textarea
-                placeholder="En vez del error, ¿cómo sería la situación que sí querés?"
-                value={errorComoSi}
-                onChange={(e) => setErrorComoSi(e.target.value)}
-                rows={3}
-                className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
-                data-testid="confirm-feedback-error-como-si"
-                autoFocus
-              />
-            </div>
-          );
-        }
-        if (step === 2) {
-          return (
-            <div className="space-y-3">
-              <ChipListInput
-                label="Estrategias"
-                placeholder="Nueva estrategia"
-                items={errorEstrategias}
-                draft={errorEstrategiaDraft}
-                onDraftChange={setErrorEstrategiaDraft}
-                onAdd={() => addChip(errorEstrategiaDraft, errorEstrategias, setErrorEstrategias, setErrorEstrategiaDraft)}
-                onRemove={(i) => setErrorEstrategias((prev) => prev.filter((_, idx) => idx !== i))}
-                testIdPrefix="confirm-feedback-error-estrategia"
-              />
-              <ChipListInput
-                label="Disparadores"
-                placeholder="Nuevo disparador"
-                items={errorDisparadores}
-                draft={errorDisparadorDraft}
-                onDraftChange={setErrorDisparadorDraft}
-                onAdd={() => addChip(errorDisparadorDraft, errorDisparadores, setErrorDisparadores, setErrorDisparadorDraft)}
-                onRemove={(i) => setErrorDisparadores((prev) => prev.filter((_, idx) => idx !== i))}
-                testIdPrefix="confirm-feedback-error-disparador"
-              />
-            </div>
-          );
-        }
+      case "errorLinks":
         return (
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground block">Skills a linkear</Label>
+              <Label className={cn(fieldLabel, "font-medium")}>Skills a linkear</Label>
               <SkillLinkPicker
                 skills={scopedGlobalSkills.map((s) => ({ id: s.id, name: s.name }))}
                 value={errorSkillIds}
@@ -422,7 +514,7 @@ export function NodeConfirmFeedbackModal({
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground block">Componentes a linkear</Label>
+              <Label className={cn(fieldLabel, "font-medium")}>Componentes a linkear</Label>
               <BodyLinkPicker value={errorBodyLinks} onChange={setErrorBodyLinks} />
               <p className="text-[10px] text-muted-foreground/70">
                 Flexibilidad mental crece siempre, no hace falta linkearla. Estos, y los skills de arriba, solo suman con +10p.
@@ -430,97 +522,56 @@ export function NodeConfirmFeedbackModal({
             </div>
           </div>
         );
-
-      case "errorAction":
-        if (step === 0) {
-          return errors.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No hay errores registrados todavía. Usá "Nuevo error" para cargar uno.</p>
-          ) : (
-            <div className="space-y-2 max-h-64 overflow-y-auto minimal-scrollbar">
-              {errors.map((error) => {
-                const state = effectiveError(error);
+      case "errorConfirm":
+        return actionError ? (
+          <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Error nuevo detectado</p>
+            <p className="mt-1 text-sm font-medium">{actionError.nombre}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Al guardar se confirma este error.</p>
+          </div>
+        ) : null;
+      case "errorDelta":
+        if (!actionError || !actionErrorState) return null;
+        return (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-medium truncate">{actionError.nombre}</p>
+              <p className="text-[11px] text-muted-foreground shrink-0">
+                {Math.abs(actionErrorState.points)} / 50{actionErrorState.points < 0 ? " (en contra)" : ""}
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {([-10, 10] as const).map((delta) => {
+                const disabled = delta === 10 ? actionErrorState.points >= 50 : actionErrorState.points <= -50;
                 return (
                   <button
-                    key={error.id}
+                    key={delta}
                     type="button"
-                    onClick={() => { setActionErrorId(error.id); setActionDelta(null); setActionValue(null); setActionNewValue(""); }}
-                    className={cn(
-                      "w-full rounded-lg border p-3 text-left transition-colors",
-                      actionErrorId === error.id ? "border-primary/50 bg-primary/10" : "border-border/60 bg-muted/40 hover:bg-muted/60"
-                    )}
-                    data-testid={`confirm-feedback-error-action-${error.id}`}
+                    disabled={disabled}
+                    onClick={() => { setActionDelta(delta); setActionValue(null); setActionNewValue(""); }}
+                    className={cn(optionClass(actionDelta === delta), "text-center disabled:opacity-50 disabled:cursor-not-allowed")}
+                    data-testid={`confirm-feedback-error-${delta > 0 ? "plus" : "minus"}`}
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-medium truncate">{error.nombre}</p>
-                      <span className="text-[11px] text-muted-foreground shrink-0">
-                        {state.confirmed ? `${Math.abs(state.points)} / 50` : "Sin confirmar"}
-                      </span>
-                    </div>
+                    <p className="text-sm font-semibold">{delta > 0 ? "+10p" : "-10p"}</p>
+                    <p className="text-[11px] text-muted-foreground">{delta > 0 ? "Usé una estrategia" : "Hubo un disparador"}</p>
                   </button>
                 );
               })}
             </div>
-          );
-        }
-        if (!actionError || !actionErrorState) return null;
-        if (step === 1) {
-          if (!actionErrorState.confirmed) {
-            return (
-              <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Error nuevo detectado</p>
-                <p className="mt-1 text-sm font-medium">{actionError.nombre}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Al guardar se confirma este error.</p>
-              </div>
-            );
-          }
-          return (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-medium truncate">{actionError.nombre}</p>
-                <p className="text-[11px] text-muted-foreground shrink-0">
-                  {Math.abs(actionErrorState.points)} / 50{actionErrorState.points < 0 ? " (en contra)" : ""}
-                </p>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                {([-10, 10] as const).map((delta) => {
-                  const disabled = delta === 10 ? actionErrorState.points >= 50 : actionErrorState.points <= -50;
-                  return (
-                    <button
-                      key={delta}
-                      type="button"
-                      disabled={disabled}
-                      onClick={() => { setActionDelta(delta); setActionValue(null); setActionNewValue(""); }}
-                      className={cn(
-                        "rounded-lg border p-3 text-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
-                        actionDelta === delta ? "border-primary/50 bg-primary/10" : "border-border/60 bg-muted/40 hover:bg-muted/60"
-                      )}
-                      data-testid={`confirm-feedback-error-action-${delta > 0 ? "plus" : "minus"}`}
-                    >
-                      <p className="text-sm font-semibold">{delta > 0 ? "+10p" : "-10p"}</p>
-                      <p className="text-[11px] text-muted-foreground">{delta > 0 ? "Usé una estrategia" : "Hubo un disparador"}</p>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        }
+          </div>
+        );
+      case "errorOption":
         return (
           <div className="space-y-2">
-            <Label className="text-[11px] text-muted-foreground uppercase tracking-wide block">
-              {actionDelta === 10 ? "¿Qué estrategia usaste?" : "¿Qué lo disparó?"}
-            </Label>
+            <Label className={fieldLabel}>{actionDelta === 10 ? "¿Qué estrategia usaste?" : "¿Qué lo disparó?"}</Label>
             {actionOptions.length > 0 && (
-              <div className="space-y-1.5 max-h-48 overflow-y-auto minimal-scrollbar">
+              <div className="space-y-1.5">
                 {actionOptions.map((option) => (
                   <button
                     key={option}
                     type="button"
                     onClick={() => { setActionValue(option); setActionNewValue(""); }}
-                    className={cn(
-                      "w-full rounded-md border px-3 py-2 text-left text-sm transition-colors",
-                      actionValue === option && !actionNewValue.trim() ? "border-primary/50 bg-primary/10" : "border-border/60 bg-muted/40 hover:bg-muted/60"
-                    )}
+                    className={cn(optionClass(actionValue === option && !actionNewValue.trim()), "rounded-md px-3 py-2 text-sm")}
                   >
                     {option}
                   </button>
@@ -533,18 +584,19 @@ export function NodeConfirmFeedbackModal({
                 placeholder={actionDelta === 10 ? "Estrategia nueva" : "Disparador nuevo"}
                 value={actionNewValue}
                 onChange={(e) => setActionNewValue(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); next(); } }}
-                className="h-8 text-sm border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted"
-                data-testid="confirm-feedback-error-action-new-option"
+                onKeyDown={submitOnEnter}
+                className={cn("h-8 text-sm", inputClass)}
+                data-testid="confirm-feedback-error-new-option"
               />
             </div>
           </div>
         );
 
-      case "xp":
-        return step === 0 ? (
+      // ----- XP -----
+      case "xpPick":
+        return (
           <div className="space-y-2">
-            <Label className="text-[11px] text-muted-foreground uppercase tracking-wide block">Elegí el/los skill(s)</Label>
+            <Label className={fieldLabel}>Elegí el/los skill(s)</Label>
             <div className="rounded-md bg-muted/30 p-1">
               <SkillPickerList
                 selectedSkillIds={xpSkillIds}
@@ -561,7 +613,9 @@ export function NodeConfirmFeedbackModal({
               />
             </div>
           </div>
-        ) : (
+        );
+      case "xpConfirm":
+        return (
           <div className="space-y-2">
             <div className="flex items-center justify-center gap-2 py-2">
               <div className="w-24 rounded-md bg-muted/50 px-3 py-2 text-center text-lg font-bold">{xpAmount}</div>
@@ -573,30 +627,26 @@ export function NodeConfirmFeedbackModal({
           </div>
         );
 
-      case "power":
-        if (step === 0) {
-          return selectablePowers.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No hay poderes disponibles para este contexto todavía.</p>
-          ) : (
-            <div className="space-y-2 max-h-64 overflow-y-auto minimal-scrollbar">
-              {selectablePowers.map((power) => (
-                <button
-                  key={power.id}
-                  type="button"
-                  onClick={() => setPowerId(power.id)}
-                  className={cn(
-                    "w-full rounded-lg border p-3 text-left transition-colors",
-                    powerId === power.id ? "border-primary/50 bg-primary/10" : "border-border/60 bg-muted/40 hover:bg-muted/60"
-                  )}
-                  data-testid={`confirm-feedback-power-${power.id}`}
-                >
-                  <p className="text-sm font-medium">{power.name}</p>
-                  {power.description && <p className="mt-1 text-xs text-muted-foreground break-words">{power.description}</p>}
-                </button>
-              ))}
-            </div>
-          );
-        }
+      // ----- Poder -----
+      case "powerPick":
+        return (
+          <div className="space-y-2">
+            {selectablePowers.map((power) => (
+              <button
+                key={power.id}
+                type="button"
+                onClick={() => setPowerTarget(power.id)}
+                className={optionClass(powerTarget === power.id)}
+                data-testid={`confirm-feedback-power-${power.id}`}
+              >
+                <p className="text-sm font-medium">{power.name}</p>
+                {power.description && <p className="mt-1 text-xs text-muted-foreground break-words">{power.description}</p>}
+              </button>
+            ))}
+            {renderNewOption("Nuevo poder", powerTarget === NEW, () => setPowerTarget(NEW))}
+          </div>
+        );
+      case "powerConfirm":
         return selectedPower ? (
           <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
             <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -606,6 +656,10 @@ export function NodeConfirmFeedbackModal({
             {selectedPower.description && <p className="mt-1 text-sm text-muted-foreground">{selectedPower.description}</p>}
           </div>
         ) : null;
+      case "powerDescription":
+        return renderDescriptionInput("Descripción", "¿Qué te permite hacer este poder?", sentence, setSentence);
+      case "powerName":
+        return renderTitleInput("Nombre", "NOMBRE");
 
       default:
         return null;
@@ -623,7 +677,7 @@ export function NodeConfirmFeedbackModal({
         {activeCube === null ? (
           <>
             <div className="min-h-0 flex-1 overflow-y-auto minimal-scrollbar -mx-1 px-1">
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 {CUBES.map(({ id, label, icon: Icon }) => {
                   const count = cubeCount(id);
                   return (
@@ -657,7 +711,7 @@ export function NodeConfirmFeedbackModal({
         ) : (
           <>
             <div className="min-h-0 flex-1 overflow-y-auto minimal-scrollbar -mx-1 px-1 space-y-4">
-              <p className="text-[11px] text-muted-foreground">Paso {step + 1} de {stepCount(activeCube)}</p>
+              <p className="text-[11px] text-muted-foreground">Paso {step + 1} de {keys.length}</p>
               {renderForm()}
             </div>
             <div className="flex items-center justify-between gap-2 shrink-0">

@@ -73,16 +73,7 @@ import { BodyStrengthPanel } from "@/components/BodyStrengthPanel";
 import { LevelNavigationPanel, type LevelNavItem } from "@/components/LevelNavigationPanel";
 import { GoalsButton, CompletedGoalsJournal } from "@/components/GoalsPanel";
 import { RadarSkillMapModal } from "@/components/RadarSkillMapModal";
-
-function SkillsSparkIcon({ className }: { className?: string }) {
-  return (
-    <span aria-hidden="true" className={cn("inline-flex items-center justify-center", className)}>
-      <svg viewBox="0 0 24 24" className="h-[84%] w-[84%] fill-black dark:fill-white" focusable="false">
-        <path d="M12 2.5L15.2 8.8L21.5 12L15.2 15.2L12 21.5L8.8 15.2L2.5 12L8.8 8.8L12 2.5Z" />
-      </svg>
-    </span>
-  );
-}
+import { SkillsSparkIcon } from "@/components/SkillsSparkIcon";
 
 function calculateVisibleLevels(skills: Skill[], endOfAreaLevel?: number): Set<number> {
   const visibleLevels = new Set<number>();
