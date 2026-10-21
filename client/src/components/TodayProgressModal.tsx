@@ -897,19 +897,20 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     });
   });
 
-  // Los nodos confirmados siempre van antes de la tarea desbloqueada (la primera sin hacer de la
-  // franja activa): los que hayan quedado después de ella (confirmados desde el árbol, o antes de
-  // que les tocara) se muestran justo antes, en el mismo orden relativo. Es una regla de cómo se
-  // muestra la franja, así vale sin importar desde dónde se confirmó el nodo. Misma noción de
-  // "franja activa" que el destacado: la de la hora actual, o cualquiera con algo en una vista previa.
+  // Las tareas confirmadas siempre van antes de la tarea desbloqueada (la primera sin hacer de la
+  // franja activa): las que hayan quedado después de ella (confirmadas desde el árbol u otro
+  // modal, o antes de que les tocara) se muestran justo antes, en el mismo orden relativo. Es una
+  // regla de cómo se muestra la franja, así vale sin importar desde dónde se confirmó la tarea.
+  // Misma noción de "franja activa" que el destacado: la de la hora actual, o cualquiera con algo
+  // en una vista previa.
   TIME_SLOTS.forEach((s) => {
     const bucket = itemBuckets[s.key];
     const isActiveSlot = isPreview ? bucket.length > 0 : s.key === getCurrentTimeSlotKey();
     if (!isActiveSlot) return;
     const firstUndone = bucket.findIndex((i) => !i.done);
     if (firstUndone === -1) return;
-    const isConfirmedNode = (i: TodayItem) => i.type === "node" && i.done && !i.traceSubs;
-    const lifted = bucket.slice(firstUndone + 1).filter(isConfirmedNode);
+    const isConfirmed = (i: TodayItem) => i.done && !i.traceSubs;
+    const lifted = bucket.slice(firstUndone + 1).filter(isConfirmed);
     if (lifted.length === 0) return;
     itemBuckets[s.key] = [
       ...bucket.slice(0, firstUndone),
@@ -1700,16 +1701,16 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // confirmarlo desde HabitStreakModal/SpaceRepetitionModal (ver useConfirmActions.ts). Una
   // práctica ya confirmada ese día no se puede "desconfirmar" — no existe esa acción en
   // SpaceRepetitionModal tampoco (avanzar un intervalo es unidireccional).
-  // Si la tarea desbloqueada de la franja actual es un nodo con sub-nodos pendientes (su sub-nodo
-  // es el desbloqueado), confirmar una tarea que está después de él en esa franja la sube justo
-  // antes del nodo padre: así no queda nada confirmado después de la tarea desbloqueada.
-  const liftBeforeUnlockedParent = (item: TodayItem) => {
+  // Confirmar una tarea que está después de la tarea desbloqueada de la franja actual la sube
+  // justo antes de ella (a continuación de las demás confirmadas): así no queda nada confirmado
+  // después de la tarea desbloqueada. Si la desbloqueada es un nodo con sub-nodos pendientes,
+  // queda antes del nodo padre.
+  const liftBeforeUnlocked = (item: TodayItem) => {
     if (isPreview || item.done) return;
     const slot = getCurrentTimeSlotKey();
     const bucket = itemBuckets[slot] || [];
     const currentIdx = bucket.findIndex((i) => !i.done);
-    const current = bucket[currentIdx];
-    if (!current || current.type !== "node" || !hasPendingSubNodes(current)) return;
+    if (currentIdx === -1) return;
     const itemIdx = bucket.findIndex((i) => i.key === item.key);
     if (itemIdx <= currentIdx) return;
     const reordered = bucket.filter((i) => i.key !== item.key);
@@ -1739,7 +1740,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         return;
       }
     }
-    liftBeforeUnlockedParent(item);
+    liftBeforeUnlocked(item);
     if (item.type === "manual") {
       toggleManualDone(item);
       return;
