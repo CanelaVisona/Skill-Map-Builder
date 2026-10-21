@@ -541,39 +541,60 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     setTimeout(attempt, 150);
   };
 
-  // Holds whatever onHide callback the current "Quest updated!" call was given (see
-  // triggerQuestUpdated below), so hideQuestUpdatedPopup (manual dismiss) can also fire it.
-  // Cleared right after use so the popup's own setTimeout firing later doesn't call it a
+  // Every onHide callback handed to the pending/current "Quest updated!" (see
+  // scheduleQuestUpdated below), so hideQuestUpdatedPopup (manual dismiss) can also fire them.
+  // Cleared right after use so the popup's own setTimeout firing later doesn't call them a
   // second time.
-  const questUpdatedHideCallback = useRef<(() => void) | null>(null);
+  const questUpdatedHideCallbacks = useRef<Array<() => void>>([]);
+  // True from the moment a "Quest updated!" is scheduled until it disappears. While set, any
+  // further request just joins it (its onHide included) instead of queueing a second pop-up --
+  // otherwise two confirms that both end up waiting on the same popup chain (e.g. behind the
+  // post-confirm feedback modal) would each show their own "Quest updated!" back to back.
+  const questUpdatedPending = useRef(false);
+  // Bumped on every show, so a stale hide timer (from a pop-up already dismissed by hand)
+  // can't hide a newer one early.
+  const questUpdatedShowId = useRef(0);
+
+  const finishQuestUpdated = () => {
+    setShowQuestUpdatedPopup(false);
+    // Reopen the unlock gate right as the pop-up disappears, so the next node becomes
+    // available at that moment instead of the instant the node was confirmed.
+    setUnlockGateOpen(true);
+    questUpdatedPending.current = false;
+    const callbacks = questUpdatedHideCallbacks.current;
+    questUpdatedHideCallbacks.current = [];
+    callbacks.forEach(cb => cb());
+  };
 
   // "Quest updated!" al confirmar un nodo regular — de vuelta como pop-up (se había quitado),
   // ahora con la misma tarjeta/tamaño que ExperienceGainPopup y TodayProgressGainPopup en vez
-  // del texto grande suelto que tenía originalmente. `onHide` lets a caller synchronize
-  // something else (e.g. refreshing the area/quest's XP total) with the exact moment this
-  // pop-up disappears, same idea as triggerQuestCelebration's onShow/onHide.
-  const triggerQuestUpdated = (onHide?: () => void) => {
-    questUpdatedHideCallback.current = onHide ?? null;
+  // del texto grande suelto que tenía originalmente.
+  const triggerQuestUpdated = () => {
+    const showId = ++questUpdatedShowId.current;
     markPopupActive(questUpdatedVisibleMs);
     setShowQuestUpdatedPopup(true);
     setTimeout(() => {
-      setShowQuestUpdatedPopup(false);
-      // Reopen the unlock gate right as the pop-up disappears, so the next node becomes
-      // available at that moment instead of the instant the node was confirmed.
-      setUnlockGateOpen(true);
-      questUpdatedHideCallback.current?.();
-      questUpdatedHideCallback.current = null;
+      if (questUpdatedShowId.current === showId && questUpdatedPending.current) finishQuestUpdated();
     }, questUpdatedVisibleMs);
   };
 
+  // Shows "Quest updated!" after `delayMs`, once every other pop-up has cleared (it's always the
+  // last thing shown for a confirm). `onHide` lets a caller synchronize something else (e.g.
+  // refreshing the area/quest's XP total) with the exact moment this pop-up disappears, same
+  // idea as triggerQuestCelebration's onShow/onHide.
+  const scheduleQuestUpdated = (delayMs: number, onHide?: () => void) => {
+    if (onHide) questUpdatedHideCallbacks.current.push(onHide);
+    if (questUpdatedPending.current) return;
+    questUpdatedPending.current = true;
+    setTimeout(() => runAfterPopupsClear(triggerQuestUpdated), delayMs);
+  };
+
   const hideQuestUpdatedPopup = () => {
-    setShowQuestUpdatedPopup(false);
     // Manual dismiss (tap outside) also counts as the pop-up "disappearing" -- reopen the
     // unlock gate right away instead of leaving it closed until the timer would've fired, and
     // fire whatever onHide is still pending the same way.
-    setUnlockGateOpen(true);
-    questUpdatedHideCallback.current?.();
-    questUpdatedHideCallback.current = null;
+    if (questUpdatedPending.current) finishQuestUpdated();
+    else setShowQuestUpdatedPopup(false);
   };
 
   const activeArea = Array.isArray(areas) ? areas.find(a => a.id === activeAreaId) : undefined;
@@ -1304,15 +1325,14 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
             ));
           }, areaQuestUpdatedDelayMs);
         } else {
-          setTimeout(() => {
-            runAfterPopupsClear(() => triggerQuestUpdated(
-              // onHide: pick up the XP delta that addAreaXp above deliberately skipped
-              // refreshing immediately, now that it's safe (the next node is revealed by this
-              // same pop-up disappearing, via the auto-unlock effect watching unlockGateOpen --
-              // this refresh is only about the area/quest's own XP total catching up).
-              () => { void refreshAllAreas(); },
-            ));
-          }, areaQuestUpdatedDelayMs);
+          scheduleQuestUpdated(
+            areaQuestUpdatedDelayMs,
+            // onHide: pick up the XP delta that addAreaXp above deliberately skipped
+            // refreshing immediately, now that it's safe (the next node is revealed by this
+            // same pop-up disappearing, via the auto-unlock effect watching unlockGateOpen --
+            // this refresh is only about the area/quest's own XP total catching up).
+            () => { void refreshAllAreas(); },
+          );
         }
       }
 
@@ -1331,7 +1351,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       // This includes the auto-unlocked next node -- except when deferAutoUnlock is set,
       // in which case only the confirmed node itself is applied now; the rest (the
       // already-unlocked next node) is picked up later by the auto-unlock effect once
-      // unlockGateOpen reopens (see triggerQuestUpdated).
+      // unlockGateOpen reopens (see finishQuestUpdated).
       if (Array.isArray(updatedLevelSkills) && !isOpeningNewLevel) {
         setAreas(prev => prev.map(a => {
           if (a.id !== areaId) return a;
@@ -1772,11 +1792,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
             ));
           }, areaQuestUpdatedDelayMs);
         } else {
-          setTimeout(() => {
-            runAfterPopupsClear(() => triggerQuestUpdated(
-              () => { void refreshAllProjects(); },
-            ));
-          }, areaQuestUpdatedDelayMs);
+          scheduleQuestUpdated(areaQuestUpdatedDelayMs, () => { void refreshAllProjects(); });
         }
       }
 
@@ -3108,7 +3124,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
 
         // Waits for anything already showing/queued (e.g. the node's own staged xp/fuerza/poder
         // from Step 3) to clear first, so quest updated always lands last.
-        runAfterPopupsClear(triggerQuestUpdated);
+        scheduleQuestUpdated(0);
       }
     } catch (error) {
       console.error("Error toggling sub-skill status:", error);

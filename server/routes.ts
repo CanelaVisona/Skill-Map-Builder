@@ -175,6 +175,60 @@ async function openNextLevelIfSourceCompleted(
   return nextLevel;
 }
 
+// Un subskill logrado en el mapa de habilidades se registra como nodo SideQuest confirmado en el
+// skill tree del área con el mismo nombre que la zona del mapa, y nace como poder del área ya
+// dominado (si ya hay uno con ese nombre no se duplica). null si no hay un área con ese nombre.
+async function logRadarSideQuest(userId: string, areaName: string, title: string, description: string) {
+  const name = areaName.trim().toLowerCase();
+  const match = (await storage.getAreas(userId)).find(a => !a.archived && a.name.trim().toLowerCase() === name);
+  if (!match) return null;
+  await createLoggedSideQuestNode({ areaId: match.id }, userId, title);
+  const existingPowers = await storage.getSourcePowers(userId, "area", match.id);
+  const alreadyExists = existingPowers.some(p => p.name.trim().toLowerCase() === title.toLowerCase());
+  let power = null;
+  if (!alreadyExists) {
+    const created = await storage.createSourcePower({ userId, areaId: match.id, name: title, description });
+    power = (await storage.updateSourcePower(created.id, { isUnlocked: 2 })) ?? created;
+  }
+  return { power };
+}
+
+// Habilidad del mapa de habilidades agendada en "Tareas de hoy": el mapa guarda en el eje
+// `sched[j] = <id de la tarea>` (j = índice de la habilidad). Confirmar esa tarea desbloquea la
+// habilidad igual que tocarla en el mapa (sube el nivel del eje y registra el SideQuest + poder),
+// siempre que siga siendo la próxima del eje. El vínculo se borra al usarse.
+const RADAR_PER = 5;
+async function unlockRadarSkillForTask(userId: string, taskId: string) {
+  const user = await storage.getUserById(userId);
+  const data = user?.radarMaps as any;
+  if (!data || !Array.isArray(data.areas)) return null;
+  for (const zone of data.areas) {
+    for (const root of Array.isArray(zone?.maps) ? zone.maps : []) {
+      const leaves: any[] = [];
+      for (const c of Array.isArray(root?.children) ? root.children : []) {
+        if (Array.isArray(c?.children)) leaves.push(...c.children);
+        else leaves.push(c);
+      }
+      for (const leaf of leaves) {
+        if (!leaf?.sched || typeof leaf.sched !== "object") continue;
+        const key = Object.keys(leaf.sched).find(k => leaf.sched[k] === taskId);
+        if (key === undefined) continue;
+        const j = Number(key);
+        delete leaf.sched[key];
+        const title = leaf.tiers?.[Math.floor(j / RADAR_PER)]?.[j % RADAR_PER];
+        const unlock = leaf.level === j && typeof title === "string" && !!title;
+        if (unlock) leaf.level = j + 1;
+        await storage.updateUserRadarMaps(userId, data);
+        if (!unlock) return null;
+        const description = typeof leaf.descs?.[j] === "string" ? leaf.descs[j] : "";
+        const result = await logRadarSideQuest(userId, String(zone.name ?? ""), title, description);
+        return { title: title as string, power: result?.power ?? null };
+      }
+    }
+  }
+  return null;
+}
+
 // Target-level order after a move: the moved node takes the exact slot of the placeholder
 // it replaced (so it fills the top-most generic node first); with no placeholder replaced
 // it's appended at the end.
@@ -566,30 +620,19 @@ export async function registerRoutes(
   // skill tree del área con el mismo nombre que la zona del mapa.
   app.post("/api/radar-maps/side-quest", requireAuth, async (req, res) => {
     try {
-      const area = typeof req.body?.area === "string" ? req.body.area.trim().toLowerCase() : "";
+      const area = typeof req.body?.area === "string" ? req.body.area : "";
       const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
       const description = typeof req.body?.description === "string" ? req.body.description.trim() : "";
-      if (!area || !title) {
+      if (!area.trim() || !title) {
         res.status(400).json({ message: "area y title son obligatorios" });
         return;
       }
-      const match = (await storage.getAreas(req.userId!))
-        .find(a => !a.archived && a.name.trim().toLowerCase() === area);
-      if (!match) {
+      const result = await logRadarSideQuest(req.userId!, area, title, description);
+      if (!result) {
         res.status(404).json({ message: "Área no encontrada" });
         return;
       }
-      await createLoggedSideQuestNode({ areaId: match.id }, req.userId!, title);
-      // El subskill confirmado también nace como poder del área, directamente dominado.
-      // Si ya hay uno con ese nombre no se duplica.
-      const existingPowers = await storage.getSourcePowers(req.userId!, "area", match.id);
-      const alreadyExists = existingPowers.some(p => p.name.trim().toLowerCase() === title.toLowerCase());
-      let power = null;
-      if (!alreadyExists) {
-        const created = await storage.createSourcePower({ userId: req.userId!, areaId: match.id, name: title, description });
-        power = (await storage.updateSourcePower(created.id, { isUnlocked: 2 })) ?? created;
-      }
-      res.json({ ok: true, power });
+      res.json({ ok: true, power: result.power });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -5960,7 +6003,11 @@ export async function registerRoutes(
       if (date !== undefined && existing.date !== date) {
         await storage.deleteTodayTaskSlot(req.userId!, existing.date, "manual", existing.id);
       }
-      res.json(updated);
+      // Tarea agendada desde el mapa de habilidades: confirmarla desbloquea esa habilidad.
+      const radarUnlock = done === 1 && existing.done !== 1
+        ? await unlockRadarSkillForTask(req.userId!, existing.id)
+        : null;
+      res.json(radarUnlock ? { ...updated, radarUnlock } : updated);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

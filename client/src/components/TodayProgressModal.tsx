@@ -18,6 +18,7 @@ import { rewiringDayRows } from "@/lib/rewiringTasks";
 import { useConfirmHabit, useConfirmPractice } from "@/lib/useConfirmActions";
 import { useTodayPriorities, useSetTodayPriorities, MAX_TODAY_PRIORITIES } from "@/lib/useTodayPriorities";
 import { MealTrackerModal } from "@/components/MealTrackerModal";
+import { usePowerCelebration } from "@/lib/power-celebration-context";
 import { useNowPlacement, setNowPlacement } from "@/lib/now-placement";
 import { addSubSkillFromToday, toggleSubSkillFromToday, masterWholeSubSkillTree, isSubSkillPlaceholder, moveSubSkillFromToday, renameSubSkill, deleteSubSkillFromToday, fetchSubSkills } from "@/lib/subskill-tree";
 import { useTodayTaskSubsteps, useCreateTodayTaskSubstep, useUpdateTodayTaskSubstep, useDeleteTodayTaskSubstep, useCreateHabitSubstep, syncHabitSubsteps, type SubstepTaskType } from "@/lib/useTodayTaskSubsteps";
@@ -243,6 +244,7 @@ function DoneNodeMark({ size = "sm" }: { size?: "sm" | "md" }) {
 
 export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const queryClient = useQueryClient();
+  const { showPowerCelebration } = usePowerCelebration();
   const { areas, projects, updateSkill, updateProjectSkill, globalSkills, toggleSkillStatus, toggleProjectSkillStatus, addSkillInPlaceOfAvailable, materializePendingEventNodes, refreshSkillTrees } = useSkillTree();
   const { data: habitsData } = useHabits();
   // Confirmar un hábito/práctica desde acá tiene que otorgar exactamente lo mismo (XP, pop-ups)
@@ -1609,7 +1611,22 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     const task = manualTasks.find((t) => t.id === item.id);
     if (!task) return;
     const newDone = task.done === 1 ? 0 : 1;
-    updateManualTask.mutate({ id: item.id, date: effectiveDate, updates: { done: newDone } });
+    updateManualTask.mutate(
+      { id: item.id, date: effectiveDate, updates: { done: newDone } },
+      {
+        // Tarea agendada desde el mapa de habilidades: el server desbloqueó esa habilidad y
+        // registró su SideQuest + poder, igual que al desbloquearla en el mapa (RadarSkillMapModal).
+        onSuccess: (res) => {
+          if (!res.radarUnlock) return;
+          refreshSkillTrees();
+          const powerName = res.radarUnlock.power?.name;
+          if (powerName) {
+            queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0] ?? "").startsWith("/api/source-powers/") });
+            showPowerCelebration({ name: powerName, kind: "confirmed" });
+          }
+        },
+      }
+    );
     // Al confirmarla, si tenía tiempo de sobra respecto de sus sub-pasos, pasa a su suma.
     if (newDone === 1) shrinkParentToChildrenSum(item, substepsFor(item).map((st) => st.minutes));
     // Evento con nodo propio (ver newTaskParent): confirmarlo/desconfirmarlo hace lo mismo con
