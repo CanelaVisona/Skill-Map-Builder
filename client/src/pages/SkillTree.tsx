@@ -31,7 +31,7 @@ import HousePriorityList from "../components/HousePriorityList";
 import HouseRepairsList from "../components/HouseRepairsList";
 import { EvidenceBoardModalWrapper } from "@/components/EvidenceBoardModal";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, ArrowRight, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, User, Menu, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Utensils, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt, OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation, Check, HelpCircle, PiggyBank, Search, X, Pentagon } from "lucide-react";
+import { ArrowLeft, ArrowRight, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, User, Menu, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Utensils, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt, OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation, Check, HelpCircle, PiggyBank, Search, X, Pentagon, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -69,6 +69,7 @@ import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { SkillsGridJournal } from "@/components/SkillsGridJournal";
+import { AchievementsHall } from "@/components/AchievementsHall";
 import { BodyStrengthPanel } from "@/components/BodyStrengthPanel";
 import { LevelNavigationPanel, type LevelNavItem } from "@/components/LevelNavigationPanel";
 import { GoalsButton, CompletedGoalsJournal } from "@/components/GoalsPanel";
@@ -3105,7 +3106,8 @@ function ProfileSection() {
   const currentEntries = activeTab === "values" ? profileValues : 
                         activeTab === "likes" ? profileLikes : 
                         activeTab === "mission" ? profileMissions : 
-                        activeTab === "about" ? profileAboutEntries :
+                        // Las entradas "__..." son almacenamiento interno (casa, logros manuales), no "Sobre mí".
+                        activeTab === "about" ? profileAboutEntries.filter((e) => !e.name?.startsWith("__")) :
                         activeTab === "concepts" ? profileConcepts :
                         activeTab === "limitingBeliefs" ? profileLimitingBeliefs :
                         activeTab === "experiences" ? profileExperiences :
@@ -9404,13 +9406,16 @@ function QuestDiary() {
               <TabsTrigger value="tools" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-tools" title="Tools">
                 <Wrench className="h-5 w-5" />
               </TabsTrigger>
+              <TabsTrigger value="logros" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-logros" title="Logros">
+                <Trophy className="h-5 w-5" />
+              </TabsTrigger>
               <TabsTrigger value="objetivos" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-objetivos" title="Objetivos">
                 <Target className="h-5 w-5" />
               </TabsTrigger>
               <TabsTrigger value="powers" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-powers" title="Poderes">
                 <Shield className="h-5 w-5" />
               </TabsTrigger>
-              <TabsTrigger value="errores" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-errores" title="Bugs">
+              <TabsTrigger value="errores" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-errores" title="Errores">
                 <Circle className="h-5 w-5" />
               </TabsTrigger>
               <TabsTrigger value="body" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-body" title="Fuerza">
@@ -9429,6 +9434,10 @@ function QuestDiary() {
               
               <TabsContent value="achievements" className="flex-1 min-h-0 min-w-0 mt-0">
                 <AchievementsSection learnings={learnings} tools={tools} thoughts={thoughts} />
+              </TabsContent>
+
+              <TabsContent value="logros" className="flex-1 min-h-0 min-w-0 mt-0">
+                <AchievementsHall />
               </TabsContent>
 
               <TabsContent value="skills" className="flex-1 min-h-0 min-w-0 mt-0">

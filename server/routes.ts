@@ -185,6 +185,16 @@ async function findAreaByName(userId: string, areaName: string) {
   const name = areaName.trim().toLowerCase();
   return (await storage.getAreas(userId)).find(a => !a.archived && a.name.trim().toLowerCase() === name);
 }
+async function renameRadarZone(userId: string, oldName: string, newName: string) {
+  const user = await storage.getUserById(userId);
+  const data = user?.radarMaps as any;
+  if (!data || !Array.isArray(data.areas)) return;
+  const old = oldName.trim().toLowerCase();
+  const zones = data.areas.filter((z: any) => typeof z?.name === "string" && z.name.trim().toLowerCase() === old);
+  if (!zones.length) return;
+  for (const z of zones) z.name = newName;
+  await storage.updateUserRadarMaps(userId, data);
+}
 async function logRadarSideQuest(
   userId: string,
   areaName: string,
@@ -747,23 +757,27 @@ export async function registerRoutes(
       } else if (match) {
         nodeId = await createLoggedSideQuestNode({ areaId: match.id }, req.userId!, title);
       }
+      // nodeCreated: false avisa al mapa que la actividad quedó solo como tarea (sin área con el
+      // nombre de la zona, p. ej. si el área se renombró, no hay dónde crear el SideQuest).
       if (task) {
         if (task.date !== date) await storage.deleteTodayTaskSlot(req.userId!, task.date, "manual", task.id);
-        res.json(await storage.updateManualTodayTask(task.id, {
+        const updated = await storage.updateManualTodayTask(task.id, {
           done: 1,
           date,
           ...(nodeId && nodeId !== task.linkedSkillId ? { linkedSkillId: nodeId } : {}),
-        }));
+        });
+        res.json({ ...updated, nodeCreated: !!nodeId });
         return;
       }
-      res.status(201).json(await storage.createManualTodayTask({
+      const created = await storage.createManualTodayTask({
         userId: req.userId!,
         date,
         title,
         kind: "task",
         done: 1,
         ...(match && nodeId ? { linkedKind: "area" as const, linkedParentId: match.id, linkedSkillId: nodeId } : {}),
-      }));
+      });
+      res.status(201).json({ ...created, nodeCreated: !!nodeId });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -888,6 +902,11 @@ export async function registerRoutes(
         return;
       }
       const area = await storage.updateArea(req.params.id, req.body);
+      // El mapa de habilidades vincula cada zona con su área por nombre: si el área se renombra,
+      // la zona pasa a llamarse igual (si no, sus SideQuests y tareas dejan de encontrar el área).
+      if (typeof req.body?.name === "string" && req.body.name.trim() && req.body.name.trim() !== existingArea.name.trim()) {
+        await renameRadarZone(req.userId!, existingArea.name, req.body.name.trim());
+      }
       res.json(area);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -4361,6 +4380,76 @@ export async function registerRoutes(
         description: JSON.stringify(items),
       });
       res.json({ ok: true, id: created.id });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Logros cargados a mano desde la tab "Logros" del Journal (mantener apretado el fondo).
+  // Mismo almacenamiento que las reparaciones: un JSON dentro de un profile_about_entry.
+  const MANUAL_ACHIEVEMENTS_STORAGE_NAME = "__manual_achievements__";
+
+  type ManualAchievement = { id: string; emoji: string; title: string; detail: string; date: string };
+
+  function sanitizeManualAchievements(input: unknown): ManualAchievement[] {
+    if (!Array.isArray(input)) return [];
+
+    return input
+      .map((item) => {
+        const a = item as Record<string, unknown>;
+        if (typeof a.id !== "string" || typeof a.title !== "string" || !a.title.trim()) return null;
+        return {
+          id: a.id,
+          emoji: typeof a.emoji === "string" && a.emoji.trim() ? a.emoji : "🏅",
+          title: a.title,
+          detail: typeof a.detail === "string" ? a.detail : "",
+          date: typeof a.date === "string" ? a.date : "",
+        };
+      })
+      .filter((item): item is ManualAchievement => item !== null);
+  }
+
+  app.get("/api/manual-achievements", requireAuth, async (req, res) => {
+    try {
+      const entries = await storage.getProfileAboutEntries(req.userId!);
+      const storageEntry = entries.find((entry) => entry.name === MANUAL_ACHIEVEMENTS_STORAGE_NAME);
+
+      if (!storageEntry) {
+        res.json([]);
+        return;
+      }
+
+      let parsed: unknown = [];
+      try {
+        parsed = JSON.parse(storageEntry.description || "[]");
+      } catch {
+        parsed = [];
+      }
+
+      res.json(sanitizeManualAchievements(parsed));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/manual-achievements", requireAuth, async (req, res) => {
+    try {
+      const items = sanitizeManualAchievements(req.body?.items);
+      const entries = await storage.getProfileAboutEntries(req.userId!);
+      const storageEntry = entries.find((entry) => entry.name === MANUAL_ACHIEVEMENTS_STORAGE_NAME);
+
+      if (storageEntry) {
+        await storage.updateProfileAboutEntry(storageEntry.id, {
+          description: JSON.stringify(items),
+        });
+      } else {
+        await storage.createProfileAboutEntry({
+          userId: req.userId!,
+          name: MANUAL_ACHIEVEMENTS_STORAGE_NAME,
+          description: JSON.stringify(items),
+        });
+      }
+      res.json(items);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

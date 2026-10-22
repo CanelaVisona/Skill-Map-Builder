@@ -537,19 +537,24 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
   function sideQuest(title,desc,taskId){
     if(!API||!zones[sa]||!title) return;
     fetch(API+'/side-quest',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({area:zones[sa].name,title:title,description:desc||'',taskId:taskId||undefined})})
-      .then(function(r){ if(!r.ok) return; return r.json().then(function(d){ return d },function(){ return {} }).then(function(d){
+      .then(function(r){ if(r.status===404){ noArea(); return } if(!r.ok) return; return r.json().then(function(d){ return d },function(){ return {} }).then(function(d){
         try{ parent.postMessage({type:'radar-side-quest',power:d&&d.power?{name:d.power.name}:null},location.origin) }catch(e){}
       }) },function(){});
   }
   /* Una actividad hecha también queda como SideQuest confirmado en el área y como tarea hecha en
      "Tareas de hoy" (si estaba agendada, se usa esa tarea y su nodo). x.t guarda el id de la tarea,
      así confirmarla/desconfirmarla en la app sigue sincronizada con la actividad. done=0 la deshace. */
+  /* La zona se vincula con su área del skill tree por nombre: sin área con ese nombre (p. ej. se
+     renombró el área) no hay dónde crear el SideQuest, así que se avisa en vez de fallar callado. */
+  function zoneLinked(Z){ return !HOST||HOST.some(function(s){ return s.trim().toLowerCase()===Z.name.trim().toLowerCase() }) }
+  function noArea(){ toast('No hay un área «'+(zones[sa]?zones[sa].name:'')+'» en el skill tree: mantené apretada la zona para elegir su área',true) }
   function actSync(x,done){
     if(!API||!zones[sa]||(!done&&!x.t)) return;
     fetch(API+'/activity',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({area:zones[sa].name,title:x.n,date:dayOffset(0),taskId:x.t||undefined,done:done?1:0})})
       .then(function(r){ if(!r.ok) throw 0; return r.json() })
       .then(function(task){
         if(done&&task&&task.id&&x.t!==task.id){ x.t=task.id; save() }
+        if(done&&task&&task.nodeCreated===false) noArea();
         try{ parent.postMessage({type:'radar-task-scheduled',date:dayOffset(0),node:true},location.origin) }catch(e){}
       }).catch(function(){ if(done) toast('No se pudo registrar «'+x.n+'» en tareas de hoy',true) });
   }
@@ -879,7 +884,7 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
     var first=L.querySelector('.mitem'); if(first) first.focus({preventScroll:true});
   }
   function closeMenu(){ menuA=null; $('menu').hidden=true }
-  function pick(a,k){ sa=a; maps=zones[a].maps; selectMap(k) }
+  function pick(a,k){ var chg=a!==sa; sa=a; maps=zones[a].maps; selectMap(k); if(chg&&!zoneLinked(zones[a])) noArea() }
   function selectMap(k){ sel=k; data=maps[k]; save(); renderBar(); go(null) }
   function holdOn(el,test,fire){
     var t=0,x=0,y=0;
@@ -1012,6 +1017,7 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
   function boot(d){
     loadAll(d); setBar(!(d&&d.bar===false)); ready=true;
     barA=sa; data=maps[sel]; renderBar(); go(null);
+    if(zones[sa]&&!zoneLinked(zones[sa])) noArea();
   }
   var local=readLocal(), dirty=false; try{ dirty=localStorage.getItem(KEY+'-dirty')==='1' }catch(e){}
   if(!API) boot(local);
