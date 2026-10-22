@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
-import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertJournalShadowPageSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileConceptSchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertSourceObjectiveSchema, insertSourceBeliefSchema, insertSourceVisionSchema, insertSourcePowersSchema, insertSourceBugSchema, insertSourceBugRecordSchema, insertNodeErrorSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema, insertSpaceRepetitionPracticeSchema, insertRewiringTrackerSchema, type InsertSpaceRepetitionPractice, type SpaceRepetitionPractice, type RewiringTracker, skills, areas, projects, spaceRepetitionPractices } from "@shared/schema";
+import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertJournalShadowPageSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileConceptSchema, insertProfileLimitingBeliefSchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertSourceObjectiveSchema, insertSourceBeliefSchema, insertSourceVisionSchema, insertSourcePowersSchema, insertSourceBugSchema, insertSourceBugRecordSchema, insertNodeErrorSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema, insertSpaceRepetitionPracticeSchema, insertRewiringTrackerSchema, type InsertSpaceRepetitionPractice, type SpaceRepetitionPractice, type RewiringTracker, skills, areas, projects, spaceRepetitionPractices } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import { z } from "zod";
 import cookieParser from "cookie-parser";
@@ -241,6 +241,16 @@ async function syncRadarForTask(userId: string, taskId: string, done: 0 | 1, has
           if (!!act.d !== (done === 1)) {
             act.d = done === 1;
             await storage.updateUserRadarMaps(userId, data);
+          }
+          // Actividad agendada sin nodo propio (de antes de que se crearan al agendarlas): al
+          // confirmarla queda igual como SideQuest confirmado, vinculado a la tarea.
+          if (done === 1 && !hasNode) {
+            const match = await findAreaByName(userId, String(zone.name ?? ""));
+            const nodeId = match ? await createLoggedSideQuestNode({ areaId: match.id }, userId, String(act.n ?? "")) : null;
+            if (nodeId) {
+              await storage.updateManualTodayTask(taskId, { linkedSkillId: nodeId });
+              return { title: String(act.n ?? ""), power: null };
+            }
           }
           return null;
         }
@@ -693,6 +703,67 @@ export async function registerRoutes(
         return;
       }
       res.json({ ok: true, power: result.power });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Actividad del mapa completada (done = 1): queda como nodo SideQuest confirmado en el área con
+  // el nombre de la zona (sin poder: es un paso hacia la habilidad, no la habilidad) y como tarea
+  // hecha en "Tareas de hoy" del día `date`. Si estaba agendada (taskId) se usa esa tarea (pasa a
+  // ese día) y su nodo pendiente; si no, se crean. done = 0 ("Volver a bloquear") desconfirma la
+  // tarea y su nodo. Devuelve la tarea: el mapa guarda su id en la actividad (x.t).
+  app.post("/api/radar-maps/activity", requireAuth, async (req, res) => {
+    try {
+      const area = typeof req.body?.area === "string" ? req.body.area : "";
+      const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
+      const date = typeof req.body?.date === "string" ? req.body.date : "";
+      const done = req.body?.done === 0 ? 0 : 1;
+      const found = typeof req.body?.taskId === "string" ? await storage.getManualTodayTask(req.body.taskId) : undefined;
+      const task = found && found.userId === req.userId ? found : undefined;
+      if (done === 0) {
+        if (!task) { res.status(404).json({ message: "Tarea no encontrada" }); return; }
+        const node = task.linkedSkillId ? await storage.getSkill(task.linkedSkillId) : undefined;
+        if (node?.areaId && node.isSideQuest === 1 && node.status === "mastered") {
+          await storage.updateSkill(node.id, { status: "available", completedAt: null });
+          await storage.recalculateAvailableStatus(node.level, { areaId: node.areaId });
+        }
+        res.json(task.done === 0 ? task : await storage.updateManualTodayTask(task.id, { done: 0 }));
+        return;
+      }
+      if (!title || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        res.status(400).json({ message: "title y date (YYYY-MM-DD) son obligatorios" });
+        return;
+      }
+      const match = area.trim() ? await findAreaByName(req.userId!, area) : undefined;
+      const pending = task?.linkedSkillId ? await storage.getSkill(task.linkedSkillId) : undefined;
+      let nodeId: string | null = null;
+      if (pending && (!match || pending.areaId === match.id)) {
+        nodeId = pending.id;
+        if (pending.status !== "mastered") {
+          await storage.updateSkill(pending.id, { status: "mastered", completedAt: new Date() });
+          await storage.recalculateAvailableStatus(pending.level, { areaId: pending.areaId! });
+        }
+      } else if (match) {
+        nodeId = await createLoggedSideQuestNode({ areaId: match.id }, req.userId!, title);
+      }
+      if (task) {
+        if (task.date !== date) await storage.deleteTodayTaskSlot(req.userId!, task.date, "manual", task.id);
+        res.json(await storage.updateManualTodayTask(task.id, {
+          done: 1,
+          date,
+          ...(nodeId && nodeId !== task.linkedSkillId ? { linkedSkillId: nodeId } : {}),
+        }));
+        return;
+      }
+      res.status(201).json(await storage.createManualTodayTask({
+        userId: req.userId!,
+        date,
+        title,
+        kind: "task",
+        done: 1,
+        ...(match && nodeId ? { linkedKind: "area" as const, linkedParentId: match.id, linkedSkillId: nodeId } : {}),
+      }));
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -3795,6 +3866,67 @@ export async function registerRoutes(
         return;
       }
       await storage.deleteProfileConcept(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Profile - Limiting Beliefs (los nombres siempre se guardan en mayúscula)
+  app.get("/api/profile/limiting-beliefs", requireAuth, async (req, res) => {
+    try {
+      const entries = await storage.getProfileLimitingBeliefs(req.userId!);
+      res.json(entries);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/profile/limiting-beliefs", requireAuth, async (req, res) => {
+    try {
+      const data = { ...req.body, userId: req.userId };
+      if (typeof data.name === "string") data.name = data.name.toUpperCase();
+      const validated = insertProfileLimitingBeliefSchema.parse(data);
+      const entry = await storage.createProfileLimitingBelief(validated);
+      res.status(201).json(entry);
+    } catch (error: any) {
+      const validationError = fromError(error);
+      res.status(400).json({ message: validationError.toString() });
+    }
+  });
+
+  app.patch("/api/profile/limiting-beliefs/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getProfileLimitingBelief(req.params.id);
+      if (!existing) {
+        res.status(404).json({ message: "Limiting belief not found" });
+        return;
+      }
+      if (existing.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para modificar esta entrada" });
+        return;
+      }
+      const data = { ...req.body };
+      if (typeof data.name === "string") data.name = data.name.toUpperCase();
+      const updated = await storage.updateProfileLimitingBelief(req.params.id, data);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/profile/limiting-beliefs/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getProfileLimitingBelief(req.params.id);
+      if (!existing) {
+        res.status(404).json({ message: "Limiting belief not found" });
+        return;
+      }
+      if (existing.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para eliminar esta entrada" });
+        return;
+      }
+      await storage.deleteProfileLimitingBelief(req.params.id);
       res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ message: error.message });

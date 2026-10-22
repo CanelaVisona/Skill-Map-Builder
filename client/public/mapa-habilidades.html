@@ -476,7 +476,7 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
           if(av){ var at=el('text',Object.assign({class:'nlbl'},place(i,ap,true)),an); at.textContent=x.n; tapLbl(at,function(){ x.v=false }) }
           press(an,function(){
             if(!av||x.d){ x.v=!av; save(); render(); return }
-            x.d=true; save(); closeEdit(); burst(ap); render(); flash($('pReal')) },function(){ openEdit(x.d?{i:i,j:a.level,k:k,actLock:true}:{i:i,j:a.level,k:k},ap) });
+            x.d=true; save(); actSync(x,true); closeEdit(); burst(ap); render(); flash($('pReal')) },function(){ openEdit(x.d?{i:i,j:a.level,k:k,actLock:true}:{i:i,j:a.level,k:k},ap) });
         });
       }
       if(grp&&gPend(a)&&!gReady(a)){
@@ -540,6 +540,18 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
       .then(function(r){ if(!r.ok) return; return r.json().then(function(d){ return d },function(){ return {} }).then(function(d){
         try{ parent.postMessage({type:'radar-side-quest',power:d&&d.power?{name:d.power.name}:null},location.origin) }catch(e){}
       }) },function(){});
+  }
+  /* Una actividad hecha también queda como SideQuest confirmado en el área y como tarea hecha en
+     "Tareas de hoy" (si estaba agendada, se usa esa tarea y su nodo). x.t guarda el id de la tarea,
+     así confirmarla/desconfirmarla en la app sigue sincronizada con la actividad. done=0 la deshace. */
+  function actSync(x,done){
+    if(!API||!zones[sa]||(!done&&!x.t)) return;
+    fetch(API+'/activity',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({area:zones[sa].name,title:x.n,date:dayOffset(0),taskId:x.t||undefined,done:done?1:0})})
+      .then(function(r){ if(!r.ok) throw 0; return r.json() })
+      .then(function(task){
+        if(done&&task&&task.id&&x.t!==task.id){ x.t=task.id; save() }
+        try{ parent.postMessage({type:'radar-task-scheduled',date:dayOffset(0),node:true},location.origin) }catch(e){}
+      }).catch(function(){ if(done) toast('No se pudo registrar «'+x.n+'» en tareas de hoy',true) });
   }
   function unlock(i){
     var a=areas[i]; if(a.level>=sk(a).length) return;
@@ -672,16 +684,15 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
     if(!edit||!edit.sched||!API) return;
     if(!/^\d{4}-\d{2}-\d{2}$/.test(date||'')||date<dayOffset(0)){ $('popDate').focus(); return }
     var title=edit.title, leaf=edit.leaf, j=edit.j, act=edit.act; closeEdit();
-    /* Una habilidad va por /schedule, que además crea su nodo SideQuest pendiente en el área (y si
-       ya estaba agendada, mueve esa misma tarea al día nuevo en vez de duplicarla). */
-    var req=act
-      ? fetch('/api/manual-today-tasks',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({date:date,title:title})})
-      : fetch(API+'/schedule',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({area:zones[sa]?zones[sa].name:'',title:title,date:date,replaceTaskId:(leaf.sched&&leaf.sched[j])||undefined})});
-    req.then(function(r){ if(!r.ok) throw 0; return r.json() })
+    /* Habilidades y actividades van por /schedule, que además crea su nodo SideQuest pendiente en el
+       área (y si ya estaba agendada, mueve esa misma tarea al día nuevo en vez de duplicarla). */
+    var prev=act?act.t:(leaf.sched&&leaf.sched[j]);
+    fetch(API+'/schedule',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({area:zones[sa]?zones[sa].name:'',title:title,date:date,replaceTaskId:prev||undefined})})
+      .then(function(r){ if(!r.ok) throw 0; return r.json() })
       .then(function(task){
         if(task&&task.id){ if(act) act.t=task.id; else { leaf.sched=leaf.sched||{}; leaf.sched[j]=task.id } save() }
         toast('«'+title+'» agendada para '+dayLabel(date));
-        try{ parent.postMessage({type:'radar-task-scheduled',date:date,node:!act},location.origin) }catch(e){}
+        try{ parent.postMessage({type:'radar-task-scheduled',date:date,node:true},location.origin) }catch(e){}
       }).catch(function(){ toast('No se pudo agendar «'+title+'»',true) });
   }
   $('popAgenda').addEventListener('click',function(){
@@ -704,7 +715,7 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
   $('popSel').addEventListener('keydown',function(ev){ if(ev.key==='Enter'){ ev.preventDefault(); saveEdit() } else if(ev.key==='Escape') closeEdit() });
   $('popLock').addEventListener('click',function(){
     if(!edit) return; var a=areas[edit.i];
-    if(edit.actLock){ getActs(a)[edit.k].d=false; shown=null; save(); closeEdit(); render(); return }
+    if(edit.actLock){ var x=getActs(a)[edit.k]; x.d=false; actSync(x,false); shown=null; save(); closeEdit(); render(); return }
     if(edit.j===a.level-1) a.level--;
     save(); closeEdit(); render();
   });

@@ -1,7 +1,7 @@
 import { eq, and, or, asc, sql, inArray, gte, lte } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db, pool } from "./db";
-import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type JournalShadowPage, type InsertJournalShadowPage, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type ProfileConcept, type InsertProfileConcept, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourceObjective, type InsertSourceObjective, type SourceBelief, type InsertSourceBelief, type SourceVision, type InsertSourceVision, type SourcePowers, type InsertSourcePowers, type SourceBug, type InsertSourceBug, type SourceBugReflexion, type SourceBugRecord, type InsertSourceBugRecord, type NodeError, type InsertNodeError, type NodeErrorRecord, type InsertNodeErrorRecord, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type BookWishlistItem, type InsertBookWishlistItem, type FinancialGoal, type InsertFinancialGoal, type BudgetQuarter, type InsertBudgetQuarter, type BudgetCategory, type InsertBudgetCategory, type IncomeSource, type InsertIncomeSource, type DollarRate, type InsertDollarRate, type PersonalIncome, type InsertPersonalIncome, type SavingMission, type InsertSavingMission, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, type BodyProgressRow, type InsertBodyProgress, type TodayTaskSlot, type InsertTodayTaskSlot, type TodayTaskSubstep, type HabitSubstep, type ManualTodayTask, type InsertManualTodayTask, type MealTrackerDay, type InsertMealTrackerDay, type MealTrackerCustomOption, type InsertMealTrackerCustomOption, type MealTrackerDish, type InsertMealTrackerDish, type MealTrackerMeta, type QuestionProblem, type InsertQuestionProblem, type QuestionItem, type InsertQuestionItem, type QuestionProblemWithItems, type EvidenceBoardRow, evidenceBoards, type LifeGoalsRow, type LifeGoalItem, type CompletedLifeGoal, lifeGoals, questionProblems, questionItems, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, journalShadowPages, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, profileConcepts, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourceObjectives, sourceBeliefs, sourceVision, sourcePowers, sourceBugs, sourceBugRecords, nodeErrors, nodeErrorRecords, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, bookWishlist, financialGoals, budgetQuarters, budgetCategories, incomeSources, dollarRates, personalIncomes, savingMissions, rewiringTrackers, rewiringTrackerRecords, bodyProgress, todayTaskSlots, todayTaskSubsteps, habitSubsteps, todayPriorities, manualTodayTasks, mealTrackerDays, mealTrackerCustomOptions, mealTrackerDishes, mealTrackerMeta } from "@shared/schema";
+import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type JournalShadowPage, type InsertJournalShadowPage, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type ProfileConcept, type InsertProfileConcept, type ProfileLimitingBelief, type InsertProfileLimitingBelief, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourceObjective, type InsertSourceObjective, type SourceBelief, type InsertSourceBelief, type SourceVision, type InsertSourceVision, type SourcePowers, type InsertSourcePowers, type SourceBug, type InsertSourceBug, type SourceBugReflexion, type SourceBugRecord, type InsertSourceBugRecord, type NodeError, type InsertNodeError, type NodeErrorRecord, type InsertNodeErrorRecord, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type BookWishlistItem, type InsertBookWishlistItem, type FinancialGoal, type InsertFinancialGoal, type BudgetQuarter, type InsertBudgetQuarter, type BudgetCategory, type InsertBudgetCategory, type IncomeSource, type InsertIncomeSource, type DollarRate, type InsertDollarRate, type PersonalIncome, type InsertPersonalIncome, type SavingMission, type InsertSavingMission, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, type BodyProgressRow, type InsertBodyProgress, type TodayTaskSlot, type InsertTodayTaskSlot, type TodayTaskSubstep, type HabitSubstep, type ManualTodayTask, type InsertManualTodayTask, type MealTrackerDay, type InsertMealTrackerDay, type MealTrackerCustomOption, type InsertMealTrackerCustomOption, type MealTrackerDish, type InsertMealTrackerDish, type MealTrackerMeta, type QuestionProblem, type InsertQuestionProblem, type QuestionItem, type InsertQuestionItem, type QuestionProblemWithItems, type EvidenceBoardRow, evidenceBoards, type LifeGoalsRow, type LifeGoalItem, type CompletedLifeGoal, lifeGoals, questionProblems, questionItems, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, journalShadowPages, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, profileConcepts, profileLimitingBeliefs, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourceObjectives, sourceBeliefs, sourceVision, sourcePowers, sourceBugs, sourceBugRecords, nodeErrors, nodeErrorRecords, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, bookWishlist, financialGoals, budgetQuarters, budgetCategories, incomeSources, dollarRates, personalIncomes, savingMissions, rewiringTrackers, rewiringTrackerRecords, bodyProgress, todayTaskSlots, todayTaskSubsteps, habitSubsteps, todayPriorities, manualTodayTasks, mealTrackerDays, mealTrackerCustomOptions, mealTrackerDishes, mealTrackerMeta } from "@shared/schema";
 
 const normalizeSourceBugStatus = (status: string): "identificado" | "debugueando" | "debugueado" => {
   if (status === "activo") return "identificado";
@@ -210,6 +210,13 @@ export interface IStorage {
   createProfileConcept(entry: InsertProfileConcept): Promise<ProfileConcept>;
   updateProfileConcept(id: string, entry: Partial<InsertProfileConcept>): Promise<ProfileConcept | undefined>;
   deleteProfileConcept(id: string): Promise<void>;
+
+  // Profile - Limiting Beliefs
+  getProfileLimitingBeliefs(userId: string): Promise<ProfileLimitingBelief[]>;
+  getProfileLimitingBelief(id: string): Promise<ProfileLimitingBelief | undefined>;
+  createProfileLimitingBelief(entry: InsertProfileLimitingBelief): Promise<ProfileLimitingBelief>;
+  updateProfileLimitingBelief(id: string, entry: Partial<InsertProfileLimitingBelief>): Promise<ProfileLimitingBelief | undefined>;
+  deleteProfileLimitingBelief(id: string): Promise<void>;
 
   // Journal - Learnings
   getJournalLearnings(userId: string): Promise<JournalLearning[]>;
@@ -2290,6 +2297,31 @@ export class DbStorage implements IStorage {
 
   async deleteProfileConcept(id: string): Promise<void> {
     await db.delete(profileConcepts).where(eq(profileConcepts.id, id));
+  }
+
+  // Profile - Limiting Beliefs
+  async getProfileLimitingBeliefs(userId: string): Promise<ProfileLimitingBelief[]> {
+    return await db.select().from(profileLimitingBeliefs).where(eq(profileLimitingBeliefs.userId, userId));
+  }
+
+  async getProfileLimitingBelief(id: string): Promise<ProfileLimitingBelief | undefined> {
+    const result = await db.select().from(profileLimitingBeliefs).where(eq(profileLimitingBeliefs.id, id));
+    return result[0];
+  }
+
+  async createProfileLimitingBelief(entry: InsertProfileLimitingBelief): Promise<ProfileLimitingBelief> {
+    const id = randomUUID();
+    const result = await db.insert(profileLimitingBeliefs).values({ id, ...entry }).returning();
+    return result[0];
+  }
+
+  async updateProfileLimitingBelief(id: string, entry: Partial<InsertProfileLimitingBelief>): Promise<ProfileLimitingBelief | undefined> {
+    const result = await db.update(profileLimitingBeliefs).set(entry).where(eq(profileLimitingBeliefs.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteProfileLimitingBelief(id: string): Promise<void> {
+    await db.delete(profileLimitingBeliefs).where(eq(profileLimitingBeliefs.id, id));
   }
 
   // Journal - Learnings

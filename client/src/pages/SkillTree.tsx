@@ -2760,6 +2760,16 @@ function ProfileSection() {
     },
   });
 
+  const { data: profileLimitingBeliefs = [], isLoading: limitingBeliefsLoading } = useQuery<ProfileEntry[]>({
+    queryKey: ["/api/profile/limiting-beliefs"],
+    queryFn: async () => {
+      const res = await fetch("/api/profile/limiting-beliefs");
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    },
+  });
+
   const { data: profileExperiences = [], isLoading: experiencesLoading } = useQuery<ProfileEntry[]>({
     queryKey: ["/api/profile/experiences"],
     queryFn: async () => {
@@ -2912,6 +2922,50 @@ function ProfileSection() {
     },
   });
 
+  const createLimitingBelief = useMutation({
+    mutationFn: async (data: { name: string; description: string }) => {
+      const res = await fetch("/api/profile/limiting-beliefs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/profile/limiting-beliefs"] });
+      setIsAdding(false);
+      setName("");
+      setDescription("");
+    },
+  });
+
+  const updateLimitingBelief = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { name?: string; description?: string } }) => {
+      const res = await fetch(`/api/profile/limiting-beliefs/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/profile/limiting-beliefs"] });
+      setSelectedEntry(null);
+      setIsEditMode(false);
+    },
+  });
+
+  const deleteLimitingBelief = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/profile/limiting-beliefs/${id}`, { method: "DELETE" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/profile/limiting-beliefs"] });
+      setSelectedEntry(null);
+      setShowDeleteConfirm(false);
+    },
+  });
+
   const createExperience = useMutation({
     mutationFn: async (data: { name: string; description: string; areaId?: string | null; projectId?: string | null }) => {
       const res = await fetch("/api/profile/experiences", {
@@ -3042,6 +3096,7 @@ function ProfileSection() {
     { id: "likes", label: "Gustos", title: "LO QUE ME GUSTA" },
     { id: "about", label: "Sobre mí", title: "SOBRE MÍ" },
     { id: "concepts", label: "Conceptos", title: "CONCEPTOS" },
+    { id: "limitingBeliefs", label: "Creencias limitantes", title: "CREENCIAS LIMITANTES" },
     { id: "experiences", label: "Experiencias", title: "MIS EXPERIENCIAS" },
     { id: "contributions", label: "Contribución", title: "MIS CONTRIBUCIONES" },
   ];
@@ -3052,6 +3107,7 @@ function ProfileSection() {
                         activeTab === "mission" ? profileMissions : 
                         activeTab === "about" ? profileAboutEntries :
                         activeTab === "concepts" ? profileConcepts :
+                        activeTab === "limitingBeliefs" ? profileLimitingBeliefs :
                         activeTab === "experiences" ? profileExperiences :
                         profileContributions;
 
@@ -3095,6 +3151,8 @@ function ProfileSection() {
       createAboutEntry.mutate({ name: name.trim(), description: description.trim() });
     } else if (activeTab === "concepts") {
       createConcept.mutate({ name: name.trim().toUpperCase(), description: description.trim() });
+    } else if (activeTab === "limitingBeliefs") {
+      createLimitingBelief.mutate({ name: name.trim().toUpperCase(), description: description.trim() });
     } else if (activeTab === "experiences") {
       const created = await createExperience.mutateAsync({
         name: name.trim(),
@@ -3126,6 +3184,8 @@ function ProfileSection() {
       updateAboutEntry.mutate({ id: selectedEntry.id, data: { name: name.trim(), description: description.trim() } });
     } else if (activeTab === "concepts") {
       updateConcept.mutate({ id: selectedEntry.id, data: { name: name.trim().toUpperCase(), description: description.trim() } });
+    } else if (activeTab === "limitingBeliefs") {
+      updateLimitingBelief.mutate({ id: selectedEntry.id, data: { name: name.trim().toUpperCase(), description: description.trim() } });
     } else if (activeTab === "experiences") {
       const experienceId = selectedEntry.id;
       updateExperience.mutate({ id: experienceId, data: {
@@ -3158,6 +3218,8 @@ function ProfileSection() {
       deleteAboutEntry.mutate(selectedEntry.id);
     } else if (activeTab === "concepts") {
       deleteConcept.mutate(selectedEntry.id);
+    } else if (activeTab === "limitingBeliefs") {
+      deleteLimitingBelief.mutate(selectedEntry.id);
     } else if (activeTab === "experiences") {
       deleteExperience.mutate(selectedEntry.id);
     } else if (activeTab === "contributions") {
@@ -3185,6 +3247,8 @@ function ProfileSection() {
       updateAboutEntry.mutate({ id: selectedEntry.id, data: { description: newDesc } });
     } else if (activeTab === "concepts") {
       updateConcept.mutate({ id: selectedEntry.id, data: { description: newDesc } });
+    } else if (activeTab === "limitingBeliefs") {
+      updateLimitingBelief.mutate({ id: selectedEntry.id, data: { description: newDesc } });
     } else if (activeTab === "experiences") {
       updateExperience.mutate({ id: selectedEntry.id, data: { description: newDesc } });
     } else if (activeTab === "contributions") {
@@ -3280,6 +3344,7 @@ function ProfileSection() {
       case "likes": return "Gusto";
       case "about": return "Sobre mí";
       case "concepts": return "Concepto";
+      case "limitingBeliefs": return "Creencia limitante";
       case "experiences": return "Experiencia";
       case "contributions": return "Contribución";
       default: return "Entrada";
@@ -3293,13 +3358,14 @@ function ProfileSection() {
       case "likes": return "gustos";
       case "about": return "entradas";
       case "concepts": return "conceptos";
+      case "limitingBeliefs": return "creencias limitantes";
       case "experiences": return "experiencias";
       case "contributions": return "contribuciones";
       default: return "entradas";
     }
   };
 
-  if (profileLoading || valuesLoading || likesLoading || missionsLoading || aboutEntriesLoading || conceptsLoading || experiencesLoading || contributionsLoading) {
+  if (profileLoading || valuesLoading || likesLoading || missionsLoading || aboutEntriesLoading || conceptsLoading || limitingBeliefsLoading || experiencesLoading || contributionsLoading) {
     return <div className="text-muted-foreground text-sm">Cargando...</div>;
   }
 
@@ -3599,7 +3665,7 @@ function ProfileSection() {
                   <div key={entry.id}>
                     <button
                       onClick={(e) => { e.stopPropagation(); setViewingEntry(entry); }}
-                      className={`w-full text-left px-3 py-2 rounded text-sm transition-all cursor-pointer select-none ${activeTab === "concepts" ? "uppercase " : ""}${
+                      className={`w-full text-left px-3 py-2 rounded text-sm transition-all cursor-pointer select-none ${activeTab === "concepts" || activeTab === "limitingBeliefs" ? "uppercase " : ""}${
                         viewingEntry?.id === entry.id
                           ? "bg-secondary text-foreground shadow-sm"
                           : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"

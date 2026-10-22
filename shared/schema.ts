@@ -1025,9 +1025,17 @@ export const profileConcepts = pgTable("profile_concepts", {
   description: text("description").notNull().default(""),
 });
 
+export const profileLimitingBeliefs = pgTable("profile_limiting_beliefs", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+});
+
 export const insertProfileMissionSchema = createInsertSchema(profileMissions).omit({ id: true });
 export const insertProfileAboutEntrySchema = createInsertSchema(profileAboutEntries).omit({ id: true });
 export const insertProfileConceptSchema = createInsertSchema(profileConcepts).omit({ id: true });
+export const insertProfileLimitingBeliefSchema = createInsertSchema(profileLimitingBeliefs).omit({ id: true });
 
 export type InsertProfileMission = z.infer<typeof insertProfileMissionSchema>;
 export type ProfileMission = typeof profileMissions.$inferSelect;
@@ -1035,6 +1043,8 @@ export type InsertProfileAboutEntry = z.infer<typeof insertProfileAboutEntrySche
 export type ProfileAboutEntry = typeof profileAboutEntries.$inferSelect;
 export type InsertProfileConcept = z.infer<typeof insertProfileConceptSchema>;
 export type ProfileConcept = typeof profileConcepts.$inferSelect;
+export type InsertProfileLimitingBelief = z.infer<typeof insertProfileLimitingBeliefSchema>;
+export type ProfileLimitingBelief = typeof profileLimitingBeliefs.$inferSelect;
 export type InsertJournalLearning = z.infer<typeof insertJournalLearningSchema>;
 export type JournalLearning = typeof journalLearnings.$inferSelect;
 export type InsertJournalTool = z.infer<typeof insertJournalToolSchema>;

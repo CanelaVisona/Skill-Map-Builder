@@ -24,7 +24,8 @@ export function RadarSkillMapModal({ open, onOpenChange }: { open: boolean; onOp
         queryClient.invalidateQueries({ queryKey: ["manual-today-tasks"] });
         queryClient.invalidateQueries({ queryKey: ["manual-today-tasks-range"] });
         queryClient.invalidateQueries({ queryKey: ["today-task-slots"] });
-        // Agendar una habilidad (no una actividad) también creó su nodo SideQuest pendiente.
+        // Agendar una habilidad o actividad crea su nodo SideQuest pendiente, y completar una
+        // actividad en el mapa lo confirma (o crea uno ya confirmado).
         if (e.data?.node) refreshSkillTrees();
         return;
       }
