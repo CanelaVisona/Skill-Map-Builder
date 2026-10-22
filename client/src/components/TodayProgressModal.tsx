@@ -650,10 +650,17 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // Se usa effectiveDate (no todayStr) para que también aparezcan acá los nodos completados sin
   // fecha planeada de un día pasado que se esté editando; para un día futuro no hay nada
   // completado todavía, así que naturalmente da vacío.
+  // Tareas manuales agregadas a mano (mantener presionado el fondo). Existen para cualquier
+  // día (hoy o un día futuro previsualizado) y no aparecen en el calendario de actividades.
+  const { data: manualTasksData } = useManualTasks(effectiveDate, open);
+  const manualTasks = manualTasksData || [];
+  // Nodos que son de una tarea manual (eventos con área, habilidades agendadas desde el mapa):
+  // la tarea ya los representa en el día, así que confirmados no se repiten como actividad extra.
+  const manualLinkedNodeIds = new Set(manualTasks.map((t) => t.linkedSkillId).filter((id): id is string => !!id));
   const extraTopNodes = [
     ...collectExtraCompletedNodes(Array.isArray(areas) ? areas : [], effectiveDate, effectiveDate),
     ...collectExtraCompletedNodes(Array.isArray(projects) ? projects : [], effectiveDate, effectiveDate),
-  ];
+  ].filter((n) => !manualLinkedNodeIds.has(n.id));
   // Un sub-nodo confirmado cuyo nodo padre ya está en la lista del día (planeado para hoy, actividad
   // extra o el padre que queda como texto en un día pasado) se ve adentro del padre (lista de
   // sub-nodos / desplegable): no se lo muestra además suelto como actividad extra.
@@ -717,10 +724,6 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     })),
   ];
 
-  // Tareas manuales agregadas a mano (mantener presionado el fondo). Existen para cualquier
-  // día (hoy o un día futuro previsualizado) y no aparecen en el calendario de actividades.
-  const { data: manualTasksData } = useManualTasks(effectiveDate, open);
-  const manualTasks = manualTasksData || [];
   const createManualTask = useCreateManualTask();
   const updateManualTask = useUpdateManualTask();
   const deleteManualTask = useDeleteManualTask();

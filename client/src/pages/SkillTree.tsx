@@ -2750,6 +2750,16 @@ function ProfileSection() {
     },
   });
 
+  const { data: profileConcepts = [], isLoading: conceptsLoading } = useQuery<ProfileEntry[]>({
+    queryKey: ["/api/profile/concepts"],
+    queryFn: async () => {
+      const res = await fetch("/api/profile/concepts");
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    },
+  });
+
   const { data: profileExperiences = [], isLoading: experiencesLoading } = useQuery<ProfileEntry[]>({
     queryKey: ["/api/profile/experiences"],
     queryFn: async () => {
@@ -2853,6 +2863,50 @@ function ProfileSection() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/profile/about"] });
+      setSelectedEntry(null);
+      setShowDeleteConfirm(false);
+    },
+  });
+
+  const createConcept = useMutation({
+    mutationFn: async (data: { name: string; description: string }) => {
+      const res = await fetch("/api/profile/concepts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/profile/concepts"] });
+      setIsAdding(false);
+      setName("");
+      setDescription("");
+    },
+  });
+
+  const updateConcept = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { name?: string; description?: string } }) => {
+      const res = await fetch(`/api/profile/concepts/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/profile/concepts"] });
+      setSelectedEntry(null);
+      setIsEditMode(false);
+    },
+  });
+
+  const deleteConcept = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/profile/concepts/${id}`, { method: "DELETE" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/profile/concepts"] });
       setSelectedEntry(null);
       setShowDeleteConfirm(false);
     },
@@ -2987,6 +3041,7 @@ function ProfileSection() {
     { id: "values", label: "Valores", title: "MIS VALORES" },
     { id: "likes", label: "Gustos", title: "LO QUE ME GUSTA" },
     { id: "about", label: "Sobre mí", title: "SOBRE MÍ" },
+    { id: "concepts", label: "Conceptos", title: "CONCEPTOS" },
     { id: "experiences", label: "Experiencias", title: "MIS EXPERIENCIAS" },
     { id: "contributions", label: "Contribución", title: "MIS CONTRIBUCIONES" },
   ];
@@ -2996,6 +3051,7 @@ function ProfileSection() {
                         activeTab === "likes" ? profileLikes : 
                         activeTab === "mission" ? profileMissions : 
                         activeTab === "about" ? profileAboutEntries :
+                        activeTab === "concepts" ? profileConcepts :
                         activeTab === "experiences" ? profileExperiences :
                         profileContributions;
 
@@ -3037,6 +3093,8 @@ function ProfileSection() {
       createMission.mutate({ name: name.trim(), description: description.trim() });
     } else if (activeTab === "about") {
       createAboutEntry.mutate({ name: name.trim(), description: description.trim() });
+    } else if (activeTab === "concepts") {
+      createConcept.mutate({ name: name.trim().toUpperCase(), description: description.trim() });
     } else if (activeTab === "experiences") {
       const created = await createExperience.mutateAsync({
         name: name.trim(),
@@ -3066,6 +3124,8 @@ function ProfileSection() {
       updateMission.mutate({ id: selectedEntry.id, data: { name: name.trim(), description: description.trim() } });
     } else if (activeTab === "about") {
       updateAboutEntry.mutate({ id: selectedEntry.id, data: { name: name.trim(), description: description.trim() } });
+    } else if (activeTab === "concepts") {
+      updateConcept.mutate({ id: selectedEntry.id, data: { name: name.trim().toUpperCase(), description: description.trim() } });
     } else if (activeTab === "experiences") {
       const experienceId = selectedEntry.id;
       updateExperience.mutate({ id: experienceId, data: {
@@ -3096,6 +3156,8 @@ function ProfileSection() {
       deleteMission.mutate(selectedEntry.id);
     } else if (activeTab === "about") {
       deleteAboutEntry.mutate(selectedEntry.id);
+    } else if (activeTab === "concepts") {
+      deleteConcept.mutate(selectedEntry.id);
     } else if (activeTab === "experiences") {
       deleteExperience.mutate(selectedEntry.id);
     } else if (activeTab === "contributions") {
@@ -3121,6 +3183,8 @@ function ProfileSection() {
       updateMission.mutate({ id: selectedEntry.id, data: { description: newDesc } });
     } else if (activeTab === "about") {
       updateAboutEntry.mutate({ id: selectedEntry.id, data: { description: newDesc } });
+    } else if (activeTab === "concepts") {
+      updateConcept.mutate({ id: selectedEntry.id, data: { description: newDesc } });
     } else if (activeTab === "experiences") {
       updateExperience.mutate({ id: selectedEntry.id, data: { description: newDesc } });
     } else if (activeTab === "contributions") {
@@ -3215,6 +3279,7 @@ function ProfileSection() {
       case "values": return "Valor";
       case "likes": return "Gusto";
       case "about": return "Sobre mí";
+      case "concepts": return "Concepto";
       case "experiences": return "Experiencia";
       case "contributions": return "Contribución";
       default: return "Entrada";
@@ -3227,13 +3292,14 @@ function ProfileSection() {
       case "values": return "valores";
       case "likes": return "gustos";
       case "about": return "entradas";
+      case "concepts": return "conceptos";
       case "experiences": return "experiencias";
       case "contributions": return "contribuciones";
       default: return "entradas";
     }
   };
 
-  if (profileLoading || valuesLoading || likesLoading || missionsLoading || aboutEntriesLoading || experiencesLoading || contributionsLoading) {
+  if (profileLoading || valuesLoading || likesLoading || missionsLoading || aboutEntriesLoading || conceptsLoading || experiencesLoading || contributionsLoading) {
     return <div className="text-muted-foreground text-sm">Cargando...</div>;
   }
 
@@ -3533,7 +3599,7 @@ function ProfileSection() {
                   <div key={entry.id}>
                     <button
                       onClick={(e) => { e.stopPropagation(); setViewingEntry(entry); }}
-                      className={`w-full text-left px-3 py-2 rounded text-sm transition-all cursor-pointer select-none ${
+                      className={`w-full text-left px-3 py-2 rounded text-sm transition-all cursor-pointer select-none ${activeTab === "concepts" ? "uppercase " : ""}${
                         viewingEntry?.id === entry.id
                           ? "bg-secondary text-foreground shadow-sm"
                           : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"

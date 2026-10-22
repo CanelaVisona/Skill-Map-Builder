@@ -9,15 +9,15 @@
 /* Layout: el radar ocupa toda la pantalla y es lo único visible; la edición aparece sobre el gráfico solo al mantener apretado. */
 :root{
   --bg:#ffffff; --panel:#f4f4f5; --ink:#0a0a0a; --muted:#5f5f66; --line:#d9d9de; --grid:#a3a3ab;
-  --real:#f07a0c; --real2:#d93a1c; --real3:#b0145a; --zdp:#0a8f88; --locked:#8c8c94;
+  --real:#f07a0c; --real2:#d93a1c; --real3:#b0145a; --zdp:#0a8f88; --locked:#8c8c94; --foco:#6d28d9;
   --display:"Chakra Petch","Trebuchet MS",system-ui,sans-serif;
 }
 @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
   --bg:#000000; --panel:#141414; --ink:#f5f5f5; --muted:#a1a1aa; --line:#2e2e33; --grid:#5c5c64;
-  --real:#ff8f1f; --real2:#ff4d2e; --real3:#ff3d8b; --zdp:#3fe0d0; --locked:#76767e; color-scheme:dark } }
+  --real:#ff8f1f; --real2:#ff4d2e; --real3:#ff3d8b; --zdp:#3fe0d0; --locked:#76767e; --foco:#b794ff; color-scheme:dark } }
 :root[data-theme="dark"]{
   --bg:#000000; --panel:#141414; --ink:#f5f5f5; --muted:#a1a1aa; --line:#2e2e33; --grid:#5c5c64;
-  --real:#ff8f1f; --real2:#ff4d2e; --real3:#ff3d8b; --zdp:#3fe0d0; --locked:#76767e; color-scheme:dark }
+  --real:#ff8f1f; --real2:#ff4d2e; --real3:#ff3d8b; --zdp:#3fe0d0; --locked:#76767e; --foco:#b794ff; color-scheme:dark }
 
 *{box-sizing:border-box}
 html,body{height:100%}
@@ -60,6 +60,14 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
 .node.up .dia{fill:var(--real)}
 .node.up .plus{fill:var(--bg)}
 .node.up:hover .dia{stroke:var(--ink)}
+/* Foco: la subskill marcada para avanzar se destaca y las demás próximas quedan atenuadas. */
+.fring{fill:none;stroke:var(--foco);stroke-width:3;pointer-events:none}
+.fpath{stroke:var(--foco);stroke-width:4;stroke-dasharray:2 9;stroke-linecap:round;pointer-events:none}
+.node.foco.locked .dot,.node.foco.zdp .dot{fill:var(--foco);stroke:var(--bg);stroke-width:3;fill-opacity:1}
+.node.foco.zdp .halo{stroke:var(--foco)}
+.zlbl.flbl,.nlbl.flbl{fill:var(--foco);font-weight:700}
+.hasfoco .node.zdp:not(.foco):not(.fax){opacity:.4}
+.hasfoco .node.zdp:not(.foco):not(.fax) .halo{animation:none;opacity:0}
 @keyframes halo{0%{transform:scale(.6);opacity:.9}100%{transform:scale(1.5);opacity:0}}
 .burst{fill:none;stroke:var(--real);stroke-width:4;transform-box:fill-box;transform-origin:center;animation:burst .8s ease-out forwards;pointer-events:none}
 @keyframes burst{0%{transform:scale(.3);opacity:1}100%{transform:scale(5);opacity:0}}
@@ -228,6 +236,7 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
   </div>
   <div class="btns">
     <button type="button" id="popSave">Guardar</button>
+    <button type="button" class="ghost" id="popFoco" hidden>Marcar como foco</button>
     <button type="button" class="ghost" id="popLock">Volver a bloquear</button>
     <button type="button" class="ghost" id="popAgenda" hidden>Agendar en tareas de hoy</button>
     <button type="button" class="ghost" id="popAdd">Agregar eje</button>
@@ -351,6 +360,12 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
   function tapLbl(t,onHide){ t.classList.add('tap'); t.addEventListener('click',function(ev){ ev.stopPropagation(); if(longFired||dragged){longFired=false;return} onHide(); save(); render() }) }
   function getDesc(a,j){ return (a.descs&&a.descs[j])||'' }
   function setDesc(a,j,v){ a.descs=a.descs||{}; if(v) a.descs[j]=v; else delete a.descs[j] }
+  /* Foco del mapa: una sola subskill (a.foco = j) marcada como la que hay que avanzar. Se destaca,
+     atenúa las demás próximas y, si está más adelante en el eje, muestra el camino hasta ella.
+     Al confirmarla el foco se cumple y se borra. */
+  function hasFoco(a){ return !isG(a)&&a.foco!=null&&a.foco>=a.level&&a.foco<leafSk(a).length }
+  function leaves(root){ var o=[]; root.children.forEach(function(c){ if(isG(c)) o=o.concat(c.children); else o.push(c) }); return o }
+  function reached(a){ if(a.foco!=null&&a.level>a.foco){ toast('Foco logrado: «'+leafSk(a)[a.foco]+'»'); delete a.foco } }
   function blanks(){ var o=[]; for(var k=1;k<=PER;k++) o.push('Habilidad '+k); return o }
   function labelPos(i){
     var lp=pt(i,rad(Math.max(PER,sk(areas[i]).length))+88), sn=Math.sin(ang(i));
@@ -417,7 +432,7 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
 
   function render(){
     R=R0+SP*Math.max(PER,maxLv());
-    var n=areas.length, M=maxLv(), sp=(R-R0)/M, g=$('gGrid'), gn=$('gNodes'), gl=$('gLabels'), top=[];
+    var n=areas.length, M=maxLv(), sp=(R-R0)/M, g=$('gGrid'), gn=$('gNodes'), gl=$('gLabels'), top=[], anyFoco=false;
     clear(g); clear(gn); clear(gl);
     for(var k=1;k<=PER;k++){ var ring=[]; for(var q=0;q<n;q++) ring.push(rad(k)); el('polygon',{class:'ring',points:pts(ring)},g) }
     areas.forEach(function(a,i){
@@ -431,17 +446,23 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
       var grp=isG(a), hex=cur!==null;
       skills.forEach(function(s,j){
         if(grp){ var gp=pt(i,rad(j+1)); el('circle',{class:'gdot'+(j+1<=gVal(a)+1e-9?' on':''),cx:gp[0],cy:gp[1],r:6},gn); return }
-        var st=j<a.level?'done':(j===a.level?'zdp':'locked');
-        var p=pt(i,rad(j+1)), node=el('g',{class:'node '+st+(j%PER===PER-1?' last':''),tabindex:'0',role:'button'},gn);
+        var st=j<a.level?'done':(j===a.level?'zdp':'locked'), fo=hasFoco(a)&&a.foco===j;
+        var p=pt(i,rad(j+1)), node=el('g',{class:'node '+st+(j%PER===PER-1?' last':'')+(fo?' foco':(st==='zdp'&&hasFoco(a)?' fax':'')),tabindex:'0',role:'button'},gn);
         el('title',{},node).textContent=s+(getDesc(a,j)?' · '+getDesc(a,j):'');
+        if(fo){ anyFoco=true;
+          if(j>a.level){ var p0=pt(i,rad(a.level+1)); gn.insertBefore(el('line',{class:'fpath',x1:p0[0],y1:p0[1],x2:p[0],y2:p[1]}),gn.firstChild) }
+          el('circle',{class:'fring',cx:p[0],cy:p[1],r:st==='zdp'?19:14},node); top.push(node) }
         if(st==='zdp'){ el('circle',{class:'halo',cx:p[0],cy:p[1],r:16},node); top.push(node) }
-        var r=st==='locked'?Math.min(7,sp*0.3):(st==='zdp'?Math.min(10,sp*0.55):Math.min(8,sp*0.4));
+        var r=st==='locked'?Math.min(fo?9:7,sp*0.3):(st==='zdp'?Math.min(10,sp*0.55):Math.min(8,sp*0.4));
         el('circle',{class:'dot'+(st==='done'?' '+tcls(Math.floor(j/PER)):''),cx:p[0],cy:p[1],r:r},node);
         el('circle',{class:'hit',cx:p[0],cy:p[1],r:st==='zdp'?(getActs(a).length?11:17):Math.max(7,Math.min(17,sp/2))},node);
-        var vis=isVis(a,j,st==='zdp');
-        if(vis){ var tl=el('text',Object.assign({class:st==='zdp'?'zlbl':'nlbl'},place(i,p)),node); tl.textContent=s; tapLbl(tl,function(){ setVis(a,j,false) }); if(st!=='zdp') top.push(node) }
-        node.setAttribute('aria-label',s+(st==='done'?' (lograda)':st==='zdp'?' (tocá para desbloquear)':' (bloqueada)'));
-        press(node, st==='zdp'?function(){ if(vis) unlock(i); else { setVis(a,j,true); save(); render() } }:function(){ setVis(a,j,!vis); save(); render() },
+        /* El título del foco siempre se ve (no se oculta al tocarlo). */
+        var vis=fo||isVis(a,j,st==='zdp');
+        if(vis){ var tl=el('text',Object.assign({class:(st==='zdp'?'zlbl':'nlbl')+(fo?' flbl':'')},place(i,p)),node); tl.textContent=(fo?'★ ':'')+s; if(!fo) tapLbl(tl,function(){ setVis(a,j,false) }); if(st!=='zdp') top.push(node) }
+        node.setAttribute('aria-label',s+(fo?' (foco)':'')+(st==='done'?' (lograda)':st==='zdp'?' (tocá para desbloquear)':' (bloqueada)'));
+        press(node, st==='zdp'?function(){ if(vis) unlock(i); else { setVis(a,j,true); save(); render() } }
+          :fo?function(){ toast('Para llegar al foco, confirmá primero «'+skills[a.level]+'»') }
+          :function(){ setVis(a,j,!vis); save(); render() },
           function(){ if(st!=='done') openEdit({i:i,j:j},p); else openEdit({i:i,j:j,done:true,lock:j===a.level-1},p) });
       });
 
@@ -459,15 +480,19 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
         });
       }
       if(grp&&gPend(a)&&!gReady(a)){
-        var nx=a.children.filter(function(c){return c.level<leafSk(c).length}).sort(function(x,y){return x.level-y.level})[0];
-        var nm=leafSk(nx)[nx.level], zp=pt(i,rad(gAvg(a)+1/a.children.length)), zn=el('g',{class:'node zdp',tabindex:'0',role:'button','aria-label':nm+' ('+nx.name+', tocá para desbloquear)'},gn);
-        el('title',{},zn).textContent=nx.name+' · '+nm;
+        /* Si el foco está en una subskill de este eje, el próximo que se muestra es el de esa subskill. */
+        var fc=a.children.filter(hasFoco)[0];
+        var nx=fc||a.children.filter(function(c){return c.level<leafSk(c).length}).sort(function(x,y){return x.level-y.level})[0];
+        var gfo=!!fc&&fc.foco===fc.level; if(fc) anyFoco=true;
+        var nm=leafSk(nx)[nx.level], zp=pt(i,rad(gAvg(a)+1/a.children.length)), zn=el('g',{class:'node zdp'+(gfo?' foco':fc?' fax':''),tabindex:'0',role:'button','aria-label':nm+' ('+nx.name+(gfo?', foco':'')+', tocá para desbloquear)'},gn);
+        el('title',{},zn).textContent=nx.name+' · '+nm+(fc&&!gfo?' · foco: '+leafSk(fc)[fc.foco]:'');
+        if(gfo) el('circle',{class:'fring',cx:zp[0],cy:zp[1],r:19},zn);
         el('circle',{class:'halo',cx:zp[0],cy:zp[1],r:16},zn);
         el('circle',{class:'dot',cx:zp[0],cy:zp[1],r:10},zn);
         el('circle',{class:'hit',cx:zp[0],cy:zp[1],r:17},zn);
-        var nj=nx.level, nv=isVis(nx,nj,true);
-        if(nv){ var nt=el('text',Object.assign({class:'zlbl'},place(i,zp)),zn); nt.textContent=nm; tapLbl(nt,function(){ setVis(nx,nj,false) }) }
-        press(zn,function(){ if(!nv){ setVis(nx,nj,true); save(); render(); return } var nd=getDesc(nx,nx.level); nx.level++; sideQuest(nm,nd); shown=null; save(); closeEdit(); burst(pt(i,rad(gAvg(a)))); render(); flash($('pReal')) },function(){});
+        var nj=nx.level, nv=gfo||isVis(nx,nj,true);
+        if(nv){ var nt=el('text',Object.assign({class:'zlbl'+(gfo?' flbl':'')},place(i,zp)),zn); nt.textContent=(gfo?'★ ':'')+nm; if(!gfo) tapLbl(nt,function(){ setVis(nx,nj,false) }) }
+        press(zn,function(){ if(!nv){ setVis(nx,nj,true); save(); render(); return } var nd=getDesc(nx,nx.level), nk=takeSched(nx,nx.level); nx.level++; reached(nx); sideQuest(nm,nd,nk); shown=null; save(); closeEdit(); burst(pt(i,rad(gAvg(a)))); render(); flash($('pReal')) },function(){});
         top.push(zn);
       }
       var ready=grp?gReady(a):a.level>=skills.length, rp=pt(i,rad(skills.length)+34), lvl=grp?gTier(a)+1:a.tier+1;
@@ -490,6 +515,7 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
       press(t,grp?function(){go(i)}:null,function(){ openEdit({i:i,j:-1},lp) });
     });
     top.forEach(function(nd){ gn.appendChild(nd) });
+    svg.classList.toggle('hasfoco',anyFoco);
     var key=cur+'|'+areas.map(function(a){return sk(a).length}).join(',');
     if(base.key!==key||!base.w){
       var x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
@@ -505,17 +531,19 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
   function burst(p){ var b=el('circle',{class:'burst',cx:p[0],cy:p[1],r:14},$('gFx')); setTimeout(function(){ if(b.parentNode) b.parentNode.removeChild(b) },900) }
 
   /* Un subskill logrado crea un nodo SideQuest confirmado en el skill tree del área de la app con el
-     mismo nombre que la zona actual; después se avisa a la app para que recargue los árboles. */
-  function sideQuest(title,desc){
+     mismo nombre que la zona actual; después se avisa a la app para que recargue los árboles.
+     Si estaba agendada (taskId), el servidor confirma su nodo pendiente y su tarea en vez de crear otro. */
+  function takeSched(a,j){ var t=a.sched&&a.sched[j]; if(t) delete a.sched[j]; return t||null }
+  function sideQuest(title,desc,taskId){
     if(!API||!zones[sa]||!title) return;
-    fetch(API+'/side-quest',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({area:zones[sa].name,title:title,description:desc||''})})
+    fetch(API+'/side-quest',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({area:zones[sa].name,title:title,description:desc||'',taskId:taskId||undefined})})
       .then(function(r){ if(!r.ok) return; return r.json().then(function(d){ return d },function(){ return {} }).then(function(d){
         try{ parent.postMessage({type:'radar-side-quest',power:d&&d.power?{name:d.power.name}:null},location.origin) }catch(e){}
       }) },function(){});
   }
   function unlock(i){
     var a=areas[i]; if(a.level>=sk(a).length) return;
-    a.level++; sideQuest(sk(a)[a.level-1],getDesc(a,a.level-1)); shown=null; save(); closeEdit();
+    var tk=takeSched(a,a.level); a.level++; reached(a); sideQuest(sk(a)[a.level-1],getDesc(a,a.level-1),tk); shown=null; save(); closeEdit();
     burst(pt(i,rad(a.level))); render(); flash($('pReal'));
   }
   function levelUp(i){
@@ -545,7 +573,8 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
     $('popSave').textContent='Guardar'; inp.placeholder=isSkill?'Título':'';
     $('popSub').hidden=!(isArea&&cur===null&&!isG(a));
     $('popNext').hidden=!(isArea&&!isG(a)); $('popNext').textContent='Preparar Nv '+(a.tier+2);
-    $('popWhen').hidden=true; $('popAgenda').hidden=!(API&&isSkill&&!ro&&target.j===a.level);
+    $('popWhen').hidden=true; $('popAgenda').hidden=!(API&&!ro&&(isAct||(isSkill&&target.j===a.level)));
+    $('popFoco').hidden=!(isSkill&&!ro); $('popFoco').textContent=a.foco===target.j?'Quitar foco':'Marcar como foco';
     var m=svg.getScreenCTM(); placePop(m.a*p[0]+m.e, m.d*p[1]+m.f);
     if(lock) $('popLock').focus(); else if(ro) $('popClose').focus(); else { inp.focus(); inp.select() }
   }
@@ -556,7 +585,7 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
     pop.style.left=left+'px'; pop.style.top=top+'px';
   }
   function popMode(o){
-    ['popName','popSel','popDesc','popDescView','popWhen','popSave','popLock','popAgenda','popAdd','popDel','popSub','popNext'].forEach(function(id){ $(id).hidden=!o[id] });
+    ['popName','popSel','popDesc','popDescView','popWhen','popSave','popFoco','popLock','popAgenda','popAdd','popDel','popSub','popNext'].forEach(function(id){ $(id).hidden=!o[id] });
     for(var id in o) if(typeof o[id]==='string') $(id).textContent=o[id];
   }
   function fillSel(opts,val){
@@ -628,7 +657,9 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
   /* Agendar una habilidad: crea una tarea con su nombre en "Tareas de hoy" de la app para el día
      elegido (hoy, mañana u otro día) y le avisa a la app para que recargue esa lista. El eje
      guarda a.sched[j] = id de la tarea: al confirmarla en la app, el servidor desbloquea la
-     habilidad (solo se agenda la próxima a desbloquear, así no se saltea ninguna). */
+     habilidad (solo se agenda la próxima a desbloquear, así no se saltea ninguna). Una actividad
+     pendiente también se agenda: guarda x.t = id de la tarea, y confirmar/desconfirmar la tarea
+     la marca hecha/pendiente. */
   function ymd(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0') }
   function dayOffset(n){ var d=new Date(); d.setDate(d.getDate()+n); return ymd(d) }
   var toastT=0;
@@ -640,21 +671,25 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
   function schedule(date){
     if(!edit||!edit.sched||!API) return;
     if(!/^\d{4}-\d{2}-\d{2}$/.test(date||'')||date<dayOffset(0)){ $('popDate').focus(); return }
-    var title=edit.title, leaf=edit.leaf, j=edit.j; closeEdit();
-    fetch('/api/manual-today-tasks',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({date:date,title:title})})
-      .then(function(r){ if(!r.ok) throw 0; return r.json() })
+    var title=edit.title, leaf=edit.leaf, j=edit.j, act=edit.act; closeEdit();
+    /* Una habilidad va por /schedule, que además crea su nodo SideQuest pendiente en el área (y si
+       ya estaba agendada, mueve esa misma tarea al día nuevo en vez de duplicarla). */
+    var req=act
+      ? fetch('/api/manual-today-tasks',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({date:date,title:title})})
+      : fetch(API+'/schedule',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({area:zones[sa]?zones[sa].name:'',title:title,date:date,replaceTaskId:(leaf.sched&&leaf.sched[j])||undefined})});
+    req.then(function(r){ if(!r.ok) throw 0; return r.json() })
       .then(function(task){
-        if(task&&task.id){ leaf.sched=leaf.sched||{}; leaf.sched[j]=task.id; save() }
+        if(task&&task.id){ if(act) act.t=task.id; else { leaf.sched=leaf.sched||{}; leaf.sched[j]=task.id } save() }
         toast('«'+title+'» agendada para '+dayLabel(date));
-        try{ parent.postMessage({type:'radar-task-scheduled',date:date},location.origin) }catch(e){}
+        try{ parent.postMessage({type:'radar-task-scheduled',date:date,node:!act},location.origin) }catch(e){}
       }).catch(function(){ toast('No se pudo agendar «'+title+'»',true) });
   }
   $('popAgenda').addEventListener('click',function(){
-    if(!edit||edit.k!=null||edit.j==null||edit.j<0) return;
+    if(!edit||edit.j==null||edit.j<0) return;
     /* Guarda antes lo que se haya escrito en el título/descripción, así la tarea sale con ese nombre. */
     applyName(); save(); render();
-    var a=areas[edit.i], title=sk(a)[edit.j], today=dayOffset(0);
-    edit={sched:true,title:title,leaf:a,j:edit.j}; delArmed=false;
+    var a=areas[edit.i], act=edit.k!=null?getActs(a)[edit.k]:null, title=act?act.n:sk(a)[edit.j], today=dayOffset(0);
+    edit={sched:true,title:title,leaf:a,j:edit.j,act:act}; delArmed=false;
     $('popCap').textContent='Agendar «'+title+'»';
     popMode({popWhen:1,popSave:'Agendar'});
     var di=$('popDate'); di.min=today; di.value=today; $('popToday').focus();
@@ -673,9 +708,17 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
     if(edit.j===a.level-1) a.level--;
     save(); closeEdit(); render();
   });
+  /* Marcar/quitar el foco: hay uno solo por mapa, así que se borra de los demás ejes y subskills. */
+  $('popFoco').addEventListener('click',function(){
+    if(!edit||edit.k!=null||edit.j==null||edit.j<0) return;
+    applyName(); var a=areas[edit.i], j=edit.j, on=a.foco!==j;
+    leaves(data).forEach(function(c){ delete c.foco });
+    if(on){ a.foco=j; toast('Foco: «'+sk(a)[j]+'»') }
+    save(); closeEdit(); render();
+  });
   $('popSub').addEventListener('click',function(){
     if(!edit||edit.j!==-1||cur!==null) return; var i=edit.i, a=areas[i]; if(isG(a)) return; applyName();
-    var first={name:'Subskill 1',level:a.level,tier:a.tier,tiers:a.tiers}; if(a.acts) first.acts=a.acts; if(a.descs) first.descs=a.descs; if(a.sched) first.sched=a.sched;
+    var first={name:'Subskill 1',level:a.level,tier:a.tier,tiers:a.tiers}; if(a.acts) first.acts=a.acts; if(a.descs) first.descs=a.descs; if(a.sched) first.sched=a.sched; if(a.foco!=null) first.foco=a.foco;
     areas[i]={name:a.name,tier:0,children:[first,blankLeaf('Subskill 2'),blankLeaf('Subskill 3')]};
     save(); closeEdit(); go(i);
   });
