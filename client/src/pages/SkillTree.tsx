@@ -75,6 +75,7 @@ import { LevelNavigationPanel, type LevelNavItem } from "@/components/LevelNavig
 import { GoalsButton, CompletedGoalsJournal } from "@/components/GoalsPanel";
 import { RadarSkillMapModal } from "@/components/RadarSkillMapModal";
 import { SkillsSparkIcon } from "@/components/SkillsSparkIcon";
+import { NodeConfirmFeedbackProvider } from "@/lib/node-confirm-feedback-context";
 
 function calculateVisibleLevels(skills: Skill[], endOfAreaLevel?: number): Set<number> {
   const visibleLevels = new Set<number>();
@@ -10672,6 +10673,7 @@ export default function SkillTreePage() {
           <ErrorCelebrationProvider>
           <InsightsCounterPopupProvider>
           <PendingRewardsProvider>
+          <NodeConfirmFeedbackProvider>
             <MenuProvider>
               <div className="flex h-screen w-full bg-background text-foreground overflow-hidden font-body selection:bg-primary/30">
                 <TopRightControls onOpenDesigner={() => setIsDesignerOpen(true)} onOpenHabits={() => setIsHabitsOpen(true)} onOpenStrength={() => setIsStrengthOpen(true)} onOpenMealTracker={() => setIsMealTrackerOpen(true)} onOpenQuestions={() => setIsQuestionsOpen(true)} onOpenEvidenceBoard={() => setIsEvidenceBoardOpen(true)} onOpenFinancialGoals={() => setIsFinancialGoalsOpen(true)} onOpenBookTracker={() => setIsBookTrackerOpen(true)} onOpenAllAreaBugs={() => setIsAllAreaBugsOpen(true)} onOpenHomeNeeds={() => setIsHomeNeedsOpen(true)} onOpenClothingInventory={() => setIsClothingInventoryOpen(true)} onOpenTodayProgress={() => setIsTodayProgressOpen(true)} onOpenRadarMap={() => setIsRadarMapOpen(true)} />
@@ -10695,6 +10697,7 @@ export default function SkillTreePage() {
                 <OnboardingGuide isOpen={showOnboarding} onComplete={handleCompleteOnboarding} />
               </div>
             </MenuProvider>
+          </NodeConfirmFeedbackProvider>
           </PendingRewardsProvider>
           </InsightsCounterPopupProvider>
           </ErrorCelebrationProvider>

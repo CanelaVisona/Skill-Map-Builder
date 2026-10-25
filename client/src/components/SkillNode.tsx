@@ -26,7 +26,8 @@ import { useToast } from "@/hooks/use-toast";
 import { SkillLinkPicker } from "@/components/SkillLinkPicker";
 import { BodyLinkPicker, type BodyLink } from "@/components/BodyLinkPicker";
 import { SkillPickerList, ChipListInput } from "@/components/skill-node-pickers";
-import { NodeConfirmFeedbackModal, isNodeFeedbackDraftEmpty, type NodeFeedbackDraft } from "@/components/NodeConfirmFeedbackModal";
+import { useApplyExperienceGain, useErrorAdjustPopups } from "@/lib/node-reward-actions";
+import { useNodeConfirmFeedback } from "@/lib/node-confirm-feedback-context";
 import {
   Popover,
   PopoverContent,
@@ -890,6 +891,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   // (igual que BugProgressPopup) y, si la barra llega a 50, encadena el pop-up "¡Error vencido!"
   // recién después de que ese primero termine (ver popup-coordinator). Un +10 siempre viaja con
   // la estrategia elegida en errorPicker; un -10, con el disparador elegido.
+  const runErrorAdjustPopups = useErrorAdjustPopups();
   const adjustNodeErrorPoints = useMutation({
     mutationFn: async ({ id, delta, estrategia, disparador }: { id: string; delta: 10 | -10; estrategia?: string | null; disparador?: string | null }) => {
       const res = await fetch(`/api/node-errors/${id}/records`, {
@@ -917,38 +919,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       queryClient.invalidateQueries({ queryKey: [`/api/source-bugs/${sourceType}/${sourceId}`] });
 
       const targetError = nodeErrorsList.find((e) => e.id === variables.id);
-
-      const blocks: Array<(enqueue: (fn: () => void) => void) => Promise<void> | void> = [];
-
-      blocks.push((enqueue) => {
-        enqueue(() => showErrorProgressPopup(result.errorProgress));
-        if (result.vencido) {
-          enqueue(() => showErrorCelebration({ name: result.errorProgress.errorName, kind: "vencido" }));
-        }
-        const { before, after } = addBodyBlock("mente", "flex");
-        enqueue(() => showBodyGainPopup({ zone: "mente", dimension: "flex", before, after }));
-      });
-
-      if (variables.delta > 0 && targetError) {
-        for (const skillId of targetError.skillIds) {
-          blocks.push((enqueue) => applyExperienceGain(skillId, enqueue));
-        }
-        for (const link of targetError.bodyLinks) {
-          blocks.push((enqueue) => {
-            const { before, after } = addBodyBlock(link.zone, link.dimension);
-            enqueue(() => showBodyGainPopup({ zone: link.zone, dimension: link.dimension, before, after }));
-          });
-        }
-      }
-
-      for (const block of blocks) {
-        const tasks: Array<() => void> = [];
-        await block((fn) => tasks.push(fn));
-        await runPopupQueueAsync(tasks);
-        while (getPopupBusyDelay() > 0) {
-          await new Promise((resolve) => setTimeout(resolve, getPopupBusyDelay() + 150));
-        }
-      }
+      await runErrorAdjustPopups(result, variables.delta, targetError, areaColor);
     },
     onError: (error) => {
       console.error("adjustNodeErrorPoints error:", error);
@@ -1599,128 +1570,12 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     }
   };
 
-  // Core XP-gain logic, shared by the Journal tab's immediate "+ Experience" button and by
-  // runConfirmSequence (which runs it later, once the node is actually confirmed). `showPopup`
-  // lets callers stagger the XP celebration pop-up against other pop-ups firing in the same
-  // batch; when omitted it fires immediately, matching the old inline behavior.
-  const applyExperienceGain = async (skillId: string, showPopup: (fn: () => void) => void = (fn) => fn()) => {
-    console.log("[applyExperienceGain] Called", { skillId });
-
-    const xpToAdd = FIXED_XP_AMOUNT;
-    console.log("[applyExperienceGain] XP to add:", xpToAdd, "SkillId:", skillId);
-
-    const buildSnapshot = (
-      skillName: string,
-      xpBefore: number,
-      level: number,
-      xpMax: number | null
-    ): ExperienceGainSnapshot => ({
-      skillName,
-      areaColor,
-      xpBefore,
-      xpAfter: xpBefore + xpToAdd,
-      xpMax,
-      level,
-      celebrateLevelUp: true,
-    });
-
-    // Check if it's a legacy skill
-    if (skillId.startsWith("legacy:")) {
-      const legacySkillName = skillId.replace("legacy:", "");
-      console.log("[applyExperienceGain] Adding XP to legacy skill:", legacySkillName);
-
-      const skillsProgress = localStorage.getItem("skillsProgress");
-      let skills: Record<string, { name: string; currentXp: number; level: number }> = {};
-
-      if (skillsProgress) {
-        try {
-          skills = JSON.parse(skillsProgress);
-        } catch (error) {
-          console.error("[applyExperienceGain] Error parsing skillsProgress:", error);
-        }
-      }
-
-      // Initialize if skill doesn't exist
-      if (!skills[legacySkillName]) {
-        skills[legacySkillName] = { name: legacySkillName, currentXp: 0, level: 1 };
-      }
-
-      const legacySnapshot = buildSnapshot(
-        legacySkillName,
-        skills[legacySkillName].currentXp,
-        skills[legacySkillName].level,
-        500
-      );
-
-      const xpPerLevel = 500;
-      skills[legacySkillName].currentXp += xpToAdd;
-      skills[legacySkillName].level = Math.floor(skills[legacySkillName].currentXp / xpPerLevel) + 1;
-      localStorage.setItem("skillsProgress", JSON.stringify(skills));
-
-      // Save to server
-      try {
-        await fetch("/api/skills-progress", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            skillName: legacySkillName,
-            currentXp: skills[legacySkillName].currentXp,
-            level: skills[legacySkillName].level
-          })
-        });
-      } catch (error) {
-        console.error('[applyExperienceGain] Error saving to server:', error);
-      }
-
-      window.dispatchEvent(new CustomEvent('skillXpAdded', {
-        detail: { skillName: legacySkillName, currentXp: skills[legacySkillName].currentXp }
-      }));
-
-      setXpValue(FIXED_XP_AMOUNT.toString());
-      showPopup(() => {
-        hideBodyGainPopup(); // evita solaparse con el pop-up de fuerza/flexibilidad
-        showXpPopup(legacySnapshot);
-      });
-      return;
-    }
-
-    // GlobalSkill flow -- looked up against the full globalSkills list (not just
-    // availableGlobalSkills) since "Otra área" lets skillId belong to a different area/quest
-    // than the one currently active.
-    const currentSkill = globalSkills.find(s => s.id === skillId);
-    const globalSnapshot = buildSnapshot(
-      currentSkill?.name || skillId,
-      currentSkill?.currentXp || 0,
-      currentSkill?.level || 1,
-      currentSkill?.goalXp && currentSkill.goalXp > 0 ? currentSkill.goalXp : null
-    );
-
-    try {
-      // Use the GlobalSkills API to add XP (with cascade to parent)
-      const updatedSkill = await addXpToGlobalSkill(skillId, xpToAdd);
-
-      if (updatedSkill) {
-        console.log("[applyExperienceGain] Updated skill via API:", updatedSkill);
-
-        // Dispatch event to update UI (for compatibility)
-        window.dispatchEvent(new CustomEvent('skillXpAdded', {
-          detail: { skillId: skillId, currentXp: updatedSkill.currentXp, level: updatedSkill.level }
-        }));
-
-        // Clear inputs and show feedback -- solo el pop-up del XP propio del skill (la barra que
-        // llega a 100% en el tab de skills del diary/quest). Agregar experiencia a un skill ya
-        // no toca la barra de nivel del área/quest: esa sube únicamente al completar nodos del
-        // skill tree de ese nivel.
-        setXpValue(FIXED_XP_AMOUNT.toString());
-        showPopup(() => {
-          hideBodyGainPopup(); // evita solaparse con el pop-up de fuerza/flexibilidad
-          showXpPopup(globalSnapshot);
-        });
-      }
-    } catch (error) {
-      console.error("[applyExperienceGain] Error adding XP:", error);
-    }
-  };
+  // Core XP-gain logic (lib/node-reward-actions.ts), shared with the post-confirm feedback
+  // modal. `showPopup` lets callers stagger the XP celebration pop-up against other pop-ups
+  // firing in the same batch; when omitted it fires immediately.
+  const applyExperienceGainShared = useApplyExperienceGain();
+  const applyExperienceGain = (skillId: string, showPopup?: (fn: () => void) => void) =>
+    applyExperienceGainShared(skillId, areaColor, showPopup);
 
   // Shared by every place that shows a picked skill id as text (legacy skills are prefixed
   // "legacy:", global skills are looked up by id against the full globalSkills list).
@@ -1956,152 +1811,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     }
   };
 
-  // Post-confirm feedback modal (NodeConfirmFeedbackModal): opens after the área/quest level
-  // bar pop-up (and any staged rewards) and before "Quest updated!". While it's pending/open it
-  // holds its own popup chain, so "Quest updated!"/"¡Subiste de nivel!" -- which wait on
-  // hasPendingPopupChain() -- stay queued behind it; the chain is released only once whatever
-  // was loaded has been saved and its pop-ups have played (or right away, if nothing was).
-  const [isConfirmFeedbackOpen, setIsConfirmFeedbackOpen] = useState(false);
-  const confirmFeedbackChainOpen = useRef(false);
-
-  const releaseConfirmFeedbackChain = () => {
-    if (!confirmFeedbackChainOpen.current) return;
-    confirmFeedbackChainOpen.current = false;
-    endPopupChain();
-  };
-
-  // If this node unmounts mid-flow (e.g. leaving the sub-skill tree), never leave the chain
-  // stuck open -- that would block every future "Quest updated!".
-  useEffect(() => () => releaseConfirmFeedbackChain(), []);
-
-  const handleConfirmFeedbackFinish = async (draft: NodeFeedbackDraft) => {
-    if (!isConfirmFeedbackOpen) return;
-    setIsConfirmFeedbackOpen(false);
-    if (isNodeFeedbackDraftEmpty(draft)) {
-      releaseConfirmFeedbackChain();
-      return;
-    }
-
-    const blocks: ConfirmRewardBlock[] = [];
-
-    for (const thought of draft.thoughts) {
-      blocks.push({
-        label: `+Pensamiento: ${thought.title}`,
-        run: async (enqueue) => {
-          const countBefore = await getJournalEntryCount("thoughts");
-          await createThought.mutateAsync({ title: thought.title, sentence: thought.sentence, skillId: skill.id });
-          enqueue(() => showInsightsCounterPopup({ type: "thought", countBefore, countAfter: countBefore + 1 }));
-        },
-      });
-    }
-
-    for (const learning of draft.learnings) {
-      blocks.push({
-        label: `+Aprendizaje: ${learning.title}`,
-        run: async (enqueue) => {
-          const countBefore = await getJournalEntryCount("learnings");
-          await createLearning.mutateAsync({ title: learning.title, sentence: learning.sentence, skillId: skill.id });
-          enqueue(() => showInsightsCounterPopup({ type: "learning", countBefore, countAfter: countBefore + 1 }));
-        },
-      });
-    }
-
-    for (const tool of draft.tools) {
-      blocks.push({
-        label: `+Herramienta: ${tool.title}`,
-        run: async (enqueue) => {
-          const countBefore = await getJournalEntryCount("tools");
-          await createTool.mutateAsync({ title: tool.title, sentence: tool.sentence, skillId: skill.id });
-          enqueue(() => showInsightsCounterPopup({ type: "tool", countBefore, countAfter: countBefore + 1 }));
-        },
-      });
-    }
-
-    // Nuevo error: se crea y se confirma de una -- confirmNodeError ya muestra su propio
-    // "¡Error nuevo detectado!" (vía runPopupQueue en su onSuccess), no hay que encolarlo acá.
-    for (const error of draft.errors) {
-      blocks.push({
-        label: `+Error: ${error.nombre}`,
-        run: async () => {
-          const created = await createNodeError.mutateAsync(error);
-          await confirmNodeError.mutateAsync(created.id);
-        },
-      });
-    }
-
-    // Cubo "Error" (ex "Bugs"): confirmar uno recién detectado o +10p/-10p sobre uno ya
-    // existente. Igual que en runConfirmSequence, cada mutación muestra sus propios pop-ups.
-    for (const action of draft.errorActions) {
-      blocks.push({
-        label: `Error: ${action.errorName}`,
-        run: async () => {
-          if (action.type === "confirm") {
-            await confirmNodeError.mutateAsync(action.errorId);
-            return;
-          }
-          const field = action.delta > 0 ? "estrategias" : "disparadores";
-          const target = nodeErrorsList.find((e) => e.id === action.errorId);
-          if (action.isNew && target && !target[field].includes(action.value)) {
-            await addNodeErrorListItem.mutateAsync({ id: target.id, field, items: [...target[field], action.value] });
-          }
-          await adjustNodeErrorPoints.mutateAsync({
-            id: action.errorId,
-            delta: action.delta,
-            estrategia: action.delta > 0 ? action.value : null,
-            disparador: action.delta < 0 ? action.value : null,
-          });
-        },
-      });
-    }
-
-    for (const xpSkillId of draft.xpSkillIds) {
-      blocks.push({
-        label: `+${FIXED_XP_AMOUNT}xp ${skillDisplayName(xpSkillId)}`,
-        run: (enqueue) => applyExperienceGain(xpSkillId, enqueue),
-      });
-    }
-
-    for (const powerId of draft.powerIds) {
-      const power = sourcePowers.find((p) => p.id === powerId);
-      if (power) {
-        blocks.push({
-          label: `+${power.name}`,
-          run: (enqueue) => applyPowerAction(power, enqueue),
-        });
-      }
-    }
-
-    // Poder nuevo: se crea bloqueado (mismo endpoint que createSourcePower, pero sin su onSuccess,
-    // que lo dejaría encolado como recompensa pendiente del nodo) y se desbloquea de una, igual
-    // que un poder creado en el Step 3 al confirmarse el nodo -- con su pop-up de "desbloqueado".
-    for (const newPower of draft.newPowers) {
-      blocks.push({
-        label: `+Poder: ${newPower.name}`,
-        run: async (enqueue) => {
-          if (!sourceType || !sourceId) return;
-          const res = await fetch("/api/source-powers", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              name: newPower.name,
-              description: newPower.description,
-              isUnlocked: 0,
-              ...(sourceType === "area" ? { areaId: sourceId } : { projectId: sourceId }),
-            }),
-          });
-          if (!res.ok) throw new Error("Failed to create power");
-          const created = (await res.json()) as SkillNodeSourcePower;
-          await applyPowerAction(created, enqueue);
-        },
-      });
-    }
-
-    try {
-      await runRewardBlocks(blocks, "confirmFeedback");
-    } finally {
-      releaseConfirmFeedbackChain();
-    }
-  };
+  // Post-confirm feedback modal ("¿Qué te dejó este nodo?") -- global (lib/node-confirm-
+  // feedback-context.tsx), since it also opens when a node is confirmed from "Tareas de hoy".
+  const { requestNodeConfirmFeedback, isNodeConfirmFeedbackPending } = useNodeConfirmFeedback();
 
   const handleTitleLongPressStart = (e: React.TouchEvent | React.MouseEvent) => {
     e.stopPropagation();
@@ -2504,10 +2216,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   // in skill-context.tsx), running the staged-rewards sequence first if there's anything to
   // grant. `learningOverride` is threaded straight through to runConfirmSequence -- see there.
   const confirmNode = (learningOverride?: { title: string; sentence: string }) => {
-    // Only a real confirm (available -> mastered) gets the feedback modal -- not an
-    // un-confirm, and not the star node that completes (and archives) the whole area/quest,
-    // since this node unmounts a few seconds later along with the archived area.
-    const opensConfirmFeedback = skill.status === "available" && !(isStarActive && isLastNodeOfLevel && !isSubSkillView);
+    // Only a real confirm (available -> mastered) gets the feedback modal, not an un-confirm.
+    const opensConfirmFeedback = skill.status === "available";
     // onClick() first: it's what runs skill-context.tsx's toggleSkillStatus, which -- for a
     // regular confirm -- synchronously claims the busy-gate for the area/quest "progress bar
     // filling up" pop-up before returning here. runConfirmSequence checks that busy-gate as
@@ -2519,29 +2229,13 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     if (isSubSkillView && skill.status === "available") {
       masterWholeSubSkillTree(skill.id).catch((error) => console.error("Error confirmando sub-nodos del sub-nodo:", error));
     }
-    if (!opensConfirmFeedback) {
-      if (hasPendingRewards) runConfirmSequence(learningOverride);
-      return;
+    // Staged rewards (Step 3 / Journal) play first, right after the área/quest level bar; the
+    // feedback modal waits for them (requestNodeConfirmFeedback claims its popup chain
+    // synchronously, in this same tick, so "Quest updated!" stays queued behind it).
+    const stagedRewards = hasPendingRewards ? runConfirmSequence(learningOverride) : undefined;
+    if (opensConfirmFeedback && sourceType && sourceId) {
+      requestNodeConfirmFeedback({ skillId: skill.id, scopeType: sourceType, scopeId: sourceId }, stagedRewards);
     }
-    // Claimed synchronously, in the same tick as onClick()'s own busy-gate claim, so "Quest
-    // updated!" knows from the very first instant that it has to wait for the modal.
-    if (!confirmFeedbackChainOpen.current) {
-      confirmFeedbackChainOpen.current = true;
-      beginPopupChain();
-    }
-    void (async () => {
-      // Staged rewards (Step 3 / Journal) play first, right after the área/quest level bar...
-      if (hasPendingRewards) await runConfirmSequence(learningOverride);
-      // ...then, once the screen is clear (that level bar pop-up included), the modal. Busy has
-      // to stay clear for a short beat: the level bar pop-up itself only fires ~150ms after
-      // its placeholder busy claim expires (runAfterBusyClears), so a single check right as
-      // busy clears would race it and open the modal on top of it.
-      do {
-        await waitForPopupsBusyClear();
-        await new Promise((resolve) => setTimeout(resolve, 400));
-      } while (getPopupBusyDelay() > 0);
-      if (confirmFeedbackChainOpen.current) setIsConfirmFeedbackOpen(true);
-    })();
   };
 
   const handleLearningFinalizeConfirm = () => {
@@ -2587,7 +2281,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     // This node's confirm is still in flight (área pop-up / staged rewards / feedback modal
     // not finished yet): a second tap would run toggleSkillStatus again and duplicate its
     // pop-ups ("Quest updated!" included).
-    if (confirmFeedbackChainOpen.current) return;
+    if (isNodeConfirmFeedbackPending(skill.id)) return;
 
     // Allow unlocking manually locked nodes by clicking.
     // Gate on the node still being "locked": a node can carry a stale manualLock=1
@@ -4676,23 +4370,6 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       </DialogContent>
     </Dialog>
 
-
-    <NodeConfirmFeedbackModal
-      open={isConfirmFeedbackOpen}
-      onFinish={handleConfirmFeedbackFinish}
-      xpAmount={FIXED_XP_AMOUNT}
-      skillDisplayName={skillDisplayName}
-      powers={sourcePowers}
-      errors={nodeErrorsList}
-      legacySkills={filteredLegacySkills}
-      scopedGlobalSkills={availableGlobalSkills}
-      areas={areas}
-      projects={projects}
-      currentAreaId={activeAreaId}
-      currentProjectId={activeProjectId}
-      getGlobalSkillsForArea={getGlobalSkillsForArea}
-      getGlobalSkillsForProject={getGlobalSkillsForProject}
-    />
 
     {/* Floating XP Animation */}
     <AnimatePresence>

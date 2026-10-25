@@ -2,7 +2,8 @@ import { useEffect, useSyncExternalStore } from "react";
 
 // Cuenta regresiva del tiempo asignado a una tarea de "Tareas de hoy" (botón ▶ al lado de
 // "X min"). Vive en localStorage para que siga corriendo aunque se cierre el modal o se recargue.
-// La key incluye el día y los minutos: cambiar el tiempo de la tarea arranca un timer nuevo.
+// La key es el día y la tarea (no los minutos): un timer ya cumplido sigue cumplido aunque
+// después se le cambie el tiempo; para volver a contar está "Reiniciar tiempo" (clearTaskTimer).
 export type TaskTimerState =
   | { status: "running"; endsAt: number }
   | { status: "paused"; remainingMs: number }
@@ -44,18 +45,19 @@ function setTimer(key: string, state: TaskTimerState) {
   listeners.forEach((l) => l());
 }
 
-// Borra la cuenta regresiva de una tarea (cualquier cantidad de minutos): se usa al guardar su
-// tiempo desde "Asignar tiempo", así quitarlo y volver a ponerlo arranca el conteo de cero.
-export function clearTaskTimers(date: string, taskKey: string) {
-  const prefix = `${date}|${taskKey}|`;
-  if (!Object.keys(timers).some((k) => k.startsWith(prefix))) return;
-  timers = Object.fromEntries(Object.entries(timers).filter(([k]) => !k.startsWith(prefix)));
+// Borra la cuenta regresiva de una tarea: vuelve a "X min ▶" con el tiempo completo.
+// keepFinished: se usa al guardar el tiempo desde "Asignar tiempo" — un conteo en curso o en
+// pausa arranca de cero, pero uno ya cumplido queda cumplido (con el tiempo nuevo).
+export function clearTaskTimer(key: string, { keepFinished = false }: { keepFinished?: boolean } = {}) {
+  const state = timers[key];
+  if (!state || (keepFinished && state.status === "finished")) return;
+  timers = Object.fromEntries(Object.entries(timers).filter(([k]) => k !== key));
   writeJson(TIMERS_KEY, timers);
   listeners.forEach((l) => l());
 }
 
-export function taskTimerKey(date: string, taskKey: string, minutes: number) {
-  return `${date}|${taskKey}|${minutes}`;
+export function taskTimerKey(date: string, taskKey: string) {
+  return `${date}|${taskKey}`;
 }
 
 export function useTaskTimer(key: string | null, minutes: number) {

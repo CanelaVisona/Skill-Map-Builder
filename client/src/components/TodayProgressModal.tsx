@@ -8,8 +8,9 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
-import { Calendar, ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Pause, Pencil, Play, Plus, Star } from "lucide-react";
+import { Calendar, ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Pause, Pencil, Play, Plus, RotateCcw, Star } from "lucide-react";
 import { useSkillTree, type Area, type Project, type Skill } from "@/lib/skill-context";
+import { useNodeConfirmFeedback } from "@/lib/node-confirm-feedback-context";
 import { useHabits, useUpdateHabitRecord } from "@/lib/useHabits";
 import { useTodayTaskSlots, useSetTodayTaskSlot, useClearTodayTaskSlot, useReorderTodayTaskSlot, getCurrentTimeSlotKey, getTimeSlotKeyForDate, type TaskSlotKey, type TaskType } from "@/lib/useTodayTaskSlots";
 import { useManualTasks, useManualTasksRange, isDefaultManualTask, defaultTaskMealId, useCreateManualTask, useUpdateManualTask, useDeleteManualTask } from "@/lib/useManualTasks";
@@ -20,7 +21,7 @@ import { useTodayPriorities, useSetTodayPriorities, MAX_TODAY_PRIORITIES } from 
 import { MealTrackerModal } from "@/components/MealTrackerModal";
 import { usePowerCelebration } from "@/lib/power-celebration-context";
 import { useNowPlacement, setNowPlacement } from "@/lib/now-placement";
-import { useTaskTimer, taskTimerKey, clearTaskTimers, wasStartTimeNowApplied, markStartTimeNowApplied } from "@/lib/task-timers";
+import { useTaskTimer, taskTimerKey, clearTaskTimer, wasStartTimeNowApplied, markStartTimeNowApplied } from "@/lib/task-timers";
 import { addSubSkillFromToday, toggleSubSkillFromToday, masterWholeSubSkillTree, isSubSkillPlaceholder, moveSubSkillFromToday, renameSubSkill, deleteSubSkillFromToday, fetchSubSkills } from "@/lib/subskill-tree";
 import { useTodayTaskSubsteps, useCreateTodayTaskSubstep, useUpdateTodayTaskSubstep, useDeleteTodayTaskSubstep, useCreateHabitSubstep, syncHabitSubsteps, type SubstepTaskType } from "@/lib/useTodayTaskSubsteps";
 import type { Habit, HabitRecord, TodayTaskSlot } from "@shared/schema";
@@ -394,7 +395,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const isPreview = previewDate !== null;
   // Key de la cuenta regresiva (botón ▶) de una tarea: solo viendo hoy, sin hacer y con minutos.
   const timerKeyFor = (taskKey: string, minutes: number | null | undefined, done: boolean) =>
-    effectiveDate === todayStr && !done && minutes ? taskTimerKey(todayStr, taskKey, minutes) : null;
+    effectiveDate === todayStr && !done && minutes ? taskTimerKey(todayStr, taskKey) : null;
   // Día pasado: es un registro de lo que pasó, no hay "tarea que toca ahora". Nada se atenúa
   // (en hoy, lo que todavía no toca queda tenue), para que se lea todo lo de ese día.
   const isPastDay = effectiveDate < todayStr;
@@ -1774,6 +1775,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       const parentTree = (parent.kind === "area" ? areas : projects).find((p) => p.id === parent.parentId);
       const node = parentTree?.skills?.find((s: Skill) => s.id === task.linkedSkillId);
       if (task.done !== 1 || !node || node.status === "mastered") continue;
+      requestFeedbackIfConfirming(node.id, parent);
       if (parent.kind === "area") toggleSkillStatus(parent.parentId, node.id);
       else toggleProjectSkillStatus(parent.parentId, node.id);
     }
@@ -1803,8 +1805,21 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       }
       return;
     }
+    requestFeedbackIfConfirming(item.id, parent);
     if (parent.kind === "area") toggleSkillStatus(parent.parentId, item.id);
     else toggleProjectSkillStatus(parent.parentId, item.id);
+  };
+
+  // Confirmar (no desconfirmar) un nodo de un área/quest desde acá abre el mismo modal de
+  // feedback post-confirmación que tocarlo en el árbol ("¿Qué te dejó este nodo?"), entre la
+  // barra de nivel y "Quest updated!" -- ver node-confirm-feedback-context.tsx. Se pide antes
+  // del toggle, en el mismo tick, para que "Quest updated!" ya sepa que tiene que esperarlo.
+  const { requestNodeConfirmFeedback } = useNodeConfirmFeedback();
+  const requestFeedbackIfConfirming = (skillId: string, parent: { parentId: string; kind: "area" | "project" }) => {
+    const tree = (parent.kind === "area" ? areas : projects).find((p) => p.id === parent.parentId);
+    const node = tree?.skills?.find((s: Skill) => s.id === skillId);
+    if (node?.status !== "available") return;
+    requestNodeConfirmFeedback({ skillId, scopeType: parent.kind, scopeId: parent.parentId });
   };
 
   // Confirmar un hábito/práctica desde acá otorga XP y dispara los mismos pop-ups que
@@ -2179,13 +2194,21 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     setTimeSubstepId(substepId);
   };
 
+  // Cuenta regresiva de la tarea/sub-paso del diálogo de "Asignar tiempo" (ver TaskTimerControl).
+  const dialogTimerKey = timeSubstepId
+    ? taskTimerKey(todayStr, `step:${timeSubstepId}`)
+    : timeItem
+    ? taskTimerKey(todayStr, `${timeItem.type}:${timeItem.id}`)
+    : null;
+  const dialogTimer = useTaskTimer(dialogTimerKey, 0);
+
   const submitTime = (raw: string = timeValue) => {
     const item = timeItem;
     const substepId = timeSubstepId;
     const maxRef = timeMaxRef;
-    // Guardar el tiempo (o quitarlo) reinicia la cuenta regresiva de esa tarea.
-    if (substepId) clearTaskTimers(todayStr, `step:${substepId}`);
-    else if (item) clearTaskTimers(todayStr, `${item.type}:${item.id}`);
+    // Guardar el tiempo (o quitarlo) reinicia la cuenta regresiva de esa tarea, salvo que ya se
+    // haya cumplido: ahí queda cumplida con el tiempo nuevo (para volver a contar: "Reiniciar tiempo").
+    if (dialogTimerKey) clearTaskTimer(dialogTimerKey, { keepFinished: true });
     setTimeItem(null);
     setTimeSubstepId(null);
     setTimeMaxRef(null);
@@ -4019,6 +4042,16 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
             </div>
           )}
         </div>
+        {/* Tiempo ya cumplido (tilde): volver a hacer la cuenta regresiva desde el principio. */}
+        {dialogTimerKey && dialogTimer.state?.status === "finished" && (
+          <button
+            onClick={() => clearTaskTimer(dialogTimerKey)}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border/50 px-3 py-2 text-sm text-muted-foreground hover:bg-muted"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            Reiniciar tiempo
+          </button>
+        )}
         <div className="flex justify-between gap-2 pt-1">
           <button
             onClick={() => submitTime("")}
