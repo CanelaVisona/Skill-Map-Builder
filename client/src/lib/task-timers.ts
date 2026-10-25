@@ -36,7 +36,21 @@ function pruneToDate<T>(record: Record<string, T>, date: string): Record<string,
   return Object.fromEntries(Object.entries(record).filter(([k]) => k.startsWith(`${date}|`)));
 }
 
-let timers: Record<string, TaskTimerState> = readJson(TIMERS_KEY, {});
+// Las keys viejas incluían los minutos ("día|tarea|10"): se pasan al formato actual ("día|tarea")
+// para no perder un conteo ya cumplido al recargar. Si hay varias de la misma tarea, gana la
+// cumplida.
+function migrateLegacyKeys(record: Record<string, TaskTimerState>): Record<string, TaskTimerState> {
+  const result: Record<string, TaskTimerState> = {};
+  Object.entries(record).forEach(([k, state]) => {
+    const parts = k.split("|");
+    const key = parts.length > 2 ? parts.slice(0, 2).join("|") : k;
+    if (!result[key] || state.status === "finished") result[key] = state;
+  });
+  return result;
+}
+
+let timers: Record<string, TaskTimerState> = migrateLegacyKeys(readJson(TIMERS_KEY, {}));
+writeJson(TIMERS_KEY, timers);
 const listeners = new Set<() => void>();
 
 function setTimer(key: string, state: TaskTimerState) {
@@ -61,25 +75,29 @@ export function taskTimerKey(date: string, taskKey: string) {
 }
 
 export function useTaskTimer(key: string | null, minutes: number) {
-  const state = useSyncExternalStore(
+  const stored = useSyncExternalStore(
     (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
     () => (key ? timers[key] : undefined)
   );
+  // Un conteo que terminó mientras no se estaba viendo (modal cerrado, página recargada) se
+  // muestra cumplido desde el primer render, sin pasar por "0 min ⏸".
+  const state: TaskTimerState | undefined =
+    stored?.status === "running" && stored.endsAt <= Date.now() ? { status: "finished" } : stored;
 
   // Llegó a cero: deja de contar y queda terminado (tilde).
   useEffect(() => {
-    if (!key || state?.status !== "running") return;
-    const finishIn = state.endsAt - Date.now();
+    if (!key || stored?.status !== "running") return;
+    const finishIn = stored.endsAt - Date.now();
     if (finishIn <= 0) {
       setTimer(key, { status: "finished" });
       return;
     }
     const id = setTimeout(() => setTimer(key, { status: "finished" }), finishIn);
     return () => clearTimeout(id);
-  }, [key, state]);
+  }, [key, stored]);
 
   const start = () => {
     if (!key) return;
