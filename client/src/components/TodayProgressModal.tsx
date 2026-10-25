@@ -20,7 +20,7 @@ import { useTodayPriorities, useSetTodayPriorities, MAX_TODAY_PRIORITIES } from 
 import { MealTrackerModal } from "@/components/MealTrackerModal";
 import { usePowerCelebration } from "@/lib/power-celebration-context";
 import { useNowPlacement, setNowPlacement } from "@/lib/now-placement";
-import { useTaskTimer, taskTimerKey, wasStartTimeNowApplied, markStartTimeNowApplied } from "@/lib/task-timers";
+import { useTaskTimer, taskTimerKey, clearTaskTimers, wasStartTimeNowApplied, markStartTimeNowApplied } from "@/lib/task-timers";
 import { addSubSkillFromToday, toggleSubSkillFromToday, masterWholeSubSkillTree, isSubSkillPlaceholder, moveSubSkillFromToday, renameSubSkill, deleteSubSkillFromToday, fetchSubSkills } from "@/lib/subskill-tree";
 import { useTodayTaskSubsteps, useCreateTodayTaskSubstep, useUpdateTodayTaskSubstep, useDeleteTodayTaskSubstep, useCreateHabitSubstep, syncHabitSubsteps, type SubstepTaskType } from "@/lib/useTodayTaskSubsteps";
 import type { Habit, HabitRecord, TodayTaskSlot } from "@shared/schema";
@@ -206,8 +206,8 @@ function MinutesSuffix({
   );
 }
 
-// "10 min ▶": tocar ▶ arranca la cuenta regresiva (se ve "07:32 ⏸", tocar pausa). Al llegar a
-// cero deja de contar y el ▶ pasa a ser un tilde. El botón no abre el menú de la tarea ni
+// "5 min ▶": tocar ▶ arranca la cuenta regresiva, que baja de a un minuto ("5 min" → "4 min",
+// sin segundos; tocar ⏸ pausa). Al llegar a cero deja de contar y el ▶ pasa a ser un tilde. El botón no abre el menú de la tarea ni
 // dispara su long-press.
 function TaskTimerControl({ timerKey, minutes }: { timerKey: string; minutes: number }) {
   const { state, start, pause } = useTaskTimer(timerKey, minutes);
@@ -223,17 +223,13 @@ function TaskTimerControl({ timerKey, minutes }: { timerKey: string; minutes: nu
     state?.status === "running" ? Math.max(0, state.endsAt - Date.now())
     : state?.status === "paused" ? state.remainingMs
     : null;
-  const formatClock = (ms: number) => {
-    const total = Math.ceil(ms / 1000);
-    return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
-  };
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
   const finished = state?.status === "finished";
 
   return (
     <span className="inline-flex items-center gap-1 align-middle">
       <span className={remainingMs !== null ? "tabular-nums text-amber-600 dark:text-amber-400" : undefined}>
-        {remainingMs !== null ? formatClock(remainingMs) : `${minutes} min`}
+        {remainingMs !== null ? Math.ceil(remainingMs / 60_000) : minutes} min
       </span>
       {finished ? (
         <Check className="h-3.5 w-3.5 text-emerald-500" strokeWidth={3} aria-label="Tiempo cumplido" />
@@ -2187,6 +2183,9 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     const item = timeItem;
     const substepId = timeSubstepId;
     const maxRef = timeMaxRef;
+    // Guardar el tiempo (o quitarlo) reinicia la cuenta regresiva de esa tarea.
+    if (substepId) clearTaskTimers(todayStr, `step:${substepId}`);
+    else if (item) clearTaskTimers(todayStr, `${item.type}:${item.id}`);
     setTimeItem(null);
     setTimeSubstepId(null);
     setTimeMaxRef(null);

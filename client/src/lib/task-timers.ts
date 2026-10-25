@@ -44,6 +44,16 @@ function setTimer(key: string, state: TaskTimerState) {
   listeners.forEach((l) => l());
 }
 
+// Borra la cuenta regresiva de una tarea (cualquier cantidad de minutos): se usa al guardar su
+// tiempo desde "Asignar tiempo", así quitarlo y volver a ponerlo arranca el conteo de cero.
+export function clearTaskTimers(date: string, taskKey: string) {
+  const prefix = `${date}|${taskKey}|`;
+  if (!Object.keys(timers).some((k) => k.startsWith(prefix))) return;
+  timers = Object.fromEntries(Object.entries(timers).filter(([k]) => !k.startsWith(prefix)));
+  writeJson(TIMERS_KEY, timers);
+  listeners.forEach((l) => l());
+}
+
 export function taskTimerKey(date: string, taskKey: string, minutes: number) {
   return `${date}|${taskKey}|${minutes}`;
 }
