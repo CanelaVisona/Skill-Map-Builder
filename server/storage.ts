@@ -3645,7 +3645,7 @@ export class DbStorage implements IStorage {
 
   // Si la copia del día salió de un sub-paso permanente de un hábito, el nombre, el tiempo y el
   // orden también se guardan en la plantilla (el "hecho" es solo de ese día).
-  async updateTodayTaskSubstep(id: string, updates: { title?: string; done?: 0 | 1; sortOrder?: number; minutes?: number | null; minutesManual?: 0 | 1; deadline?: string | null }): Promise<TodayTaskSubstep | undefined> {
+  async updateTodayTaskSubstep(id: string, updates: { title?: string; done?: 0 | 1; sortOrder?: number; minutes?: number | null; minutesManual?: 0 | 1; deadline?: string | null; startTime?: string | null }): Promise<TodayTaskSubstep | undefined> {
     const result = await db.update(todayTaskSubsteps).set(updates).where(eq(todayTaskSubsteps.id, id)).returning();
     const row = result[0];
     if (row?.templateId) {

@@ -6211,9 +6211,12 @@ export async function registerRoutes(
       if (!existing || existing.userId !== req.userId) {
         return res.status(404).json({ message: "Sub-paso no encontrado" });
       }
-      const { title, done, sortOrder, minutes, minutesManual, deadline } = req.body;
+      const { title, done, sortOrder, minutes, minutesManual, deadline, startTime } = req.body;
       if (deadline !== undefined && deadline !== null && (typeof deadline !== "string" || !/^\d{2}:\d{2}$/.test(deadline))) {
         return res.status(400).json({ message: "deadline debe tener formato HH:MM o null" });
+      }
+      if (startTime !== undefined && startTime !== null && (typeof startTime !== "string" || !/^\d{2}:\d{2}$/.test(startTime))) {
+        return res.status(400).json({ message: "startTime debe tener formato HH:MM o null" });
       }
       if (minutes !== undefined && minutes !== null && (!Number.isInteger(minutes) || minutes < 0)) {
         return res.status(400).json({ message: "minutes debe ser un entero >= 0 o null" });
@@ -6231,6 +6234,7 @@ export async function registerRoutes(
         ...(minutes !== undefined ? { minutes } : {}),
         ...(minutesManual === 0 || minutesManual === 1 ? { minutesManual } : {}),
         ...(deadline !== undefined ? { deadline } : {}),
+        ...(startTime !== undefined ? { startTime } : {}),
       });
       res.json(updated);
     } catch (error: any) {

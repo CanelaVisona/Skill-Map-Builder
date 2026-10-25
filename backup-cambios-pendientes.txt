@@ -1,0 +1,278 @@
+diff --git a/client/src/lib/skill-context.tsx b/client/src/lib/skill-context.tsx
+index 189ad85..3f0df61 100644
+--- a/client/src/lib/skill-context.tsx
++++ b/client/src/lib/skill-context.tsx
+@@ -67,6 +67,7 @@ export interface Skill {
+   completedAt?: string | null;
+   plannedDurationManual?: number | null;
+   plannedDeadline?: string | null;
++  plannedStartTime?: string | null;
+ }
+ 
+ export interface Area {
+@@ -120,6 +121,7 @@ export interface GlobalSkill {
+   completedAt?: string | null;
+   plannedDurationManual?: number | null;
+   plannedDeadline?: string | null;
++  plannedStartTime?: string | null;
+   // Medallion visual customization (Journal → Skills grid) — all optional.
+   icon?: string | null;
+   shape?: "diamond_classic" | "diamond_ornate" | "medallion" | "insignia";
+@@ -144,7 +146,7 @@ interface SkillTreeContextType {
+   toggleSkillStatus: (areaId: string, skillId: string) => void;
+   toggleProjectSkillStatus: (projectId: string, skillId: string) => void;
+   addSkill: (areaId: string, skill: Omit<Skill, "id">) => void;
+-  updateSkill: (areaId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null }) => void;
++  updateSkill: (areaId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null }) => void;
+   deleteSkill: (areaId: string, skillId: string) => void;
+   toggleLock: (areaId: string, skillId: string) => void;
+   moveSkill: (areaId: string, skillId: string, direction: "up" | "down") => void;
+@@ -154,7 +156,7 @@ interface SkillTreeContextType {
+   swapAreaLevels: (areaId: string, levelA: number, levelB: number) => Promise<void>;
+   addExtraAreaLevel: (areaId: string) => Promise<boolean>;
+   deleteAreaLevel: (areaId: string, level: number) => Promise<void>;
+-  updateProjectSkill: (projectId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null }) => void;
++  updateProjectSkill: (projectId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null }) => void;
+   deleteProjectSkill: (projectId: string, skillId: string) => void;
+   toggleProjectLock: (projectId: string, skillId: string) => void;
+   moveProjectSkill: (projectId: string, skillId: string, direction: "up" | "down") => void;
+@@ -190,7 +192,7 @@ interface SkillTreeContextType {
+   enterSubSkillTree: (skillId: string, skillTitle: string) => Promise<void>;
+   exitSubSkillTree: () => void;
+   toggleSubSkillStatus: (skillId: string) => void;
+-  updateSubSkill: (skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null }) => void;
++  updateSubSkill: (skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null }) => void;
+   deleteSubSkill: (skillId: string) => void;
+   toggleSubSkillLock: (skillId: string) => void;
+   moveSubSkill: (skillId: string, direction: "up" | "down") => void;
+@@ -199,7 +201,7 @@ interface SkillTreeContextType {
+   addProjectSkillBelow: (projectId: string, skillId: string, title?: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; isSideQuest?: 0 | 1 }) => Promise<void>;
+   addSubSkillBelow: (skillId: string, title?: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; isSideQuest?: 0 | 1 }) => Promise<void>;
+   addSideQuestNode: (kind: "area" | "project" | "sub", parentId: string, skillId: string) => Promise<void>;
+-  addSkillInPlaceOfAvailable: (kind: "area" | "project", parentId: string, title: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null }) => Promise<Skill | null>;
++  addSkillInPlaceOfAvailable: (kind: "area" | "project", parentId: string, title: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null }) => Promise<Skill | null>;
+   materializePendingEventNodes: () => Promise<void>;
+   // Relee áreas y quests del server (p.ej. después de cambiar estados de nodos por fuera del árbol).
+   refreshSkillTrees: () => Promise<void>;
+@@ -2073,7 +2075,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }):
+     }
+   };
+ 
+-  const updateSkill = async (areaId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null }) => {
++  const updateSkill = async (areaId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null }) => {
+     console.log('[updateSkill] Called with skillId:', skillId, 'areaId:', areaId, 'updates:', updates);
+     try {
+       const response = await fetch(`/api/skills/${skillId}`, {
+@@ -2345,7 +2347,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }):
+     }
+   };
+ 
+-  const updateProjectSkill = async (projectId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null }) => {
++  const updateProjectSkill = async (projectId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null }) => {
+     try {
+       await fetch(`/api/skills/${skillId}`, {
+         method: "PATCH",
+@@ -3131,7 +3133,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }):
+     }
+   };
+ 
+-  const updateSubSkill = async (skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null }) => {
++  const updateSubSkill = async (skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null }) => {
+     try {
+       await fetch(`/api/skills/${skillId}`, {
+         method: "PATCH",
+@@ -3703,7 +3705,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }):
+     kind: "area" | "project",
+     parentId: string,
+     title: string,
+-    copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null }
++    copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null }
+   ): Promise<Skill | null> => {
+     // Se lee el árbol fresco del server (no el estado local): esto puede correr varias veces
+     // seguidas sobre el mismo árbol (eventos pendientes) y el estado local quedaría viejo.
+@@ -3743,6 +3745,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }):
+           ...(copyFields?.plannedDate !== undefined ? { plannedDate: copyFields.plannedDate } : {}),
+           ...(copyFields?.plannedDuration !== undefined ? { plannedDuration: copyFields.plannedDuration } : {}),
+           ...(copyFields?.plannedDeadline ? { plannedDeadline: copyFields.plannedDeadline } : {}),
++          ...(copyFields?.plannedStartTime ? { plannedStartTime: copyFields.plannedStartTime } : {}),
+         }),
+       });
+       if (!response.ok) throw new Error("Failed to create skill");
+diff --git a/client/src/lib/useManualTasks.ts b/client/src/lib/useManualTasks.ts
+index 4bf2427..b20f99b 100644
+--- a/client/src/lib/useManualTasks.ts
++++ b/client/src/lib/useManualTasks.ts
+@@ -71,6 +71,7 @@ export function useCreateManualTask() {
+       linkedParentId,
+       minutes,
+       deadline,
++      startTime,
+     }: {
+       date: string;
+       title: string;
+@@ -82,11 +83,13 @@ export function useCreateManualTask() {
+       minutes?: number | null;
+       // Hora límite ("HH:MM") con la que se calcularon los minutos.
+       deadline?: string | null;
++      // Hora ("HH:MM") a la que empieza: al llegar pasa a ser la tarea de "Ahora".
++      startTime?: string | null;
+     }) => {
+       const res = await fetch("/api/manual-today-tasks", {
+         method: "POST",
+         headers: { "Content-Type": "application/json" },
+-        body: JSON.stringify({ date, title, kind, linkedKind, linkedParentId, minutes, deadline }),
++        body: JSON.stringify({ date, title, kind, linkedKind, linkedParentId, minutes, deadline, startTime }),
+       });
+       if (!res.ok) throw new Error("Failed to create manual task");
+       return res.json() as Promise<ManualTodayTask>;
+@@ -111,7 +114,7 @@ export function useUpdateManualTask() {
+       // `updates.date` es el día NUEVO al que se mueve la tarea (mantener presionada una tarea
+       // y elegir "Cambiar de día"); `date` arriba es el día ACTUAL bajo el que se la está
+       // viendo, se usa solo para invalidar esa lista.
+-      updates: { title?: string; done?: 0 | 1; date?: string; minutes?: number | null; deadline?: string | null };
++      updates: { title?: string; done?: 0 | 1; date?: string; minutes?: number | null; deadline?: string | null; startTime?: string | null };
+     }) => {
+       const res = await fetch(`/api/manual-today-tasks/${id}`, {
+         method: "PATCH",
+diff --git a/server/index.ts b/server/index.ts
+index 406cc52..26b17fc 100644
+--- a/server/index.ts
++++ b/server/index.ts
+@@ -182,6 +182,13 @@ app.use((req, res, next) => {
+     await db.execute(sql`
+       ALTER TABLE "manual_today_tasks" ADD COLUMN IF NOT EXISTS "deadline" varchar;
+     `);
++    // Hora a la que empieza una tarea de "Tareas de hoy" (pasa sola a "Ahora" al llegar).
++    await db.execute(sql`
++      ALTER TABLE "skills" ADD COLUMN IF NOT EXISTS "planned_start_time" varchar;
++    `);
++    await db.execute(sql`
++      ALTER TABLE "manual_today_tasks" ADD COLUMN IF NOT EXISTS "start_time" varchar;
++    `);
+     // Una sola copia por sub-paso permanente y día, aunque la sincronización corra dos veces a la vez.
+     await db.execute(sql`
+       CREATE UNIQUE INDEX IF NOT EXISTS "today_task_substeps_template_day_idx"
+diff --git a/server/routes.ts b/server/routes.ts
+index da95151..88add28 100644
+--- a/server/routes.ts
++++ b/server/routes.ts
+@@ -6321,7 +6321,7 @@ export async function registerRoutes(
+ 
+   app.post("/api/manual-today-tasks", requireAuth, async (req, res) => {
+     try {
+-      const { date, title, kind, linkedKind, linkedParentId, minutes, deadline } = req.body;
++      const { date, title, kind, linkedKind, linkedParentId, minutes, deadline, startTime } = req.body;
+       if (minutes !== undefined && minutes !== null && (!Number.isInteger(minutes) || minutes < 0)) {
+         return res.status(400).json({ message: "minutes debe ser un entero >= 0 o null" });
+       }
+@@ -6343,6 +6343,7 @@ export async function registerRoutes(
+         ...(linkedParentId ? { linkedKind, linkedParentId: String(linkedParentId) } : {}),
+         ...(minutes ? { minutes } : {}),
+         ...(typeof deadline === "string" && /^\d{2}:\d{2}$/.test(deadline) ? { deadline } : {}),
++        ...(typeof startTime === "string" && /^\d{2}:\d{2}$/.test(startTime) ? { startTime } : {}),
+       });
+       res.status(201).json(task);
+     } catch (error: any) {
+@@ -6356,10 +6357,13 @@ export async function registerRoutes(
+       if (!existing || existing.userId !== req.userId) {
+         return res.status(404).json({ message: "Tarea no encontrada" });
+       }
+-      const { title, done, date, minutes, linkedSkillId, deadline } = req.body;
++      const { title, done, date, minutes, linkedSkillId, deadline, startTime } = req.body;
+       if (deadline !== undefined && deadline !== null && (typeof deadline !== "string" || !/^\d{2}:\d{2}$/.test(deadline))) {
+         return res.status(400).json({ message: "deadline debe tener formato HH:MM o null" });
+       }
++      if (startTime !== undefined && startTime !== null && (typeof startTime !== "string" || !/^\d{2}:\d{2}$/.test(startTime))) {
++        return res.status(400).json({ message: "startTime debe tener formato HH:MM o null" });
++      }
+       if (done !== undefined && done !== 0 && done !== 1) {
+         return res.status(400).json({ message: "done debe ser 0 o 1" });
+       }
+@@ -6376,6 +6380,7 @@ export async function registerRoutes(
+         ...(minutes !== undefined ? { minutes } : {}),
+         ...(linkedSkillId !== undefined ? { linkedSkillId: linkedSkillId === null ? null : String(linkedSkillId) } : {}),
+         ...(deadline !== undefined ? { deadline } : {}),
++        ...(startTime !== undefined ? { startTime } : {}),
+       });
+       // Si se movió de día, la franja horaria asignada quedó atada a la fecha vieja: no tiene
+       // sentido dejarla huérfana ahí (el día viejo ya no la va a mostrar, pero queda basura en
+diff --git a/server/storage.ts b/server/storage.ts
+index d2e2392..98d0de9 100644
+--- a/server/storage.ts
++++ b/server/storage.ts
+@@ -620,7 +620,7 @@ export class DbStorage implements IStorage {
+   // planeada o que ya se completaron: el front solo tiene cargados los nodos de primer nivel,
+   // así que sin esto los sub-nodos nunca aparecían en "Hoy" ni en el calendario de actividades.
+   // parentName = título del nodo padre directo.
+-  async getDatedSubSkills(userId: string): Promise<{ id: string; title: string; status: string; plannedDate: string | null; plannedDuration: number | null; plannedDeadline: string | null; completedAt: Date | null; parentName: string; parentSkillId: string; parentPlannedDate: string | null }[]> {
++  async getDatedSubSkills(userId: string): Promise<{ id: string; title: string; status: string; plannedDate: string | null; plannedDuration: number | null; plannedDeadline: string | null; plannedStartTime: string | null; completedAt: Date | null; parentName: string; parentSkillId: string; parentPlannedDate: string | null }[]> {
+     const result = await pool.query(
+       `WITH RECURSIVE tree AS (
+          SELECT s.id FROM skills s
+@@ -630,7 +630,7 @@ export class DbStorage implements IStorage {
+          UNION ALL
+          SELECT c.id FROM skills c JOIN tree t ON c.parent_skill_id = t.id
+        )
+-       SELECT s.id, s.title, s.status, s.planned_date, s.planned_duration, s.planned_deadline, s.completed_at, parent.title AS parent_name,
++       SELECT s.id, s.title, s.status, s.planned_date, s.planned_duration, s.planned_deadline, s.planned_start_time, s.completed_at, parent.title AS parent_name,
+               s.parent_skill_id, parent.planned_date AS parent_planned_date
+        FROM skills s
+        JOIN tree t ON s.id = t.id
+@@ -645,6 +645,7 @@ export class DbStorage implements IStorage {
+       plannedDate: r.planned_date,
+       plannedDuration: r.planned_duration,
+       plannedDeadline: r.planned_deadline,
++      plannedStartTime: r.planned_start_time,
+       completedAt: r.completed_at,
+       parentName: r.parent_name,
+       // Para el registro de un día pasado: si el padre se pasó a otro día, sus sub-nodos
+@@ -680,6 +681,7 @@ export class DbStorage implements IStorage {
+       plannedDate: skill.plannedDate,
+       plannedDuration: skill.plannedDuration,
+       plannedDeadline: skill.plannedDeadline ?? null,
++      plannedStartTime: skill.plannedStartTime ?? null,
+     };
+     const result = await db.insert(skills).values(insertData).returning();
+     return result[0];
+@@ -705,6 +707,7 @@ export class DbStorage implements IStorage {
+     if (skill.plannedDuration !== undefined) updateData.plannedDuration = skill.plannedDuration;
+     if (skill.plannedDurationManual !== undefined) updateData.plannedDurationManual = skill.plannedDurationManual;
+     if (skill.plannedDeadline !== undefined) updateData.plannedDeadline = skill.plannedDeadline;
++    if (skill.plannedStartTime !== undefined) updateData.plannedStartTime = skill.plannedStartTime;
+     if (skill.completedAt !== undefined) updateData.completedAt = skill.completedAt;
+ 
+     const result = await db.update(skills).set(updateData).where(eq(skills.id, id)).returning();
+@@ -3761,10 +3764,11 @@ export class DbStorage implements IStorage {
+     return result[0];
+   }
+ 
+-  async updateManualTodayTask(id: string, updates: Partial<Pick<InsertManualTodayTask, "title" | "done" | "date" | "minutes" | "linkedSkillId" | "deadline">>): Promise<ManualTodayTask | undefined> {
++  async updateManualTodayTask(id: string, updates: Partial<Pick<InsertManualTodayTask, "title" | "done" | "date" | "minutes" | "linkedSkillId" | "deadline" | "startTime">>): Promise<ManualTodayTask | undefined> {
+     const updateData: Record<string, unknown> = {};
+     if (updates.minutes !== undefined) updateData.minutes = updates.minutes;
+     if (updates.deadline !== undefined) updateData.deadline = updates.deadline;
++    if (updates.startTime !== undefined) updateData.startTime = updates.startTime;
+     if (updates.title !== undefined) updateData.title = updates.title;
+     if (updates.done !== undefined) updateData.done = updates.done;
+     if (updates.date !== undefined) updateData.date = updates.date;
+diff --git a/shared/schema.ts b/shared/schema.ts
+index b4baa0a..0bded5c 100644
+--- a/shared/schema.ts
++++ b/shared/schema.ts
+@@ -83,6 +83,8 @@ export const skills = pgTable("skills", {
+   // Hora límite ("HH:MM") con la que se calculó plannedDuration en "Tareas de hoy" (minutos que
+   // faltaban desde ese momento hasta esa hora). Se muestra como "· 60min (hasta 5pm)".
+   plannedDeadline: varchar("planned_deadline"),
++  // Hora ("HH:MM") a la que empieza en "Tareas de hoy": al llegar pasa sola a ser la tarea de "Ahora".
++  plannedStartTime: varchar("planned_start_time"),
+   completedAt: timestamp("completed_at"),
+ });
+ 
+@@ -862,6 +864,7 @@ export const manualTodayTasks = pgTable("manual_today_tasks", {
+   done: integer("done").$type<0 | 1>().notNull().default(0),
+   minutes: integer("minutes"), // Tiempo estimado asignado desde "Tareas de hoy" (se muestra como "· Xmin")
+   deadline: varchar("deadline"), // Hora límite ("HH:MM") con la que se calcularon los minutos
++  startTime: varchar("start_time"), // Hora ("HH:MM") a la que empieza: al llegar pasa a ser la tarea de "Ahora"
+   // Evento asociado a un área/quest: el día del evento se crea un nodo con su nombre en el
+   // lugar del nodo desbloqueado de ese árbol (linkedSkillId queda apuntando a ese nodo), y
+   // confirmar el evento confirma el nodo.

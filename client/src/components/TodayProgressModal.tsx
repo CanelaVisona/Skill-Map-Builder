@@ -20,7 +20,7 @@ import { useTodayPriorities, useSetTodayPriorities, MAX_TODAY_PRIORITIES } from 
 import { MealTrackerModal } from "@/components/MealTrackerModal";
 import { usePowerCelebration } from "@/lib/power-celebration-context";
 import { useNowPlacement, setNowPlacement } from "@/lib/now-placement";
-import { useTaskTimer, taskTimerKey, wasDeadlineNowApplied, markDeadlineNowApplied } from "@/lib/task-timers";
+import { useTaskTimer, taskTimerKey, wasStartTimeNowApplied, markStartTimeNowApplied } from "@/lib/task-timers";
 import { addSubSkillFromToday, toggleSubSkillFromToday, masterWholeSubSkillTree, isSubSkillPlaceholder, moveSubSkillFromToday, renameSubSkill, deleteSubSkillFromToday, fetchSubSkills } from "@/lib/subskill-tree";
 import { useTodayTaskSubsteps, useCreateTodayTaskSubstep, useUpdateTodayTaskSubstep, useDeleteTodayTaskSubstep, useCreateHabitSubstep, syncHabitSubsteps, type SubstepTaskType } from "@/lib/useTodayTaskSubsteps";
 import type { Habit, HabitRecord, TodayTaskSlot } from "@shared/schema";
@@ -94,6 +94,8 @@ interface PlannedNode {
   plannedDuration?: number | null;
   // Hora límite con la que se calcularon esos minutos (ver formatDeadline).
   plannedDeadline?: string | null;
+  // Hora a la que empieza ("Empieza a las"): al llegar pasa sola a ser la tarea de "Ahora".
+  plannedStartTime?: string | null;
   // Solo presentes en nodos con fecha planeada (no en los "extra"): de dónde viene, para poder
   // llamar a updateSkill/updateProjectSkill al cambiar su día desde "Tareas de hoy".
   parentId?: string;
@@ -124,18 +126,43 @@ function formatDeadline(deadline: string): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-// Minutos que faltan desde ahora hasta la hora límite de hoy ("HH:MM"). null si ya pasó.
+// Minutos que faltan desde ahora hasta la hora límite de hoy ("HH:MM"). null si ya pasó. Se
+// cuenta en minutos de reloj (16:18 - 16:13 = 5), así baja justo cuando cambia el minuto.
 function minutesUntilDeadline(deadline: string): number | null {
   const [h, m] = deadline.split(":").map(Number);
   if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
-  const target = new Date();
-  target.setHours(h, m, 0, 0);
-  const diff = Math.round((target.getTime() - Date.now()) / 60_000);
+  const now = new Date();
+  const diff = h * 60 + m - (now.getHours() * 60 + now.getMinutes());
   return diff > 0 ? diff : null;
 }
 
-// showRemaining: con hora límite, los minutos que se muestran son los que quedan hasta esa hora
-// (se actualizan solos cada minuto). Solo tiene sentido viendo hoy y con la tarea sin hacer.
+// Re-renderiza cada vez que cambia el minuto del reloj (alineado al segundo 0, no cada 60 s
+// desde que se montó), para que lo que depende de la hora se actualice justo a tiempo.
+function useMinuteTick(active: boolean) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    let id: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      const now = new Date();
+      id = setTimeout(() => {
+        setTick((t) => t + 1);
+        schedule();
+      }, 60_000 - (now.getSeconds() * 1000 + now.getMilliseconds()) + 50);
+    };
+    schedule();
+    return () => clearTimeout(id);
+  }, [active]);
+}
+
+// "· empieza 15:00": tarea de hoy sin hacer con hora de inicio (ver plannedStartTime/startTime).
+function StartTimeSuffix({ startTime }: { startTime?: string | null }) {
+  if (!startTime) return null;
+  return <span className="text-muted-foreground"> · empieza {formatDeadline(startTime)}</span>;
+}
+
+// showRemaining: con hora límite, muestra también el tiempo que queda hasta esa hora (se
+// actualiza solo cuando cambia el minuto del reloj). Solo tiene sentido viendo hoy y con la tarea sin hacer.
 // timerKey: tarea de hoy sin hacer con una cantidad de minutos (sin hora límite): muestra el
 // botón ▶ para hacer la cuenta regresiva de ese tiempo (ver TaskTimerControl).
 function MinutesSuffix({
@@ -150,20 +177,17 @@ function MinutesSuffix({
   timerKey?: string | null;
 }) {
   const live = !!deadline && !!showRemaining;
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    if (!live) return;
-    const id = setInterval(() => setTick((t) => t + 1), 60_000);
-    return () => clearInterval(id);
-  }, [live]);
+  useMinuteTick(live);
   if (!minutes) return null;
-  // Un marco para avanzar, no una alarma: "5 min · hasta 16:18", todo en el mismo tono tranquilo.
-  // Cuando la hora ya pasó, queda solo "hasta 16:18" (sin rojo ni "atrasado").
+  // Un marco para avanzar, no una alarma: cada número dice qué es ("10 min · hasta 16:18 ·
+  // tengo 5 min"), todo en el mismo tono tranquilo. "tengo" baja con la hora actual; cuando la
+  // hora ya pasó, simplemente deja de mostrarse (sin rojo ni "atrasado").
   if (live) {
     const remaining = minutesUntilDeadline(deadline!);
     return (
       <span className="text-muted-foreground">
-        {" "}· {remaining !== null && <>{remaining} min · </>}hasta {formatDeadline(deadline!)}
+        {" "}· {minutes} min · hasta {formatDeadline(deadline!)}
+        {remaining !== null && <> · tengo {remaining} min</>}
       </span>
     );
   }
@@ -345,6 +369,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const [newTaskMinutes, setNewTaskMinutes] = useState("");
   // Hora límite al crear la tarea ("HH:MM", "" = ninguna): calcula newTaskMinutes desde ahora.
   const [newTaskDeadline, setNewTaskDeadline] = useState("");
+  // Hora a la que empieza ("HH:MM", "" = ninguna): al llegar pasa sola a "Ahora".
+  const [newTaskStartTime, setNewTaskStartTime] = useState("");
   // Secciones desplegables del diálogo (cerradas por defecto): área/quest y agregar un hábito.
   const [newTaskParentOpen, setNewTaskParentOpen] = useState(false);
   const [newTaskHabitsOpen, setNewTaskHabitsOpen] = useState(false);
@@ -398,13 +424,9 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   }, [open]);
 
   // Con el modal abierto se re-renderiza cada minuto para que la franja horaria actual (que
-  // queda bloqueada abierta) pase sola a la siguiente cuando cambia la hora.
-  const [, setClockTick] = useState(0);
-  useEffect(() => {
-    if (!open) return;
-    const id = setInterval(() => setClockTick((n) => n + 1), 60_000);
-    return () => clearInterval(id);
-  }, [open]);
+  // queda bloqueada abierta) pase sola a la siguiente cuando cambia la hora, y para que las
+  // tareas con hora de inicio pasen a "Ahora" a tiempo.
+  useMinuteTick(open);
 
   const habitsScheduledForView = (habitsData || []).filter((h) => {
     if (h.endDate && h.endDate < effectiveDate) return false;
@@ -486,6 +508,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
             done: skill.status === "mastered",
             plannedDuration: skill.plannedDuration,
             plannedDeadline: skill.plannedDeadline,
+            plannedStartTime: skill.plannedStartTime,
             parentId: parent.id,
             kind,
           });
@@ -502,7 +525,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     queryFn: async () => {
       const res = await fetch("/api/sub-skills/dated");
       if (!res.ok) throw new Error("Failed to fetch dated sub-skills");
-      return res.json() as Promise<{ id: string; title: string; status: string; plannedDate: string | null; plannedDuration: number | null; plannedDeadline: string | null; completedAt: string | null; parentName: string; parentSkillId: string; parentPlannedDate: string | null }[]>;
+      return res.json() as Promise<{ id: string; title: string; status: string; plannedDate: string | null; plannedDuration: number | null; plannedDeadline: string | null; plannedStartTime: string | null; completedAt: string | null; parentName: string; parentSkillId: string; parentPlannedDate: string | null }[]>;
     },
     enabled: open,
     // Los sub-nodos se editan desde el sub-árbol sin invalidar esta consulta: se refresca
@@ -544,6 +567,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       done: s.status === "mastered",
       plannedDuration: s.plannedDuration,
       plannedDeadline: s.plannedDeadline,
+      plannedStartTime: s.plannedStartTime,
       kind: "sub",
     }));
 
@@ -554,7 +578,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   ];
 
   const patchSubSkill = useMutation({
-    mutationFn: async ({ id, updates }: { id: string; updates: { plannedDate?: string | null; plannedDuration?: number | null; plannedDurationManual?: 0 | 1; plannedDeadline?: string | null; status?: string; completedAt?: string } }) => {
+    mutationFn: async ({ id, updates }: { id: string; updates: { plannedDate?: string | null; plannedDuration?: number | null; plannedDurationManual?: 0 | 1; plannedDeadline?: string | null; plannedStartTime?: string | null; status?: string; completedAt?: string } }) => {
       const res = await fetch(`/api/skills/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -769,6 +793,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       label: (
         <>
           {stripLeadingEmoji(n.title)} <span className="text-muted-foreground">· {n.parentName}</span>
+          {!n.done && <StartTimeSuffix startTime={n.plannedStartTime} />}
           <MinutesSuffix minutes={n.plannedDuration} />
         </>
       ),
@@ -878,6 +903,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       label: (
         <>
           {stripLeadingEmoji(n.title)} <span className="text-muted-foreground">· {n.parentName}</span>
+          {!n.done && <StartTimeSuffix startTime={n.plannedStartTime} />}
           <MinutesSuffix minutes={n.plannedDuration} deadline={n.done ? null : n.plannedDeadline} showRemaining={!n.done && effectiveDate === todayStr} timerKey={timerKeyFor(`node:${n.id}`, n.plannedDuration, n.done)} />
         </>
       ),
@@ -909,6 +935,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       label: (
         <>
           {t.kind === "event" ? <>📅 {stripLeadingEmoji(t.title)}</> : stripLeadingEmoji(t.title)}
+          {t.done !== 1 && <StartTimeSuffix startTime={t.startTime} />}
           <MinutesSuffix minutes={t.minutes} deadline={t.done === 1 ? null : t.deadline} showRemaining={t.done !== 1 && effectiveDate === todayStr} timerKey={timerKeyFor(`manual:${t.id}`, t.minutes, t.done === 1)} />
         </>
       ),
@@ -1246,6 +1273,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
               }}
               minutes={sub.plannedDuration}
               deadline={sub.plannedDeadline}
+              startTime={sub.plannedStartTime}
               showRemaining={effectiveDate === todayStr}
               timerKey={timerKeyFor(`node:${sub.id}`, sub.plannedDuration, sub.status === "mastered")}
               onAssignTime={() =>
@@ -1512,7 +1540,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         deadline={st.deadline}
         showRemaining={effectiveDate === todayStr}
         timerKey={timerKeyFor(`step:${st.id}`, st.minutes, st.done === 1)}
-        onAssignTime={() => openSubstepTimeDialog(st.id, st.minutes, parentTimeRef(item, steps.map((x) => x.minutes), i), st.deadline)}
+        onAssignTime={() => openSubstepTimeDialog(st.id, st.minutes, parentTimeRef(item, steps.map((x) => x.minutes), i), st.deadline, st.startTime)}
+        startTime={st.startTime}
         deleteLabel="sub-paso"
       />
     ));
@@ -2100,10 +2129,42 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     return null;
   };
 
+  // Hora de inicio ("Empieza a las"): tareas manuales y nodos de la lista del día, sus sub-nodos
+  // y los sub-pasos (estos últimos van por timeSubstepId). Al llegar la hora pasan a "Ahora".
+  const [timeStartTime, setTimeStartTime] = useState("");
+  const currentStartTime = (item: TodayItem): string | null => {
+    if (item.type === "manual") return manualTasks.find((t) => t.id === item.id)?.startTime ?? null;
+    if (item.type === "node") {
+      return (
+        allPlannedNodes.find((n) => n.id === item.id)?.plannedStartTime ??
+        Array.from(subSkillsByNodeId.values()).flat().find((sub) => sub.id === item.id)?.plannedStartTime ??
+        null
+      );
+    }
+    return null;
+  };
+  const canSetStartTime = (item: TodayItem | null) =>
+    !!item &&
+    (item.type === "manual" || item.type === "node") &&
+    (todayItems.some((i) => i.type === item.type && i.id === item.id) ||
+      (item.type === "node" && Array.from(subSkillsByNodeId.values()).flat().some((sub) => sub.id === item.id)));
+  const saveItemStartTime = (item: TodayItem, startTime: string | null) => {
+    if (startTime === currentStartTime(item)) return;
+    if (item.type === "manual") {
+      updateManualTask.mutate({ id: item.id, date: effectiveDate, updates: { startTime } });
+      return;
+    }
+    const parent = findNodeParent(item.id);
+    if (!parent) patchSubSkill.mutate({ id: item.id, updates: { plannedStartTime: startTime } });
+    else if (parent.kind === "project") updateProjectSkill(parent.parentId, item.id, { plannedStartTime: startTime });
+    else updateSkill(parent.parentId, item.id, { plannedStartTime: startTime });
+  };
+
   const openTimeDialog = (item: TodayItem, maxRef: ParentTimeRef | null = null) => {
     const m = currentMinutes(item);
     setTimeValue(m ? String(m) : "");
     setTimeDeadline(currentDeadline(item) ?? "");
+    setTimeStartTime(currentStartTime(item) ?? "");
     setTimeMaxRef(maxRef);
     setTimeItem(item);
   };
@@ -2112,10 +2173,12 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     substepId: string,
     minutes: number | null | undefined,
     maxRef: ParentTimeRef | null = null,
-    deadline: string | null = null
+    deadline: string | null = null,
+    startTime: string | null = null
   ) => {
     setTimeValue(minutes ? String(minutes) : "");
     setTimeDeadline(deadline ?? "");
+    setTimeStartTime(startTime ?? "");
     setTimeMaxRef(maxRef);
     setTimeSubstepId(substepId);
   };
@@ -2132,6 +2195,14 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     // La hora límite solo vale si los minutos salieron de ella (elegir minutos a mano la borra).
     const deadline = minutes !== null && timeDeadline ? timeDeadline : null;
     setTimeDeadline("");
+    // La hora de inicio va aparte de los minutos: se guarda la que quedó en el campo.
+    if (substepId) {
+      const step = (substepsData || []).find((st) => st.id === substepId);
+      if (step && (step.startTime ?? null) !== (timeStartTime || null)) {
+        updateSubstep.mutate({ id: substepId, date: effectiveDate, updates: { startTime: timeStartTime || null } });
+      }
+    } else if (item && canSetStartTime(item)) saveItemStartTime(item, timeStartTime || null);
+    setTimeStartTime("");
     if (maxRef && minutes !== null && minutes > maxRef.available) {
       setTimeOverflow({ minutes, deadline, item, substepId, ref: maxRef });
       return;
@@ -2245,21 +2316,72 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     updateDurationMutation.mutate({ item, minutes });
   };
 
-  // Tarea con hora límite: al llegar esa hora pasa sola a ser la tarea de "Ahora" (ver
-  // moveItemNow). Una sola vez por tarea y hora (wasDeadlineNowApplied), así si después se la
+  // Tarea con hora de inicio ("Empieza a las"): al llegar esa hora pasa sola a ser la tarea de
+  // "Ahora" (ver moveItemNow). Un sub-nodo o sub-paso con hora de inicio hace pasar a su tarea a
+  // "Ahora" y él mismo queda como el siguiente a hacer adentro de ella (justo antes del primero
+  // sin hacer). Una sola vez por tarea y hora (wasStartTimeNowApplied), así si después se la
   // mueve a mano no vuelve a saltar. Corre en cada render: el reloj del modal re-renderiza cada
-  // minuto, y una por vez — la siguiente se ubica cuando vuelven las franjas ya reordenadas.
+  // minuto, y una por vez — la siguiente se ubica cuando vuelven las listas ya reordenadas.
+  const startTimeReached = (startTime: string | null | undefined): startTime is string =>
+    !!startTime && minutesUntilDeadline(startTime) === null;
+  const claimStartTime = (key: string, startTime: string) => {
+    const flag = `${effectiveDate}|${key}|${startTime}`;
+    if (wasStartTimeNowApplied(flag)) return false;
+    markStartTimeNowApplied(flag);
+    return true;
+  };
+  // Pone al sub-paso en el lugar del primero sin hacer de su tarea (los demás corren uno abajo).
+  const moveSubstepToFront = (item: TodayItem, stepId: string) => {
+    const steps = substepsFor(item);
+    const step = steps.find((st) => st.id === stepId);
+    const firstUndone = steps.findIndex((st) => st.done !== 1);
+    if (!step || firstUndone === -1 || steps.indexOf(step) <= firstUndone) return;
+    const rest = steps.filter((st) => st.id !== stepId);
+    const ordered = [...rest.slice(0, firstUndone), step, ...rest.slice(firstUndone)];
+    ordered.forEach((st, idx) => {
+      if (st.sortOrder !== idx) updateSubstep.mutate({ id: st.id, date: effectiveDate, updates: { sortOrder: idx } });
+    });
+  };
+  // Igual para un sub-nodo: se intercambia con el de arriba hasta llegar al primero sin confirmar
+  // (mismo intercambio que "Mover arriba", así el desbloqueado queda bien).
+  const moveSubNodeToFront = (item: TodayItem, subId: string) => {
+    const subs = subNodesFor(item);
+    const index = subs.findIndex((sub) => sub.id === subId);
+    const firstUndone = subs.findIndex((sub) => sub.status !== "mastered");
+    if (index === -1 || firstUndone === -1 || index <= firstUndone) return;
+    runSubNodeOp(item.id, async () => {
+      let current = subs[index];
+      for (let j = index - 1; j >= firstUndone; j--) {
+        const neighbor = subs[j];
+        if (neighbor.level !== current.level) break;
+        await moveSubSkillFromToday(current, neighbor);
+        current = { ...current, y: neighbor.y, levelPosition: neighbor.levelPosition, status: neighbor.status, isFinalNode: neighbor.isFinalNode };
+      }
+    });
+  };
   useEffect(() => {
-    if (!open || isPreview || effectiveDate !== todayStr || !slotsData || reorderTaskSlot.isPending) return;
+    if (!open || isPreview || effectiveDate !== todayStr || !slotsData || reorderTaskSlot.isPending || subNodeBusy) return;
     for (const item of todayItems) {
-      if (item.done || (item.type !== "node" && item.type !== "manual")) continue;
-      const deadline = currentDeadline(item);
-      if (!deadline || minutesUntilDeadline(deadline) !== null) continue;
-      const flag = `${effectiveDate}|${item.type}:${item.id}|${deadline}`;
-      if (wasDeadlineNowApplied(flag)) continue;
-      markDeadlineNowApplied(flag);
-      moveItemNow(item);
-      break;
+      if (item.done || item.traceSubs) continue;
+      if (item.type === "node" || item.type === "manual") {
+        const startTime = currentStartTime(item);
+        if (startTimeReached(startTime) && claimStartTime(`${item.type}:${item.id}`, startTime)) {
+          moveItemNow(item);
+          return;
+        }
+      }
+      const step = substepsFor(item).find((st) => st.done !== 1 && startTimeReached(st.startTime));
+      if (step && claimStartTime(`step:${step.id}`, step.startTime!)) {
+        moveItemNow(item);
+        moveSubstepToFront(item, step.id);
+        return;
+      }
+      const sub = subNodesFor(item).find((sn) => sn.status !== "mastered" && startTimeReached(sn.plannedStartTime));
+      if (sub && claimStartTime(`node:${sub.id}`, sub.plannedStartTime!)) {
+        moveItemNow(item);
+        moveSubNodeToFront(item, sub.id);
+        return;
+      }
     }
   });
 
@@ -2272,6 +2394,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       setNewTaskParent("");
       setNewTaskMinutes("");
       setNewTaskDeadline("");
+      setNewTaskStartTime("");
       setNewTaskParentOpen(false);
       setNewTaskHabitsOpen(false);
       setAddTaskTargetSlot(null);
@@ -2299,6 +2422,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       setNewTaskParent("");
       setNewTaskMinutes("");
       setNewTaskDeadline("");
+      setNewTaskStartTime("");
       setNewTaskParentOpen(false);
       setNewTaskHabitsOpen(false);
       setAddTaskTargetSlot(slot);
@@ -2320,10 +2444,11 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     const parsedMinutes = parseInt(newTaskMinutes, 10);
     const minutes = Number.isFinite(parsedMinutes) && parsedMinutes > 0 ? parsedMinutes : null;
     const deadline = minutes !== null && newTaskDeadline ? newTaskDeadline : null;
+    const startTime = newTaskStartTime || null;
     setAddTaskDialogOpen(false);
     if (newTaskKind === "event" && newTaskParent) {
       const [linkedKind, linkedParentId] = newTaskParent.split(":") as ["area" | "project", string];
-      const created = await createManualTask.mutateAsync({ date: effectiveDate, title, kind: "event", linkedKind, linkedParentId, minutes, deadline });
+      const created = await createManualTask.mutateAsync({ date: effectiveDate, title, kind: "event", linkedKind, linkedParentId, minutes, deadline, startTime });
       if (addTaskTargetSlot) {
         setTaskSlot.mutate({ date: effectiveDate, taskType: "manual", taskId: created.id, slot: addTaskTargetSlot });
       }
@@ -2336,7 +2461,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     }
     if (newTaskKind === "task" && newTaskParent) {
       const [parentKind, parentId] = newTaskParent.split(":") as ["area" | "project", string];
-      const node = await addSkillInPlaceOfAvailable(parentKind, parentId, title, { plannedDate: effectiveDate, plannedDuration: minutes, plannedDeadline: deadline });
+      const node = await addSkillInPlaceOfAvailable(parentKind, parentId, title, { plannedDate: effectiveDate, plannedDuration: minutes, plannedDeadline: deadline, plannedStartTime: startTime });
       if (node) {
         if (addTaskTargetSlot) {
           setTaskSlot.mutate({ date: effectiveDate, taskType: "node", taskId: node.id, slot: addTaskTargetSlot });
@@ -2346,13 +2471,13 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       // No se pudo crear el nodo (error de red, árbol sin lugar donde ubicarlo…): la tarea no
       // se pierde, queda como tarea manual vinculada al área/quest — igual que un evento — y el
       // nodo se vuelve a intentar al cargar (materializePendingEventNodes) y al completarla.
-      const created = await createManualTask.mutateAsync({ date: effectiveDate, title, kind: "task", linkedKind: parentKind, linkedParentId: parentId, minutes, deadline });
+      const created = await createManualTask.mutateAsync({ date: effectiveDate, title, kind: "task", linkedKind: parentKind, linkedParentId: parentId, minutes, deadline, startTime });
       if (addTaskTargetSlot) {
         setTaskSlot.mutate({ date: effectiveDate, taskType: "manual", taskId: created.id, slot: addTaskTargetSlot });
       }
       return;
     }
-    const created = await createManualTask.mutateAsync({ date: effectiveDate, title, kind: newTaskKind, minutes, deadline });
+    const created = await createManualTask.mutateAsync({ date: effectiveDate, title, kind: newTaskKind, minutes, deadline, startTime });
     // Si el diálogo se abrió apuntado a una franja (long-press en su título), la tarea recién
     // creada se asigna directo ahí — queda última de la fila porque es la de updatedAt más
     // reciente entre las tareas no hechas de esa franja.
@@ -3508,6 +3633,16 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
               </span>
             )}
           </div>
+          {/* Al llegar esa hora, la tarea pasa sola a ser la de "Ahora". */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground whitespace-nowrap">Empieza a las</span>
+            <Input
+              type="time"
+              value={newTaskStartTime}
+              onChange={(e) => setNewTaskStartTime(e.target.value)}
+              className="h-7 w-28 text-xs"
+            />
+          </div>
         </div>
         {(areas.length > 0 || projects.length > 0) && (
           <div className="space-y-1.5">
@@ -3871,6 +4006,19 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                 : "Elegí una hora que todavía no pasó"}
             </p>
           )}
+          {/* Hora de inicio, aparte de los minutos: al llegar, la tarea pasa sola a ser la de "Ahora". */}
+          {(timeSubstepId || canSetStartTime(timeItem)) && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground whitespace-nowrap">Empieza a las</span>
+              <Input
+                type="time"
+                value={timeStartTime}
+                onChange={(e) => setTimeStartTime(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") submitTime(); }}
+                className="w-32"
+              />
+            </div>
+          )}
         </div>
         <div className="flex justify-between gap-2 pt-1">
           <button
@@ -3932,6 +4080,7 @@ function TodaySubRow({
   deadline,
   showRemaining,
   timerKey,
+  startTime,
   onAddChild,
   depth = 0,
   onDelete,
@@ -3954,6 +4103,8 @@ function TodaySubRow({
   showRemaining?: boolean;
   // Cuenta regresiva del tiempo asignado (ver MinutesSuffix). null/undefined = sin botón ▶.
   timerKey?: string | null;
+  // Hora a la que empieza ("Empieza a las"): se muestra "· empieza 15:00" mientras no esté hecha.
+  startTime?: string | null;
   // Agregarle un sub-nodo a este sub-nodo (se muestra anidado adentro de él).
   onAddChild?: () => void;
   // 1 = sub-nodo de un sub-nodo: un nivel más de sangría.
@@ -3970,6 +4121,7 @@ function TodaySubRow({
       }`}
     >
       {title}
+      {!done && <StartTimeSuffix startTime={startTime} />}
       {/* Ya hecha: queda solo el tiempo previsto, sin la hora límite ni lo que falta. */}
       <MinutesSuffix minutes={minutes} deadline={done ? null : deadline} showRemaining={showRemaining && !done} timerKey={done ? null : timerKey} />
     </span>

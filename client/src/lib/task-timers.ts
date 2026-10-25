@@ -9,9 +9,9 @@ export type TaskTimerState =
   | { status: "finished" };
 
 const TIMERS_KEY = "today-task-timers";
-// Tareas con hora límite que ya se pasaron solas a "Ahora" al llegar esa hora (una sola vez,
+// Tareas con hora de inicio ("Empieza a las") que ya se pasaron solas a "Ahora" al llegar esa hora (una sola vez,
 // así si después se la mueve a mano no vuelve a saltar).
-const DEADLINE_NOW_KEY = "today-deadline-now";
+const START_NOW_KEY = "today-start-now";
 
 function readJson<T>(key: string, fallback: T): T {
   try {
@@ -81,11 +81,11 @@ export function useTaskTimer(key: string | null, minutes: number) {
   return { state, start, pause };
 }
 
-export function wasDeadlineNowApplied(flag: string): boolean {
-  return !!readJson<Record<string, true>>(DEADLINE_NOW_KEY, {})[flag];
+export function wasStartTimeNowApplied(flag: string): boolean {
+  return !!readJson<Record<string, true>>(START_NOW_KEY, {})[flag];
 }
 
-export function markDeadlineNowApplied(flag: string) {
-  const all = pruneToDate(readJson<Record<string, true>>(DEADLINE_NOW_KEY, {}), flag.split("|")[0]);
-  writeJson(DEADLINE_NOW_KEY, { ...all, [flag]: true });
+export function markStartTimeNowApplied(flag: string) {
+  const all = pruneToDate(readJson<Record<string, true>>(START_NOW_KEY, {}), flag.split("|")[0]);
+  writeJson(START_NOW_KEY, { ...all, [flag]: true });
 }

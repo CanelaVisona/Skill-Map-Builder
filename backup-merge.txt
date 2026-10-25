@@ -1,0 +1,2345 @@
+diff --git a/client/public/mapa-habilidades.html b/client/public/mapa-habilidades.html
+index c837e7c..a56debc 100644
+--- a/client/public/mapa-habilidades.html
++++ b/client/public/mapa-habilidades.html
+@@ -9,15 +9,15 @@
+ /* Layout: el radar ocupa toda la pantalla y es lo único visible; la edición aparece sobre el gráfico solo al mantener apretado. */
+ :root{
+   --bg:#ffffff; --panel:#f4f4f5; --ink:#0a0a0a; --muted:#5f5f66; --line:#d9d9de; --grid:#a3a3ab;
+-  --real:#f07a0c; --real2:#d93a1c; --real3:#b0145a; --zdp:#0a8f88; --locked:#8c8c94;
++  --real:#f07a0c; --real2:#d93a1c; --real3:#b0145a; --zdp:#0a8f88; --locked:#8c8c94; --foco:#6d28d9;
+   --display:"Chakra Petch","Trebuchet MS",system-ui,sans-serif;
+ }
+ @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+   --bg:#000000; --panel:#141414; --ink:#f5f5f5; --muted:#a1a1aa; --line:#2e2e33; --grid:#5c5c64;
+-  --real:#ff8f1f; --real2:#ff4d2e; --real3:#ff3d8b; --zdp:#3fe0d0; --locked:#76767e; color-scheme:dark } }
++  --real:#ff8f1f; --real2:#ff4d2e; --real3:#ff3d8b; --zdp:#3fe0d0; --locked:#76767e; --foco:#b794ff; color-scheme:dark } }
+ :root[data-theme="dark"]{
+   --bg:#000000; --panel:#141414; --ink:#f5f5f5; --muted:#a1a1aa; --line:#2e2e33; --grid:#5c5c64;
+-  --real:#ff8f1f; --real2:#ff4d2e; --real3:#ff3d8b; --zdp:#3fe0d0; --locked:#76767e; color-scheme:dark }
++  --real:#ff8f1f; --real2:#ff4d2e; --real3:#ff3d8b; --zdp:#3fe0d0; --locked:#76767e; --foco:#b794ff; color-scheme:dark }
+ 
+ *{box-sizing:border-box}
+ html,body{height:100%}
+@@ -60,6 +60,14 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
+ .node.up .dia{fill:var(--real)}
+ .node.up .plus{fill:var(--bg)}
+ .node.up:hover .dia{stroke:var(--ink)}
++/* Foco: la subskill marcada para avanzar se destaca y las demás próximas quedan atenuadas. */
++.fring{fill:none;stroke:var(--foco);stroke-width:3;pointer-events:none}
++.fpath{stroke:var(--foco);stroke-width:4;stroke-dasharray:2 9;stroke-linecap:round;pointer-events:none}
++.node.foco.locked .dot,.node.foco.zdp .dot{fill:var(--foco);stroke:var(--bg);stroke-width:3;fill-opacity:1}
++.node.foco.zdp .halo{stroke:var(--foco)}
++.zlbl.flbl,.nlbl.flbl{fill:var(--foco);font-weight:700}
++.hasfoco .node.zdp:not(.foco):not(.fax){opacity:.4}
++.hasfoco .node.zdp:not(.foco):not(.fax) .halo{animation:none;opacity:0}
+ @keyframes halo{0%{transform:scale(.6);opacity:.9}100%{transform:scale(1.5);opacity:0}}
+ .burst{fill:none;stroke:var(--real);stroke-width:4;transform-box:fill-box;transform-origin:center;animation:burst .8s ease-out forwards;pointer-events:none}
+ @keyframes burst{0%{transform:scale(.3);opacity:1}100%{transform:scale(5);opacity:0}}
+@@ -155,6 +163,9 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
+ .pop button{font:600 .85rem var(--display);border-radius:4px;padding:7px 12px;cursor:pointer;border:2px solid var(--zdp);background:var(--zdp);color:var(--bg)}
+ .pop button.ghost{background:transparent;color:var(--muted);border-color:var(--line)}
+ .pop button.danger{background:transparent;color:var(--real2);border-color:var(--real2)}
++.pop .when{display:flex;flex-direction:column;gap:8px}
++.toast{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom, 0px));transform:translateX(-50%);z-index:11;max-width:calc(100% - 32px);background:var(--panel);color:var(--ink);border:1px solid var(--zdp);border-radius:6px;padding:10px 14px;font:600 .9rem var(--display);box-shadow:0 10px 30px rgba(0,0,0,.35)}
++.toast.err{border-color:var(--real2);color:var(--real2)}
+ .pop input:focus-visible,.pop select:focus-visible,.pop textarea:focus-visible,.pop button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+ [hidden]{display:none !important}
+ </style>
+@@ -219,9 +230,15 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
+   <select id="popSel" hidden aria-labelledby="popCap"></select>
+   <textarea id="popDesc" rows="3" maxlength="400" placeholder="Descripción" aria-label="Descripción de la habilidad" hidden></textarea>
+   <p id="popDescView" class="desc-view" hidden></p>
++  <div id="popWhen" class="when" hidden>
++    <div class="btns"><button type="button" class="ghost" id="popToday">Hoy</button><button type="button" class="ghost" id="popTomorrow">Mañana</button></div>
++    <input id="popDate" type="date" aria-label="Otro día">
++  </div>
+   <div class="btns">
+     <button type="button" id="popSave">Guardar</button>
++    <button type="button" class="ghost" id="popFoco" hidden>Marcar como foco</button>
+     <button type="button" class="ghost" id="popLock">Volver a bloquear</button>
++    <button type="button" class="ghost" id="popAgenda" hidden>Agendar en tareas de hoy</button>
+     <button type="button" class="ghost" id="popAdd">Agregar eje</button>
+     <button type="button" class="ghost" id="popSub">Dividir en subskills</button>
+     <button type="button" class="ghost" id="popNext" hidden>Preparar próximo nivel</button>
+@@ -229,6 +246,7 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
+     <button type="button" class="ghost" id="popClose">Cerrar</button>
+   </div>
+ </div>
++<div class="toast" id="toast" role="status" hidden></div>
+ 
+ <script>
+ (function(){
+@@ -342,6 +360,12 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
+   function tapLbl(t,onHide){ t.classList.add('tap'); t.addEventListener('click',function(ev){ ev.stopPropagation(); if(longFired||dragged){longFired=false;return} onHide(); save(); render() }) }
+   function getDesc(a,j){ return (a.descs&&a.descs[j])||'' }
+   function setDesc(a,j,v){ a.descs=a.descs||{}; if(v) a.descs[j]=v; else delete a.descs[j] }
++  /* Foco del mapa: una sola subskill (a.foco = j) marcada como la que hay que avanzar. Se destaca,
++     atenúa las demás próximas y, si está más adelante en el eje, muestra el camino hasta ella.
++     Al confirmarla el foco se cumple y se borra. */
++  function hasFoco(a){ return !isG(a)&&a.foco!=null&&a.foco>=a.level&&a.foco<leafSk(a).length }
++  function leaves(root){ var o=[]; root.children.forEach(function(c){ if(isG(c)) o=o.concat(c.children); else o.push(c) }); return o }
++  function reached(a){ if(a.foco!=null&&a.level>a.foco){ toast('Foco logrado: «'+leafSk(a)[a.foco]+'»'); delete a.foco } }
+   function blanks(){ var o=[]; for(var k=1;k<=PER;k++) o.push('Habilidad '+k); return o }
+   function labelPos(i){
+     var lp=pt(i,rad(Math.max(PER,sk(areas[i]).length))+88), sn=Math.sin(ang(i));
+@@ -408,7 +432,7 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
+ 
+   function render(){
+     R=R0+SP*Math.max(PER,maxLv());
+-    var n=areas.length, M=maxLv(), sp=(R-R0)/M, g=$('gGrid'), gn=$('gNodes'), gl=$('gLabels'), top=[];
++    var n=areas.length, M=maxLv(), sp=(R-R0)/M, g=$('gGrid'), gn=$('gNodes'), gl=$('gLabels'), top=[], anyFoco=false;
+     clear(g); clear(gn); clear(gl);
+     for(var k=1;k<=PER;k++){ var ring=[]; for(var q=0;q<n;q++) ring.push(rad(k)); el('polygon',{class:'ring',points:pts(ring)},g) }
+     areas.forEach(function(a,i){
+@@ -422,17 +446,23 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
+       var grp=isG(a), hex=cur!==null;
+       skills.forEach(function(s,j){
+         if(grp){ var gp=pt(i,rad(j+1)); el('circle',{class:'gdot'+(j+1<=gVal(a)+1e-9?' on':''),cx:gp[0],cy:gp[1],r:6},gn); return }
+-        var st=j<a.level?'done':(j===a.level?'zdp':'locked');
+-        var p=pt(i,rad(j+1)), node=el('g',{class:'node '+st+(j%PER===PER-1?' last':''),tabindex:'0',role:'button'},gn);
++        var st=j<a.level?'done':(j===a.level?'zdp':'locked'), fo=hasFoco(a)&&a.foco===j;
++        var p=pt(i,rad(j+1)), node=el('g',{class:'node '+st+(j%PER===PER-1?' last':'')+(fo?' foco':(st==='zdp'&&hasFoco(a)?' fax':'')),tabindex:'0',role:'button'},gn);
+         el('title',{},node).textContent=s+(getDesc(a,j)?' · '+getDesc(a,j):'');
++        if(fo){ anyFoco=true;
++          if(j>a.level){ var p0=pt(i,rad(a.level+1)); gn.insertBefore(el('line',{class:'fpath',x1:p0[0],y1:p0[1],x2:p[0],y2:p[1]}),gn.firstChild) }
++          el('circle',{class:'fring',cx:p[0],cy:p[1],r:st==='zdp'?19:14},node); top.push(node) }
+         if(st==='zdp'){ el('circle',{class:'halo',cx:p[0],cy:p[1],r:16},node); top.push(node) }
+-        var r=st==='locked'?Math.min(7,sp*0.3):(st==='zdp'?Math.min(10,sp*0.55):Math.min(8,sp*0.4));
++        var r=st==='locked'?Math.min(fo?9:7,sp*0.3):(st==='zdp'?Math.min(10,sp*0.55):Math.min(8,sp*0.4));
+         el('circle',{class:'dot'+(st==='done'?' '+tcls(Math.floor(j/PER)):''),cx:p[0],cy:p[1],r:r},node);
+         el('circle',{class:'hit',cx:p[0],cy:p[1],r:st==='zdp'?(getActs(a).length?11:17):Math.max(7,Math.min(17,sp/2))},node);
+-        var vis=isVis(a,j,st==='zdp');
+-        if(vis){ var tl=el('text',Object.assign({class:st==='zdp'?'zlbl':'nlbl'},place(i,p)),node); tl.textContent=s; tapLbl(tl,function(){ setVis(a,j,false) }); if(st!=='zdp') top.push(node) }
+-        node.setAttribute('aria-label',s+(st==='done'?' (lograda)':st==='zdp'?' (tocá para desbloquear)':' (bloqueada)'));
+-        press(node, st==='zdp'?function(){ if(vis) unlock(i); else { setVis(a,j,true); save(); render() } }:function(){ setVis(a,j,!vis); save(); render() },
++        /* El título del foco siempre se ve (no se oculta al tocarlo). */
++        var vis=fo||isVis(a,j,st==='zdp');
++        if(vis){ var tl=el('text',Object.assign({class:(st==='zdp'?'zlbl':'nlbl')+(fo?' flbl':'')},place(i,p)),node); tl.textContent=(fo?'★ ':'')+s; if(!fo) tapLbl(tl,function(){ setVis(a,j,false) }); if(st!=='zdp') top.push(node) }
++        node.setAttribute('aria-label',s+(fo?' (foco)':'')+(st==='done'?' (lograda)':st==='zdp'?' (tocá para desbloquear)':' (bloqueada)'));
++        press(node, st==='zdp'?function(){ if(vis) unlock(i); else { setVis(a,j,true); save(); render() } }
++          :fo?function(){ toast('Para llegar al foco, confirmá primero «'+skills[a.level]+'»') }
++          :function(){ setVis(a,j,!vis); save(); render() },
+           function(){ if(st!=='done') openEdit({i:i,j:j},p); else openEdit({i:i,j:j,done:true,lock:j===a.level-1},p) });
+       });
+ 
+@@ -446,19 +476,23 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
+           if(av){ var at=el('text',Object.assign({class:'nlbl'},place(i,ap,true)),an); at.textContent=x.n; tapLbl(at,function(){ x.v=false }) }
+           press(an,function(){
+             if(!av||x.d){ x.v=!av; save(); render(); return }
+-            x.d=true; save(); closeEdit(); burst(ap); render(); flash($('pReal')) },function(){ openEdit(x.d?{i:i,j:a.level,k:k,actLock:true}:{i:i,j:a.level,k:k},ap) });
++            x.d=true; save(); actSync(x,true); closeEdit(); burst(ap); render(); flash($('pReal')) },function(){ openEdit(x.d?{i:i,j:a.level,k:k,actLock:true}:{i:i,j:a.level,k:k},ap) });
+         });
+       }
+       if(grp&&gPend(a)&&!gReady(a)){
+-        var nx=a.children.filter(function(c){return c.level<leafSk(c).length}).sort(function(x,y){return x.level-y.level})[0];
+-        var nm=leafSk(nx)[nx.level], zp=pt(i,rad(gAvg(a)+1/a.children.length)), zn=el('g',{class:'node zdp',tabindex:'0',role:'button','aria-label':nm+' ('+nx.name+', tocá para desbloquear)'},gn);
+-        el('title',{},zn).textContent=nx.name+' · '+nm;
++        /* Si el foco está en una subskill de este eje, el próximo que se muestra es el de esa subskill. */
++        var fc=a.children.filter(hasFoco)[0];
++        var nx=fc||a.children.filter(function(c){return c.level<leafSk(c).length}).sort(function(x,y){return x.level-y.level})[0];
++        var gfo=!!fc&&fc.foco===fc.level; if(fc) anyFoco=true;
++        var nm=leafSk(nx)[nx.level], zp=pt(i,rad(gAvg(a)+1/a.children.length)), zn=el('g',{class:'node zdp'+(gfo?' foco':fc?' fax':''),tabindex:'0',role:'button','aria-label':nm+' ('+nx.name+(gfo?', foco':'')+', tocá para desbloquear)'},gn);
++        el('title',{},zn).textContent=nx.name+' · '+nm+(fc&&!gfo?' · foco: '+leafSk(fc)[fc.foco]:'');
++        if(gfo) el('circle',{class:'fring',cx:zp[0],cy:zp[1],r:19},zn);
+         el('circle',{class:'halo',cx:zp[0],cy:zp[1],r:16},zn);
+         el('circle',{class:'dot',cx:zp[0],cy:zp[1],r:10},zn);
+         el('circle',{class:'hit',cx:zp[0],cy:zp[1],r:17},zn);
+-        var nj=nx.level, nv=isVis(nx,nj,true);
+-        if(nv){ var nt=el('text',Object.assign({class:'zlbl'},place(i,zp)),zn); nt.textContent=nm; tapLbl(nt,function(){ setVis(nx,nj,false) }) }
+-        press(zn,function(){ if(!nv){ setVis(nx,nj,true); save(); render(); return } var nd=getDesc(nx,nx.level); nx.level++; sideQuest(nm,nd); shown=null; save(); closeEdit(); burst(pt(i,rad(gAvg(a)))); render(); flash($('pReal')) },function(){});
++        var nj=nx.level, nv=gfo||isVis(nx,nj,true);
++        if(nv){ var nt=el('text',Object.assign({class:'zlbl'+(gfo?' flbl':'')},place(i,zp)),zn); nt.textContent=(gfo?'★ ':'')+nm; if(!gfo) tapLbl(nt,function(){ setVis(nx,nj,false) }) }
++        press(zn,function(){ if(!nv){ setVis(nx,nj,true); save(); render(); return } var nd=getDesc(nx,nx.level), nk=takeSched(nx,nx.level); nx.level++; reached(nx); sideQuest(nm,nd,nk); shown=null; save(); closeEdit(); burst(pt(i,rad(gAvg(a)))); render(); flash($('pReal')) },function(){});
+         top.push(zn);
+       }
+       var ready=grp?gReady(a):a.level>=skills.length, rp=pt(i,rad(skills.length)+34), lvl=grp?gTier(a)+1:a.tier+1;
+@@ -481,6 +515,7 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
+       press(t,grp?function(){go(i)}:null,function(){ openEdit({i:i,j:-1},lp) });
+     });
+     top.forEach(function(nd){ gn.appendChild(nd) });
++    svg.classList.toggle('hasfoco',anyFoco);
+     var key=cur+'|'+areas.map(function(a){return sk(a).length}).join(',');
+     if(base.key!==key||!base.w){
+       var x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+@@ -496,17 +531,36 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
+   function burst(p){ var b=el('circle',{class:'burst',cx:p[0],cy:p[1],r:14},$('gFx')); setTimeout(function(){ if(b.parentNode) b.parentNode.removeChild(b) },900) }
+ 
+   /* Un subskill logrado crea un nodo SideQuest confirmado en el skill tree del área de la app con el
+-     mismo nombre que la zona actual; después se avisa a la app para que recargue los árboles. */
+-  function sideQuest(title,desc){
++     mismo nombre que la zona actual; después se avisa a la app para que recargue los árboles.
++     Si estaba agendada (taskId), el servidor confirma su nodo pendiente y su tarea en vez de crear otro. */
++  function takeSched(a,j){ var t=a.sched&&a.sched[j]; if(t) delete a.sched[j]; return t||null }
++  function sideQuest(title,desc,taskId){
+     if(!API||!zones[sa]||!title) return;
+-    fetch(API+'/side-quest',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({area:zones[sa].name,title:title,description:desc||''})})
+-      .then(function(r){ if(!r.ok) return; return r.json().then(function(d){ return d },function(){ return {} }).then(function(d){
++    fetch(API+'/side-quest',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({area:zones[sa].name,title:title,description:desc||'',taskId:taskId||undefined})})
++      .then(function(r){ if(r.status===404){ noArea(); return } if(!r.ok) return; return r.json().then(function(d){ return d },function(){ return {} }).then(function(d){
+         try{ parent.postMessage({type:'radar-side-quest',power:d&&d.power?{name:d.power.name}:null},location.origin) }catch(e){}
+       }) },function(){});
+   }
++  /* Una actividad hecha también queda como SideQuest confirmado en el área y como tarea hecha en
++     "Tareas de hoy" (si estaba agendada, se usa esa tarea y su nodo). x.t guarda el id de la tarea,
++     así confirmarla/desconfirmarla en la app sigue sincronizada con la actividad. done=0 la deshace. */
++  /* La zona se vincula con su área del skill tree por nombre: sin área con ese nombre (p. ej. se
++     renombró el área) no hay dónde crear el SideQuest, así que se avisa en vez de fallar callado. */
++  function zoneLinked(Z){ return !HOST||HOST.some(function(s){ return s.trim().toLowerCase()===Z.name.trim().toLowerCase() }) }
++  function noArea(){ toast('No hay un área «'+(zones[sa]?zones[sa].name:'')+'» en el skill tree: mantené apretada la zona para elegir su área',true) }
++  function actSync(x,done){
++    if(!API||!zones[sa]||(!done&&!x.t)) return;
++    fetch(API+'/activity',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({area:zones[sa].name,title:x.n,date:dayOffset(0),taskId:x.t||undefined,done:done?1:0})})
++      .then(function(r){ if(!r.ok) throw 0; return r.json() })
++      .then(function(task){
++        if(done&&task&&task.id&&x.t!==task.id){ x.t=task.id; save() }
++        if(done&&task&&task.nodeCreated===false) noArea();
++        try{ parent.postMessage({type:'radar-task-scheduled',date:dayOffset(0),node:true},location.origin) }catch(e){}
++      }).catch(function(){ if(done) toast('No se pudo registrar «'+x.n+'» en tareas de hoy',true) });
++  }
+   function unlock(i){
+     var a=areas[i]; if(a.level>=sk(a).length) return;
+-    a.level++; sideQuest(sk(a)[a.level-1],getDesc(a,a.level-1)); shown=null; save(); closeEdit();
++    var tk=takeSched(a,a.level); a.level++; reached(a); sideQuest(sk(a)[a.level-1],getDesc(a,a.level-1),tk); shown=null; save(); closeEdit();
+     burst(pt(i,rad(a.level))); render(); flash($('pReal'));
+   }
+   function levelUp(i){
+@@ -536,6 +590,8 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
+     $('popSave').textContent='Guardar'; inp.placeholder=isSkill?'Título':'';
+     $('popSub').hidden=!(isArea&&cur===null&&!isG(a));
+     $('popNext').hidden=!(isArea&&!isG(a)); $('popNext').textContent='Preparar Nv '+(a.tier+2);
++    $('popWhen').hidden=true; $('popAgenda').hidden=!(API&&!ro&&(isAct||(isSkill&&target.j===a.level)));
++    $('popFoco').hidden=!(isSkill&&!ro); $('popFoco').textContent=a.foco===target.j?'Quitar foco':'Marcar como foco';
+     var m=svg.getScreenCTM(); placePop(m.a*p[0]+m.e, m.d*p[1]+m.f);
+     if(lock) $('popLock').focus(); else if(ro) $('popClose').focus(); else { inp.focus(); inp.select() }
+   }
+@@ -546,7 +602,7 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
+     pop.style.left=left+'px'; pop.style.top=top+'px';
+   }
+   function popMode(o){
+-    ['popName','popSel','popDesc','popDescView','popSave','popLock','popAdd','popDel','popSub','popNext'].forEach(function(id){ $(id).hidden=!o[id] });
++    ['popName','popSel','popDesc','popDescView','popWhen','popSave','popFoco','popLock','popAgenda','popAdd','popDel','popSub','popNext'].forEach(function(id){ $(id).hidden=!o[id] });
+     for(var id in o) if(typeof o[id]==='string') $(id).textContent=o[id];
+   }
+   function fillSel(opts,val){
+@@ -612,8 +668,51 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
+       return;
+     }
+     if(edit.bg){ closeEdit(); return }
++    if(edit.sched){ schedule($('popDate').value); return }
+     applyName(); save(); closeEdit(); render();
+   }
++  /* Agendar una habilidad: crea una tarea con su nombre en "Tareas de hoy" de la app para el día
++     elegido (hoy, mañana u otro día) y le avisa a la app para que recargue esa lista. El eje
++     guarda a.sched[j] = id de la tarea: al confirmarla en la app, el servidor desbloquea la
++     habilidad (solo se agenda la próxima a desbloquear, así no se saltea ninguna). Una actividad
++     pendiente también se agenda: guarda x.t = id de la tarea, y confirmar/desconfirmar la tarea
++     la marca hecha/pendiente. */
++  function ymd(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0') }
++  function dayOffset(n){ var d=new Date(); d.setDate(d.getDate()+n); return ymd(d) }
++  var toastT=0;
++  function toast(msg,err){ var t=$('toast'); t.textContent=msg; t.classList.toggle('err',!!err); t.hidden=false; clearTimeout(toastT); toastT=setTimeout(function(){ t.hidden=true },2600) }
++  function dayLabel(d){
++    if(d===dayOffset(0)) return 'hoy'; if(d===dayOffset(1)) return 'mañana';
++    return new Date(d+'T00:00:00').toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'numeric'});
++  }
++  function schedule(date){
++    if(!edit||!edit.sched||!API) return;
++    if(!/^\d{4}-\d{2}-\d{2}$/.test(date||'')||date<dayOffset(0)){ $('popDate').focus(); return }
++    var title=edit.title, leaf=edit.leaf, j=edit.j, act=edit.act; closeEdit();
++    /* Habilidades y actividades van por /schedule, que además crea su nodo SideQuest pendiente en el
++       área (y si ya estaba agendada, mueve esa misma tarea al día nuevo en vez de duplicarla). */
++    var prev=act?act.t:(leaf.sched&&leaf.sched[j]);
++    fetch(API+'/schedule',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({area:zones[sa]?zones[sa].name:'',title:title,date:date,replaceTaskId:prev||undefined})})
++      .then(function(r){ if(!r.ok) throw 0; return r.json() })
++      .then(function(task){
++        if(task&&task.id){ if(act) act.t=task.id; else { leaf.sched=leaf.sched||{}; leaf.sched[j]=task.id } save() }
++        toast('«'+title+'» agendada para '+dayLabel(date));
++        try{ parent.postMessage({type:'radar-task-scheduled',date:date,node:true},location.origin) }catch(e){}
++      }).catch(function(){ toast('No se pudo agendar «'+title+'»',true) });
++  }
++  $('popAgenda').addEventListener('click',function(){
++    if(!edit||edit.j==null||edit.j<0) return;
++    /* Guarda antes lo que se haya escrito en el título/descripción, así la tarea sale con ese nombre. */
++    applyName(); save(); render();
++    var a=areas[edit.i], act=edit.k!=null?getActs(a)[edit.k]:null, title=act?act.n:sk(a)[edit.j], today=dayOffset(0);
++    edit={sched:true,title:title,leaf:a,j:edit.j,act:act}; delArmed=false;
++    $('popCap').textContent='Agendar «'+title+'»';
++    popMode({popWhen:1,popSave:'Agendar'});
++    var di=$('popDate'); di.min=today; di.value=today; $('popToday').focus();
++  });
++  $('popToday').addEventListener('click',function(){ schedule(dayOffset(0)) });
++  $('popTomorrow').addEventListener('click',function(){ schedule(dayOffset(1)) });
++  $('popDate').addEventListener('keydown',function(ev){ if(ev.key==='Enter'){ ev.preventDefault(); saveEdit() } else if(ev.key==='Escape') closeEdit() });
+   $('popSave').addEventListener('click',saveEdit);
+   $('popClose').addEventListener('click',closeEdit);
+   $('popName').addEventListener('keydown',function(ev){ if(ev.key==='Enter') saveEdit(); else if(ev.key==='Escape') closeEdit() });
+@@ -621,13 +720,21 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
+   $('popSel').addEventListener('keydown',function(ev){ if(ev.key==='Enter'){ ev.preventDefault(); saveEdit() } else if(ev.key==='Escape') closeEdit() });
+   $('popLock').addEventListener('click',function(){
+     if(!edit) return; var a=areas[edit.i];
+-    if(edit.actLock){ getActs(a)[edit.k].d=false; shown=null; save(); closeEdit(); render(); return }
++    if(edit.actLock){ var x=getActs(a)[edit.k]; x.d=false; actSync(x,false); shown=null; save(); closeEdit(); render(); return }
+     if(edit.j===a.level-1) a.level--;
+     save(); closeEdit(); render();
+   });
++  /* Marcar/quitar el foco: hay uno solo por mapa, así que se borra de los demás ejes y subskills. */
++  $('popFoco').addEventListener('click',function(){
++    if(!edit||edit.k!=null||edit.j==null||edit.j<0) return;
++    applyName(); var a=areas[edit.i], j=edit.j, on=a.foco!==j;
++    leaves(data).forEach(function(c){ delete c.foco });
++    if(on){ a.foco=j; toast('Foco: «'+sk(a)[j]+'»') }
++    save(); closeEdit(); render();
++  });
+   $('popSub').addEventListener('click',function(){
+     if(!edit||edit.j!==-1||cur!==null) return; var i=edit.i, a=areas[i]; if(isG(a)) return; applyName();
+-    var first={name:'Subskill 1',level:a.level,tier:a.tier,tiers:a.tiers}; if(a.acts) first.acts=a.acts; if(a.descs) first.descs=a.descs;
++    var first={name:'Subskill 1',level:a.level,tier:a.tier,tiers:a.tiers}; if(a.acts) first.acts=a.acts; if(a.descs) first.descs=a.descs; if(a.sched) first.sched=a.sched; if(a.foco!=null) first.foco=a.foco;
+     areas[i]={name:a.name,tier:0,children:[first,blankLeaf('Subskill 2'),blankLeaf('Subskill 3')]};
+     save(); closeEdit(); go(i);
+   });
+@@ -777,7 +884,7 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
+     var first=L.querySelector('.mitem'); if(first) first.focus({preventScroll:true});
+   }
+   function closeMenu(){ menuA=null; $('menu').hidden=true }
+-  function pick(a,k){ sa=a; maps=zones[a].maps; selectMap(k) }
++  function pick(a,k){ var chg=a!==sa; sa=a; maps=zones[a].maps; selectMap(k); if(chg&&!zoneLinked(zones[a])) noArea() }
+   function selectMap(k){ sel=k; data=maps[k]; save(); renderBar(); go(null) }
+   function holdOn(el,test,fire){
+     var t=0,x=0,y=0;
+@@ -910,6 +1017,7 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
+   function boot(d){
+     loadAll(d); setBar(!(d&&d.bar===false)); ready=true;
+     barA=sa; data=maps[sel]; renderBar(); go(null);
++    if(zones[sa]&&!zoneLinked(zones[sa])) noArea();
+   }
+   var local=readLocal(), dirty=false; try{ dirty=localStorage.getItem(KEY+'-dirty')==='1' }catch(e){}
+   if(!API) boot(local);
+diff --git a/client/src/components/AchievementCelebration.tsx b/client/src/components/AchievementCelebration.tsx
+new file mode 100644
+index 0000000..9fd265b
+--- /dev/null
++++ b/client/src/components/AchievementCelebration.tsx
+@@ -0,0 +1,111 @@
++import { AnimatePresence, motion } from "framer-motion";
++import { createPortal } from "react-dom";
++import { Star } from "lucide-react";
++import { usePopupPalette } from "@/lib/popup-theme";
++
++// Cuánto tiempo queda visible la celebración antes de que el padre limpie el estado.
++export const ACHIEVEMENT_CELEBRATION_MS = 1800;
++
++export interface AchievementCelebrationState {
++  emoji: string;
++  title: string;
++}
++
++// Mismo tratamiento visual que GoalCompletedCelebration / QuestCompletedCelebration (backdrop,
++// ráfaga determinista de estrellas, tarjeta con ícono redondo pulsante y paleta de popup).
++const PARTICLE_COUNT = 16;
++const particles = Array.from({ length: PARTICLE_COUNT }).map((_, i) => {
++  const angle = (i / PARTICLE_COUNT) * Math.PI * 2;
++  const jitter = ((i * 43) % 10) / 10;
++  const distance = 85 + jitter * 55;
++  return {
++    x: Math.cos(angle) * distance,
++    y: Math.sin(angle) * distance,
++    rotate: (i * 61) % 360,
++    delay: (i % 5) * 0.04,
++    size: 9 + (i % 3) * 4,
++  };
++});
++
++export function AchievementCelebration({ celebration }: { celebration: AchievementCelebrationState | null }) {
++  const palette = usePopupPalette();
++
++  if (typeof document === "undefined") {
++    return null;
++  }
++
++  return createPortal(
++    <AnimatePresence>
++      {celebration && (
++        <motion.div
++          key="achievement-celebration"
++          className="fixed inset-0 z-[300] flex items-center justify-center pointer-events-none"
++          initial={{ opacity: 0 }}
++          animate={{ opacity: 1 }}
++          exit={{ opacity: 0 }}
++          transition={{ duration: 0.3 }}
++        >
++          <motion.div
++            className="absolute inset-0"
++            style={{ backgroundColor: "rgba(0,0,0,0.55)" }}
++            initial={{ opacity: 0 }}
++            animate={{ opacity: 1 }}
++            exit={{ opacity: 0 }}
++          />
++
++          <div className="relative flex items-center justify-center">
++            {particles.map((p, i) => (
++              <motion.div
++                key={i}
++                className="absolute left-1/2 top-1/2"
++                initial={{ x: 0, y: 0, opacity: 0, scale: 0.3, rotate: 0 }}
++                animate={{
++                  x: p.x,
++                  y: p.y,
++                  opacity: [0, 1, 1, 0],
++                  scale: [0.3, 1, 1, 0.6],
++                  rotate: p.rotate,
++                }}
++                transition={{ duration: 1.5, delay: p.delay, ease: [0.16, 1, 0.3, 1] }}
++              >
++                <Star
++                  size={p.size}
++                  className="fill-amber-400 text-amber-400 drop-shadow-[0_0_6px_rgba(251,191,36,0.8)]"
++                />
++              </motion.div>
++            ))}
++
++            <motion.div
++              initial={{ opacity: 0, scale: 0.7, y: 12 }}
++              animate={{ opacity: 1, scale: 1, y: 0 }}
++              exit={{ opacity: 0, scale: 0.85, y: -8 }}
++              transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
++              className="relative w-[min(88vw,320px)] rounded-lg border px-6 py-6 text-center shadow-[0_20px_60px_rgba(0,0,0,0.5)]"
++              style={{ backgroundColor: palette.bg, borderColor: palette.border }}
++            >
++              <motion.div
++                className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full text-2xl leading-none"
++                style={{ backgroundColor: palette.blockEmpty, border: `1.5px solid ${palette.text}` }}
++                animate={{ scale: [1, 1.12, 1] }}
++                transition={{ duration: 1.2, repeat: 2, ease: "easeInOut" }}
++              >
++                {celebration.emoji}
++              </motion.div>
++
++              <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: palette.textMuted }}>
++                ¡Nuevo logro!
++              </div>
++              <div className="mt-1 break-words text-lg font-bold" style={{ color: palette.text }}>
++                {celebration.title}
++              </div>
++              <div className="mt-2 text-[11px]" style={{ color: palette.textDim }}>
++                Guardado en tus Logros
++              </div>
++            </motion.div>
++          </div>
++        </motion.div>
++      )}
++    </AnimatePresence>,
++    document.body,
++  );
++}
+diff --git a/client/src/components/AchievementsHall.tsx b/client/src/components/AchievementsHall.tsx
+new file mode 100644
+index 0000000..15565f0
+--- /dev/null
++++ b/client/src/components/AchievementsHall.tsx
+@@ -0,0 +1,538 @@
++import { useEffect, useMemo, useRef, useState } from "react";
++import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
++import { Trophy, X } from "lucide-react";
++import { useSkillTree } from "@/lib/skill-context";
++import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
++import { Input } from "@/components/ui/input";
++import { Textarea } from "@/components/ui/textarea";
++import { Button } from "@/components/ui/button";
++import { playProgressAdvanceSound } from "@/lib/sound";
++import {
++  AchievementCelebration,
++  ACHIEVEMENT_CELEBRATION_MS,
++  type AchievementCelebrationState,
++} from "@/components/AchievementCelebration";
++
++// Tab "Logros" del Journal: junta en un solo lugar lo que ya se cumplió en cada tracker
++// (hábitos terminados, libros leídos, bugs debugueados, objetivos, ahorro, etc.). Solo lee:
++// cada logro se sigue editando desde su propio modal. Los únicos que viven acá son los
++// logros manuales, que se agregan manteniendo apretado el fondo de la tab.
++
++type CategoryKey =
++  | "manual"
++  | "habits"
++  | "books"
++  | "spaced"
++  | "rewiring"
++  | "errorsFound"
++  | "bugs"
++  | "shadows"
++  | "goals"
++  | "skills"
++  | "financial"
++  | "missions"
++  | "questions"
++  | "repairs";
++
++const CATEGORIES: Record<CategoryKey, { emoji: string; label: string }> = {
++  manual: { emoji: "🏅", label: "Logros propios" },
++  habits: { emoji: "🔥", label: "Hábitos completados" },
++  books: { emoji: "📚", label: "Libros leídos" },
++  spaced: { emoji: "🧠", label: "Repetición espaciada" },
++  rewiring: { emoji: "⚡", label: "Rewirings completados" },
++  errorsFound: { emoji: "🔍", label: "Errores encontrados" },
++  bugs: { emoji: "🐞", label: "Errores debugueados" },
++  shadows: { emoji: "💀", label: "Sombras derrotadas" },
++  goals: { emoji: "🎯", label: "Objetivos cumplidos" },
++  skills: { emoji: "✨", label: "Skills completadas" },
++  financial: { emoji: "💰", label: "Metas de ahorro" },
++  missions: { emoji: "🐷", label: "Misiones de ahorro" },
++  questions: { emoji: "⚔️", label: "Problemas encontrados" },
++  repairs: { emoji: "🔧", label: "Reparaciones hechas" },
++};
++
++interface ManualAchievement {
++  id: string;
++  emoji: string;
++  title: string;
++  detail: string;
++  date: string;
++}
++
++const MANUAL_KEY = ["achievements-hall", "manual"];
++const LONG_PRESS_MS = 550;
++
++interface Achievement {
++  id: string;
++  cat: CategoryKey;
++  emoji?: string;
++  manualId?: string;
++  title: string;
++  detail?: string;
++  date?: string | null;
++}
++
++// Fechas "YYYY-MM-DD" se leen como día local; el resto (ISO/timestamp) tal cual.
++function toTime(date?: string | null): number {
++  if (!date) return 0;
++  const t = new Date(date.length === 10 ? `${date}T00:00:00` : date).getTime();
++  return Number.isNaN(t) ? 0 : t;
++}
++
++function formatDate(date?: string | null): string {
++  const t = toTime(date);
++  if (!t) return "";
++  return new Date(t).toLocaleDateString("es-AR", { day: "numeric", month: "short", year: "numeric" });
++}
++
++function todayStr(): string {
++  const d = new Date();
++  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
++}
++
++// Keys propias (no las de cada modal) porque algunos modales cachean con otro queryFn/forma.
++// Se refetchea al montar para que el tab siempre muestre lo último.
++function useList<T>(key: string, url: string, enabled = true) {
++  return useQuery<T[]>({
++    queryKey: ["achievements-hall", key],
++    enabled,
++    refetchOnMount: "always",
++    queryFn: async () => {
++      const res = await fetch(url, { credentials: "include" });
++      if (!res.ok) return [];
++      const data = await res.json();
++      return Array.isArray(data) ? data : [];
++    },
++  }).data ?? [];
++}
++
++export function AchievementsHall() {
++  const { areas, projects } = useSkillTree();
++  const queryClient = useQueryClient();
++  const [filter, setFilter] = useState<CategoryKey | null>(null);
++  const [draft, setDraft] = useState<{ emoji: string; title: string; detail: string; date: string } | null>(null);
++  const pressRef = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null);
++
++  const manual = useList<ManualAchievement>("manual", "/api/manual-achievements");
++  const nodeErrors = useList<any>("node-errors", "/api/node-errors");
++
++  const saveManual = useMutation({
++    mutationFn: async (items: ManualAchievement[]) => {
++      const res = await fetch("/api/manual-achievements", {
++        method: "PUT",
++        headers: { "Content-Type": "application/json" },
++        credentials: "include",
++        body: JSON.stringify({ items }),
++      });
++      if (!res.ok) throw new Error("No se pudo guardar el logro");
++      return (await res.json()) as ManualAchievement[];
++    },
++    onMutate: async (items) => {
++      await queryClient.cancelQueries({ queryKey: MANUAL_KEY });
++      const previous = queryClient.getQueryData<ManualAchievement[]>(MANUAL_KEY);
++      queryClient.setQueryData(MANUAL_KEY, items);
++      return { previous };
++    },
++    onError: (_err, _items, ctx) => queryClient.setQueryData(MANUAL_KEY, ctx?.previous ?? []),
++    onSuccess: (items) => queryClient.setQueryData(MANUAL_KEY, items),
++  });
++
++  const [celebration, setCelebration] = useState<AchievementCelebrationState | null>(null);
++  const celebrationTimerRef = useRef<number | null>(null);
++  useEffect(() => () => {
++    if (celebrationTimerRef.current) window.clearTimeout(celebrationTimerRef.current);
++  }, []);
++  const celebrate = (emoji: string, title: string) => {
++    playProgressAdvanceSound();
++    setCelebration({ emoji, title });
++    if (celebrationTimerRef.current) window.clearTimeout(celebrationTimerRef.current);
++    celebrationTimerRef.current = window.setTimeout(() => setCelebration(null), ACHIEVEMENT_CELEBRATION_MS);
++  };
++
++  const addManual = () => {
++    if (!draft || !draft.title.trim()) return;
++    const item: ManualAchievement = {
++      id: crypto.randomUUID(),
++      emoji: draft.emoji.trim() || "🏅",
++      title: draft.title.trim(),
++      detail: draft.detail.trim(),
++      date: draft.date || todayStr(),
++    };
++    saveManual.mutate([...manual, item], { onSuccess: () => celebrate(item.emoji, item.title) });
++    setDraft(null);
++  };
++
++  // Mantener apretado el fondo (no una tarjeta ni un botón) abre el alta de un logro manual.
++  // Moverse más de 10px cancela, así scrollear la lista no lo dispara.
++  const cancelPress = () => {
++    if (pressRef.current) clearTimeout(pressRef.current.timer);
++    pressRef.current = null;
++  };
++  const startPress = (e: React.PointerEvent) => {
++    // contains(): los eventos del diálogo (portal) también burbujean hasta acá.
++    const target = e.target as HTMLElement;
++    if (!e.currentTarget.contains(target) || target.closest("button, [data-achievement-card]")) return;
++    cancelPress();
++    pressRef.current = {
++      x: e.clientX,
++      y: e.clientY,
++      timer: setTimeout(() => {
++        pressRef.current = null;
++        setDraft({ emoji: "🏅", title: "", detail: "", date: todayStr() });
++      }, LONG_PRESS_MS),
++    };
++  };
++  const movePress = (e: React.PointerEvent) => {
++    const p = pressRef.current;
++    if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 10) cancelPress();
++  };
++  const pressHandlers = {
++    onPointerDown: startPress,
++    onPointerMove: movePress,
++    onPointerUp: cancelPress,
++    onPointerLeave: cancelPress,
++    onPointerCancel: cancelPress,
++    onContextMenu: (e: React.MouseEvent) => {
++      if (!(e.target as HTMLElement).closest("button, [data-achievement-card]")) e.preventDefault();
++    },
++  };
++
++  const habits = useList<any>("habits", "/api/habits");
++  const books = useList<any>("books", "/api/book-wishlist");
++  const spaced = useList<any>("spaced", "/api/space-repetition");
++  const rewiring = useList<any>("rewiring", "/api/rewiring-trackers");
++  const shadows = useList<any>("shadows", "/api/journal/shadows");
++  const lifeGoals = useList<any>("life-goals", "/api/life-goals");
++  const globalSkills = useList<any>("global-skills", "/api/global-skills");
++  const financial = useList<any>("financial", "/api/financial-goals");
++  const missions = useList<any>("missions", "/api/saving-missions");
++  const questions = useList<any>("questions", "/api/question-problems");
++  const repairs = useList<any>("repairs", "/api/house-repairs/items");
++
++  const areaIds = areas.map((a) => a.id).join("|");
++  const { data: bugs = [] } = useQuery<Array<{ areaName: string; bug: any }>>({
++    queryKey: ["achievements-hall", "bugs", areaIds],
++    enabled: areas.length > 0,
++    refetchOnMount: "always",
++    queryFn: async () => {
++      const groups = await Promise.all(
++        areas.map(async (area) => {
++          const res = await fetch(`/api/source-bugs/area/${area.id}`, { credentials: "include" });
++          if (!res.ok) return [];
++          const list = (await res.json()) as any[];
++          return list.map((bug) => ({ areaName: area.name, bug }));
++        }),
++      );
++      return groups.flat();
++    },
++  });
++
++  const sourceName = (type: string, id: string) =>
++    (type === "area" ? areas.find((a) => a.id === id) : projects.find((p) => p.id === id))?.name;
++
++  const achievements = useMemo<Achievement[]>(() => {
++    const today = todayStr();
++    const list: Achievement[] = [];
++
++    // Hábito con fecha de fin ya pasada = hábito terminado (mismo criterio que "archivados").
++    habits
++      .filter((h) => h.endDate && h.endDate < today)
++      .forEach((h) =>
++        list.push({
++          id: `habit-${h.id}`,
++          cat: "habits",
++          title: `${h.emoji ?? ""} ${h.name}`.trim(),
++          detail: h.bestStreak ? `Mejor racha: ${h.bestStreak} días` : undefined,
++          date: h.endDate,
++        }),
++      );
++
++    books
++      .filter((b) => b.status === "leido")
++      .forEach((b) =>
++        list.push({ id: `book-${b.id}`, cat: "books", title: b.title, detail: b.author || undefined, date: b.updatedAt }),
++      );
++
++    spaced
++      .filter((p) => p.archived === 1 || p.archived === true)
++      .forEach((p) =>
++        list.push({
++          id: `sr-${p.id}`,
++          cat: "spaced",
++          title: `${p.emoji ?? ""} ${p.name}`.trim(),
++          detail: p.level === 2 ? "Nivel 2 completo" : undefined,
++          date: p.endDate,
++        }),
++      );
++
++    rewiring
++      .filter((t) => t.archivedAt)
++      .forEach((t) =>
++        list.push({
++          id: `rw-${t.id}`,
++          cat: "rewiring",
++          title: t.name,
++          detail: t.count ? `${t.count} repeticiones` : undefined,
++          date: t.archivedAt,
++        }),
++      );
++
++    // Encontrar un error ya es un logro, esté o no debugueado. Bugs y errores de nodo son lo
++    // mismo: el error confirmado tiene su bug (bugId), así que de node_errors solo se suman los
++    // que todavía no se confirmaron, para no contarlos dos veces.
++    bugs.forEach(({ areaName, bug }) =>
++      list.push({
++        id: `found-bug-${bug.id}`,
++        cat: "errorsFound",
++        title: bug.nombre,
++        detail: areaName,
++        date: bug.createdAt,
++      }),
++    );
++    nodeErrors
++      .filter((e) => !e.bugId)
++      .forEach((e) =>
++        list.push({
++          id: `found-err-${e.id}`,
++          cat: "errorsFound",
++          title: e.nombre,
++          detail: (e.areaId && sourceName("area", e.areaId)) || (e.projectId && sourceName("project", e.projectId)) || undefined,
++          date: e.createdAt,
++        }),
++      );
++
++    bugs
++      .filter(({ bug }) => bug.status === "debugueado")
++      .forEach(({ areaName, bug }) =>
++        list.push({
++          id: `bug-${bug.id}`,
++          cat: "bugs",
++          title: bug.accion ? `${bug.nombre} → ${bug.accion}` : bug.nombre,
++          detail: areaName,
++          date: bug.updatedAt,
++        }),
++      );
++
++    shadows
++      .filter((s) => s.defeated === 1)
++      .forEach((s) =>
++        list.push({ id: `shadow-${s.id}`, cat: "shadows", title: s.name, detail: s.action || undefined, date: s.updatedAt }),
++      );
++
++    lifeGoals.forEach((row) =>
++      (row.completed ?? []).forEach((g: any) =>
++        list.push({
++          id: `goal-${row.sourceId}-${g.id}`,
++          cat: "goals",
++          title: g.text,
++          detail: sourceName(row.sourceType, row.sourceId),
++          date: g.completedAt,
++        }),
++      ),
++    );
++
++    globalSkills
++      .filter((s) => s.completed === 1 || s.completed === true)
++      .forEach((s) =>
++        list.push({ id: `skill-${s.id}`, cat: "skills", title: s.name, detail: `Nivel ${s.level}`, date: s.completedAt }),
++      );
++
++    financial
++      .filter((g) => {
++        const saved = (g.holdings ?? []).reduce((a: number, h: any) => a + (Number(h.amount) || 0), 0);
++        return g.target > 0 && saved >= g.target;
++      })
++      .forEach((g) =>
++        list.push({
++          id: `fin-${g.id}`,
++          cat: "financial",
++          title: `${g.emoji ?? ""} ${g.name}`.trim(),
++          detail: `Meta: US$ ${Number(g.target).toLocaleString("es-AR")}`,
++          date: g.updatedAt,
++        }),
++      );
++
++    missions
++      .filter((m) => m.done)
++      .forEach((m) =>
++        list.push({
++          id: `mission-${m.id}`,
++          cat: "missions",
++          title: `${m.emoji ?? ""} ${m.title}`.trim(),
++          detail: m.amount ? `Ahorro: US$ ${Number(m.amount).toLocaleString("es-AR")}` : undefined,
++          date: m.completedAt,
++        }),
++      );
++
++    questions
++      .filter((q) => q.foundAt)
++      .forEach((q) =>
++        list.push({ id: `q-${q.id}`, cat: "questions", title: q.text || "Problema", detail: q.goal || undefined, date: q.foundAt }),
++      );
++
++    repairs
++      .filter((r) => r.done)
++      .forEach((r) => list.push({ id: `repair-${r.id}`, cat: "repairs", title: r.text }));
++
++    manual.forEach((m) =>
++      list.push({
++        id: `manual-${m.id}`,
++        cat: "manual",
++        emoji: m.emoji,
++        manualId: m.id,
++        title: m.title,
++        detail: m.detail || undefined,
++        date: m.date,
++      }),
++    );
++
++    return list.sort((a, b) => toTime(b.date) - toTime(a.date));
++  }, [manual, nodeErrors, habits, books, spaced, rewiring, bugs, shadows, lifeGoals, globalSkills, financial, missions, questions, repairs, areas, projects]);
++
++  const counts = useMemo(() => {
++    const c = {} as Record<CategoryKey, number>;
++    achievements.forEach((a) => {
++      c[a.cat] = (c[a.cat] ?? 0) + 1;
++    });
++    return c;
++  }, [achievements]);
++
++  const visible = filter ? achievements.filter((a) => a.cat === filter) : achievements;
++  const categoryKeys = (Object.keys(CATEGORIES) as CategoryKey[]).filter((k) => counts[k]);
++
++  const addDialog = (
++    <>
++    <AchievementCelebration celebration={celebration} />
++    <Dialog open={!!draft} onOpenChange={(open) => !open && setDraft(null)}>
++      <DialogContent className="max-w-md">
++        <DialogTitle>Nuevo logro</DialogTitle>
++        {draft && (
++          <form
++            className="space-y-3"
++            onSubmit={(e) => {
++              e.preventDefault();
++              addManual();
++            }}
++          >
++            <div className="flex gap-2">
++              <Input
++                value={draft.emoji}
++                onChange={(e) => setDraft({ ...draft, emoji: e.target.value })}
++                className="w-14 text-center"
++                maxLength={4}
++                aria-label="Emoji"
++                data-testid="input-manual-achievement-emoji"
++              />
++              <Input
++                autoFocus
++                value={draft.title}
++                onChange={(e) => setDraft({ ...draft, title: e.target.value })}
++                placeholder="¿Qué lograste?"
++                data-testid="input-manual-achievement-title"
++              />
++            </div>
++            <Textarea
++              value={draft.detail}
++              onChange={(e) => setDraft({ ...draft, detail: e.target.value })}
++              placeholder="Detalle (opcional)"
++              rows={2}
++              data-testid="input-manual-achievement-detail"
++            />
++            <Input
++              type="date"
++              value={draft.date}
++              onChange={(e) => setDraft({ ...draft, date: e.target.value })}
++              data-testid="input-manual-achievement-date"
++            />
++            <div className="flex justify-end gap-2">
++              <Button type="button" variant="outline" onClick={() => setDraft(null)}>
++                Cancelar
++              </Button>
++              <Button type="submit" disabled={!draft.title.trim()} data-testid="button-save-manual-achievement">
++                Guardar
++              </Button>
++            </div>
++          </form>
++        )}
++      </DialogContent>
++    </Dialog>
++    </>
++  );
++
++  if (achievements.length === 0) {
++    return (
++      <div
++        className="flex h-full select-none flex-col items-center justify-center text-center"
++        data-testid="achievements-hall-empty"
++        {...pressHandlers}
++      >
++        <Trophy className="mb-3 h-8 w-8 text-muted-foreground/40" />
++        <p className="text-sm text-muted-foreground">Todavía no hay logros. ¡Terminá un hábito, un libro o un error!</p>
++        <p className="mt-1 text-xs text-muted-foreground/70">Mantené apretado el fondo para agregar uno.</p>
++        {addDialog}
++      </div>
++    );
++  }
++
++  return (
++    <div className="flex h-full min-h-0 select-none flex-col gap-4" data-testid="achievements-hall" {...pressHandlers}>
++      {addDialog}
++      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
++        <button
++          onClick={() => setFilter(null)}
++          className={`rounded-lg border p-2.5 text-left transition-colors ${
++            filter === null ? "border-foreground/40 bg-secondary" : "border-border/60 bg-muted/20 hover:bg-muted/40"
++          }`}
++          data-testid="achievements-filter-all"
++        >
++          <div className="text-xl font-bold tabular-nums text-foreground">{achievements.length}</div>
++          <div className="text-xs text-muted-foreground">🏆 Todos los logros</div>
++        </button>
++        {categoryKeys.map((k) => (
++          <button
++            key={k}
++            onClick={() => setFilter(filter === k ? null : k)}
++            className={`rounded-lg border p-2.5 text-left transition-colors ${
++              filter === k ? "border-foreground/40 bg-secondary" : "border-border/60 bg-muted/20 hover:bg-muted/40"
++            }`}
++            data-testid={`achievements-filter-${k}`}
++          >
++            <div className="text-xl font-bold tabular-nums text-foreground">{counts[k]}</div>
++            <div className="text-xs text-muted-foreground">
++              {CATEGORIES[k].emoji} {CATEGORIES[k].label}
++            </div>
++          </button>
++        ))}
++      </div>
++
++      <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
++        {visible.map((a) => (
++          <div
++            key={a.id}
++            className="flex select-text items-start gap-3 rounded-lg border border-border/50 bg-background/70 px-3 py-2"
++            data-achievement-card
++            data-testid={`achievement-${a.id}`}
++          >
++            <span className="mt-0.5 text-lg leading-none">{a.emoji ?? CATEGORIES[a.cat].emoji}</span>
++            <div className="min-w-0 flex-1">
++              <p className="break-words text-sm font-medium text-foreground">{a.title}</p>
++              {a.detail && <p className="break-words text-xs text-muted-foreground">{a.detail}</p>}
++            </div>
++            {a.date && <span className="shrink-0 text-xs text-muted-foreground">{formatDate(a.date)}</span>}
++            {a.manualId && (
++              <button
++                onClick={() => saveManual.mutate(manual.filter((m) => m.id !== a.manualId))}
++                className="shrink-0 rounded p-0.5 text-muted-foreground/60 hover:text-foreground"
++                title="Borrar logro"
++                data-testid={`button-delete-manual-achievement-${a.manualId}`}
++              >
++                <X className="h-3.5 w-3.5" />
++              </button>
++            )}
++          </div>
++        ))}
++        <p className="pt-2 text-center text-xs text-muted-foreground/60">Mantené apretado el fondo para agregar un logro.</p>
++      </div>
++    </div>
++  );
++}
+diff --git a/client/src/components/AreaMenu.tsx b/client/src/components/AreaMenu.tsx
+index 27dbfda..2a16a4c 100644
+--- a/client/src/components/AreaMenu.tsx
++++ b/client/src/components/AreaMenu.tsx
+@@ -1806,7 +1806,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
+             <TabsTrigger value="beliefs" className="shrink-0 text-xs">Creencias</TabsTrigger>
+             <TabsTrigger value="vision" className="shrink-0 text-xs">Visión</TabsTrigger>
+             <TabsTrigger value="objectives" className="shrink-0 text-xs">Propósitos</TabsTrigger>
+-            <TabsTrigger value="bugs" className="shrink-0 text-xs">Bugs</TabsTrigger>
++            <TabsTrigger value="bugs" className="shrink-0 text-xs">Errores</TabsTrigger>
+             <TabsTrigger value="powers" className="shrink-0 text-xs">Poderes</TabsTrigger>
+             <TabsTrigger value="experiences" className="shrink-0 text-xs">Experiencias</TabsTrigger>
+             <TabsTrigger value="growth" className="shrink-0 text-xs">Crecimiento</TabsTrigger>
+diff --git a/client/src/components/RadarSkillMapModal.tsx b/client/src/components/RadarSkillMapModal.tsx
+index a0a9f90..67d4143 100644
+--- a/client/src/components/RadarSkillMapModal.tsx
++++ b/client/src/components/RadarSkillMapModal.tsx
+@@ -17,7 +17,19 @@ export function RadarSkillMapModal({ open, onOpenChange }: { open: boolean; onOp
+   // recargar los árboles (y los poderes) y mostrar el pop-up de nuevo poder.
+   useEffect(() => {
+     const onMessage = (e: MessageEvent) => {
+-      if (e.origin !== window.location.origin || e.data?.type !== "radar-side-quest") return;
++      if (e.origin !== window.location.origin) return;
++      // Habilidad agendada desde el mapa: el mapa ya creó la tarea manual de ese día, acá solo
++      // se refrescan las listas de "Tareas de hoy" (y el calendario) para que aparezca.
++      if (e.data?.type === "radar-task-scheduled") {
++        queryClient.invalidateQueries({ queryKey: ["manual-today-tasks"] });
++        queryClient.invalidateQueries({ queryKey: ["manual-today-tasks-range"] });
++        queryClient.invalidateQueries({ queryKey: ["today-task-slots"] });
++        // Agendar una habilidad o actividad crea su nodo SideQuest pendiente, y completar una
++        // actividad en el mapa lo confirma (o crea uno ya confirmado).
++        if (e.data?.node) refreshSkillTrees();
++        return;
++      }
++      if (e.data?.type !== "radar-side-quest") return;
+       refreshSkillTrees();
+       const powerName = e.data?.power?.name;
+       if (typeof powerName === "string" && powerName) {
+diff --git a/client/src/components/SkillNode.tsx b/client/src/components/SkillNode.tsx
+index 246f1dd..0343d83 100644
+--- a/client/src/components/SkillNode.tsx
++++ b/client/src/components/SkillNode.tsx
+@@ -2583,7 +2583,12 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
+       return;
+     }
+     lastClickTime.current = now;
+-    
++
++    // This node's confirm is still in flight (área pop-up / staged rewards / feedback modal
++    // not finished yet): a second tap would run toggleSkillStatus again and duplicate its
++    // pop-ups ("Quest updated!" included).
++    if (confirmFeedbackChainOpen.current) return;
++
+     // Allow unlocking manually locked nodes by clicking.
+     // Gate on the node still being "locked": a node can carry a stale manualLock=1
+     // flag (leftover from when it was created as a future/staged placeholder) even
+diff --git a/client/src/components/TodayProgressModal.tsx b/client/src/components/TodayProgressModal.tsx
+index 70d58a0..0a026b3 100644
+--- a/client/src/components/TodayProgressModal.tsx
++++ b/client/src/components/TodayProgressModal.tsx
+@@ -18,6 +18,7 @@ import { rewiringDayRows } from "@/lib/rewiringTasks";
+ import { useConfirmHabit, useConfirmPractice } from "@/lib/useConfirmActions";
+ import { useTodayPriorities, useSetTodayPriorities, MAX_TODAY_PRIORITIES } from "@/lib/useTodayPriorities";
+ import { MealTrackerModal } from "@/components/MealTrackerModal";
++import { usePowerCelebration } from "@/lib/power-celebration-context";
+ import { useNowPlacement, setNowPlacement } from "@/lib/now-placement";
+ import { useTaskTimer, taskTimerKey, wasDeadlineNowApplied, markDeadlineNowApplied } from "@/lib/task-timers";
+ import { addSubSkillFromToday, toggleSubSkillFromToday, masterWholeSubSkillTree, isSubSkillPlaceholder, moveSubSkillFromToday, renameSubSkill, deleteSubSkillFromToday, fetchSubSkills } from "@/lib/subskill-tree";
+@@ -314,6 +315,7 @@ function DoneNodeMark({ size = "sm" }: { size?: "sm" | "md" }) {
+ 
+ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+   const queryClient = useQueryClient();
++  const { showPowerCelebration } = usePowerCelebration();
+   const { areas, projects, updateSkill, updateProjectSkill, globalSkills, toggleSkillStatus, toggleProjectSkillStatus, addSkillInPlaceOfAvailable, materializePendingEventNodes, refreshSkillTrees } = useSkillTree();
+   const { data: habitsData } = useHabits();
+   // Confirmar un hábito/práctica desde acá tiene que otorgar exactamente lo mismo (XP, pop-ups)
+@@ -728,10 +730,17 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
+   // Se usa effectiveDate (no todayStr) para que también aparezcan acá los nodos completados sin
+   // fecha planeada de un día pasado que se esté editando; para un día futuro no hay nada
+   // completado todavía, así que naturalmente da vacío.
++  // Tareas manuales agregadas a mano (mantener presionado el fondo). Existen para cualquier
++  // día (hoy o un día futuro previsualizado) y no aparecen en el calendario de actividades.
++  const { data: manualTasksData } = useManualTasks(effectiveDate, open);
++  const manualTasks = manualTasksData || [];
++  // Nodos que son de una tarea manual (eventos con área, habilidades agendadas desde el mapa):
++  // la tarea ya los representa en el día, así que confirmados no se repiten como actividad extra.
++  const manualLinkedNodeIds = new Set(manualTasks.map((t) => t.linkedSkillId).filter((id): id is string => !!id));
+   const extraTopNodes = [
+     ...collectExtraCompletedNodes(Array.isArray(areas) ? areas : [], effectiveDate, effectiveDate),
+     ...collectExtraCompletedNodes(Array.isArray(projects) ? projects : [], effectiveDate, effectiveDate),
+-  ];
++  ].filter((n) => !manualLinkedNodeIds.has(n.id));
+   // Un sub-nodo confirmado cuyo nodo padre ya está en la lista del día (planeado para hoy, actividad
+   // extra o el padre que queda como texto en un día pasado) se ve adentro del padre (lista de
+   // sub-nodos / desplegable): no se lo muestra además suelto como actividad extra.
+@@ -795,10 +804,6 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
+     })),
+   ];
+ 
+-  // Tareas manuales agregadas a mano (mantener presionado el fondo). Existen para cualquier
+-  // día (hoy o un día futuro previsualizado) y no aparecen en el calendario de actividades.
+-  const { data: manualTasksData } = useManualTasks(effectiveDate, open);
+-  const manualTasks = manualTasksData || [];
+   const createManualTask = useCreateManualTask();
+   const updateManualTask = useUpdateManualTask();
+   const deleteManualTask = useDeleteManualTask();
+@@ -975,19 +980,20 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
+     });
+   });
+ 
+-  // Los nodos confirmados siempre van antes de la tarea desbloqueada (la primera sin hacer de la
+-  // franja activa): los que hayan quedado después de ella (confirmados desde el árbol, o antes de
+-  // que les tocara) se muestran justo antes, en el mismo orden relativo. Es una regla de cómo se
+-  // muestra la franja, así vale sin importar desde dónde se confirmó el nodo. Misma noción de
+-  // "franja activa" que el destacado: la de la hora actual, o cualquiera con algo en una vista previa.
++  // Las tareas confirmadas siempre van antes de la tarea desbloqueada (la primera sin hacer de la
++  // franja activa): las que hayan quedado después de ella (confirmadas desde el árbol u otro
++  // modal, o antes de que les tocara) se muestran justo antes, en el mismo orden relativo. Es una
++  // regla de cómo se muestra la franja, así vale sin importar desde dónde se confirmó la tarea.
++  // Misma noción de "franja activa" que el destacado: la de la hora actual, o cualquiera con algo
++  // en una vista previa.
+   TIME_SLOTS.forEach((s) => {
+     const bucket = itemBuckets[s.key];
+     const isActiveSlot = isPreview ? bucket.length > 0 : s.key === getCurrentTimeSlotKey();
+     if (!isActiveSlot) return;
+     const firstUndone = bucket.findIndex((i) => !i.done);
+     if (firstUndone === -1) return;
+-    const isConfirmedNode = (i: TodayItem) => i.type === "node" && i.done && !i.traceSubs;
+-    const lifted = bucket.slice(firstUndone + 1).filter(isConfirmedNode);
++    const isConfirmed = (i: TodayItem) => i.done && !i.traceSubs;
++    const lifted = bucket.slice(firstUndone + 1).filter(isConfirmed);
+     if (lifted.length === 0) return;
+     itemBuckets[s.key] = [
+       ...bucket.slice(0, firstUndone),
+@@ -1691,7 +1697,22 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
+     const task = manualTasks.find((t) => t.id === item.id);
+     if (!task) return;
+     const newDone = task.done === 1 ? 0 : 1;
+-    updateManualTask.mutate({ id: item.id, date: effectiveDate, updates: { done: newDone } });
++    updateManualTask.mutate(
++      { id: item.id, date: effectiveDate, updates: { done: newDone } },
++      {
++        // Tarea agendada desde el mapa de habilidades: el server desbloqueó esa habilidad y
++        // registró su SideQuest + poder, igual que al desbloquearla en el mapa (RadarSkillMapModal).
++        onSuccess: (res) => {
++          if (!res.radarUnlock) return;
++          refreshSkillTrees();
++          const powerName = res.radarUnlock.power?.name;
++          if (powerName) {
++            queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0] ?? "").startsWith("/api/source-powers/") });
++            showPowerCelebration({ name: powerName, kind: "confirmed" });
++          }
++        },
++      }
++    );
+     // Al confirmarla, si tenía tiempo de sobra respecto de sus sub-pasos, pasa a su suma.
+     if (newDone === 1) shrinkParentToChildrenSum(item, substepsFor(item).map((st) => st.minutes));
+     // Evento con nodo propio (ver newTaskParent): confirmarlo/desconfirmarlo hace lo mismo con
+@@ -1765,16 +1786,16 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
+   // confirmarlo desde HabitStreakModal/SpaceRepetitionModal (ver useConfirmActions.ts). Una
+   // práctica ya confirmada ese día no se puede "desconfirmar" — no existe esa acción en
+   // SpaceRepetitionModal tampoco (avanzar un intervalo es unidireccional).
+-  // Si la tarea desbloqueada de la franja actual es un nodo con sub-nodos pendientes (su sub-nodo
+-  // es el desbloqueado), confirmar una tarea que está después de él en esa franja la sube justo
+-  // antes del nodo padre: así no queda nada confirmado después de la tarea desbloqueada.
+-  const liftBeforeUnlockedParent = (item: TodayItem) => {
++  // Confirmar una tarea que está después de la tarea desbloqueada de la franja actual la sube
++  // justo antes de ella (a continuación de las demás confirmadas): así no queda nada confirmado
++  // después de la tarea desbloqueada. Si la desbloqueada es un nodo con sub-nodos pendientes,
++  // queda antes del nodo padre.
++  const liftBeforeUnlocked = (item: TodayItem) => {
+     if (isPreview || item.done) return;
+     const slot = getCurrentTimeSlotKey();
+     const bucket = itemBuckets[slot] || [];
+     const currentIdx = bucket.findIndex((i) => !i.done);
+-    const current = bucket[currentIdx];
+-    if (!current || current.type !== "node" || !hasPendingSubNodes(current)) return;
++    if (currentIdx === -1) return;
+     const itemIdx = bucket.findIndex((i) => i.key === item.key);
+     if (itemIdx <= currentIdx) return;
+     const reordered = bucket.filter((i) => i.key !== item.key);
+@@ -1804,7 +1825,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
+         return;
+       }
+     }
+-    liftBeforeUnlockedParent(item);
++    liftBeforeUnlocked(item);
+     if (item.type === "manual") {
+       toggleManualDone(item);
+       return;
+diff --git a/client/src/lib/skill-context.tsx b/client/src/lib/skill-context.tsx
+index 0b0c4a2..189ad85 100644
+--- a/client/src/lib/skill-context.tsx
++++ b/client/src/lib/skill-context.tsx
+@@ -541,39 +541,60 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }):
+     setTimeout(attempt, 150);
+   };
+ 
+-  // Holds whatever onHide callback the current "Quest updated!" call was given (see
+-  // triggerQuestUpdated below), so hideQuestUpdatedPopup (manual dismiss) can also fire it.
+-  // Cleared right after use so the popup's own setTimeout firing later doesn't call it a
++  // Every onHide callback handed to the pending/current "Quest updated!" (see
++  // scheduleQuestUpdated below), so hideQuestUpdatedPopup (manual dismiss) can also fire them.
++  // Cleared right after use so the popup's own setTimeout firing later doesn't call them a
+   // second time.
+-  const questUpdatedHideCallback = useRef<(() => void) | null>(null);
++  const questUpdatedHideCallbacks = useRef<Array<() => void>>([]);
++  // True from the moment a "Quest updated!" is scheduled until it disappears. While set, any
++  // further request just joins it (its onHide included) instead of queueing a second pop-up --
++  // otherwise two confirms that both end up waiting on the same popup chain (e.g. behind the
++  // post-confirm feedback modal) would each show their own "Quest updated!" back to back.
++  const questUpdatedPending = useRef(false);
++  // Bumped on every show, so a stale hide timer (from a pop-up already dismissed by hand)
++  // can't hide a newer one early.
++  const questUpdatedShowId = useRef(0);
++
++  const finishQuestUpdated = () => {
++    setShowQuestUpdatedPopup(false);
++    // Reopen the unlock gate right as the pop-up disappears, so the next node becomes
++    // available at that moment instead of the instant the node was confirmed.
++    setUnlockGateOpen(true);
++    questUpdatedPending.current = false;
++    const callbacks = questUpdatedHideCallbacks.current;
++    questUpdatedHideCallbacks.current = [];
++    callbacks.forEach(cb => cb());
++  };
+ 
+   // "Quest updated!" al confirmar un nodo regular — de vuelta como pop-up (se había quitado),
+   // ahora con la misma tarjeta/tamaño que ExperienceGainPopup y TodayProgressGainPopup en vez
+-  // del texto grande suelto que tenía originalmente. `onHide` lets a caller synchronize
+-  // something else (e.g. refreshing the area/quest's XP total) with the exact moment this
+-  // pop-up disappears, same idea as triggerQuestCelebration's onShow/onHide.
+-  const triggerQuestUpdated = (onHide?: () => void) => {
+-    questUpdatedHideCallback.current = onHide ?? null;
++  // del texto grande suelto que tenía originalmente.
++  const triggerQuestUpdated = () => {
++    const showId = ++questUpdatedShowId.current;
+     markPopupActive(questUpdatedVisibleMs);
+     setShowQuestUpdatedPopup(true);
+     setTimeout(() => {
+-      setShowQuestUpdatedPopup(false);
+-      // Reopen the unlock gate right as the pop-up disappears, so the next node becomes
+-      // available at that moment instead of the instant the node was confirmed.
+-      setUnlockGateOpen(true);
+-      questUpdatedHideCallback.current?.();
+-      questUpdatedHideCallback.current = null;
++      if (questUpdatedShowId.current === showId && questUpdatedPending.current) finishQuestUpdated();
+     }, questUpdatedVisibleMs);
+   };
+ 
++  // Shows "Quest updated!" after `delayMs`, once every other pop-up has cleared (it's always the
++  // last thing shown for a confirm). `onHide` lets a caller synchronize something else (e.g.
++  // refreshing the area/quest's XP total) with the exact moment this pop-up disappears, same
++  // idea as triggerQuestCelebration's onShow/onHide.
++  const scheduleQuestUpdated = (delayMs: number, onHide?: () => void) => {
++    if (onHide) questUpdatedHideCallbacks.current.push(onHide);
++    if (questUpdatedPending.current) return;
++    questUpdatedPending.current = true;
++    setTimeout(() => runAfterPopupsClear(triggerQuestUpdated), delayMs);
++  };
++
+   const hideQuestUpdatedPopup = () => {
+-    setShowQuestUpdatedPopup(false);
+     // Manual dismiss (tap outside) also counts as the pop-up "disappearing" -- reopen the
+     // unlock gate right away instead of leaving it closed until the timer would've fired, and
+     // fire whatever onHide is still pending the same way.
+-    setUnlockGateOpen(true);
+-    questUpdatedHideCallback.current?.();
+-    questUpdatedHideCallback.current = null;
++    if (questUpdatedPending.current) finishQuestUpdated();
++    else setShowQuestUpdatedPopup(false);
+   };
+ 
+   const activeArea = Array.isArray(areas) ? areas.find(a => a.id === activeAreaId) : undefined;
+@@ -1304,15 +1325,14 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }):
+             ));
+           }, areaQuestUpdatedDelayMs);
+         } else {
+-          setTimeout(() => {
+-            runAfterPopupsClear(() => triggerQuestUpdated(
+-              // onHide: pick up the XP delta that addAreaXp above deliberately skipped
+-              // refreshing immediately, now that it's safe (the next node is revealed by this
+-              // same pop-up disappearing, via the auto-unlock effect watching unlockGateOpen --
+-              // this refresh is only about the area/quest's own XP total catching up).
+-              () => { void refreshAllAreas(); },
+-            ));
+-          }, areaQuestUpdatedDelayMs);
++          scheduleQuestUpdated(
++            areaQuestUpdatedDelayMs,
++            // onHide: pick up the XP delta that addAreaXp above deliberately skipped
++            // refreshing immediately, now that it's safe (the next node is revealed by this
++            // same pop-up disappearing, via the auto-unlock effect watching unlockGateOpen --
++            // this refresh is only about the area/quest's own XP total catching up).
++            () => { void refreshAllAreas(); },
++          );
+         }
+       }
+ 
+@@ -1331,7 +1351,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }):
+       // This includes the auto-unlocked next node -- except when deferAutoUnlock is set,
+       // in which case only the confirmed node itself is applied now; the rest (the
+       // already-unlocked next node) is picked up later by the auto-unlock effect once
+-      // unlockGateOpen reopens (see triggerQuestUpdated).
++      // unlockGateOpen reopens (see finishQuestUpdated).
+       if (Array.isArray(updatedLevelSkills) && !isOpeningNewLevel) {
+         setAreas(prev => prev.map(a => {
+           if (a.id !== areaId) return a;
+@@ -1772,11 +1792,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }):
+             ));
+           }, areaQuestUpdatedDelayMs);
+         } else {
+-          setTimeout(() => {
+-            runAfterPopupsClear(() => triggerQuestUpdated(
+-              () => { void refreshAllProjects(); },
+-            ));
+-          }, areaQuestUpdatedDelayMs);
++          scheduleQuestUpdated(areaQuestUpdatedDelayMs, () => { void refreshAllProjects(); });
+         }
+       }
+ 
+@@ -3108,7 +3124,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }):
+ 
+         // Waits for anything already showing/queued (e.g. the node's own staged xp/fuerza/poder
+         // from Step 3) to clear first, so quest updated always lands last.
+-        runAfterPopupsClear(triggerQuestUpdated);
++        scheduleQuestUpdated(0);
+       }
+     } catch (error) {
+       console.error("Error toggling sub-skill status:", error);
+diff --git a/client/src/lib/useManualTasks.ts b/client/src/lib/useManualTasks.ts
+index 9ed84fc..4bf2427 100644
+--- a/client/src/lib/useManualTasks.ts
++++ b/client/src/lib/useManualTasks.ts
+@@ -119,7 +119,8 @@ export function useUpdateManualTask() {
+         body: JSON.stringify(updates),
+       });
+       if (!res.ok) throw new Error("Failed to update manual task");
+-      return res.json() as Promise<ManualTodayTask>;
++      // radarUnlock: la tarea venía del mapa de habilidades y confirmarla desbloqueó esa habilidad.
++      return res.json() as Promise<ManualTodayTask & { radarUnlock?: { title: string; power: { name: string } | null } }>;
+     },
+     onSuccess: (_, variables) => {
+       queryClient.invalidateQueries({ queryKey: ["manual-today-tasks", variables.date] });
+diff --git a/client/src/lib/useTodayProgressSummary.ts b/client/src/lib/useTodayProgressSummary.ts
+index 5c876db..a183c84 100644
+--- a/client/src/lib/useTodayProgressSummary.ts
++++ b/client/src/lib/useTodayProgressSummary.ts
+@@ -142,13 +142,15 @@ export function useTodayProgressSummary() {
+     return result;
+   };
+ 
++  const manualTasksQuery = useManualTasks(todayStr, true);
++  const manualTasks = manualTasksQuery.data || [];
++
++  // Igual que en TodayProgressModal: el nodo de una tarea manual no se cuenta además como extra.
++  const manualLinkedNodeIds = new Set(manualTasks.map((t) => t.linkedSkillId).filter((id): id is string => !!id));
+   const extraNodesToday = [
+     ...collectExtraCompletedNodes(Array.isArray(areas) ? areas : []),
+     ...collectExtraCompletedNodes(Array.isArray(projects) ? projects : []),
+-  ];
+-
+-  const manualTasksQuery = useManualTasks(todayStr, true);
+-  const manualTasks = manualTasksQuery.data || [];
++  ].filter((n) => !manualLinkedNodeIds.has(n.id));
+ 
+   const slotsQuery = useTodayTaskSlots(todayStr, true);
+   const { data: slotsData } = slotsQuery;
+diff --git a/client/src/pages/SkillTree.tsx b/client/src/pages/SkillTree.tsx
+index 6fdee07..7a37cf3 100644
+--- a/client/src/pages/SkillTree.tsx
++++ b/client/src/pages/SkillTree.tsx
+@@ -31,7 +31,7 @@ import HousePriorityList from "../components/HousePriorityList";
+ import HouseRepairsList from "../components/HouseRepairsList";
+ import { EvidenceBoardModalWrapper } from "@/components/EvidenceBoardModal";
+ import { motion, AnimatePresence } from "framer-motion";
+-import { ArrowLeft, ArrowRight, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, User, Menu, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Utensils, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt, OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation, Check, HelpCircle, PiggyBank, Search, X, Pentagon } from "lucide-react";
++import { ArrowLeft, ArrowRight, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, User, Menu, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Utensils, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt, OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation, Check, HelpCircle, PiggyBank, Search, X, Pentagon, Trophy } from "lucide-react";
+ import { Button } from "@/components/ui/button";
+ import { useTheme } from "next-themes";
+ import { DiaryProvider, useDiary } from "@/lib/diary-context";
+@@ -69,6 +69,7 @@ import { useAuth } from "@/lib/auth-context";
+ import { cn } from "@/lib/utils";
+ import { useIsMobile } from "@/hooks/use-mobile";
+ import { SkillsGridJournal } from "@/components/SkillsGridJournal";
++import { AchievementsHall } from "@/components/AchievementsHall";
+ import { BodyStrengthPanel } from "@/components/BodyStrengthPanel";
+ import { LevelNavigationPanel, type LevelNavItem } from "@/components/LevelNavigationPanel";
+ import { GoalsButton, CompletedGoalsJournal } from "@/components/GoalsPanel";
+@@ -2750,6 +2751,26 @@ function ProfileSection() {
+     },
+   });
+ 
++  const { data: profileConcepts = [], isLoading: conceptsLoading } = useQuery<ProfileEntry[]>({
++    queryKey: ["/api/profile/concepts"],
++    queryFn: async () => {
++      const res = await fetch("/api/profile/concepts");
++      if (!res.ok) return [];
++      const data = await res.json();
++      return Array.isArray(data) ? data : [];
++    },
++  });
++
++  const { data: profileLimitingBeliefs = [], isLoading: limitingBeliefsLoading } = useQuery<ProfileEntry[]>({
++    queryKey: ["/api/profile/limiting-beliefs"],
++    queryFn: async () => {
++      const res = await fetch("/api/profile/limiting-beliefs");
++      if (!res.ok) return [];
++      const data = await res.json();
++      return Array.isArray(data) ? data : [];
++    },
++  });
++
+   const { data: profileExperiences = [], isLoading: experiencesLoading } = useQuery<ProfileEntry[]>({
+     queryKey: ["/api/profile/experiences"],
+     queryFn: async () => {
+@@ -2858,6 +2879,94 @@ function ProfileSection() {
+     },
+   });
+ 
++  const createConcept = useMutation({
++    mutationFn: async (data: { name: string; description: string }) => {
++      const res = await fetch("/api/profile/concepts", {
++        method: "POST",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify(data),
++      });
++      return res.json();
++    },
++    onSuccess: () => {
++      queryClient.invalidateQueries({ queryKey: ["/api/profile/concepts"] });
++      setIsAdding(false);
++      setName("");
++      setDescription("");
++    },
++  });
++
++  const updateConcept = useMutation({
++    mutationFn: async ({ id, data }: { id: string; data: { name?: string; description?: string } }) => {
++      const res = await fetch(`/api/profile/concepts/${id}`, {
++        method: "PATCH",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify(data),
++      });
++      return res.json();
++    },
++    onSuccess: () => {
++      queryClient.invalidateQueries({ queryKey: ["/api/profile/concepts"] });
++      setSelectedEntry(null);
++      setIsEditMode(false);
++    },
++  });
++
++  const deleteConcept = useMutation({
++    mutationFn: async (id: string) => {
++      await fetch(`/api/profile/concepts/${id}`, { method: "DELETE" });
++    },
++    onSuccess: () => {
++      queryClient.invalidateQueries({ queryKey: ["/api/profile/concepts"] });
++      setSelectedEntry(null);
++      setShowDeleteConfirm(false);
++    },
++  });
++
++  const createLimitingBelief = useMutation({
++    mutationFn: async (data: { name: string; description: string }) => {
++      const res = await fetch("/api/profile/limiting-beliefs", {
++        method: "POST",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify(data),
++      });
++      return res.json();
++    },
++    onSuccess: () => {
++      queryClient.invalidateQueries({ queryKey: ["/api/profile/limiting-beliefs"] });
++      setIsAdding(false);
++      setName("");
++      setDescription("");
++    },
++  });
++
++  const updateLimitingBelief = useMutation({
++    mutationFn: async ({ id, data }: { id: string; data: { name?: string; description?: string } }) => {
++      const res = await fetch(`/api/profile/limiting-beliefs/${id}`, {
++        method: "PATCH",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify(data),
++      });
++      return res.json();
++    },
++    onSuccess: () => {
++      queryClient.invalidateQueries({ queryKey: ["/api/profile/limiting-beliefs"] });
++      setSelectedEntry(null);
++      setIsEditMode(false);
++    },
++  });
++
++  const deleteLimitingBelief = useMutation({
++    mutationFn: async (id: string) => {
++      await fetch(`/api/profile/limiting-beliefs/${id}`, { method: "DELETE" });
++    },
++    onSuccess: () => {
++      queryClient.invalidateQueries({ queryKey: ["/api/profile/limiting-beliefs"] });
++      setSelectedEntry(null);
++      setShowDeleteConfirm(false);
++    },
++  });
++
+   const createExperience = useMutation({
+     mutationFn: async (data: { name: string; description: string; areaId?: string | null; projectId?: string | null }) => {
+       const res = await fetch("/api/profile/experiences", {
+@@ -2987,6 +3096,8 @@ function ProfileSection() {
+     { id: "values", label: "Valores", title: "MIS VALORES" },
+     { id: "likes", label: "Gustos", title: "LO QUE ME GUSTA" },
+     { id: "about", label: "Sobre mí", title: "SOBRE MÍ" },
++    { id: "concepts", label: "Conceptos", title: "CONCEPTOS" },
++    { id: "limitingBeliefs", label: "Creencias limitantes", title: "CREENCIAS LIMITANTES" },
+     { id: "experiences", label: "Experiencias", title: "MIS EXPERIENCIAS" },
+     { id: "contributions", label: "Contribución", title: "MIS CONTRIBUCIONES" },
+   ];
+@@ -2995,7 +3106,10 @@ function ProfileSection() {
+   const currentEntries = activeTab === "values" ? profileValues : 
+                         activeTab === "likes" ? profileLikes : 
+                         activeTab === "mission" ? profileMissions : 
+-                        activeTab === "about" ? profileAboutEntries :
++                        // Las entradas "__..." son almacenamiento interno (casa, logros manuales), no "Sobre mí".
++                        activeTab === "about" ? profileAboutEntries.filter((e) => !e.name?.startsWith("__")) :
++                        activeTab === "concepts" ? profileConcepts :
++                        activeTab === "limitingBeliefs" ? profileLimitingBeliefs :
+                         activeTab === "experiences" ? profileExperiences :
+                         profileContributions;
+ 
+@@ -3037,6 +3151,10 @@ function ProfileSection() {
+       createMission.mutate({ name: name.trim(), description: description.trim() });
+     } else if (activeTab === "about") {
+       createAboutEntry.mutate({ name: name.trim(), description: description.trim() });
++    } else if (activeTab === "concepts") {
++      createConcept.mutate({ name: name.trim().toUpperCase(), description: description.trim() });
++    } else if (activeTab === "limitingBeliefs") {
++      createLimitingBelief.mutate({ name: name.trim().toUpperCase(), description: description.trim() });
+     } else if (activeTab === "experiences") {
+       const created = await createExperience.mutateAsync({
+         name: name.trim(),
+@@ -3066,6 +3184,10 @@ function ProfileSection() {
+       updateMission.mutate({ id: selectedEntry.id, data: { name: name.trim(), description: description.trim() } });
+     } else if (activeTab === "about") {
+       updateAboutEntry.mutate({ id: selectedEntry.id, data: { name: name.trim(), description: description.trim() } });
++    } else if (activeTab === "concepts") {
++      updateConcept.mutate({ id: selectedEntry.id, data: { name: name.trim().toUpperCase(), description: description.trim() } });
++    } else if (activeTab === "limitingBeliefs") {
++      updateLimitingBelief.mutate({ id: selectedEntry.id, data: { name: name.trim().toUpperCase(), description: description.trim() } });
+     } else if (activeTab === "experiences") {
+       const experienceId = selectedEntry.id;
+       updateExperience.mutate({ id: experienceId, data: {
+@@ -3096,6 +3218,10 @@ function ProfileSection() {
+       deleteMission.mutate(selectedEntry.id);
+     } else if (activeTab === "about") {
+       deleteAboutEntry.mutate(selectedEntry.id);
++    } else if (activeTab === "concepts") {
++      deleteConcept.mutate(selectedEntry.id);
++    } else if (activeTab === "limitingBeliefs") {
++      deleteLimitingBelief.mutate(selectedEntry.id);
+     } else if (activeTab === "experiences") {
+       deleteExperience.mutate(selectedEntry.id);
+     } else if (activeTab === "contributions") {
+@@ -3121,6 +3247,10 @@ function ProfileSection() {
+       updateMission.mutate({ id: selectedEntry.id, data: { description: newDesc } });
+     } else if (activeTab === "about") {
+       updateAboutEntry.mutate({ id: selectedEntry.id, data: { description: newDesc } });
++    } else if (activeTab === "concepts") {
++      updateConcept.mutate({ id: selectedEntry.id, data: { description: newDesc } });
++    } else if (activeTab === "limitingBeliefs") {
++      updateLimitingBelief.mutate({ id: selectedEntry.id, data: { description: newDesc } });
+     } else if (activeTab === "experiences") {
+       updateExperience.mutate({ id: selectedEntry.id, data: { description: newDesc } });
+     } else if (activeTab === "contributions") {
+@@ -3215,6 +3345,8 @@ function ProfileSection() {
+       case "values": return "Valor";
+       case "likes": return "Gusto";
+       case "about": return "Sobre mí";
++      case "concepts": return "Concepto";
++      case "limitingBeliefs": return "Creencia limitante";
+       case "experiences": return "Experiencia";
+       case "contributions": return "Contribución";
+       default: return "Entrada";
+@@ -3227,13 +3359,15 @@ function ProfileSection() {
+       case "values": return "valores";
+       case "likes": return "gustos";
+       case "about": return "entradas";
++      case "concepts": return "conceptos";
++      case "limitingBeliefs": return "creencias limitantes";
+       case "experiences": return "experiencias";
+       case "contributions": return "contribuciones";
+       default: return "entradas";
+     }
+   };
+ 
+-  if (profileLoading || valuesLoading || likesLoading || missionsLoading || aboutEntriesLoading || experiencesLoading || contributionsLoading) {
++  if (profileLoading || valuesLoading || likesLoading || missionsLoading || aboutEntriesLoading || conceptsLoading || limitingBeliefsLoading || experiencesLoading || contributionsLoading) {
+     return <div className="text-muted-foreground text-sm">Cargando...</div>;
+   }
+ 
+@@ -3533,7 +3667,7 @@ function ProfileSection() {
+                   <div key={entry.id}>
+                     <button
+                       onClick={(e) => { e.stopPropagation(); setViewingEntry(entry); }}
+-                      className={`w-full text-left px-3 py-2 rounded text-sm transition-all cursor-pointer select-none ${
++                      className={`w-full text-left px-3 py-2 rounded text-sm transition-all cursor-pointer select-none ${activeTab === "concepts" || activeTab === "limitingBeliefs" ? "uppercase " : ""}${
+                         viewingEntry?.id === entry.id
+                           ? "bg-secondary text-foreground shadow-sm"
+                           : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+@@ -9272,13 +9406,16 @@ function QuestDiary() {
+               <TabsTrigger value="tools" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-tools" title="Tools">
+                 <Wrench className="h-5 w-5" />
+               </TabsTrigger>
++              <TabsTrigger value="logros" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-logros" title="Logros">
++                <Trophy className="h-5 w-5" />
++              </TabsTrigger>
+               <TabsTrigger value="objetivos" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-objetivos" title="Objetivos">
+                 <Target className="h-5 w-5" />
+               </TabsTrigger>
+               <TabsTrigger value="powers" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-powers" title="Poderes">
+                 <Shield className="h-5 w-5" />
+               </TabsTrigger>
+-              <TabsTrigger value="errores" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-errores" title="Bugs">
++              <TabsTrigger value="errores" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-errores" title="Errores">
+                 <Circle className="h-5 w-5" />
+               </TabsTrigger>
+               <TabsTrigger value="body" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-body" title="Fuerza">
+@@ -9299,6 +9436,10 @@ function QuestDiary() {
+                 <AchievementsSection learnings={learnings} tools={tools} thoughts={thoughts} />
+               </TabsContent>
+ 
++              <TabsContent value="logros" className="flex-1 min-h-0 min-w-0 mt-0">
++                <AchievementsHall />
++              </TabsContent>
++
+               <TabsContent value="skills" className="flex-1 min-h-0 min-w-0 mt-0">
+                 <SkillsGridJournal skillId="" />
+               </TabsContent>
+diff --git a/migrations/0066_profile_concepts.sql b/migrations/0066_profile_concepts.sql
+new file mode 100644
+index 0000000..b68cb60
+--- /dev/null
++++ b/migrations/0066_profile_concepts.sql
+@@ -0,0 +1,7 @@
++-- Tab "Conceptos" del perfil: misma estructura que "Sobre mí" (nombre + descripción).
++CREATE TABLE IF NOT EXISTS "profile_concepts" (
++	"id" varchar PRIMARY KEY NOT NULL,
++	"user_id" varchar REFERENCES "users"("id") ON DELETE CASCADE,
++	"name" text NOT NULL,
++	"description" text DEFAULT '' NOT NULL
++);
+diff --git a/migrations/0067_profile_limiting_beliefs.sql b/migrations/0067_profile_limiting_beliefs.sql
+new file mode 100644
+index 0000000..b85f33b
+--- /dev/null
++++ b/migrations/0067_profile_limiting_beliefs.sql
+@@ -0,0 +1,7 @@
++-- Tab "Creencias limitantes" del perfil: misma estructura que "Conceptos" (nombre + descripción).
++CREATE TABLE IF NOT EXISTS "profile_limiting_beliefs" (
++	"id" varchar PRIMARY KEY NOT NULL,
++	"user_id" varchar REFERENCES "users"("id") ON DELETE CASCADE,
++	"name" text NOT NULL,
++	"description" text DEFAULT '' NOT NULL
++);
+diff --git a/server/routes.ts b/server/routes.ts
+index da6ced0..da95151 100644
+--- a/server/routes.ts
++++ b/server/routes.ts
+@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
+ import { storage } from "./storage";
+ import { db } from "./db";
+ import { eq } from "drizzle-orm";
+-import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertJournalShadowPageSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertSourceObjectiveSchema, insertSourceBeliefSchema, insertSourceVisionSchema, insertSourcePowersSchema, insertSourceBugSchema, insertSourceBugRecordSchema, insertNodeErrorSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema, insertSpaceRepetitionPracticeSchema, insertRewiringTrackerSchema, type InsertSpaceRepetitionPractice, type SpaceRepetitionPractice, type RewiringTracker, skills, areas, projects, spaceRepetitionPractices } from "@shared/schema";
++import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertJournalShadowPageSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileConceptSchema, insertProfileLimitingBeliefSchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertSourceObjectiveSchema, insertSourceBeliefSchema, insertSourceVisionSchema, insertSourcePowersSchema, insertSourceBugSchema, insertSourceBugRecordSchema, insertNodeErrorSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema, insertSpaceRepetitionPracticeSchema, insertRewiringTrackerSchema, type InsertSpaceRepetitionPractice, type SpaceRepetitionPractice, type RewiringTracker, skills, areas, projects, spaceRepetitionPractices } from "@shared/schema";
+ import { fromError } from "zod-validation-error";
+ import { z } from "zod";
+ import cookieParser from "cookie-parser";
+@@ -175,6 +175,120 @@ async function openNextLevelIfSourceCompleted(
+   return nextLevel;
+ }
+ 
++// Un subskill logrado en el mapa de habilidades se registra como nodo SideQuest confirmado en el
++// skill tree del área con el mismo nombre que la zona del mapa, y nace como poder del área ya
++// dominado (si ya hay uno con ese nombre no se duplica). null si no hay un área con ese nombre.
++// node: "create" crea el nodo ya confirmado; "skip" no toca el árbol (el nodo ya existe y se
++// confirma por otro lado); { confirmId } confirma ese nodo pendiente si sigue en el área (el de
++// una habilidad agendada) y, si ya no existe, crea uno confirmado como siempre.
++async function findAreaByName(userId: string, areaName: string) {
++  const name = areaName.trim().toLowerCase();
++  return (await storage.getAreas(userId)).find(a => !a.archived && a.name.trim().toLowerCase() === name);
++}
++async function renameRadarZone(userId: string, oldName: string, newName: string) {
++  const user = await storage.getUserById(userId);
++  const data = user?.radarMaps as any;
++  if (!data || !Array.isArray(data.areas)) return;
++  const old = oldName.trim().toLowerCase();
++  const zones = data.areas.filter((z: any) => typeof z?.name === "string" && z.name.trim().toLowerCase() === old);
++  if (!zones.length) return;
++  for (const z of zones) z.name = newName;
++  await storage.updateUserRadarMaps(userId, data);
++}
++async function logRadarSideQuest(
++  userId: string,
++  areaName: string,
++  title: string,
++  description: string,
++  node: "create" | "skip" | { confirmId: string } = "create",
++) {
++  const match = await findAreaByName(userId, areaName);
++  if (!match) return null;
++  if (node !== "skip") {
++    const pendingNode = typeof node === "object" ? await storage.getSkill(node.confirmId) : undefined;
++    if (pendingNode && pendingNode.areaId === match.id) {
++      if (pendingNode.status !== "mastered") {
++        await storage.updateSkill(pendingNode.id, { status: "mastered", completedAt: new Date() });
++        await storage.recalculateAvailableStatus(pendingNode.level, { areaId: match.id });
++      }
++    } else {
++      await createLoggedSideQuestNode({ areaId: match.id }, userId, title);
++    }
++  }
++  const existingPowers = await storage.getSourcePowers(userId, "area", match.id);
++  const alreadyExists = existingPowers.some(p => p.name.trim().toLowerCase() === title.toLowerCase());
++  let power = null;
++  if (!alreadyExists) {
++    const created = await storage.createSourcePower({ userId, areaId: match.id, name: title, description });
++    power = (await storage.updateSourcePower(created.id, { isUnlocked: 2 })) ?? created;
++  }
++  return { power };
++}
++
++// Habilidad del mapa de habilidades agendada en "Tareas de hoy": el mapa guarda en el eje
++// `sched[j] = <id de la tarea>` (j = índice de la habilidad). Confirmar esa tarea desbloquea la
++// habilidad igual que tocarla en el mapa (sube el nivel del eje y registra el SideQuest + poder),
++// siempre que siga siendo la próxima del eje. El vínculo se borra al usarse.
++// Las actividades de un eje (leaf.acts[nivel] = [{n, d}]) guardan el id de su tarea en `t`: la
++// tarea y la actividad quedan sincronizadas en los dos sentidos (confirmar/desconfirmar marca
++// la actividad como hecha/pendiente, igual que tocarla o "Volver a bloquear" en el mapa).
++const RADAR_PER = 5;
++async function syncRadarForTask(userId: string, taskId: string, done: 0 | 1, hasNode: boolean) {
++  const user = await storage.getUserById(userId);
++  const data = user?.radarMaps as any;
++  if (!data || !Array.isArray(data.areas)) return null;
++  for (const zone of data.areas) {
++    for (const root of Array.isArray(zone?.maps) ? zone.maps : []) {
++      const leaves: any[] = [];
++      for (const c of Array.isArray(root?.children) ? root.children : []) {
++        if (Array.isArray(c?.children)) leaves.push(...c.children);
++        else leaves.push(c);
++      }
++      for (const leaf of leaves) {
++        const acts = leaf?.acts && typeof leaf.acts === "object" ? Object.values(leaf.acts).flat() as any[] : [];
++        const act = acts.find(x => x && x.t === taskId);
++        if (act) {
++          if (!!act.d !== (done === 1)) {
++            act.d = done === 1;
++            await storage.updateUserRadarMaps(userId, data);
++          }
++          // Actividad agendada sin nodo propio (de antes de que se crearan al agendarlas): al
++          // confirmarla queda igual como SideQuest confirmado, vinculado a la tarea.
++          if (done === 1 && !hasNode) {
++            const match = await findAreaByName(userId, String(zone.name ?? ""));
++            const nodeId = match ? await createLoggedSideQuestNode({ areaId: match.id }, userId, String(act.n ?? "")) : null;
++            if (nodeId) {
++              await storage.updateManualTodayTask(taskId, { linkedSkillId: nodeId });
++              return { title: String(act.n ?? ""), power: null };
++            }
++          }
++          return null;
++        }
++        if (done !== 1 || !leaf?.sched || typeof leaf.sched !== "object") continue;
++        const key = Object.keys(leaf.sched).find(k => leaf.sched[k] === taskId);
++        if (key === undefined) continue;
++        const j = Number(key);
++        delete leaf.sched[key];
++        const title = leaf.tiers?.[Math.floor(j / RADAR_PER)]?.[j % RADAR_PER];
++        const unlock = leaf.level === j && typeof title === "string" && !!title;
++        if (unlock) {
++          leaf.level = j + 1;
++          // Era el foco del mapa (leaf.foco = j): confirmarla lo cumple.
++          if (leaf.foco === j) delete leaf.foco;
++        }
++        await storage.updateUserRadarMaps(userId, data);
++        if (!unlock) return null;
++        const description = typeof leaf.descs?.[j] === "string" ? leaf.descs[j] : "";
++        // Si la tarea ya tiene su nodo SideQuest (se creó pendiente al agendarla), ese nodo lo
++        // confirma la app junto con la tarea (con su XP/pop-ups): acá no se crea otro.
++        const result = await logRadarSideQuest(userId, String(zone.name ?? ""), title, description, hasNode ? "skip" : "create");
++        return { title: title as string, power: result?.power ?? null };
++      }
++    }
++  }
++  return null;
++}
++
+ // Target-level order after a move: the moved node takes the exact slot of the placeholder
+ // it replaced (so it fills the top-most generic node first); with no placeholder replaced
+ // it's appended at the end.
+@@ -190,10 +304,13 @@ function orderWithMovedInSlot(targetOthers: any[], movedSkill: any, removedPosit
+ // hecho como un nodo SideQuest ya confirmado. Entra en el lugar del nodo desbloqueado del árbol
+ // (que queda después, dependiendo del nuevo, y sigue desbloqueado); si no hay ninguno, justo
+ // después del último confirmado. No hace nada si el área/quest no es del usuario.
++// Con pending = true el nodo nace sin confirmar (desbloqueado, y el que estaba desbloqueado
++// queda bloqueado detrás): es el de una habilidad del mapa agendada en "Tareas de hoy".
+ async function createLoggedSideQuestNode(
+   link: { areaId?: string | null; projectId?: string | null },
+   userId: string,
+   title: string,
++  pending = false,
+ ): Promise<string | null> {
+   const areaId = link.areaId || undefined;
+   const projectId = areaId ? undefined : (link.projectId || undefined);
+@@ -205,8 +322,17 @@ async function createLoggedSideQuestNode(
+   const tree = (areaId ? await storage.getSkills(areaId) : await storage.getProjectSkills(projectId!))
+     .filter(s => !s.parentSkillId)
+     .sort((a, b) => (a.level - b.level) || ((a.levelPosition ?? 0) - (b.levelPosition ?? 0)));
+-  const available = tree.find(s => s.status === "available" && (s.levelPosition ?? 0) > 1);
+-  const anchor = available ?? [...tree].reverse().find(s => s.status === "mastered");
++  let available = tree.find(s => s.status === "available" && (s.levelPosition ?? 0) > 1);
++  let anchor = available ?? [...tree].reverse().find(s => s.status === "mastered");
++  // Un pendiente nuevo va después de los SideQuest pendientes que ya haya (otras habilidades
++  // agendadas): quedan en fila en el orden en que se agendaron, sin que el último bloquee al anterior.
++  if (pending && available) {
++    const lvl = tree.filter(s => s.level === available!.level);
++    let idx = lvl.findIndex(s => s.id === available!.id);
++    while (idx < lvl.length && lvl[idx].isSideQuest === 1 && lvl[idx].status !== "mastered") idx++;
++    if (idx < lvl.length) { available = lvl[idx]; anchor = available; }
++    else { anchor = lvl[lvl.length - 1]; available = undefined; }
++  }
+   if (!anchor) return null;
+ 
+   const level = anchor.level;
+@@ -214,7 +340,7 @@ async function createLoggedSideQuestNode(
+     ...(areaId ? { areaId } : { projectId }),
+     title,
+     description: "",
+-    status: "mastered",
++    status: pending ? "available" : "mastered",
+     x: anchor.x,
+     y: anchor.y,
+     dependencies: available ? (Array.isArray(available.dependencies) ? available.dependencies : []) : [anchor.id],
+@@ -224,7 +350,7 @@ async function createLoggedSideQuestNode(
+     manualLock: 0,
+     isSideQuest: 1,
+   });
+-  await storage.updateSkill(skill.id, { completedAt: new Date() });
++  if (!pending) await storage.updateSkill(skill.id, { completedAt: new Date() });
+   if (available) await storage.updateSkill(available.id, { dependencies: [skill.id] });
+ 
+   // Renumera el nivel con el nuevo en su lugar (mismo criterio que POST /api/skills).
+@@ -235,7 +361,7 @@ async function createLoggedSideQuestNode(
+     if (ordered[i].levelPosition !== i + 1) await storage.updateSkill(ordered[i].id, { levelPosition: i + 1 });
+   }
+   await storage.recalculateYCoordinates({ areaId, projectId });
+-  await storage.recalculateAvailableStatus(level, { areaId, projectId, excludeSkillId: skill.id });
++  await storage.recalculateAvailableStatus(level, { areaId, projectId, ...(pending ? {} : { excludeSkillId: skill.id }) });
+   return skill.id;
+ }
+ 
+@@ -566,30 +692,130 @@ export async function registerRoutes(
+   // skill tree del área con el mismo nombre que la zona del mapa.
+   app.post("/api/radar-maps/side-quest", requireAuth, async (req, res) => {
+     try {
+-      const area = typeof req.body?.area === "string" ? req.body.area.trim().toLowerCase() : "";
++      const area = typeof req.body?.area === "string" ? req.body.area : "";
+       const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
+       const description = typeof req.body?.description === "string" ? req.body.description.trim() : "";
+-      if (!area || !title) {
++      if (!area.trim() || !title) {
+         res.status(400).json({ message: "area y title son obligatorios" });
+         return;
+       }
+-      const match = (await storage.getAreas(req.userId!))
+-        .find(a => !a.archived && a.name.trim().toLowerCase() === area);
+-      if (!match) {
++      // Habilidad que estaba agendada (taskId = su tarea): desbloquearla en el mapa confirma su
++      // nodo SideQuest pendiente y su tarea, en vez de crear otro nodo.
++      const task = typeof req.body?.taskId === "string" ? await storage.getManualTodayTask(req.body.taskId) : undefined;
++      const ownTask = task && task.userId === req.userId ? task : undefined;
++      const result = await logRadarSideQuest(
++        req.userId!, area, title, description,
++        ownTask?.linkedSkillId ? { confirmId: ownTask.linkedSkillId } : "create",
++      );
++      if (ownTask && ownTask.done !== 1) await storage.updateManualTodayTask(ownTask.id, { done: 1 });
++      if (!result) {
+         res.status(404).json({ message: "Área no encontrada" });
+         return;
+       }
+-      await createLoggedSideQuestNode({ areaId: match.id }, req.userId!, title);
+-      // El subskill confirmado también nace como poder del área, directamente dominado.
+-      // Si ya hay uno con ese nombre no se duplica.
+-      const existingPowers = await storage.getSourcePowers(req.userId!, "area", match.id);
+-      const alreadyExists = existingPowers.some(p => p.name.trim().toLowerCase() === title.toLowerCase());
+-      let power = null;
+-      if (!alreadyExists) {
+-        const created = await storage.createSourcePower({ userId: req.userId!, areaId: match.id, name: title, description });
+-        power = (await storage.updateSourcePower(created.id, { isUnlocked: 2 })) ?? created;
++      res.json({ ok: true, power: result.power });
++    } catch (error: any) {
++      res.status(500).json({ message: error.message });
++    }
++  });
++
++  // Actividad del mapa completada (done = 1): queda como nodo SideQuest confirmado en el área con
++  // el nombre de la zona (sin poder: es un paso hacia la habilidad, no la habilidad) y como tarea
++  // hecha en "Tareas de hoy" del día `date`. Si estaba agendada (taskId) se usa esa tarea (pasa a
++  // ese día) y su nodo pendiente; si no, se crean. done = 0 ("Volver a bloquear") desconfirma la
++  // tarea y su nodo. Devuelve la tarea: el mapa guarda su id en la actividad (x.t).
++  app.post("/api/radar-maps/activity", requireAuth, async (req, res) => {
++    try {
++      const area = typeof req.body?.area === "string" ? req.body.area : "";
++      const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
++      const date = typeof req.body?.date === "string" ? req.body.date : "";
++      const done = req.body?.done === 0 ? 0 : 1;
++      const found = typeof req.body?.taskId === "string" ? await storage.getManualTodayTask(req.body.taskId) : undefined;
++      const task = found && found.userId === req.userId ? found : undefined;
++      if (done === 0) {
++        if (!task) { res.status(404).json({ message: "Tarea no encontrada" }); return; }
++        const node = task.linkedSkillId ? await storage.getSkill(task.linkedSkillId) : undefined;
++        if (node?.areaId && node.isSideQuest === 1 && node.status === "mastered") {
++          await storage.updateSkill(node.id, { status: "available", completedAt: null });
++          await storage.recalculateAvailableStatus(node.level, { areaId: node.areaId });
++        }
++        res.json(task.done === 0 ? task : await storage.updateManualTodayTask(task.id, { done: 0 }));
++        return;
++      }
++      if (!title || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
++        res.status(400).json({ message: "title y date (YYYY-MM-DD) son obligatorios" });
++        return;
++      }
++      const match = area.trim() ? await findAreaByName(req.userId!, area) : undefined;
++      const pending = task?.linkedSkillId ? await storage.getSkill(task.linkedSkillId) : undefined;
++      let nodeId: string | null = null;
++      if (pending && (!match || pending.areaId === match.id)) {
++        nodeId = pending.id;
++        if (pending.status !== "mastered") {
++          await storage.updateSkill(pending.id, { status: "mastered", completedAt: new Date() });
++          await storage.recalculateAvailableStatus(pending.level, { areaId: pending.areaId! });
++        }
++      } else if (match) {
++        nodeId = await createLoggedSideQuestNode({ areaId: match.id }, req.userId!, title);
++      }
++      // nodeCreated: false avisa al mapa que la actividad quedó solo como tarea (sin área con el
++      // nombre de la zona, p. ej. si el área se renombró, no hay dónde crear el SideQuest).
++      if (task) {
++        if (task.date !== date) await storage.deleteTodayTaskSlot(req.userId!, task.date, "manual", task.id);
++        const updated = await storage.updateManualTodayTask(task.id, {
++          done: 1,
++          date,
++          ...(nodeId && nodeId !== task.linkedSkillId ? { linkedSkillId: nodeId } : {}),
++        });
++        res.json({ ...updated, nodeCreated: !!nodeId });
++        return;
++      }
++      const created = await storage.createManualTodayTask({
++        userId: req.userId!,
++        date,
++        title,
++        kind: "task",
++        done: 1,
++        ...(match && nodeId ? { linkedKind: "area" as const, linkedParentId: match.id, linkedSkillId: nodeId } : {}),
++      });
++      res.status(201).json({ ...created, nodeCreated: !!nodeId });
++    } catch (error: any) {
++      res.status(500).json({ message: error.message });
++    }
++  });
++
++  // Agendar una habilidad del mapa en "Tareas de hoy": crea la tarea del día elegido y, si la
++  // zona del mapa es un área del skill tree, un nodo SideQuest pendiente en el lugar del nodo
++  // desbloqueado de esa área, vinculado a la tarea (confirmar la tarea confirma el nodo, igual
++  // que los eventos con área). Sin área que coincida, queda como tarea suelta.
++  app.post("/api/radar-maps/schedule", requireAuth, async (req, res) => {
++    try {
++      const area = typeof req.body?.area === "string" ? req.body.area : "";
++      const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
++      const date = typeof req.body?.date === "string" ? req.body.date : "";
++      if (!title || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
++        res.status(400).json({ message: "title y date (YYYY-MM-DD) son obligatorios" });
++        return;
++      }
++      // Ya agendada y sin confirmar: se mueve esa tarea (con su nodo) al día nuevo.
++      const previous = typeof req.body?.replaceTaskId === "string" ? await storage.getManualTodayTask(req.body.replaceTaskId) : undefined;
++      if (previous && previous.userId === req.userId && previous.done !== 1) {
++        if (previous.date === date) { res.json(previous); return; }
++        const moved = await storage.updateManualTodayTask(previous.id, { date });
++        await storage.deleteTodayTaskSlot(req.userId!, previous.date, "manual", previous.id);
++        res.json(moved);
++        return;
+       }
+-      res.json({ ok: true, power });
++      const match = area.trim() ? await findAreaByName(req.userId!, area) : undefined;
++      const nodeId = match ? await createLoggedSideQuestNode({ areaId: match.id }, req.userId!, title, true) : null;
++      const task = await storage.createManualTodayTask({
++        userId: req.userId!,
++        date,
++        title,
++        kind: "task",
++        done: 0,
++        ...(match && nodeId ? { linkedKind: "area" as const, linkedParentId: match.id, linkedSkillId: nodeId } : {}),
++      });
++      res.status(201).json(task);
+     } catch (error: any) {
+       res.status(500).json({ message: error.message });
+     }
+@@ -676,6 +902,11 @@ export async function registerRoutes(
+         return;
+       }
+       const area = await storage.updateArea(req.params.id, req.body);
++      // El mapa de habilidades vincula cada zona con su área por nombre: si el área se renombra,
++      // la zona pasa a llamarse igual (si no, sus SideQuests y tareas dejan de encontrar el área).
++      if (typeof req.body?.name === "string" && req.body.name.trim() && req.body.name.trim() !== existingArea.name.trim()) {
++        await renameRadarZone(req.userId!, existingArea.name, req.body.name.trim());
++      }
+       res.json(area);
+     } catch (error: any) {
+       res.status(500).json({ message: error.message });
+@@ -3599,6 +3830,128 @@ export async function registerRoutes(
+     }
+   });
+ 
++  // Profile - Concepts (los nombres siempre se guardan en mayúscula)
++  app.get("/api/profile/concepts", requireAuth, async (req, res) => {
++    try {
++      const entries = await storage.getProfileConcepts(req.userId!);
++      res.json(entries);
++    } catch (error: any) {
++      res.status(500).json({ message: error.message });
++    }
++  });
++
++  app.post("/api/profile/concepts", requireAuth, async (req, res) => {
++    try {
++      const data = { ...req.body, userId: req.userId };
++      if (typeof data.name === "string") data.name = data.name.toUpperCase();
++      const validated = insertProfileConceptSchema.parse(data);
++      const entry = await storage.createProfileConcept(validated);
++      res.status(201).json(entry);
++    } catch (error: any) {
++      const validationError = fromError(error);
++      res.status(400).json({ message: validationError.toString() });
++    }
++  });
++
++  app.patch("/api/profile/concepts/:id", requireAuth, async (req, res) => {
++    try {
++      const existing = await storage.getProfileConcept(req.params.id);
++      if (!existing) {
++        res.status(404).json({ message: "Concept not found" });
++        return;
++      }
++      if (existing.userId !== req.userId) {
++        res.status(403).json({ message: "No tienes permiso para modificar esta entrada" });
++        return;
++      }
++      const data = { ...req.body };
++      if (typeof data.name === "string") data.name = data.name.toUpperCase();
++      const updated = await storage.updateProfileConcept(req.params.id, data);
++      res.json(updated);
++    } catch (error: any) {
++      res.status(500).json({ message: error.message });
++    }
++  });
++
++  app.delete("/api/profile/concepts/:id", requireAuth, async (req, res) => {
++    try {
++      const existing = await storage.getProfileConcept(req.params.id);
++      if (!existing) {
++        res.status(404).json({ message: "Concept not found" });
++        return;
++      }
++      if (existing.userId !== req.userId) {
++        res.status(403).json({ message: "No tienes permiso para eliminar esta entrada" });
++        return;
++      }
++      await storage.deleteProfileConcept(req.params.id);
++      res.status(204).send();
++    } catch (error: any) {
++      res.status(500).json({ message: error.message });
++    }
++  });
++
++  // Profile - Limiting Beliefs (los nombres siempre se guardan en mayúscula)
++  app.get("/api/profile/limiting-beliefs", requireAuth, async (req, res) => {
++    try {
++      const entries = await storage.getProfileLimitingBeliefs(req.userId!);
++      res.json(entries);
++    } catch (error: any) {
++      res.status(500).json({ message: error.message });
++    }
++  });
++
++  app.post("/api/profile/limiting-beliefs", requireAuth, async (req, res) => {
++    try {
++      const data = { ...req.body, userId: req.userId };
++      if (typeof data.name === "string") data.name = data.name.toUpperCase();
++      const validated = insertProfileLimitingBeliefSchema.parse(data);
++      const entry = await storage.createProfileLimitingBelief(validated);
++      res.status(201).json(entry);
++    } catch (error: any) {
++      const validationError = fromError(error);
++      res.status(400).json({ message: validationError.toString() });
++    }
++  });
++
++  app.patch("/api/profile/limiting-beliefs/:id", requireAuth, async (req, res) => {
++    try {
++      const existing = await storage.getProfileLimitingBelief(req.params.id);
++      if (!existing) {
++        res.status(404).json({ message: "Limiting belief not found" });
++        return;
++      }
++      if (existing.userId !== req.userId) {
++        res.status(403).json({ message: "No tienes permiso para modificar esta entrada" });
++        return;
++      }
++      const data = { ...req.body };
++      if (typeof data.name === "string") data.name = data.name.toUpperCase();
++      const updated = await storage.updateProfileLimitingBelief(req.params.id, data);
++      res.json(updated);
++    } catch (error: any) {
++      res.status(500).json({ message: error.message });
++    }
++  });
++
++  app.delete("/api/profile/limiting-beliefs/:id", requireAuth, async (req, res) => {
++    try {
++      const existing = await storage.getProfileLimitingBelief(req.params.id);
++      if (!existing) {
++        res.status(404).json({ message: "Limiting belief not found" });
++        return;
++      }
++      if (existing.userId !== req.userId) {
++        res.status(403).json({ message: "No tienes permiso para eliminar esta entrada" });
++        return;
++      }
++      await storage.deleteProfileLimitingBelief(req.params.id);
++      res.status(204).send();
++    } catch (error: any) {
++      res.status(500).json({ message: error.message });
++    }
++  });
++
+   // Home Needs - cross-device sync
+   const HOME_NEEDS_STORAGE_NAME = "__home_needs_tasks__";
+ 
+@@ -4032,6 +4385,76 @@ export async function registerRoutes(
+     }
+   });
+ 
++  // Logros cargados a mano desde la tab "Logros" del Journal (mantener apretado el fondo).
++  // Mismo almacenamiento que las reparaciones: un JSON dentro de un profile_about_entry.
++  const MANUAL_ACHIEVEMENTS_STORAGE_NAME = "__manual_achievements__";
++
++  type ManualAchievement = { id: string; emoji: string; title: string; detail: string; date: string };
++
++  function sanitizeManualAchievements(input: unknown): ManualAchievement[] {
++    if (!Array.isArray(input)) return [];
++
++    return input
++      .map((item) => {
++        const a = item as Record<string, unknown>;
++        if (typeof a.id !== "string" || typeof a.title !== "string" || !a.title.trim()) return null;
++        return {
++          id: a.id,
++          emoji: typeof a.emoji === "string" && a.emoji.trim() ? a.emoji : "🏅",
++          title: a.title,
++          detail: typeof a.detail === "string" ? a.detail : "",
++          date: typeof a.date === "string" ? a.date : "",
++        };
++      })
++      .filter((item): item is ManualAchievement => item !== null);
++  }
++
++  app.get("/api/manual-achievements", requireAuth, async (req, res) => {
++    try {
++      const entries = await storage.getProfileAboutEntries(req.userId!);
++      const storageEntry = entries.find((entry) => entry.name === MANUAL_ACHIEVEMENTS_STORAGE_NAME);
++
++      if (!storageEntry) {
++        res.json([]);
++        return;
++      }
++
++      let parsed: unknown = [];
++      try {
++        parsed = JSON.parse(storageEntry.description || "[]");
++      } catch {
++        parsed = [];
++      }
++
++      res.json(sanitizeManualAchievements(parsed));
++    } catch (error: any) {
++      res.status(500).json({ message: error.message });
++    }
++  });
++
++  app.put("/api/manual-achievements", requireAuth, async (req, res) => {
++    try {
++      const items = sanitizeManualAchievements(req.body?.items);
++      const entries = await storage.getProfileAboutEntries(req.userId!);
++      const storageEntry = entries.find((entry) => entry.name === MANUAL_ACHIEVEMENTS_STORAGE_NAME);
++
++      if (storageEntry) {
++        await storage.updateProfileAboutEntry(storageEntry.id, {
++          description: JSON.stringify(items),
++        });
++      } else {
++        await storage.createProfileAboutEntry({
++          userId: req.userId!,
++          name: MANUAL_ACHIEVEMENTS_STORAGE_NAME,
++          description: JSON.stringify(items),
++        });
++      }
++      res.json(items);
++    } catch (error: any) {
++      res.status(500).json({ message: error.message });
++    }
++  });
++
+   // Profile - Experiences
+   app.get("/api/profile/experiences", requireAuth, async (req, res) => {
+     try {
+@@ -5960,7 +6383,12 @@ export async function registerRoutes(
+       if (date !== undefined && existing.date !== date) {
+         await storage.deleteTodayTaskSlot(req.userId!, existing.date, "manual", existing.id);
+       }
+-      res.json(updated);
++      // Tarea agendada desde el mapa de habilidades: confirmarla desbloquea esa habilidad (o
++      // marca esa actividad; desconfirmarla la vuelve a dejar pendiente).
++      const radarUnlock = done !== undefined && done !== existing.done
++        ? await syncRadarForTask(req.userId!, existing.id, done, !!existing.linkedSkillId)
++        : null;
++      res.json(radarUnlock ? { ...updated, radarUnlock } : updated);
+     } catch (error: any) {
+       res.status(500).json({ message: error.message });
+     }
+diff --git a/server/storage.ts b/server/storage.ts
+index fbb1c9b..d2e2392 100644
+--- a/server/storage.ts
++++ b/server/storage.ts
+@@ -1,7 +1,7 @@
+ import { eq, and, or, asc, sql, inArray, gte, lte } from "drizzle-orm";
+ import { randomUUID } from "crypto";
+ import { db, pool } from "./db";
+-import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type JournalShadowPage, type InsertJournalShadowPage, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourceObjective, type InsertSourceObjective, type SourceBelief, type InsertSourceBelief, type SourceVision, type InsertSourceVision, type SourcePowers, type InsertSourcePowers, type SourceBug, type InsertSourceBug, type SourceBugReflexion, type SourceBugRecord, type InsertSourceBugRecord, type NodeError, type InsertNodeError, type NodeErrorRecord, type InsertNodeErrorRecord, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type BookWishlistItem, type InsertBookWishlistItem, type FinancialGoal, type InsertFinancialGoal, type BudgetQuarter, type InsertBudgetQuarter, type BudgetCategory, type InsertBudgetCategory, type IncomeSource, type InsertIncomeSource, type DollarRate, type InsertDollarRate, type PersonalIncome, type InsertPersonalIncome, type SavingMission, type InsertSavingMission, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, type BodyProgressRow, type InsertBodyProgress, type TodayTaskSlot, type InsertTodayTaskSlot, type TodayTaskSubstep, type HabitSubstep, type ManualTodayTask, type InsertManualTodayTask, type MealTrackerDay, type InsertMealTrackerDay, type MealTrackerCustomOption, type InsertMealTrackerCustomOption, type MealTrackerDish, type InsertMealTrackerDish, type MealTrackerMeta, type QuestionProblem, type InsertQuestionProblem, type QuestionItem, type InsertQuestionItem, type QuestionProblemWithItems, type EvidenceBoardRow, evidenceBoards, type LifeGoalsRow, type LifeGoalItem, type CompletedLifeGoal, lifeGoals, questionProblems, questionItems, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, journalShadowPages, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourceObjectives, sourceBeliefs, sourceVision, sourcePowers, sourceBugs, sourceBugRecords, nodeErrors, nodeErrorRecords, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, bookWishlist, financialGoals, budgetQuarters, budgetCategories, incomeSources, dollarRates, personalIncomes, savingMissions, rewiringTrackers, rewiringTrackerRecords, bodyProgress, todayTaskSlots, todayTaskSubsteps, habitSubsteps, todayPriorities, manualTodayTasks, mealTrackerDays, mealTrackerCustomOptions, mealTrackerDishes, mealTrackerMeta } from "@shared/schema";
++import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type JournalShadowPage, type InsertJournalShadowPage, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type ProfileConcept, type InsertProfileConcept, type ProfileLimitingBelief, type InsertProfileLimitingBelief, type JournalLearning, type InsertJournalLearning, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourceObjective, type InsertSourceObjective, type SourceBelief, type InsertSourceBelief, type SourceVision, type InsertSourceVision, type SourcePowers, type InsertSourcePowers, type SourceBug, type InsertSourceBug, type SourceBugReflexion, type SourceBugRecord, type InsertSourceBugRecord, type NodeError, type InsertNodeError, type NodeErrorRecord, type InsertNodeErrorRecord, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type BookWishlistItem, type InsertBookWishlistItem, type FinancialGoal, type InsertFinancialGoal, type BudgetQuarter, type InsertBudgetQuarter, type BudgetCategory, type InsertBudgetCategory, type IncomeSource, type InsertIncomeSource, type DollarRate, type InsertDollarRate, type PersonalIncome, type InsertPersonalIncome, type SavingMission, type InsertSavingMission, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, type BodyProgressRow, type InsertBodyProgress, type TodayTaskSlot, type InsertTodayTaskSlot, type TodayTaskSubstep, type HabitSubstep, type ManualTodayTask, type InsertManualTodayTask, type MealTrackerDay, type InsertMealTrackerDay, type MealTrackerCustomOption, type InsertMealTrackerCustomOption, type MealTrackerDish, type InsertMealTrackerDish, type MealTrackerMeta, type QuestionProblem, type InsertQuestionProblem, type QuestionItem, type InsertQuestionItem, type QuestionProblemWithItems, type EvidenceBoardRow, evidenceBoards, type LifeGoalsRow, type LifeGoalItem, type CompletedLifeGoal, lifeGoals, questionProblems, questionItems, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, journalShadowPages, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, profileConcepts, profileLimitingBeliefs, journalLearnings, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourceObjectives, sourceBeliefs, sourceVision, sourcePowers, sourceBugs, sourceBugRecords, nodeErrors, nodeErrorRecords, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, bookWishlist, financialGoals, budgetQuarters, budgetCategories, incomeSources, dollarRates, personalIncomes, savingMissions, rewiringTrackers, rewiringTrackerRecords, bodyProgress, todayTaskSlots, todayTaskSubsteps, habitSubsteps, todayPriorities, manualTodayTasks, mealTrackerDays, mealTrackerCustomOptions, mealTrackerDishes, mealTrackerMeta } from "@shared/schema";
+ 
+ const normalizeSourceBugStatus = (status: string): "identificado" | "debugueando" | "debugueado" => {
+   if (status === "activo") return "identificado";
+@@ -204,6 +204,20 @@ export interface IStorage {
+   updateProfileAboutEntry(id: string, entry: Partial<InsertProfileAboutEntry>): Promise<ProfileAboutEntry | undefined>;
+   deleteProfileAboutEntry(id: string): Promise<void>;
+ 
++  // Profile - Concepts
++  getProfileConcepts(userId: string): Promise<ProfileConcept[]>;
++  getProfileConcept(id: string): Promise<ProfileConcept | undefined>;
++  createProfileConcept(entry: InsertProfileConcept): Promise<ProfileConcept>;
++  updateProfileConcept(id: string, entry: Partial<InsertProfileConcept>): Promise<ProfileConcept | undefined>;
++  deleteProfileConcept(id: string): Promise<void>;
++
++  // Profile - Limiting Beliefs
++  getProfileLimitingBeliefs(userId: string): Promise<ProfileLimitingBelief[]>;
++  getProfileLimitingBelief(id: string): Promise<ProfileLimitingBelief | undefined>;
++  createProfileLimitingBelief(entry: InsertProfileLimitingBelief): Promise<ProfileLimitingBelief>;
++  updateProfileLimitingBelief(id: string, entry: Partial<InsertProfileLimitingBelief>): Promise<ProfileLimitingBelief | undefined>;
++  deleteProfileLimitingBelief(id: string): Promise<void>;
++
+   // Journal - Learnings
+   getJournalLearnings(userId: string): Promise<JournalLearning[]>;
+   createJournalLearning(learning: InsertJournalLearning): Promise<JournalLearning>;
+@@ -2260,6 +2274,56 @@ export class DbStorage implements IStorage {
+     await db.delete(profileAboutEntries).where(eq(profileAboutEntries.id, id));
+   }
+ 
++  // Profile - Concepts
++  async getProfileConcepts(userId: string): Promise<ProfileConcept[]> {
++    return await db.select().from(profileConcepts).where(eq(profileConcepts.userId, userId));
++  }
++
++  async getProfileConcept(id: string): Promise<ProfileConcept | undefined> {
++    const result = await db.select().from(profileConcepts).where(eq(profileConcepts.id, id));
++    return result[0];
++  }
++
++  async createProfileConcept(entry: InsertProfileConcept): Promise<ProfileConcept> {
++    const id = randomUUID();
++    const result = await db.insert(profileConcepts).values({ id, ...entry }).returning();
++    return result[0];
++  }
++
++  async updateProfileConcept(id: string, entry: Partial<InsertProfileConcept>): Promise<ProfileConcept | undefined> {
++    const result = await db.update(profileConcepts).set(entry).where(eq(profileConcepts.id, id)).returning();
++    return result[0];
++  }
++
++  async deleteProfileConcept(id: string): Promise<void> {
++    await db.delete(profileConcepts).where(eq(profileConcepts.id, id));
++  }
++
++  // Profile - Limiting Beliefs
++  async getProfileLimitingBeliefs(userId: string): Promise<ProfileLimitingBelief[]> {
++    return await db.select().from(profileLimitingBeliefs).where(eq(profileLimitingBeliefs.userId, userId));
++  }
++
++  async getProfileLimitingBelief(id: string): Promise<ProfileLimitingBelief | undefined> {
++    const result = await db.select().from(profileLimitingBeliefs).where(eq(profileLimitingBeliefs.id, id));
++    return result[0];
++  }
++
++  async createProfileLimitingBelief(entry: InsertProfileLimitingBelief): Promise<ProfileLimitingBelief> {
++    const id = randomUUID();
++    const result = await db.insert(profileLimitingBeliefs).values({ id, ...entry }).returning();
++    return result[0];
++  }
++
++  async updateProfileLimitingBelief(id: string, entry: Partial<InsertProfileLimitingBelief>): Promise<ProfileLimitingBelief | undefined> {
++    const result = await db.update(profileLimitingBeliefs).set(entry).where(eq(profileLimitingBeliefs.id, id)).returning();
++    return result[0];
++  }
++
++  async deleteProfileLimitingBelief(id: string): Promise<void> {
++    await db.delete(profileLimitingBeliefs).where(eq(profileLimitingBeliefs.id, id));
++  }
++
+   // Journal - Learnings
+   async getJournalLearnings(userId: string): Promise<JournalLearning[]> {
+     return await db.select().from(journalLearnings).where(eq(journalLearnings.userId, userId));
+diff --git a/shared/schema.ts b/shared/schema.ts
+index 285992c..b4baa0a 100644
+--- a/shared/schema.ts
++++ b/shared/schema.ts
+@@ -1018,13 +1018,33 @@ export const profileAboutEntries = pgTable("profile_about_entries", {
+   description: text("description").notNull().default(""),
+ });
+ 
++export const profileConcepts = pgTable("profile_concepts", {
++  id: varchar("id").primaryKey(),
++  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
++  name: text("name").notNull(),
++  description: text("description").notNull().default(""),
++});
++
++export const profileLimitingBeliefs = pgTable("profile_limiting_beliefs", {
++  id: varchar("id").primaryKey(),
++  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
++  name: text("name").notNull(),
++  description: text("description").notNull().default(""),
++});
++
+ export const insertProfileMissionSchema = createInsertSchema(profileMissions).omit({ id: true });
+ export const insertProfileAboutEntrySchema = createInsertSchema(profileAboutEntries).omit({ id: true });
++export const insertProfileConceptSchema = createInsertSchema(profileConcepts).omit({ id: true });
++export const insertProfileLimitingBeliefSchema = createInsertSchema(profileLimitingBeliefs).omit({ id: true });
+ 
+ export type InsertProfileMission = z.infer<typeof insertProfileMissionSchema>;
+ export type ProfileMission = typeof profileMissions.$inferSelect;
+ export type InsertProfileAboutEntry = z.infer<typeof insertProfileAboutEntrySchema>;
+ export type ProfileAboutEntry = typeof profileAboutEntries.$inferSelect;
++export type InsertProfileConcept = z.infer<typeof insertProfileConceptSchema>;
++export type ProfileConcept = typeof profileConcepts.$inferSelect;
++export type InsertProfileLimitingBelief = z.infer<typeof insertProfileLimitingBeliefSchema>;
++export type ProfileLimitingBelief = typeof profileLimitingBeliefs.$inferSelect;
+ export type InsertJournalLearning = z.infer<typeof insertJournalLearningSchema>;
+ export type JournalLearning = typeof journalLearnings.$inferSelect;
+ export type InsertJournalTool = z.infer<typeof insertJournalToolSchema>;

@@ -830,6 +830,7 @@ export const todayTaskSubsteps = pgTable("today_task_substeps", {
   // 1 = minutes puesto a mano; 0 = vino del reparto automático del tiempo de la tarea padre.
   minutesManual: integer("minutes_manual").$type<0 | 1>().notNull().default(0),
   deadline: varchar("deadline"), // Hora límite ("HH:MM") con la que se calcularon los minutos
+  startTime: varchar("start_time"), // Hora ("HH:MM") a la que empieza: al llegar pasa a ser el sub-paso de "Ahora"
   // Sub-paso permanente de un hábito (habitSubsteps) del que salió esta copia del día. Editar o
   // borrar la copia también edita/borra la plantilla.
   templateId: varchar("template_id"),
