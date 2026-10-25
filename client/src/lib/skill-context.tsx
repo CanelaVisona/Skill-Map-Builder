@@ -67,6 +67,7 @@ export interface Skill {
   completedAt?: string | null;
   plannedDurationManual?: number | null;
   plannedDeadline?: string | null;
+  plannedStartTime?: string | null;
 }
 
 export interface Area {
@@ -120,6 +121,7 @@ export interface GlobalSkill {
   completedAt?: string | null;
   plannedDurationManual?: number | null;
   plannedDeadline?: string | null;
+  plannedStartTime?: string | null;
   // Medallion visual customization (Journal → Skills grid) — all optional.
   icon?: string | null;
   shape?: "diamond_classic" | "diamond_ornate" | "medallion" | "insignia";
@@ -144,7 +146,7 @@ interface SkillTreeContextType {
   toggleSkillStatus: (areaId: string, skillId: string) => void;
   toggleProjectSkillStatus: (projectId: string, skillId: string) => void;
   addSkill: (areaId: string, skill: Omit<Skill, "id">) => void;
-  updateSkill: (areaId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null }) => void;
+  updateSkill: (areaId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null }) => void;
   deleteSkill: (areaId: string, skillId: string) => void;
   toggleLock: (areaId: string, skillId: string) => void;
   moveSkill: (areaId: string, skillId: string, direction: "up" | "down") => void;
@@ -154,7 +156,7 @@ interface SkillTreeContextType {
   swapAreaLevels: (areaId: string, levelA: number, levelB: number) => Promise<void>;
   addExtraAreaLevel: (areaId: string) => Promise<boolean>;
   deleteAreaLevel: (areaId: string, level: number) => Promise<void>;
-  updateProjectSkill: (projectId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null }) => void;
+  updateProjectSkill: (projectId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null }) => void;
   deleteProjectSkill: (projectId: string, skillId: string) => void;
   toggleProjectLock: (projectId: string, skillId: string) => void;
   moveProjectSkill: (projectId: string, skillId: string, direction: "up" | "down") => void;
@@ -190,7 +192,7 @@ interface SkillTreeContextType {
   enterSubSkillTree: (skillId: string, skillTitle: string) => Promise<void>;
   exitSubSkillTree: () => void;
   toggleSubSkillStatus: (skillId: string) => void;
-  updateSubSkill: (skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null }) => void;
+  updateSubSkill: (skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null }) => void;
   deleteSubSkill: (skillId: string) => void;
   toggleSubSkillLock: (skillId: string) => void;
   moveSubSkill: (skillId: string, direction: "up" | "down") => void;
@@ -199,7 +201,7 @@ interface SkillTreeContextType {
   addProjectSkillBelow: (projectId: string, skillId: string, title?: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; isSideQuest?: 0 | 1 }) => Promise<void>;
   addSubSkillBelow: (skillId: string, title?: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; isSideQuest?: 0 | 1 }) => Promise<void>;
   addSideQuestNode: (kind: "area" | "project" | "sub", parentId: string, skillId: string) => Promise<void>;
-  addSkillInPlaceOfAvailable: (kind: "area" | "project", parentId: string, title: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null }) => Promise<Skill | null>;
+  addSkillInPlaceOfAvailable: (kind: "area" | "project", parentId: string, title: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null }) => Promise<Skill | null>;
   materializePendingEventNodes: () => Promise<void>;
   // Relee áreas y quests del server (p.ej. después de cambiar estados de nodos por fuera del árbol).
   refreshSkillTrees: () => Promise<void>;
@@ -2073,7 +2075,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
-  const updateSkill = async (areaId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null }) => {
+  const updateSkill = async (areaId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null }) => {
     console.log('[updateSkill] Called with skillId:', skillId, 'areaId:', areaId, 'updates:', updates);
     try {
       const response = await fetch(`/api/skills/${skillId}`, {
@@ -2345,7 +2347,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
-  const updateProjectSkill = async (projectId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null }) => {
+  const updateProjectSkill = async (projectId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null }) => {
     try {
       await fetch(`/api/skills/${skillId}`, {
         method: "PATCH",
@@ -3131,7 +3133,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
-  const updateSubSkill = async (skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null }) => {
+  const updateSubSkill = async (skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null }) => {
     try {
       await fetch(`/api/skills/${skillId}`, {
         method: "PATCH",
@@ -3703,7 +3705,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     kind: "area" | "project",
     parentId: string,
     title: string,
-    copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null }
+    copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null }
   ): Promise<Skill | null> => {
     // Se lee el árbol fresco del server (no el estado local): esto puede correr varias veces
     // seguidas sobre el mismo árbol (eventos pendientes) y el estado local quedaría viejo.
@@ -3743,6 +3745,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           ...(copyFields?.plannedDate !== undefined ? { plannedDate: copyFields.plannedDate } : {}),
           ...(copyFields?.plannedDuration !== undefined ? { plannedDuration: copyFields.plannedDuration } : {}),
           ...(copyFields?.plannedDeadline ? { plannedDeadline: copyFields.plannedDeadline } : {}),
+          ...(copyFields?.plannedStartTime ? { plannedStartTime: copyFields.plannedStartTime } : {}),
         }),
       });
       if (!response.ok) throw new Error("Failed to create skill");

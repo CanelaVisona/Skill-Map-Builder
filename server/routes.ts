@@ -6321,7 +6321,7 @@ export async function registerRoutes(
 
   app.post("/api/manual-today-tasks", requireAuth, async (req, res) => {
     try {
-      const { date, title, kind, linkedKind, linkedParentId, minutes, deadline } = req.body;
+      const { date, title, kind, linkedKind, linkedParentId, minutes, deadline, startTime } = req.body;
       if (minutes !== undefined && minutes !== null && (!Number.isInteger(minutes) || minutes < 0)) {
         return res.status(400).json({ message: "minutes debe ser un entero >= 0 o null" });
       }
@@ -6343,6 +6343,7 @@ export async function registerRoutes(
         ...(linkedParentId ? { linkedKind, linkedParentId: String(linkedParentId) } : {}),
         ...(minutes ? { minutes } : {}),
         ...(typeof deadline === "string" && /^\d{2}:\d{2}$/.test(deadline) ? { deadline } : {}),
+        ...(typeof startTime === "string" && /^\d{2}:\d{2}$/.test(startTime) ? { startTime } : {}),
       });
       res.status(201).json(task);
     } catch (error: any) {
@@ -6356,9 +6357,12 @@ export async function registerRoutes(
       if (!existing || existing.userId !== req.userId) {
         return res.status(404).json({ message: "Tarea no encontrada" });
       }
-      const { title, done, date, minutes, linkedSkillId, deadline } = req.body;
+      const { title, done, date, minutes, linkedSkillId, deadline, startTime } = req.body;
       if (deadline !== undefined && deadline !== null && (typeof deadline !== "string" || !/^\d{2}:\d{2}$/.test(deadline))) {
         return res.status(400).json({ message: "deadline debe tener formato HH:MM o null" });
+      }
+      if (startTime !== undefined && startTime !== null && (typeof startTime !== "string" || !/^\d{2}:\d{2}$/.test(startTime))) {
+        return res.status(400).json({ message: "startTime debe tener formato HH:MM o null" });
       }
       if (done !== undefined && done !== 0 && done !== 1) {
         return res.status(400).json({ message: "done debe ser 0 o 1" });
@@ -6376,6 +6380,7 @@ export async function registerRoutes(
         ...(minutes !== undefined ? { minutes } : {}),
         ...(linkedSkillId !== undefined ? { linkedSkillId: linkedSkillId === null ? null : String(linkedSkillId) } : {}),
         ...(deadline !== undefined ? { deadline } : {}),
+        ...(startTime !== undefined ? { startTime } : {}),
       });
       // Si se movió de día, la franja horaria asignada quedó atada a la fecha vieja: no tiene
       // sentido dejarla huérfana ahí (el día viejo ya no la va a mostrar, pero queda basura en

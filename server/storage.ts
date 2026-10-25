@@ -620,7 +620,7 @@ export class DbStorage implements IStorage {
   // planeada o que ya se completaron: el front solo tiene cargados los nodos de primer nivel,
   // así que sin esto los sub-nodos nunca aparecían en "Hoy" ni en el calendario de actividades.
   // parentName = título del nodo padre directo.
-  async getDatedSubSkills(userId: string): Promise<{ id: string; title: string; status: string; plannedDate: string | null; plannedDuration: number | null; plannedDeadline: string | null; completedAt: Date | null; parentName: string; parentSkillId: string; parentPlannedDate: string | null }[]> {
+  async getDatedSubSkills(userId: string): Promise<{ id: string; title: string; status: string; plannedDate: string | null; plannedDuration: number | null; plannedDeadline: string | null; plannedStartTime: string | null; completedAt: Date | null; parentName: string; parentSkillId: string; parentPlannedDate: string | null }[]> {
     const result = await pool.query(
       `WITH RECURSIVE tree AS (
          SELECT s.id FROM skills s
@@ -630,7 +630,7 @@ export class DbStorage implements IStorage {
          UNION ALL
          SELECT c.id FROM skills c JOIN tree t ON c.parent_skill_id = t.id
        )
-       SELECT s.id, s.title, s.status, s.planned_date, s.planned_duration, s.planned_deadline, s.completed_at, parent.title AS parent_name,
+       SELECT s.id, s.title, s.status, s.planned_date, s.planned_duration, s.planned_deadline, s.planned_start_time, s.completed_at, parent.title AS parent_name,
               s.parent_skill_id, parent.planned_date AS parent_planned_date
        FROM skills s
        JOIN tree t ON s.id = t.id
@@ -645,6 +645,7 @@ export class DbStorage implements IStorage {
       plannedDate: r.planned_date,
       plannedDuration: r.planned_duration,
       plannedDeadline: r.planned_deadline,
+      plannedStartTime: r.planned_start_time,
       completedAt: r.completed_at,
       parentName: r.parent_name,
       // Para el registro de un día pasado: si el padre se pasó a otro día, sus sub-nodos
@@ -680,6 +681,7 @@ export class DbStorage implements IStorage {
       plannedDate: skill.plannedDate,
       plannedDuration: skill.plannedDuration,
       plannedDeadline: skill.plannedDeadline ?? null,
+      plannedStartTime: skill.plannedStartTime ?? null,
     };
     const result = await db.insert(skills).values(insertData).returning();
     return result[0];
@@ -705,6 +707,7 @@ export class DbStorage implements IStorage {
     if (skill.plannedDuration !== undefined) updateData.plannedDuration = skill.plannedDuration;
     if (skill.plannedDurationManual !== undefined) updateData.plannedDurationManual = skill.plannedDurationManual;
     if (skill.plannedDeadline !== undefined) updateData.plannedDeadline = skill.plannedDeadline;
+    if (skill.plannedStartTime !== undefined) updateData.plannedStartTime = skill.plannedStartTime;
     if (skill.completedAt !== undefined) updateData.completedAt = skill.completedAt;
 
     const result = await db.update(skills).set(updateData).where(eq(skills.id, id)).returning();
@@ -3761,10 +3764,11 @@ export class DbStorage implements IStorage {
     return result[0];
   }
 
-  async updateManualTodayTask(id: string, updates: Partial<Pick<InsertManualTodayTask, "title" | "done" | "date" | "minutes" | "linkedSkillId" | "deadline">>): Promise<ManualTodayTask | undefined> {
+  async updateManualTodayTask(id: string, updates: Partial<Pick<InsertManualTodayTask, "title" | "done" | "date" | "minutes" | "linkedSkillId" | "deadline" | "startTime">>): Promise<ManualTodayTask | undefined> {
     const updateData: Record<string, unknown> = {};
     if (updates.minutes !== undefined) updateData.minutes = updates.minutes;
     if (updates.deadline !== undefined) updateData.deadline = updates.deadline;
+    if (updates.startTime !== undefined) updateData.startTime = updates.startTime;
     if (updates.title !== undefined) updateData.title = updates.title;
     if (updates.done !== undefined) updateData.done = updates.done;
     if (updates.date !== undefined) updateData.date = updates.date;

@@ -83,6 +83,8 @@ export const skills = pgTable("skills", {
   // Hora límite ("HH:MM") con la que se calculó plannedDuration en "Tareas de hoy" (minutos que
   // faltaban desde ese momento hasta esa hora). Se muestra como "· 60min (hasta 5pm)".
   plannedDeadline: varchar("planned_deadline"),
+  // Hora ("HH:MM") a la que empieza en "Tareas de hoy": al llegar pasa sola a ser la tarea de "Ahora".
+  plannedStartTime: varchar("planned_start_time"),
   completedAt: timestamp("completed_at"),
 });
 
@@ -862,6 +864,7 @@ export const manualTodayTasks = pgTable("manual_today_tasks", {
   done: integer("done").$type<0 | 1>().notNull().default(0),
   minutes: integer("minutes"), // Tiempo estimado asignado desde "Tareas de hoy" (se muestra como "· Xmin")
   deadline: varchar("deadline"), // Hora límite ("HH:MM") con la que se calcularon los minutos
+  startTime: varchar("start_time"), // Hora ("HH:MM") a la que empieza: al llegar pasa a ser la tarea de "Ahora"
   // Evento asociado a un área/quest: el día del evento se crea un nodo con su nombre en el
   // lugar del nodo desbloqueado de ese árbol (linkedSkillId queda apuntando a ese nodo), y
   // confirmar el evento confirma el nodo.

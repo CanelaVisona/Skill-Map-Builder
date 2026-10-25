@@ -182,6 +182,13 @@ app.use((req, res, next) => {
     await db.execute(sql`
       ALTER TABLE "manual_today_tasks" ADD COLUMN IF NOT EXISTS "deadline" varchar;
     `);
+    // Hora a la que empieza una tarea de "Tareas de hoy" (pasa sola a "Ahora" al llegar).
+    await db.execute(sql`
+      ALTER TABLE "skills" ADD COLUMN IF NOT EXISTS "planned_start_time" varchar;
+    `);
+    await db.execute(sql`
+      ALTER TABLE "manual_today_tasks" ADD COLUMN IF NOT EXISTS "start_time" varchar;
+    `);
     // Una sola copia por sub-paso permanente y día, aunque la sincronización corra dos veces a la vez.
     await db.execute(sql`
       CREATE UNIQUE INDEX IF NOT EXISTS "today_task_substeps_template_day_idx"
