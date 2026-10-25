@@ -8,7 +8,7 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
-import { Calendar, ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Pencil, Plus, Star } from "lucide-react";
+import { Calendar, ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Pause, Pencil, Play, Plus, Star } from "lucide-react";
 import { useSkillTree, type Area, type Project, type Skill } from "@/lib/skill-context";
 import { useHabits, useUpdateHabitRecord } from "@/lib/useHabits";
 import { useTodayTaskSlots, useSetTodayTaskSlot, useClearTodayTaskSlot, useReorderTodayTaskSlot, getCurrentTimeSlotKey, getTimeSlotKeyForDate, type TaskSlotKey, type TaskType } from "@/lib/useTodayTaskSlots";
@@ -19,6 +19,7 @@ import { useConfirmHabit, useConfirmPractice } from "@/lib/useConfirmActions";
 import { useTodayPriorities, useSetTodayPriorities, MAX_TODAY_PRIORITIES } from "@/lib/useTodayPriorities";
 import { MealTrackerModal } from "@/components/MealTrackerModal";
 import { useNowPlacement, setNowPlacement } from "@/lib/now-placement";
+import { useTaskTimer, taskTimerKey, wasDeadlineNowApplied, markDeadlineNowApplied } from "@/lib/task-timers";
 import { addSubSkillFromToday, toggleSubSkillFromToday, masterWholeSubSkillTree, isSubSkillPlaceholder, moveSubSkillFromToday, renameSubSkill, deleteSubSkillFromToday, fetchSubSkills } from "@/lib/subskill-tree";
 import { useTodayTaskSubsteps, useCreateTodayTaskSubstep, useUpdateTodayTaskSubstep, useDeleteTodayTaskSubstep, useCreateHabitSubstep, syncHabitSubsteps, type SubstepTaskType } from "@/lib/useTodayTaskSubsteps";
 import type { Habit, HabitRecord, TodayTaskSlot } from "@shared/schema";
@@ -132,16 +133,20 @@ function minutesUntilDeadline(deadline: string): number | null {
   return diff > 0 ? diff : null;
 }
 
-// showRemaining: con hora límite, muestra también el tiempo que queda hasta esa hora (se
-// actualiza solo cada minuto). Solo tiene sentido viendo hoy y con la tarea sin hacer.
+// showRemaining: con hora límite, los minutos que se muestran son los que quedan hasta esa hora
+// (se actualizan solos cada minuto). Solo tiene sentido viendo hoy y con la tarea sin hacer.
+// timerKey: tarea de hoy sin hacer con una cantidad de minutos (sin hora límite): muestra el
+// botón ▶ para hacer la cuenta regresiva de ese tiempo (ver TaskTimerControl).
 function MinutesSuffix({
   minutes,
   deadline,
   showRemaining,
+  timerKey,
 }: {
   minutes?: number | null;
   deadline?: string | null;
   showRemaining?: boolean;
+  timerKey?: string | null;
 }) {
   const live = !!deadline && !!showRemaining;
   const [, setTick] = useState(0);
@@ -151,15 +156,81 @@ function MinutesSuffix({
     return () => clearInterval(id);
   }, [live]);
   if (!minutes) return null;
-  // Un marco para avanzar, no una alarma: cada número dice qué es ("10 min · hasta 16:18 ·
-  // tengo 5 min"), todo en el mismo tono tranquilo. Cuando la hora ya pasó, simplemente deja de
-  // mostrarse cuánto queda (sin rojo ni "atrasado").
-  const remaining = live ? minutesUntilDeadline(deadline!) : null;
+  // Un marco para avanzar, no una alarma: "5 min · hasta 16:18", todo en el mismo tono tranquilo.
+  // Cuando la hora ya pasó, queda solo "hasta 16:18" (sin rojo ni "atrasado").
+  if (live) {
+    const remaining = minutesUntilDeadline(deadline!);
+    return (
+      <span className="text-muted-foreground">
+        {" "}· {remaining !== null && <>{remaining} min · </>}hasta {formatDeadline(deadline!)}
+      </span>
+    );
+  }
+  if (timerKey && !deadline) {
+    return (
+      <span className="text-muted-foreground">
+        {" "}· <TaskTimerControl timerKey={timerKey} minutes={minutes} />
+      </span>
+    );
+  }
   return (
     <span className="text-muted-foreground">
       {" "}· {minutes} min
       {deadline && <> · hasta {formatDeadline(deadline)}</>}
-      {remaining !== null && <> · tengo {remaining} min</>}
+    </span>
+  );
+}
+
+// "10 min ▶": tocar ▶ arranca la cuenta regresiva (se ve "07:32 ⏸", tocar pausa). Al llegar a
+// cero deja de contar y el ▶ pasa a ser un tilde. El botón no abre el menú de la tarea ni
+// dispara su long-press.
+function TaskTimerControl({ timerKey, minutes }: { timerKey: string; minutes: number }) {
+  const { state, start, pause } = useTaskTimer(timerKey, minutes);
+  const running = state?.status === "running";
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!running) return;
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [running]);
+
+  const remainingMs =
+    state?.status === "running" ? Math.max(0, state.endsAt - Date.now())
+    : state?.status === "paused" ? state.remainingMs
+    : null;
+  const formatClock = (ms: number) => {
+    const total = Math.ceil(ms / 1000);
+    return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+  };
+  const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+  const finished = state?.status === "finished";
+
+  return (
+    <span className="inline-flex items-center gap-1 align-middle">
+      <span className={remainingMs !== null ? "tabular-nums text-amber-600 dark:text-amber-400" : undefined}>
+        {remainingMs !== null ? formatClock(remainingMs) : `${minutes} min`}
+      </span>
+      {finished ? (
+        <Check className="h-3.5 w-3.5 text-emerald-500" strokeWidth={3} aria-label="Tiempo cumplido" />
+      ) : (
+        <button
+          type="button"
+          onPointerDown={stop}
+          onMouseDown={stop}
+          onTouchStart={stop}
+          onKeyDown={stop}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            if (running) pause();
+            else start();
+          }}
+          className="flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+          aria-label={running ? "Pausar" : "Iniciar cuenta regresiva"}
+        >
+          {running ? <Pause className="h-3 w-3 fill-current" /> : <Play className="h-3 w-3 fill-current" />}
+        </button>
+      )}
     </span>
   );
 }
@@ -297,6 +368,9 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const todayStr = getDateStr(new Date());
   const effectiveDate = previewDate ?? todayStr;
   const isPreview = previewDate !== null;
+  // Key de la cuenta regresiva (botón ▶) de una tarea: solo viendo hoy, sin hacer y con minutos.
+  const timerKeyFor = (taskKey: string, minutes: number | null | undefined, done: boolean) =>
+    effectiveDate === todayStr && !done && minutes ? taskTimerKey(todayStr, taskKey, minutes) : null;
   // Día pasado: es un registro de lo que pasó, no hay "tarea que toca ahora". Nada se atenúa
   // (en hoy, lo que todavía no toca queda tenue), para que se lea todo lo de ese día.
   const isPastDay = effectiveDate < todayStr;
@@ -378,21 +452,24 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     }
   });
 
-  const scheduledHabitItems = habitsScheduledForView.map((h, i) => ({
-    id: h.id,
-    label: (
-      <>
-        {h.emoji} {h.name}
-        <MinutesSuffix minutes={h.minMinutes} />
-        {rewiringHabitBadgeById.has(h.id) && (
-          <TaskCountBadge {...rewiringHabitBadgeById.get(h.id)!} />
-        )}
-      </>
-    ),
-    done: !!(viewRecordQueries[i]?.data as HabitRecord[] | undefined)?.some(
+  const scheduledHabitItems = habitsScheduledForView.map((h, i) => {
+    const done = !!(viewRecordQueries[i]?.data as HabitRecord[] | undefined)?.some(
       (r) => r.date === effectiveDate && r.completed === 1
-    ),
-  }));
+    );
+    return {
+      id: h.id,
+      label: (
+        <>
+          {h.emoji} {h.name}
+          <MinutesSuffix minutes={h.minMinutes} timerKey={timerKeyFor(`habit:${h.id}`, h.minMinutes, done)} />
+          {rewiringHabitBadgeById.has(h.id) && (
+            <TaskCountBadge {...rewiringHabitBadgeById.get(h.id)!} />
+          )}
+        </>
+      ),
+      done,
+    };
+  });
 
   const collectPlannedNodes = (list: (Area | Project)[], kind: "area" | "project"): PlannedNode[] => {
     const result: PlannedNode[] = [];
@@ -553,21 +630,24 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     (slotsData || []).filter((s) => s.taskType === "habit" && s.slot !== "hidden").map((s) => s.taskId)
   );
 
-  const notScheduledHabitRows = habitsNotScheduledForView.map((h, i) => ({
-    id: h.id,
-    label: (
-      <>
-        {h.emoji} {h.name}
-        <MinutesSuffix minutes={h.minMinutes} />
-        {rewiringHabitBadgeById.has(h.id) && (
-          <TaskCountBadge {...rewiringHabitBadgeById.get(h.id)!} />
-        )}
-      </>
-    ),
-    done: !!(otherHabitRecordQueries[i]?.data as HabitRecord[] | undefined)?.some(
+  const notScheduledHabitRows = habitsNotScheduledForView.map((h, i) => {
+    const done = !!(otherHabitRecordQueries[i]?.data as HabitRecord[] | undefined)?.some(
       (r) => r.date === effectiveDate && r.completed === 1
-    ),
-  }));
+    );
+    return {
+      id: h.id,
+      label: (
+        <>
+          {h.emoji} {h.name}
+          <MinutesSuffix minutes={h.minMinutes} timerKey={timerKeyFor(`habit:${h.id}`, h.minMinutes, done)} />
+          {rewiringHabitBadgeById.has(h.id) && (
+            <TaskCountBadge {...rewiringHabitBadgeById.get(h.id)!} />
+          )}
+        </>
+      ),
+      done,
+    };
+  });
   const addedHabitItems = notScheduledHabitRows.filter((h) => addedHabitIds.has(h.id));
   // Los agregados a mano se tratan igual que los programados (cuentan, se pueden ocultar, etc.).
   const habitItems = [...scheduledHabitItems, ...addedHabitItems];
@@ -793,7 +873,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       label: (
         <>
           {stripLeadingEmoji(n.title)} <span className="text-muted-foreground">· {n.parentName}</span>
-          <MinutesSuffix minutes={n.plannedDuration} deadline={n.done ? null : n.plannedDeadline} showRemaining={!n.done && effectiveDate === todayStr} />
+          <MinutesSuffix minutes={n.plannedDuration} deadline={n.done ? null : n.plannedDeadline} showRemaining={!n.done && effectiveDate === todayStr} timerKey={timerKeyFor(`node:${n.id}`, n.plannedDuration, n.done)} />
         </>
       ),
       done: n.done,
@@ -807,7 +887,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       label: (
         <>
           {p.emoji} {p.name}
-          <MinutesSuffix minutes={p.minMinutes} />
+          <MinutesSuffix minutes={p.minMinutes} timerKey={timerKeyFor(`practice:${p.id}`, p.minMinutes, done)} />
         </>
       ),
       done,
@@ -824,7 +904,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       label: (
         <>
           {t.kind === "event" ? <>📅 {stripLeadingEmoji(t.title)}</> : stripLeadingEmoji(t.title)}
-          <MinutesSuffix minutes={t.minutes} deadline={t.done === 1 ? null : t.deadline} showRemaining={t.done !== 1 && effectiveDate === todayStr} />
+          <MinutesSuffix minutes={t.minutes} deadline={t.done === 1 ? null : t.deadline} showRemaining={t.done !== 1 && effectiveDate === todayStr} timerKey={timerKeyFor(`manual:${t.id}`, t.minutes, t.done === 1)} />
         </>
       ),
       done: t.done === 1,
@@ -1161,6 +1241,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
               minutes={sub.plannedDuration}
               deadline={sub.plannedDeadline}
               showRemaining={effectiveDate === todayStr}
+              timerKey={timerKeyFor(`node:${sub.id}`, sub.plannedDuration, sub.status === "mastered")}
               onAssignTime={() =>
                 openTimeDialog(
                   { key: `node:${sub.id}`, type: "node", id: sub.id, label: sub.title, done: sub.status === "mastered" },
@@ -1424,6 +1505,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         minutes={st.minutes}
         deadline={st.deadline}
         showRemaining={effectiveDate === todayStr}
+        timerKey={timerKeyFor(`step:${st.id}`, st.minutes, st.done === 1)}
         onAssignTime={() => openSubstepTimeDialog(st.id, st.minutes, parentTimeRef(item, steps.map((x) => x.minutes), i), st.deadline)}
         deleteLabel="sub-paso"
       />
@@ -2141,6 +2223,24 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     }
     updateDurationMutation.mutate({ item, minutes });
   };
+
+  // Tarea con hora límite: al llegar esa hora pasa sola a ser la tarea de "Ahora" (ver
+  // moveItemNow). Una sola vez por tarea y hora (wasDeadlineNowApplied), así si después se la
+  // mueve a mano no vuelve a saltar. Corre en cada render: el reloj del modal re-renderiza cada
+  // minuto, y una por vez — la siguiente se ubica cuando vuelven las franjas ya reordenadas.
+  useEffect(() => {
+    if (!open || isPreview || effectiveDate !== todayStr || !slotsData || reorderTaskSlot.isPending) return;
+    for (const item of todayItems) {
+      if (item.done || (item.type !== "node" && item.type !== "manual")) continue;
+      const deadline = currentDeadline(item);
+      if (!deadline || minutesUntilDeadline(deadline) !== null) continue;
+      const flag = `${effectiveDate}|${item.type}:${item.id}|${deadline}`;
+      if (wasDeadlineNowApplied(flag)) continue;
+      markDeadlineNowApplied(flag);
+      moveItemNow(item);
+      break;
+    }
+  });
 
   // Mantener presionado el fondo (fuera de una tarea puntual) abre el diálogo para agregar
   // una tarea manual al día que se está viendo (hoy, o el día previsualizado), sin franja.
@@ -3810,6 +3910,7 @@ function TodaySubRow({
   minutes,
   deadline,
   showRemaining,
+  timerKey,
   onAddChild,
   depth = 0,
   onDelete,
@@ -3830,6 +3931,8 @@ function TodaySubRow({
   deadline?: string | null;
   // Mostrar el tiempo que queda hasta la hora límite (solo viendo hoy).
   showRemaining?: boolean;
+  // Cuenta regresiva del tiempo asignado (ver MinutesSuffix). null/undefined = sin botón ▶.
+  timerKey?: string | null;
   // Agregarle un sub-nodo a este sub-nodo (se muestra anidado adentro de él).
   onAddChild?: () => void;
   // 1 = sub-nodo de un sub-nodo: un nivel más de sangría.
@@ -3847,7 +3950,7 @@ function TodaySubRow({
     >
       {title}
       {/* Ya hecha: queda solo el tiempo previsto, sin la hora límite ni lo que falta. */}
-      <MinutesSuffix minutes={minutes} deadline={done ? null : deadline} showRemaining={showRemaining && !done} />
+      <MinutesSuffix minutes={minutes} deadline={done ? null : deadline} showRemaining={showRemaining && !done} timerKey={done ? null : timerKey} />
     </span>
   );
   return (
