@@ -17,7 +17,19 @@ export function RadarSkillMapModal({ open, onOpenChange }: { open: boolean; onOp
   // recargar los árboles (y los poderes) y mostrar el pop-up de nuevo poder.
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
-      if (e.origin !== window.location.origin || e.data?.type !== "radar-side-quest") return;
+      if (e.origin !== window.location.origin) return;
+      // Habilidad agendada desde el mapa: el mapa ya creó la tarea manual de ese día, acá solo
+      // se refrescan las listas de "Tareas de hoy" (y el calendario) para que aparezca.
+      if (e.data?.type === "radar-task-scheduled") {
+        queryClient.invalidateQueries({ queryKey: ["manual-today-tasks"] });
+        queryClient.invalidateQueries({ queryKey: ["manual-today-tasks-range"] });
+        queryClient.invalidateQueries({ queryKey: ["today-task-slots"] });
+        // Agendar una habilidad o actividad crea su nodo SideQuest pendiente, y completar una
+        // actividad en el mapa lo confirma (o crea uno ya confirmado).
+        if (e.data?.node) refreshSkillTrees();
+        return;
+      }
+      if (e.data?.type !== "radar-side-quest") return;
       refreshSkillTrees();
       const powerName = e.data?.power?.name;
       if (typeof powerName === "string" && powerName) {

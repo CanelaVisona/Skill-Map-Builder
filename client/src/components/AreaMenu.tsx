@@ -1806,7 +1806,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
             <TabsTrigger value="beliefs" className="shrink-0 text-xs">Creencias</TabsTrigger>
             <TabsTrigger value="vision" className="shrink-0 text-xs">Visión</TabsTrigger>
             <TabsTrigger value="objectives" className="shrink-0 text-xs">Propósitos</TabsTrigger>
-            <TabsTrigger value="bugs" className="shrink-0 text-xs">Bugs</TabsTrigger>
+            <TabsTrigger value="bugs" className="shrink-0 text-xs">Errores</TabsTrigger>
             <TabsTrigger value="powers" className="shrink-0 text-xs">Poderes</TabsTrigger>
             <TabsTrigger value="experiences" className="shrink-0 text-xs">Experiencias</TabsTrigger>
             <TabsTrigger value="growth" className="shrink-0 text-xs">Crecimiento</TabsTrigger>

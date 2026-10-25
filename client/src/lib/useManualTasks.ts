@@ -119,7 +119,8 @@ export function useUpdateManualTask() {
         body: JSON.stringify(updates),
       });
       if (!res.ok) throw new Error("Failed to update manual task");
-      return res.json() as Promise<ManualTodayTask>;
+      // radarUnlock: la tarea venía del mapa de habilidades y confirmarla desbloqueó esa habilidad.
+      return res.json() as Promise<ManualTodayTask & { radarUnlock?: { title: string; power: { name: string } | null } }>;
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["manual-today-tasks", variables.date] });

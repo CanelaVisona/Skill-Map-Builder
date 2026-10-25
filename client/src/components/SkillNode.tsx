@@ -2583,7 +2583,12 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       return;
     }
     lastClickTime.current = now;
-    
+
+    // This node's confirm is still in flight (área pop-up / staged rewards / feedback modal
+    // not finished yet): a second tap would run toggleSkillStatus again and duplicate its
+    // pop-ups ("Quest updated!" included).
+    if (confirmFeedbackChainOpen.current) return;
+
     // Allow unlocking manually locked nodes by clicking.
     // Gate on the node still being "locked": a node can carry a stale manualLock=1
     // flag (leftover from when it was created as a future/staged placeholder) even

@@ -18,6 +18,7 @@ import { rewiringDayRows } from "@/lib/rewiringTasks";
 import { useConfirmHabit, useConfirmPractice } from "@/lib/useConfirmActions";
 import { useTodayPriorities, useSetTodayPriorities, MAX_TODAY_PRIORITIES } from "@/lib/useTodayPriorities";
 import { MealTrackerModal } from "@/components/MealTrackerModal";
+import { usePowerCelebration } from "@/lib/power-celebration-context";
 import { useNowPlacement, setNowPlacement } from "@/lib/now-placement";
 import { useTaskTimer, taskTimerKey, wasDeadlineNowApplied, markDeadlineNowApplied } from "@/lib/task-timers";
 import { addSubSkillFromToday, toggleSubSkillFromToday, masterWholeSubSkillTree, isSubSkillPlaceholder, moveSubSkillFromToday, renameSubSkill, deleteSubSkillFromToday, fetchSubSkills } from "@/lib/subskill-tree";
@@ -314,6 +315,7 @@ function DoneNodeMark({ size = "sm" }: { size?: "sm" | "md" }) {
 
 export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const queryClient = useQueryClient();
+  const { showPowerCelebration } = usePowerCelebration();
   const { areas, projects, updateSkill, updateProjectSkill, globalSkills, toggleSkillStatus, toggleProjectSkillStatus, addSkillInPlaceOfAvailable, materializePendingEventNodes, refreshSkillTrees } = useSkillTree();
   const { data: habitsData } = useHabits();
   // Confirmar un hábito/práctica desde acá tiene que otorgar exactamente lo mismo (XP, pop-ups)
@@ -728,10 +730,17 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // Se usa effectiveDate (no todayStr) para que también aparezcan acá los nodos completados sin
   // fecha planeada de un día pasado que se esté editando; para un día futuro no hay nada
   // completado todavía, así que naturalmente da vacío.
+  // Tareas manuales agregadas a mano (mantener presionado el fondo). Existen para cualquier
+  // día (hoy o un día futuro previsualizado) y no aparecen en el calendario de actividades.
+  const { data: manualTasksData } = useManualTasks(effectiveDate, open);
+  const manualTasks = manualTasksData || [];
+  // Nodos que son de una tarea manual (eventos con área, habilidades agendadas desde el mapa):
+  // la tarea ya los representa en el día, así que confirmados no se repiten como actividad extra.
+  const manualLinkedNodeIds = new Set(manualTasks.map((t) => t.linkedSkillId).filter((id): id is string => !!id));
   const extraTopNodes = [
     ...collectExtraCompletedNodes(Array.isArray(areas) ? areas : [], effectiveDate, effectiveDate),
     ...collectExtraCompletedNodes(Array.isArray(projects) ? projects : [], effectiveDate, effectiveDate),
-  ];
+  ].filter((n) => !manualLinkedNodeIds.has(n.id));
   // Un sub-nodo confirmado cuyo nodo padre ya está en la lista del día (planeado para hoy, actividad
   // extra o el padre que queda como texto en un día pasado) se ve adentro del padre (lista de
   // sub-nodos / desplegable): no se lo muestra además suelto como actividad extra.
@@ -795,10 +804,6 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     })),
   ];
 
-  // Tareas manuales agregadas a mano (mantener presionado el fondo). Existen para cualquier
-  // día (hoy o un día futuro previsualizado) y no aparecen en el calendario de actividades.
-  const { data: manualTasksData } = useManualTasks(effectiveDate, open);
-  const manualTasks = manualTasksData || [];
   const createManualTask = useCreateManualTask();
   const updateManualTask = useUpdateManualTask();
   const deleteManualTask = useDeleteManualTask();
@@ -975,19 +980,20 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     });
   });
 
-  // Los nodos confirmados siempre van antes de la tarea desbloqueada (la primera sin hacer de la
-  // franja activa): los que hayan quedado después de ella (confirmados desde el árbol, o antes de
-  // que les tocara) se muestran justo antes, en el mismo orden relativo. Es una regla de cómo se
-  // muestra la franja, así vale sin importar desde dónde se confirmó el nodo. Misma noción de
-  // "franja activa" que el destacado: la de la hora actual, o cualquiera con algo en una vista previa.
+  // Las tareas confirmadas siempre van antes de la tarea desbloqueada (la primera sin hacer de la
+  // franja activa): las que hayan quedado después de ella (confirmadas desde el árbol u otro
+  // modal, o antes de que les tocara) se muestran justo antes, en el mismo orden relativo. Es una
+  // regla de cómo se muestra la franja, así vale sin importar desde dónde se confirmó la tarea.
+  // Misma noción de "franja activa" que el destacado: la de la hora actual, o cualquiera con algo
+  // en una vista previa.
   TIME_SLOTS.forEach((s) => {
     const bucket = itemBuckets[s.key];
     const isActiveSlot = isPreview ? bucket.length > 0 : s.key === getCurrentTimeSlotKey();
     if (!isActiveSlot) return;
     const firstUndone = bucket.findIndex((i) => !i.done);
     if (firstUndone === -1) return;
-    const isConfirmedNode = (i: TodayItem) => i.type === "node" && i.done && !i.traceSubs;
-    const lifted = bucket.slice(firstUndone + 1).filter(isConfirmedNode);
+    const isConfirmed = (i: TodayItem) => i.done && !i.traceSubs;
+    const lifted = bucket.slice(firstUndone + 1).filter(isConfirmed);
     if (lifted.length === 0) return;
     itemBuckets[s.key] = [
       ...bucket.slice(0, firstUndone),
@@ -1691,7 +1697,22 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     const task = manualTasks.find((t) => t.id === item.id);
     if (!task) return;
     const newDone = task.done === 1 ? 0 : 1;
-    updateManualTask.mutate({ id: item.id, date: effectiveDate, updates: { done: newDone } });
+    updateManualTask.mutate(
+      { id: item.id, date: effectiveDate, updates: { done: newDone } },
+      {
+        // Tarea agendada desde el mapa de habilidades: el server desbloqueó esa habilidad y
+        // registró su SideQuest + poder, igual que al desbloquearla en el mapa (RadarSkillMapModal).
+        onSuccess: (res) => {
+          if (!res.radarUnlock) return;
+          refreshSkillTrees();
+          const powerName = res.radarUnlock.power?.name;
+          if (powerName) {
+            queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0] ?? "").startsWith("/api/source-powers/") });
+            showPowerCelebration({ name: powerName, kind: "confirmed" });
+          }
+        },
+      }
+    );
     // Al confirmarla, si tenía tiempo de sobra respecto de sus sub-pasos, pasa a su suma.
     if (newDone === 1) shrinkParentToChildrenSum(item, substepsFor(item).map((st) => st.minutes));
     // Evento con nodo propio (ver newTaskParent): confirmarlo/desconfirmarlo hace lo mismo con
@@ -1765,16 +1786,16 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // confirmarlo desde HabitStreakModal/SpaceRepetitionModal (ver useConfirmActions.ts). Una
   // práctica ya confirmada ese día no se puede "desconfirmar" — no existe esa acción en
   // SpaceRepetitionModal tampoco (avanzar un intervalo es unidireccional).
-  // Si la tarea desbloqueada de la franja actual es un nodo con sub-nodos pendientes (su sub-nodo
-  // es el desbloqueado), confirmar una tarea que está después de él en esa franja la sube justo
-  // antes del nodo padre: así no queda nada confirmado después de la tarea desbloqueada.
-  const liftBeforeUnlockedParent = (item: TodayItem) => {
+  // Confirmar una tarea que está después de la tarea desbloqueada de la franja actual la sube
+  // justo antes de ella (a continuación de las demás confirmadas): así no queda nada confirmado
+  // después de la tarea desbloqueada. Si la desbloqueada es un nodo con sub-nodos pendientes,
+  // queda antes del nodo padre.
+  const liftBeforeUnlocked = (item: TodayItem) => {
     if (isPreview || item.done) return;
     const slot = getCurrentTimeSlotKey();
     const bucket = itemBuckets[slot] || [];
     const currentIdx = bucket.findIndex((i) => !i.done);
-    const current = bucket[currentIdx];
-    if (!current || current.type !== "node" || !hasPendingSubNodes(current)) return;
+    if (currentIdx === -1) return;
     const itemIdx = bucket.findIndex((i) => i.key === item.key);
     if (itemIdx <= currentIdx) return;
     const reordered = bucket.filter((i) => i.key !== item.key);
@@ -1804,7 +1825,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         return;
       }
     }
-    liftBeforeUnlockedParent(item);
+    liftBeforeUnlocked(item);
     if (item.type === "manual") {
       toggleManualDone(item);
       return;

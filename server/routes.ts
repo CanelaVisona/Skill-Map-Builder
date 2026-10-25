@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
-import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertJournalShadowPageSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertSourceObjectiveSchema, insertSourceBeliefSchema, insertSourceVisionSchema, insertSourcePowersSchema, insertSourceBugSchema, insertSourceBugRecordSchema, insertNodeErrorSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema, insertSpaceRepetitionPracticeSchema, insertRewiringTrackerSchema, type InsertSpaceRepetitionPractice, type SpaceRepetitionPractice, type RewiringTracker, skills, areas, projects, spaceRepetitionPractices } from "@shared/schema";
+import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertJournalShadowPageSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileConceptSchema, insertProfileLimitingBeliefSchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertSourceObjectiveSchema, insertSourceBeliefSchema, insertSourceVisionSchema, insertSourcePowersSchema, insertSourceBugSchema, insertSourceBugRecordSchema, insertNodeErrorSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema, insertSpaceRepetitionPracticeSchema, insertRewiringTrackerSchema, type InsertSpaceRepetitionPractice, type SpaceRepetitionPractice, type RewiringTracker, skills, areas, projects, spaceRepetitionPractices } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import { z } from "zod";
 import cookieParser from "cookie-parser";
@@ -175,6 +175,120 @@ async function openNextLevelIfSourceCompleted(
   return nextLevel;
 }
 
+// Un subskill logrado en el mapa de habilidades se registra como nodo SideQuest confirmado en el
+// skill tree del área con el mismo nombre que la zona del mapa, y nace como poder del área ya
+// dominado (si ya hay uno con ese nombre no se duplica). null si no hay un área con ese nombre.
+// node: "create" crea el nodo ya confirmado; "skip" no toca el árbol (el nodo ya existe y se
+// confirma por otro lado); { confirmId } confirma ese nodo pendiente si sigue en el área (el de
+// una habilidad agendada) y, si ya no existe, crea uno confirmado como siempre.
+async function findAreaByName(userId: string, areaName: string) {
+  const name = areaName.trim().toLowerCase();
+  return (await storage.getAreas(userId)).find(a => !a.archived && a.name.trim().toLowerCase() === name);
+}
+async function renameRadarZone(userId: string, oldName: string, newName: string) {
+  const user = await storage.getUserById(userId);
+  const data = user?.radarMaps as any;
+  if (!data || !Array.isArray(data.areas)) return;
+  const old = oldName.trim().toLowerCase();
+  const zones = data.areas.filter((z: any) => typeof z?.name === "string" && z.name.trim().toLowerCase() === old);
+  if (!zones.length) return;
+  for (const z of zones) z.name = newName;
+  await storage.updateUserRadarMaps(userId, data);
+}
+async function logRadarSideQuest(
+  userId: string,
+  areaName: string,
+  title: string,
+  description: string,
+  node: "create" | "skip" | { confirmId: string } = "create",
+) {
+  const match = await findAreaByName(userId, areaName);
+  if (!match) return null;
+  if (node !== "skip") {
+    const pendingNode = typeof node === "object" ? await storage.getSkill(node.confirmId) : undefined;
+    if (pendingNode && pendingNode.areaId === match.id) {
+      if (pendingNode.status !== "mastered") {
+        await storage.updateSkill(pendingNode.id, { status: "mastered", completedAt: new Date() });
+        await storage.recalculateAvailableStatus(pendingNode.level, { areaId: match.id });
+      }
+    } else {
+      await createLoggedSideQuestNode({ areaId: match.id }, userId, title);
+    }
+  }
+  const existingPowers = await storage.getSourcePowers(userId, "area", match.id);
+  const alreadyExists = existingPowers.some(p => p.name.trim().toLowerCase() === title.toLowerCase());
+  let power = null;
+  if (!alreadyExists) {
+    const created = await storage.createSourcePower({ userId, areaId: match.id, name: title, description });
+    power = (await storage.updateSourcePower(created.id, { isUnlocked: 2 })) ?? created;
+  }
+  return { power };
+}
+
+// Habilidad del mapa de habilidades agendada en "Tareas de hoy": el mapa guarda en el eje
+// `sched[j] = <id de la tarea>` (j = índice de la habilidad). Confirmar esa tarea desbloquea la
+// habilidad igual que tocarla en el mapa (sube el nivel del eje y registra el SideQuest + poder),
+// siempre que siga siendo la próxima del eje. El vínculo se borra al usarse.
+// Las actividades de un eje (leaf.acts[nivel] = [{n, d}]) guardan el id de su tarea en `t`: la
+// tarea y la actividad quedan sincronizadas en los dos sentidos (confirmar/desconfirmar marca
+// la actividad como hecha/pendiente, igual que tocarla o "Volver a bloquear" en el mapa).
+const RADAR_PER = 5;
+async function syncRadarForTask(userId: string, taskId: string, done: 0 | 1, hasNode: boolean) {
+  const user = await storage.getUserById(userId);
+  const data = user?.radarMaps as any;
+  if (!data || !Array.isArray(data.areas)) return null;
+  for (const zone of data.areas) {
+    for (const root of Array.isArray(zone?.maps) ? zone.maps : []) {
+      const leaves: any[] = [];
+      for (const c of Array.isArray(root?.children) ? root.children : []) {
+        if (Array.isArray(c?.children)) leaves.push(...c.children);
+        else leaves.push(c);
+      }
+      for (const leaf of leaves) {
+        const acts = leaf?.acts && typeof leaf.acts === "object" ? Object.values(leaf.acts).flat() as any[] : [];
+        const act = acts.find(x => x && x.t === taskId);
+        if (act) {
+          if (!!act.d !== (done === 1)) {
+            act.d = done === 1;
+            await storage.updateUserRadarMaps(userId, data);
+          }
+          // Actividad agendada sin nodo propio (de antes de que se crearan al agendarlas): al
+          // confirmarla queda igual como SideQuest confirmado, vinculado a la tarea.
+          if (done === 1 && !hasNode) {
+            const match = await findAreaByName(userId, String(zone.name ?? ""));
+            const nodeId = match ? await createLoggedSideQuestNode({ areaId: match.id }, userId, String(act.n ?? "")) : null;
+            if (nodeId) {
+              await storage.updateManualTodayTask(taskId, { linkedSkillId: nodeId });
+              return { title: String(act.n ?? ""), power: null };
+            }
+          }
+          return null;
+        }
+        if (done !== 1 || !leaf?.sched || typeof leaf.sched !== "object") continue;
+        const key = Object.keys(leaf.sched).find(k => leaf.sched[k] === taskId);
+        if (key === undefined) continue;
+        const j = Number(key);
+        delete leaf.sched[key];
+        const title = leaf.tiers?.[Math.floor(j / RADAR_PER)]?.[j % RADAR_PER];
+        const unlock = leaf.level === j && typeof title === "string" && !!title;
+        if (unlock) {
+          leaf.level = j + 1;
+          // Era el foco del mapa (leaf.foco = j): confirmarla lo cumple.
+          if (leaf.foco === j) delete leaf.foco;
+        }
+        await storage.updateUserRadarMaps(userId, data);
+        if (!unlock) return null;
+        const description = typeof leaf.descs?.[j] === "string" ? leaf.descs[j] : "";
+        // Si la tarea ya tiene su nodo SideQuest (se creó pendiente al agendarla), ese nodo lo
+        // confirma la app junto con la tarea (con su XP/pop-ups): acá no se crea otro.
+        const result = await logRadarSideQuest(userId, String(zone.name ?? ""), title, description, hasNode ? "skip" : "create");
+        return { title: title as string, power: result?.power ?? null };
+      }
+    }
+  }
+  return null;
+}
+
 // Target-level order after a move: the moved node takes the exact slot of the placeholder
 // it replaced (so it fills the top-most generic node first); with no placeholder replaced
 // it's appended at the end.
@@ -190,10 +304,13 @@ function orderWithMovedInSlot(targetOthers: any[], movedSkill: any, removedPosit
 // hecho como un nodo SideQuest ya confirmado. Entra en el lugar del nodo desbloqueado del árbol
 // (que queda después, dependiendo del nuevo, y sigue desbloqueado); si no hay ninguno, justo
 // después del último confirmado. No hace nada si el área/quest no es del usuario.
+// Con pending = true el nodo nace sin confirmar (desbloqueado, y el que estaba desbloqueado
+// queda bloqueado detrás): es el de una habilidad del mapa agendada en "Tareas de hoy".
 async function createLoggedSideQuestNode(
   link: { areaId?: string | null; projectId?: string | null },
   userId: string,
   title: string,
+  pending = false,
 ): Promise<string | null> {
   const areaId = link.areaId || undefined;
   const projectId = areaId ? undefined : (link.projectId || undefined);
@@ -205,8 +322,17 @@ async function createLoggedSideQuestNode(
   const tree = (areaId ? await storage.getSkills(areaId) : await storage.getProjectSkills(projectId!))
     .filter(s => !s.parentSkillId)
     .sort((a, b) => (a.level - b.level) || ((a.levelPosition ?? 0) - (b.levelPosition ?? 0)));
-  const available = tree.find(s => s.status === "available" && (s.levelPosition ?? 0) > 1);
-  const anchor = available ?? [...tree].reverse().find(s => s.status === "mastered");
+  let available = tree.find(s => s.status === "available" && (s.levelPosition ?? 0) > 1);
+  let anchor = available ?? [...tree].reverse().find(s => s.status === "mastered");
+  // Un pendiente nuevo va después de los SideQuest pendientes que ya haya (otras habilidades
+  // agendadas): quedan en fila en el orden en que se agendaron, sin que el último bloquee al anterior.
+  if (pending && available) {
+    const lvl = tree.filter(s => s.level === available!.level);
+    let idx = lvl.findIndex(s => s.id === available!.id);
+    while (idx < lvl.length && lvl[idx].isSideQuest === 1 && lvl[idx].status !== "mastered") idx++;
+    if (idx < lvl.length) { available = lvl[idx]; anchor = available; }
+    else { anchor = lvl[lvl.length - 1]; available = undefined; }
+  }
   if (!anchor) return null;
 
   const level = anchor.level;
@@ -214,7 +340,7 @@ async function createLoggedSideQuestNode(
     ...(areaId ? { areaId } : { projectId }),
     title,
     description: "",
-    status: "mastered",
+    status: pending ? "available" : "mastered",
     x: anchor.x,
     y: anchor.y,
     dependencies: available ? (Array.isArray(available.dependencies) ? available.dependencies : []) : [anchor.id],
@@ -224,7 +350,7 @@ async function createLoggedSideQuestNode(
     manualLock: 0,
     isSideQuest: 1,
   });
-  await storage.updateSkill(skill.id, { completedAt: new Date() });
+  if (!pending) await storage.updateSkill(skill.id, { completedAt: new Date() });
   if (available) await storage.updateSkill(available.id, { dependencies: [skill.id] });
 
   // Renumera el nivel con el nuevo en su lugar (mismo criterio que POST /api/skills).
@@ -235,7 +361,7 @@ async function createLoggedSideQuestNode(
     if (ordered[i].levelPosition !== i + 1) await storage.updateSkill(ordered[i].id, { levelPosition: i + 1 });
   }
   await storage.recalculateYCoordinates({ areaId, projectId });
-  await storage.recalculateAvailableStatus(level, { areaId, projectId, excludeSkillId: skill.id });
+  await storage.recalculateAvailableStatus(level, { areaId, projectId, ...(pending ? {} : { excludeSkillId: skill.id }) });
   return skill.id;
 }
 
@@ -566,30 +692,130 @@ export async function registerRoutes(
   // skill tree del área con el mismo nombre que la zona del mapa.
   app.post("/api/radar-maps/side-quest", requireAuth, async (req, res) => {
     try {
-      const area = typeof req.body?.area === "string" ? req.body.area.trim().toLowerCase() : "";
+      const area = typeof req.body?.area === "string" ? req.body.area : "";
       const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
       const description = typeof req.body?.description === "string" ? req.body.description.trim() : "";
-      if (!area || !title) {
+      if (!area.trim() || !title) {
         res.status(400).json({ message: "area y title son obligatorios" });
         return;
       }
-      const match = (await storage.getAreas(req.userId!))
-        .find(a => !a.archived && a.name.trim().toLowerCase() === area);
-      if (!match) {
+      // Habilidad que estaba agendada (taskId = su tarea): desbloquearla en el mapa confirma su
+      // nodo SideQuest pendiente y su tarea, en vez de crear otro nodo.
+      const task = typeof req.body?.taskId === "string" ? await storage.getManualTodayTask(req.body.taskId) : undefined;
+      const ownTask = task && task.userId === req.userId ? task : undefined;
+      const result = await logRadarSideQuest(
+        req.userId!, area, title, description,
+        ownTask?.linkedSkillId ? { confirmId: ownTask.linkedSkillId } : "create",
+      );
+      if (ownTask && ownTask.done !== 1) await storage.updateManualTodayTask(ownTask.id, { done: 1 });
+      if (!result) {
         res.status(404).json({ message: "Área no encontrada" });
         return;
       }
-      await createLoggedSideQuestNode({ areaId: match.id }, req.userId!, title);
-      // El subskill confirmado también nace como poder del área, directamente dominado.
-      // Si ya hay uno con ese nombre no se duplica.
-      const existingPowers = await storage.getSourcePowers(req.userId!, "area", match.id);
-      const alreadyExists = existingPowers.some(p => p.name.trim().toLowerCase() === title.toLowerCase());
-      let power = null;
-      if (!alreadyExists) {
-        const created = await storage.createSourcePower({ userId: req.userId!, areaId: match.id, name: title, description });
-        power = (await storage.updateSourcePower(created.id, { isUnlocked: 2 })) ?? created;
+      res.json({ ok: true, power: result.power });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Actividad del mapa completada (done = 1): queda como nodo SideQuest confirmado en el área con
+  // el nombre de la zona (sin poder: es un paso hacia la habilidad, no la habilidad) y como tarea
+  // hecha en "Tareas de hoy" del día `date`. Si estaba agendada (taskId) se usa esa tarea (pasa a
+  // ese día) y su nodo pendiente; si no, se crean. done = 0 ("Volver a bloquear") desconfirma la
+  // tarea y su nodo. Devuelve la tarea: el mapa guarda su id en la actividad (x.t).
+  app.post("/api/radar-maps/activity", requireAuth, async (req, res) => {
+    try {
+      const area = typeof req.body?.area === "string" ? req.body.area : "";
+      const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
+      const date = typeof req.body?.date === "string" ? req.body.date : "";
+      const done = req.body?.done === 0 ? 0 : 1;
+      const found = typeof req.body?.taskId === "string" ? await storage.getManualTodayTask(req.body.taskId) : undefined;
+      const task = found && found.userId === req.userId ? found : undefined;
+      if (done === 0) {
+        if (!task) { res.status(404).json({ message: "Tarea no encontrada" }); return; }
+        const node = task.linkedSkillId ? await storage.getSkill(task.linkedSkillId) : undefined;
+        if (node?.areaId && node.isSideQuest === 1 && node.status === "mastered") {
+          await storage.updateSkill(node.id, { status: "available", completedAt: null });
+          await storage.recalculateAvailableStatus(node.level, { areaId: node.areaId });
+        }
+        res.json(task.done === 0 ? task : await storage.updateManualTodayTask(task.id, { done: 0 }));
+        return;
       }
-      res.json({ ok: true, power });
+      if (!title || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        res.status(400).json({ message: "title y date (YYYY-MM-DD) son obligatorios" });
+        return;
+      }
+      const match = area.trim() ? await findAreaByName(req.userId!, area) : undefined;
+      const pending = task?.linkedSkillId ? await storage.getSkill(task.linkedSkillId) : undefined;
+      let nodeId: string | null = null;
+      if (pending && (!match || pending.areaId === match.id)) {
+        nodeId = pending.id;
+        if (pending.status !== "mastered") {
+          await storage.updateSkill(pending.id, { status: "mastered", completedAt: new Date() });
+          await storage.recalculateAvailableStatus(pending.level, { areaId: pending.areaId! });
+        }
+      } else if (match) {
+        nodeId = await createLoggedSideQuestNode({ areaId: match.id }, req.userId!, title);
+      }
+      // nodeCreated: false avisa al mapa que la actividad quedó solo como tarea (sin área con el
+      // nombre de la zona, p. ej. si el área se renombró, no hay dónde crear el SideQuest).
+      if (task) {
+        if (task.date !== date) await storage.deleteTodayTaskSlot(req.userId!, task.date, "manual", task.id);
+        const updated = await storage.updateManualTodayTask(task.id, {
+          done: 1,
+          date,
+          ...(nodeId && nodeId !== task.linkedSkillId ? { linkedSkillId: nodeId } : {}),
+        });
+        res.json({ ...updated, nodeCreated: !!nodeId });
+        return;
+      }
+      const created = await storage.createManualTodayTask({
+        userId: req.userId!,
+        date,
+        title,
+        kind: "task",
+        done: 1,
+        ...(match && nodeId ? { linkedKind: "area" as const, linkedParentId: match.id, linkedSkillId: nodeId } : {}),
+      });
+      res.status(201).json({ ...created, nodeCreated: !!nodeId });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Agendar una habilidad del mapa en "Tareas de hoy": crea la tarea del día elegido y, si la
+  // zona del mapa es un área del skill tree, un nodo SideQuest pendiente en el lugar del nodo
+  // desbloqueado de esa área, vinculado a la tarea (confirmar la tarea confirma el nodo, igual
+  // que los eventos con área). Sin área que coincida, queda como tarea suelta.
+  app.post("/api/radar-maps/schedule", requireAuth, async (req, res) => {
+    try {
+      const area = typeof req.body?.area === "string" ? req.body.area : "";
+      const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
+      const date = typeof req.body?.date === "string" ? req.body.date : "";
+      if (!title || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        res.status(400).json({ message: "title y date (YYYY-MM-DD) son obligatorios" });
+        return;
+      }
+      // Ya agendada y sin confirmar: se mueve esa tarea (con su nodo) al día nuevo.
+      const previous = typeof req.body?.replaceTaskId === "string" ? await storage.getManualTodayTask(req.body.replaceTaskId) : undefined;
+      if (previous && previous.userId === req.userId && previous.done !== 1) {
+        if (previous.date === date) { res.json(previous); return; }
+        const moved = await storage.updateManualTodayTask(previous.id, { date });
+        await storage.deleteTodayTaskSlot(req.userId!, previous.date, "manual", previous.id);
+        res.json(moved);
+        return;
+      }
+      const match = area.trim() ? await findAreaByName(req.userId!, area) : undefined;
+      const nodeId = match ? await createLoggedSideQuestNode({ areaId: match.id }, req.userId!, title, true) : null;
+      const task = await storage.createManualTodayTask({
+        userId: req.userId!,
+        date,
+        title,
+        kind: "task",
+        done: 0,
+        ...(match && nodeId ? { linkedKind: "area" as const, linkedParentId: match.id, linkedSkillId: nodeId } : {}),
+      });
+      res.status(201).json(task);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -676,6 +902,11 @@ export async function registerRoutes(
         return;
       }
       const area = await storage.updateArea(req.params.id, req.body);
+      // El mapa de habilidades vincula cada zona con su área por nombre: si el área se renombra,
+      // la zona pasa a llamarse igual (si no, sus SideQuests y tareas dejan de encontrar el área).
+      if (typeof req.body?.name === "string" && req.body.name.trim() && req.body.name.trim() !== existingArea.name.trim()) {
+        await renameRadarZone(req.userId!, existingArea.name, req.body.name.trim());
+      }
       res.json(area);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -3599,6 +3830,128 @@ export async function registerRoutes(
     }
   });
 
+  // Profile - Concepts (los nombres siempre se guardan en mayúscula)
+  app.get("/api/profile/concepts", requireAuth, async (req, res) => {
+    try {
+      const entries = await storage.getProfileConcepts(req.userId!);
+      res.json(entries);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/profile/concepts", requireAuth, async (req, res) => {
+    try {
+      const data = { ...req.body, userId: req.userId };
+      if (typeof data.name === "string") data.name = data.name.toUpperCase();
+      const validated = insertProfileConceptSchema.parse(data);
+      const entry = await storage.createProfileConcept(validated);
+      res.status(201).json(entry);
+    } catch (error: any) {
+      const validationError = fromError(error);
+      res.status(400).json({ message: validationError.toString() });
+    }
+  });
+
+  app.patch("/api/profile/concepts/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getProfileConcept(req.params.id);
+      if (!existing) {
+        res.status(404).json({ message: "Concept not found" });
+        return;
+      }
+      if (existing.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para modificar esta entrada" });
+        return;
+      }
+      const data = { ...req.body };
+      if (typeof data.name === "string") data.name = data.name.toUpperCase();
+      const updated = await storage.updateProfileConcept(req.params.id, data);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/profile/concepts/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getProfileConcept(req.params.id);
+      if (!existing) {
+        res.status(404).json({ message: "Concept not found" });
+        return;
+      }
+      if (existing.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para eliminar esta entrada" });
+        return;
+      }
+      await storage.deleteProfileConcept(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Profile - Limiting Beliefs (los nombres siempre se guardan en mayúscula)
+  app.get("/api/profile/limiting-beliefs", requireAuth, async (req, res) => {
+    try {
+      const entries = await storage.getProfileLimitingBeliefs(req.userId!);
+      res.json(entries);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/profile/limiting-beliefs", requireAuth, async (req, res) => {
+    try {
+      const data = { ...req.body, userId: req.userId };
+      if (typeof data.name === "string") data.name = data.name.toUpperCase();
+      const validated = insertProfileLimitingBeliefSchema.parse(data);
+      const entry = await storage.createProfileLimitingBelief(validated);
+      res.status(201).json(entry);
+    } catch (error: any) {
+      const validationError = fromError(error);
+      res.status(400).json({ message: validationError.toString() });
+    }
+  });
+
+  app.patch("/api/profile/limiting-beliefs/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getProfileLimitingBelief(req.params.id);
+      if (!existing) {
+        res.status(404).json({ message: "Limiting belief not found" });
+        return;
+      }
+      if (existing.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para modificar esta entrada" });
+        return;
+      }
+      const data = { ...req.body };
+      if (typeof data.name === "string") data.name = data.name.toUpperCase();
+      const updated = await storage.updateProfileLimitingBelief(req.params.id, data);
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/profile/limiting-beliefs/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getProfileLimitingBelief(req.params.id);
+      if (!existing) {
+        res.status(404).json({ message: "Limiting belief not found" });
+        return;
+      }
+      if (existing.userId !== req.userId) {
+        res.status(403).json({ message: "No tienes permiso para eliminar esta entrada" });
+        return;
+      }
+      await storage.deleteProfileLimitingBelief(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Home Needs - cross-device sync
   const HOME_NEEDS_STORAGE_NAME = "__home_needs_tasks__";
 
@@ -4027,6 +4380,76 @@ export async function registerRoutes(
         description: JSON.stringify(items),
       });
       res.json({ ok: true, id: created.id });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Logros cargados a mano desde la tab "Logros" del Journal (mantener apretado el fondo).
+  // Mismo almacenamiento que las reparaciones: un JSON dentro de un profile_about_entry.
+  const MANUAL_ACHIEVEMENTS_STORAGE_NAME = "__manual_achievements__";
+
+  type ManualAchievement = { id: string; emoji: string; title: string; detail: string; date: string };
+
+  function sanitizeManualAchievements(input: unknown): ManualAchievement[] {
+    if (!Array.isArray(input)) return [];
+
+    return input
+      .map((item) => {
+        const a = item as Record<string, unknown>;
+        if (typeof a.id !== "string" || typeof a.title !== "string" || !a.title.trim()) return null;
+        return {
+          id: a.id,
+          emoji: typeof a.emoji === "string" && a.emoji.trim() ? a.emoji : "🏅",
+          title: a.title,
+          detail: typeof a.detail === "string" ? a.detail : "",
+          date: typeof a.date === "string" ? a.date : "",
+        };
+      })
+      .filter((item): item is ManualAchievement => item !== null);
+  }
+
+  app.get("/api/manual-achievements", requireAuth, async (req, res) => {
+    try {
+      const entries = await storage.getProfileAboutEntries(req.userId!);
+      const storageEntry = entries.find((entry) => entry.name === MANUAL_ACHIEVEMENTS_STORAGE_NAME);
+
+      if (!storageEntry) {
+        res.json([]);
+        return;
+      }
+
+      let parsed: unknown = [];
+      try {
+        parsed = JSON.parse(storageEntry.description || "[]");
+      } catch {
+        parsed = [];
+      }
+
+      res.json(sanitizeManualAchievements(parsed));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/manual-achievements", requireAuth, async (req, res) => {
+    try {
+      const items = sanitizeManualAchievements(req.body?.items);
+      const entries = await storage.getProfileAboutEntries(req.userId!);
+      const storageEntry = entries.find((entry) => entry.name === MANUAL_ACHIEVEMENTS_STORAGE_NAME);
+
+      if (storageEntry) {
+        await storage.updateProfileAboutEntry(storageEntry.id, {
+          description: JSON.stringify(items),
+        });
+      } else {
+        await storage.createProfileAboutEntry({
+          userId: req.userId!,
+          name: MANUAL_ACHIEVEMENTS_STORAGE_NAME,
+          description: JSON.stringify(items),
+        });
+      }
+      res.json(items);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -5960,7 +6383,12 @@ export async function registerRoutes(
       if (date !== undefined && existing.date !== date) {
         await storage.deleteTodayTaskSlot(req.userId!, existing.date, "manual", existing.id);
       }
-      res.json(updated);
+      // Tarea agendada desde el mapa de habilidades: confirmarla desbloquea esa habilidad (o
+      // marca esa actividad; desconfirmarla la vuelve a dejar pendiente).
+      const radarUnlock = done !== undefined && done !== existing.done
+        ? await syncRadarForTask(req.userId!, existing.id, done, !!existing.linkedSkillId)
+        : null;
+      res.json(radarUnlock ? { ...updated, radarUnlock } : updated);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

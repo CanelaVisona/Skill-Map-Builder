@@ -142,13 +142,15 @@ export function useTodayProgressSummary() {
     return result;
   };
 
+  const manualTasksQuery = useManualTasks(todayStr, true);
+  const manualTasks = manualTasksQuery.data || [];
+
+  // Igual que en TodayProgressModal: el nodo de una tarea manual no se cuenta además como extra.
+  const manualLinkedNodeIds = new Set(manualTasks.map((t) => t.linkedSkillId).filter((id): id is string => !!id));
   const extraNodesToday = [
     ...collectExtraCompletedNodes(Array.isArray(areas) ? areas : []),
     ...collectExtraCompletedNodes(Array.isArray(projects) ? projects : []),
-  ];
-
-  const manualTasksQuery = useManualTasks(todayStr, true);
-  const manualTasks = manualTasksQuery.data || [];
+  ].filter((n) => !manualLinkedNodeIds.has(n.id));
 
   const slotsQuery = useTodayTaskSlots(todayStr, true);
   const { data: slotsData } = slotsQuery;

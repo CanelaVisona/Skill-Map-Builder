@@ -31,7 +31,7 @@ import HousePriorityList from "../components/HousePriorityList";
 import HouseRepairsList from "../components/HouseRepairsList";
 import { EvidenceBoardModalWrapper } from "@/components/EvidenceBoardModal";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, ArrowRight, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, User, Menu, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Utensils, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt, OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation, Check, HelpCircle, PiggyBank, Search, X, Pentagon } from "lucide-react";
+import { ArrowLeft, ArrowRight, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, User, Menu, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Utensils, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt, OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation, Check, HelpCircle, PiggyBank, Search, X, Pentagon, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -69,6 +69,7 @@ import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { SkillsGridJournal } from "@/components/SkillsGridJournal";
+import { AchievementsHall } from "@/components/AchievementsHall";
 import { BodyStrengthPanel } from "@/components/BodyStrengthPanel";
 import { LevelNavigationPanel, type LevelNavItem } from "@/components/LevelNavigationPanel";
 import { GoalsButton, CompletedGoalsJournal } from "@/components/GoalsPanel";
@@ -2750,6 +2751,26 @@ function ProfileSection() {
     },
   });
 
+  const { data: profileConcepts = [], isLoading: conceptsLoading } = useQuery<ProfileEntry[]>({
+    queryKey: ["/api/profile/concepts"],
+    queryFn: async () => {
+      const res = await fetch("/api/profile/concepts");
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    },
+  });
+
+  const { data: profileLimitingBeliefs = [], isLoading: limitingBeliefsLoading } = useQuery<ProfileEntry[]>({
+    queryKey: ["/api/profile/limiting-beliefs"],
+    queryFn: async () => {
+      const res = await fetch("/api/profile/limiting-beliefs");
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    },
+  });
+
   const { data: profileExperiences = [], isLoading: experiencesLoading } = useQuery<ProfileEntry[]>({
     queryKey: ["/api/profile/experiences"],
     queryFn: async () => {
@@ -2853,6 +2874,94 @@ function ProfileSection() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/profile/about"] });
+      setSelectedEntry(null);
+      setShowDeleteConfirm(false);
+    },
+  });
+
+  const createConcept = useMutation({
+    mutationFn: async (data: { name: string; description: string }) => {
+      const res = await fetch("/api/profile/concepts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/profile/concepts"] });
+      setIsAdding(false);
+      setName("");
+      setDescription("");
+    },
+  });
+
+  const updateConcept = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { name?: string; description?: string } }) => {
+      const res = await fetch(`/api/profile/concepts/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/profile/concepts"] });
+      setSelectedEntry(null);
+      setIsEditMode(false);
+    },
+  });
+
+  const deleteConcept = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/profile/concepts/${id}`, { method: "DELETE" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/profile/concepts"] });
+      setSelectedEntry(null);
+      setShowDeleteConfirm(false);
+    },
+  });
+
+  const createLimitingBelief = useMutation({
+    mutationFn: async (data: { name: string; description: string }) => {
+      const res = await fetch("/api/profile/limiting-beliefs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/profile/limiting-beliefs"] });
+      setIsAdding(false);
+      setName("");
+      setDescription("");
+    },
+  });
+
+  const updateLimitingBelief = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: { name?: string; description?: string } }) => {
+      const res = await fetch(`/api/profile/limiting-beliefs/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/profile/limiting-beliefs"] });
+      setSelectedEntry(null);
+      setIsEditMode(false);
+    },
+  });
+
+  const deleteLimitingBelief = useMutation({
+    mutationFn: async (id: string) => {
+      await fetch(`/api/profile/limiting-beliefs/${id}`, { method: "DELETE" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/profile/limiting-beliefs"] });
       setSelectedEntry(null);
       setShowDeleteConfirm(false);
     },
@@ -2987,6 +3096,8 @@ function ProfileSection() {
     { id: "values", label: "Valores", title: "MIS VALORES" },
     { id: "likes", label: "Gustos", title: "LO QUE ME GUSTA" },
     { id: "about", label: "Sobre mí", title: "SOBRE MÍ" },
+    { id: "concepts", label: "Conceptos", title: "CONCEPTOS" },
+    { id: "limitingBeliefs", label: "Creencias limitantes", title: "CREENCIAS LIMITANTES" },
     { id: "experiences", label: "Experiencias", title: "MIS EXPERIENCIAS" },
     { id: "contributions", label: "Contribución", title: "MIS CONTRIBUCIONES" },
   ];
@@ -2995,7 +3106,10 @@ function ProfileSection() {
   const currentEntries = activeTab === "values" ? profileValues : 
                         activeTab === "likes" ? profileLikes : 
                         activeTab === "mission" ? profileMissions : 
-                        activeTab === "about" ? profileAboutEntries :
+                        // Las entradas "__..." son almacenamiento interno (casa, logros manuales), no "Sobre mí".
+                        activeTab === "about" ? profileAboutEntries.filter((e) => !e.name?.startsWith("__")) :
+                        activeTab === "concepts" ? profileConcepts :
+                        activeTab === "limitingBeliefs" ? profileLimitingBeliefs :
                         activeTab === "experiences" ? profileExperiences :
                         profileContributions;
 
@@ -3037,6 +3151,10 @@ function ProfileSection() {
       createMission.mutate({ name: name.trim(), description: description.trim() });
     } else if (activeTab === "about") {
       createAboutEntry.mutate({ name: name.trim(), description: description.trim() });
+    } else if (activeTab === "concepts") {
+      createConcept.mutate({ name: name.trim().toUpperCase(), description: description.trim() });
+    } else if (activeTab === "limitingBeliefs") {
+      createLimitingBelief.mutate({ name: name.trim().toUpperCase(), description: description.trim() });
     } else if (activeTab === "experiences") {
       const created = await createExperience.mutateAsync({
         name: name.trim(),
@@ -3066,6 +3184,10 @@ function ProfileSection() {
       updateMission.mutate({ id: selectedEntry.id, data: { name: name.trim(), description: description.trim() } });
     } else if (activeTab === "about") {
       updateAboutEntry.mutate({ id: selectedEntry.id, data: { name: name.trim(), description: description.trim() } });
+    } else if (activeTab === "concepts") {
+      updateConcept.mutate({ id: selectedEntry.id, data: { name: name.trim().toUpperCase(), description: description.trim() } });
+    } else if (activeTab === "limitingBeliefs") {
+      updateLimitingBelief.mutate({ id: selectedEntry.id, data: { name: name.trim().toUpperCase(), description: description.trim() } });
     } else if (activeTab === "experiences") {
       const experienceId = selectedEntry.id;
       updateExperience.mutate({ id: experienceId, data: {
@@ -3096,6 +3218,10 @@ function ProfileSection() {
       deleteMission.mutate(selectedEntry.id);
     } else if (activeTab === "about") {
       deleteAboutEntry.mutate(selectedEntry.id);
+    } else if (activeTab === "concepts") {
+      deleteConcept.mutate(selectedEntry.id);
+    } else if (activeTab === "limitingBeliefs") {
+      deleteLimitingBelief.mutate(selectedEntry.id);
     } else if (activeTab === "experiences") {
       deleteExperience.mutate(selectedEntry.id);
     } else if (activeTab === "contributions") {
@@ -3121,6 +3247,10 @@ function ProfileSection() {
       updateMission.mutate({ id: selectedEntry.id, data: { description: newDesc } });
     } else if (activeTab === "about") {
       updateAboutEntry.mutate({ id: selectedEntry.id, data: { description: newDesc } });
+    } else if (activeTab === "concepts") {
+      updateConcept.mutate({ id: selectedEntry.id, data: { description: newDesc } });
+    } else if (activeTab === "limitingBeliefs") {
+      updateLimitingBelief.mutate({ id: selectedEntry.id, data: { description: newDesc } });
     } else if (activeTab === "experiences") {
       updateExperience.mutate({ id: selectedEntry.id, data: { description: newDesc } });
     } else if (activeTab === "contributions") {
@@ -3215,6 +3345,8 @@ function ProfileSection() {
       case "values": return "Valor";
       case "likes": return "Gusto";
       case "about": return "Sobre mí";
+      case "concepts": return "Concepto";
+      case "limitingBeliefs": return "Creencia limitante";
       case "experiences": return "Experiencia";
       case "contributions": return "Contribución";
       default: return "Entrada";
@@ -3227,13 +3359,15 @@ function ProfileSection() {
       case "values": return "valores";
       case "likes": return "gustos";
       case "about": return "entradas";
+      case "concepts": return "conceptos";
+      case "limitingBeliefs": return "creencias limitantes";
       case "experiences": return "experiencias";
       case "contributions": return "contribuciones";
       default: return "entradas";
     }
   };
 
-  if (profileLoading || valuesLoading || likesLoading || missionsLoading || aboutEntriesLoading || experiencesLoading || contributionsLoading) {
+  if (profileLoading || valuesLoading || likesLoading || missionsLoading || aboutEntriesLoading || conceptsLoading || limitingBeliefsLoading || experiencesLoading || contributionsLoading) {
     return <div className="text-muted-foreground text-sm">Cargando...</div>;
   }
 
@@ -3533,7 +3667,7 @@ function ProfileSection() {
                   <div key={entry.id}>
                     <button
                       onClick={(e) => { e.stopPropagation(); setViewingEntry(entry); }}
-                      className={`w-full text-left px-3 py-2 rounded text-sm transition-all cursor-pointer select-none ${
+                      className={`w-full text-left px-3 py-2 rounded text-sm transition-all cursor-pointer select-none ${activeTab === "concepts" || activeTab === "limitingBeliefs" ? "uppercase " : ""}${
                         viewingEntry?.id === entry.id
                           ? "bg-secondary text-foreground shadow-sm"
                           : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
@@ -9272,13 +9406,16 @@ function QuestDiary() {
               <TabsTrigger value="tools" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-tools" title="Tools">
                 <Wrench className="h-5 w-5" />
               </TabsTrigger>
+              <TabsTrigger value="logros" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-logros" title="Logros">
+                <Trophy className="h-5 w-5" />
+              </TabsTrigger>
               <TabsTrigger value="objetivos" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-objetivos" title="Objetivos">
                 <Target className="h-5 w-5" />
               </TabsTrigger>
               <TabsTrigger value="powers" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-powers" title="Poderes">
                 <Shield className="h-5 w-5" />
               </TabsTrigger>
-              <TabsTrigger value="errores" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-errores" title="Bugs">
+              <TabsTrigger value="errores" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-errores" title="Errores">
                 <Circle className="h-5 w-5" />
               </TabsTrigger>
               <TabsTrigger value="body" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-body" title="Fuerza">
@@ -9297,6 +9434,10 @@ function QuestDiary() {
               
               <TabsContent value="achievements" className="flex-1 min-h-0 min-w-0 mt-0">
                 <AchievementsSection learnings={learnings} tools={tools} thoughts={thoughts} />
+              </TabsContent>
+
+              <TabsContent value="logros" className="flex-1 min-h-0 min-w-0 mt-0">
+                <AchievementsHall />
               </TabsContent>
 
               <TabsContent value="skills" className="flex-1 min-h-0 min-w-0 mt-0">
