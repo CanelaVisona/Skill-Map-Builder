@@ -77,6 +77,7 @@ import { RadarSkillMapModal } from "@/components/RadarSkillMapModal";
 import { SkillsSparkIcon } from "@/components/SkillsSparkIcon";
 import { NodeConfirmFeedbackProvider } from "@/lib/node-confirm-feedback-context";
 import { JournalQuickAddDialog, type JournalQuickAddKind } from "@/components/JournalQuickAddDialog";
+import { useLongPress } from "@/lib/use-long-press";
 
 function calculateVisibleLevels(skills: Skill[], endOfAreaLevel?: number): Set<number> {
   const visibleLevels = new Set<number>();
@@ -2071,13 +2072,17 @@ function ToolsSection({
   onDelete,
   onUpdate,
   questMap,
+  onTitleLongPress,
 }: {
   entries: JournalTool[];
   isLoading: boolean;
   onDelete: (id: string) => void;
   onUpdate?: (id: string, data: { title: string; sentence: string }) => void;
   questMap: SkillQuestMap;
+  // Mantener apretado el título ("N tools") abre "Nueva entrada" para agregar una tool.
+  onTitleLongPress?: () => void;
 }) {
+  const titleLongPress = useLongPress(onTitleLongPress);
   const [viewingEntry, setViewingEntry] = useState<JournalTool | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editTitle, setEditTitle] = useState("");
@@ -2151,7 +2156,7 @@ function ToolsSection({
 
   return (
     <div className="h-full flex flex-col">
-      <div className="mb-3 pb-2 border-b border-border">
+      <div className="mb-3 pb-2 border-b border-border select-none" {...titleLongPress} data-testid="journal-tools-title">
         <span className="text-xs text-muted-foreground uppercase tracking-wider">
           {filteredEntries.length} tools
         </span>
@@ -2329,6 +2334,7 @@ function LearningsSection({
   onUpdate,
   questMap,
   variant = "learnings",
+  onTitleLongPress,
 }: {
   entries: Array<JournalLearning | JournalStrategy>;
   isLoading: boolean;
@@ -2336,8 +2342,11 @@ function LearningsSection({
   onUpdate?: (id: string, data: { title: string; sentence: string }) => void;
   questMap: SkillQuestMap;
   variant?: keyof typeof ENTRY_SECTION_TEXTS;
+  // Mantener apretado el título ("N discoveries") abre "Nueva entrada" para agregar una de esta tab.
+  onTitleLongPress?: () => void;
 }) {
   const texts = ENTRY_SECTION_TEXTS[variant];
+  const titleLongPress = useLongPress(onTitleLongPress);
   const EmptyIcon = texts.icon;
   const [viewingEntry, setViewingEntry] = useState<JournalLearning | JournalStrategy | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -2412,7 +2421,7 @@ function LearningsSection({
 
   return (
     <div className="h-full flex flex-col">
-      <div className="mb-3 pb-2 border-b border-border">
+      <div className="mb-3 pb-2 border-b border-border select-none" {...titleLongPress} data-testid={`journal-${variant}-title`}>
         <span className="text-xs text-muted-foreground uppercase tracking-wider">
           {filteredEntries.length} discoveries
         </span>
@@ -9409,43 +9418,9 @@ function QuestDiary() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/journal/tools"] }),
   });
   
-  // Mantener apretado el fondo de las tabs Achievements/Learnings/Estrategias/Tools abre "Nueva
-  // entrada" (JournalQuickAddDialog), con el tipo de esa tab ya elegido (en Achievements arranca
-  // en "Pensamiento", que no tiene tab propia). Solo ahí: otras tabs (p.ej. Errores) ya usan el
-  // long-press del fondo para lo suyo. No dispara si el press empezó sobre algo interactivo.
-  const [journalTab, setJournalTab] = useState("achievements");
+  // "Nueva entrada" (JournalQuickAddDialog): se abre manteniendo apretado el título de las tabs
+  // Learnings/Estrategias/Tools, con el tipo de esa tab ya elegido.
   const [quickAddKind, setQuickAddKind] = useState<JournalQuickAddKind | null>(null);
-  const journalBgLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const journalBgPressStart = useRef<{ x: number; y: number } | null>(null);
-  const QUICK_ADD_KIND_BY_TAB: Record<string, JournalQuickAddKind> = {
-    achievements: "thought",
-    learnings: "learning",
-    tools: "tool",
-    strategies: "strategy",
-  };
-  const cancelJournalBgLongPress = () => {
-    if (journalBgLongPressTimer.current) {
-      clearTimeout(journalBgLongPressTimer.current);
-      journalBgLongPressTimer.current = null;
-    }
-    journalBgPressStart.current = null;
-  };
-  const startJournalBgLongPress = (e: React.PointerEvent) => {
-    const tabKind = QUICK_ADD_KIND_BY_TAB[journalTab];
-    if (!tabKind) return;
-    if ((e.target as HTMLElement).closest("button, a, input, textarea, select, [role='button'], [role='tab'], [contenteditable='true']")) return;
-    cancelJournalBgLongPress();
-    journalBgPressStart.current = { x: e.clientX, y: e.clientY };
-    journalBgLongPressTimer.current = setTimeout(() => {
-      journalBgLongPressTimer.current = null;
-      setQuickAddKind(tabKind);
-    }, 600);
-  };
-  // Un scroll/arrastre no cuenta como mantener apretado.
-  const moveJournalBgLongPress = (e: React.PointerEvent) => {
-    const start = journalBgPressStart.current;
-    if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) cancelJournalBgLongPress();
-  };
 
   return (
     <>
@@ -9463,7 +9438,7 @@ function QuestDiary() {
           <DialogTitle>Journal</DialogTitle>
         </VisuallyHidden>
         <div className="flex h-full min-h-0 min-w-0 flex-col sm:flex-row">
-          <Tabs activationMode="manual" defaultValue="achievements" onValueChange={setJournalTab} className="flex-1 flex min-h-0 min-w-0 flex-col sm:flex-row" orientation={isMobile ? "horizontal" : "vertical"}>
+          <Tabs activationMode="manual" defaultValue="achievements" className="flex-1 flex min-h-0 min-w-0 flex-col sm:flex-row" orientation={isMobile ? "horizontal" : "vertical"}>
             <TabsList className="flex w-full sm:w-auto flex-row sm:flex-col h-auto sm:h-full justify-start gap-0.5 p-1.5 rounded-none border-b-2 sm:border-b-0 sm:border-r-2 border-border bg-secondary/50 shadow-[inset_0_-4px_8px_rgba(0,0,0,0.3)] sm:shadow-[inset_-4px_0_8px_rgba(0,0,0,0.3)] dark:shadow-[inset_0_-4px_8px_rgba(0,0,0,0.3)] sm:dark:shadow-[inset_-4px_0_8px_rgba(0,0,0,0.3)] overflow-x-auto">
               <TabsTrigger value="achievements" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-achievements" title="Achievements">
                 <Scroll className="h-5 w-5" />
@@ -9504,15 +9479,7 @@ function QuestDiary() {
               </TabsTrigger>
             </TabsList>
             
-            <div
-              className="flex-1 p-3 sm:p-6 bg-background flex flex-col min-h-0 min-w-0"
-              onPointerDown={startJournalBgLongPress}
-              onPointerMove={moveJournalBgLongPress}
-              onPointerUp={cancelJournalBgLongPress}
-              onPointerCancel={cancelJournalBgLongPress}
-              onPointerLeave={cancelJournalBgLongPress}
-              onContextMenu={(e) => { if (quickAddKind !== null || journalBgLongPressTimer.current) e.preventDefault(); }}
-            >
+            <div className="flex-1 p-3 sm:p-6 bg-background flex flex-col min-h-0 min-w-0">
               <div className="mb-4 pb-3 border-b border-border">
                 <h2 className="text-xl font-bold tracking-tight text-foreground">Journal</h2>
                 <div className="h-0.5 w-16 bg-gradient-to-r from-muted-foreground to-transparent mt-2" />
@@ -9543,6 +9510,7 @@ function QuestDiary() {
               
               <TabsContent value="learnings" className="flex-1 min-h-0 min-w-0 mt-0">
                 <LearningsSection
+                  onTitleLongPress={() => setQuickAddKind("learning")}
                   entries={learnings}
                   isLoading={loadingLearnings}
                   questMap={skillQuestMap}
@@ -9561,6 +9529,7 @@ function QuestDiary() {
               <TabsContent value="strategies" className="flex-1 min-h-0 min-w-0 mt-0">
                 <LearningsSection
                   variant="strategies"
+                  onTitleLongPress={() => setQuickAddKind("strategy")}
                   entries={strategies}
                   isLoading={loadingStrategies}
                   questMap={skillQuestMap}
@@ -9581,6 +9550,7 @@ function QuestDiary() {
 
               <TabsContent value="tools" className="flex-1 min-h-0 min-w-0 mt-0">
                 <ToolsSection
+                  onTitleLongPress={() => setQuickAddKind("tool")}
                   entries={tools}
                   isLoading={loadingTools}
                   questMap={skillQuestMap}
