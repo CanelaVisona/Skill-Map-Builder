@@ -184,7 +184,17 @@ function MinutesSuffix({
   const inFlow = isFlowActive(allTimers, getDateStr(new Date()));
   const live = !!deadline && !!showRemaining && !inFlow;
   useMinuteTick(live);
-  if (!minutes) return null;
+  const family = useContext(TimerFamilyContext);
+  if (!minutes) {
+    // Sin tiempo asignado: igual se puede dar ▶ y contar para arriba ("llevo 12 min"). Si la fila
+    // ya muestra la suma del tiempo de sus hijos, el contador va ahí (derivedTimerKey), no acá.
+    if (!timerKey || family.derivedKeys.has(timerKey)) return null;
+    return (
+      <span className="text-muted-foreground">
+        <TaskTimerControl timerKey={timerKey} minutes={0} done={timerDone} />
+      </span>
+    );
+  }
   // Un marco para avanzar, no una alarma: cada número dice qué es ("10 min · hasta 16:18 ·
   // tengo 5 min"), todo en el mismo tono tranquilo. "tengo" baja con la hora actual; cuando la
   // hora ya pasó, simplemente deja de mostrarse (sin rojo ni "atrasado").
@@ -200,7 +210,7 @@ function MinutesSuffix({
   if (timerKey && !deadline) {
     return (
       <span className="text-muted-foreground">
-        {" "}· <TaskTimerControl timerKey={timerKey} minutes={minutes} done={timerDone} />
+        <TaskTimerControl timerKey={timerKey} minutes={minutes} done={timerDone} />
       </span>
     );
   }
@@ -216,8 +226,9 @@ function MinutesSuffix({
 // padre suma lo que llevaron sus hijos (más el suyo propio, si se usó su ▶), sin cambiar su tiempo
 // asignado: pasarse no es un error, es entrar en flow. Para no contar dos veces, en una misma
 // familia corre un solo contador a la vez (dar ▶ en uno pausa al padre y a los hermanos).
-type TimerFamily = { childrenOf: Map<string, string[]>; parentOf: Map<string, string> };
-const TimerFamilyContext = React.createContext<TimerFamily>({ childrenOf: new Map(), parentOf: new Map() });
+// derivedKeys: tareas sin tiempo propio cuya fila muestra la suma del de sus hijos (ahí va su ▶).
+type TimerFamily = { childrenOf: Map<string, string[]>; parentOf: Map<string, string>; derivedKeys: Set<string> };
+const TimerFamilyContext = React.createContext<TimerFamily>({ childrenOf: new Map(), parentOf: new Map(), derivedKeys: new Set() });
 
 // Contador de arranque. "5 min ▶": tocar ▶ cuenta para atrás de a un minuto ("5 min" → "4 min",
 // sin segundos; ⏸ pausa). Al llegar a cero no corta: pasa a "✓ 5 · llevo 12 min" y sigue
@@ -240,7 +251,9 @@ function TaskTimerControl({ timerKey, minutes, done }: { timerKey: string; minut
 
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
   const used = !!state || childStates.length > 0;
-  if (!used && done) return <>{minutes} min</>;
+  // Sin tiempo asignado (minutes 0): no hay arranque, solo cuenta para arriba.
+  const free = minutes === 0;
+  if (!used && done) return free ? null : <>{" "}· {minutes} min</>;
 
   // Lo propio más lo de los hijos; el arranque es el del propio contador, o los minutos asignados.
   const elapsedMs = (state ? timerElapsedMs(state) : 0) + childStates.reduce((acc, t) => acc + timerElapsedMs(t), 0);
@@ -256,7 +269,8 @@ function TaskTimerControl({ timerKey, minutes, done }: { timerKey: string; minut
     start();
   };
   let label: React.ReactNode;
-  if (!used) label = <>{minutes} min</>;
+  if (free) label = used ? <>{done ? "" : "llevo "}{elapsedMin} min</> : null;
+  else if (!used) label = <>{minutes} min</>;
   else if (reached) {
     label = (
       <>
@@ -271,7 +285,14 @@ function TaskTimerControl({ timerKey, minutes, done }: { timerKey: string; minut
 
   return (
     <span className="inline-flex items-center gap-1 align-middle">
-      <span className={used && !done ? "tabular-nums text-amber-600 dark:text-amber-400" : undefined}>{label}</span>
+      {label ? (
+        <>
+          {" "}·{" "}
+          <span className={used && !done ? "tabular-nums text-amber-600 dark:text-amber-400" : undefined}>{label}</span>
+        </>
+      ) : (
+        " "
+      )}
       {!done && (
         <button
           type="button"
@@ -431,10 +452,11 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const todayStr = getDateStr(new Date());
   const effectiveDate = previewDate ?? todayStr;
   const isPreview = previewDate !== null;
-  // Key del contador de arranque (botón ▶) de una tarea: solo viendo hoy y con minutos. Una tarea
-  // ya confirmada lo sigue mostrando (sin botón), con lo que se llevó (ver TaskTimerControl).
-  const timerKeyFor = (taskKey: string, minutes: number | null | undefined) =>
-    effectiveDate === todayStr && minutes ? taskTimerKey(todayStr, taskKey) : null;
+  // Key del contador (botón ▶) de una tarea: solo viendo hoy. Con minutos es un arranque; sin
+  // minutos cuenta para arriba. Una tarea ya confirmada lo sigue mostrando (sin botón), con lo que
+  // se llevó (ver TaskTimerControl).
+  const timerKeyFor = (taskKey: string, _minutes?: number | null) =>
+    effectiveDate === todayStr ? taskTimerKey(todayStr, taskKey) : null;
   // Día pasado: es un registro de lo que pasó, no hay "tarea que toca ahora". Nada se atenúa
   // (en hoy, lo que todavía no toca queda tenue), para que se lea todo lo de ese día.
   const isPastDay = effectiveDate < todayStr;
@@ -2395,9 +2417,10 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const allTimers = useAllTaskTimers();
   const flowActive = isFlowActive(allTimers, todayStr);
   // Familias de contadores (ver TimerFamilyContext): cada tarea con sus sub-nodos o sub-pasos.
-  const timerFamily: TimerFamily = { childrenOf: new Map(), parentOf: new Map() };
+  const timerFamily: TimerFamily = { childrenOf: new Map(), parentOf: new Map(), derivedKeys: new Set() };
   todayItems.forEach((item) => {
     const parentKey = taskTimerKey(todayStr, `${item.type}:${item.id}`);
+    if (parentMinutesProps(item).derivedMinutes) timerFamily.derivedKeys.add(parentKey);
     const childKeys = item.type === "node"
       ? subNodesFor(item).map((sub) => taskTimerKey(todayStr, `node:${sub.id}`))
       : substepsFor(item).map((st) => taskTimerKey(todayStr, `step:${st.id}`));
