@@ -4850,8 +4850,13 @@ export async function registerRoutes(
   app.get("/api/source-powers/:type/:sourceId", requireAuth, async (req, res) => {
     try {
       const { type, sourceId } = req.params;
+      // "none": poderes sueltos, sin área ni proyecto (sección "+ poderes").
+      if (type === "none") {
+        res.json(await storage.getUnassignedSourcePowers(req.userId!));
+        return;
+      }
       if (type !== "area" && type !== "project") {
-        res.status(400).json({ message: "Invalid type. Must be 'area' or 'project'" });
+        res.status(400).json({ message: "Invalid type. Must be 'area', 'project' or 'none'" });
         return;
       }
       const powers = await storage.getSourcePowers(req.userId!, type, sourceId);
@@ -5247,11 +5252,9 @@ export async function registerRoutes(
 
   app.post("/api/node-errors", requireAuth, async (req, res) => {
     try {
+      // Sin nodo, área ni proyecto también vale: es un error "suelto" (cargado desde el modal de
+      // feedback de una tarea de "Tareas de hoy"), que se lista en la sección "+ errores".
       const validated = insertNodeErrorSchema.parse({ ...req.body, userId: req.userId });
-      if (!validated.skillId && !validated.areaId && !validated.projectId) {
-        res.status(400).json({ message: "El error necesita un nodo, área o proyecto" });
-        return;
-      }
       const created = await storage.createNodeError(validated);
       res.status(201).json(created);
     } catch (error: any) {

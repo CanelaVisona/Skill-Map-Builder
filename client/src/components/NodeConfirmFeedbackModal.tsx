@@ -16,7 +16,10 @@ import { SkillPickerList, ChipListInput } from "@/components/skill-node-pickers"
 // del área/quest y antes de "Quest updated!" (ver confirmNode en SkillNode.tsx). Se divide en
 // cubos (pensamiento, aprendizaje, herramienta, error, XP, poder); cada cubo abre su formulario
 // por pasos y, al guardarlo, vuelve a los cubos. Los cubos de error y poder sirven tanto para
-// elegir uno existente como para crear uno nuevo. En todos los formularios la descripción va
+// elegir uno existente como para crear uno nuevo. Si lo confirmado no tiene área/quest (una
+// tarea suelta, un hábito o una práctica de "Tareas de hoy"), esos dos cubos primero preguntan
+// a qué área/quest pertenece; sin ninguna, queda "suelto" (secciones "+ errores"/"+ poderes"
+// del Journal). En todos los formularios la descripción va
 // primero y el título después. Nada se registra acá adentro: todo queda en un borrador que se
 // le entrega a onFinish al apretar "Listo" (o al cerrar el modal tocando afuera), y recién ahí
 // SkillNode lo guarda y muestra los pop-ups de lo que se cargó.
@@ -38,9 +41,8 @@ export interface NodeFeedbackError {
 // Movimiento sobre un error ya registrado (lo que antes era la tab "Bugs"): confirmar uno
 // recién detectado, o +10p con una estrategia / -10p con un disparador. `isNew` marca que la
 // estrategia/disparador se tipeó acá y hay que sumarla a la lista guardada del error.
-export type NodeFeedbackErrorAction =
-  | { type: "confirm"; errorId: string; errorName: string }
-  | { type: "adjust"; errorId: string; errorName: string; delta: 10 | -10; value: string; isNew: boolean };
+// Área/quest a la que pertenece un error/poder; null = suelto.
+export type FeedbackScope = { type: "area" | "project"; id: string } | null;
 
 export interface NodeFeedbackExistingError {
   id: string;
@@ -49,29 +51,38 @@ export interface NodeFeedbackExistingError {
   confirmed: 0 | 1;
   estrategias: string[];
   disparadores: string[];
+  // Skills/componentes linkeados (suman con un +10).
+  skillIds?: string[];
+  bodyLinks?: BodyLink[];
 }
 
-export interface NodeFeedbackNewPower {
-  name: string;
-  description: string;
-}
-
-export interface NodeFeedbackDraft {
-  thoughts: NodeFeedbackEntry[];
-  learnings: NodeFeedbackEntry[];
-  tools: NodeFeedbackEntry[];
-  errors: NodeFeedbackError[];
-  errorActions: NodeFeedbackErrorAction[];
-  xpSkillIds: string[];
-  powerIds: string[];
-  newPowers: NodeFeedbackNewPower[];
-}
+export type NodeFeedbackErrorAction = { errorId: string; errorName: string; scope: FeedbackScope } & (
+  | { type: "confirm" }
+  | { type: "adjust"; delta: 10 | -10; value: string; isNew: boolean; savedOptions: string[]; links: { skillIds: string[]; bodyLinks: BodyLink[] } }
+);
 
 export interface NodeFeedbackPower {
   id: string;
   name: string;
   description: string;
   isUnlocked: 0 | 1 | 2;
+}
+
+export interface NodeFeedbackNewPower {
+  name: string;
+  description: string;
+  scope: FeedbackScope;
+}
+
+export interface NodeFeedbackDraft {
+  thoughts: NodeFeedbackEntry[];
+  learnings: NodeFeedbackEntry[];
+  tools: NodeFeedbackEntry[];
+  errors: Array<NodeFeedbackError & { scope: FeedbackScope }>;
+  errorActions: NodeFeedbackErrorAction[];
+  xpSkillIds: string[];
+  powers: Array<{ power: NodeFeedbackPower; scope: FeedbackScope }>;
+  newPowers: NodeFeedbackNewPower[];
 }
 
 const EMPTY_DRAFT: NodeFeedbackDraft = {
@@ -81,7 +92,7 @@ const EMPTY_DRAFT: NodeFeedbackDraft = {
   errors: [],
   errorActions: [],
   xpSkillIds: [],
-  powerIds: [],
+  powers: [],
   newPowers: [],
 };
 
@@ -92,7 +103,7 @@ export const isNodeFeedbackDraftEmpty = (draft: NodeFeedbackDraft) =>
   draft.errors.length === 0 &&
   draft.errorActions.length === 0 &&
   draft.xpSkillIds.length === 0 &&
-  draft.powerIds.length === 0 &&
+  draft.powers.length === 0 &&
   draft.newPowers.length === 0;
 
 type CubeId = "thought" | "learning" | "tool" | "error" | "xp" | "power";
@@ -111,6 +122,7 @@ const CUBES: Array<{ id: CubeId; label: string; icon: React.ComponentType<{ clas
 // Cada paso de cada formulario. La lista de pasos de un cubo depende de lo elegido en su primer
 // paso (error/poder nuevo vs. existente) -- ver stepKeys.
 type StepKey =
+  | "scope"
   | "description"
   | "title"
   | "errorPick"
@@ -135,6 +147,12 @@ interface NodeConfirmFeedbackModalProps {
   onFinish: (draft: NodeFeedbackDraft) => void;
   xpAmount: number;
   skillDisplayName: (id: string) => string;
+  // Área/quest de lo confirmado (un nodo). Si falta, los cubos de error/poder la preguntan.
+  fixedScope?: { type: "area" | "project"; id: string };
+  // Avisa qué área/quest se eligió en esos cubos, para que el llamador cargue `powers`/`errors`
+  // de esa área/quest (o los sueltos, con null).
+  onListScopeChange?: (scope: FeedbackScope) => void;
+  // Poderes/errores del área/quest actual (fixedScope, o la elegida).
   powers: NodeFeedbackPower[];
   errors: NodeFeedbackExistingError[];
   // Skill picker (XP) -- mismos datos que el picker del Step 3 del diálogo de edición.
@@ -161,6 +179,8 @@ export function NodeConfirmFeedbackModal({
   onFinish,
   xpAmount,
   skillDisplayName,
+  fixedScope,
+  onListScopeChange,
   powers,
   errors,
   legacySkills,
@@ -195,6 +215,23 @@ export function NodeConfirmFeedbackModal({
   const [actionDelta, setActionDelta] = useState<10 | -10 | null>(null);
   const [actionValue, setActionValue] = useState<string | null>(null);
   const [actionNewValue, setActionNewValue] = useState("");
+  // Área/quest elegida en el primer paso de error/poder (solo sin fixedScope). undefined = todavía
+  // sin elegir; null = ninguna (suelto).
+  const [pickedScope, setPickedScope] = useState<FeedbackScope | undefined>(undefined);
+  const entryScope: FeedbackScope = fixedScope ?? pickedScope ?? null;
+
+  const scopeKey = (scope: FeedbackScope | undefined) => (scope === undefined ? "" : scope === null ? "none" : `${scope.type}:${scope.id}`);
+  const pickScope = (scope: FeedbackScope) => {
+    if (scopeKey(scope) !== scopeKey(pickedScope)) {
+      setErrorTarget(null);
+      setPowerTarget(null);
+      setActionDelta(null);
+      setActionValue(null);
+      setActionNewValue("");
+    }
+    setPickedScope(scope);
+    onListScopeChange?.(scope);
+  };
 
   // Cada apertura arranca de cero, en la vista de cubos.
   useEffect(() => {
@@ -221,6 +258,7 @@ export function NodeConfirmFeedbackModal({
     setActionDelta(null);
     setActionValue(null);
     setActionNewValue("");
+    setPickedScope(undefined);
     setStep(0);
     setActiveCube(cube);
   };
@@ -239,7 +277,7 @@ export function NodeConfirmFeedbackModal({
       case "tool": return draft.tools.length;
       case "error": return draft.errors.length + draft.errorActions.length;
       case "xp": return draft.xpSkillIds.length;
-      case "power": return draft.powerIds.length + draft.newPowers.length;
+      case "power": return draft.powers.length + draft.newPowers.length;
     }
   };
 
@@ -255,7 +293,7 @@ export function NodeConfirmFeedbackModal({
     return text && !items.includes(text) ? [...items, text] : items;
   };
 
-  const selectablePowers = powers.filter((p) => p.isUnlocked !== 2 && !draft.powerIds.includes(p.id));
+  const selectablePowers = powers.filter((p) => p.isUnlocked !== 2 && !draft.powers.some((d) => d.power.id === p.id));
   const selectedPower = powers.find((p) => p.id === powerTarget) || null;
 
   const actionError = errors.find((e) => e.id === errorTarget) || null;
@@ -273,20 +311,21 @@ export function NodeConfirmFeedbackModal({
     : [];
 
   const stepKeys = (cube: CubeId): StepKey[] => {
+    const scopeStep: StepKey[] = fixedScope ? [] : ["scope"];
     switch (cube) {
       case "thought":
       case "learning":
       case "tool":
         return ["description", "title"];
       case "error":
-        if (errorTarget === NEW) return ["errorPick", "errorComoSi", "errorName", "errorChips", "errorLinks"];
-        if (actionErrorState && !actionErrorState.confirmed) return ["errorPick", "errorConfirm"];
-        return ["errorPick", "errorDelta", "errorOption"];
+        if (errorTarget === NEW) return [...scopeStep, "errorPick", "errorComoSi", "errorName", "errorChips", "errorLinks"];
+        if (actionErrorState && !actionErrorState.confirmed) return [...scopeStep, "errorPick", "errorConfirm"];
+        return [...scopeStep, "errorPick", "errorDelta", "errorOption"];
       case "xp":
         return ["xpPick", "xpConfirm"];
       case "power":
-        if (powerTarget === NEW) return ["powerPick", "powerDescription", "powerName"];
-        return ["powerPick", "powerConfirm"];
+        if (powerTarget === NEW) return [...scopeStep, "powerPick", "powerDescription", "powerName"];
+        return [...scopeStep, "powerPick", "powerConfirm"];
     }
   };
 
@@ -296,6 +335,8 @@ export function NodeConfirmFeedbackModal({
 
   const canAdvance = (): boolean => {
     switch (currentKey) {
+      case "scope":
+        return pickedScope !== undefined;
       case "title":
       case "errorName":
       case "powerName":
@@ -331,9 +372,9 @@ export function NodeConfirmFeedbackModal({
           return { ...prev, xpSkillIds: Array.from(new Set([...prev.xpSkillIds, ...xpSkillIds])) };
         case "power":
           if (powerTarget === NEW) {
-            return { ...prev, newPowers: [...prev.newPowers, { name: title.trim(), description: sentence.trim() }] };
+            return { ...prev, newPowers: [...prev.newPowers, { name: title.trim(), description: sentence.trim(), scope: entryScope }] };
           }
-          return powerTarget ? { ...prev, powerIds: [...prev.powerIds, powerTarget] } : prev;
+          return selectedPower ? { ...prev, powers: [...prev.powers, { power: selectedPower, scope: entryScope }] } : prev;
         case "error": {
           if (errorTarget === NEW) {
             return {
@@ -345,12 +386,13 @@ export function NodeConfirmFeedbackModal({
                 disparadores: withPendingChip(errorDisparadores, errorDisparadorDraft),
                 skillIds: errorSkillIds,
                 bodyLinks: errorBodyLinks,
+                scope: entryScope,
               }],
             };
           }
           if (!actionError || !actionErrorState) return prev;
           if (!actionErrorState.confirmed) {
-            return { ...prev, errorActions: [...prev.errorActions, { type: "confirm", errorId: actionError.id, errorName: actionError.nombre }] };
+            return { ...prev, errorActions: [...prev.errorActions, { type: "confirm", errorId: actionError.id, errorName: actionError.nombre, scope: entryScope }] };
           }
           if (actionDelta === null) return prev;
           const typed = actionNewValue.trim();
@@ -366,6 +408,9 @@ export function NodeConfirmFeedbackModal({
               delta: actionDelta,
               value,
               isNew: !!typed && !savedOptions.includes(typed),
+              savedOptions,
+              links: { skillIds: actionError.skillIds ?? [], bodyLinks: actionError.bodyLinks ?? [] },
+              scope: entryScope,
             }],
           };
         }
@@ -432,8 +477,33 @@ export function NodeConfirmFeedbackModal({
     </button>
   );
 
+  const renderScopePick = () => {
+    const option = (scope: FeedbackScope, label: string, hint?: string) => (
+      <button
+        key={scopeKey(scope)}
+        type="button"
+        onClick={() => pickScope(scope)}
+        className={optionClass(scopeKey(pickedScope) === scopeKey(scope))}
+        data-testid={`confirm-feedback-scope-${scopeKey(scope)}`}
+      >
+        <p className="text-sm font-medium">{label}</p>
+        {hint && <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p>}
+      </button>
+    );
+    return (
+      <div className="space-y-2">
+        <Label className={fieldLabel}>¿De qué área o quest?</Label>
+        {areas.map((a) => option({ type: "area", id: a.id }, a.name))}
+        {projects.map((p) => option({ type: "project", id: p.id }, p.name, "Quest"))}
+        {option(null, "Ninguna", activeCube === "power" ? "Queda en \"+ poderes\"" : "Queda en \"+ errores\"")}
+      </div>
+    );
+  };
+
   const renderForm = () => {
     switch (currentKey) {
+      case "scope":
+        return renderScopePick();
       case "description":
         return renderDescriptionInput(
           "Descripción",

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useContext, useEffect, useRef, useState } from "react";
 import { isHabitScheduledOn } from "@shared/habitSchedule";
 import { useQuery, useQueries, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -212,28 +212,51 @@ function MinutesSuffix({
   );
 }
 
+// Qué contadores son hijos de cuál (sub-nodos/sub-pasos de una tarea), por key de contador. El
+// padre suma lo que llevaron sus hijos (más el suyo propio, si se usó su ▶), sin cambiar su tiempo
+// asignado: pasarse no es un error, es entrar en flow. Para no contar dos veces, en una misma
+// familia corre un solo contador a la vez (dar ▶ en uno pausa al padre y a los hermanos).
+type TimerFamily = { childrenOf: Map<string, string[]>; parentOf: Map<string, string> };
+const TimerFamilyContext = React.createContext<TimerFamily>({ childrenOf: new Map(), parentOf: new Map() });
+
 // Contador de arranque. "5 min ▶": tocar ▶ cuenta para atrás de a un minuto ("5 min" → "4 min",
 // sin segundos; ⏸ pausa). Al llegar a cero no corta: pasa a "✓ 5 · llevo 12 min" y sigue
 // sumando hasta que se confirma la tarea. Confirmada, queda lo que se llevó ("✓ 5 · 37 min").
 // El botón no abre el menú de la tarea ni dispara su long-press.
 function TaskTimerControl({ timerKey, minutes, done }: { timerKey: string; minutes: number; done?: boolean }) {
   const { state, start, pause } = useTaskTimer(timerKey, minutes);
+  const family = useContext(TimerFamilyContext);
+  const allTimers = useAllTaskTimers();
+  const childKeys = family.childrenOf.get(timerKey) ?? [];
+  const childStates = childKeys.map((k) => allTimers[k]).filter((t): t is NonNullable<typeof t> => !!t);
   const running = state?.status === "running";
+  const ticking = running || childStates.some((t) => t.status === "running");
   const [, setTick] = useState(0);
   useEffect(() => {
-    if (!running) return;
+    if (!ticking) return;
     const id = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(id);
-  }, [running]);
+  }, [ticking]);
 
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
-  if (!state && done) return <>{minutes} min</>;
+  const used = !!state || childStates.length > 0;
+  if (!used && done) return <>{minutes} min</>;
 
-  const elapsedMs = state ? timerElapsedMs(state) : 0;
+  // Lo propio más lo de los hijos; el arranque es el del propio contador, o los minutos asignados.
+  const elapsedMs = (state ? timerElapsedMs(state) : 0) + childStates.reduce((acc, t) => acc + timerElapsedMs(t), 0);
   const elapsedMin = Math.floor(elapsedMs / 60_000);
-  const reached = isStarterReached(state);
+  const starterMs = state?.starterMs ?? minutes * 60_000;
+  const reached = used && elapsedMs >= starterMs;
+  const startExclusive = () => {
+    const parentKey = family.parentOf.get(timerKey);
+    const siblings = parentKey ? family.childrenOf.get(parentKey) ?? [] : [];
+    [...childKeys, ...(parentKey ? [parentKey] : []), ...siblings]
+      .filter((k) => k !== timerKey)
+      .forEach((k) => pauseTaskTimer(k));
+    start();
+  };
   let label: React.ReactNode;
-  if (!state) label = <>{minutes} min</>;
+  if (!used) label = <>{minutes} min</>;
   else if (reached) {
     label = (
       <>
@@ -244,11 +267,11 @@ function TaskTimerControl({ timerKey, minutes, done }: { timerKey: string; minut
       </>
     );
   } else if (done) label = <>{minutes} min · llevé {elapsedMin} min</>;
-  else label = <>{Math.ceil((state.starterMs - elapsedMs) / 60_000)} min</>;
+  else label = <>{Math.ceil((starterMs - elapsedMs) / 60_000)} min</>;
 
   return (
     <span className="inline-flex items-center gap-1 align-middle">
-      <span className={state && !done ? "tabular-nums text-amber-600 dark:text-amber-400" : undefined}>{label}</span>
+      <span className={used && !done ? "tabular-nums text-amber-600 dark:text-amber-400" : undefined}>{label}</span>
       {!done && (
         <button
           type="button"
@@ -260,7 +283,7 @@ function TaskTimerControl({ timerKey, minutes, done }: { timerKey: string; minut
             e.stopPropagation();
             e.preventDefault();
             if (running) pause();
-            else start();
+            else startExclusive();
           }}
           className="flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
           aria-label={running ? "Pausar" : "Iniciar"}
@@ -1667,7 +1690,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     // Ya confirmada con algún hijo sin tiempo: la suma no diría cuánto llevó, así que no se muestra.
     if (item.done && childMinutes.some((m) => !m || m <= 0)) return {};
     const sum = sumChildMinutes(childMinutes);
-    return sum ? { derivedMinutes: sum } : {};
+    return sum ? { derivedMinutes: sum, derivedTimerKey: timerKeyFor(`${item.type}:${item.id}`, sum) } : {};
   };
 
   const nowProps = (item: TodayItem) =>
@@ -1757,6 +1780,12 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     );
     // Al confirmarla, si tenía tiempo de sobra respecto de sus sub-pasos, pasa a su suma.
     if (newDone === 1) shrinkParentToChildrenSum(item, substepsFor(item).map((st) => st.minutes));
+    // Tarea suelta (sin nodo ni área/quest): mismo modal de feedback que un nodo, sin nodo. Las
+    // vinculadas lo abren al confirmar su nodo (toggleNodeDone / el efecto de abajo). Las comidas
+    // por defecto (desayuno, almuerzo...) no lo abren.
+    if (newDone === 1 && !defaultTaskMealId(task.id) && !task.linkedSkillId && !(task.linkedKind && task.linkedParentId)) {
+      requestNodeConfirmFeedback({});
+    }
     // Evento con nodo propio (ver newTaskParent): confirmarlo/desconfirmarlo hace lo mismo con
     // el nodo, salvo que el nodo ya esté en ese estado (p.ej. se confirmó desde el árbol).
     if (task.linkedSkillId) {
@@ -1830,6 +1859,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // feedback post-confirmación que tocarlo en el árbol ("¿Qué te dejó este nodo?"), entre la
   // barra de nivel y "Quest updated!" -- ver node-confirm-feedback-context.tsx. Se pide antes
   // del toggle, en el mismo tick, para que "Quest updated!" ya sepa que tiene que esperarlo.
+  // Tareas sueltas, hábitos y prácticas también lo abren (sin nodo ni área/quest), ver
+  // toggleManualDone / toggleItemDone.
   const { requestNodeConfirmFeedback } = useNodeConfirmFeedback();
   const requestFeedbackIfConfirming = (skillId: string, parent: { parentId: string; kind: "area" | "project" }) => {
     const tree = (parent.kind === "area" ? areas : projects).find((p) => p.id === parent.parentId);
@@ -1890,7 +1921,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       const habit = (habitsData || []).find((h) => h.id === item.id);
       if (!habit) return;
       if (item.done) unconfirmHabit(habit, effectiveDate);
-      else confirmHabit(habit, effectiveDate);
+      // El modal de feedback espera a que arranquen los pop-ups de XP del hábito.
+      else requestNodeConfirmFeedback({}, confirmHabit(habit, effectiveDate));
       return;
     }
     if (item.type === "node") {
@@ -1908,7 +1940,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     if (item.type === "practice") {
       if (item.done) return;
       const practice = (practicesData || []).find((p) => p.id === item.id);
-      if (practice) confirmPractice(practice);
+      if (practice) requestNodeConfirmFeedback({}, confirmPractice(practice));
     }
   };
 
@@ -2362,6 +2394,17 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // minuto, y una por vez — la siguiente se ubica cuando vuelven las listas ya reordenadas.
   const allTimers = useAllTaskTimers();
   const flowActive = isFlowActive(allTimers, todayStr);
+  // Familias de contadores (ver TimerFamilyContext): cada tarea con sus sub-nodos o sub-pasos.
+  const timerFamily: TimerFamily = { childrenOf: new Map(), parentOf: new Map() };
+  todayItems.forEach((item) => {
+    const parentKey = taskTimerKey(todayStr, `${item.type}:${item.id}`);
+    const childKeys = item.type === "node"
+      ? subNodesFor(item).map((sub) => taskTimerKey(todayStr, `node:${sub.id}`))
+      : substepsFor(item).map((st) => taskTimerKey(todayStr, `step:${st.id}`));
+    if (childKeys.length === 0) return;
+    timerFamily.childrenOf.set(parentKey, childKeys);
+    childKeys.forEach((k) => timerFamily.parentOf.set(k, parentKey));
+  });
   // Los contadores viven en la base: se traen al abrir, cada minuto y al volver a la pestaña.
   useTaskTimersSync(todayStr, open);
   // Confirmar una tarea detiene su contador de arranque (queda registrado lo que se llevó).
@@ -2938,7 +2981,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const pickerOffset = getFirstDayOfMonth(calAddPickerMonth);
 
   return (
-    <>
+    <TimerFamilyContext.Provider value={timerFamily}>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md rounded-2xl border-none max-h-[85vh] overflow-y-auto minimal-scrollbar" showCloseButton={false}>
         <VisuallyHidden>
@@ -4142,7 +4185,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       initialMealId={mealPopupId}
       initialDate={effectiveDate}
     />
-    </>
+    </TimerFamilyContext.Provider>
   );
 }
 
@@ -4312,6 +4355,7 @@ function TodayTaskRow({
   onToggleExpand,
   onMoveNow,
   derivedMinutes,
+  derivedTimerKey,
 }: {
   item: TodayItem;
   // Tarea que no es "la que sigue" (la primera pendiente de la franja horaria actual): se
@@ -4353,6 +4397,8 @@ function TodayTaskRow({
   onMoveNow?: () => void;
   // Suma del tiempo de sus sub-nodos/sub-pasos, cuando la tarea no tiene tiempo propio.
   derivedMinutes?: number;
+  // Contador de esa suma (ver TaskTimerControl): el padre muestra lo que llevaron sus hijos.
+  derivedTimerKey?: string | null;
 }) {
   const [hideConfirmOpen, setHideConfirmOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -4437,7 +4483,7 @@ function TodayTaskRow({
               }`}
             >
               {item.label}
-              {derivedMinutes ? <MinutesSuffix minutes={derivedMinutes} /> : null}
+              {derivedMinutes ? <MinutesSuffix minutes={derivedMinutes} timerKey={derivedTimerKey} timerDone={item.done} /> : null}
               {priority && (
                 <Star className="ml-1 inline h-3.5 w-3.5 -translate-y-px fill-amber-400 text-amber-500" aria-label="Prioridad" />
               )}

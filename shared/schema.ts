@@ -914,14 +914,16 @@ export const insertProfileValueSchema = createInsertSchema(profileValues).omit({
 export const insertProfileLikeSchema = createInsertSchema(profileLikes).omit({ id: true });
 export const insertProfileExperienceSchema = createInsertSchema(profileExperiences).omit({ id: true });
 export const insertProfileContributionSchema = createInsertSchema(profileContributions).omit({ id: true });
+// skillId es opcional: el modal de feedback de una tarea suelta de "Tareas de hoy" (sin nodo)
+// también carga pensamientos/aprendizajes/herramientas.
 export const insertJournalLearningSchema = createInsertSchema(journalLearnings).omit({ id: true }).extend({
-  skillId: z.string().min(1, "skillId is required"),
+  skillId: z.string().min(1).nullable().optional(),
 });
 export const insertJournalToolSchema = createInsertSchema(journalTools).omit({ id: true }).extend({
-  skillId: z.string().min(1, "skillId is required"),
+  skillId: z.string().min(1).nullable().optional(),
 });
 export const insertJournalThoughtSchema = createInsertSchema(journalThoughts).omit({ id: true }).extend({
-  skillId: z.string().min(1, "skillId is required"),
+  skillId: z.string().min(1).nullable().optional(),
 });
 
 export const insertUserSkillsProgressSchema = createInsertSchema(userSkillsProgress).omit({ id: true, createdAt: true, updatedAt: true, userId: true });

@@ -10,31 +10,36 @@ import { type BodyLink } from "@/components/BodyLinkPicker";
 import {
   NodeConfirmFeedbackModal,
   isNodeFeedbackDraftEmpty,
+  type FeedbackScope,
   type NodeFeedbackDraft,
   type NodeFeedbackPower,
 } from "@/components/NodeConfirmFeedbackModal";
 
 // Modal de feedback post-confirmación ("¿Qué te dejó este nodo?"), global: se abre al confirmar
 // un nodo de un área/quest tanto desde el árbol (SkillNode.tsx) como desde "Tareas de hoy"
-// (TodayProgressModal.tsx), donde no hay ningún SkillNode montado. Por eso el modal, sus datos
-// y el guardado de lo cargado viven acá y no en SkillNode.
+// (TodayProgressModal.tsx) -- y ahí también al confirmar una tarea suelta, un hábito o una
+// práctica, que no tienen nodo ni área/quest. Por eso el modal, sus datos y el guardado de lo
+// cargado viven acá y no en SkillNode.
 //
-// Orden de pop-ups: barra de nivel del área/quest -> (recompensas encoladas del nodo, si las
-// hay) -> este modal -> pop-ups de lo cargado en él -> "Quest updated!" / "¡Subiste de nivel!".
-// Cada pedido abre su propia cadena de pop-ups (beginPopupChain) en el mismo tick del click, y
-// "Quest updated!" espera a que no haya cadenas pendientes (runAfterPopupsClear en
-// skill-context.tsx), así que siempre queda último. La cadena se cierra recién cuando lo cargado
-// ya se guardó y sus pop-ups terminaron (o enseguida, si no se cargó nada).
+// Orden de pop-ups: barra de nivel del área/quest -> (recompensas encoladas del nodo, o los
+// pop-ups de XP del hábito/práctica) -> este modal -> pop-ups de lo cargado en él -> "Quest
+// updated!" / "¡Subiste de nivel!" / progreso de hoy. Cada pedido abre su propia cadena de
+// pop-ups (beginPopupChain) en el mismo tick del click, y esos últimos esperan a que no haya
+// cadenas pendientes (runAfterPopupsClear en skill-context.tsx), así que siempre quedan después.
+// La cadena se cierra recién cuando lo cargado ya se guardó y sus pop-ups terminaron (o
+// enseguida, si no se cargó nada).
 
 export interface NodeConfirmFeedbackTarget {
-  skillId: string;
-  scopeType: "area" | "project";
-  scopeId: string;
+  // Nodo confirmado. Sin nodo (tarea suelta, hábito, práctica), lo cargado queda sin nodo.
+  skillId?: string;
+  // Área/quest de lo confirmado. Sin ella, los cubos de error/poder la preguntan.
+  scopeType?: "area" | "project";
+  scopeId?: string;
 }
 
 interface NodeConfirmFeedbackContextValue {
   // `waitFor`: algo que tiene que terminar antes de abrir el modal (p.ej. la secuencia de
-  // recompensas encoladas del nodo en SkillNode.tsx).
+  // recompensas encoladas del nodo en SkillNode.tsx, o el confirm de un hábito).
   requestNodeConfirmFeedback: (target: NodeConfirmFeedbackTarget, waitFor?: Promise<unknown>) => void;
   // true mientras el feedback de ese nodo está pendiente/abierto/guardándose -- SkillNode lo usa
   // para ignorar un segundo tap que volvería a confirmar el nodo y duplicaría sus pop-ups.
@@ -50,7 +55,8 @@ const LEGACY_SKILLS = ["Limpieza", "Guitarra", "Lectura", "Growth mindset", "Ace
 
 // Skills legacy asociados al área/quest (localStorage "legacySkillAssociations", mismo formato
 // que lee SkillNode: array de {type, id} o, en datos viejos, un solo objeto).
-function readLegacySkillsFor(scopeType: "area" | "project", scopeId: string): string[] {
+function readLegacySkillsFor(scope: FeedbackScope): string[] {
+  if (!scope) return [];
   let parsed: Record<string, unknown> = {};
   try {
     parsed = JSON.parse(localStorage.getItem("legacySkillAssociations") || "{}");
@@ -60,9 +66,15 @@ function readLegacySkillsFor(scopeType: "area" | "project", scopeId: string): st
   return LEGACY_SKILLS.filter((name) => {
     const raw = parsed[name];
     const list = Array.isArray(raw) ? raw : raw ? [raw] : [];
-    return list.some((a: any) => a && a.type === scopeType && a.id === scopeId);
+    return list.some((a: any) => a && a.type === scope.type && a.id === scope.id);
   });
 }
+
+const targetScope = (target: NodeConfirmFeedbackTarget): FeedbackScope =>
+  target.scopeType && target.scopeId ? { type: target.scopeType, id: target.scopeId } : null;
+
+const scopeBody = (scope: FeedbackScope) =>
+  !scope ? {} : scope.type === "area" ? { areaId: scope.id } : { projectId: scope.id };
 
 interface ScopeError {
   id: string;
@@ -73,12 +85,9 @@ interface ScopeError {
   disparadores: string[];
   skillIds: string[];
   bodyLinks: BodyLink[];
-}
-
-interface FinishedFeedback {
-  draft: NodeFeedbackDraft;
-  powers: NodeFeedbackPower[];
-  scopeErrors: ScopeError[];
+  skillId?: string | null;
+  areaId?: string | null;
+  projectId?: string | null;
 }
 
 interface RewardBlock {
@@ -102,38 +111,64 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
   const runErrorAdjustPopups = useErrorAdjustPopups();
 
   const [active, setActive] = useState<NodeConfirmFeedbackTarget | null>(null);
+  // Área/quest elegida dentro del modal (cubos de error/poder) cuando lo confirmado no tiene.
+  const [pickedScope, setPickedScope] = useState<FeedbackScope>(null);
   const queue = useRef<Array<{ target: NodeConfirmFeedbackTarget; waitFor?: Promise<unknown> }>>([]);
   const processing = useRef(false);
   const pendingSkillIds = useRef<Map<string, number>>(new Map());
-  const finishResolver = useRef<((finished: FinishedFeedback) => void) | null>(null);
+  const finishResolver = useRef<((draft: NodeFeedbackDraft) => void) | null>(null);
 
-  const powersKey = active ? `/api/source-powers/${active.scopeType}/${active.scopeId}` : "";
+  const activeScope = active ? targetScope(active) : null;
+  // Área/quest cuyos poderes/errores se listan en el modal.
+  const listScope: FeedbackScope = activeScope ?? pickedScope;
+
+  const powersUrl = listScope ? `/api/source-powers/${listScope.type}/${listScope.id}` : "/api/source-powers/none/none";
   const { data: powers = [] } = useQuery<NodeFeedbackPower[]>({
-    queryKey: [powersKey],
+    queryKey: [powersUrl],
     queryFn: async () => {
-      const res = await fetch(powersKey);
+      const res = await fetch(powersUrl);
       if (!res.ok) throw new Error("Failed to fetch powers");
       return res.json();
     },
     enabled: !!active,
   });
 
-  // Misma queryKey que SkillNode, así comparten caché e invalidaciones.
-  const { data: scopeErrors = [] } = useQuery<ScopeError[]>({
-    queryKey: [`/api/node-errors/${active?.skillId}`, active?.scopeType, active?.scopeId],
+  // Nodo con área/quest: misma query que SkillNode (comparten caché e invalidaciones).
+  const { data: nodeErrors = [] } = useQuery<ScopeError[]>({
+    queryKey: [`/api/node-errors/${active?.skillId}`, activeScope?.type, activeScope?.id],
     queryFn: async () => {
-      if (!active) return [];
-      const param = active.scopeType === "area" ? "areaId" : "projectId";
-      const res = await fetch(`/api/node-errors/${active.skillId}?${param}=${active.scopeId}`);
+      if (!active?.skillId || !activeScope) return [];
+      const param = activeScope.type === "area" ? "areaId" : "projectId";
+      const res = await fetch(`/api/node-errors/${active.skillId}?${param}=${activeScope.id}`);
       if (!res.ok) throw new Error("Failed to fetch node errors");
       return res.json();
     },
-    enabled: !!active,
+    enabled: !!active?.skillId && !!activeScope,
   });
 
-  const getJournalEntryCount = async (kind: "learnings" | "tools" | "thoughts", target: NodeConfirmFeedbackTarget) => {
-    const param = target.scopeType === "area" ? "areaId" : "projectId";
-    const url = `/api/journal/${kind}?${param}=${target.scopeId}`;
+  // Sin nodo: todos los errores, filtrados por el área/quest elegida (o los sueltos).
+  const { data: allErrors = [] } = useQuery<ScopeError[]>({
+    queryKey: ["/api/node-errors"],
+    queryFn: async () => {
+      const res = await fetch("/api/node-errors");
+      if (!res.ok) throw new Error("Failed to fetch node errors");
+      return res.json();
+    },
+    enabled: !!active && !(active.skillId && activeScope),
+  });
+
+  const listErrors: ScopeError[] = active?.skillId && activeScope
+    ? nodeErrors
+    : allErrors.filter((e) =>
+        !listScope
+          ? !e.skillId && !e.areaId && !e.projectId
+          : listScope.type === "area" ? e.areaId === listScope.id : e.projectId === listScope.id
+      );
+
+  const getJournalEntryCount = async (kind: "learnings" | "tools" | "thoughts", scope: FeedbackScope) => {
+    const url = scope
+      ? `/api/journal/${kind}?${scope.type === "area" ? "areaId" : "projectId"}=${scope.id}`
+      : `/api/journal/${kind}`;
     const entries = await queryClient.fetchQuery<Array<unknown>>({ queryKey: [url], staleTime: 0 });
     return entries?.length ?? 0;
   };
@@ -144,31 +179,41 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
     return res.json();
   };
 
-  const confirmError = async (target: NodeConfirmFeedbackTarget, errorId: string, enqueue: (fn: () => void) => void) => {
+  const invalidateScope = (scope: FeedbackScope) => {
+    queryClient.invalidateQueries({ queryKey: ["/api/node-errors"] });
+    if (scope) {
+      queryClient.invalidateQueries({ queryKey: [`/api/source-bugs/${scope.type}/${scope.id}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/source-powers/${scope.type}/${scope.id}`] });
+    } else {
+      queryClient.invalidateQueries({ queryKey: ["/api/source-powers/none/none"] });
+    }
+  };
+
+  const confirmError = async (scope: FeedbackScope, errorId: string, enqueue: (fn: () => void) => void) => {
+    // Con área/quest, el confirm crea su bug vinculado.
     const updated = await postJson<{ nombre: string }>(`/api/node-errors/${errorId}`, "PATCH", { confirmed: 1 });
-    // El confirm crea el bug de área/quest vinculado.
-    queryClient.invalidateQueries({ queryKey: [`/api/source-bugs/${target.scopeType}/${target.scopeId}`] });
+    invalidateScope(scope);
     enqueue(() => showErrorCelebration({ name: updated.nombre, kind: "detected" }));
   };
 
-  const unlockOrMasterPower = async (target: NodeConfirmFeedbackTarget, power: NodeFeedbackPower, enqueue: (fn: () => void) => void) => {
+  const unlockOrMasterPower = async (scope: FeedbackScope, power: NodeFeedbackPower, enqueue: (fn: () => void) => void) => {
     if (power.isUnlocked === 2) return;
     const nextState = power.isUnlocked === 0 ? 1 : 2;
     await postJson(`/api/source-powers/${power.id}`, "PATCH", { isUnlocked: nextState });
-    queryClient.invalidateQueries({ queryKey: [`/api/source-powers/${target.scopeType}/${target.scopeId}`] });
+    invalidateScope(scope);
     enqueue(() => showPowerCelebration({ name: power.name, kind: nextState === 1 ? "unlocked" : "confirmed" }));
   };
 
   // Guarda lo cargado en el modal y muestra sus pop-ups, de a un bloque por vez.
-  const commit = async (target: NodeConfirmFeedbackTarget, { draft, powers, scopeErrors }: FinishedFeedback) => {
-    const { skillId, scopeType, scopeId } = target;
-    const scopeBody = scopeType === "area" ? { areaId: scopeId } : { projectId: scopeId };
+  const commit = async (target: NodeConfirmFeedbackTarget, draft: NodeFeedbackDraft) => {
+    const skillId = target.skillId ?? null;
+    const confirmedScope = targetScope(target);
     const blocks: RewardBlock[] = [];
 
     const journalBlock = (kind: "thoughts" | "learnings" | "tools", popupType: "thought" | "learning" | "tool", entry: { title: string; sentence: string }): RewardBlock => ({
       label: `+${popupType}: ${entry.title}`,
       run: async (enqueue) => {
-        const countBefore = await getJournalEntryCount(kind, target);
+        const countBefore = await getJournalEntryCount(kind, confirmedScope);
         await postJson(`/api/journal/${kind}`, "POST", { title: entry.title, sentence: entry.sentence, skillId });
         queryClient.invalidateQueries({ queryKey: [`/api/journal/${kind}`] });
         enqueue(() => showInsightsCounterPopup({ type: popupType, countBefore, countAfter: countBefore + 1 }));
@@ -179,13 +224,18 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
     draft.learnings.forEach((l) => blocks.push(journalBlock("learnings", "learning", l)));
     draft.tools.forEach((t) => blocks.push(journalBlock("tools", "tool", t)));
 
-    // Error nuevo: se crea y se confirma de una ("¡Error nuevo detectado!").
-    for (const error of draft.errors) {
+    // Error nuevo: se crea y se confirma de una ("¡Error nuevo detectado!"). Va con el nodo solo
+    // si es de la misma área/quest que el nodo confirmado.
+    for (const { scope, ...error } of draft.errors) {
       blocks.push({
         label: `+Error: ${error.nombre}`,
         run: async (enqueue) => {
-          const created = await postJson<{ id: string }>("/api/node-errors", "POST", { skillId, ...scopeBody, ...error });
-          await confirmError(target, created.id, enqueue);
+          const created = await postJson<{ id: string }>("/api/node-errors", "POST", {
+            ...(skillId && confirmedScope ? { skillId } : {}),
+            ...scopeBody(scope),
+            ...error,
+          });
+          await confirmError(scope, created.id, enqueue);
         },
       });
     }
@@ -196,21 +246,20 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
         label: `Error: ${action.errorName}`,
         run: async (enqueue) => {
           if (action.type === "confirm") {
-            await confirmError(target, action.errorId, enqueue);
+            await confirmError(action.scope, action.errorId, enqueue);
             return;
           }
-          const targetError = scopeErrors.find((e) => e.id === action.errorId);
           const field = action.delta > 0 ? "estrategias" : "disparadores";
-          if (action.isNew && targetError && !targetError[field].includes(action.value)) {
-            await postJson(`/api/node-errors/${action.errorId}`, "PATCH", { [field]: [...targetError[field], action.value] });
+          if (action.isNew) {
+            await postJson(`/api/node-errors/${action.errorId}`, "PATCH", { [field]: [...action.savedOptions, action.value] });
           }
           const result = await postJson<ErrorAdjustResult>(`/api/node-errors/${action.errorId}/records`, "POST", {
             delta: action.delta,
             estrategia: action.delta > 0 ? action.value : null,
             disparador: action.delta < 0 ? action.value : null,
           });
-          queryClient.invalidateQueries({ queryKey: [`/api/source-bugs/${scopeType}/${scopeId}`] });
-          await runErrorAdjustPopups(result, action.delta, targetError, AREA_COLOR);
+          invalidateScope(action.scope);
+          await runErrorAdjustPopups(result, action.delta, action.links, AREA_COLOR);
         },
       });
     }
@@ -222,15 +271,12 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
       });
     }
 
-    for (const powerId of draft.powerIds) {
-      const power = powers.find((p) => p.id === powerId);
-      if (power) {
-        blocks.push({ label: `+${power.name}`, run: (enqueue) => unlockOrMasterPower(target, power, enqueue) });
-      }
+    for (const { power, scope } of draft.powers) {
+      blocks.push({ label: `+${power.name}`, run: (enqueue) => unlockOrMasterPower(scope, power, enqueue) });
     }
 
     // Poder nuevo: se crea bloqueado y se desbloquea de una, con su pop-up de "desbloqueado".
-    for (const newPower of draft.newPowers) {
+    for (const { scope, ...newPower } of draft.newPowers) {
       blocks.push({
         label: `+Poder: ${newPower.name}`,
         run: async (enqueue) => {
@@ -238,9 +284,9 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
             name: newPower.name,
             description: newPower.description,
             isUnlocked: 0,
-            ...scopeBody,
+            ...scopeBody(scope),
           });
-          await unlockOrMasterPower(target, created, enqueue);
+          await unlockOrMasterPower(scope, created, enqueue);
         },
       });
     }
@@ -256,10 +302,12 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
       await waitForPopupsBusyClear();
     }
 
-    queryClient.invalidateQueries({ queryKey: [`/api/node-errors/${skillId}`] });
-    queryClient.invalidateQueries({ queryKey: ["/api/journal/thoughts", skillId] });
-    queryClient.invalidateQueries({ queryKey: ["/api/journal/learnings", skillId] });
-    queryClient.invalidateQueries({ queryKey: ["/api/journal/tools", skillId] });
+    if (skillId) {
+      queryClient.invalidateQueries({ queryKey: [`/api/node-errors/${skillId}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/journal/thoughts", skillId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/journal/learnings", skillId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/journal/tools", skillId] });
+    }
   };
 
   // processQueue corre a lo largo de varios renders: siempre usa el commit del último render.
@@ -280,17 +328,20 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
           await new Promise((resolve) => setTimeout(resolve, 400));
         } while (getPopupBusyDelay() > 0);
 
-        const finished = await new Promise<FinishedFeedback>((resolve) => {
+        const draft = await new Promise<NodeFeedbackDraft>((resolve) => {
           finishResolver.current = resolve;
+          setPickedScope(null);
           setActive(target);
         });
-        if (!isNodeFeedbackDraftEmpty(finished.draft)) await commitRef.current(target, finished);
+        if (!isNodeFeedbackDraftEmpty(draft)) await commitRef.current(target, draft);
       } catch (error) {
         console.error("[nodeConfirmFeedback] Failed:", error);
       } finally {
-        const left = (pendingSkillIds.current.get(target.skillId) ?? 1) - 1;
-        if (left > 0) pendingSkillIds.current.set(target.skillId, left);
-        else pendingSkillIds.current.delete(target.skillId);
+        if (target.skillId) {
+          const left = (pendingSkillIds.current.get(target.skillId) ?? 1) - 1;
+          if (left > 0) pendingSkillIds.current.set(target.skillId, left);
+          else pendingSkillIds.current.delete(target.skillId);
+        }
         endPopupChain();
       }
     }
@@ -301,40 +352,44 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
     // Sincrónico, en el mismo tick que la confirmación: "Quest updated!" ya sabe que tiene que
     // esperar.
     beginPopupChain();
-    pendingSkillIds.current.set(target.skillId, (pendingSkillIds.current.get(target.skillId) ?? 0) + 1);
+    if (target.skillId) {
+      pendingSkillIds.current.set(target.skillId, (pendingSkillIds.current.get(target.skillId) ?? 0) + 1);
+    }
     queue.current.push({ target, waitFor });
     if (!processing.current) void processQueue();
   };
 
-  // Los poderes/errores del nodo se capturan acá, mientras el modal sigue abierto: después de
-  // setActive(null) sus queries quedan deshabilitadas y ya no los tienen.
   const handleFinish = (draft: NodeFeedbackDraft) => {
     const resolve = finishResolver.current;
     if (!resolve) return;
     finishResolver.current = null;
     setActive(null);
-    resolve({ draft, powers, scopeErrors });
+    resolve(draft);
   };
 
   const skillDisplayName = (id: string) =>
     id.startsWith("legacy:") ? id.replace("legacy:", "") : (globalSkills.find((s) => s.id === id)?.name || "Skill");
 
   return (
-    <NodeConfirmFeedbackContext.Provider value={{ requestNodeConfirmFeedback, isNodeConfirmFeedbackPending: (skillId) => pendingSkillIds.current.has(skillId) }}>
+    <NodeConfirmFeedbackContext.Provider
+      value={{ requestNodeConfirmFeedback, isNodeConfirmFeedbackPending: (skillId) => pendingSkillIds.current.has(skillId) }}
+    >
       {children}
       <NodeConfirmFeedbackModal
         open={!!active}
         onFinish={handleFinish}
         xpAmount={FIXED_XP_AMOUNT}
         skillDisplayName={skillDisplayName}
+        fixedScope={activeScope ?? undefined}
+        onListScopeChange={setPickedScope}
         powers={powers}
-        errors={scopeErrors}
-        legacySkills={active ? readLegacySkillsFor(active.scopeType, active.scopeId) : []}
-        scopedGlobalSkills={active ? (active.scopeType === "area" ? getGlobalSkillsForArea(active.scopeId) : getGlobalSkillsForProject(active.scopeId)) : []}
+        errors={listErrors}
+        legacySkills={readLegacySkillsFor(activeScope)}
+        scopedGlobalSkills={activeScope ? (activeScope.type === "area" ? getGlobalSkillsForArea(activeScope.id) : getGlobalSkillsForProject(activeScope.id)) : globalSkills}
         areas={areas}
         projects={projects}
-        currentAreaId={active?.scopeType === "area" ? active.scopeId : undefined}
-        currentProjectId={active?.scopeType === "project" ? active.scopeId : undefined}
+        currentAreaId={activeScope?.type === "area" ? activeScope.id : undefined}
+        currentProjectId={activeScope?.type === "project" ? activeScope.id : undefined}
         getGlobalSkillsForArea={getGlobalSkillsForArea}
         getGlobalSkillsForProject={getGlobalSkillsForProject}
       />

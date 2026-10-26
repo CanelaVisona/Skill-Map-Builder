@@ -8969,6 +8969,18 @@ function QuestDiary() {
     })),
   });
 
+  // "+ poderes": poderes sueltos, sin área ni quest (cargados desde el modal de feedback de una
+  // tarea suelta, hábito o práctica de "Tareas de hoy"). Se muestran todos, no solo los dominados.
+  const { data: unassignedPowers = [] } = useQuery<Array<{ id: string; name: string; description: string; isUnlocked: 0 | 1 | 2 }>>({
+    queryKey: ["/api/source-powers/none/none"],
+    queryFn: async () => {
+      const res = await fetch("/api/source-powers/none/none");
+      if (!res.ok) throw new Error("Failed to fetch powers");
+      return res.json();
+    },
+    enabled: isDiaryOpen,
+  });
+
   const areaPowerGroups = areas
     .map((area, index) => ({
       id: area.id,
@@ -9051,6 +9063,8 @@ function QuestDiary() {
     },
     enabled: isDiaryOpen,
   });
+
+  const unassignedErrors = allNodeErrors.filter((e) => !e.skillId && !e.areaId && !e.projectId);
 
   interface ErrorQuestGroup {
     key: string;
@@ -9505,12 +9519,51 @@ function QuestDiary() {
                     </p>
                   </div>
 
-                  {areaPowerGroups.length === 0 && projectPowerGroups.length === 0 ? (
+                  {areaPowerGroups.length === 0 && projectPowerGroups.length === 0 && unassignedPowers.length === 0 ? (
                     <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-border/70 bg-muted/10 p-6 text-center text-sm text-muted-foreground">
                       Aún no tienes poderes dominados en áreas o proyectos.
                     </div>
                   ) : (
-                    <div className="flex-1 space-y-4 overflow-y-auto pr-1">
+                    <div className="flex-1 space-y-4 overflow-y-auto pr-1 minimal-scrollbar">
+                      {unassignedPowers.length > 0 && (
+                        <section data-testid="journal-unassigned-powers">
+                          <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">+ poderes</h3>
+                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            {unassignedPowers.map((power) => {
+                              const state = renderPowerState(power);
+                              const PowerIcon = getPowerIcon(power.id);
+                              const isSelected = selectedPowerId === power.id;
+                              return (
+                                <button
+                                  key={power.id}
+                                  type="button"
+                                  onClick={() => setSelectedPowerId((current) => current === power.id ? null : power.id)}
+                                  className={`relative flex min-h-[60px] w-full items-start gap-2 overflow-hidden rounded-lg border p-2 text-left text-xs font-medium transition-all ${state.cardClass} ${state.backgroundClass}`}
+                                >
+                                  <span className={`relative flex h-8 w-8 flex-none items-center justify-center rounded-md border ${state.chipClass}`}>
+                                    <PowerIcon className={`h-4 w-4 ${state.iconColorClass}`} />
+                                    {state.showLock && (
+                                      <span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full border border-white/15 bg-[#1D1911]">
+                                        <Lock className="h-2 w-2 text-[#7A7161]" />
+                                      </span>
+                                    )}
+                                  </span>
+                                  <div className="min-w-0 flex-1">
+                                    <p className="truncate">{power.name}</p>
+                                    {isSelected && power.description ? (
+                                      <p className="mt-1 text-[11px] leading-snug text-muted-foreground break-words">{power.description}</p>
+                                    ) : null}
+                                  </div>
+                                  {state.showGlow && (
+                                    <div className="pointer-events-none absolute inset-0 rounded-lg bg-[linear-gradient(135deg,rgba(239,159,39,0.2)_0%,rgba(186,117,23,0.06)_100%)]" />
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </section>
+                      )}
+
                       {areaPowerGroups.length > 0 && (
                         <section>
                           <Accordion type="multiple" className="space-y-2" defaultValue={areaPowerGroups.map((group) => `area-${group.id}`)}>
@@ -9635,7 +9688,49 @@ function QuestDiary() {
                     </TabsTrigger>
                   </TabsList>
 
-                  <TabsContent value="activos" className="flex-1 min-h-0 mt-0 overflow-y-auto pr-1">
+                  <TabsContent value="activos" className="flex-1 min-h-0 mt-0 overflow-y-auto pr-1 minimal-scrollbar">
+                    {/* "+ errores": errores sueltos, sin nodo ni área/quest (cargados desde el modal de
+                        feedback de una tarea suelta, hábito o práctica de "Tareas de hoy"). No tienen
+                        bug de área/quest, así que no aparecen en la lista de bugs de abajo. */}
+                    {unassignedErrors.length > 0 && (
+                      <section className="mb-4" data-testid="journal-unassigned-errors">
+                        <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">+ errores</h3>
+                        <div className="space-y-2">
+                          {unassignedErrors.map((error) => {
+                            const bar = getErrorBarBlocks(error.points);
+                            const isSelected = selectedJournalErrorId === error.id;
+                            return (
+                              <button
+                                key={error.id}
+                                type="button"
+                                onClick={() => setSelectedJournalErrorId(isSelected ? null : error.id)}
+                                className="w-full rounded-lg border border-border/60 bg-muted/30 p-3 text-left transition-colors hover:bg-muted/50"
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="text-sm font-medium truncate">{error.nombre}</p>
+                                  <span className="text-[11px] text-muted-foreground shrink-0">
+                                    {error.confirmed ? `${Math.abs(error.points)} / 50${error.points < 0 ? " (en contra)" : ""}` : "Sin confirmar"}
+                                  </span>
+                                </div>
+                                {error.confirmed === 1 && (
+                                  <div className="mt-2 w-full h-2 flex gap-0.5">
+                                    {Array.from({ length: 5 }).map((_, index) => (
+                                      <div
+                                        key={index}
+                                        className={`flex-1 h-full rounded-sm ${index < bar.count ? (bar.color === "red" ? "bg-red-500" : "bg-emerald-500") : "bg-muted"}`}
+                                      />
+                                    ))}
+                                  </div>
+                                )}
+                                {isSelected && error.comoSi && (
+                                  <p className="mt-2 text-xs text-muted-foreground break-words">¿Cómo sí? {error.comoSi}</p>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </section>
+                    )}
                     <AllAreaBugsModalWrapper open={isDiaryOpen} embedded />
                   </TabsContent>
 
