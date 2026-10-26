@@ -144,6 +144,22 @@ app.use((req, res, next) => {
     console.error("⚠ manual_today_tasks.minutes migration warning:", error.message);
   }
 
+  // "Estrategias" del Journal (cubo "Nuevas estrategias" del modal de feedback). Ver
+  // migrations/0068_journal_strategies.sql.
+  try {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "journal_strategies" (
+        "id" varchar PRIMARY KEY NOT NULL,
+        "user_id" varchar REFERENCES "users"("id") ON DELETE CASCADE,
+        "skill_id" varchar,
+        "title" text NOT NULL,
+        "sentence" text DEFAULT '' NOT NULL
+      );
+    `);
+  } catch (error: any) {
+    console.error("⚠ journal_strategies migration warning:", error.message);
+  }
+
   // Sub-pasos (checklist del día) de las tareas de "Tareas de hoy" que no son nodos.
   try {
     await db.execute(sql`

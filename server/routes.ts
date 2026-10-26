@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
-import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertJournalShadowPageSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileConceptSchema, insertProfileLimitingBeliefSchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertSourceObjectiveSchema, insertSourceBeliefSchema, insertSourceVisionSchema, insertSourcePowersSchema, insertSourceBugSchema, insertSourceBugRecordSchema, insertNodeErrorSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema, insertSpaceRepetitionPracticeSchema, insertRewiringTrackerSchema, type InsertSpaceRepetitionPractice, type SpaceRepetitionPractice, type RewiringTracker, skills, areas, projects, spaceRepetitionPractices } from "@shared/schema";
+import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertJournalShadowPageSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalStrategySchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileConceptSchema, insertProfileLimitingBeliefSchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertSourceObjectiveSchema, insertSourceBeliefSchema, insertSourceVisionSchema, insertSourcePowersSchema, insertSourceBugSchema, insertSourceBugRecordSchema, insertNodeErrorSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema, insertSpaceRepetitionPracticeSchema, insertRewiringTrackerSchema, type InsertSpaceRepetitionPractice, type SpaceRepetitionPractice, type RewiringTracker, skills, areas, projects, spaceRepetitionPractices } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import { z } from "zod";
 import cookieParser from "cookie-parser";
@@ -3342,6 +3342,63 @@ export async function registerRoutes(
       }
       await storage.deleteJournalShadowPage(req.params.id);
       res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Journal - Strategies (misma forma que Learnings; ver journal_strategies en schema.ts)
+  app.get("/api/journal/strategies", requireAuth, async (req, res) => {
+    try {
+      const skillId = req.query.skillId as string | undefined;
+      const areaId = req.query.areaId as string | undefined;
+      const projectId = req.query.projectId as string | undefined;
+      const strategies = await storage.getJournalStrategies(req.userId!);
+      let filtered = strategies;
+      if (skillId) {
+        filtered = strategies.filter(s => s.skillId === skillId);
+      } else if (areaId || projectId) {
+        const scopeSkillIds = new Set(await storage.getAllSkillIdsInScope({ areaId, projectId }));
+        filtered = strategies.filter(s => s.skillId != null && scopeSkillIds.has(s.skillId));
+      }
+      res.json(filtered);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/journal/strategies", requireAuth, async (req, res) => {
+    try {
+      const validated = insertJournalStrategySchema.parse({ ...req.body, userId: req.userId });
+      const strategy = await storage.createJournalStrategy(validated);
+      res.status(201).json(strategy);
+    } catch (error: any) {
+      const validationError = fromError(error);
+      res.status(400).json({ message: validationError.toString() });
+    }
+  });
+
+  app.delete("/api/journal/strategies/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteJournalStrategy(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/journal/strategies/:id", requireAuth, async (req, res) => {
+    try {
+      const { title, sentence } = req.body;
+      const data: any = {};
+      if (title !== undefined) data.title = title;
+      if (sentence !== undefined) data.sentence = sentence;
+      const strategy = await storage.updateJournalStrategy(req.params.id, data);
+      if (!strategy) {
+        res.status(404).json({ message: "Estrategia no encontrada" });
+        return;
+      }
+      res.json(strategy);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

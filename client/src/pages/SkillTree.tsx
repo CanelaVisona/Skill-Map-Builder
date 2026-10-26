@@ -31,7 +31,7 @@ import HousePriorityList from "../components/HousePriorityList";
 import HouseRepairsList from "../components/HouseRepairsList";
 import { EvidenceBoardModalWrapper } from "@/components/EvidenceBoardModal";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, ArrowRight, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, User, Menu, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Utensils, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt, OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation, Check, HelpCircle, PiggyBank, Search, X, Pentagon, Trophy } from "lucide-react";
+import { ArrowLeft, ArrowRight, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, User, Menu, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Utensils, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt, OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation, Check, HelpCircle, PiggyBank, Search, X, Pentagon, Trophy, Split } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -63,7 +63,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { JournalCharacter, JournalPlace, JournalShadow, JournalShadowPage, JournalLearning, JournalTool, JournalThought, HabitRecord } from "@shared/schema";
+import type { JournalCharacter, JournalPlace, JournalShadow, JournalShadowPage, JournalLearning, JournalStrategy, JournalTool, JournalThought, HabitRecord } from "@shared/schema";
 import { OnboardingGuide, HelpButton, useOnboarding } from "@/components/OnboardingGuide";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
@@ -76,6 +76,7 @@ import { GoalsButton, CompletedGoalsJournal } from "@/components/GoalsPanel";
 import { RadarSkillMapModal } from "@/components/RadarSkillMapModal";
 import { SkillsSparkIcon } from "@/components/SkillsSparkIcon";
 import { NodeConfirmFeedbackProvider } from "@/lib/node-confirm-feedback-context";
+import { JournalQuickAddDialog, type JournalQuickAddKind } from "@/components/JournalQuickAddDialog";
 
 function calculateVisibleLevels(skills: Skill[], endOfAreaLevel?: number): Set<number> {
   const visibleLevels = new Set<number>();
@@ -2314,20 +2315,31 @@ function ToolsSection({
   );
 }
 
+// También se usa para la tab "Estrategias" (misma forma que los aprendizajes): `variant`
+// cambia solo los textos, el ícono del estado vacío y los data-testid.
+const ENTRY_SECTION_TEXTS = {
+  learnings: { icon: Lightbulb, empty: "No learnings yet", deleteQuestion: "Delete this learning?" },
+  strategies: { icon: Split, empty: "Todavía no hay estrategias", deleteQuestion: "¿Borrar esta estrategia?" },
+} as const;
+
 function LearningsSection({
   entries,
   isLoading,
   onDelete,
   onUpdate,
   questMap,
+  variant = "learnings",
 }: {
-  entries: JournalLearning[];
+  entries: Array<JournalLearning | JournalStrategy>;
   isLoading: boolean;
   onDelete: (id: string) => void;
   onUpdate?: (id: string, data: { title: string; sentence: string }) => void;
   questMap: SkillQuestMap;
+  variant?: keyof typeof ENTRY_SECTION_TEXTS;
 }) {
-  const [viewingEntry, setViewingEntry] = useState<JournalLearning | null>(null);
+  const texts = ENTRY_SECTION_TEXTS[variant];
+  const EmptyIcon = texts.icon;
+  const [viewingEntry, setViewingEntry] = useState<JournalLearning | JournalStrategy | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editSentence, setEditSentence] = useState("");
@@ -2349,7 +2361,7 @@ function LearningsSection({
     return <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">Loading...</div>;
   }
 
-  const handleLeftLongPressStart = (entry: JournalLearning) => {
+  const handleLeftLongPressStart = (entry: JournalLearning | JournalStrategy) => {
     longPressTimer.current = setTimeout(() => {
       setViewingEntry(entry);
       setEditTitle(entry.title);
@@ -2416,9 +2428,9 @@ function LearningsSection({
           <ScrollArea className="h-full">
             {filteredEntries.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
-                <Lightbulb className="h-8 w-8 text-muted-foreground/50 mb-3" />
+                <EmptyIcon className="h-8 w-8 text-muted-foreground/50 mb-3" />
                 <p className="text-muted-foreground text-sm">
-                  {selectedQuestKey === null ? "No learnings yet" : "No hay discoveries en esta quest todavía"}
+                  {selectedQuestKey === null ? texts.empty : "No hay discoveries en esta quest todavía"}
                 </p>
               </div>
             ) : (
@@ -2438,7 +2450,7 @@ function LearningsSection({
                           ? "bg-secondary text-foreground shadow-sm"
                           : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground/80"
                       }`}
-                      data-testid={`card-learnings-${entry.id}`}
+                      data-testid={`card-${variant}-${entry.id}`}
                     >
                       {entry.title}
                     </button>
@@ -2538,7 +2550,7 @@ function LearningsSection({
       {showDeleteConfirm && viewingEntry && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-background border border-border rounded-lg p-4 max-w-sm">
-            <p className="text-sm text-muted-foreground mb-4">Delete this learning?</p>
+            <p className="text-sm text-muted-foreground mb-4">{texts.deleteQuestion}</p>
             <div className="flex gap-2">
               <Button 
                 size="sm" 
@@ -8940,6 +8952,11 @@ function QuestDiary() {
     enabled: isDiaryOpen,
   });
 
+  const { data: strategies = [], isLoading: loadingStrategies } = useQuery<JournalStrategy[]>({
+    queryKey: ["/api/journal/strategies"],
+    enabled: isDiaryOpen,
+  });
+
   const { data: thoughts = [], isLoading: loadingThoughts } = useQuery<JournalThought[]>({
     queryKey: ["/api/journal/thoughts"],
     enabled: isDiaryOpen,
@@ -9392,8 +9409,51 @@ function QuestDiary() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/journal/tools"] }),
   });
   
+  // Mantener apretado el fondo de las tabs Achievements/Learnings/Estrategias/Tools abre "Nueva
+  // entrada" (JournalQuickAddDialog), con el tipo de esa tab ya elegido (en Achievements arranca
+  // en "Pensamiento", que no tiene tab propia). Solo ahí: otras tabs (p.ej. Errores) ya usan el
+  // long-press del fondo para lo suyo. No dispara si el press empezó sobre algo interactivo.
+  const [journalTab, setJournalTab] = useState("achievements");
+  const [quickAddKind, setQuickAddKind] = useState<JournalQuickAddKind | null>(null);
+  const journalBgLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const journalBgPressStart = useRef<{ x: number; y: number } | null>(null);
+  const QUICK_ADD_KIND_BY_TAB: Record<string, JournalQuickAddKind> = {
+    achievements: "thought",
+    learnings: "learning",
+    tools: "tool",
+    strategies: "strategy",
+  };
+  const cancelJournalBgLongPress = () => {
+    if (journalBgLongPressTimer.current) {
+      clearTimeout(journalBgLongPressTimer.current);
+      journalBgLongPressTimer.current = null;
+    }
+    journalBgPressStart.current = null;
+  };
+  const startJournalBgLongPress = (e: React.PointerEvent) => {
+    const tabKind = QUICK_ADD_KIND_BY_TAB[journalTab];
+    if (!tabKind) return;
+    if ((e.target as HTMLElement).closest("button, a, input, textarea, select, [role='button'], [role='tab'], [contenteditable='true']")) return;
+    cancelJournalBgLongPress();
+    journalBgPressStart.current = { x: e.clientX, y: e.clientY };
+    journalBgLongPressTimer.current = setTimeout(() => {
+      journalBgLongPressTimer.current = null;
+      setQuickAddKind(tabKind);
+    }, 600);
+  };
+  // Un scroll/arrastre no cuenta como mantener apretado.
+  const moveJournalBgLongPress = (e: React.PointerEvent) => {
+    const start = journalBgPressStart.current;
+    if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) cancelJournalBgLongPress();
+  };
+
   return (
     <>
+    <JournalQuickAddDialog
+      open={quickAddKind !== null}
+      onOpenChange={(open) => { if (!open) setQuickAddKind(null); }}
+      initialKind={quickAddKind ?? "thought"}
+    />
     <Dialog open={isDiaryOpen} modal={false} onOpenChange={(open) => !open && closeDiary()}>
       <DialogContent
         className="w-[calc(100vw-1.5rem)] max-w-[calc(100vw-1.5rem)] sm:max-w-4xl h-[92dvh] sm:h-[75vh] p-0 overflow-hidden bg-background border-2 border-border shadow-2xl"
@@ -9403,7 +9463,7 @@ function QuestDiary() {
           <DialogTitle>Journal</DialogTitle>
         </VisuallyHidden>
         <div className="flex h-full min-h-0 min-w-0 flex-col sm:flex-row">
-          <Tabs activationMode="manual" defaultValue="achievements" className="flex-1 flex min-h-0 min-w-0 flex-col sm:flex-row" orientation={isMobile ? "horizontal" : "vertical"}>
+          <Tabs activationMode="manual" defaultValue="achievements" onValueChange={setJournalTab} className="flex-1 flex min-h-0 min-w-0 flex-col sm:flex-row" orientation={isMobile ? "horizontal" : "vertical"}>
             <TabsList className="flex w-full sm:w-auto flex-row sm:flex-col h-auto sm:h-full justify-start gap-0.5 p-1.5 rounded-none border-b-2 sm:border-b-0 sm:border-r-2 border-border bg-secondary/50 shadow-[inset_0_-4px_8px_rgba(0,0,0,0.3)] sm:shadow-[inset_-4px_0_8px_rgba(0,0,0,0.3)] dark:shadow-[inset_0_-4px_8px_rgba(0,0,0,0.3)] sm:dark:shadow-[inset_-4px_0_8px_rgba(0,0,0,0.3)] overflow-x-auto">
               <TabsTrigger value="achievements" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-achievements" title="Achievements">
                 <Scroll className="h-5 w-5" />
@@ -9421,8 +9481,11 @@ function QuestDiary() {
               <TabsTrigger value="tools" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-tools" title="Tools">
                 <Wrench className="h-5 w-5" />
               </TabsTrigger>
-              <TabsTrigger value="logros" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-logros" title="Logros">
-                <Trophy className="h-5 w-5" />
+              <TabsTrigger value="errores" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-errores" title="Errores">
+                <Circle className="h-5 w-5" />
+              </TabsTrigger>
+              <TabsTrigger value="strategies" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-strategies" title="Estrategias">
+                <Split className="h-5 w-5" />
               </TabsTrigger>
               <TabsTrigger value="objetivos" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-objetivos" title="Objetivos">
                 <Target className="h-5 w-5" />
@@ -9430,8 +9493,8 @@ function QuestDiary() {
               <TabsTrigger value="powers" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-powers" title="Poderes">
                 <Shield className="h-5 w-5" />
               </TabsTrigger>
-              <TabsTrigger value="errores" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-errores" title="Errores">
-                <Circle className="h-5 w-5" />
+              <TabsTrigger value="logros" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-logros" title="Logros">
+                <Trophy className="h-5 w-5" />
               </TabsTrigger>
               <TabsTrigger value="body" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-body" title="Fuerza">
                 <BicepsFlexed className="h-5 w-5" />
@@ -9441,7 +9504,15 @@ function QuestDiary() {
               </TabsTrigger>
             </TabsList>
             
-            <div className="flex-1 p-3 sm:p-6 bg-background flex flex-col min-h-0 min-w-0">
+            <div
+              className="flex-1 p-3 sm:p-6 bg-background flex flex-col min-h-0 min-w-0"
+              onPointerDown={startJournalBgLongPress}
+              onPointerMove={moveJournalBgLongPress}
+              onPointerUp={cancelJournalBgLongPress}
+              onPointerCancel={cancelJournalBgLongPress}
+              onPointerLeave={cancelJournalBgLongPress}
+              onContextMenu={(e) => { if (quickAddKind !== null || journalBgLongPressTimer.current) e.preventDefault(); }}
+            >
               <div className="mb-4 pb-3 border-b border-border">
                 <h2 className="text-xl font-bold tracking-tight text-foreground">Journal</h2>
                 <div className="h-0.5 w-16 bg-gradient-to-r from-muted-foreground to-transparent mt-2" />
@@ -9487,6 +9558,27 @@ function QuestDiary() {
                 />
               </TabsContent>
               
+              <TabsContent value="strategies" className="flex-1 min-h-0 min-w-0 mt-0">
+                <LearningsSection
+                  variant="strategies"
+                  entries={strategies}
+                  isLoading={loadingStrategies}
+                  questMap={skillQuestMap}
+                  onDelete={async (id) => {
+                    await fetch(`/api/journal/strategies/${id}`, { method: "DELETE" });
+                    queryClient.invalidateQueries({ queryKey: ["/api/journal/strategies"] });
+                  }}
+                  onUpdate={async (id, data) => {
+                    await fetch(`/api/journal/strategies/${id}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(data),
+                    });
+                    queryClient.invalidateQueries({ queryKey: ["/api/journal/strategies"] });
+                  }}
+                />
+              </TabsContent>
+
               <TabsContent value="tools" className="flex-1 min-h-0 min-w-0 mt-0">
                 <ToolsSection
                   entries={tools}

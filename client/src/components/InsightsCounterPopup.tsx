@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { createPortal } from "react-dom";
 import { useEffect, useState } from "react";
-import { Lightbulb, Pencil, Wrench } from "lucide-react";
+import { Lightbulb, Pencil, Split, Wrench } from "lucide-react";
 import { usePopupPalette, type PopupPalette } from "@/lib/popup-theme";
 import { playProgressAdvanceSound } from "@/lib/sound";
 
@@ -17,6 +17,7 @@ interface InsightsCounterPopupProps {
 const KIND_META: Record<InsightsCounterKind, { icon: typeof Lightbulb; label: string }> = {
   thought: { icon: Pencil, label: "Pensamientos" },
   learning: { icon: Lightbulb, label: "Aprendizajes" },
+  strategy: { icon: Split, label: "Estrategias" },
   tool: { icon: Wrench, label: "Herramientas" },
 };
 
