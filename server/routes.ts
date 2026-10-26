@@ -6286,6 +6286,56 @@ export async function registerRoutes(
     }
   });
 
+  // Task Timers (contador de arranque de las tareas de "Tareas de hoy", ver task-timers.ts)
+  app.get("/api/task-timers", requireAuth, async (req, res) => {
+    try {
+      const { date } = req.query;
+      if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return res.status(400).json({ message: "date es requerido (formato YYYY-MM-DD)" });
+      }
+      res.json(await storage.getTaskTimers(req.userId!, date));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/task-timers", requireAuth, async (req, res) => {
+    try {
+      const { date, taskKey, status, since, elapsedMs, starterMs } = req.body;
+      const isMs = (v: unknown) => typeof v === "number" && Number.isFinite(v) && v >= 0;
+      if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date) || typeof taskKey !== "string" || !taskKey) {
+        return res.status(400).json({ message: "date (YYYY-MM-DD) y taskKey son requeridos" });
+      }
+      if ((status !== "running" && status !== "paused") || !isMs(elapsedMs) || !isMs(starterMs) || (status === "running" && !isMs(since))) {
+        return res.status(400).json({ message: "status, elapsedMs y starterMs (y since si está corriendo) son requeridos" });
+      }
+      const saved = await storage.upsertTaskTimer(req.userId!, {
+        date,
+        taskKey,
+        status,
+        since: status === "running" ? Math.round(since) : null,
+        elapsedMs: Math.round(elapsedMs),
+        starterMs: Math.round(starterMs),
+      });
+      res.json(saved);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/task-timers", requireAuth, async (req, res) => {
+    try {
+      const { date, taskKey } = req.query;
+      if (typeof date !== "string" || typeof taskKey !== "string" || !date || !taskKey) {
+        return res.status(400).json({ message: "date y taskKey son requeridos" });
+      }
+      await storage.deleteTaskTimer(req.userId!, date, taskKey);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Manual Today Tasks (tareas agregadas a mano en "Tareas de hoy", con mantener presionado el fondo)
   app.get("/api/manual-today-tasks", requireAuth, async (req, res) => {
     try {

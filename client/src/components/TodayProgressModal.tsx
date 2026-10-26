@@ -21,7 +21,7 @@ import { useTodayPriorities, useSetTodayPriorities, MAX_TODAY_PRIORITIES } from 
 import { MealTrackerModal } from "@/components/MealTrackerModal";
 import { usePowerCelebration } from "@/lib/power-celebration-context";
 import { useNowPlacement, setNowPlacement } from "@/lib/now-placement";
-import { useTaskTimer, useAllTaskTimers, taskTimerKey, clearTaskTimer, pauseTaskTimer, timerElapsedMs, isStarterReached, isFlowActive, wasStartTimeNowApplied, markStartTimeNowApplied } from "@/lib/task-timers";
+import { useTaskTimer, useAllTaskTimers, useTaskTimersSync, taskTimerRowDate, taskTimerKey, clearTaskTimer, pauseTaskTimer, timerElapsedMs, isStarterReached, isFlowActive, wasStartTimeNowApplied, markStartTimeNowApplied } from "@/lib/task-timers";
 import { addSubSkillFromToday, toggleSubSkillFromToday, masterWholeSubSkillTree, isSubSkillPlaceholder, moveSubSkillFromToday, renameSubSkill, deleteSubSkillFromToday, fetchSubSkills } from "@/lib/subskill-tree";
 import { useTodayTaskSubsteps, useCreateTodayTaskSubstep, useUpdateTodayTaskSubstep, useDeleteTodayTaskSubstep, useCreateHabitSubstep, syncHabitSubsteps, type SubstepTaskType } from "@/lib/useTodayTaskSubsteps";
 import type { Habit, HabitRecord, TodayTaskSlot } from "@shared/schema";
@@ -2362,16 +2362,35 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // minuto, y una por vez — la siguiente se ubica cuando vuelven las listas ya reordenadas.
   const allTimers = useAllTaskTimers();
   const flowActive = isFlowActive(allTimers, todayStr);
+  // Los contadores viven en la base: se traen al abrir, cada minuto y al volver a la pestaña.
+  useTaskTimersSync(todayStr, open);
   // Confirmar una tarea detiene su contador de arranque (queda registrado lo que se llevó).
+  // Uno que sigue corriendo desde un día anterior (en flow pasada la medianoche) sigue en la
+  // misma tarea si hoy también está en la lista (hábitos, prácticas); si su tarea ya no está, se
+  // detiene ahí, guardando lo que se llevó, para que no quede "en flow" para siempre.
   useEffect(() => {
     if (!open) return;
     const doneKeys = new Set<string>();
-    todayItems.forEach((i) => { if (i.done) doneKeys.add(`${i.type}:${i.id}`); });
-    (substepsData || []).forEach((st) => { if (st.done === 1) doneKeys.add(`step:${st.id}`); });
-    subSkillsByNodeId.forEach((subs) => subs.forEach((sub) => { if (sub.status === "mastered") doneKeys.add(`node:${sub.id}`); }));
+    const visibleKeys = new Set<string>();
+    todayItems.forEach((i) => {
+      visibleKeys.add(`${i.type}:${i.id}`);
+      if (i.done) doneKeys.add(`${i.type}:${i.id}`);
+    });
+    (substepsData || []).forEach((st) => {
+      visibleKeys.add(`step:${st.id}`);
+      if (st.done === 1) doneKeys.add(`step:${st.id}`);
+    });
+    subSkillsByNodeId.forEach((subs) => subs.forEach((sub) => {
+      visibleKeys.add(`node:${sub.id}`);
+      if (sub.status === "mastered") doneKeys.add(`node:${sub.id}`);
+    }));
+    // Hasta que no carguen todas las listas del día no se sabe qué tareas faltan.
+    const listsLoaded = !!habitsData && !!slotsData && !!substepsData && !!manualTasksData;
     Object.entries(allTimers).forEach(([key, state]) => {
       if (state.status !== "running" || !key.startsWith(`${todayStr}|`)) return;
-      if (doneKeys.has(key.slice(todayStr.length + 1))) pauseTaskTimer(key);
+      const taskKey = key.slice(todayStr.length + 1);
+      const fromOtherDay = taskTimerRowDate(key) !== todayStr;
+      if (doneKeys.has(taskKey) || (fromOtherDay && listsLoaded && !visibleKeys.has(taskKey))) pauseTaskTimer(key);
     });
   });
   const startTimeReached = (startTime: string | null | undefined): startTime is string =>

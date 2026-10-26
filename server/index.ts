@@ -192,6 +192,23 @@ app.use((req, res, next) => {
     await db.execute(sql`
       ALTER TABLE "today_task_substeps" ADD COLUMN IF NOT EXISTS "start_time" varchar;
     `);
+    // Contador de arranque de las tareas de "Tareas de hoy" (ver shared/schema.ts → taskTimers).
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "task_timers" (
+        "id" varchar PRIMARY KEY NOT NULL,
+        "user_id" varchar NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+        "date" varchar NOT NULL,
+        "task_key" varchar NOT NULL,
+        "status" text NOT NULL,
+        "since" bigint,
+        "elapsed_ms" bigint DEFAULT 0 NOT NULL,
+        "starter_ms" bigint DEFAULT 0 NOT NULL,
+        "updated_at" timestamp DEFAULT now() NOT NULL
+      );
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS "task_timers_user_date_idx" ON "task_timers" ("user_id", "date");
+    `);
     // Una sola copia por sub-paso permanente y día, aunque la sincronización corra dos veces a la vez.
     await db.execute(sql`
       CREATE UNIQUE INDEX IF NOT EXISTS "today_task_substeps_template_day_idx"

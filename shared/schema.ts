@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, boolean, jsonb, timestamp, doublePrecision } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, boolean, jsonb, timestamp, doublePrecision, bigint } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -813,6 +813,25 @@ export const todayPriorities = pgTable("today_priorities", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 export type TodayPriorities = typeof todayPriorities.$inferSelect;
+
+// Contador de arranque de una tarea de "Tareas de hoy" (botón ▶ al lado de "X min", ver
+// client/src/lib/task-timers.ts). Una fila por (usuario, día, tarea), id determinístico
+// `${userId}:${date}:${taskKey}` para upsert directo. taskKey: `${taskType}:${taskId}` como en
+// todayPriorities ("step:<id>" para un sub-paso). Corriendo: since (ms epoch) + elapsedMs (lo
+// acumulado antes de la última vez que se le dio ▶); en pausa: elapsedMs es el total.
+// starterMs: el tiempo de arranque con el que se empezó a contar.
+export const taskTimers = pgTable("task_timers", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  date: varchar("date").notNull(), // YYYY-MM-DD format
+  taskKey: varchar("task_key").notNull(),
+  status: text("status").$type<"running" | "paused">().notNull(),
+  since: bigint("since", { mode: "number" }),
+  elapsedMs: bigint("elapsed_ms", { mode: "number" }).notNull().default(0),
+  starterMs: bigint("starter_ms", { mode: "number" }).notNull().default(0),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export type TaskTimerRow = typeof taskTimers.$inferSelect;
 
 // Sub-pasos de una tarea de "Tareas de hoy" que no es un nodo (tarea/evento manual, hábito,
 // práctica, rewiring): un checklist propio de ese día, que se muestra adentro de la tarea y se
