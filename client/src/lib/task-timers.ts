@@ -7,7 +7,8 @@ import { useEffect, useSyncExternalStore } from "react";
 // confirmar la tarea (pauseTaskTimer), y queda registrado cuánto se llevó.
 // Se guarda en la base (tabla task_timers, /api/task-timers): se ve igual en todos los
 // dispositivos y no depende del navegador. No guarda "cuánto falta" sino desde cuándo corre, así
-// que sigue contando bien aunque la página esté cerrada o el servidor se reinicie.
+// que sigue contando bien aunque la página esté cerrada o el servidor esté dormido o se
+// reinicie; los cambios que no se pudieron guardar se reintentan solos (ver la cola de salida).
 // La key es el día y la tarea (no los minutos): un arranque ya cumplido sigue cumplido aunque
 // después se le cambie el tiempo; para volver a contar está "Reiniciar tiempo" (clearTaskTimer).
 // starterMs: el tiempo de arranque con el que se empezó a contar (cumplido = elapsed >= starterMs).
@@ -32,9 +33,8 @@ type Entry = { rowDate: string; taskKey: string; state: TaskTimerState };
 let entries: Record<string, Entry> = {};
 let timers: Record<string, TaskTimerState> = {};
 const listeners = new Set<() => void>();
-// Escrituras todavía en viaje: mientras haya alguna, una lectura del server puede traer datos
-// viejos y no se aplica (la siguiente sincronización la trae ya actualizada).
-let pendingWrites = 0;
+// Sube con cada cambio local y con cada guardado confirmado: una lectura del server que empezó
+// antes de alguno de ellos puede traer datos viejos y no se aplica.
 let localVersion = 0;
 
 function emit() {
@@ -66,14 +66,110 @@ function fromRow(row: TaskTimerRow): TaskTimerState {
     : { status: "paused", elapsedMs: Number(row.elapsedMs), starterMs: Number(row.starterMs) };
 }
 
-function write(request: Promise<Response>) {
+// Guardados pendientes (cola de salida). Cada cambio (▶, ⏸, confirmar, reiniciar) se anota acá
+// antes de mandarlo, y sale de la cola recién cuando el server lo confirma. Si el server no
+// responde — p.ej. Render dormido por inactividad, que tarda en despertar, o sin internet — se
+// reintenta solo (cada vez más espaciado, hasta 1 por minuto), y la cola se guarda en el
+// navegador: aunque se recargue o se cierre la página, el cambio no se pierde y se sube apenas se
+// pueda. Mientras tanto, lo que se lee del server se muestra con estos cambios encima.
+// Una sola operación por fila (día + tarea): la última reemplaza a la anterior.
+type Op =
+  | { op: "put"; row: TaskTimerRow }
+  | { op: "delete"; date: string; taskKey: string };
+const OUTBOX_KEY = "task-timers-outbox";
+
+function readOutbox(): Record<string, Op> {
+  try {
+    return JSON.parse(localStorage.getItem(OUTBOX_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+let outbox: Record<string, Op> = readOutbox();
+
+function saveOutbox() {
+  try {
+    if (Object.keys(outbox).length === 0) localStorage.removeItem(OUTBOX_KEY);
+    else localStorage.setItem(OUTBOX_KEY, JSON.stringify(outbox));
+  } catch {
+    // Sin storage: la cola vive mientras la página siga abierta.
+  }
+}
+
+const opDate = (op: Op) => (op.op === "put" ? op.row.date : op.date);
+const opTaskKey = (op: Op) => (op.op === "put" ? op.row.taskKey : op.taskKey);
+
+// true = ya no hay que reintentarlo (guardado, o rechazado por datos inválidos: reintentar no
+// lo arreglaría). false = el server no respondió o no se pudo autenticar: se reintenta.
+async function sendOp(op: Op): Promise<boolean> {
+  try {
+    const res = op.op === "put"
+      ? await fetch("/api/task-timers", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(op.row),
+        })
+      : await fetch(`/api/task-timers?date=${op.date}&taskKey=${encodeURIComponent(op.taskKey)}`, { method: "DELETE" });
+    if (res.ok) return true;
+    const retryable = res.status >= 500 || res.status === 401 || res.status === 408 || res.status === 429;
+    if (!retryable) console.error("El server rechazó el contador de la tarea:", res.status);
+    return !retryable;
+  } catch {
+    return false;
+  }
+}
+
+let flushing = false;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let retryDelayMs = 0;
+
+async function flushOutbox() {
+  if (flushing) return;
+  flushing = true;
+  try {
+    for (;;) {
+      const next = Object.entries(outbox)[0];
+      if (!next) return;
+      const [id, op] = next;
+      if (!(await sendOp(op))) {
+        retryDelayMs = Math.min(Math.max(5_000, retryDelayMs * 2), 60_000);
+        if (!retryTimer) {
+          retryTimer = setTimeout(() => {
+            retryTimer = null;
+            flushOutbox();
+          }, retryDelayMs);
+        }
+        return;
+      }
+      retryDelayMs = 0;
+      // Si mientras viajaba se anotó otro cambio de la misma fila, queda en la cola para mandarlo.
+      if (outbox[id] === op) {
+        const { [id]: _sent, ...rest } = outbox;
+        outbox = rest;
+        saveOutbox();
+      }
+      localVersion++;
+    }
+  } finally {
+    flushing = false;
+  }
+}
+
+function enqueue(op: Op) {
+  outbox = { ...outbox, [`${opDate(op)}|${opTaskKey(op)}`]: op };
+  saveOutbox();
   localVersion++;
-  pendingWrites++;
-  request
-    .catch((error) => console.error("Error guardando el contador de la tarea:", error))
-    .finally(() => {
-      pendingWrites--;
-    });
+  flushOutbox();
+}
+
+// Al volver internet o la pestaña, se manda lo pendiente sin esperar al próximo reintento.
+if (typeof window !== "undefined") {
+  window.addEventListener("online", () => flushOutbox());
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") flushOutbox();
+  });
+  flushOutbox();
 }
 
 function setTimer(key: string, state: TaskTimerState) {
@@ -81,13 +177,7 @@ function setTimer(key: string, state: TaskTimerState) {
   const rowDate = entries[key]?.rowDate ?? date;
   entries = { ...entries, [key]: { rowDate, taskKey, state } };
   emit();
-  write(
-    fetch("/api/task-timers", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(toRow(rowDate, taskKey, state)),
-    })
-  );
+  enqueue({ op: "put", row: toRow(rowDate, taskKey, state) });
 }
 
 // Contadores que quedaron en localStorage de la versión anterior: se suben una sola vez (solo
@@ -119,7 +209,7 @@ export async function loadTaskTimers(date: string) {
     const res = await fetch(`/api/task-timers?date=${date}`);
     if (!res.ok) return;
     const rows = (await res.json()) as TaskTimerRow[];
-    if (version !== localVersion || pendingWrites > 0) return;
+    if (version !== localVersion) return;
     const next: Record<string, Entry> = {};
     rows
       .filter((r) => r.date === date)
@@ -132,6 +222,17 @@ export async function loadTaskTimers(date: string) {
         const key = `${date}|${r.taskKey}`;
         if (!next[key]) next[key] = { rowDate: r.date, taskKey: r.taskKey, state: fromRow(r) };
       });
+    // Cambios que todavía no llegaron al server: van encima de lo que se leyó.
+    Object.values(outbox).forEach((op) => {
+      const key = `${date}|${opTaskKey(op)}`;
+      if (op.op === "put") {
+        if (op.row.date === date || (op.row.status === "running" && next[key]?.rowDate !== date)) {
+          next[key] = { rowDate: op.row.date, taskKey: op.row.taskKey, state: fromRow(op.row) };
+        }
+      } else if (next[key]?.rowDate === op.date) {
+        delete next[key];
+      }
+    });
     entries = next;
     emit();
     migrateLegacyTimers(date);
@@ -180,9 +281,7 @@ export function clearTaskTimer(key: string, { keepReached = false }: { keepReach
   if (!entry || (keepReached && isStarterReached(entry.state))) return;
   entries = Object.fromEntries(Object.entries(entries).filter(([k]) => k !== key));
   emit();
-  write(
-    fetch(`/api/task-timers?date=${entry.rowDate}&taskKey=${encodeURIComponent(entry.taskKey)}`, { method: "DELETE" })
-  );
+  enqueue({ op: "delete", date: entry.rowDate, taskKey: entry.taskKey });
 }
 
 // Detiene el contador guardando lo que se llevó (al confirmar la tarea). No-op si no corría.
