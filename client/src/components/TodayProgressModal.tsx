@@ -21,7 +21,7 @@ import { useTodayPriorities, useSetTodayPriorities, MAX_TODAY_PRIORITIES } from 
 import { MealTrackerModal } from "@/components/MealTrackerModal";
 import { usePowerCelebration } from "@/lib/power-celebration-context";
 import { useNowPlacement, setNowPlacement } from "@/lib/now-placement";
-import { useTaskTimer, taskTimerKey, clearTaskTimer, wasStartTimeNowApplied, markStartTimeNowApplied } from "@/lib/task-timers";
+import { useTaskTimer, useAllTaskTimers, taskTimerKey, clearTaskTimer, pauseTaskTimer, timerElapsedMs, isStarterReached, isFlowActive, wasStartTimeNowApplied, markStartTimeNowApplied } from "@/lib/task-timers";
 import { addSubSkillFromToday, toggleSubSkillFromToday, masterWholeSubSkillTree, isSubSkillPlaceholder, moveSubSkillFromToday, renameSubSkill, deleteSubSkillFromToday, fetchSubSkills } from "@/lib/subskill-tree";
 import { useTodayTaskSubsteps, useCreateTodayTaskSubstep, useUpdateTodayTaskSubstep, useDeleteTodayTaskSubstep, useCreateHabitSubstep, syncHabitSubsteps, type SubstepTaskType } from "@/lib/useTodayTaskSubsteps";
 import type { Habit, HabitRecord, TodayTaskSlot } from "@shared/schema";
@@ -164,20 +164,25 @@ function StartTimeSuffix({ startTime }: { startTime?: string | null }) {
 
 // showRemaining: con hora límite, muestra también el tiempo que queda hasta esa hora (se
 // actualiza solo cuando cambia el minuto del reloj). Solo tiene sentido viendo hoy y con la tarea sin hacer.
-// timerKey: tarea de hoy sin hacer con una cantidad de minutos (sin hora límite): muestra el
-// botón ▶ para hacer la cuenta regresiva de ese tiempo (ver TaskTimerControl).
+// timerKey: tarea de hoy con una cantidad de minutos (sin hora límite): muestra el contador de
+// arranque (ver TaskTimerControl). timerDone: la tarea ya está confirmada — queda lo que se llevó.
+// Mientras hay una tarea en flow (isFlowActive) no se muestra el "tengo X min" de las demás.
 function MinutesSuffix({
   minutes,
   deadline,
   showRemaining,
   timerKey,
+  timerDone,
 }: {
   minutes?: number | null;
   deadline?: string | null;
   showRemaining?: boolean;
   timerKey?: string | null;
+  timerDone?: boolean;
 }) {
-  const live = !!deadline && !!showRemaining;
+  const allTimers = useAllTaskTimers();
+  const inFlow = isFlowActive(allTimers, getDateStr(new Date()));
+  const live = !!deadline && !!showRemaining && !inFlow;
   useMinuteTick(live);
   if (!minutes) return null;
   // Un marco para avanzar, no una alarma: cada número dice qué es ("10 min · hasta 16:18 ·
@@ -195,7 +200,7 @@ function MinutesSuffix({
   if (timerKey && !deadline) {
     return (
       <span className="text-muted-foreground">
-        {" "}· <TaskTimerControl timerKey={timerKey} minutes={minutes} />
+        {" "}· <TaskTimerControl timerKey={timerKey} minutes={minutes} done={timerDone} />
       </span>
     );
   }
@@ -207,10 +212,11 @@ function MinutesSuffix({
   );
 }
 
-// "5 min ▶": tocar ▶ arranca la cuenta regresiva, que baja de a un minuto ("5 min" → "4 min",
-// sin segundos; tocar ⏸ pausa). Al llegar a cero deja de contar y el ▶ pasa a ser un tilde. El botón no abre el menú de la tarea ni
-// dispara su long-press.
-function TaskTimerControl({ timerKey, minutes }: { timerKey: string; minutes: number }) {
+// Contador de arranque. "5 min ▶": tocar ▶ cuenta para atrás de a un minuto ("5 min" → "4 min",
+// sin segundos; ⏸ pausa). Al llegar a cero no corta: pasa a "✓ 5 · llevo 12 min" y sigue
+// sumando hasta que se confirma la tarea. Confirmada, queda lo que se llevó ("✓ 5 · 37 min").
+// El botón no abre el menú de la tarea ni dispara su long-press.
+function TaskTimerControl({ timerKey, minutes, done }: { timerKey: string; minutes: number; done?: boolean }) {
   const { state, start, pause } = useTaskTimer(timerKey, minutes);
   const running = state?.status === "running";
   const [, setTick] = useState(0);
@@ -220,21 +226,30 @@ function TaskTimerControl({ timerKey, minutes }: { timerKey: string; minutes: nu
     return () => clearInterval(id);
   }, [running]);
 
-  const remainingMs =
-    state?.status === "running" ? Math.max(0, state.endsAt - Date.now())
-    : state?.status === "paused" ? state.remainingMs
-    : null;
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
-  const finished = state?.status === "finished";
+  if (!state && done) return <>{minutes} min</>;
+
+  const elapsedMs = state ? timerElapsedMs(state) : 0;
+  const elapsedMin = Math.floor(elapsedMs / 60_000);
+  const reached = isStarterReached(state);
+  let label: React.ReactNode;
+  if (!state) label = <>{minutes} min</>;
+  else if (reached) {
+    label = (
+      <>
+        <Check className="mr-0.5 inline h-3.5 w-3.5 -translate-y-px text-emerald-500" strokeWidth={3} aria-label="Arranque cumplido" />
+        {minutes}
+        {elapsedMs > 0 && <> · {done ? "" : "llevo "}{elapsedMin} min</>}
+        {elapsedMs === 0 && " min"}
+      </>
+    );
+  } else if (done) label = <>{minutes} min · llevé {elapsedMin} min</>;
+  else label = <>{Math.ceil((state.starterMs - elapsedMs) / 60_000)} min</>;
 
   return (
     <span className="inline-flex items-center gap-1 align-middle">
-      <span className={remainingMs !== null ? "tabular-nums text-amber-600 dark:text-amber-400" : undefined}>
-        {remainingMs !== null ? Math.ceil(remainingMs / 60_000) : minutes} min
-      </span>
-      {finished ? (
-        <Check className="h-3.5 w-3.5 text-emerald-500" strokeWidth={3} aria-label="Tiempo cumplido" />
-      ) : (
+      <span className={state && !done ? "tabular-nums text-amber-600 dark:text-amber-400" : undefined}>{label}</span>
+      {!done && (
         <button
           type="button"
           onPointerDown={stop}
@@ -248,7 +263,7 @@ function TaskTimerControl({ timerKey, minutes }: { timerKey: string; minutes: nu
             else start();
           }}
           className="flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
-          aria-label={running ? "Pausar" : "Iniciar cuenta regresiva"}
+          aria-label={running ? "Pausar" : "Iniciar"}
         >
           {running ? <Pause className="h-3 w-3 fill-current" /> : <Play className="h-3 w-3 fill-current" />}
         </button>
@@ -393,9 +408,10 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const todayStr = getDateStr(new Date());
   const effectiveDate = previewDate ?? todayStr;
   const isPreview = previewDate !== null;
-  // Key de la cuenta regresiva (botón ▶) de una tarea: solo viendo hoy, sin hacer y con minutos.
-  const timerKeyFor = (taskKey: string, minutes: number | null | undefined, done: boolean) =>
-    effectiveDate === todayStr && !done && minutes ? taskTimerKey(todayStr, taskKey) : null;
+  // Key del contador de arranque (botón ▶) de una tarea: solo viendo hoy y con minutos. Una tarea
+  // ya confirmada lo sigue mostrando (sin botón), con lo que se llevó (ver TaskTimerControl).
+  const timerKeyFor = (taskKey: string, minutes: number | null | undefined) =>
+    effectiveDate === todayStr && minutes ? taskTimerKey(todayStr, taskKey) : null;
   // Día pasado: es un registro de lo que pasó, no hay "tarea que toca ahora". Nada se atenúa
   // (en hoy, lo que todavía no toca queda tenue), para que se lea todo lo de ese día.
   const isPastDay = effectiveDate < todayStr;
@@ -482,7 +498,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       label: (
         <>
           {h.emoji} {h.name}
-          <MinutesSuffix minutes={h.minMinutes} timerKey={timerKeyFor(`habit:${h.id}`, h.minMinutes, done)} />
+          <MinutesSuffix minutes={h.minMinutes} timerKey={timerKeyFor(`habit:${h.id}`, h.minMinutes)} timerDone={done} />
           {rewiringHabitBadgeById.has(h.id) && (
             <TaskCountBadge {...rewiringHabitBadgeById.get(h.id)!} />
           )}
@@ -662,7 +678,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       label: (
         <>
           {h.emoji} {h.name}
-          <MinutesSuffix minutes={h.minMinutes} timerKey={timerKeyFor(`habit:${h.id}`, h.minMinutes, done)} />
+          <MinutesSuffix minutes={h.minMinutes} timerKey={timerKeyFor(`habit:${h.id}`, h.minMinutes)} timerDone={done} />
           {rewiringHabitBadgeById.has(h.id) && (
             <TaskCountBadge {...rewiringHabitBadgeById.get(h.id)!} />
           )}
@@ -901,7 +917,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         <>
           {stripLeadingEmoji(n.title)} <span className="text-muted-foreground">· {n.parentName}</span>
           {!n.done && <StartTimeSuffix startTime={n.plannedStartTime} />}
-          <MinutesSuffix minutes={n.plannedDuration} deadline={n.done ? null : n.plannedDeadline} showRemaining={!n.done && effectiveDate === todayStr} timerKey={timerKeyFor(`node:${n.id}`, n.plannedDuration, n.done)} />
+          <MinutesSuffix minutes={n.plannedDuration} deadline={n.done ? null : n.plannedDeadline} showRemaining={!n.done && effectiveDate === todayStr} timerKey={timerKeyFor(`node:${n.id}`, n.plannedDuration)} timerDone={n.done} />
         </>
       ),
       done: n.done,
@@ -915,7 +931,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       label: (
         <>
           {p.emoji} {p.name}
-          <MinutesSuffix minutes={p.minMinutes} timerKey={timerKeyFor(`practice:${p.id}`, p.minMinutes, done)} />
+          <MinutesSuffix minutes={p.minMinutes} timerKey={timerKeyFor(`practice:${p.id}`, p.minMinutes)} timerDone={done} />
         </>
       ),
       done,
@@ -933,7 +949,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         <>
           {t.kind === "event" ? <>📅 {stripLeadingEmoji(t.title)}</> : stripLeadingEmoji(t.title)}
           {t.done !== 1 && <StartTimeSuffix startTime={t.startTime} />}
-          <MinutesSuffix minutes={t.minutes} deadline={t.done === 1 ? null : t.deadline} showRemaining={t.done !== 1 && effectiveDate === todayStr} timerKey={timerKeyFor(`manual:${t.id}`, t.minutes, t.done === 1)} />
+          <MinutesSuffix minutes={t.minutes} deadline={t.done === 1 ? null : t.deadline} showRemaining={t.done !== 1 && effectiveDate === todayStr} timerKey={timerKeyFor(`manual:${t.id}`, t.minutes)} timerDone={t.done === 1} />
         </>
       ),
       done: t.done === 1,
@@ -1272,7 +1288,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
               deadline={sub.plannedDeadline}
               startTime={sub.plannedStartTime}
               showRemaining={effectiveDate === todayStr}
-              timerKey={timerKeyFor(`node:${sub.id}`, sub.plannedDuration, sub.status === "mastered")}
+              timerKey={timerKeyFor(`node:${sub.id}`, sub.plannedDuration)}
               onAssignTime={() =>
                 openTimeDialog(
                   { key: `node:${sub.id}`, type: "node", id: sub.id, label: sub.title, done: sub.status === "mastered" },
@@ -1536,7 +1552,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         minutes={st.minutes}
         deadline={st.deadline}
         showRemaining={effectiveDate === todayStr}
-        timerKey={timerKeyFor(`step:${st.id}`, st.minutes, st.done === 1)}
+        timerKey={timerKeyFor(`step:${st.id}`, st.minutes)}
         onAssignTime={() => openSubstepTimeDialog(st.id, st.minutes, parentTimeRef(item, steps.map((x) => x.minutes), i), st.deadline, st.startTime)}
         startTime={st.startTime}
         deleteLabel="sub-paso"
@@ -2208,7 +2224,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     const maxRef = timeMaxRef;
     // Guardar el tiempo (o quitarlo) reinicia la cuenta regresiva de esa tarea, salvo que ya se
     // haya cumplido: ahí queda cumplida con el tiempo nuevo (para volver a contar: "Reiniciar tiempo").
-    if (dialogTimerKey) clearTaskTimer(dialogTimerKey, { keepFinished: true });
+    if (dialogTimerKey) clearTaskTimer(dialogTimerKey, { keepReached: true });
     setTimeItem(null);
     setTimeSubstepId(null);
     setTimeMaxRef(null);
@@ -2344,6 +2360,20 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // sin hacer). Una sola vez por tarea y hora (wasStartTimeNowApplied), así si después se la
   // mueve a mano no vuelve a saltar. Corre en cada render: el reloj del modal re-renderiza cada
   // minuto, y una por vez — la siguiente se ubica cuando vuelven las listas ya reordenadas.
+  const allTimers = useAllTaskTimers();
+  const flowActive = isFlowActive(allTimers, todayStr);
+  // Confirmar una tarea detiene su contador de arranque (queda registrado lo que se llevó).
+  useEffect(() => {
+    if (!open) return;
+    const doneKeys = new Set<string>();
+    todayItems.forEach((i) => { if (i.done) doneKeys.add(`${i.type}:${i.id}`); });
+    (substepsData || []).forEach((st) => { if (st.done === 1) doneKeys.add(`step:${st.id}`); });
+    subSkillsByNodeId.forEach((subs) => subs.forEach((sub) => { if (sub.status === "mastered") doneKeys.add(`node:${sub.id}`); }));
+    Object.entries(allTimers).forEach(([key, state]) => {
+      if (state.status !== "running" || !key.startsWith(`${todayStr}|`)) return;
+      if (doneKeys.has(key.slice(todayStr.length + 1))) pauseTaskTimer(key);
+    });
+  });
   const startTimeReached = (startTime: string | null | undefined): startTime is string =>
     !!startTime && minutesUntilDeadline(startTime) === null;
   const claimStartTime = (key: string, startTime: string) => {
@@ -2383,6 +2413,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   };
   useEffect(() => {
     if (!open || isPreview || effectiveDate !== todayStr || !slotsData || reorderTaskSlot.isPending || subNodeBusy) return;
+    // En flow no se reacomoda nada: las tareas cuya hora llegó pasan a "Ahora" al terminar.
+    if (flowActive) return;
     for (const item of todayItems) {
       if (item.done || item.traceSubs) continue;
       if (item.type === "node" || item.type === "manual") {
@@ -4043,7 +4075,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
           )}
         </div>
         {/* Tiempo ya cumplido (tilde): volver a hacer la cuenta regresiva desde el principio. */}
-        {dialogTimerKey && dialogTimer.state?.status === "finished" && (
+        {dialogTimerKey && isStarterReached(dialogTimer.state) && (
           <button
             onClick={() => clearTaskTimer(dialogTimerKey)}
             className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-border/50 px-3 py-2 text-sm text-muted-foreground hover:bg-muted"
@@ -4155,7 +4187,7 @@ function TodaySubRow({
       {title}
       {!done && <StartTimeSuffix startTime={startTime} />}
       {/* Ya hecha: queda solo el tiempo previsto, sin la hora límite ni lo que falta. */}
-      <MinutesSuffix minutes={minutes} deadline={done ? null : deadline} showRemaining={showRemaining && !done} timerKey={done ? null : timerKey} />
+      <MinutesSuffix minutes={minutes} deadline={done ? null : deadline} showRemaining={showRemaining && !done} timerKey={timerKey} timerDone={done} />
     </span>
   );
   return (
