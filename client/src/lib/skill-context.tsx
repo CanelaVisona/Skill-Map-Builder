@@ -3726,7 +3726,40 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     const anchor = available ?? lastMastered;
     if (!anchor) return null;
 
+    // Nodos todavía sin nombre (los que se crean vacíos al armar un nivel o con un título por
+    // defecto): la tarea nueva ocupa el lugar de uno de ellos en vez de sumar un nodo más, así
+    // el árbol no sigue empujando para adelante los nodos sin nombre.
+    const UNNAMED_TITLES = new Set(["", "?", "Asigná un paso", "Next challenge", "Next objetive quest", "Objective quest"]);
+    const isUnnamed = (s: Skill) => s.status !== "mastered" && !s.isFinalNode && UNNAMED_TITLES.has((s.title || "").trim());
+
+    const plannedFields = {
+      ...(copyFields?.plannedDate !== undefined ? { plannedDate: copyFields.plannedDate } : {}),
+      ...(copyFields?.plannedDuration !== undefined ? { plannedDuration: copyFields.plannedDuration } : {}),
+      ...(copyFields?.plannedDeadline ? { plannedDeadline: copyFields.plannedDeadline } : {}),
+      ...(copyFields?.plannedStartTime ? { plannedStartTime: copyFields.plannedStartTime } : {}),
+    };
+
     try {
+      // El desbloqueado no tiene nombre: se le pone el de la tarea y queda en su lugar.
+      if (available && isUnnamed(available)) {
+        const res = await fetch(`/api/skills/${available.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, ...plannedFields }),
+        });
+        if (!res.ok) throw new Error("Failed to rename unnamed node");
+        if (kind === "area") await refreshAllAreas();
+        else await refreshAllProjects();
+        return { ...available, title, ...plannedFields } as Skill;
+      }
+
+      const insertPosition = available ? (anchor.levelPosition || 0) : (anchor.levelPosition || 0) + 1;
+      // Primer nodo sin nombre que queda después del nuevo en ese nivel: se borra al insertar,
+      // para que el nuevo lo reemplace (el server reacomoda dependencias y posiciones).
+      const unnamedToReplace = sorted.find(s =>
+        s.level === anchor.level && (s.levelPosition || 0) >= insertPosition && s.id !== available?.id && isUnnamed(s)
+      );
+
       const response = await fetch("/api/skills", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -3739,13 +3772,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           status: "available",
           dependencies: available ? ensureDependenciesArray(available.dependencies) : [anchor.id],
           level: anchor.level,
-          levelPosition: available ? (anchor.levelPosition || 0) : (anchor.levelPosition || 0) + 1,
+          levelPosition: insertPosition,
           isFinalNode: 0,
           manualLock: 0,
-          ...(copyFields?.plannedDate !== undefined ? { plannedDate: copyFields.plannedDate } : {}),
-          ...(copyFields?.plannedDuration !== undefined ? { plannedDuration: copyFields.plannedDuration } : {}),
-          ...(copyFields?.plannedDeadline ? { plannedDeadline: copyFields.plannedDeadline } : {}),
-          ...(copyFields?.plannedStartTime ? { plannedStartTime: copyFields.plannedStartTime } : {}),
+          ...plannedFields,
         }),
       });
       if (!response.ok) throw new Error("Failed to create skill");
@@ -3758,6 +3788,10 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ dependencies: [newSkill.id] }),
         });
+      }
+
+      if (unnamedToReplace) {
+        await fetch(`/api/skills/${unnamedToReplace.id}`, { method: "DELETE" });
       }
 
       if (kind === "area") await refreshAllAreas();
