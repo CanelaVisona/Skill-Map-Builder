@@ -2542,19 +2542,11 @@ export class DbStorage implements IStorage {
     return result[0];
   }
 
-  // Calculate level based on XP (100 XP per level, exponential growth)
+  // Calculate level based on XP: a flat 100 XP per level (10 gains of 10 XP), every level.
+  // Level 1: 0-99 XP, Level 2: 100-199 XP, Level 3: 200-299 XP, etc.
+  // Same formula as levelFromXp in client/src/lib/skill-xp.ts.
   private calculateLevel(xp: number): number {
-    // Level formula: each level requires (level * 100) XP
-    // Level 1: 0-99 XP, Level 2: 100-299 XP, Level 3: 300-599 XP, etc.
-    let level = 1;
-    let requiredXp = 100;
-    let totalRequired = 0;
-    while (xp >= totalRequired + requiredXp) {
-      totalRequired += requiredXp;
-      level++;
-      requiredXp = level * 100;
-    }
-    return level;
+    return Math.floor(Math.max(0, xp) / 100) + 1;
   }
 
   private async getGlobalSkillLevelCap(skill: GlobalSkill): Promise<number | null> {

@@ -25,6 +25,7 @@ import { usePopupPalette } from "@/lib/popup-theme";
 import { useLevelUpCelebration } from "@/lib/level-up-celebration-context";
 import { POPUP_VISIBLE_MS } from "@/lib/popup-coordinator";
 import { playProgressAdvanceSound } from "@/lib/sound";
+import { BLOCKS_PER_LEVEL, XP_PER_BLOCK, XP_PER_LEVEL } from "@/lib/skill-xp";
 
 export interface ExperienceGainSnapshot {
   skillName: string;
@@ -80,10 +81,8 @@ function clampPercent(value: number) {
 }
 
 export function ExperienceGainPopup({ snapshot, onClose }: ExperienceGainPopupProps) {
-  const XP_PER_LEVEL = 100;
   // Se muestra en "cuadraditos": cada suma de xp (10) es 1 de los 10 que llenan un nivel.
-  const XP_PER_BLOCK = 10;
-  const totalBlocks = XP_PER_LEVEL / XP_PER_BLOCK;
+  const totalBlocks = BLOCKS_PER_LEVEL;
   const blocksFor = (xp: number) => Math.floor((xp % XP_PER_LEVEL) / XP_PER_BLOCK);
   const [barWidth, setBarWidth] = useState(0);
   const [showLevelUp, setShowLevelUp] = useState(false);

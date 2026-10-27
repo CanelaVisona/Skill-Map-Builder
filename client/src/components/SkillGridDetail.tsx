@@ -1,10 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { SkillDiamond } from "./SkillDiamond";
 import { usePopupPalette } from "@/lib/popup-theme";
-
-// Same block count as the "+XP" gain popup (ExperienceGainPopup.tsx), so the two bars read
-// as the same visual language.
-const XP_BAR_BLOCKS = 15;
+import { BLOCKS_PER_LEVEL, blocksInLevel, levelFromXp } from "@/lib/skill-xp";
 
 interface SkillData {
   id: string;
@@ -29,21 +26,11 @@ export function SkillGridDetail({ skill, areaColor, children }: SkillGridDetailP
   const [progressPercent, setProgressPercent] = useState(0);
   const palette = usePopupPalette();
 
-  // Helper: cumulative XP required to reach the start of `level`
-  const cumulativeXpToLevelStart = (level: number) => {
-    // sum_{i=1}^{level-1} i*100 = 100 * (level-1)*level/2
-    return 100 * ((level - 1) * level) / 2;
-  };
-
   // Recalculate progress when skill changes (especially level)
   useEffect(() => {
     if (skill) {
-      const currentLevel = skill.level || Math.floor(skill.currentXp / 100) + 1;
-      const levelStart = cumulativeXpToLevelStart(currentLevel);
-      const xpIntoCurrentLevel = Math.max(0, skill.currentXp - levelStart);
-      const xpForThisLevel = Math.max(1, currentLevel * 100);
-      const pct = Math.round((xpIntoCurrentLevel / xpForThisLevel) * 100);
-      setProgressPercent(Math.max(0, Math.min(100, pct)));
+      const currentLevel = skill.level || levelFromXp(skill.currentXp);
+      setProgressPercent(Math.round((blocksInLevel(skill.currentXp, currentLevel) / BLOCKS_PER_LEVEL) * 100));
     } else {
       setProgressPercent(0);
     }
@@ -73,10 +60,9 @@ export function SkillGridDetail({ skill, areaColor, children }: SkillGridDetailP
   const goalLevel = skill.goalXp > 0 ? skill.goalXp : null;
 
   // Compute level progress values
-  const currentLevel = skill.level || Math.floor(skill.currentXp / 100) + 1;
-  const levelStart = cumulativeXpToLevelStart(currentLevel);
-  const xpIntoCurrentLevel = Math.max(0, skill.currentXp - levelStart);
-  const xpForThisLevel = Math.max(1, currentLevel * 100);
+  // Mostrado en cuadraditos (1 por suma de xp, 10 por nivel), igual que el pop-up de "+XP".
+  const currentLevel = skill.level || levelFromXp(skill.currentXp);
+  const filledBlocks = blocksInLevel(skill.currentXp, currentLevel);
   const progressColor = getProgressColorForLevel(currentLevel);
   const nextLevelLabel = `Lv${currentLevel + 1}`;
 
@@ -133,7 +119,7 @@ export function SkillGridDetail({ skill, areaColor, children }: SkillGridDetailP
             </div>
             <div className="text-center">
               <div className="text-base font-bold" style={{ color: areaColor }}>
-                {xpIntoCurrentLevel}
+                {filledBlocks}
               </div>
               <div className="text-xs text-muted-foreground uppercase tracking-wider">
                 XP
@@ -152,8 +138,7 @@ export function SkillGridDetail({ skill, areaColor, children }: SkillGridDetailP
           {/* XP Progress Bar — blocky segments, matching the "+XP" gain popup's style */}
           <div className="mx-auto w-full max-w-[240px]">
             <div className="h-4 w-full flex gap-0.5 rounded-sm">
-              {Array.from({ length: XP_BAR_BLOCKS }).map((_, index) => {
-                const filledBlocks = Math.round((progressPercent / 100) * XP_BAR_BLOCKS);
+              {Array.from({ length: BLOCKS_PER_LEVEL }).map((_, index) => {
                 const isFilled = index < filledBlocks;
                 return (
                   <div
@@ -166,10 +151,10 @@ export function SkillGridDetail({ skill, areaColor, children }: SkillGridDetailP
             </div>
             <div className="flex justify-between mt-1 px-1">
               <span className="text-xs text-muted-foreground">
-                {xpIntoCurrentLevel}
+                {filledBlocks}
               </span>
               <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <span>{xpForThisLevel}</span>
+                <span>{BLOCKS_PER_LEVEL}</span>
                 <span className="text-[9px] leading-none font-semibold whitespace-nowrap" style={{ color: "#c8a96e" }}>
                   {nextLevelLabel}
                 </span>

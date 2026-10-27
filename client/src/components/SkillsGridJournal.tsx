@@ -94,6 +94,9 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
   const areaLongPressTimer = React.useRef<NodeJS.Timeout | null>(null);
   const plusButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const tabsContainerRef = React.useRef<HTMLDivElement | null>(null);
+  // Arrastre con el mouse para scrollear las áreas (con el dedo el scroll ya es nativo).
+  // moved queda en true hasta el click que sigue, para que soltar un arrastre no elija un área.
+  const tabsDragRef = React.useRef<{ startX: number; scrollLeft: number; moved: boolean } | null>(null);
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number } | null>(null);
   
   // Create Area/Project Form
@@ -589,6 +592,38 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
     }, 600);
   };
 
+  // Al deslizar (mouse o dedo) no tiene que dispararse ningún long-press.
+  const cancelTabsLongPresses = () => {
+    if (tabsLongPressTimer.current) clearTimeout(tabsLongPressTimer.current);
+    if (areaLongPressTimer.current) clearTimeout(areaLongPressTimer.current);
+  };
+
+  const handleTabsDragStart = (e: React.MouseEvent) => {
+    const el = tabsContainerRef.current;
+    if (!el || e.button !== 0) return;
+    tabsDragRef.current = { startX: e.clientX, scrollLeft: el.scrollLeft, moved: false };
+  };
+
+  const handleTabsDragMove = (e: React.MouseEvent) => {
+    const drag = tabsDragRef.current;
+    const el = tabsContainerRef.current;
+    if (!drag || !el || e.buttons !== 1) return;
+    const dx = e.clientX - drag.startX;
+    if (!drag.moved && Math.abs(dx) > 5) {
+      drag.moved = true;
+      cancelTabsLongPresses();
+    }
+    if (drag.moved) el.scrollLeft = drag.scrollLeft - dx;
+  };
+
+  const handleTabsDragClickCapture = (e: React.MouseEvent) => {
+    if (tabsDragRef.current?.moved) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    tabsDragRef.current = null;
+  };
+
   const handleTabsLongPressEnd = () => {
     if (tabsLongPressTimer.current) {
       clearTimeout(tabsLongPressTimer.current);
@@ -734,8 +769,12 @@ export function SkillsGridJournal({ skillId, areaId }: SkillsGridJournalProps) {
     <div className="w-full h-full flex flex-col gap-3">
       {/* Area Tabs - Scrolleable */}
       <div
-        className="overflow-x-auto overflow-y-hidden"
+        className="overflow-x-auto overflow-y-hidden scrollbar-hide select-none cursor-grab active:cursor-grabbing"
         ref={tabsContainerRef}
+        onMouseDownCapture={handleTabsDragStart}
+        onMouseMove={handleTabsDragMove}
+        onClickCapture={handleTabsDragClickCapture}
+        onTouchMove={cancelTabsLongPresses}
         onMouseDown={!anyModalOpen ? handleTabsLongPressStart : undefined}
         onMouseUp={!anyModalOpen ? handleTabsLongPressEnd : undefined}
         onMouseLeave={!anyModalOpen ? handleTabsLongPressEnd : undefined}

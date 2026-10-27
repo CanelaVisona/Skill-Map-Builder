@@ -3,6 +3,7 @@ import { isHabitScheduledOn } from "@shared/habitSchedule";
 import { createPortal } from "react-dom";
 import { SkillTreeProvider, useSkillTree, type Skill, type GlobalSkill, type Area, type Project } from "@/lib/skill-context";
 import { MenuProvider, useMenu } from "@/lib/menu-context";
+import { XP_PER_LEVEL } from "@/lib/skill-xp";
 import { AreaMenu } from "@/components/AreaMenu";
 import { SkillNode } from "@/components/SkillNode";
 import { getErrorBarBlocks } from "@/components/ErrorProgressPopup";
@@ -5337,13 +5338,8 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
   }, []);
   
   // XP per level calculation (same formula as backend)
-  const calculateXpForLevel = (level: number) => {
-    let totalXp = 0;
-    for (let i = 1; i < level; i++) {
-      totalXp += i * 100;
-    }
-    return totalXp;
-  };
+  // 100 xp por nivel, igual en todos (ver lib/skill-xp.ts).
+  const calculateXpForLevel = (level: number) => (level - 1) * XP_PER_LEVEL;
   
   const calculateXpProgress = (currentXp: number, level: number) => {
     const xpForCurrentLevel = calculateXpForLevel(level);

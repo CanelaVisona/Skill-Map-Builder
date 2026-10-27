@@ -11,6 +11,7 @@ import {
 } from "@/lib/skill-shapes";
 import { getMaterialTokens, getRimColorForLevel, getMaterialForLevel, tintWithAreaColor, type MaterialKey } from "@/lib/skill-materials";
 import { getRarityTokens, shouldGlow, type RarityKey } from "@/lib/skill-rarity";
+import { BLOCKS_PER_LEVEL, blocksInLevel, levelFromXp } from "@/lib/skill-xp";
 
 interface SkillData {
   id: string;
@@ -82,12 +83,8 @@ export function SkillDiamond({
     return "#1a5c1a";
   };
 
-  const currentLevel = level || Math.floor(skill.currentXp / 100) + 1;
-  const cumulativeXpToLevelStart = (lvl: number) => (100 * ((lvl - 1) * lvl)) / 2;
-  const levelStart = cumulativeXpToLevelStart(currentLevel);
-  const xpIntoCurrentLevel = Math.max(0, skill.currentXp - levelStart);
-  const xpForThisLevel = Math.max(1, currentLevel * 100);
-  const progressPercent = Math.round(Math.max(0, Math.min(100, (xpIntoCurrentLevel / xpForThisLevel) * 100)));
+  const currentLevel = level || levelFromXp(skill.currentXp);
+  const progressPercent = Math.round((blocksInLevel(skill.currentXp, currentLevel) / BLOCKS_PER_LEVEL) * 100);
   const progressColor = getProgressColorForLevel(currentLevel);
 
   // Every skill is a uniform legendary-tier diamond whose material automatically upgrades
