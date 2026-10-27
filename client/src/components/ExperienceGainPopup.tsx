@@ -81,6 +81,10 @@ function clampPercent(value: number) {
 
 export function ExperienceGainPopup({ snapshot, onClose }: ExperienceGainPopupProps) {
   const XP_PER_LEVEL = 100;
+  // Se muestra en "cuadraditos": cada suma de xp (10) es 1 de los 10 que llenan un nivel.
+  const XP_PER_BLOCK = 10;
+  const totalBlocks = XP_PER_LEVEL / XP_PER_BLOCK;
+  const blocksFor = (xp: number) => Math.floor((xp % XP_PER_LEVEL) / XP_PER_BLOCK);
   const [barWidth, setBarWidth] = useState(0);
   const [showLevelUp, setShowLevelUp] = useState(false);
   const [barTransitionMs, setBarTransitionMs] = useState(1000);
@@ -107,12 +111,14 @@ export function ExperienceGainPopup({ snapshot, onClose }: ExperienceGainPopupPr
     const xpInCurrentLevel = xpAfter % XP_PER_LEVEL;
     const progressPct = (xpInCurrentLevel / XP_PER_LEVEL) * 100;
     const progressPctBefore = ((xpBefore % XP_PER_LEVEL) / XP_PER_LEVEL) * 100;
+    const blocksBefore = blocksFor(xpBefore);
+    const blocksAfter = blocksFor(xpAfter);
     const cleanupTimers: number[] = [];
 
     setShowLevelUp(false);
     setBarTransitionMs(1000);
     setBarWidth(progressPctBefore);
-    setDisplayBlocks(Math.max(0, Math.min(totalBlocks, Math.round(progressPctBefore / 100 * totalBlocks))));
+    setDisplayBlocks(blocksBefore);
     setAnimationStage("initial");
 
     if (xpAfter > xpBefore) {
@@ -122,7 +128,7 @@ export function ExperienceGainPopup({ snapshot, onClose }: ExperienceGainPopupPr
     const rafId = window.requestAnimationFrame(() => {
       if (!leveledUp) {
         setBarWidth(progressPct);
-        setDisplayBlocks(Math.max(0, Math.min(totalBlocks, Math.round(progressPct / 100 * totalBlocks))));
+        setDisplayBlocks(blocksAfter);
         setAnimationStage("fill");
         return;
       }
@@ -152,7 +158,7 @@ export function ExperienceGainPopup({ snapshot, onClose }: ExperienceGainPopupPr
         const thirdTimer = window.setTimeout(() => {
           setBarTransitionMs(1000);
           setBarWidth(progressPct);
-          setDisplayBlocks(Math.max(0, Math.min(totalBlocks, Math.round(progressPct / 100 * totalBlocks))));
+          setDisplayBlocks(blocksAfter);
         }, 30);
 
         cleanupTimers.push(secondTimer, thirdTimer);
@@ -183,15 +189,11 @@ export function ExperienceGainPopup({ snapshot, onClose }: ExperienceGainPopupPr
   const xpAfter = snapshot.xpAfter;
   const levelBefore = Math.floor(xpBefore / XP_PER_LEVEL);
   const levelAfter = Math.floor(xpAfter / XP_PER_LEVEL);
-  const xpInCurrentLevel = xpAfter % XP_PER_LEVEL;
-  const xpToNextLevel = XP_PER_LEVEL - xpInCurrentLevel;
   const nextLevel = levelAfter + 1;
   const leveledUp = levelAfter > levelBefore;
   const currentLevel = snapshot.level;
   const progressColor = getProgressColor(currentLevel);
-  const totalBlocks = 15;
-  const filledBlocksBefore = Math.round((xpBefore % XP_PER_LEVEL) / XP_PER_LEVEL * totalBlocks);
-  const filledBlocksAfter = Math.round((xpAfter % XP_PER_LEVEL) / XP_PER_LEVEL * totalBlocks);
+  const filledBlocksBefore = blocksFor(xpBefore);
   const useResetAnimation = animationStage === "afterReset";
 
   return createPortal(
@@ -258,7 +260,7 @@ export function ExperienceGainPopup({ snapshot, onClose }: ExperienceGainPopupPr
             </div>
 
             <div className="mt-3 text-center text-[13px] font-medium" style={{ color: palette.text }}>
-              {xpBefore} → {xpAfter} XP
+              {Math.floor(xpBefore / XP_PER_BLOCK)} → {Math.floor(xpAfter / XP_PER_BLOCK)} XP
             </div>
 
             <div className="mt-3">
@@ -296,7 +298,7 @@ export function ExperienceGainPopup({ snapshot, onClose }: ExperienceGainPopupPr
 
               <div className="mt-2 flex items-center justify-between text-[9px]" style={{ color: palette.textDim }}>
                 <span>
-                  {xpInCurrentLevel} / {XP_PER_LEVEL}
+                  {blocksFor(xpAfter)} / {totalBlocks}
                 </span>
                 <span>{`Lv${nextLevel}`}</span>
               </div>

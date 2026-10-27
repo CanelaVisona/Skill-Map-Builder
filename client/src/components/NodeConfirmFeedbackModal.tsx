@@ -696,10 +696,6 @@ export function NodeConfirmFeedbackModal({
       case "xpConfirm":
         return (
           <div className="space-y-2">
-            <div className="flex items-center justify-center gap-2 py-2">
-              <div className="w-24 rounded-md bg-muted/50 px-3 py-2 text-center text-lg font-bold">{xpAmount}</div>
-              <span className="text-lg font-medium text-muted-foreground">xp</span>
-            </div>
             <p className="text-center text-sm text-muted-foreground">
               Para: <span className="text-foreground">{xpSkillIds.map(skillDisplayName).join(", ")}</span>
             </p>
@@ -729,7 +725,7 @@ export function NodeConfirmFeedbackModal({
         return selectedPower ? (
           <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
             <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              {selectedPower.isUnlocked === 0 ? "Desbloquear" : "Dominar"}
+              Dominar
             </p>
             <p className="mt-1 text-sm font-medium">{selectedPower.name}</p>
             {selectedPower.description && <p className="mt-1 text-sm text-muted-foreground">{selectedPower.description}</p>}

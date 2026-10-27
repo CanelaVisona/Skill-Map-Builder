@@ -668,16 +668,14 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     createSourcePower.mutate({ name: finalName, description: newPowerDescription.trim() });
   };
 
-  // Core power unlock/master logic, shared by the Journal tab's immediate "Desbloquear"/"Dominar"
-  // button and by runConfirmSequence.
+  // Core power master logic, shared by the Journal tab's immediate "Dominar" button and by
+  // runConfirmSequence. No intermediate "desbloqueado" step: a power goes straight to dominado.
   const applyPowerAction = async (power: SkillNodeSourcePower, showPopup: (fn: () => void) => void = (fn) => fn()) => {
     if (power.isUnlocked === 2) return;
 
-    const nextState = power.isUnlocked === 0 ? 1 : 2;
-
     try {
-      await updateSourcePower.mutateAsync({ id: power.id, data: { isUnlocked: nextState } });
-      showPopup(() => showPowerCelebration({ name: power.name, kind: nextState === 1 ? "unlocked" : "confirmed" }));
+      await updateSourcePower.mutateAsync({ id: power.id, data: { isUnlocked: 2 } });
+      showPopup(() => showPowerCelebration({ name: power.name, kind: "confirmed" }));
     } catch {
       // Mutation error is already handled by the mutation's onError callback.
     }
@@ -2657,7 +2655,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                         <span className="whitespace-nowrap">+{pendingTools.length} tool{pendingTools.length > 1 ? "s" : ""}</span>
                       )}
                       {pendingXpSkillNames.map((name, i) => (
-                        <span key={pendingXpSkillIds[i]} className="whitespace-nowrap">+{FIXED_XP_AMOUNT}xp {name}</span>
+                        <span key={pendingXpSkillIds[i]} className="whitespace-nowrap">+{name}</span>
                       ))}
                       {pendingBodyZones.length > 0 && (
                         <span className="whitespace-nowrap">
@@ -3488,13 +3486,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                     </TabsTrigger>
                   </TabsList>
 
+                  {/* Solo se elige el skill: la cantidad de xp no se muestra acá, se ve recién en el
+                      pop-up que la suma al confirmar el nodo. */}
                   <TabsContent value="experience" className="mt-4 space-y-3 flex flex-col flex-1">
-                    <div className="flex items-center justify-center gap-2 py-4">
-                      <div className="w-24 rounded-md bg-muted/50 px-3 py-2 text-center text-lg font-bold">
-                        {FIXED_XP_AMOUNT}
-                      </div>
-                      <span className="text-lg font-medium text-muted-foreground">xp</span>
-                    </div>
                     <Popover open={showPendingXpSkillSelector} onOpenChange={setShowPendingXpSkillSelector}>
                       <PopoverTrigger asChild>
                         <Button
@@ -3679,7 +3673,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                                   <p className="mt-1 text-sm text-muted-foreground">{pendingSelectedPower.description}</p>
                                 )}
                                 <p className="mt-2 text-[11px] text-muted-foreground">
-                                  Al confirmar el nodo: {pendingSelectedPower.isUnlocked === 0 ? "se desbloqueará" : pendingSelectedPower.isUnlocked === 1 ? "se dominará" : "ya dominado"}
+                                  Al confirmar el nodo: {pendingSelectedPower.isUnlocked === 2 ? "ya dominado" : "se dominará"}
                                 </p>
                               </div>
                             )}

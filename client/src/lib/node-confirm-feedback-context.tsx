@@ -198,10 +198,10 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
 
   const unlockOrMasterPower = async (scope: FeedbackScope, power: NodeFeedbackPower, enqueue: (fn: () => void) => void) => {
     if (power.isUnlocked === 2) return;
-    const nextState = power.isUnlocked === 0 ? 1 : 2;
-    await postJson(`/api/source-powers/${power.id}`, "PATCH", { isUnlocked: nextState });
+    // Sin paso intermedio "desbloqueado": el poder pasa directo a dominado.
+    await postJson(`/api/source-powers/${power.id}`, "PATCH", { isUnlocked: 2 });
     invalidateScope(scope);
-    enqueue(() => showPowerCelebration({ name: power.name, kind: nextState === 1 ? "unlocked" : "confirmed" }));
+    enqueue(() => showPowerCelebration({ name: power.name, kind: "confirmed" }));
   };
 
   // Guarda lo cargado en el modal y muestra sus pop-ups, de a un bloque por vez.
@@ -276,7 +276,7 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
       blocks.push({ label: `+${power.name}`, run: (enqueue) => unlockOrMasterPower(scope, power, enqueue) });
     }
 
-    // Poder nuevo: se crea bloqueado y se desbloquea de una, con su pop-up de "desbloqueado".
+    // Poder nuevo: se crea bloqueado y se domina de una, con su pop-up de "dominado".
     for (const { scope, ...newPower } of draft.newPowers) {
       blocks.push({
         label: `+Poder: ${newPower.name}`,

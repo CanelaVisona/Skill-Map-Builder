@@ -2273,7 +2273,16 @@ export async function registerRoutes(
       }
 
       const neighbor = sameLevelSkills[neighborIndex];
-      
+
+      // The skeleton node (levelPosition 1 / isAutoComplete) anchors the level and must stay
+      // first: swapping with it (e.g. "up" on the first real node) pushes it into the middle
+      // of the level and leaves no node at position 1.
+      const isSkeleton = (s: typeof existingSkill) => s.isAutoComplete === 1 || s.levelPosition === 1;
+      if (isSkeleton(existingSkill) || isSkeleton(neighbor)) {
+        res.status(400).json({ message: "No se puede mover el nodo base del nivel" });
+        return;
+      }
+
       // Swap Y coordinates and levelPosition
       const tempY = existingSkill.y;
       const neighborY = neighbor.y;

@@ -1634,7 +1634,8 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
   };
 
   const renderPowerState = (power: SourcePower): PowerRenderState => {
-    if (power.isUnlocked === 0) {
+    // Ya no hay estado "desbloqueado": uno que haya quedado en 1 se ve como bloqueado.
+    if (power.isUnlocked !== 2) {
       return {
         cardClass: "border-white/7 text-[#5a5648]",
         chipClass: "bg-white/[0.03] border-white/10",
@@ -1644,14 +1645,12 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       };
     }
 
-    const active = power.isUnlocked === 2;
-
     return {
-      cardClass: active ? "border-[#EF9F27] text-[#FAC775]" : "border-white/13 text-[#b0997a]",
-      chipClass: active ? "bg-gradient-to-b from-[#FAC775] to-[#EF9F27] border-transparent" : "bg-white/[0.05] border-white/15",
-      iconColorClass: active ? "text-[#1A1206]" : "text-[#c9a876]",
+      cardClass: "border-[#EF9F27] text-[#FAC775]",
+      chipClass: "bg-gradient-to-b from-[#FAC775] to-[#EF9F27] border-transparent",
+      iconColorClass: "text-[#1A1206]",
       showLock: false,
-      showGlow: active,
+      showGlow: true,
     };
   };
 
@@ -1792,7 +1791,6 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
 
   const totalPowerCount = (powers || []).length;
   const masteredPowerCount = (powers || []).filter((p) => p.isUnlocked === 2).length;
-  const unlockedPowerCount = (powers || []).filter((p) => p.isUnlocked >= 1).length;
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -2012,7 +2010,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                 <div className="mb-4 flex items-center justify-between">
                   <span className="text-sm font-medium">Poderes</span>
                   <span className="text-xs text-muted-foreground">
-                    <span className="font-medium text-[#FAC775]">{masteredPowerCount}</span> dominados · {unlockedPowerCount} desbloqueados de {totalPowerCount}
+                    <span className="font-medium text-[#FAC775]">{masteredPowerCount}</span> dominados de {totalPowerCount}
                   </span>
                 </div>
 
@@ -2047,7 +2045,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                             }}
                             className={`w-full min-h-[52px] p-2 rounded-lg text-xs font-medium transition-all text-left flex items-center gap-2 border relative overflow-hidden ${state.cardClass}`}
                             style={{
-                              background: power.isUnlocked === 0 ? "#0f0b07" : power.isUnlocked === 1 ? "#221a10" : "#2a1a00",
+                              background: power.isUnlocked === 2 ? "#2a1a00" : "#0f0b07",
                             }}
                           >
                             <span className={`relative flex h-7 w-7 flex-none items-center justify-center rounded-md border ${state.chipClass}`}>
@@ -2483,12 +2481,11 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
                 </Label>
                 <select
                   id="power-status"
-                  value={powerStatus}
-                  onChange={(e) => setPowerStatus(Number(e.target.value) as 0 | 1 | 2)}
+                  value={powerStatus === 2 ? 2 : 0}
+                  onChange={(e) => setPowerStatus(Number(e.target.value) as 0 | 2)}
                   className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
                 >
                   <option value={0}>Bloqueado</option>
-                  <option value={1}>Desbloqueado</option>
                   <option value={2}>Dominado</option>
                 </select>
               </div>

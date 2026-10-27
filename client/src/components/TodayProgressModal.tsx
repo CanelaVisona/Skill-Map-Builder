@@ -393,6 +393,8 @@ function DoneNodeMark({ size = "sm" }: { size?: "sm" | "md" }) {
   );
 }
 
+const NOW_CLEARED_STORAGE_KEY = "today-progress-now-cleared-date";
+
 export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const queryClient = useQueryClient();
   const { showPowerCelebration } = usePowerCelebration();
@@ -409,6 +411,21 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // Previsualización de un día futuro (se entra tocando ese día en el calendario). null = se
   // está viendo el día real de hoy.
   const [previewDate, setPreviewDate] = useState<string | null>(null);
+  // "Ahora" destildado (tocar "Ahora" en la tarea desbloqueada): ese día no queda ninguna tarea
+  // desbloqueada hasta que se le tilde "Ahora" a una. Se guarda el día en que se destildó, así
+  // al día siguiente vuelve a haber desbloqueada sola.
+  const [nowClearedDate, setNowClearedDate] = useState<string | null>(() => {
+    try { return localStorage.getItem(NOW_CLEARED_STORAGE_KEY); } catch { return null; }
+  });
+  const setNowCleared = (date: string | null) => {
+    setNowClearedDate(date);
+    try {
+      if (date) localStorage.setItem(NOW_CLEARED_STORAGE_KEY, date);
+      else localStorage.removeItem(NOW_CLEARED_STORAGE_KEY);
+    } catch {
+      // Sin storage solo dura mientras el modal está montado.
+    }
+  };
   const [addTaskDialogOpen, setAddTaskDialogOpen] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   // Elegido con los botones "Tarea"/"Evento" del diálogo de agregar — se manda tal cual al crear.
@@ -460,6 +477,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // Día pasado: es un registro de lo que pasó, no hay "tarea que toca ahora". Nada se atenúa
   // (en hoy, lo que todavía no toca queda tenue), para que se lea todo lo de ese día.
   const isPastDay = effectiveDate < todayStr;
+  // Solo viendo hoy: en otro día no hay "ahora".
+  const nowCleared = !isPreview && nowClearedDate === todayStr;
   // Confirmar algo mientras se edita un día pasado lo registra ese día (a la hora actual, para
   // no cambiar el orden), no el día en que se toca. undefined = hoy/futuro: el server usa "ahora".
   const pastDayCompletedAt = (): string | undefined => {
@@ -1074,7 +1093,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   TIME_SLOTS.forEach((s) => {
     const bucket = itemBuckets[s.key];
     const isActiveSlot = isPreview ? bucket.length > 0 : s.key === getCurrentTimeSlotKey();
-    if (!isActiveSlot) return;
+    // Sin tarea desbloqueada ("Ahora" destildado) no hay nada antes de lo cual subir lo confirmado.
+    if (!isActiveSlot || nowCleared) return;
     const firstUndone = bucket.findIndex((i) => !i.done);
     if (firstUndone === -1) return;
     const isConfirmed = (i: TodayItem) => i.done && !i.traceSubs;
@@ -1683,6 +1703,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // Solo viendo hoy y para tareas sin hacer: en otro día no hay "ahora".
   const moveItemNow = (item: TodayItem) => {
     if (isPreview || item.done) return;
+    // Tildarle "Ahora" a una tarea vuelve a haber desbloqueada (si se había destildado).
+    setNowCleared(null);
     cancelPendingNowPlacement();
     const slot = getCurrentTimeSlotKey();
     const sameTask = (i: TodayItem) => i.type === item.type && i.id === item.id;
@@ -1715,8 +1737,16 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     return sum ? { derivedMinutes: sum, derivedTimerKey: timerKeyFor(`${item.type}:${item.id}`, sum) } : {};
   };
 
-  const nowProps = (item: TodayItem) =>
-    !isPreview && !item.done && !item.traceSubs ? { onMoveNow: () => moveItemNow(item) } : {};
+  // La tarea desbloqueada (la primera sin hacer de la franja actual) lleva "Ahora" tildado;
+  // tocarlo de nuevo lo destilda y deja el día sin tarea desbloqueada (ver nowCleared).
+  const currentNowKey = isPreview || nowCleared
+    ? null
+    : (itemBuckets[getCurrentTimeSlotKey()] || []).find((i) => !i.done)?.key ?? null;
+  const nowProps = (item: TodayItem) => {
+    if (isPreview || item.done || item.traceSubs) return {};
+    const nowActive = item.key === currentNowKey;
+    return { nowActive, onMoveNow: () => (nowActive ? setNowCleared(todayStr) : moveItemNow(item)) };
+  };
 
   const moveItemToSlot = (item: TodayItem, slot: TaskSlotKey) => {
     cancelPendingNowPlacement();
@@ -1900,7 +1930,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // después de la tarea desbloqueada. Si la desbloqueada es un nodo con sub-nodos pendientes,
   // queda antes del nodo padre.
   const liftBeforeUnlocked = (item: TodayItem) => {
-    if (isPreview || item.done) return;
+    if (isPreview || item.done || nowCleared) return;
     const slot = getCurrentTimeSlotKey();
     const bucket = itemBuckets[slot] || [];
     const currentIdx = bucket.findIndex((i) => !i.done);
@@ -3198,7 +3228,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                     // agendado se trata como activa, para que la tarea aparezca
                                     // destacada en vez de tenue.
                                     const isActiveSlot = isPreview ? itemBuckets[s.key].length > 0 : s.key === getCurrentTimeSlotKey();
-                                    const firstUndoneIdx = isActiveSlot ? itemBuckets[s.key].findIndex((i) => !i.done) : -1;
+                                    const firstUndoneIdx = isActiveSlot && !nowCleared ? itemBuckets[s.key].findIndex((i) => !i.done) : -1;
                                     return itemBuckets[s.key].map((item, idx) => {
                                       if (item.traceSubs) return renderTraceRow(item);
                                       // Nodo desbloqueado con sub-árbol: el destacado pasa a su
@@ -4377,6 +4407,7 @@ function TodayTaskRow({
   expanded,
   onToggleExpand,
   onMoveNow,
+  nowActive,
   derivedMinutes,
   derivedTimerKey,
 }: {
@@ -4417,7 +4448,9 @@ function TodayTaskRow({
   expanded?: boolean;
   onToggleExpand?: () => void;
   // "Ahora": pasa a ocupar el lugar de la tarea desbloqueada (solo viendo hoy, tareas sin hacer).
+  // nowActive: es la tarea desbloqueada — "Ahora" se ve tildado y tocarlo lo destilda.
   onMoveNow?: () => void;
+  nowActive?: boolean;
   // Suma del tiempo de sus sub-nodos/sub-pasos, cuando la tarea no tiene tiempo propio.
   derivedMinutes?: number;
   // Contador de esa suma (ver TaskTimerControl): el padre muestra lo que llevaron sus hijos.
@@ -4547,7 +4580,12 @@ function TodayTaskRow({
                 <DropdownMenuSeparator />
               </>
             )}
-            {onMoveNow && <DropdownMenuItem onClick={onMoveNow}>Ahora</DropdownMenuItem>}
+            {onMoveNow && (
+              <DropdownMenuItem onClick={onMoveNow}>
+                Ahora
+                {nowActive && <Check className="ml-auto h-4 w-4" aria-label="Tarea desbloqueada" />}
+              </DropdownMenuItem>
+            )}
             {TIME_SLOTS.map((s) => (
               <DropdownMenuItem key={s.key} onClick={() => onMove(s.key)}>
                 {s.label}

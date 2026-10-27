@@ -231,6 +231,10 @@ function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpen
 
   const pendingNodesTodayCount =
     pendingHabitsInSegment + pendingNodesInSegment + pendingPracticesInSegment + pendingManualInSegment;
+  // El badge no muestra cuántas son: 1 si queda al menos una en la franja actual, 0 si no,
+  // junto con la abreviatura de esa franja.
+  const hasPendingInSegment = pendingNodesTodayCount > 0;
+  const currentSlotAbbr = { morning: "mañ", midday: "med", afternoon: "tard", night: "noch" }[currentSlotKey];
 
   return (
     <div className="fixed top-4 right-4 z-50 flex flex-col items-end gap-2">
@@ -293,11 +297,17 @@ function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpen
               title="Progreso de hoy"
             >
               <CalendarCheck className="h-4 w-4 mx-auto" />
-              {pendingNodesTodayCount > 0 && (
-                <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full border border-background bg-black px-1 text-[10px] font-bold leading-none text-white dark:bg-white dark:text-black">
-                  {pendingNodesTodayCount > 99 ? "99+" : pendingNodesTodayCount}
-                </span>
-              )}
+              <span
+                className={cn(
+                  "absolute -top-1 -right-1 flex h-4 items-center gap-0.5 whitespace-nowrap rounded-full border border-background px-1 text-[9px] leading-none",
+                  hasPendingInSegment
+                    ? "bg-black font-bold text-white dark:bg-white dark:text-black"
+                    : "bg-muted-foreground/60 font-semibold text-background"
+                )}
+              >
+                <span className="font-normal">{currentSlotAbbr}</span>
+                {hasPendingInSegment ? 1 : 0}
+              </span>
             </button>
             <button
               className="relative h-8 w-8 rounded-full text-muted-foreground/60 transition-colors hover:text-foreground"
@@ -9033,7 +9043,8 @@ function QuestDiary() {
   };
 
   const renderPowerState = (power: { isUnlocked: 0 | 1 | 2 }) => {
-    if (power.isUnlocked === 0) {
+    // Ya no hay estado "desbloqueado": uno que haya quedado en 1 se ve como bloqueado.
+    if (power.isUnlocked !== 2) {
       return {
         cardClass: "border-white/7 text-[#5a5648]",
         chipClass: "bg-white/[0.03] border-white/10",
@@ -9044,15 +9055,13 @@ function QuestDiary() {
       };
     }
 
-    const active = power.isUnlocked === 2;
-
     return {
-      cardClass: active ? "border-[#EF9F27] text-[#FAC775]" : "border-white/13 text-[#b0997a]",
-      chipClass: active ? "bg-gradient-to-b from-[#FAC775] to-[#EF9F27] border-transparent" : "bg-white/[0.05] border-white/15",
-      iconColorClass: active ? "text-[#1A1206]" : "text-[#c9a876]",
+      cardClass: "border-[#EF9F27] text-[#FAC775]",
+      chipClass: "bg-gradient-to-b from-[#FAC775] to-[#EF9F27] border-transparent",
+      iconColorClass: "text-[#1A1206]",
       showLock: false,
-      showGlow: active,
-      backgroundClass: active ? "bg-[#2a1a00]" : "bg-[#221a10]",
+      showGlow: true,
+      backgroundClass: "bg-[#2a1a00]",
     };
   };
 
@@ -10098,8 +10107,10 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
         <div className="flex-1 overflow-y-auto p-8 scroll-smooth scrollbar-hide" data-skill-canvas-scroll="true">
           <div className="w-full relative max-w-4xl mx-auto mt-2 min-h-full">
             
-            <div className="absolute top-0 left-0 z-10">
-              <div className="flex items-center gap-3 mb-2">
+            {/* En el flujo (no absoluto), como el header de la vista principal: si el título es
+                largo y ocupa varias líneas empuja la red de nodos en vez de quedar encima. */}
+            <div className="relative z-10 mb-8 pb-6 border-b border-border/50">
+              <div className="flex items-start gap-3 mb-2">
                 <Button
                   variant="ghost"
                   size="icon"
@@ -10109,7 +10120,7 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
                 >
                   <ArrowLeft className="h-5 w-5" />
                 </Button>
-                <h2 className="text-2xl font-bold tracking-tight">
+                <h2 className="min-w-0 break-words text-2xl font-bold tracking-tight">
                   {currentParent?.title || "SubQuests"}
                 </h2>
               </div>
@@ -10154,7 +10165,7 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
             </div>
 
             <div 
-              className="relative mt-20 transition-all duration-500 ease-in-out overflow-x-auto sm:overflow-x-hidden scrollbar-hide"
+              className="relative transition-all duration-500 ease-in-out overflow-x-auto sm:overflow-x-hidden scrollbar-hide"
               style={{ height: `${containerHeight}px`, minHeight: "600px", width: "100%", minWidth: containerMinWidth }}
             >
               <AnimatePresence mode="wait">
