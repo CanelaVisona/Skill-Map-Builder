@@ -229,6 +229,9 @@ function MinutesSuffix({
 // derivedKeys: tareas sin tiempo propio cuya fila muestra la suma del de sus hijos (ahí va su ▶).
 type TimerFamily = { childrenOf: Map<string, string[]>; parentOf: Map<string, string>; derivedKeys: Set<string> };
 const TimerFamilyContext = React.createContext<TimerFamily>({ childrenOf: new Map(), parentOf: new Map(), derivedKeys: new Set() });
+// ▶ solo en la tarea desbloqueada: cada fila de Tareas de hoy lo habilita solo si es la destacada
+// ("current"). Fuera de las filas (p.ej. el diálogo de "Asignar tiempo") queda habilitado.
+const TimerPlayContext = React.createContext(true);
 
 // Contador de arranque. "5 min ▶": tocar ▶ cuenta para atrás de a un minuto ("5 min" → "4 min",
 // sin segundos; ⏸ pausa). Al llegar a cero no corta: pasa a "✓ 5 · llevo 12 min" y sigue
@@ -237,6 +240,7 @@ const TimerFamilyContext = React.createContext<TimerFamily>({ childrenOf: new Ma
 function TaskTimerControl({ timerKey, minutes, done }: { timerKey: string; minutes: number; done?: boolean }) {
   const { state, start, pause } = useTaskTimer(timerKey, minutes);
   const family = useContext(TimerFamilyContext);
+  const canPlay = useContext(TimerPlayContext);
   const allTimers = useAllTaskTimers();
   const childKeys = family.childrenOf.get(timerKey) ?? [];
   const childStates = childKeys.map((k) => allTimers[k]).filter((t): t is NonNullable<typeof t> => !!t);
@@ -293,7 +297,8 @@ function TaskTimerControl({ timerKey, minutes, done }: { timerKey: string; minut
       ) : (
         " "
       )}
-      {!done && (
+      {/* Un contador que ya corre en una tarea que dejó de ser la desbloqueada conserva su ⏸. */}
+      {!done && (canPlay || running) && (
         <button
           type="button"
           onPointerDown={stop}
@@ -4306,7 +4311,7 @@ function TodaySubRow({
     </span>
   );
   return (
-    <>
+    <TimerPlayContext.Provider value={!!current}>
       <div className={`${depth > 0 ? "ml-10" : "ml-5"} border-l-2 pl-3 transition-opacity ${current ? "border-amber-500/40" : "border-border/40"} ${dimmed ? "opacity-25" : ""}`}>
         <div
           className={`flex items-center gap-2 text-sm ${
@@ -4381,7 +4386,7 @@ function TodaySubRow({
           </AlertDialogContent>
         </AlertDialog>
       )}
-    </>
+    </TimerPlayContext.Provider>
   );
 }
 
@@ -4487,7 +4492,7 @@ function TodayTaskRow({
   };
 
   return (
-    <>
+    <TimerPlayContext.Provider value={!!current}>
       <div
         className={`flex items-center gap-2 text-sm touch-none select-none transition-opacity ${
           dimmed ? "opacity-25" : ""
@@ -4674,6 +4679,6 @@ function TodayTaskRow({
           </AlertDialogContent>
         </AlertDialog>
       )}
-    </>
+    </TimerPlayContext.Provider>
   );
 }
