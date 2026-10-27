@@ -231,10 +231,8 @@ function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpen
 
   const pendingNodesTodayCount =
     pendingHabitsInSegment + pendingNodesInSegment + pendingPracticesInSegment + pendingManualInSegment;
-  // El badge no muestra cuántas son: 1 si queda al menos una en la franja actual, 0 si no,
-  // junto con la abreviatura de esa franja.
+  // El badge no muestra cuántas son: 1 si queda al menos una en la franja actual, 0 si no.
   const hasPendingInSegment = pendingNodesTodayCount > 0;
-  const currentSlotAbbr = { morning: "mañ", midday: "med", afternoon: "tard", night: "noch" }[currentSlotKey];
 
   return (
     <div className="fixed top-4 right-4 z-50 flex flex-col items-end gap-2">
@@ -299,13 +297,12 @@ function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpen
               <CalendarCheck className="h-4 w-4 mx-auto" />
               <span
                 className={cn(
-                  "absolute -top-1 -right-1 flex h-4 items-center gap-0.5 whitespace-nowrap rounded-full border border-background px-1 text-[9px] leading-none",
+                  "absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full border border-background px-1 text-[10px] leading-none",
                   hasPendingInSegment
                     ? "bg-black font-bold text-white dark:bg-white dark:text-black"
                     : "bg-muted-foreground/60 font-semibold text-background"
                 )}
               >
-                <span className="font-normal">{currentSlotAbbr}</span>
                 {hasPendingInSegment ? 1 : 0}
               </span>
             </button>
