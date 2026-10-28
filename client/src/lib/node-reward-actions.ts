@@ -6,6 +6,7 @@ import { useErrorProgressPopup } from "@/lib/error-progress-popup-context";
 import { useErrorCelebration } from "@/lib/error-celebration-context";
 import { runPopupQueueAsync, getPopupBusyDelay } from "@/lib/popup-coordinator";
 import { type ExperienceGainSnapshot } from "@/components/ExperienceGainPopup";
+import { queryClient } from "@/lib/queryClient";
 
 // Lógica de recompensas compartida entre SkillNode.tsx (árbol) y el modal de feedback post-
 // confirmación (node-confirm-feedback-context.tsx), que también se abre al confirmar un nodo
@@ -116,6 +117,8 @@ export function useApplyExperienceGain() {
 export interface ErrorAdjustResult {
   errorProgress: { errorName: string; pointsBefore: number; pointsAfter: number; estrategia?: string | null; disparador?: string | null };
   vencido: boolean;
+  // Título de la estrategia que este +10 sumó a las "Estrategias" del Journal (null si ya estaba).
+  newStrategy?: string | null;
 }
 
 export interface ErrorLinks {
@@ -140,6 +143,11 @@ export function useErrorAdjustPopups() {
       enqueue(() => showErrorProgressPopup(result.errorProgress));
       if (result.vencido) {
         enqueue(() => showErrorCelebration({ name: result.errorProgress.errorName, kind: "vencido" }));
+      }
+      if (result.newStrategy) {
+        const strategyName = result.newStrategy;
+        queryClient.invalidateQueries({ queryKey: ["/api/journal/strategies"] });
+        enqueue(() => showErrorCelebration({ name: strategyName, kind: "estrategia" }));
       }
       const { before, after } = addBodyBlock("mente", "flex");
       enqueue(() => showBodyGainPopup({ zone: "mente", dimension: "flex", before, after }));

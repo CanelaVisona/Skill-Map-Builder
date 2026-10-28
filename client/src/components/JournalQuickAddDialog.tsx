@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { BookOpen, Lightbulb, Split, Wrench, ChevronLeft } from "lucide-react";
+import { BookOpen, Lightbulb, Split, HelpCircle, Wrench, ChevronLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useInsightsCounterPopup } from "@/lib/insights-counter-popup-context";
 import { Button } from "@/components/ui/button";
@@ -10,17 +10,18 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 
 // "Nueva entrada" del Journal: se abre manteniendo apretado el fondo de sus tabs (ver QuestDiary
-// en SkillTree.tsx). Carga un pensamiento, aprendizaje, herramienta o estrategia suelto (sin
+// en SkillTree.tsx). Carga un pensamiento, aprendizaje, herramienta, estrategia o pregunta suelto (sin
 // nodo), con los mismos pasos que los cubos del modal de feedback post-confirmación:
 // descripción primero, título después.
 
-export type JournalQuickAddKind = "thought" | "learning" | "tool" | "strategy";
+export type JournalQuickAddKind = "thought" | "learning" | "tool" | "strategy" | "question";
 
 const KINDS: Array<{ id: JournalQuickAddKind; label: string; endpoint: string; icon: React.ComponentType<{ className?: string }> }> = [
   { id: "thought", label: "Pensamiento", endpoint: "thoughts", icon: BookOpen },
   { id: "learning", label: "Aprendizaje", endpoint: "learnings", icon: Lightbulb },
   { id: "tool", label: "Herramienta", endpoint: "tools", icon: Wrench },
   { id: "strategy", label: "Estrategia", endpoint: "strategies", icon: Split },
+  { id: "question", label: "Pregunta", endpoint: "questions", icon: HelpCircle },
 ];
 
 const inputClass = "border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted";
@@ -86,9 +87,9 @@ export function JournalQuickAddDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[400px] border-0 shadow-2xl max-h-[90dvh] flex flex-col gap-3 overflow-hidden">
         <DialogTitle className="text-lg font-medium shrink-0">Nueva entrada</DialogTitle>
-        <DialogDescription className="sr-only">Agregá un pensamiento, aprendizaje, herramienta o estrategia al Journal</DialogDescription>
+        <DialogDescription className="sr-only">Agregá un pensamiento, aprendizaje, herramienta, estrategia o pregunta al Journal</DialogDescription>
 
-        <div className="grid grid-cols-4 gap-1.5 shrink-0">
+        <div className="grid grid-cols-5 gap-1.5 shrink-0">
           {KINDS.map(({ id, label, icon: Icon }) => (
             <button
               key={id}

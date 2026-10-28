@@ -165,7 +165,7 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
           : listScope.type === "area" ? e.areaId === listScope.id : e.projectId === listScope.id
       );
 
-  const getJournalEntryCount = async (kind: "learnings" | "strategies" | "tools" | "thoughts", scope: FeedbackScope) => {
+  const getJournalEntryCount = async (kind: "learnings" | "strategies" | "questions" | "tools" | "thoughts", scope: FeedbackScope) => {
     const url = scope
       ? `/api/journal/${kind}?${scope.type === "area" ? "areaId" : "projectId"}=${scope.id}`
       : `/api/journal/${kind}`;
@@ -210,7 +210,7 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
     const confirmedScope = targetScope(target);
     const blocks: RewardBlock[] = [];
 
-    const journalBlock = (kind: "thoughts" | "learnings" | "strategies" | "tools", popupType: "thought" | "learning" | "strategy" | "tool", entry: { title: string; sentence: string }): RewardBlock => ({
+    const journalBlock = (kind: "thoughts" | "learnings" | "strategies" | "questions" | "tools", popupType: "thought" | "learning" | "strategy" | "question" | "tool", entry: { title: string; sentence: string }): RewardBlock => ({
       label: `+${popupType}: ${entry.title}`,
       run: async (enqueue) => {
         const countBefore = await getJournalEntryCount(kind, confirmedScope);
@@ -223,6 +223,7 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
     draft.thoughts.forEach((t) => blocks.push(journalBlock("thoughts", "thought", t)));
     draft.learnings.forEach((l) => blocks.push(journalBlock("learnings", "learning", l)));
     draft.strategies.forEach((st) => blocks.push(journalBlock("strategies", "strategy", st)));
+    draft.questions.forEach((q) => blocks.push(journalBlock("questions", "question", q)));
     draft.tools.forEach((t) => blocks.push(journalBlock("tools", "tool", t)));
 
     // Error nuevo: se crea y se confirma de una ("¡Error nuevo detectado!"). Va con el nodo solo
@@ -308,6 +309,7 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
       queryClient.invalidateQueries({ queryKey: ["/api/journal/thoughts", skillId] });
       queryClient.invalidateQueries({ queryKey: ["/api/journal/learnings", skillId] });
       queryClient.invalidateQueries({ queryKey: ["/api/journal/strategies", skillId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/journal/questions", skillId] });
       queryClient.invalidateQueries({ queryKey: ["/api/journal/tools", skillId] });
     }
   };

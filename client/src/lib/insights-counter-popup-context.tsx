@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { InsightsCounterPopup } from "@/components/InsightsCounterPopup";
 import { markPopupActive } from "@/lib/popup-coordinator";
 
-export type InsightsCounterKind = "thought" | "learning" | "strategy" | "tool";
+export type InsightsCounterKind = "thought" | "learning" | "strategy" | "question" | "tool";
 
 export interface InsightsCounterPopupSnapshot {
   type: InsightsCounterKind;

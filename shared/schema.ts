@@ -357,6 +357,16 @@ export const journalStrategies = pgTable("journal_strategies", {
   sentence: text("sentence").notNull().default(""),
 });
 
+// "Preguntas" del Journal: misma forma que journal_strategies (título + descripción, nodo
+// opcional). Se cargan desde el cubo "Preguntas" del modal de feedback post-confirmación.
+export const journalQuestions = pgTable("journal_questions", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  skillId: varchar("skill_id"),
+  title: text("title").notNull(),
+  sentence: text("sentence").notNull().default(""),
+});
+
 export const journalTools = pgTable("journal_tools", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
@@ -932,6 +942,9 @@ export const insertJournalLearningSchema = createInsertSchema(journalLearnings).
 export const insertJournalStrategySchema = createInsertSchema(journalStrategies).omit({ id: true }).extend({
   skillId: z.string().min(1).nullable().optional(),
 });
+export const insertJournalQuestionSchema = createInsertSchema(journalQuestions).omit({ id: true }).extend({
+  skillId: z.string().min(1).nullable().optional(),
+});
 export const insertJournalToolSchema = createInsertSchema(journalTools).omit({ id: true }).extend({
   skillId: z.string().min(1).nullable().optional(),
 });
@@ -1087,6 +1100,8 @@ export type InsertJournalLearning = z.infer<typeof insertJournalLearningSchema>;
 export type JournalLearning = typeof journalLearnings.$inferSelect;
 export type InsertJournalStrategy = z.infer<typeof insertJournalStrategySchema>;
 export type JournalStrategy = typeof journalStrategies.$inferSelect;
+export type InsertJournalQuestion = z.infer<typeof insertJournalQuestionSchema>;
+export type JournalQuestion = typeof journalQuestions.$inferSelect;
 export type InsertJournalTool = z.infer<typeof insertJournalToolSchema>;
 export type JournalTool = typeof journalTools.$inferSelect;
 export type InsertJournalThought = z.infer<typeof insertJournalThoughtSchema>;

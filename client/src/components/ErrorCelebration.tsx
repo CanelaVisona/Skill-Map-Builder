@@ -1,13 +1,14 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { createPortal } from "react-dom";
-import { Skull, Sparkles } from "lucide-react";
+import { Lightbulb, Skull, Sparkles } from "lucide-react";
 import { usePopupPalette } from "@/lib/popup-theme";
 
 export interface ErrorCelebrationState {
   name: string;
   // "detected" = toast chico al confirmar un error recién agregado.
   // "vencido" = la barra llegó a 50/50 -- celebración completa, igual que "Poder dominado".
-  kind: "detected" | "vencido";
+  // "estrategia" = una victoria sumó su estrategia al Journal -- mismo toast chico que "detected".
+  kind: "detected" | "vencido" | "estrategia";
 }
 
 interface ErrorCelebrationProps {
@@ -155,7 +156,11 @@ export function ErrorCelebration({ celebration }: ErrorCelebrationProps) {
                       strokeWidth="1.5"
                     />
                   </svg>
-                  <Sparkles className="relative h-4 w-4 text-amber-400" strokeWidth={2.1} />
+                  {celebration.kind === "estrategia" ? (
+                    <Lightbulb className="relative h-4 w-4 text-amber-400" strokeWidth={2.1} />
+                  ) : (
+                    <Sparkles className="relative h-4 w-4 text-amber-400" strokeWidth={2.1} />
+                  )}
                 </motion.div>
 
                 <div className="min-w-0 flex-1">
@@ -166,7 +171,7 @@ export function ErrorCelebration({ celebration }: ErrorCelebrationProps) {
               </div>
 
               <div className="mt-3 text-center text-[13px] font-bold" style={{ color: palette.text }}>
-                ¡Error nuevo detectado!
+                {celebration.kind === "estrategia" ? "¡Nueva estrategia!" : "¡Error nuevo detectado!"}
               </div>
             </motion.div>
           </div>

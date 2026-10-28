@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
-import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertJournalShadowPageSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalStrategySchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileConceptSchema, insertProfileLimitingBeliefSchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertSourceObjectiveSchema, insertSourceBeliefSchema, insertSourceVisionSchema, insertSourcePowersSchema, insertSourceBugSchema, insertSourceBugRecordSchema, insertNodeErrorSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema, insertSpaceRepetitionPracticeSchema, insertRewiringTrackerSchema, type InsertSpaceRepetitionPractice, type SpaceRepetitionPractice, type RewiringTracker, skills, areas, projects, spaceRepetitionPractices } from "@shared/schema";
+import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertJournalShadowPageSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalStrategySchema, insertJournalQuestionSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileConceptSchema, insertProfileLimitingBeliefSchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertSourceObjectiveSchema, insertSourceBeliefSchema, insertSourceVisionSchema, insertSourcePowersSchema, insertSourceBugSchema, insertSourceBugRecordSchema, insertNodeErrorSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema, insertSpaceRepetitionPracticeSchema, insertRewiringTrackerSchema, type InsertSpaceRepetitionPractice, type SpaceRepetitionPractice, type RewiringTracker, skills, areas, projects, spaceRepetitionPractices } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import { z } from "zod";
 import cookieParser from "cookie-parser";
@@ -298,6 +298,19 @@ function orderWithMovedInSlot(targetOthers: any[], movedSkill: any, removedPosit
     ? others.length
     : others.filter(s => (s.levelPosition ?? 0) < removedPosition).length;
   return [...others.slice(0, insertAt), movedSkill, ...others.slice(insertAt)];
+}
+
+// Una victoria sobre un error con estrategia asignada la suma a las "Estrategias" del Journal,
+// salvo que ya haya una con el mismo título. Devuelve el título si la creó (para el pop-up
+// "¡Nueva estrategia!" del cliente), o null si ya existía.
+async function addVictoryStrategyToJournal(userId: string, estrategia: string | null | undefined, skillId: string | null): Promise<string | null> {
+  const title = (estrategia ?? "").trim();
+  if (!title) return null;
+  const existing = await storage.getJournalStrategies(userId);
+  const key = title.toLocaleLowerCase();
+  if (existing.some((s) => s.title.trim().toLocaleLowerCase() === key)) return null;
+  await storage.createJournalStrategy({ userId, skillId, title, sentence: "" } as any);
+  return title;
 }
 
 // Avance de un libro / práctica de repetición espaciada unido a un área o quest: registra lo
@@ -3413,6 +3426,63 @@ export async function registerRoutes(
     }
   });
 
+  // Journal - Questions (misma forma que Strategies; ver journal_questions en schema.ts)
+  app.get("/api/journal/questions", requireAuth, async (req, res) => {
+    try {
+      const skillId = req.query.skillId as string | undefined;
+      const areaId = req.query.areaId as string | undefined;
+      const projectId = req.query.projectId as string | undefined;
+      const questions = await storage.getJournalQuestions(req.userId!);
+      let filtered = questions;
+      if (skillId) {
+        filtered = questions.filter(q => q.skillId === skillId);
+      } else if (areaId || projectId) {
+        const scopeSkillIds = new Set(await storage.getAllSkillIdsInScope({ areaId, projectId }));
+        filtered = questions.filter(q => q.skillId != null && scopeSkillIds.has(q.skillId));
+      }
+      res.json(filtered);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/journal/questions", requireAuth, async (req, res) => {
+    try {
+      const validated = insertJournalQuestionSchema.parse({ ...req.body, userId: req.userId });
+      const question = await storage.createJournalQuestion(validated);
+      res.status(201).json(question);
+    } catch (error: any) {
+      const validationError = fromError(error);
+      res.status(400).json({ message: validationError.toString() });
+    }
+  });
+
+  app.delete("/api/journal/questions/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteJournalQuestion(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/journal/questions/:id", requireAuth, async (req, res) => {
+    try {
+      const { title, sentence } = req.body;
+      const data: any = {};
+      if (title !== undefined) data.title = title;
+      if (sentence !== undefined) data.sentence = sentence;
+      const question = await storage.updateJournalQuestion(req.params.id, data);
+      if (!question) {
+        res.status(404).json({ message: "Pregunta no encontrada" });
+        return;
+      }
+      res.json(question);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Journal - Learnings
   app.get("/api/journal/learnings", requireAuth, async (req, res) => {
     try {
@@ -5084,6 +5154,14 @@ export async function registerRoutes(
           sentence: typeof aprendizajeDetalle === "string" ? aprendizajeDetalle.trim() : "",
         } as any);
       }
+      let newStrategy: string | null = null;
+      if (validated.resultado === "victoria") {
+        try {
+          newStrategy = await addVictoryStrategyToJournal(req.userId!, validated.estrategia, sideQuestSkillId);
+        } catch (strategyError) {
+          console.error("[POST /api/source-bugs/:id/records] Journal strategy error:", strategyError);
+        }
+      }
 
       const bugAfter = await storage.getSourceBug(req.params.id);
       const bugProgress = {
@@ -5095,7 +5173,7 @@ export async function registerRoutes(
       };
 
       if (effectiveSkillIds.length === 0) {
-        res.status(201).json({ ...record, bugProgress });
+        res.status(201).json({ ...record, bugProgress, newStrategy });
         return;
       }
 
@@ -5122,6 +5200,7 @@ export async function registerRoutes(
       res.status(201).json({
         ...record,
         bugProgress,
+        newStrategy,
         xpAwards,
         xpAward: xpAwards[0] ?? null,
       });
@@ -5457,7 +5536,17 @@ export async function registerRoutes(
       // tocar 50 (p.ej. -10 y +10 seguidos) no se repite el pop-up.
       const vencido = pointsBefore < 50 && pointsAfter >= 50;
 
+      let newStrategy: string | null = null;
+      if (delta === 10) {
+        try {
+          newStrategy = await addVictoryStrategyToJournal(req.userId!, estrategia, errorBefore.skillId ?? null);
+        } catch (strategyError) {
+          console.error("[POST /api/node-errors/:id/records] Journal strategy error:", strategyError);
+        }
+      }
+
       res.status(201).json({
+        newStrategy,
         ...record,
         errorProgress: {
           errorName: errorBefore.nombre,

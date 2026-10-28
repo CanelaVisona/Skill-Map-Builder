@@ -43,7 +43,7 @@ import { BodyProgressProvider, useBodyProgress } from "@/lib/body-progress-conte
 import { BodyGainPopupProvider, useBodyGainPopup } from "@/lib/body-gain-popup-context";
 import { BugProgressPopupProvider, useBugProgressPopup } from "@/lib/bug-progress-popup-context";
 import { ErrorProgressPopupProvider } from "@/lib/error-progress-popup-context";
-import { ErrorCelebrationProvider } from "@/lib/error-celebration-context";
+import { ErrorCelebrationProvider, useErrorCelebration } from "@/lib/error-celebration-context";
 import { BUG_POPUP_VISIBLE_MS, type BugProgressSnapshot } from "@/components/BugProgressPopup";
 import { POPUP_VISIBLE_MS } from "@/lib/popup-coordinator";
 import { LevelUpCelebrationProvider } from "@/lib/level-up-celebration-context";
@@ -64,7 +64,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { JournalCharacter, JournalPlace, JournalShadow, JournalShadowPage, JournalLearning, JournalStrategy, JournalTool, JournalThought, HabitRecord } from "@shared/schema";
+import type { JournalCharacter, JournalPlace, JournalShadow, JournalShadowPage, JournalLearning, JournalStrategy, JournalQuestion, JournalTool, JournalThought, HabitRecord } from "@shared/schema";
 import { OnboardingGuide, HelpButton, useOnboarding } from "@/components/OnboardingGuide";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
@@ -430,6 +430,8 @@ interface BugRecordXpAward {
 }
 
 interface BugRecordCreateResponse extends SourceBugRecord {
+  // Estrategia que esta victoria sumó a las "Estrategias" del Journal (null si ya estaba).
+  newStrategy?: string | null;
   xpAward?: BugRecordXpAward;
   xpAwards?: BugRecordXpAward[];
   bugProgress?: {
@@ -2331,8 +2333,9 @@ function ToolsSection({
 // También se usa para la tab "Estrategias" (misma forma que los aprendizajes): `variant`
 // cambia solo los textos, el ícono del estado vacío y los data-testid.
 const ENTRY_SECTION_TEXTS = {
-  learnings: { icon: Lightbulb, empty: "No learnings yet", deleteQuestion: "Delete this learning?" },
-  strategies: { icon: Split, empty: "Todavía no hay estrategias", deleteQuestion: "¿Borrar esta estrategia?" },
+  learnings: { icon: Lightbulb, label: "discoveries", empty: "No learnings yet", deleteQuestion: "Delete this learning?" },
+  strategies: { icon: Split, label: "Estrategias", empty: "Todavía no hay estrategias", deleteQuestion: "¿Borrar esta estrategia?" },
+  questions: { icon: HelpCircle, label: "discoveries", empty: "Todavía no hay preguntas", deleteQuestion: "¿Borrar esta pregunta?" },
 } as const;
 
 function LearningsSection({
@@ -2344,7 +2347,7 @@ function LearningsSection({
   variant = "learnings",
   onTitleLongPress,
 }: {
-  entries: Array<JournalLearning | JournalStrategy>;
+  entries: Array<JournalLearning | JournalStrategy | JournalQuestion>;
   isLoading: boolean;
   onDelete: (id: string) => void;
   onUpdate?: (id: string, data: { title: string; sentence: string }) => void;
@@ -2356,7 +2359,7 @@ function LearningsSection({
   const texts = ENTRY_SECTION_TEXTS[variant];
   const titleLongPress = useLongPress(onTitleLongPress);
   const EmptyIcon = texts.icon;
-  const [viewingEntry, setViewingEntry] = useState<JournalLearning | JournalStrategy | null>(null);
+  const [viewingEntry, setViewingEntry] = useState<JournalLearning | JournalStrategy | JournalQuestion | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editSentence, setEditSentence] = useState("");
@@ -2378,7 +2381,7 @@ function LearningsSection({
     return <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">Loading...</div>;
   }
 
-  const handleLeftLongPressStart = (entry: JournalLearning | JournalStrategy) => {
+  const handleLeftLongPressStart = (entry: JournalLearning | JournalStrategy | JournalQuestion) => {
     longPressTimer.current = setTimeout(() => {
       setViewingEntry(entry);
       setEditTitle(entry.title);
@@ -2431,7 +2434,7 @@ function LearningsSection({
     <div className="h-full flex flex-col">
       <div className="mb-3 pb-2 border-b border-border select-none" {...titleLongPress} data-testid={`journal-${variant}-title`}>
         <span className="text-xs text-muted-foreground uppercase tracking-wider">
-          {filteredEntries.length} discoveries
+          {filteredEntries.length} {texts.label}
         </span>
         <div className="h-px w-8 bg-gradient-to-r from-muted-foreground to-transparent mt-1" />
       </div>
@@ -2447,7 +2450,7 @@ function LearningsSection({
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <EmptyIcon className="h-8 w-8 text-muted-foreground/50 mb-3" />
                 <p className="text-muted-foreground text-sm">
-                  {selectedQuestKey === null ? texts.empty : "No hay discoveries en esta quest todavía"}
+                  {selectedQuestKey === null ? texts.empty : `No hay ${texts.label.toLowerCase()} en esta quest todavía`}
                 </p>
               </div>
             ) : (
@@ -7435,6 +7438,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
   const { addBodyBlock } = useBodyProgress();
   const { showBodyGainPopup, hideBodyGainPopup } = useBodyGainPopup();
   const { showBugProgressPopup } = useBugProgressPopup();
+  const { showErrorCelebration } = useErrorCelebration();
   const queryClient = useQueryClient();
   const [selectedBugRef, setSelectedBugRef] = useState<{ areaId: string; bugId: string } | null>(null);
   // Alta de un bug nuevo directo a un área (mismo lugar en el modal y en el Journal).
@@ -7743,14 +7747,25 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
         const xpPopupsShown = showBugRecordXpAwards(createdRecord?.xpAwards, true);
         growLinkedBody(Array.isArray(createdRecord?.bodyLinks) ? createdRecord.bodyLinks : [], xpPopupsShown);
       };
+      // Una victoria con estrategia nueva la sumó al Journal: "¡Nueva estrategia!" va justo
+      // después del progreso del bug y antes del XP.
+      const newStrategy = createdRecord?.newStrategy;
+      if (newStrategy) queryClient.invalidateQueries({ queryKey: ["/api/journal/strategies"] });
+      const runAfterBug = newStrategy
+        ? () => {
+            hideXpPopup();
+            showErrorCelebration({ name: newStrategy, kind: "estrategia" });
+            window.setTimeout(runXpAndBodyPopups, POPUP_VISIBLE_MS + 250);
+          }
+        : runXpAndBodyPopups;
 
       if (createdRecord?.bugProgress) {
         growMentalFlexThenBug(
           { ...createdRecord.bugProgress, resultado: variables.data.resultado },
-          runXpAndBodyPopups,
+          runAfterBug,
         );
       } else {
-        runXpAndBodyPopups();
+        runAfterBug();
       }
 
       resetRecordForm();
@@ -8969,6 +8984,11 @@ function QuestDiary() {
     enabled: isDiaryOpen,
   });
 
+  const { data: journalQuestions = [], isLoading: loadingJournalQuestions } = useQuery<JournalQuestion[]>({
+    queryKey: ["/api/journal/questions"],
+    enabled: isDiaryOpen,
+  });
+
   const { data: thoughts = [], isLoading: loadingThoughts } = useQuery<JournalThought[]>({
     queryKey: ["/api/journal/thoughts"],
     enabled: isDiaryOpen,
@@ -9421,7 +9441,7 @@ function QuestDiary() {
   });
   
   // "Nueva entrada" (JournalQuickAddDialog): se abre manteniendo apretado el título de las tabs
-  // Learnings/Estrategias/Tools, con el tipo de esa tab ya elegido.
+  // Learnings/Estrategias/Preguntas/Tools, con el tipo de esa tab ya elegido.
   const [quickAddKind, setQuickAddKind] = useState<JournalQuickAddKind | null>(null);
 
   return (
@@ -9463,6 +9483,9 @@ function QuestDiary() {
               </TabsTrigger>
               <TabsTrigger value="strategies" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-strategies" title="Estrategias">
                 <Split className="h-5 w-5" />
+              </TabsTrigger>
+              <TabsTrigger value="questions" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-questions" title="Preguntas">
+                <HelpCircle className="h-5 w-5" />
               </TabsTrigger>
               <TabsTrigger value="objetivos" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-objetivos" title="Objetivos">
                 <Target className="h-5 w-5" />
@@ -9546,6 +9569,28 @@ function QuestDiary() {
                       body: JSON.stringify(data),
                     });
                     queryClient.invalidateQueries({ queryKey: ["/api/journal/strategies"] });
+                  }}
+                />
+              </TabsContent>
+
+              <TabsContent value="questions" className="flex-1 min-h-0 min-w-0 mt-0">
+                <LearningsSection
+                  variant="questions"
+                  onTitleLongPress={() => setQuickAddKind("question")}
+                  entries={journalQuestions}
+                  isLoading={loadingJournalQuestions}
+                  questMap={skillQuestMap}
+                  onDelete={async (id) => {
+                    await fetch(`/api/journal/questions/${id}`, { method: "DELETE" });
+                    queryClient.invalidateQueries({ queryKey: ["/api/journal/questions"] });
+                  }}
+                  onUpdate={async (id, data) => {
+                    await fetch(`/api/journal/questions/${id}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(data),
+                    });
+                    queryClient.invalidateQueries({ queryKey: ["/api/journal/questions"] });
                   }}
                 />
               </TabsContent>

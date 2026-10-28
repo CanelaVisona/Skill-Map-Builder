@@ -22,7 +22,7 @@ export function ErrorCelebrationProvider({ children }: { children: ReactNode }) 
     // "detected" reusa el chime de progreso (mismo trato que "Poder desbloqueado"); "vencido"
     // reusa el mismo sonido que "Poder dominado" (playLevelUpSound), mismo trato que
     // PowerCelebration le da a su kind "confirmed".
-    if (state.kind === "detected") {
+    if (state.kind === "detected" || state.kind === "estrategia") {
       playProgressAdvanceSound();
     } else {
       playLevelUpSound();

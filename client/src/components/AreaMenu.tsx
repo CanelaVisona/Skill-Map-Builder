@@ -3,7 +3,9 @@ import { useAuth } from "@/lib/auth-context";
 import { useMenu } from "@/lib/menu-context";
 import { useXpPopup } from "@/lib/xp-popup-context";
 import { useBugProgressPopup } from "@/lib/bug-progress-popup-context";
+import { useErrorCelebration } from "@/lib/error-celebration-context";
 import { BUG_POPUP_VISIBLE_MS } from "@/components/BugProgressPopup";
+import { POPUP_VISIBLE_MS } from "@/lib/popup-coordinator";
 import { useBodyProgress } from "@/lib/body-progress-context";
 import type { BodyLink } from "@/components/BodyLinkPicker";
 import { useToast } from "@/hooks/use-toast";
@@ -234,6 +236,8 @@ interface BugRecordCreateResponse extends SourceBugRecord {
     xpMax?: number | null;
     level?: number;
   };
+  // Estrategia que esta victoria sumó a las "Estrategias" del Journal (null si ya estaba).
+  newStrategy?: string | null;
   bugProgress?: {
     bugName: string;
     victoryCountBefore: number;
@@ -335,6 +339,7 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
   const { areas } = useSkillTree();
   const { showXpPopup } = useXpPopup();
   const { showBugProgressPopup } = useBugProgressPopup();
+  const { showErrorCelebration } = useErrorCelebration();
   const { addBodyBlock } = useBodyProgress();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -1055,11 +1060,22 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
       // El pop-up de progreso del bug va primero en la cola; el de XP arranca
       // después en vez de solaparse con él. El delay debe cubrir todo el tiempo
       // visible del pop-up de bug, o el de nivel (pantalla completa) lo pisa.
+      // Una victoria con estrategia nueva la sumó al Journal: "¡Nueva estrategia!" va justo
+      // después del progreso del bug y antes del XP.
+      const newStrategy = createdRecord?.newStrategy;
+      if (newStrategy) queryClient.invalidateQueries({ queryKey: ["/api/journal/strategies"] });
+      const showStrategyThenXp = newStrategy
+        ? () => {
+            showErrorCelebration({ name: newStrategy, kind: "estrategia" });
+            window.setTimeout(showXpAward, POPUP_VISIBLE_MS + 250);
+          }
+        : showXpAward;
+
       if (createdRecord?.bugProgress) {
         showBugProgressPopup({ ...createdRecord.bugProgress, resultado: variables.data.resultado });
-        window.setTimeout(showXpAward, BUG_POPUP_VISIBLE_MS);
+        window.setTimeout(showStrategyThenXp, BUG_POPUP_VISIBLE_MS);
       } else {
-        showXpAward();
+        showStrategyThenXp();
       }
 
       setIsBugRecordFormOpen(false);

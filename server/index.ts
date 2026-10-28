@@ -160,6 +160,22 @@ app.use((req, res, next) => {
     console.error("⚠ journal_strategies migration warning:", error.message);
   }
 
+  // "Preguntas" del Journal (cubo "Preguntas" del modal de feedback). Ver
+  // migrations/0069_journal_questions.sql.
+  try {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "journal_questions" (
+        "id" varchar PRIMARY KEY NOT NULL,
+        "user_id" varchar REFERENCES "users"("id") ON DELETE CASCADE,
+        "skill_id" varchar,
+        "title" text NOT NULL,
+        "sentence" text DEFAULT '' NOT NULL
+      );
+    `);
+  } catch (error: any) {
+    console.error("⚠ journal_questions migration warning:", error.message);
+  }
+
   // Sub-pasos (checklist del día) de las tareas de "Tareas de hoy" que no son nodos.
   try {
     await db.execute(sql`
