@@ -6471,7 +6471,7 @@ export async function registerRoutes(
       if (!isDateStr(date) || typeof text !== "string") {
         return res.status(400).json({ message: "date (YYYY-MM-DD) y text son requeridos" });
       }
-      const saved = await storage.setImprovementFocus(req.userId!, date, text.trim().slice(0, 500));
+      const saved = await storage.setImprovementFocus(req.userId!, date, text.trim().slice(0, 2000));
       res.json({ date, text: saved });
     } catch (error: any) {
       res.status(500).json({ message: error.message });

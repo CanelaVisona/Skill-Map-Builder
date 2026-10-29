@@ -9,7 +9,6 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Calendar, ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Pause, Pencil, Play, Plus, RotateCcw, Star } from "lucide-react";
 import { useSkillTree, type Area, type Project, type Skill } from "@/lib/skill-context";
 import { useNodeConfirmFeedback } from "@/lib/node-confirm-feedback-context";
@@ -167,6 +166,12 @@ function useMinuteTick(active: boolean) {
     schedule();
     return () => clearTimeout(id);
   }, [active]);
+}
+
+// "¿En qué estoy trabajando para mejorar hoy?" admite varias opciones: se guardan como un solo
+// texto, una opción por línea (así las respuestas viejas, de una sola línea, siguen valiendo).
+function splitFocusOptions(text: string | null | undefined): string[] {
+  return (text ?? "").split("\n").map((o) => o.trim()).filter(Boolean);
 }
 
 // Minutos como texto: "45 min", y pasando los 60 en horas y minutos ("1 h 20 min", "2 h").
@@ -505,7 +510,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // "¿En qué estoy trabajando para mejorar hoy?": mantener presionado el título abre el diálogo
   // para responder (la respuesta es del día que se está viendo).
   const [focusDialogOpen, setFocusDialogOpen] = useState(false);
-  const [focusDraft, setFocusDraft] = useState("");
+  const [focusDraft, setFocusDraft] = useState<string[]>([""]);
   const focusLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [prioritiesEditing, setPrioritiesEditing] = useState(false);
 
@@ -3202,7 +3207,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     cancelFocusLongPress();
     focusLongPressTimer.current = setTimeout(() => {
       // Sin respuesta para este día, se precarga la más reciente: seguir con lo mismo o cambiarlo.
-      setFocusDraft(focusText || focusData?.previous || "");
+      const options = splitFocusOptions(focusText || focusData?.previous);
+      setFocusDraft(options.length > 0 ? options : [""]);
       setFocusDialogOpen(true);
     }, 500);
   }
@@ -3213,7 +3219,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     }
   }
   const saveFocus = () => {
-    setImprovementFocus.mutate({ date: effectiveDate, text: focusDraft.trim() });
+    setImprovementFocus.mutate({ date: effectiveDate, text: splitFocusOptions(focusDraft.join("\n")).join("\n") });
     setFocusDialogOpen(false);
   };
 
@@ -3309,8 +3315,12 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
               >
                 {isPreview ? "¿En qué estoy trabajando para mejorar ese día?" : "¿En qué estoy trabajando para mejorar hoy?"}
               </h3>
-              {focusText ? (
-                <p className="whitespace-pre-wrap text-sm">{focusText}</p>
+              {splitFocusOptions(focusText).length > 0 ? (
+                <ul className="list-disc space-y-0.5 pl-5 text-sm">
+                  {splitFocusOptions(focusText).map((option, i) => (
+                    <li key={i}>{option}</li>
+                  ))}
+                </ul>
               ) : (
                 <p className="text-xs text-muted-foreground/70">Mantené presionado el título para responder.</p>
               )}
@@ -3687,11 +3697,15 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                       <Pencil className="h-3 w-3 text-muted-foreground" />
                     </button>
                   </div>
-                  {focusByDate.get(selectedDay) && (
-                    <p className="text-sm">
-                      <span className="text-muted-foreground">Trabajando para mejorar: </span>
-                      <span className="whitespace-pre-wrap">{focusByDate.get(selectedDay)}</span>
-                    </p>
+                  {splitFocusOptions(focusByDate.get(selectedDay)).length > 0 && (
+                    <div className="text-sm">
+                      <span className="text-muted-foreground">Trabajando para mejorar:</span>
+                      <ul className="list-disc pl-5">
+                        {splitFocusOptions(focusByDate.get(selectedDay)).map((option, i) => (
+                          <li key={i}>{option}</li>
+                        ))}
+                      </ul>
+                    </div>
                   )}
                   {selectedDayList.length > 0 ? (
                     <div className="space-y-1">{selectedDayList}</div>
@@ -3714,15 +3728,45 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         <DialogTitle className="text-base">
           {isPreview ? "¿En qué estoy trabajando para mejorar ese día?" : "¿En qué estoy trabajando para mejorar hoy?"}
         </DialogTitle>
-        <Textarea
-          value={focusDraft}
-          onChange={(e) => setFocusDraft(e.target.value)}
-          placeholder="Ej: escuchar sin interrumpir, terminar lo que empiezo…"
-          rows={3}
-          maxLength={500}
-          autoFocus
-          className="resize-none border-0 bg-muted/50 focus-visible:ring-0"
-        />
+        {/* Una opción por campo; "Agregar otra" suma un campo y la × saca esa opción. */}
+        <div className="space-y-2">
+          {focusDraft.map((option, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <Input
+                value={option}
+                onChange={(e) => setFocusDraft((prev) => prev.map((o, j) => (j === i ? e.target.value : o)))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    setFocusDraft((prev) => [...prev.slice(0, i + 1), "", ...prev.slice(i + 1)]);
+                  }
+                }}
+                placeholder={i === 0 ? "Ej: escuchar sin interrumpir" : "Otra cosa en la que estoy trabajando"}
+                maxLength={200}
+                autoFocus={i === focusDraft.length - 1}
+                className="border-0 bg-muted/50 focus-visible:ring-0"
+              />
+              {focusDraft.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setFocusDraft((prev) => prev.filter((_, j) => j !== i))}
+                  className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+                  aria-label="Quitar esta opción"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() => setFocusDraft((prev) => [...prev, ""])}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Agregar otra
+          </button>
+        </div>
         <div className="flex justify-end gap-2">
           <button
             onClick={() => setFocusDialogOpen(false)}
