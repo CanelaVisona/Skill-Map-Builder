@@ -176,6 +176,21 @@ app.use((req, res, next) => {
     console.error("⚠ journal_questions migration warning:", error.message);
   }
 
+  // "¿En qué estoy trabajando para mejorar hoy?" — una respuesta por día (ver schema).
+  try {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "today_improvement_focus" (
+        "id" varchar PRIMARY KEY NOT NULL,
+        "user_id" varchar NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+        "date" varchar NOT NULL,
+        "text" text DEFAULT '' NOT NULL,
+        "updated_at" timestamp DEFAULT now() NOT NULL
+      );
+    `);
+  } catch (error: any) {
+    console.error("⚠ today_improvement_focus migration warning:", error.message);
+  }
+
   // Sub-pasos (checklist del día) de las tareas de "Tareas de hoy" que no son nodos.
   try {
     await db.execute(sql`

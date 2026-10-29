@@ -2,12 +2,14 @@ import React, { useContext, useEffect, useRef, useState } from "react";
 import { isHabitScheduledOn } from "@shared/habitSchedule";
 import { useQuery, useQueries, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Calendar, ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Pause, Pencil, Play, Plus, RotateCcw, Star } from "lucide-react";
 import { useSkillTree, type Area, type Project, type Skill } from "@/lib/skill-context";
 import { useNodeConfirmFeedback } from "@/lib/node-confirm-feedback-context";
@@ -18,6 +20,7 @@ import { calculateStatus, calculateStatusL2, type SpaceRepetitionPractice } from
 import { rewiringDayRows } from "@/lib/rewiringTasks";
 import { useConfirmHabit, useConfirmPractice } from "@/lib/useConfirmActions";
 import { useTodayPriorities, useSetTodayPriorities, MAX_TODAY_PRIORITIES } from "@/lib/useTodayPriorities";
+import { useImprovementFocus, useImprovementFocusRange, useSetImprovementFocus } from "@/lib/useImprovementFocus";
 import { MealTrackerModal } from "@/components/MealTrackerModal";
 import { usePowerCelebration } from "@/lib/power-celebration-context";
 import { useNowPlacement, setNowPlacement } from "@/lib/now-placement";
@@ -55,6 +58,16 @@ interface TodayItem {
   // Registro de un día pasado: nodo padre que ese día tenía sub-nodos confirmados pero después
   // se pasó a otro día. Se muestra solo como texto (sin confirmar ni menú), con esos sub-nodos.
   traceSubs?: { id: string; title: string }[];
+}
+
+// Contador (▶) que está corriendo hoy: `key` es la del contador; `taskKey`, la de lo que cuenta
+// (una tarea, un sub-paso "step:" o un sub-nodo "node:"); `item`, la tarea de la lista a la que
+// pertenece (la propia, o la tarea padre del sub-paso/sub-nodo).
+interface RunningTimerInfo {
+  key: string;
+  taskKey: string;
+  item: TodayItem | null;
+  name: string;
 }
 
 const MONTHS = [
@@ -156,10 +169,33 @@ function useMinuteTick(active: boolean) {
   }, [active]);
 }
 
-// "· empieza 15:00": tarea de hoy sin hacer con hora de inicio (ver plannedStartTime/startTime).
-function StartTimeSuffix({ startTime }: { startTime?: string | null }) {
+// Minutos como texto: "45 min", y pasando los 60 en horas y minutos ("1 h 20 min", "2 h").
+function formatMinutesAsHours(total: number): string {
+  if (total < 60) return `${total} min`;
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return m ? `${h} h ${m} min` : `${h} h`;
+}
+
+// Franja del día en la que cae una hora "HH:MM" (la misma división que la hora actual).
+function slotForTime(time: string): TaskSlotKey {
+  const [h, m] = time.split(":").map(Number);
+  return getTimeSlotKeyForDate(new Date(2000, 0, 1, h || 0, m || 0));
+}
+
+// "· empieza 15:00 · en 1 h 20 min": tarea sin hacer con hora de inicio (ver
+// plannedStartTime/startTime). showRemaining: viendo hoy, cuánto falta para que empiece (se
+// actualiza con el minuto del reloj; cuando la hora llega, deja de mostrarse).
+function StartTimeSuffix({ startTime, showRemaining }: { startTime?: string | null; showRemaining?: boolean }) {
+  useMinuteTick(!!startTime && !!showRemaining);
   if (!startTime) return null;
-  return <span className="text-muted-foreground"> · empieza {formatDeadline(startTime)}</span>;
+  const remaining = showRemaining ? minutesUntilDeadline(startTime) : null;
+  return (
+    <span className="text-muted-foreground">
+      {" "}· empieza {formatDeadline(startTime)}
+      {remaining !== null && <> · en {formatMinutesAsHours(remaining)}</>}
+    </span>
+  );
 }
 
 // showRemaining: con hora límite, muestra también el tiempo que queda hasta esa hora (se
@@ -203,7 +239,7 @@ function MinutesSuffix({
     return (
       <span className="text-muted-foreground">
         {" "}· {minutes} min · hasta {formatDeadline(deadline!)}
-        {remaining !== null && <> · tengo {remaining} min</>}
+        {remaining !== null && <> · tengo {formatMinutesAsHours(remaining)}</>}
       </span>
     );
   }
@@ -465,6 +501,12 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // Pop-up de la estrellita: las (hasta 3) prioridades "no negociables" del día. prioritiesEditing
   // = se está eligiendo cuáles son, entre todas las tareas del día.
   const [prioritiesOpen, setPrioritiesOpen] = useState(false);
+
+  // "¿En qué estoy trabajando para mejorar hoy?": mantener presionado el título abre el diálogo
+  // para responder (la respuesta es del día que se está viendo).
+  const [focusDialogOpen, setFocusDialogOpen] = useState(false);
+  const [focusDraft, setFocusDraft] = useState("");
+  const focusLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [prioritiesEditing, setPrioritiesEditing] = useState(false);
 
   // Pop-up del registro de comidas abierto desde una tarea por defecto (Desayuná/Almorzá/…):
@@ -678,11 +720,9 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
 
   const plannedNodesForView = allPlannedNodes.filter((n) => n.plannedDate === effectiveDate);
 
-  // Prácticas de repetición espaciada que vencían hoy ("expires_soon") o que se confirmaron el
-  // día que se está viendo (lastConfirmedAt cae en effectiveDate y ya avanzaron a otro estado).
-  // El "vencimiento" es siempre relativo a ahora (no al día del calendario que se esté viendo),
-  // así que solo cuenta cuando se está viendo el día real de hoy — en cualquier otro día (pasado
-  // o futuro) sólo importa si hubo una confirmación ese día puntual. Ojo: lastConfirmedAt sólo
+  // Prácticas de repetición espaciada: solo aparecen una vez confirmadas el día que se está
+  // viendo (lastConfirmedAt cae en effectiveDate y ya avanzaron a otro estado), nunca antes —
+  // una práctica por vencer no es una tarea del día hasta que se hace. Ojo: lastConfirmedAt sólo
   // guarda la ÚLTIMA confirmación, así que un día pasado con confirmaciones más viejas (ya
   // tapadas por una más reciente) no las va a mostrar acá — misma limitación que el calendario.
   const { data: practicesData } = useQuery({
@@ -698,10 +738,9 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const practicesToday = (practicesData || [])
     .map((p) => {
       const status = p.level === 2 ? calculateStatusL2(p) : calculateStatus(p);
-      const pending = !isPreview && status === "expires_soon";
       const confirmedAt = p.lastConfirmedAt || p.updatedAt;
-      const confirmedOnViewedDay = !pending && status !== "loss" && status !== "frozen" && !!confirmedAt && getDateStr(new Date(confirmedAt)) === effectiveDate;
-      return { practice: p, done: confirmedOnViewedDay, include: pending || confirmedOnViewedDay };
+      const confirmedOnViewedDay = status !== "expires_soon" && status !== "loss" && status !== "frozen" && !!confirmedAt && getDateStr(new Date(confirmedAt)) === effectiveDate;
+      return { practice: p, done: confirmedOnViewedDay, include: confirmedOnViewedDay };
     })
     .filter((entry) => entry.include);
 
@@ -875,7 +914,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       label: (
         <>
           {stripLeadingEmoji(n.title)} <span className="text-muted-foreground">· {n.parentName}</span>
-          {!n.done && <StartTimeSuffix startTime={n.plannedStartTime} />}
+          {!n.done && <StartTimeSuffix startTime={n.plannedStartTime} showRemaining={effectiveDate === todayStr} />}
           <MinutesSuffix minutes={n.plannedDuration} />
         </>
       ),
@@ -985,7 +1024,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       label: (
         <>
           {stripLeadingEmoji(n.title)} <span className="text-muted-foreground">· {n.parentName}</span>
-          {!n.done && <StartTimeSuffix startTime={n.plannedStartTime} />}
+          {!n.done && <StartTimeSuffix startTime={n.plannedStartTime} showRemaining={effectiveDate === todayStr} />}
           <MinutesSuffix minutes={n.plannedDuration} deadline={n.done ? null : n.plannedDeadline} showRemaining={!n.done && effectiveDate === todayStr} timerKey={timerKeyFor(`node:${n.id}`, n.plannedDuration)} timerDone={n.done} />
         </>
       ),
@@ -1017,7 +1056,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       label: (
         <>
           {t.kind === "event" ? <>📅 {stripLeadingEmoji(t.title)}</> : stripLeadingEmoji(t.title)}
-          {t.done !== 1 && <StartTimeSuffix startTime={t.startTime} />}
+          {t.done !== 1 && <StartTimeSuffix startTime={t.startTime} showRemaining={effectiveDate === todayStr} />}
           <MinutesSuffix minutes={t.minutes} deadline={t.done === 1 ? null : t.deadline} showRemaining={t.done !== 1 && effectiveDate === todayStr} timerKey={timerKeyFor(`manual:${t.id}`, t.minutes)} timerDone={t.done === 1} />
         </>
       ),
@@ -1089,17 +1128,13 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     });
   });
 
-  // Las tareas confirmadas siempre van antes de la tarea desbloqueada (la primera sin hacer de la
-  // franja activa): las que hayan quedado después de ella (confirmadas desde el árbol u otro
-  // modal, o antes de que les tocara) se muestran justo antes, en el mismo orden relativo. Es una
-  // regla de cómo se muestra la franja, así vale sin importar desde dónde se confirmó la tarea.
-  // Misma noción de "franja activa" que el destacado: la de la hora actual, o cualquiera con algo
-  // en una vista previa.
+  // Las tareas confirmadas siempre van antes de las sin confirmar de su franja: las que hayan
+  // quedado después de la primera sin hacer (confirmadas desde el árbol u otro modal, como una
+  // comida registrada, o antes de que les tocara) se muestran justo antes de ella, en el mismo
+  // orden relativo. Es una regla de cómo se muestra la franja, así vale en todas las franjas, sin
+  // importar desde dónde se confirmó la tarea ni si hay tarea desbloqueada ("Ahora" destildado).
   TIME_SLOTS.forEach((s) => {
     const bucket = itemBuckets[s.key];
-    const isActiveSlot = isPreview ? bucket.length > 0 : s.key === getCurrentTimeSlotKey();
-    // Sin tarea desbloqueada ("Ahora" destildado) no hay nada antes de lo cual subir lo confirmado.
-    if (!isActiveSlot || nowCleared) return;
     const firstUndone = bucket.findIndex((i) => !i.done);
     if (firstUndone === -1) return;
     const isConfirmed = (i: TodayItem) => i.done && !i.traceSubs;
@@ -1130,6 +1165,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     viewRecordQueries.every((q) => !q.isLoading) &&
     slotByKey.has(`node:${nowPlacement.nodeId}`) &&
     todayItems.some((i) => i.type === "node" && i.id === nowPlacement.nodeId);
+  // Se llena más abajo, cuando ya están los contadores (ver runningTimer).
+  const runningTimerRef = useRef<RunningTimerInfo | null>(null);
   useEffect(() => {
     if (!nowPlacementReady || !nowPlacement) return;
     setNowPlacement(null);
@@ -1137,6 +1174,11 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     const nodeKey = `node:${nowPlacement.nodeId}`;
     const bucket = itemBuckets[slot].filter((i) => i.key !== nodeKey);
     const nodeItem = todayItems.find((i) => i.key === nodeKey)!;
+    // Hay otra tarea con el ▶ andando: primero se confirma o se para esa (ver pendingNow).
+    if (isOtherTaskRunning(nodeItem)) {
+      setPendingNow(nodeItem);
+      return;
+    }
     const firstUndone = bucket.findIndex((i) => !i.done);
     const at = firstUndone === -1 ? bucket.length : firstUndone;
     const ordered = [...bucket.slice(0, at), nodeItem, ...bucket.slice(at)];
@@ -1703,6 +1745,20 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     if (nowPlacement && nowPlacement.date === effectiveDate) setNowPlacement(null);
   };
 
+  // Tarea a la que se le asignó "Ahora" mientras otra tenía el ▶ andando: queda en espera hasta
+  // que la que anda se confirme o se pare (diálogo "Hay una tarea andando"), y recién ahí pasa a
+  // "Ahora". Así nunca hay dos tareas "Ahora" a la vez: la que anda y la nueva.
+  const [pendingNow, setPendingNow] = useState<TodayItem | null>(null);
+  const isOtherTaskRunning = (item: TodayItem) => {
+    const running = runningTimerRef.current;
+    return !!running && running.item?.key !== item.key && running.taskKey !== `${item.type}:${item.id}`;
+  };
+  const requestMoveItemNow = (item: TodayItem) => {
+    if (isPreview || item.done) return;
+    if (isOtherTaskRunning(item)) setPendingNow(item);
+    else moveItemNow(item);
+  };
+
   // "Ahora" (menú de la tarea): la tarea pasa a la franja de la hora actual, ocupando el lugar de
   // la tarea desbloqueada (justo antes de la primera sin hacer), que queda como la siguiente.
   // Solo viendo hoy y para tareas sin hacer: en otro día no hay "ahora".
@@ -1750,7 +1806,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const nowProps = (item: TodayItem) => {
     if (isPreview || item.done || item.traceSubs) return {};
     const nowActive = item.key === currentNowKey;
-    return { nowActive, onMoveNow: () => (nowActive ? setNowCleared(todayStr) : moveItemNow(item)) };
+    return { nowActive, onMoveNow: () => (nowActive ? setNowCleared(todayStr) : requestMoveItemNow(item)) };
   };
 
   const moveItemToSlot = (item: TodayItem, slot: TaskSlotKey) => {
@@ -1930,13 +1986,14 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // confirmarlo desde HabitStreakModal/SpaceRepetitionModal (ver useConfirmActions.ts). Una
   // práctica ya confirmada ese día no se puede "desconfirmar" — no existe esa acción en
   // SpaceRepetitionModal tampoco (avanzar un intervalo es unidireccional).
-  // Confirmar una tarea que está después de la tarea desbloqueada de la franja actual la sube
-  // justo antes de ella (a continuación de las demás confirmadas): así no queda nada confirmado
-  // después de la tarea desbloqueada. Si la desbloqueada es un nodo con sub-nodos pendientes,
-  // queda antes del nodo padre.
+  // Confirmar una tarea que está después de la primera sin hacer de su franja (la desbloqueada,
+  // en la franja actual) la sube justo antes de ella (a continuación de las demás confirmadas):
+  // así no queda nada confirmado después de algo pendiente, haya o no tarea desbloqueada. Si la
+  // primera sin hacer es un nodo con sub-nodos pendientes, queda antes del nodo padre.
   const liftBeforeUnlocked = (item: TodayItem) => {
-    if (isPreview || item.done || nowCleared) return;
-    const slot = getCurrentTimeSlotKey();
+    if (item.done) return;
+    const slot = TIME_SLOTS.find((t) => (itemBuckets[t.key] || []).some((i) => i.key === item.key))?.key;
+    if (!slot) return;
     const bucket = itemBuckets[slot] || [];
     const currentIdx = bucket.findIndex((i) => !i.done);
     if (currentIdx === -1) return;
@@ -2264,8 +2321,51 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     (item.type === "manual" || item.type === "node") &&
     (todayItems.some((i) => i.type === item.type && i.id === item.id) ||
       (item.type === "node" && Array.from(subSkillsByNodeId.values()).flat().some((sub) => sub.id === item.id)));
+  // Tarea con hora de inicio: va a la franja de esa hora y se ordena entre las tareas de la
+  // franja que también tienen hora — justo antes de la primera que empieza más tarde, o si no,
+  // justo después de la última que empieza antes (o al final si ninguna tiene hora). Las tareas
+  // sin hora quedan donde estaban.
+  const placeByStartTime = (taskType: TaskType, taskId: string, startTime: string) => {
+    cancelPendingNowPlacement();
+    const slot = slotForTime(startTime);
+    const bucket = (itemBuckets[slot] || []).filter((i) => !(i.type === taskType && i.id === taskId) && !i.traceSubs);
+    const timeOf = (i: TodayItem) => currentStartTime(i);
+    const laterIdx = bucket.findIndex((i) => {
+      const t = timeOf(i);
+      return !!t && t > startTime;
+    });
+    let at = laterIdx;
+    if (at === -1) {
+      let lastEarlier = -1;
+      bucket.forEach((i, idx) => {
+        if (timeOf(i)) lastEarlier = idx;
+      });
+      at = lastEarlier === -1 ? bucket.length : lastEarlier + 1;
+    }
+    const ordered = [
+      ...bucket.slice(0, at).map((i) => ({ type: i.type, id: i.id })),
+      { type: taskType, id: taskId },
+      ...bucket.slice(at).map((i) => ({ type: i.type, id: i.id })),
+    ];
+    // Una sola entrada por tarea (un hábito puede estar duplicado en varias franjas, keys "#slot").
+    const seen = new Set<string>();
+    const order = ordered
+      .filter((i) => {
+        const k = `${i.type}:${i.id}`;
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      })
+      .map((i) => ({ taskType: i.type, taskId: i.id }));
+    reorderTaskSlot.mutate({ date: effectiveDate, slot, order });
+  };
+
   const saveItemStartTime = (item: TodayItem, startTime: string | null) => {
     if (startTime === currentStartTime(item)) return;
+    // Solo las tareas del día (no los sub-nodos, que van adentro de su nodo) cambian de franja.
+    if (startTime && todayItems.some((i) => i.type === item.type && i.id === item.id)) {
+      placeByStartTime(item.type, item.id, startTime);
+    }
     if (item.type === "manual") {
       updateManualTask.mutate({ id: item.id, date: effectiveDate, updates: { startTime } });
       return;
@@ -2463,6 +2563,50 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     timerFamily.childrenOf.set(parentKey, childKeys);
     childKeys.forEach((k) => timerFamily.parentOf.set(k, parentKey));
   });
+  // El ▶ que está corriendo hoy (a lo sumo uno a la vez en la práctica), con su tarea.
+  const runningTimer: RunningTimerInfo | null = (() => {
+    if (effectiveDate !== todayStr) return null;
+    const entry = Object.entries(allTimers).find(([k, st]) => k.startsWith(`${todayStr}|`) && st.status === "running");
+    if (!entry) return null;
+    const key = entry[0];
+    const taskKey = key.slice(todayStr.length + 1);
+    const parentKey = timerFamily.parentOf.get(key);
+    const ownerTaskKey = parentKey ? parentKey.slice(todayStr.length + 1) : taskKey;
+    const item = todayItems.find((i) => !i.traceSubs && `${i.type}:${i.id}` === ownerTaskKey) ?? null;
+    let name = item && typeof item.label === "string" ? item.label : "la tarea que está andando";
+    if (taskKey.startsWith("step:")) {
+      name = (substepsData || []).find((st) => `step:${st.id}` === taskKey)?.title ?? name;
+    } else if (parentKey && item) {
+      name = subNodesFor(item).find((sub) => `node:${sub.id}` === taskKey)?.title || name;
+    }
+    return { key, taskKey, item, name };
+  })();
+  runningTimerRef.current = runningTimer;
+  // Cuando la que andaba se confirmó o se paró, la tarea en espera pasa a "Ahora".
+  useEffect(() => {
+    if (!pendingNow || runningTimer) return;
+    const fresh = todayItems.find((i) => i.key === pendingNow.key);
+    setPendingNow(null);
+    if (fresh && !fresh.done) moveItemNow(fresh);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingNow, runningTimer?.key]);
+
+  // Confirmar desde el diálogo: lo que cuenta el ▶ (la tarea, o su sub-paso/sub-nodo).
+  const confirmRunningTask = () => {
+    const running = runningTimer;
+    if (!running) return;
+    pauseTaskTimer(running.key);
+    if (running.taskKey.startsWith("step:")) {
+      const id = running.taskKey.slice("step:".length);
+      updateSubstep.mutate({ id, date: effectiveDate, updates: { done: 1 } });
+    } else if (running.item && running.taskKey !== `${running.item.type}:${running.item.id}`) {
+      const sub = subNodesFor(running.item).find((sn) => `node:${sn.id}` === running.taskKey);
+      if (sub && sub.status !== "mastered") void toggleSubNode(running.item.id, sub);
+    } else if (running.item && !running.item.done) {
+      toggleItemDone(running.item);
+    }
+  };
+
   // Los contadores viven en la base: se traen al abrir, cada minuto y al volver a la pestaña.
   useTaskTimersSync(todayStr, open);
   // Confirmar una tarea detiene su contador de arranque (queda registrado lo que se llevó).
@@ -2533,8 +2677,10 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   };
   useEffect(() => {
     if (!open || isPreview || effectiveDate !== todayStr || !slotsData || reorderTaskSlot.isPending || subNodeBusy) return;
-    // En flow no se reacomoda nada: las tareas cuya hora llegó pasan a "Ahora" al terminar.
-    if (flowActive) return;
+    // En flow no se reacomoda nada: las tareas cuya hora llegó pasan a "Ahora" al terminar. Lo
+    // mismo con cualquier ▶ andando: la otra tarea no le pasa por encima hasta que esa se
+    // confirme o se pare.
+    if (flowActive || runningTimer) return;
     for (const item of todayItems) {
       if (item.done || item.traceSubs) continue;
       if (item.type === "node" || item.type === "manual") {
@@ -2623,7 +2769,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     if (newTaskKind === "event" && newTaskParent) {
       const [linkedKind, linkedParentId] = newTaskParent.split(":") as ["area" | "project", string];
       const created = await createManualTask.mutateAsync({ date: effectiveDate, title, kind: "event", linkedKind, linkedParentId, minutes, deadline, startTime });
-      if (addTaskTargetSlot) {
+      if (startTime) placeByStartTime("manual", created.id, startTime);
+      else if (addTaskTargetSlot) {
         setTaskSlot.mutate({ date: effectiveDate, taskType: "manual", taskId: created.id, slot: addTaskTargetSlot });
       }
       // Si el evento es de hoy (o de un día ya pasado), su nodo se crea ya mismo.
@@ -2637,7 +2784,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       const [parentKind, parentId] = newTaskParent.split(":") as ["area" | "project", string];
       const node = await addSkillInPlaceOfAvailable(parentKind, parentId, title, { plannedDate: effectiveDate, plannedDuration: minutes, plannedDeadline: deadline, plannedStartTime: startTime });
       if (node) {
-        if (addTaskTargetSlot) {
+        if (startTime) placeByStartTime("node", node.id, startTime);
+        else if (addTaskTargetSlot) {
           setTaskSlot.mutate({ date: effectiveDate, taskType: "node", taskId: node.id, slot: addTaskTargetSlot });
         }
         return;
@@ -2646,12 +2794,18 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       // se pierde, queda como tarea manual vinculada al área/quest — igual que un evento — y el
       // nodo se vuelve a intentar al cargar (materializePendingEventNodes) y al completarla.
       const created = await createManualTask.mutateAsync({ date: effectiveDate, title, kind: "task", linkedKind: parentKind, linkedParentId: parentId, minutes, deadline, startTime });
-      if (addTaskTargetSlot) {
+      if (startTime) placeByStartTime("manual", created.id, startTime);
+      else if (addTaskTargetSlot) {
         setTaskSlot.mutate({ date: effectiveDate, taskType: "manual", taskId: created.id, slot: addTaskTargetSlot });
       }
       return;
     }
     const created = await createManualTask.mutateAsync({ date: effectiveDate, title, kind: newTaskKind, minutes, deadline, startTime });
+    // Con hora de inicio, la franja la decide esa hora (y se ordena entre las que tienen hora).
+    if (startTime) {
+      placeByStartTime("manual", created.id, startTime);
+      return;
+    }
     // Si el diálogo se abrió apuntado a una franja (long-press en su título), la tarea recién
     // creada se asigna directo ahí — queda última de la fila porque es la de updatedAt más
     // reciente entre las tareas no hechas de esa franja.
@@ -2794,6 +2948,11 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const calDim = new Date(calYear, calMonth + 1, 0).getDate();
   const calMonthStart = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-01`;
   const calMonthEnd = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(calDim).padStart(2, "0")}`;
+
+  const { data: focusData } = useImprovementFocus(effectiveDate, open);
+  const setImprovementFocus = useSetImprovementFocus();
+  const { data: focusMonthData } = useImprovementFocusRange(calMonthStart, calMonthEnd, open && viewMode === "calendar");
+  const focusByDate = new Map((focusMonthData || []).map((f) => [f.date, f.text]));
 
   const activeHabitsThisMonth = (habitsData || []).filter((h: Habit) => {
     if (!h.endDate) return true;
@@ -3038,6 +3197,26 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const pickerDim = new Date(pickerYear, pickerMonth + 1, 0).getDate();
   const pickerOffset = getFirstDayOfMonth(calAddPickerMonth);
 
+  const focusText = focusData?.text ?? "";
+  function startFocusLongPress() {
+    cancelFocusLongPress();
+    focusLongPressTimer.current = setTimeout(() => {
+      // Sin respuesta para este día, se precarga la más reciente: seguir con lo mismo o cambiarlo.
+      setFocusDraft(focusText || focusData?.previous || "");
+      setFocusDialogOpen(true);
+    }, 500);
+  }
+  function cancelFocusLongPress() {
+    if (focusLongPressTimer.current) {
+      clearTimeout(focusLongPressTimer.current);
+      focusLongPressTimer.current = null;
+    }
+  }
+  const saveFocus = () => {
+    setImprovementFocus.mutate({ date: effectiveDate, text: focusDraft.trim() });
+    setFocusDialogOpen(false);
+  };
+
   return (
     <TimerFamilyContext.Provider value={timerFamily}>
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -3112,6 +3291,29 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                   <div className="h-3 flex-1 rounded-sm bg-muted" />
                 )}
               </div>
+            </div>
+
+            {/* "¿En qué estoy trabajando para mejorar hoy?" — mantener presionado el título para
+                responder. La respuesta es de este día (cada día la suya) y queda en el calendario. */}
+            <div className="space-y-1">
+              <h3
+                className="cursor-pointer select-none text-sm font-semibold text-muted-foreground"
+                onMouseDown={startFocusLongPress}
+                onMouseUp={cancelFocusLongPress}
+                onMouseLeave={cancelFocusLongPress}
+                onTouchStart={startFocusLongPress}
+                onTouchEnd={cancelFocusLongPress}
+                onTouchCancel={cancelFocusLongPress}
+                onTouchMove={cancelFocusLongPress}
+                onContextMenu={(e) => e.preventDefault()}
+              >
+                {isPreview ? "¿En qué estoy trabajando para mejorar ese día?" : "¿En qué estoy trabajando para mejorar hoy?"}
+              </h3>
+              {focusText ? (
+                <p className="whitespace-pre-wrap text-sm">{focusText}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground/70">Mantené presionado el título para responder.</p>
+              )}
             </div>
 
             <ScrollArea
@@ -3415,6 +3617,10 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                     <div className={isToday ? "font-bold text-emerald-600 dark:text-emerald-400" : "font-medium"}>
                       {day}
                     </div>
+                    {/* Ese día respondió "¿En qué estoy trabajando para mejorar hoy?". */}
+                    {focusByDate.has(dateStr) && (
+                      <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-sky-500" aria-label="Con foco de mejora" />
+                    )}
                     {allDone && !isFuture && (
                       <div className="text-xs font-bold text-emerald-600 dark:text-emerald-400">✓✓</div>
                     )}
@@ -3481,6 +3687,12 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                       <Pencil className="h-3 w-3 text-muted-foreground" />
                     </button>
                   </div>
+                  {focusByDate.get(selectedDay) && (
+                    <p className="text-sm">
+                      <span className="text-muted-foreground">Trabajando para mejorar: </span>
+                      <span className="whitespace-pre-wrap">{focusByDate.get(selectedDay)}</span>
+                    </p>
+                  )}
                   {selectedDayList.length > 0 ? (
                     <div className="space-y-1">{selectedDayList}</div>
                   ) : (
@@ -3493,6 +3705,38 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
             </div>
           </div>
         )}
+      </DialogContent>
+    </Dialog>
+
+    {/* Respuesta a "¿En qué estoy trabajando para mejorar hoy?" del día que se está viendo. */}
+    <Dialog open={focusDialogOpen} onOpenChange={setFocusDialogOpen}>
+      <DialogContent className="max-w-sm rounded-2xl">
+        <DialogTitle className="text-base">
+          {isPreview ? "¿En qué estoy trabajando para mejorar ese día?" : "¿En qué estoy trabajando para mejorar hoy?"}
+        </DialogTitle>
+        <Textarea
+          value={focusDraft}
+          onChange={(e) => setFocusDraft(e.target.value)}
+          placeholder="Ej: escuchar sin interrumpir, terminar lo que empiezo…"
+          rows={3}
+          maxLength={500}
+          autoFocus
+          className="resize-none border-0 bg-muted/50 focus-visible:ring-0"
+        />
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={() => setFocusDialogOpen(false)}
+            className="px-3 py-1.5 text-sm rounded-md hover:bg-muted transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={saveFocus}
+            className="px-3 py-1.5 text-sm rounded-md bg-emerald-500 text-white hover:bg-emerald-600 transition-colors"
+          >
+            Guardar
+          </button>
+        </div>
       </DialogContent>
     </Dialog>
 
@@ -4237,6 +4481,35 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       </AlertDialogContent>
     </AlertDialog>
 
+    {/* "Ahora" a otra tarea con un ▶ andando: primero se confirma o se para la que anda. */}
+    <AlertDialog open={!!pendingNow && !!runningTimer} onOpenChange={(o) => { if (!o) setPendingNow(null); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Hay una tarea andando</AlertDialogTitle>
+          <AlertDialogDescription>
+            {runningTimer && pendingNow &&
+              `"${runningTimer.name}" tiene el tiempo corriendo. Confirmala o parala para pasar a "${typeof pendingNow.label === "string" ? pendingNow.label : "la otra tarea"}" como Ahora.`}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel data-testid="running-now-cancel">Cancelar</AlertDialogCancel>
+          {/* Botones comunes (no AlertDialogAction, que cierra el diálogo y cancelaría la tarea en
+              espera): el diálogo se cierra solo apenas la que anda deja de correr, y ahí la otra
+              pasa a "Ahora". */}
+          <Button
+            variant="secondary"
+            onClick={() => runningTimer && pauseTaskTimer(runningTimer.key)}
+            data-testid="running-now-stop"
+          >
+            Parar
+          </Button>
+          <Button onClick={confirmRunningTask} data-testid="running-now-confirm">
+            Confirmar
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
     <MealTrackerModal
       open={mealPopupId !== null}
       onOpenChange={(o) => { if (!o) setMealPopupId(null); }}
@@ -4305,7 +4578,7 @@ function TodaySubRow({
       }`}
     >
       {title}
-      {!done && <StartTimeSuffix startTime={startTime} />}
+      {!done && <StartTimeSuffix startTime={startTime} showRemaining={showRemaining} />}
       {/* Ya hecha: queda solo el tiempo previsto, sin la hora límite ni lo que falta. */}
       <MinutesSuffix minutes={minutes} deadline={done ? null : deadline} showRemaining={showRemaining && !done} timerKey={timerKey} timerDone={done} />
     </span>

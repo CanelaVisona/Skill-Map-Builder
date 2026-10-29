@@ -11,10 +11,14 @@ export interface InsightsCounterPopupSnapshot {
   countAfter: number;
 }
 
+// Primera fase del pop-up: el anuncio ("¡Pensamiento nuevo!") solo, antes de pasar -- en el
+// mismo cuadro -- al conteo creciendo.
+export const INSIGHTS_ANNOUNCE_MS = 1200;
+
 // Este pop-up se queda visible más tiempo que el resto de la familia (POPUP_VISIBLE_MS, 1500ms):
-// el número arranca en countBefore y cambia a countAfter con un "+1", así que este tiempo extra
-// es para que se vea el cambio y alcance a leerse con comodidad antes de que se cierre.
-export const INSIGHTS_POPUP_VISIBLE_MS = 2800;
+// primero el anuncio y después el número, que arranca en countBefore y cambia a countAfter con un
+// "+1"; el tiempo extra es para que se vea el cambio y alcance a leerse con comodidad.
+export const INSIGHTS_POPUP_VISIBLE_MS = INSIGHTS_ANNOUNCE_MS + 2800;
 
 interface InsightsCounterPopupContextValue {
   snapshot: InsightsCounterPopupSnapshot | null;

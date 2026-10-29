@@ -220,10 +220,6 @@ function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpen
     countPendingNodesInSegment(Array.isArray(todayAreas) ? todayAreas : []) +
     countPendingNodesInSegment(Array.isArray(todayProjects) ? todayProjects : []);
 
-  const pendingPracticesInSegment = spaceRepPractices.filter((p) => {
-    const status = p.level === 2 ? calculateStatusL2(p) : calculateStatus(p);
-    return status === "expires_soon" && isInCurrentSegment(`practice:${p.id}`);
-  }).length;
 
   const { data: todayManualTasks } = useManualTasks(todayStr, true);
   const pendingManualInSegment = (todayManualTasks || []).filter(
@@ -231,7 +227,7 @@ function TopRightControls({ onOpenDesigner, onOpenHabits, onOpenStrength, onOpen
   ).length;
 
   const pendingNodesTodayCount =
-    pendingHabitsInSegment + pendingNodesInSegment + pendingPracticesInSegment + pendingManualInSegment;
+    pendingHabitsInSegment + pendingNodesInSegment + pendingManualInSegment;
   // El badge no muestra cuántas son: 1 si queda al menos una en la franja actual, 0 si no.
   const hasPendingInSegment = pendingNodesTodayCount > 0;
 

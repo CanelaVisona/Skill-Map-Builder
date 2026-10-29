@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BookOpen, Lightbulb, Split, HelpCircle, Circle, Wrench, Shield, Check, ChevronLeft, Plus } from "lucide-react";
+import { BookOpen, Lightbulb, Split, HelpCircle, Circle, Wrench, Shield, Check, ChevronLeft, Plus, X } from "lucide-react";
 import { SkillsSparkIcon } from "@/components/SkillsSparkIcon";
 import { type GlobalSkill } from "@/lib/skill-context";
 import { cn } from "@/lib/utils";
@@ -21,7 +21,7 @@ import { SkillPickerList, ChipListInput } from "@/components/skill-node-pickers"
 // a qué área/quest pertenece; sin ninguna, queda "suelto" (secciones "+ errores"/"+ poderes"
 // del Journal). En todos los formularios la descripción va
 // primero y el título después. Nada se registra acá adentro: todo queda en un borrador que se
-// le entrega a onFinish al apretar "Listo" (o al cerrar el modal tocando afuera), y recién ahí
+// le entrega a onFinish al cerrar el modal (tocando afuera o con Escape), y recién ahí
 // SkillNode lo guarda y muestra los pop-ups de lo que se cargó.
 
 export interface NodeFeedbackEntry {
@@ -151,6 +151,50 @@ type StepKey =
 
 const NEW = "__new__";
 
+// Estado del formulario de un cubo. Se guarda por cubo al volver sin guardar, así lo escrito sigue
+// ahí al reabrir ese cubo (ver leaveForm/startForm).
+interface CubeForm {
+  step: number;
+  title: string;
+  sentence: string;
+  errorComoSi: string;
+  errorEstrategias: string[];
+  errorEstrategiaDraft: string;
+  errorDisparadores: string[];
+  errorDisparadorDraft: string;
+  errorSkillIds: string[];
+  errorBodyLinks: BodyLink[];
+  xpSkillIds: string[];
+  errorTarget: string | null;
+  powerTarget: string | null;
+  actionDelta: 10 | -10 | null;
+  actionValue: string | null;
+  actionNewValue: string;
+  pickedScope: FeedbackScope | undefined;
+}
+
+const EMPTY_FORM: CubeForm = {
+  step: 0,
+  title: "",
+  sentence: "",
+  errorComoSi: "",
+  errorEstrategias: [],
+  errorEstrategiaDraft: "",
+  errorDisparadores: [],
+  errorDisparadorDraft: "",
+  errorSkillIds: [],
+  errorBodyLinks: [],
+  xpSkillIds: [],
+  errorTarget: null,
+  powerTarget: null,
+  actionDelta: null,
+  actionValue: null,
+  actionNewValue: "",
+  pickedScope: undefined,
+};
+
+const isFormEmpty = (form: CubeForm) => JSON.stringify(form) === JSON.stringify(EMPTY_FORM);
+
 interface NodeConfirmFeedbackModalProps {
   open: boolean;
   onFinish: (draft: NodeFeedbackDraft) => void;
@@ -205,7 +249,12 @@ export function NodeConfirmFeedbackModal({
   const [activeCube, setActiveCube] = useState<CubeId | null>(null);
   const [step, setStep] = useState(0);
 
-  // Campos del formulario abierto (se resetean al abrir cada cubo). title/sentence se usan para
+  // Dentro de un cubo: "list" = lo ya cargado en ese cubo + "Agregar otro"; "form" = el formulario.
+  const [cubeView, setCubeView] = useState<"list" | "form">("form");
+  // Formularios a medio escribir, por cubo (ver CubeForm).
+  const [formDrafts, setFormDrafts] = useState<Partial<Record<CubeId, CubeForm>>>({});
+
+  // Campos del formulario abierto (se restauran de formDrafts al abrir cada cubo). title/sentence se usan para
   // pensamiento/aprendizaje/herramienta, el nombre del error nuevo y el nombre/descripción del
   // poder nuevo.
   const [title, setTitle] = useState("");
@@ -248,28 +297,69 @@ export function NodeConfirmFeedbackModal({
       setDraft(EMPTY_DRAFT);
       setActiveCube(null);
       setStep(0);
+      setFormDrafts({});
+      setCubeView("form");
     }
   }, [open]);
 
-  const openCube = (cube: CubeId) => {
-    setTitle("");
-    setSentence("");
-    setErrorComoSi("");
-    setErrorEstrategias([]);
-    setErrorEstrategiaDraft("");
-    setErrorDisparadores([]);
-    setErrorDisparadorDraft("");
-    setErrorSkillIds([]);
-    setErrorBodyLinks([]);
-    setXpSkillIds([]);
-    setErrorTarget(null);
-    setPowerTarget(null);
-    setActionDelta(null);
-    setActionValue(null);
-    setActionNewValue("");
-    setPickedScope(undefined);
-    setStep(0);
-    setActiveCube(cube);
+  const currentForm = (): CubeForm => ({
+    step,
+    title,
+    sentence,
+    errorComoSi,
+    errorEstrategias,
+    errorEstrategiaDraft,
+    errorDisparadores,
+    errorDisparadorDraft,
+    errorSkillIds,
+    errorBodyLinks,
+    xpSkillIds,
+    errorTarget,
+    powerTarget,
+    actionDelta,
+    actionValue,
+    actionNewValue,
+    pickedScope,
+  });
+
+  const applyForm = (form: CubeForm) => {
+    setStep(form.step);
+    setTitle(form.title);
+    setSentence(form.sentence);
+    setErrorComoSi(form.errorComoSi);
+    setErrorEstrategias(form.errorEstrategias);
+    setErrorEstrategiaDraft(form.errorEstrategiaDraft);
+    setErrorDisparadores(form.errorDisparadores);
+    setErrorDisparadorDraft(form.errorDisparadorDraft);
+    setErrorSkillIds(form.errorSkillIds);
+    setErrorBodyLinks(form.errorBodyLinks);
+    setXpSkillIds(form.xpSkillIds);
+    setErrorTarget(form.errorTarget);
+    setPowerTarget(form.powerTarget);
+    setActionDelta(form.actionDelta);
+    setActionValue(form.actionValue);
+    setActionNewValue(form.actionNewValue);
+    setPickedScope(form.pickedScope);
+    // Las listas de errores/poderes tienen que volver a ser las del área/quest elegida.
+    if (form.pickedScope !== undefined) onListScopeChange?.(form.pickedScope);
+  };
+
+  // Abre el formulario del cubo: lo que había quedado escrito, o vacío.
+  const startForm = (cube: CubeId) => {
+    applyForm(formDrafts[cube] ?? EMPTY_FORM);
+    setCubeView("form");
+  };
+
+  // Al salir del formulario sin guardar, lo escrito queda guardado para ese cubo.
+  const leaveForm = () => {
+    if (!activeCube) return;
+    const form = currentForm();
+    setFormDrafts((prev) => {
+      const nextDrafts = { ...prev };
+      if (isFormEmpty(form)) delete nextDrafts[activeCube];
+      else nextDrafts[activeCube] = form;
+      return nextDrafts;
+    });
   };
 
   const backToCubes = () => {
@@ -290,6 +380,14 @@ export function NodeConfirmFeedbackModal({
       case "xp": return draft.xpSkillIds.length;
       case "power": return draft.powers.length + draft.newPowers.length;
     }
+  };
+
+  // Si el cubo ya tiene algo cargado, abre en la lista (con "Agregar otro"); si no, directo al
+  // formulario.
+  const openCube = (cube: CubeId) => {
+    setActiveCube(cube);
+    if (cubeCount(cube) > 0) setCubeView("list");
+    else startForm(cube);
   };
 
   const addChip = (draftText: string, items: string[], setItems: (v: string[]) => void, setDraftText: (v: string) => void) => {
@@ -433,6 +531,12 @@ export function NodeConfirmFeedbackModal({
         }
       }
     });
+    const savedCube = activeCube;
+    setFormDrafts((prev) => {
+      const nextDrafts = { ...prev };
+      delete nextDrafts[savedCube];
+      return nextDrafts;
+    });
     backToCubes();
   };
 
@@ -443,8 +547,47 @@ export function NodeConfirmFeedbackModal({
   };
 
   const back = () => {
-    if (step === 0) backToCubes();
-    else setStep((s) => s - 1);
+    if (step > 0) {
+      setStep((s) => s - 1);
+      return;
+    }
+    leaveForm();
+    if (activeCube && cubeCount(activeCube) > 0) setCubeView("list");
+    else backToCubes();
+  };
+
+  // Lo ya cargado en un cubo, para su vista de lista (cada uno se puede quitar).
+  type DraftArrayField = "thoughts" | "learnings" | "strategies" | "questions" | "tools" | "errors" | "errorActions" | "xpSkillIds" | "powers" | "newPowers";
+  const removeAt = (field: DraftArrayField, index: number) =>
+    setDraft((prev) => ({ ...prev, [field]: (prev[field] as unknown[]).filter((_, i) => i !== index) }));
+
+  const listItems = (cube: CubeId): Array<{ key: string; label: string; detail?: string; onRemove: () => void }> => {
+    const entries = (field: "thoughts" | "learnings" | "strategies" | "questions" | "tools") =>
+      draft[field].map((entry, i) => ({ key: `${field}-${i}`, label: entry.title, detail: entry.sentence || undefined, onRemove: () => removeAt(field, i) }));
+    switch (cube) {
+      case "thought": return entries("thoughts");
+      case "learning": return entries("learnings");
+      case "strategy": return entries("strategies");
+      case "question": return entries("questions");
+      case "tool": return entries("tools");
+      case "error":
+        return [
+          ...draft.errors.map((e, i) => ({ key: `errors-${i}`, label: `Nuevo: ${e.nombre}`, detail: e.comoSi || undefined, onRemove: () => removeAt("errors", i) })),
+          ...draft.errorActions.map((a, i) => ({
+            key: `errorActions-${i}`,
+            label: a.type === "confirm" ? `Confirmar: ${a.errorName}` : `${a.delta > 0 ? "+10p" : "-10p"} ${a.errorName}`,
+            detail: a.type === "adjust" ? a.value : undefined,
+            onRemove: () => removeAt("errorActions", i),
+          })),
+        ];
+      case "xp":
+        return draft.xpSkillIds.map((id, i) => ({ key: `xp-${id}`, label: `+${xpAmount}xp ${skillDisplayName(id)}`, onRemove: () => removeAt("xpSkillIds", i) }));
+      case "power":
+        return [
+          ...draft.powers.map((p, i) => ({ key: `powers-${p.power.id}`, label: `${p.power.isUnlocked === 0 ? "Desbloquear" : "Dominar"}: ${p.power.name}`, onRemove: () => removeAt("powers", i) })),
+          ...draft.newPowers.map((p, i) => ({ key: `newPowers-${i}`, label: `Nuevo: ${p.name}`, detail: p.description || undefined, onRemove: () => removeAt("newPowers", i) })),
+        ];
+    }
   };
 
   const submitOnEnter = (e: React.KeyboardEvent) => {
@@ -751,8 +894,9 @@ export function NodeConfirmFeedbackModal({
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) finish(); }}>
-      {/* Título y botones (Listo / Atrás-Siguiente) quedan fijos; solo el cuerpo scrollea, con
-          barra minimalista, así "Listo" siempre está a la vista sin tener que scrollear. */}
+      {/* Título y botones (Atrás-Siguiente) quedan fijos; solo el cuerpo scrollea, con barra
+          minimalista. Sin botón "Listo": el modal se cierra (y entrega lo cargado) tocando afuera
+          o con Escape. */}
       <DialogContent className="sm:max-w-[400px] border-0 shadow-2xl max-h-[90dvh] flex flex-col gap-3 overflow-hidden">
         <DialogTitle className="text-lg font-medium shrink-0">{activeCubeMeta ? activeCubeMeta.label : "¿Qué te dejó este nodo?"}</DialogTitle>
         <DialogDescription className="sr-only">Registrá pensamientos, aprendizajes, estrategias, preguntas, herramientas, errores, XP o poderes del nodo confirmado</DialogDescription>
@@ -787,9 +931,44 @@ export function NodeConfirmFeedbackModal({
                 })}
               </div>
             </div>
-            <Button onClick={finish} className="w-full shrink-0" data-testid="confirm-feedback-done">
-              Listo
-            </Button>
+          </>
+        ) : cubeView === "list" ? (
+          <>
+            <div className="min-h-0 flex-1 overflow-y-auto minimal-scrollbar -mx-1 px-1 space-y-2">
+              {listItems(activeCube).map((item) => (
+                <div key={item.key} className="flex items-start gap-2 rounded-lg border border-primary/40 bg-primary/5 p-3" data-testid={`confirm-feedback-loaded-${item.key}`}>
+                  <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium break-words">{item.label}</p>
+                    {item.detail && <p className="mt-0.5 text-xs text-muted-foreground break-words line-clamp-2">{item.detail}</p>}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={item.onRemove}
+                    className="shrink-0 text-muted-foreground hover:text-foreground"
+                    aria-label="Quitar"
+                    data-testid={`confirm-feedback-remove-${item.key}`}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={() => startForm(activeCube)}
+                className={cn(optionClass(false), "flex items-center gap-2")}
+                data-testid="confirm-feedback-add-another"
+              >
+                <Plus className="h-4 w-4 shrink-0" />
+                <span className="text-sm font-medium">{formDrafts[activeCube] ? "Seguir cargando" : listItems(activeCube).length > 0 ? "Agregar otro" : "Agregar"}</span>
+              </button>
+            </div>
+            <div className="flex items-center justify-between gap-2 shrink-0">
+              <Button variant="ghost" size="sm" onClick={backToCubes} className="bg-muted/50 hover:bg-muted" data-testid="confirm-feedback-back">
+                <ChevronLeft className="h-4 w-4 mr-1" />
+                Volver
+              </Button>
+            </div>
           </>
         ) : (
           <>
@@ -800,7 +979,7 @@ export function NodeConfirmFeedbackModal({
             <div className="flex items-center justify-between gap-2 shrink-0">
               <Button variant="ghost" size="sm" onClick={back} className="bg-muted/50 hover:bg-muted" data-testid="confirm-feedback-back">
                 <ChevronLeft className="h-4 w-4 mr-1" />
-                {step === 0 ? "Cubos" : "Atrás"}
+                {step === 0 ? "Volver" : "Atrás"}
               </Button>
               <Button size="sm" onClick={next} disabled={!canAdvance()} data-testid="confirm-feedback-next">
                 {isLastStep ? "Guardar" : "Siguiente"}

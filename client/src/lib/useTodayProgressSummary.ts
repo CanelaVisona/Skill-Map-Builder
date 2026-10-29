@@ -100,11 +100,11 @@ export function useTodayProgressSummary() {
   const practicesToday = (practicesData || [])
     .map((p) => {
       const status = p.level === 2 ? calculateStatusL2(p) : calculateStatus(p);
-      const pending = status === "expires_soon";
+      // Igual que en Tareas de hoy: una práctica cuenta recién cuando se confirmó hoy.
       const confirmedAt = p.lastConfirmedAt || p.updatedAt;
       const confirmedToday =
-        !pending && status !== "loss" && status !== "frozen" && !!confirmedAt && getDateStr(new Date(confirmedAt)) === todayStr;
-      return { id: p.id, done: confirmedToday, include: pending || confirmedToday };
+        status !== "expires_soon" && status !== "loss" && status !== "frozen" && !!confirmedAt && getDateStr(new Date(confirmedAt)) === todayStr;
+      return { id: p.id, done: confirmedToday, include: confirmedToday };
     })
     .filter((entry) => entry.include);
 

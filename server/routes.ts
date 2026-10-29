@@ -6444,6 +6444,40 @@ export async function registerRoutes(
     }
   });
 
+  // "¿En qué estoy trabajando para mejorar hoy?" (debajo de la barra de "Tareas de hoy").
+  // ?date=YYYY-MM-DD → la de ese día (y la anterior más reciente, para precargar al responder);
+  // ?startDate=&endDate= → las de un rango (calendario).
+  const isDateStr = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
+  app.get("/api/improvement-focus", requireAuth, async (req, res) => {
+    try {
+      const { date, startDate, endDate } = req.query;
+      if (isDateStr(startDate) && isDateStr(endDate)) {
+        return res.json(await storage.getImprovementFocusRange(req.userId!, startDate, endDate));
+      }
+      if (!isDateStr(date)) {
+        return res.status(400).json({ message: "date (YYYY-MM-DD) o startDate/endDate son requeridos" });
+      }
+      const [today] = await storage.getImprovementFocusRange(req.userId!, date, date);
+      const previous = await storage.getPreviousImprovementFocus(req.userId!, date);
+      res.json({ date, text: today?.text ?? "", previous });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/improvement-focus", requireAuth, async (req, res) => {
+    try {
+      const { date, text } = req.body;
+      if (!isDateStr(date) || typeof text !== "string") {
+        return res.status(400).json({ message: "date (YYYY-MM-DD) y text son requeridos" });
+      }
+      const saved = await storage.setImprovementFocus(req.userId!, date, text.trim().slice(0, 500));
+      res.json({ date, text: saved });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Task Timers (contador de arranque de las tareas de "Tareas de hoy", ver task-timers.ts)
   app.get("/api/task-timers", requireAuth, async (req, res) => {
     try {

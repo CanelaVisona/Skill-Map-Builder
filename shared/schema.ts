@@ -834,6 +834,18 @@ export const todayPriorities = pgTable("today_priorities", {
 });
 export type TodayPriorities = typeof todayPriorities.$inferSelect;
 
+// "¿En qué estoy trabajando para mejorar hoy?" (debajo de la barra de "Tareas de hoy"): una
+// respuesta por (usuario, día), id determinístico `${userId}:${date}` para upsert directo, igual
+// que today_priorities. Cada día tiene la suya; el calendario muestra la de cada día.
+export const todayImprovementFocus = pgTable("today_improvement_focus", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  date: varchar("date").notNull(), // YYYY-MM-DD format
+  text: text("text").notNull().default(""),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export type TodayImprovementFocus = typeof todayImprovementFocus.$inferSelect;
+
 // Contador de arranque de una tarea de "Tareas de hoy" (botón ▶ al lado de "X min", ver
 // client/src/lib/task-timers.ts). Una fila por (usuario, día, tarea), id determinístico
 // `${userId}:${date}:${taskKey}` para upsert directo. taskKey: `${taskType}:${taskId}` como en
