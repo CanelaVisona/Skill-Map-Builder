@@ -239,6 +239,9 @@ app.use((req, res, next) => {
     await db.execute(sql`
       ALTER TABLE "today_task_substeps" ADD COLUMN IF NOT EXISTS "start_time" varchar;
     `);
+    await db.execute(sql`
+      ALTER TABLE "today_task_substeps" ADD COLUMN IF NOT EXISTS "slot" varchar;
+    `);
     // Contador de arranque de las tareas de "Tareas de hoy" (ver shared/schema.ts → taskTimers).
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS "task_timers" (

@@ -882,6 +882,9 @@ export const todayTaskSubsteps = pgTable("today_task_substeps", {
   minutesManual: integer("minutes_manual").$type<0 | 1>().notNull().default(0),
   deadline: varchar("deadline"), // Hora límite ("HH:MM") con la que se calcularon los minutos
   startTime: varchar("start_time"), // Hora ("HH:MM") a la que empieza: al llegar pasa a ser el sub-paso de "Ahora"
+  // Franja propia del sub-paso ("morning" | "midday" | "afternoon" | "night"), cuando se hace en
+  // otra franja que su tarea: ahí aparece en una fila de continuación. null = con su tarea.
+  slot: varchar("slot"),
   // Sub-paso permanente de un hábito (habitSubsteps) del que salió esta copia del día. Editar o
   // borrar la copia también edita/borra la plantilla.
   templateId: varchar("template_id"),

@@ -57,6 +57,17 @@ interface TodayItem {
   // Registro de un día pasado: nodo padre que ese día tenía sub-nodos confirmados pero después
   // se pasó a otro día. Se muestra solo como texto (sin confirmar ni menú), con esos sub-nodos.
   traceSubs?: { id: string; title: string }[];
+  // Tarea con sub-tareas (sub-pasos o sub-nodos) repartidas en más de una franja: cada franja
+  // muestra solo las suyas (slotSubIds). En su propia franja la tarea es la de siempre; en las
+  // otras aparece como fila de continuación ("· continúa", continuation), que no es una tarea
+  // aparte: no tiene fila de franja propia, no cuenta en la barra y no se confirma sola.
+  continuation?: boolean;
+  slotSubIds?: string[];
+  // false: en esta franja no hay nada para hacer ahora (su próxima sub-tarea está en otra), así
+  // que no puede ser la desbloqueada de esta franja.
+  actionableHere?: boolean;
+  // Todas las sub-tareas de esta franja están hechas.
+  allSlotSubsDone?: boolean;
 }
 
 // Contador (▶) que está corriendo hoy: `key` es la del contador; `taskKey`, la de lo que cuenta
@@ -1094,113 +1105,16 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     return [];
   };
 
-  // "more" agrupa la actividad extra (sección "Más") que no tiene ninguna franja, ni manual
-  // ni por defecto — hoy en día eso es solo hábitos extra (no hay forma de saber a qué hora se
-  // confirmaron). Los nodos extra sí tienen franja por defecto (la hora en la que se
-  // confirmaron) y por eso caen directo en la franja del día que corresponda, no acá; desde
-  // ahí se pueden mover a otra franja igual que cualquier tarea de hoy.
-  const itemBuckets: Record<string, TodayItem[]> = { unassigned: [], more: [] };
-  TIME_SLOTS.forEach((s) => (itemBuckets[s.key] = []));
-  // Reparte un ítem en los buckets de sus franjas efectivas; si tiene más de una, cada
-  // duplicado extra necesita una "key" propia para React (mismo type/id, así que los clics
-  // sobre cualquiera de las copias siguen afectando la misma tarea/hábito real).
-  const distributeItem = (item: TodayItem, fallbackBucket: "unassigned" | "more") => {
-    // "hidden" no es una franja real: puede llegar acá si la tarea se ocultó y después se
-    // confirmó (vuelve a aparecer, ya hecha), así que cae al bucket por defecto igual que si
-    // nunca hubiera tenido franja.
-    const slots = resolveSlots(item).filter((s) => TIME_SLOTS.some((t) => t.key === s));
-    if (slots.length === 0) {
-      itemBuckets[fallbackBucket].push(item);
-      return;
-    }
-    slots.forEach((slot, i) => {
-      itemBuckets[slot].push(i === 0 ? item : { ...item, key: `${item.key}#${slot}` });
-    });
-  };
-  todayItems.forEach((item) => distributeItem(item, "unassigned"));
-  visibleExtraItems.forEach((item) => distributeItem(item, "more"));
-
-  // Confirmar una tarea no la mueve: hechas y pendientes comparten el mismo orden. Dentro de
-  // cada franja horaria se respeta el orden guardado (sortOrder) — el que se puede cambiar de a
-  // pares con "Mover arriba"/"Mover abajo". Desempata por updatedAt para que las franjas
-  // asignadas antes de tener esta columna (todas con sortOrder 0) tengan igual un orden estable
-  // en vez de depender del orden de la consulta. "Sin asignar" queda en el orden en que se armó.
-  TIME_SLOTS.forEach((s) => {
-    itemBuckets[s.key].sort((a, b) => {
-      const diff = (sortOrderByKey.get(a.key) ?? 0) - (sortOrderByKey.get(b.key) ?? 0);
-      if (diff !== 0) return diff;
-      return (slotUpdatedAtByKey.get(a.key) ?? 0) - (slotUpdatedAtByKey.get(b.key) ?? 0);
-    });
-  });
-
-  // Las tareas confirmadas siempre van antes de las sin confirmar de su franja: las que hayan
-  // quedado después de la primera sin hacer (confirmadas desde el árbol u otro modal, como una
-  // comida registrada, o antes de que les tocara) se muestran justo antes de ella, en el mismo
-  // orden relativo. Es una regla de cómo se muestra la franja, así vale en todas las franjas, sin
-  // importar desde dónde se confirmó la tarea ni si hay tarea desbloqueada ("Ahora" destildado).
-  TIME_SLOTS.forEach((s) => {
-    const bucket = itemBuckets[s.key];
-    const firstUndone = bucket.findIndex((i) => !i.done);
-    if (firstUndone === -1) return;
-    const isConfirmed = (i: TodayItem) => i.done && !i.traceSubs;
-    const lifted = bucket.slice(firstUndone + 1).filter(isConfirmed);
-    if (lifted.length === 0) return;
-    itemBuckets[s.key] = [
-      ...bucket.slice(0, firstUndone),
-      ...lifted,
-      ...bucket.slice(firstUndone).filter((i) => !lifted.includes(i)),
-    ];
-  });
-
-  // Nodo al que se le eligió "Ahora" en "When exactly?" (ver setNowPlacement en SkillNode):
-  // ocupa el lugar de la tarea desbloqueada de la franja actual (la primera sin hacer), que
-  // pasa a quedar justo después. Se hace acá y no en el server porque solo acá se conoce el
-  // orden visual real de la franja, incluidos los ítems sin fila propia (hábitos con franja por
-  // defecto, actividad extra), que el server no ve. Espera a tener todo cargado (y la fila del
-  // nodo ya creada por SkillNode) para no calcular la tarea desbloqueada con datos a medias.
-  const nowPlacement = useNowPlacement();
-  const nowPlacementReady =
-    open &&
-    !!nowPlacement &&
-    !isPreview &&
-    nowPlacement.date === effectiveDate &&
-    !!slotsData &&
-    !!manualTasksData &&
-    !!habitsData &&
-    viewRecordQueries.every((q) => !q.isLoading) &&
-    slotByKey.has(`node:${nowPlacement.nodeId}`) &&
-    todayItems.some((i) => i.type === "node" && i.id === nowPlacement.nodeId);
-  // Se llena más abajo, cuando ya están los contadores (ver runningTimer).
-  const runningTimerRef = useRef<RunningTimerInfo | null>(null);
-  useEffect(() => {
-    if (!nowPlacementReady || !nowPlacement) return;
-    setNowPlacement(null);
-    const slot = getCurrentTimeSlotKey();
-    const nodeKey = `node:${nowPlacement.nodeId}`;
-    const bucket = itemBuckets[slot].filter((i) => i.key !== nodeKey);
-    const nodeItem = todayItems.find((i) => i.key === nodeKey)!;
-    // Hay otra tarea con el ▶ andando: primero se confirma o se para esa (ver pendingNow).
-    if (isOtherTaskRunning(nodeItem)) {
-      setPendingNow(nodeItem);
-      return;
-    }
-    const firstUndone = bucket.findIndex((i) => !i.done);
-    const at = firstUndone === -1 ? bucket.length : firstUndone;
-    const ordered = [...bucket.slice(0, at), nodeItem, ...bucket.slice(at)];
-    // Un hábito puede estar duplicado en varias franjas (keys "#slot"): una sola entrada por tarea.
-    const seen = new Set<string>();
-    const order = ordered
-      .filter((i) => {
-        if (i.traceSubs) return false;
-        const k = `${i.type}:${i.id}`;
-        if (seen.has(k)) return false;
-        seen.add(k);
-        return true;
-      })
-      .map((i) => ({ taskType: i.type, taskId: i.id }));
-    reorderTaskSlot.mutate({ date: effectiveDate, slot, order });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nowPlacementReady]);
+  // Sub-pasos (checklist del día) de las tareas que no son nodos: se agregan desde el menú de la
+  // tarea ("Agregar sub-paso"), se muestran adentro de ella y se confirman en orden. Si la tarea
+  // es la desbloqueada, el destacado pasa a su primer sub-paso sin hacer.
+  const { data: substepsData } = useTodayTaskSubsteps(effectiveDate, open);
+  const createSubstep = useCreateTodayTaskSubstep();
+  const updateSubstep = useUpdateTodayTaskSubstep();
+  const deleteSubstep = useDeleteTodayTaskSubstep();
+  const substepsFor = (item: TodayItem) =>
+    item.type === "node" ? [] : (substepsData || []).filter((st) => st.taskType === item.type && st.taskId === item.id);
+  const hasPendingSubsteps = (item: TodayItem) => substepsFor(item).some((st) => st.done !== 1);
 
   // Sub-nodos de los nodos de Tareas de hoy: se muestran adentro del nodo padre (sin el "inicio"
   // ni los pasos de relleno sin nombrar) y se confirman en orden. Mientras quede alguno sin
@@ -1250,6 +1164,194 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const hasPendingChildSubNodes = (sub: Skill) => childSubNodesOf(sub).some((c) => c.status !== "mastered");
   const subNodesFor = (item: TodayItem) => (item.type === "node" ? subSkillsByNodeId.get(item.id) || [] : []);
   const hasPendingSubNodes = (item: TodayItem) => subNodesFor(item).some((sub) => sub.status !== "mastered");
+
+  // --- Sub-tareas en otra franja que su tarea (p.ej. dos sub-pasos a la mañana y uno a la tarde).
+  // Franja propia de una sub-tarea: sub-paso → su columna slot; sub-nodo → su fila de franja del
+  // día (`node:<id del sub-nodo>`). null = va con su tarea.
+  const subtaskOwnSlot = (item: TodayItem, subId: string): TaskSlotKey | null => {
+    const raw = item.type === "node"
+      ? slotByKey.get(`node:${subId}`)
+      : (substepsData || []).find((st) => st.id === subId)?.slot;
+    return raw && TIME_SLOTS.some((t) => t.key === raw) ? (raw as TaskSlotKey) : null;
+  };
+  const subtasksOf = (item: TodayItem) =>
+    item.type === "node"
+      ? subNodesFor(item).map((sub) => ({ id: sub.id, done: sub.status === "mastered", startTime: sub.plannedStartTime ?? null }))
+      : substepsFor(item).map((st) => ({ id: st.id, done: st.done === 1, startTime: st.startTime ?? null }));
+  // Franja propia de la tarea (la primera, si es un hábito en varias); null = sin franja.
+  const homeSlotOf = (item: TodayItem): TaskSlotKey | null =>
+    resolveSlots(item).find((sl) => TIME_SLOTS.some((t) => t.key === sl)) ?? null;
+  // Hora de inicio de una entrada de la franja (de su sub-tarea, si es una continuación).
+  const entryStartTime = (i: TodayItem): string | null => {
+    if (i.continuation) {
+      const first = subtasksOf(i).find((st) => i.slotSubIds?.includes(st.id) && !st.done) ?? subtasksOf(i).find((st) => i.slotSubIds?.includes(st.id));
+      return first?.startTime ?? null;
+    }
+    if (i.type === "manual") return manualTasks.find((t) => t.id === i.id)?.startTime ?? null;
+    if (i.type === "node") return allPlannedNodes.find((n) => n.id === i.id)?.plannedStartTime ?? null;
+    return null;
+  };
+  // Pendiente en esta franja: puede ser la desbloqueada. Hecha acá: cuenta como confirmada para
+  // el orden (lo hecho arriba) aunque la tarea en sí todavía no se confirmó.
+  const isPendingHere = (i: TodayItem) => !i.done && i.actionableHere !== false;
+  const isDoneHere = (i: TodayItem) => i.done || (!!i.allSlotSubsDone && i.actionableHere === false);
+  const slotSubSet = (i: TodayItem) => (i.slotSubIds ? new Set(i.slotSubIds) : undefined);
+
+  // "more" agrupa la actividad extra (sección "Más") que no tiene ninguna franja, ni manual
+  // ni por defecto — hoy en día eso es solo hábitos extra (no hay forma de saber a qué hora se
+  // confirmaron). Los nodos extra sí tienen franja por defecto (la hora en la que se
+  // confirmaron) y por eso caen directo en la franja del día que corresponda, no acá; desde
+  // ahí se pueden mover a otra franja igual que cualquier tarea de hoy.
+  const itemBuckets: Record<string, TodayItem[]> = { unassigned: [], more: [] };
+  TIME_SLOTS.forEach((s) => (itemBuckets[s.key] = []));
+  // Reparte un ítem en los buckets de sus franjas efectivas; si tiene más de una, cada
+  // duplicado extra necesita una "key" propia para React (mismo type/id, así que los clics
+  // sobre cualquiera de las copias siguen afectando la misma tarea/hábito real).
+  const distributeItem = (item: TodayItem, fallbackBucket: "unassigned" | "more") => {
+    // "hidden" no es una franja real: puede llegar acá si la tarea se ocultó y después se
+    // confirmó (vuelve a aparecer, ya hecha), así que cae al bucket por defecto igual que si
+    // nunca hubiera tenido franja.
+    const slots = resolveSlots(item).filter((s) => TIME_SLOTS.some((t) => t.key === s));
+    // Sub-tareas en otras franjas: la tarea queda en la suya con sus sub-tareas de ahí, y en cada
+    // otra franja aparece una continuación con las de esa franja. (Un hábito en varias franjas
+    // ya se duplica entero: ahí no se reparte.)
+    const home: string = slots[0] ?? fallbackBucket;
+    if (slots.length <= 1 && !item.done && !item.traceSubs) {
+      const subs = subtasksOf(item);
+      const bySlot = new Map<string, { id: string; done: boolean }[]>();
+      subs.forEach((st) => {
+        const sl = subtaskOwnSlot(item, st.id) ?? home;
+        bySlot.set(sl, [...(bySlot.get(sl) ?? []), st]);
+      });
+      if (Array.from(bySlot.keys()).some((sl) => sl !== home)) {
+        const firstUndone = subs.find((st) => !st.done);
+        const firstUndoneSlot = firstUndone ? subtaskOwnSlot(item, firstUndone.id) ?? home : null;
+        const entryFor = (sl: string) => {
+          const own = bySlot.get(sl) ?? [];
+          return {
+            slotSubIds: own.map((o) => o.id),
+            allSlotSubsDone: own.every((o) => o.done),
+            // En su franja, la tarea tiene algo para hacer si su próxima sub-tarea está ahí, o si ya
+            // no le queda ninguna (falta confirmarla a ella). En otra, solo si la próxima está ahí.
+            actionableHere: firstUndoneSlot === null ? sl === home : firstUndoneSlot === sl,
+          };
+        };
+        itemBuckets[home].push({ ...item, ...entryFor(home) });
+        bySlot.forEach((_, sl) => {
+          if (sl !== home) itemBuckets[sl].push({ ...item, key: `${item.key}@${sl}`, continuation: true, ...entryFor(sl) });
+        });
+        return;
+      }
+    }
+    if (slots.length === 0) {
+      itemBuckets[fallbackBucket].push(item);
+      return;
+    }
+    slots.forEach((slot, i) => {
+      itemBuckets[slot].push(i === 0 ? item : { ...item, key: `${item.key}#${slot}` });
+    });
+  };
+  todayItems.forEach((item) => distributeItem(item, "unassigned"));
+  visibleExtraItems.forEach((item) => distributeItem(item, "more"));
+
+  // Confirmar una tarea no la mueve: hechas y pendientes comparten el mismo orden. Dentro de
+  // cada franja horaria se respeta el orden guardado (sortOrder) — el que se puede cambiar de a
+  // pares con "Mover arriba"/"Mover abajo". Desempata por updatedAt para que las franjas
+  // asignadas antes de tener esta columna (todas con sortOrder 0) tengan igual un orden estable
+  // en vez de depender del orden de la consulta. "Sin asignar" queda en el orden en que se armó.
+  TIME_SLOTS.forEach((s) => {
+    itemBuckets[s.key].sort((a, b) => {
+      const diff = (sortOrderByKey.get(a.key) ?? 0) - (sortOrderByKey.get(b.key) ?? 0);
+      if (diff !== 0) return diff;
+      return (slotUpdatedAtByKey.get(a.key) ?? 0) - (slotUpdatedAtByKey.get(b.key) ?? 0);
+    });
+  });
+
+  // Las tareas confirmadas siempre van antes de las sin confirmar de su franja: las que hayan
+  // quedado después de la primera sin hacer (confirmadas desde el árbol u otro modal, como una
+  // comida registrada, o antes de que les tocara) se muestran justo antes de ella, en el mismo
+  // orden relativo. Es una regla de cómo se muestra la franja, así vale en todas las franjas, sin
+  // importar desde dónde se confirmó la tarea ni si hay tarea desbloqueada ("Ahora" destildado).
+  // Las continuaciones no tienen fila de franja propia (no tienen orden guardado): se ubican por la
+  // hora de inicio de su sub-tarea — justo antes de la primera tarea que empieza más tarde — o,
+  // sin hora, al final de la franja.
+  TIME_SLOTS.forEach((s) => {
+    const conts = itemBuckets[s.key].filter((i) => i.continuation);
+    if (conts.length === 0) return;
+    let rest = itemBuckets[s.key].filter((i) => !i.continuation);
+    conts.forEach((c) => {
+      const t = entryStartTime(c);
+      const later = t ? rest.findIndex((i) => { const ti = entryStartTime(i); return !!ti && ti > t; }) : -1;
+      const at = later === -1 ? rest.length : later;
+      rest = [...rest.slice(0, at), c, ...rest.slice(at)];
+    });
+    itemBuckets[s.key] = rest;
+  });
+
+  TIME_SLOTS.forEach((s) => {
+    const bucket = itemBuckets[s.key];
+    const firstUndone = bucket.findIndex((i) => !isDoneHere(i));
+    if (firstUndone === -1) return;
+    const isConfirmed = (i: TodayItem) => isDoneHere(i) && !i.traceSubs;
+    const lifted = bucket.slice(firstUndone + 1).filter(isConfirmed);
+    if (lifted.length === 0) return;
+    itemBuckets[s.key] = [
+      ...bucket.slice(0, firstUndone),
+      ...lifted,
+      ...bucket.slice(firstUndone).filter((i) => !lifted.includes(i)),
+    ];
+  });
+
+  // Nodo al que se le eligió "Ahora" en "When exactly?" (ver setNowPlacement en SkillNode):
+  // ocupa el lugar de la tarea desbloqueada de la franja actual (la primera sin hacer), que
+  // pasa a quedar justo después. Se hace acá y no en el server porque solo acá se conoce el
+  // orden visual real de la franja, incluidos los ítems sin fila propia (hábitos con franja por
+  // defecto, actividad extra), que el server no ve. Espera a tener todo cargado (y la fila del
+  // nodo ya creada por SkillNode) para no calcular la tarea desbloqueada con datos a medias.
+  const nowPlacement = useNowPlacement();
+  const nowPlacementReady =
+    open &&
+    !!nowPlacement &&
+    !isPreview &&
+    nowPlacement.date === effectiveDate &&
+    !!slotsData &&
+    !!manualTasksData &&
+    !!habitsData &&
+    viewRecordQueries.every((q) => !q.isLoading) &&
+    slotByKey.has(`node:${nowPlacement.nodeId}`) &&
+    todayItems.some((i) => i.type === "node" && i.id === nowPlacement.nodeId);
+  // Se llena más abajo, cuando ya están los contadores (ver runningTimer).
+  const runningTimerRef = useRef<RunningTimerInfo | null>(null);
+  useEffect(() => {
+    if (!nowPlacementReady || !nowPlacement) return;
+    setNowPlacement(null);
+    const slot = getCurrentTimeSlotKey();
+    const nodeKey = `node:${nowPlacement.nodeId}`;
+    const bucket = itemBuckets[slot].filter((i) => i.key !== nodeKey && !i.continuation);
+    const nodeItem = todayItems.find((i) => i.key === nodeKey)!;
+    // Hay otra tarea con el ▶ andando: primero se confirma o se para esa (ver pendingNow).
+    if (isOtherTaskRunning(nodeItem)) {
+      setPendingNow(nodeItem);
+      return;
+    }
+    const firstUndone = bucket.findIndex(isPendingHere);
+    const at = firstUndone === -1 ? bucket.length : firstUndone;
+    const ordered = [...bucket.slice(0, at), nodeItem, ...bucket.slice(at)];
+    // Un hábito puede estar duplicado en varias franjas (keys "#slot"): una sola entrada por tarea.
+    const seen = new Set<string>();
+    const order = ordered
+      .filter((i) => {
+        if (i.traceSubs || i.continuation) return false;
+        const k = `${i.type}:${i.id}`;
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      })
+      .map((i) => ({ taskType: i.type, taskId: i.id }));
+    reorderTaskSlot.mutate({ date: effectiveDate, slot, order });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nowPlacementReady]);
+
   const [subNodeBusy, setSubNodeBusy] = useState(false);
   // Al confirmar el padre, si tenía tiempo de sobra respecto de sus hijos, pasa a la suma del
   // tiempo de sus hijos (lo que realmente llevó). Hábitos y prácticas no: su tiempo es la
@@ -1263,6 +1365,28 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     if (childMinutes.some((m) => !m || m <= 0)) return;
     const sum = sumChildMinutes(childMinutes);
     if (sum && sum < own) saveItemMinutes(parent, sum, null);
+  };
+
+  // Franja de una sub-tarea, desde su menú. La de su tarea = sin franja propia (va con ella).
+  const setSubtaskSlot = (item: TodayItem, subId: string, slot: TaskSlotKey | null) => {
+    const toStore = slot === homeSlotOf(item) ? null : slot;
+    if (item.type === "node") {
+      if (toStore) setTaskSlot.mutate({ date: effectiveDate, taskType: "node", taskId: subId, slot: toStore });
+      else clearTaskSlot.mutate({ date: effectiveDate, taskType: "node", taskId: subId });
+    } else {
+      updateSubstep.mutate({ id: subId, date: effectiveDate, updates: { slot: toStore } });
+    }
+  };
+  const subtaskSlotProps = (item: TodayItem, subId: string, done: boolean) => {
+    if (done || item.done) return {};
+    const own = subtaskOwnSlot(item, subId);
+    const home = homeSlotOf(item);
+    return {
+      slot: own ?? home,
+      onMoveToSlot: (slot: TaskSlotKey) => setSubtaskSlot(item, subId, slot),
+      // Volver con su tarea (sirve también cuando la tarea está en "Sin asignar").
+      onClearSlot: own && own !== home ? () => setSubtaskSlot(item, subId, null) : undefined,
+    };
   };
 
   const toggleSubNode = async (parentId: string, sub: Skill) => {
@@ -1415,6 +1539,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
               // Eliminar un sub-nodo borra también sus sub-nodos (ver deleteSubSkillFromToday).
               onDelete={parentConfirmed ? undefined : () => runSubNodeOp(item.id, () => deleteSubSkillFromToday(item.id, sub))}
               deleteLabel="sub-nodo"
+              {...(parentConfirmed || item.traceSubs ? {} : subtaskSlotProps(item, sub.id, sub.status === "mastered"))}
             />
           )}
           {renderChildren(sub, isCurrentSub)}
@@ -1509,15 +1634,6 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     }
   };
 
-  // Sub-pasos (checklist del día) de las tareas que no son nodos: se agregan desde el menú de la
-  // tarea ("Agregar sub-paso"), se muestran adentro de ella y se confirman en orden. Si la tarea
-  // es la desbloqueada, el destacado pasa a su primer sub-paso sin hacer.
-  const { data: substepsData } = useTodayTaskSubsteps(effectiveDate, open);
-  const createSubstep = useCreateTodayTaskSubstep();
-  const updateSubstep = useUpdateTodayTaskSubstep();
-  const deleteSubstep = useDeleteTodayTaskSubstep();
-  const substepsFor = (item: TodayItem) =>
-    item.type === "node" ? [] : (substepsData || []).filter((st) => st.taskType === item.type && st.taskId === item.id);
   const [addSubstepFor, setAddSubstepFor] = useState<TodayItem | null>(null);
   const [newSubstepTitle, setNewSubstepTitle] = useState("");
   // Hábitos: el sub-paso puede ser solo de este día o permanente (se repite todos los días que el
@@ -1633,7 +1749,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
 
   // Sub-pasos de una tarea, indentados adentro de ella. En orden: solo se puede confirmar el
   // primero sin hacer, y desconfirmar el último hecho.
-  const renderSubsteps = (item: TodayItem, parentIsCurrent: boolean) => {
+  // onlyIds: solo las de esa franja (tarea con sub-pasos repartidos en varias franjas).
+  const renderSubsteps = (item: TodayItem, parentIsCurrent: boolean, onlyIds?: Set<string>) => {
     const steps = substepsFor(item);
     if (steps.length === 0) return null;
     const firstUndone = steps.findIndex((st) => st.done !== 1);
@@ -1647,7 +1764,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       updateSubstep.mutate({ id: a.id, date: effectiveDate, updates: { sortOrder: bOrder, done: b.done as 0 | 1 } });
       updateSubstep.mutate({ id: b.id, date: effectiveDate, updates: { sortOrder: aOrder, done: a.done as 0 | 1 } });
     };
-    return steps.map((st, i) => (
+    return steps.map((st, i) => (onlyIds && !onlyIds.has(st.id)) ? null : (
       <TodaySubRow
         key={st.id}
         title={stripLeadingEmoji(st.title)}
@@ -1673,10 +1790,30 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         onAssignTime={() => openSubstepTimeDialog(st.id, st.minutes, parentTimeRef(item, steps.map((x) => x.minutes), i), st.deadline, st.startTime)}
         startTime={st.startTime}
         deleteLabel="sub-paso"
+        {...subtaskSlotProps(item, st.id, st.done === 1)}
       />
     ));
   };
-  const hasPendingSubsteps = (item: TodayItem) => substepsFor(item).some((st) => st.done !== 1);
+
+  // Fila de continuación: la tarea en otra franja que la suya, con sus sub-tareas de esa franja.
+  // El título va tenue con "· continúa" y sin tilde (la tarea se confirma en su franja); sus
+  // sub-tareas se confirman acá como siempre, y la que toca puede ser la desbloqueada.
+  const renderContinuationRow = (item: TodayItem, isCurrent: boolean) => (
+    <React.Fragment key={item.key}>
+      <TimerPlayContext.Provider value={false}>
+        <div className={`flex items-center gap-2 text-sm ${isPastDay || isCurrent ? "" : "opacity-60"}`}>
+          {item.dotEmoji && <TaskDot emoji={item.dotEmoji} color={item.dotColor || NODE_COLOR} size="md" />}
+          <span className="flex-1">
+            {item.label}
+            <span className="text-muted-foreground"> · continúa</span>
+          </span>
+        </div>
+      </TimerPlayContext.Provider>
+      {item.type === "node"
+        ? renderSubNodes(item, isCurrent && !isPreview, slotSubSet(item))
+        : renderSubsteps(item, isCurrent, slotSubSet(item))}
+    </React.Fragment>
+  );
 
   // El acordeón de franjas horarias solo se muestra si hay algo para agrupar ahí: tareas
   // configuradas para hoy, o actividad extra que ya se movió a una franja específica.
@@ -1774,8 +1911,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     cancelPendingNowPlacement();
     const slot = getCurrentTimeSlotKey();
     const sameTask = (i: TodayItem) => i.type === item.type && i.id === item.id;
-    const bucket = (itemBuckets[slot] || []).filter((i) => !sameTask(i) && !i.traceSubs);
-    const firstUndone = bucket.findIndex((i) => !i.done);
+    const bucket = (itemBuckets[slot] || []).filter((i) => !sameTask(i) && !i.traceSubs && !i.continuation);
+    const firstUndone = bucket.findIndex(isPendingHere);
     const at = firstUndone === -1 ? bucket.length : firstUndone;
     const ordered = [...bucket.slice(0, at), item, ...bucket.slice(at)];
     // Una sola entrada por tarea (un hábito puede estar duplicado en varias franjas, keys "#slot").
@@ -1807,7 +1944,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // tocarlo de nuevo lo destilda y deja el día sin tarea desbloqueada (ver nowCleared).
   const currentNowKey = isPreview || nowCleared
     ? null
-    : (itemBuckets[getCurrentTimeSlotKey()] || []).find((i) => !i.done)?.key ?? null;
+    : (itemBuckets[getCurrentTimeSlotKey()] || []).find(isPendingHere)?.key ?? null;
   const nowProps = (item: TodayItem) => {
     if (isPreview || item.done || item.traceSubs) return {};
     const nowActive = item.key === currentNowKey;
@@ -1835,7 +1972,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     const seen = new Set<string>();
     const order = newOrder
       .filter((it) => {
-        if (it.traceSubs) return false;
+        if (it.traceSubs || it.continuation) return false;
         const k = `${it.type}:${it.id}`;
         if (seen.has(k)) return false;
         seen.add(k);
@@ -1958,8 +2095,56 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // Confirmar/desconfirmar un nodo desde acá corre exactamente el mismo camino que tocarlo en
   // el árbol (toggleSkillStatus/toggleProjectSkillStatus en skill-context.tsx): mismos guards
   // de progresión de nivel y mismos pop-ups de XP/quest/subida de nivel.
+  // Nodo bloqueado en el árbol solo porque hay nodos sin confirmar antes que él en su nivel (p.ej.
+  // en Tareas de hoy se lo ordenó antes que el desbloqueado): confirmarlo desde acá lo sube en el
+  // árbol al lugar del nodo desbloqueado — mismo intercambio que "Mover arriba", que le pasa el
+  // estado "desbloqueado" — y recién ahí se confirma. Antes el árbol lo rechazaba sin avisar.
+  // Solo en el nivel actual: un nodo de un nivel futuro no se puede adelantar así.
+  const [pendingNodeConfirm, setPendingNodeConfirm] = useState<TodayItem | null>(null);
+  const moveNodeInPlaceOfAvailable = async (nodeId: string, parent: { parentId: string; kind: "area" | "project" }) => {
+    const tree = (parent.kind === "area" ? areas : projects).find((p) => p.id === parent.parentId);
+    const node = tree?.skills.find((sk: Skill) => sk.id === nodeId);
+    if (!tree || !node || node.status !== "locked" || node.level !== tree.unlockedLevel) return false;
+    const available = tree.skills.find((sk: Skill) => sk.level === node.level && sk.status === "available");
+    const steps = (node.levelPosition ?? 0) - (available?.levelPosition ?? 0);
+    if (!available || steps <= 0) return false;
+    for (let k = 0; k < steps; k++) {
+      const res = await fetch(`/api/skills/${node.id}/reorder`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ direction: "up", parentType: parent.kind, parentId: parent.parentId, currentLevel: node.level }),
+      });
+      if (!res.ok) return false;
+    }
+    await refreshSkillTrees();
+    return true;
+  };
+  // Una vez que el árbol refrescado lo muestra desbloqueado, se confirma por el camino normal.
+  useEffect(() => {
+    if (!pendingNodeConfirm) return;
+    const parent = findNodeParent(pendingNodeConfirm.id);
+    const tree = parent ? (parent.kind === "area" ? areas : projects).find((p) => p.id === parent.parentId) : undefined;
+    const node = tree?.skills.find((sk: Skill) => sk.id === pendingNodeConfirm.id);
+    if (!node || node.status === "locked") return;
+    const item = pendingNodeConfirm;
+    setPendingNodeConfirm(null);
+    if (node.status === "available") toggleNodeDone({ ...item, done: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingNodeConfirm, areas, projects]);
+
   const toggleNodeDone = (item: TodayItem) => {
     const parent = findNodeParent(item.id);
+    if (parent && !item.done) {
+      const tree = (parent.kind === "area" ? areas : projects).find((p) => p.id === parent.parentId);
+      if (tree?.skills.find((sk: Skill) => sk.id === item.id)?.status === "locked") {
+        void moveNodeInPlaceOfAvailable(item.id, parent)
+          .then((moved) => {
+            if (moved) setPendingNodeConfirm(item);
+          })
+          .catch((error) => console.error("Error adelantando el nodo para confirmarlo:", error));
+        return;
+      }
+    }
     if (!parent) {
       // Sub-nodo: no está en el contexto, se marca directo en el server (que igual estampa
       // completedAt, suma XP al padre y desbloquea el siguiente del nivel).
@@ -2000,7 +2185,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     const slot = TIME_SLOTS.find((t) => (itemBuckets[t.key] || []).some((i) => i.key === item.key))?.key;
     if (!slot) return;
     const bucket = itemBuckets[slot] || [];
-    const currentIdx = bucket.findIndex((i) => !i.done);
+    const currentIdx = bucket.findIndex(isPendingHere);
     if (currentIdx === -1) return;
     const itemIdx = bucket.findIndex((i) => i.key === item.key);
     if (itemIdx <= currentIdx) return;
@@ -2010,7 +2195,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     const seen = new Set<string>();
     const order = reordered
       .filter((i) => {
-        if (i.traceSubs) return false;
+        if (i.traceSubs || i.continuation) return false;
         const k = `${i.type}:${i.id}`;
         if (seen.has(k)) return false;
         seen.add(k);
@@ -2333,7 +2518,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const placeByStartTime = (taskType: TaskType, taskId: string, startTime: string) => {
     cancelPendingNowPlacement();
     const slot = slotForTime(startTime);
-    const bucket = (itemBuckets[slot] || []).filter((i) => !(i.type === taskType && i.id === taskId) && !i.traceSubs);
+    const bucket = (itemBuckets[slot] || []).filter((i) => !(i.type === taskType && i.id === taskId) && !i.traceSubs && !i.continuation);
     const timeOf = (i: TodayItem) => currentStartTime(i);
     const laterIdx = bucket.findIndex((i) => {
       const t = timeOf(i);
@@ -2370,6 +2555,9 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     // Solo las tareas del día (no los sub-nodos, que van adentro de su nodo) cambian de franja.
     if (startTime && todayItems.some((i) => i.type === item.type && i.id === item.id)) {
       placeByStartTime(item.type, item.id, startTime);
+    } else if (startTime && item.type === "node") {
+      // Sub-nodo: pasa a la franja de esa hora (continuación si no es la de su nodo).
+      setTaskSlot.mutate({ date: effectiveDate, taskType: "node", taskId: item.id, slot: slotForTime(startTime) });
     }
     if (item.type === "manual") {
       updateManualTask.mutate({ id: item.id, date: effectiveDate, updates: { startTime } });
@@ -2412,8 +2600,11 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     : null;
   const dialogTimer = useTaskTimer(dialogTimerKey, 0);
 
-  const submitTime = (raw: string = timeValue) => {
+  // clearAll ("Quitar tiempo"): saca todo el tiempo asignado — minutos, "hasta las" y
+  // "Empieza a las" — no solo los minutos.
+  const submitTime = (raw: string = timeValue, { clearAll = false }: { clearAll?: boolean } = {}) => {
     const item = timeItem;
+    const startTimeToSave = clearAll ? null : timeStartTime || null;
     const substepId = timeSubstepId;
     const maxRef = timeMaxRef;
     // Guardar el tiempo (o quitarlo) reinicia la cuenta regresiva de esa tarea, salvo que ya se
@@ -2430,10 +2621,16 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     // La hora de inicio va aparte de los minutos: se guarda la que quedó en el campo.
     if (substepId) {
       const step = (substepsData || []).find((st) => st.id === substepId);
-      if (step && (step.startTime ?? null) !== (timeStartTime || null)) {
-        updateSubstep.mutate({ id: substepId, date: effectiveDate, updates: { startTime: timeStartTime || null } });
+      if (step && (step.startTime ?? null) !== startTimeToSave) {
+        // Con hora de inicio, el sub-paso pasa a la franja de esa hora (si no es la de su tarea,
+        // aparece en una continuación).
+        updateSubstep.mutate({
+          id: substepId,
+          date: effectiveDate,
+          updates: { startTime: startTimeToSave, ...(startTimeToSave ? { slot: slotForTime(startTimeToSave) } : {}) },
+        });
       }
-    } else if (item && canSetStartTime(item)) saveItemStartTime(item, timeStartTime || null);
+    } else if (item && canSetStartTime(item)) saveItemStartTime(item, startTimeToSave);
     setTimeStartTime("");
     if (maxRef && minutes !== null && minutes > maxRef.available) {
       setTimeOverflow({ minutes, deadline, item, substepId, ref: maxRef });
@@ -2695,16 +2892,26 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
           return;
         }
       }
+      // Una sub-tarea en otra franja que su tarea ya está en la suya (su continuación): al llegar
+      // su hora no se mueve la tarea entera.
+      const inOtherSlot = (subId: string) => {
+        const own = subtaskOwnSlot(item, subId);
+        return !!own && own !== homeSlotOf(item);
+      };
       const step = substepsFor(item).find((st) => st.done !== 1 && startTimeReached(st.startTime));
       if (step && claimStartTime(`step:${step.id}`, step.startTime!)) {
-        moveItemNow(item);
-        moveSubstepToFront(item, step.id);
+        if (!inOtherSlot(step.id)) {
+          moveItemNow(item);
+          moveSubstepToFront(item, step.id);
+        }
         return;
       }
       const sub = subNodesFor(item).find((sn) => sn.status !== "mastered" && startTimeReached(sn.plannedStartTime));
       if (sub && claimStartTime(`node:${sub.id}`, sub.plannedStartTime!)) {
-        moveItemNow(item);
-        moveSubNodeToFront(item, sub.id);
+        if (!inOtherSlot(sub.id)) {
+          moveItemNow(item);
+          moveSubNodeToFront(item, sub.id);
+        }
         return;
       }
     }
@@ -3379,8 +3586,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                     {...nowProps(item)}
                                     {...parentMinutesProps(item)}
                                   />
-                                  {renderSubNodes(item, false)}
-                                  {renderSubsteps(item, false)}
+                                  {renderSubNodes(item, false, slotSubSet(item))}
+                                  {renderSubsteps(item, false, slotSubSet(item))}
                                   </React.Fragment>
                                 ))}
                               </div>
@@ -3445,9 +3652,10 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                     // agendado se trata como activa, para que la tarea aparezca
                                     // destacada en vez de tenue.
                                     const isActiveSlot = isPreview ? itemBuckets[s.key].length > 0 : s.key === getCurrentTimeSlotKey();
-                                    const firstUndoneIdx = isActiveSlot && !nowCleared ? itemBuckets[s.key].findIndex((i) => !i.done) : -1;
+                                    const firstUndoneIdx = isActiveSlot && !nowCleared ? itemBuckets[s.key].findIndex(isPendingHere) : -1;
                                     return itemBuckets[s.key].map((item, idx) => {
                                       if (item.traceSubs) return renderTraceRow(item);
+                                      if (item.continuation) return renderContinuationRow(item, idx === firstUndoneIdx);
                                       // Nodo desbloqueado con sub-árbol: el destacado pasa a su
                                       // sub-nodo desbloqueado, que se muestra adentro de él.
                                       const isCurrent = !item.done && idx === firstUndoneIdx;
@@ -3474,8 +3682,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                         onMoveUp={idx > 0 ? () => moveItemOrder(s.key, itemBuckets[s.key], idx, "up") : undefined}
                                         onMoveDown={idx < itemBuckets[s.key].length - 1 ? () => moveItemOrder(s.key, itemBuckets[s.key], idx, "down") : undefined}
                                       />
-                                      {renderSubNodes(item, isCurrent && !isPreview)}
-                                      {renderSubsteps(item, isCurrent)}
+                                      {renderSubNodes(item, isCurrent && !isPreview, slotSubSet(item))}
+                                      {renderSubsteps(item, isCurrent, slotSubSet(item))}
                                       </React.Fragment>
                                       );
                                     });
@@ -3514,7 +3722,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                     {...nowProps(item)}
                                     {...parentMinutesProps(item)}
                                 />
-                                {renderSubNodes(item, false)}
+                                {renderSubNodes(item, false, slotSubSet(item))}
                                 </React.Fragment>
                               ))}
                             </div>
@@ -4494,7 +4702,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         )}
         <div className="flex justify-between gap-2 pt-1">
           <button
-            onClick={() => submitTime("")}
+            onClick={() => submitTime("", { clearAll: true })}
             className="rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted"
           >
             Quitar tiempo
@@ -4586,6 +4794,9 @@ function TodaySubRow({
   depth = 0,
   onDelete,
   deleteLabel = "sub-paso",
+  slot,
+  onMoveToSlot,
+  onClearSlot,
 }: {
   title: string;
   done?: boolean;
@@ -4612,9 +4823,14 @@ function TodaySubRow({
   depth?: number;
   onDelete?: () => void;
   deleteLabel?: string;
+  // Franja en la que se hace (la de su tarea si no tiene una propia): elegir otra la muestra en
+  // una continuación de la tarea en esa franja.
+  slot?: TaskSlotKey | null;
+  onMoveToSlot?: (slot: TaskSlotKey) => void;
+  onClearSlot?: () => void;
 }) {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const hasMenu = !!(onMoveUp || onMoveDown || onRename || onAssignTime || onAddChild || onDelete);
+  const hasMenu = !!(onMoveUp || onMoveDown || onRename || onAssignTime || onAddChild || onDelete || onMoveToSlot);
   const titleNode = (
     <span
       className={`flex-1 ${hasMenu ? "cursor-pointer" : ""} ${done ? "text-yellow-600/60" : ""} ${
@@ -4667,6 +4883,18 @@ function TodaySubRow({
                 {onAddChild && (
                   <>
                     <DropdownMenuItem onClick={onAddChild}>Agregar sub-nodo</DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
+                {onMoveToSlot && (
+                  <>
+                    {TIME_SLOTS.map((ts) => (
+                      <DropdownMenuItem key={ts.key} onClick={() => onMoveToSlot(ts.key)}>
+                        {ts.label}
+                        {slot === ts.key && <Check className="ml-auto h-4 w-4" aria-label="Franja actual" />}
+                      </DropdownMenuItem>
+                    ))}
+                    {onClearSlot && <DropdownMenuItem onClick={onClearSlot}>Con la tarea</DropdownMenuItem>}
                     <DropdownMenuSeparator />
                   </>
                 )}
