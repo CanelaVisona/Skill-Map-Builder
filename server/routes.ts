@@ -2227,6 +2227,48 @@ export async function registerRoutes(
   });
 
   // Reorder skill within same level (swap with adjacent)
+  // Reordena los nodos pendientes de un nivel según una lista (orden de "Tareas de hoy", que tiene
+  // que coincidir con el del árbol). Los nodos de la lista se reparten las mismas posiciones que ya
+  // ocupaban, en el orden pedido; el resto del nivel no se mueve. Solo nodos sin confirmar (y nunca
+  // el nodo base): así la cadena "confirmados primero" sigue valiendo, y el estado desbloqueado se
+  // recalcula por posición (el primero sin confirmar queda desbloqueado).
+  app.post("/api/skills/reorder-level", requireAuth, async (req, res) => {
+    try {
+      const { parentType, parentId, level, orderedIds } = req.body;
+      if (!["area", "project"].includes(parentType) || typeof parentId !== "string" || typeof level !== "number" ||
+          !Array.isArray(orderedIds) || orderedIds.some((id: unknown) => typeof id !== "string")) {
+        return res.status(400).json({ message: "parentType, parentId, level y orderedIds son requeridos" });
+      }
+      const owner = parentType === "area" ? await storage.getArea(parentId) : await storage.getProject(parentId);
+      if (!owner || owner.userId !== req.userId) {
+        return res.status(403).json({ message: "No tienes permiso para reordenar este nivel" });
+      }
+      const all = parentType === "area" ? await storage.getSkills(parentId) : await storage.getProjectSkills(parentId);
+      const levelSkills = all.filter((s) => s.level === level && !s.parentSkillId);
+      const moved = (orderedIds as string[]).map((id) => levelSkills.find((s) => s.id === id));
+      if (moved.some((s) => !s || s.status === "mastered" || s.isAutoComplete === 1 || s.levelPosition === 1)) {
+        return res.status(400).json({ message: "Solo se pueden reordenar nodos sin confirmar de ese nivel" });
+      }
+      const positions = moved.map((s) => s!.levelPosition ?? 0).sort((a, b) => a - b);
+      for (let i = 0; i < moved.length; i++) {
+        if (moved[i]!.levelPosition !== positions[i]) {
+          await storage.updateSkill(moved[i]!.id, { levelPosition: positions[i] });
+        }
+      }
+      const parentInfo = {
+        areaId: parentType === "area" ? parentId : undefined,
+        projectId: parentType === "project" ? parentId : undefined,
+      };
+      await storage.recalculateYCoordinates(parentInfo);
+      await storage.recalculateFinalNodes(level, parentInfo);
+      await storage.recalculateAvailableStatus(level, parentInfo);
+      const refreshed = parentType === "area" ? await storage.getSkills(parentId) : await storage.getProjectSkills(parentId);
+      res.json(refreshed.filter((s) => s.level === level).sort((a, b) => (a.levelPosition ?? 0) - (b.levelPosition ?? 0)));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.patch("/api/skills/:id/reorder", requireAuth, async (req, res) => {
     try {
       const { direction, parentType, parentId, currentLevel } = req.body;
@@ -6410,7 +6452,7 @@ export async function registerRoutes(
       if (!existing || existing.userId !== req.userId) {
         return res.status(404).json({ message: "Sub-paso no encontrado" });
       }
-      await storage.deleteTodayTaskSubstep(req.params.id);
+      await storage.deleteTodayTaskSubstep(req.params.id, req.query.scope === "day");
       res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ message: error.message });

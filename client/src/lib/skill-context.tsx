@@ -59,6 +59,7 @@ export interface Skill {
   isAutoComplete?: number;
   hasCompletionStar?: number;
   isSideQuest?: number;
+  isReflection?: number;
   level: number;
   levelPosition?: number;
   experiencePoints?: number;
@@ -197,9 +198,9 @@ interface SkillTreeContextType {
   toggleSubSkillLock: (skillId: string) => void;
   moveSubSkill: (skillId: string, direction: "up" | "down") => void;
   deleteSubSkillTree: () => Promise<void>;
-  addSkillBelow: (areaId: string, skillId: string, title?: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; isSideQuest?: 0 | 1 }) => Promise<void>;
-  addProjectSkillBelow: (projectId: string, skillId: string, title?: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; isSideQuest?: 0 | 1 }) => Promise<void>;
-  addSubSkillBelow: (skillId: string, title?: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; isSideQuest?: 0 | 1 }) => Promise<void>;
+  addSkillBelow: (areaId: string, skillId: string, title?: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; isSideQuest?: 0 | 1; isReflection?: 0 | 1 }) => Promise<void>;
+  addProjectSkillBelow: (projectId: string, skillId: string, title?: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; isSideQuest?: 0 | 1; isReflection?: 0 | 1 }) => Promise<void>;
+  addSubSkillBelow: (skillId: string, title?: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; isSideQuest?: 0 | 1; isReflection?: 0 | 1 }) => Promise<void>;
   addSideQuestNode: (kind: "area" | "project" | "sub", parentId: string, skillId: string) => Promise<void>;
   addSkillInPlaceOfAvailable: (kind: "area" | "project", parentId: string, title: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null }) => Promise<Skill | null>;
   materializePendingEventNodes: () => Promise<void>;
@@ -3374,7 +3375,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
-  const addSkillBelow = async (areaId: string, skillId: string, title: string = "", copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; isSideQuest?: 0 | 1 }) => {
+  const addSkillBelow = async (areaId: string, skillId: string, title: string = "", copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; isSideQuest?: 0 | 1; isReflection?: 0 | 1 }) => {
     const area = areas.find(a => a.id === areaId);
     if (!area) return;
 
@@ -3422,6 +3423,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         ...(copyFields?.plannedDate !== undefined ? { plannedDate: copyFields.plannedDate } : {}),
         ...(copyFields?.plannedDuration !== undefined ? { plannedDuration: copyFields.plannedDuration } : {}),
         ...(copyFields?.isSideQuest ? { isSideQuest: 1 } : {}),
+        ...(copyFields?.isReflection ? { isReflection: 1 } : {}),
       };
 
       const response = await fetch("/api/skills", {
@@ -3466,7 +3468,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
-  const addProjectSkillBelow = async (projectId: string, skillId: string, title: string = "?", copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; isSideQuest?: 0 | 1 }) => {
+  const addProjectSkillBelow = async (projectId: string, skillId: string, title: string = "?", copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; isSideQuest?: 0 | 1; isReflection?: 0 | 1 }) => {
     const project = projects.find(p => p.id === projectId);
     if (!project) return;
 
@@ -3514,6 +3516,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         ...(copyFields?.plannedDate !== undefined ? { plannedDate: copyFields.plannedDate } : {}),
         ...(copyFields?.plannedDuration !== undefined ? { plannedDuration: copyFields.plannedDuration } : {}),
         ...(copyFields?.isSideQuest ? { isSideQuest: 1 } : {}),
+        ...(copyFields?.isReflection ? { isReflection: 1 } : {}),
       };
 
       const response = await fetch("/api/skills", {
@@ -3558,7 +3561,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
-  const addSubSkillBelow = async (skillId: string, title: string = "?", copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; isSideQuest?: 0 | 1 }) => {
+  const addSubSkillBelow = async (skillId: string, title: string = "?", copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; isSideQuest?: 0 | 1; isReflection?: 0 | 1 }) => {
     const clickedSkill = subSkills.find(s => s.id === skillId);
     if (!clickedSkill || !activeParentSkillId) return;
 
@@ -3596,6 +3599,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
         ...(copyFields?.plannedDate !== undefined ? { plannedDate: copyFields.plannedDate } : {}),
         ...(copyFields?.plannedDuration !== undefined ? { plannedDuration: copyFields.plannedDuration } : {}),
         ...(copyFields?.isSideQuest ? { isSideQuest: 1 } : {}),
+        ...(copyFields?.isReflection ? { isReflection: 1 } : {}),
       };
 
       const response = await fetch("/api/skills", {

@@ -72,6 +72,8 @@ export const skills = pgTable("skills", {
   hasCompletionStar: integer("has_completion_star").$type<0 | 1>().default(0),
   // SideQuest node: not part of the level's title, but done along the way and it grew the area.
   isSideQuest: integer("is_side_quest").$type<0 | 1>().default(0),
+  // Reflexión node: works like a regular node, but is drawn with a note icon instead of the dot.
+  isReflection: integer("is_reflection").$type<0 | 1>().default(0),
   level: integer("level").notNull().default(1),
   levelPosition: integer("level_position").notNull().default(1),
   experiencePoints: integer("experience_points").default(0),
@@ -888,6 +890,9 @@ export const todayTaskSubsteps = pgTable("today_task_substeps", {
   // Sub-paso permanente de un hábito (habitSubsteps) del que salió esta copia del día. Editar o
   // borrar la copia también edita/borra la plantilla.
   templateId: varchar("template_id"),
+  // 1 = copia de una plantilla borrada solo ese día: no se muestra, pero queda para que la
+  // sincronización no la vuelva a crear. La plantilla sigue apareciendo los otros días.
+  removed: integer("removed").$type<0 | 1>().notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export type TodayTaskSubstep = typeof todayTaskSubsteps.$inferSelect;

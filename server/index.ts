@@ -144,6 +144,15 @@ app.use((req, res, next) => {
     console.error("⚠ manual_today_tasks.minutes migration warning:", error.message);
   }
 
+  // Nodos Reflexión. Ver migrations/0070_skill_reflection.sql.
+  try {
+    await db.execute(sql`
+      ALTER TABLE "skills" ADD COLUMN IF NOT EXISTS "is_reflection" integer DEFAULT 0;
+    `);
+  } catch (error: any) {
+    console.error("⚠ skills.is_reflection migration warning:", error.message);
+  }
+
   // "Estrategias" del Journal (cubo "Nuevas estrategias" del modal de feedback). Ver
   // migrations/0068_journal_strategies.sql.
   try {
@@ -241,6 +250,9 @@ app.use((req, res, next) => {
     `);
     await db.execute(sql`
       ALTER TABLE "today_task_substeps" ADD COLUMN IF NOT EXISTS "slot" varchar;
+    `);
+    await db.execute(sql`
+      ALTER TABLE "today_task_substeps" ADD COLUMN IF NOT EXISTS "removed" integer DEFAULT 0 NOT NULL;
     `);
     // Contador de arranque de las tareas de "Tareas de hoy" (ver shared/schema.ts → taskTimers).
     await db.execute(sql`

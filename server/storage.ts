@@ -1,4 +1,4 @@
-import { eq, and, or, asc, desc, sql, inArray, gte, lte, lt, isNull } from "drizzle-orm";
+import { eq, and, or, asc, desc, sql, inArray, gte, lte, lt, isNull, isNotNull } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db, pool } from "./db";
 import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type JournalShadowPage, type InsertJournalShadowPage, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type ProfileConcept, type InsertProfileConcept, type ProfileLimitingBelief, type InsertProfileLimitingBelief, type JournalLearning, type InsertJournalLearning, type JournalStrategy, type InsertJournalStrategy, type JournalQuestion, type InsertJournalQuestion, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourceObjective, type InsertSourceObjective, type SourceBelief, type InsertSourceBelief, type SourceVision, type InsertSourceVision, type SourcePowers, type InsertSourcePowers, type SourceBug, type InsertSourceBug, type SourceBugReflexion, type SourceBugRecord, type InsertSourceBugRecord, type NodeError, type InsertNodeError, type NodeErrorRecord, type InsertNodeErrorRecord, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type BookWishlistItem, type InsertBookWishlistItem, type FinancialGoal, type InsertFinancialGoal, type BudgetQuarter, type InsertBudgetQuarter, type BudgetCategory, type InsertBudgetCategory, type IncomeSource, type InsertIncomeSource, type DollarRate, type InsertDollarRate, type PersonalIncome, type InsertPersonalIncome, type SavingMission, type InsertSavingMission, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, type BodyProgressRow, type InsertBodyProgress, type TodayTaskSlot, type InsertTodayTaskSlot, type TodayTaskSubstep, type HabitSubstep, type ManualTodayTask, type InsertManualTodayTask, type MealTrackerDay, type InsertMealTrackerDay, type MealTrackerCustomOption, type InsertMealTrackerCustomOption, type MealTrackerDish, type InsertMealTrackerDish, type MealTrackerMeta, type QuestionProblem, type InsertQuestionProblem, type QuestionItem, type InsertQuestionItem, type QuestionProblemWithItems, type EvidenceBoardRow, evidenceBoards, type LifeGoalsRow, type LifeGoalItem, type CompletedLifeGoal, lifeGoals, questionProblems, questionItems, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, journalShadowPages, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, profileConcepts, profileLimitingBeliefs, journalLearnings, journalStrategies, journalQuestions, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourceObjectives, sourceBeliefs, sourceVision, sourcePowers, sourceBugs, sourceBugRecords, nodeErrors, nodeErrorRecords, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, bookWishlist, financialGoals, budgetQuarters, budgetCategories, incomeSources, dollarRates, personalIncomes, savingMissions, rewiringTrackers, rewiringTrackerRecords, bodyProgress, todayTaskSlots, todayTaskSubsteps, habitSubsteps, todayPriorities, todayImprovementFocus, taskTimers, type TaskTimerRow, manualTodayTasks, mealTrackerDays, mealTrackerCustomOptions, mealTrackerDishes, mealTrackerMeta } from "@shared/schema";
@@ -685,6 +685,7 @@ export class DbStorage implements IStorage {
       manualLock: (skill.manualLock ?? 0) as 0 | 1,
       isFinalNode: (skill.isFinalNode ?? 0) as 0 | 1,
       isSideQuest: (skill.isSideQuest ?? 0) as 0 | 1,
+      isReflection: (skill.isReflection ?? 0) as 0 | 1,
       level: skill.level,
       levelPosition: skill.levelPosition,
       plannedDate: skill.plannedDate,
@@ -710,6 +711,7 @@ export class DbStorage implements IStorage {
     if (skill.manualLock !== undefined) updateData.manualLock = skill.manualLock as 0 | 1;
     if (skill.isFinalNode !== undefined) updateData.isFinalNode = skill.isFinalNode as 0 | 1;
     if (skill.isSideQuest !== undefined) updateData.isSideQuest = skill.isSideQuest as 0 | 1;
+    if (skill.isReflection !== undefined) updateData.isReflection = skill.isReflection as 0 | 1;
     if (skill.level !== undefined) updateData.level = skill.level;
     if (skill.levelPosition !== undefined) updateData.levelPosition = skill.levelPosition;
     if (skill.plannedDate !== undefined) updateData.plannedDate = skill.plannedDate;
@@ -3725,7 +3727,7 @@ export class DbStorage implements IStorage {
   // Sub-pasos de las tareas de "Tareas de hoy" (ver todayTaskSubsteps en el schema).
   async getTodayTaskSubsteps(userId: string, date: string): Promise<TodayTaskSubstep[]> {
     return await db.select().from(todayTaskSubsteps)
-      .where(and(eq(todayTaskSubsteps.userId, userId), eq(todayTaskSubsteps.date, date)))
+      .where(and(eq(todayTaskSubsteps.userId, userId), eq(todayTaskSubsteps.date, date), eq(todayTaskSubsteps.removed, 0)))
       .orderBy(asc(todayTaskSubsteps.sortOrder), asc(todayTaskSubsteps.createdAt));
   }
 
@@ -3766,8 +3768,14 @@ export class DbStorage implements IStorage {
   }
 
   // Borrar la copia de un sub-paso permanente también borra la plantilla: deja de aparecer los
-  // días siguientes (las copias de días pasados quedan como registro).
-  async deleteTodayTaskSubstep(id: string): Promise<void> {
+  // días siguientes (las copias de días pasados quedan como registro). Con `onlyThisDay`, la
+  // copia queda marcada como borrada ese día y la plantilla sigue apareciendo los demás días.
+  async deleteTodayTaskSubstep(id: string, onlyThisDay = false): Promise<void> {
+    if (onlyThisDay) {
+      const marked = await db.update(todayTaskSubsteps).set({ removed: 1 })
+        .where(and(eq(todayTaskSubsteps.id, id), isNotNull(todayTaskSubsteps.templateId))).returning();
+      if (marked.length > 0) return;
+    }
     const rows = await db.delete(todayTaskSubsteps).where(eq(todayTaskSubsteps.id, id)).returning();
     const templateId = rows[0]?.templateId;
     if (templateId) await db.delete(habitSubsteps).where(eq(habitSubsteps.id, templateId));

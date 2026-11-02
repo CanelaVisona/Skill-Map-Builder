@@ -55,8 +55,10 @@ export function useUpdateTodayTaskSubstep() {
 export function useDeleteTodayTaskSubstep() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id }: { id: string; date: string }) => {
-      const res = await fetch(`/api/today-task-substeps/${id}`, { method: "DELETE" });
+    // onlyThisDay: en un sub-paso permanente de un hábito, lo saca solo de ese día (la plantilla
+    // sigue). Sin él, también se borra la plantilla y deja de aparecer los días siguientes.
+    mutationFn: async ({ id, onlyThisDay }: { id: string; date: string; onlyThisDay?: boolean }) => {
+      const res = await fetch(`/api/today-task-substeps/${id}${onlyThisDay ? "?scope=day" : ""}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete today task substep");
     },
     onSuccess: (_, variables) => {

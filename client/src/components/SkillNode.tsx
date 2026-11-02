@@ -2,7 +2,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { type Skill, type GlobalSkill, useSkillTree } from "@/lib/skill-context";
 import { type JournalThought, type JournalLearning, type JournalTool } from "@shared/schema";
 import { cn } from "@/lib/utils";
-import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus, Star, ChevronRight, ChevronLeft, Wrench, Lightbulb, Bug, X } from "lucide-react";
+import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus, Star, ChevronRight, ChevronLeft, Wrench, Lightbulb, Bug, X, NotebookPen } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { type ExperienceGainSnapshot } from "./ExperienceGainPopup";
@@ -2350,20 +2350,22 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
 
   // Adds a node below this one. A SideQuest instead takes the unlocked node's place (see
   // addSideQuestNode) and is drawn with a dotted ring: it isn't part of the level's title,
-  // but was done along the way and grew the area.
-  const addNodeBelow = (isSideQuest: boolean = false) => {
-    if (isSideQuest) {
+  // but was done along the way and grew the area. A Reflexión is added like a regular node,
+  // only drawn with a note icon instead of the dot.
+  const addNodeBelow = (kind: "normal" | "sidequest" | "reflection" = "normal") => {
+    const copyFields = kind === "reflection" ? { isReflection: 1 as const } : undefined;
+    if (kind === "sidequest") {
       if (isSubSkillView) {
         if (activeParentSkillId) addSideQuestNode("sub", activeParentSkillId, skill.id);
       } else {
         addSideQuestNode(isProject ? "project" : "area", activeId, skill.id);
       }
     } else if (isSubSkillView) {
-      addSubSkillBelow(skill.id, "");
+      addSubSkillBelow(skill.id, "", copyFields);
     } else if (isProject) {
-      addProjectSkillBelow(activeId, skill.id, "");
+      addProjectSkillBelow(activeId, skill.id, "", copyFields);
     } else {
-      addSkillBelow(activeId, skill.id, "");
+      addSkillBelow(activeId, skill.id, "", copyFields);
     }
   };
 
@@ -2508,6 +2510,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               <Lock size={14} />
             ) : isMastered ? (
               <Check size={18} strokeWidth={3} />
+            ) : skill.isReflection === 1 ? (
+              <NotebookPen size={16} className="text-foreground" />
             ) : (
               <div className="w-2.5 h-2.5 rounded-full bg-foreground" />
             )}
@@ -2543,6 +2547,30 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 size={14}
                 className="fill-amber-400 text-amber-400 drop-shadow-lg"
               />
+            </div>
+          )}
+
+          {/* Reflexión badge: once confirmed the check takes the note icon's place, so a small
+              note in the corner keeps the node recognizable as a reflection. */}
+          {skill.isReflection === 1 && isMastered && (
+            <div className="absolute -top-1 -left-1 z-30" title="Reflexión">
+              <svg width="14" height="14" viewBox="0 0 14 14" className="text-foreground drop-shadow">
+                <path
+                  d="M2.5 1.5h6l3 3v8h-9z"
+                  className="fill-background"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M8.5 1.5v3h3M4.5 7.5h5M4.5 10h3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
             </div>
           )}
 
@@ -2726,12 +2754,27 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               title={!canAddFromNode ? "Solo se puede agregar cuando el siguiente nodo está desbloqueado" : "Nodo que no es parte del título del nivel, pero que te hizo crecer en el área"}
               onClick={() => {
                 if (!canAddFromNode) return;
-                addNodeBelow(true);
+                addNodeBelow("sidequest");
                 setIsOpen(false);
               }}
               data-testid="button-add-sidequest-below-node1"
             >
               SideQuest
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 px-3 text-xs bg-muted/50 hover:bg-muted"
+              disabled={!canAddFromNode}
+              title={!canAddFromNode ? "Solo se puede agregar cuando el siguiente nodo está desbloqueado" : undefined}
+              onClick={() => {
+                if (!canAddFromNode) return;
+                addNodeBelow("reflection");
+                setIsOpen(false);
+              }}
+              data-testid="button-add-reflection-below-node1"
+            >
+              Reflexión
             </Button>
           </div>
         ) : (
@@ -2846,13 +2889,29 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                        title={!canAddFromNode ? "Solo se puede agregar desde el nodo confirmado anterior al desbloqueado" : "Nodo que no es parte del título del nivel, pero que te hizo crecer en el área"}
                        onClick={() => {
                          if (!canAddFromNode) return;
-                         addNodeBelow(true);
+                         addNodeBelow("sidequest");
                          setIsAddOptionsOpen(false);
                          setIsOpen(false);
                        }}
                        data-testid="button-add-sidequest"
                      >
                        SideQuest
+                     </Button>
+                     <Button
+                       variant="ghost"
+                       size="sm"
+                       className="h-7 px-3 text-xs justify-start font-normal hover:bg-muted/50"
+                       disabled={!canAddFromNode}
+                       title={!canAddFromNode ? "Solo se puede agregar desde el nodo confirmado anterior al desbloqueado" : undefined}
+                       onClick={() => {
+                         if (!canAddFromNode) return;
+                         addNodeBelow("reflection");
+                         setIsAddOptionsOpen(false);
+                         setIsOpen(false);
+                       }}
+                       data-testid="button-add-reflection"
+                     >
+                       Reflexión
                      </Button>
                      <Button
                        variant="ghost"

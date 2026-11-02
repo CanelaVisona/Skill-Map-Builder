@@ -784,7 +784,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // mañana/mediodía/tarde/noche, o marcarse "hidden" (mantener presionada una tarea no hecha)
   // para que deje de contar como tarea de ese día. La asignación es por día (queryKey incluye
   // effectiveDate), lo que también permite ordenar tareas de días futuros previsualizados.
-  const { data: slotsData } = useTodayTaskSlots(effectiveDate, open);
+  const slotsQuery = useTodayTaskSlots(effectiveDate, open);
+  const { data: slotsData } = slotsQuery;
 
   // Hábitos no programados para este día que se agregaron a mano (desde el diálogo de
   // "mantener presionado"): cualquier fila de franja que no sea "hidden" los vuelve una tarea
@@ -970,9 +971,23 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const updateManualTask = useUpdateManualTask();
   const deleteManualTask = useDeleteManualTask();
 
-  const setTaskSlot = useSetTodayTaskSlot();
+  // Todo movimiento hecho en Tareas de hoy (orden o franja) pide sincronizar el orden de los
+  // nodos en su árbol (ver el efecto de treeSyncRequest más abajo).
+  const [treeSyncRequest, setTreeSyncRequest] = useState(0);
+  const requestTreeSync = () => setTreeSyncRequest((n) => n + 1);
+  const setTaskSlotMutation = useSetTodayTaskSlot();
+  const setTaskSlot = {
+    ...setTaskSlotMutation,
+    mutate: (vars: Parameters<typeof setTaskSlotMutation.mutate>[0]) =>
+      setTaskSlotMutation.mutate(vars, { onSuccess: requestTreeSync }),
+  };
   const clearTaskSlot = useClearTodayTaskSlot();
-  const reorderTaskSlot = useReorderTodayTaskSlot();
+  const reorderTaskSlotMutation = useReorderTodayTaskSlot();
+  const reorderTaskSlot = {
+    ...reorderTaskSlotMutation,
+    mutate: (vars: Parameters<typeof reorderTaskSlotMutation.mutate>[0]) =>
+      reorderTaskSlotMutation.mutate(vars, { onSuccess: requestTreeSync }),
+  };
 
   const slotByKey = new Map<string, TaskSlotKey>();
   const sortOrderByKey = new Map<string, number>();
@@ -1264,6 +1279,40 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       const diff = (sortOrderByKey.get(a.key) ?? 0) - (sortOrderByKey.get(b.key) ?? 0);
       if (diff !== 0) return diff;
       return (slotUpdatedAtByKey.get(a.key) ?? 0) - (slotUpdatedAtByKey.get(b.key) ?? 0);
+    });
+  });
+
+  // Tareas de hoy y el árbol en el mismo orden. Cada nodo de un área/quest, con su nivel:
+  const treeNodeById = new Map<string, { skill: Skill; parentId: string; kind: "area" | "project" }>();
+  (Array.isArray(areas) ? areas : []).forEach((a) =>
+    (a.skills || []).forEach((sk: Skill) => treeNodeById.set(sk.id, { skill: sk, parentId: a.id, kind: "area" }))
+  );
+  (Array.isArray(projects) ? projects : []).forEach((pr) =>
+    (pr.skills || []).forEach((sk: Skill) => treeNodeById.set(sk.id, { skill: sk, parentId: pr.id, kind: "project" }))
+  );
+  const treeGroupOf = (i: TodayItem): string | null => {
+    if (i.type !== "node" || i.continuation || i.traceSubs) return null;
+    const t = treeNodeById.get(i.id);
+    return t ? `${t.kind}:${t.parentId}:${t.skill.level}` : null;
+  };
+  const treePosition = (id: string) => treeNodeById.get(id)?.skill.levelPosition ?? 0;
+  // El orden pedido en Tareas de hoy, de la mañana a la noche (antes de aplicar el del árbol): es
+  // el que se le pasa al árbol cuando el movimiento se hizo acá.
+  const todayOrderForTreeSync = TIME_SLOTS.flatMap((s) => itemBuckets[s.key]);
+  // Del árbol a Tareas de hoy: dentro de cada franja, los nodos de un mismo nivel se muestran en el
+  // orden del árbol (cada uno toma uno de los lugares que ocupan entre ellos; lo demás no se mueve).
+  // Así mover un nodo en el árbol también lo mueve acá.
+  ["unassigned", ...TIME_SLOTS.map((t) => t.key)].forEach((key) => {
+    const bucket = itemBuckets[key];
+    const groups = new Map<string, number[]>();
+    bucket.forEach((i, idx) => {
+      const g = treeGroupOf(i);
+      if (g) groups.set(g, [...(groups.get(g) ?? []), idx]);
+    });
+    groups.forEach((idxs) => {
+      if (idxs.length < 2) return;
+      const sorted = idxs.map((ix) => bucket[ix]).sort((a, b) => treePosition(a.id) - treePosition(b.id));
+      idxs.forEach((ix, k) => (bucket[ix] = sorted[k]));
     });
   });
 
@@ -1782,7 +1831,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
           setRenameSubTitle(st.title);
           setRenameSubTarget({ kind: "step", id: st.id, parentId: item.id });
         }}
-        onDelete={() => deleteSubstep.mutate({ id: st.id, date: effectiveDate })}
+        onDelete={() => deleteSubstep.mutate({ id: st.id, date: effectiveDate, onlyThisDay: !!st.templateId })}
+        onDeleteAllDays={st.templateId ? () => deleteSubstep.mutate({ id: st.id, date: effectiveDate }) : undefined}
         minutes={st.minutes}
         deadline={st.deadline}
         showRemaining={effectiveDate === todayStr}
@@ -2095,6 +2145,44 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // Confirmar/desconfirmar un nodo desde acá corre exactamente el mismo camino que tocarlo en
   // el árbol (toggleSkillStatus/toggleProjectSkillStatus en skill-context.tsx): mismos guards
   // de progresión de nivel y mismos pop-ups de XP/quest/subida de nivel.
+  // De Tareas de hoy al árbol: después de un movimiento hecho acá (y de que vuelva la lista de
+  // franjas ya actualizada), los nodos sin confirmar de un mismo nivel se reordenan en el árbol
+  // según el orden del día (de la mañana a la noche, y dentro de cada franja el de la lista). Solo
+  // viendo hoy: reordenar un día pasado o futuro no toca el árbol. Los nodos sin franja ("Sin
+  // asignar") y los de otros días quedan donde están en el árbol.
+  const handledTreeSync = useRef(0);
+  useEffect(() => {
+    if (treeSyncRequest === handledTreeSync.current || slotsQuery.isFetching) return;
+    handledTreeSync.current = treeSyncRequest;
+    if (isPreview) return;
+    const wanted = new Map<string, string[]>();
+    todayOrderForTreeSync.forEach((i) => {
+      const g = treeGroupOf(i);
+      const t = treeNodeById.get(i.id);
+      if (!g || !t || i.done || t.skill.status === "mastered" || t.skill.levelPosition === 1 || t.skill.isAutoComplete === 1) return;
+      const list = wanted.get(g) ?? [];
+      if (!list.includes(i.id)) list.push(i.id);
+      wanted.set(g, list);
+    });
+    const requests: Promise<Response>[] = [];
+    wanted.forEach((ids) => {
+      if (ids.length < 2) return;
+      const inTree = [...ids].sort((a, b) => treePosition(a) - treePosition(b));
+      if (inTree.every((id, k) => id === ids[k])) return;
+      const t = treeNodeById.get(ids[0])!;
+      requests.push(fetch("/api/skills/reorder-level", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ parentType: t.kind, parentId: t.parentId, level: t.skill.level, orderedIds: ids }),
+      }));
+    });
+    if (requests.length === 0) return;
+    Promise.all(requests)
+      .then(() => refreshSkillTrees())
+      .catch((error) => console.error("Error sincronizando el orden del árbol con Tareas de hoy:", error));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [treeSyncRequest, slotsQuery.isFetching]);
+
   // Nodo bloqueado en el árbol solo porque hay nodos sin confirmar antes que él en su nivel (p.ej.
   // en Tareas de hoy se lo ordenó antes que el desbloqueado): confirmarlo desde acá lo sube en el
   // árbol al lugar del nodo desbloqueado — mismo intercambio que "Mover arriba", que le pasa el
@@ -4793,6 +4881,7 @@ function TodaySubRow({
   onAddChild,
   depth = 0,
   onDelete,
+  onDeleteAllDays,
   deleteLabel = "sub-paso",
   slot,
   onMoveToSlot,
@@ -4822,6 +4911,9 @@ function TodaySubRow({
   // 1 = sub-nodo de un sub-nodo: un nivel más de sangría.
   depth?: number;
   onDelete?: () => void;
+  // Sub-paso que se repite todos los días (de un hábito): con esto el diálogo de eliminar ofrece
+  // "Solo este día" (onDelete) o "Todos los días" (onDeleteAllDays).
+  onDeleteAllDays?: () => void;
   deleteLabel?: string;
   // Franja en la que se hace (la de su tarea si no tiene una propia): elegir otra la muestra en
   // una continuación de la tarea en esa franja.
@@ -4922,11 +5014,20 @@ function TodaySubRow({
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>¿Eliminar este {deleteLabel}?</AlertDialogTitle>
-              <AlertDialogDescription>Se va a borrar. No se puede deshacer.</AlertDialogDescription>
+              <AlertDialogDescription>
+                {onDeleteAllDays
+                  ? "Se repite todos los días. Podés sacarlo solo de este día o de todos los días que vienen."
+                  : "Se va a borrar. No se puede deshacer."}
+              </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancelar</AlertDialogCancel>
-              <AlertDialogAction onClick={onDelete}>Eliminar</AlertDialogAction>
+              {onDeleteAllDays && (
+                <AlertDialogAction onClick={onDeleteAllDays} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                  Todos los días
+                </AlertDialogAction>
+              )}
+              <AlertDialogAction onClick={onDelete}>{onDeleteAllDays ? "Solo este día" : "Eliminar"}</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
