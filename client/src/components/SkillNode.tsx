@@ -330,6 +330,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [isOpen, setIsOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editStep, setEditStep] = useState(0);
+  // Reflexión nodes: the edit dialog only has a name step and a "Nota" step.
+  const isReflectionNode = skill.isReflection === 1;
   const [editTitle, setEditTitle] = useState(skill.title);
   const [editAction, setEditAction] = useState(skill.description?.split("\n\nWhen: ")[0] || "");
   const [editPlannedDate, setEditPlannedDate] = useState(skill.plannedDate || "");
@@ -2553,7 +2555,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
           {/* Reflexión badge: once confirmed the check takes the note icon's place, so a small
               note in the corner keeps the node recognizable as a reflection. */}
           {skill.isReflection === 1 && isMastered && (
-            <div className="absolute -top-1 -left-1 z-30" title="Reflexión">
+            <div className="absolute -top-1 -right-1 z-30" title="Reflexión">
               <svg width="14" height="14" viewBox="0 0 14 14" className="text-foreground drop-shadow">
                 <path
                   d="M2.5 1.5h6l3 3v8h-9z"
@@ -2563,7 +2565,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                   strokeLinejoin="round"
                 />
                 <path
-                  d="M8.5 1.5v3h3M4.5 7.5h5M4.5 10h3.5"
+                  d="M8.5 1.5v3h3"
                   fill="none"
                   stroke="currentColor"
                   strokeWidth="1.2"
@@ -3043,7 +3045,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 className="flex-1 flex flex-col gap-4"
               >
                 <div>
-                  <Label htmlFor="edit-title" className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block">PASO 1: Nombre y tiempo</Label>
+                  <Label htmlFor="edit-title" className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block">{isReflectionNode ? "PASO 1: Nombre" : "PASO 1: Nombre y tiempo"}</Label>
                   <Input
                     id="edit-title"
                     value={editTitle}
@@ -3056,6 +3058,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                     autoFocus
                   />
                 </div>
+                {!isReflectionNode && (
                 <div>
                   <Label htmlFor="edit-duration" className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block">Time</Label>
                   {(() => {
@@ -3216,6 +3219,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                     );
                   })()}
                 </div>
+                )}
                 <div className="flex justify-end mt-auto pt-4">
                   <Button
                     variant="ghost"
@@ -3240,13 +3244,13 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 className="flex-1 flex flex-col gap-4"
               >
                 <div>
-                  <Label htmlFor="edit-action" className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block">PASO 2: Background</Label>
+                  <Label htmlFor="edit-action" className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block">{isReflectionNode ? "PASO 2: Nota" : "PASO 2: Background"}</Label>
                   <Textarea
                     id="edit-action"
                     value={editAction}
                     onChange={(e) => setEditAction(e.target.value)}
-                    placeholder="Describe your next action..."
-                    rows={2}
+                    placeholder={isReflectionNode ? "Escribí tu reflexión..." : "Describe your next action..."}
+                    rows={isReflectionNode ? 6 : 2}
                     className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
                     data-testid="input-edit-action"
                     autoFocus
@@ -3501,6 +3505,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                   ) : (
                     <div className="h-10 w-10" />
                   )}
+                  {/* Reflexión nodes only have the name and note steps. */}
+                  {!isReflectionNode && (
                   <Button
                     variant="ghost"
                     size="icon"
@@ -3510,6 +3516,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                   >
                     <ChevronRight className="h-5 w-5" />
                   </Button>
+                  )}
                 </div>
               </motion.div>
             )}
