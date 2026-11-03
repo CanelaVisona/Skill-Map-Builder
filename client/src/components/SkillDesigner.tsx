@@ -497,6 +497,9 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                     <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" onClick={() => { addSkillBelow(area.id, skill.id, ''); setOpenAddMenuSkillId(null); }}>
                                                       Nodo vacío
                                                     </Button>
+                                                    <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" onClick={() => { addSkillBelow(area.id, skill.id, '', { isReflection: 1 }); setOpenAddMenuSkillId(null); }}>
+                                                      Reflexión
+                                                    </Button>
                                                     <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" onClick={() => { duplicateSkill(area.id, skill); setOpenAddMenuSkillId(null); }}>
                                                       Duplicar nodo
                                                     </Button>
@@ -700,6 +703,9 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                       <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" onClick={() => { addProjectSkillBelow(project.id, skill.id, ''); setOpenAddMenuSkillId(null); }}>
                                                         Nodo vacío
                                                       </Button>
+                                                      <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" onClick={() => { addProjectSkillBelow(project.id, skill.id, '', { isReflection: 1 }); setOpenAddMenuSkillId(null); }}>
+                                                        Reflexión
+                                                      </Button>
                                                       <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" onClick={() => { duplicateProjectSkill(project.id, skill); setOpenAddMenuSkillId(null); }}>
                                                         Duplicar nodo
                                                       </Button>
@@ -897,6 +903,9 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                     <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" onClick={() => { addProjectSkillBelow(project.id, skill.id, ''); setOpenAddMenuSkillId(null); }}>
                                                       Nodo vacío
                                                     </Button>
+                                                    <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" onClick={() => { addProjectSkillBelow(project.id, skill.id, '', { isReflection: 1 }); setOpenAddMenuSkillId(null); }}>
+                                                      Reflexión
+                                                    </Button>
                                                     <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" onClick={() => { duplicateProjectSkill(project.id, skill); setOpenAddMenuSkillId(null); }}>
                                                       Duplicar nodo
                                                     </Button>
@@ -1090,6 +1099,9 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                 <div className="flex flex-col gap-0.5">
                                                   <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" onClick={() => { addProjectSkillBelow(project.id, skill.id, ''); setOpenAddMenuSkillId(null); }}>
                                                     Nodo vacío
+                                                  </Button>
+                                                  <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" onClick={() => { addProjectSkillBelow(project.id, skill.id, '', { isReflection: 1 }); setOpenAddMenuSkillId(null); }}>
+                                                    Reflexión
                                                   </Button>
                                                   <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" onClick={() => { duplicateProjectSkill(project.id, skill); setOpenAddMenuSkillId(null); }}>
                                                     Duplicar nodo

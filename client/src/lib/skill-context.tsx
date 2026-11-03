@@ -5310,14 +5310,12 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
  * @param nextLevelToAssign The next level number to create (max level + 1)
  * @param endOfAreaLevel Optional cap on the maximum level for this area
  * 
- * IMPORTANT: Window calculation uses the SAME visibility rule as SkillDesigner
- * Maximum visible = endOfAreaLevel ?? (nextLevelToAssign + 2)
- * This ensures consistency: levels beyond this show as locked in both views
+ * The window never goes past maxLevel (the last level with generated skills), so the
+ * last row is always the real last level - the one carrying the "+" (add level) button.
+ * endOfAreaLevel, when set, caps it further.
  * 
- * Example: unlockedLevel=2, nextLevelToAssign=5
- *   -> maxLevelInDesigner = 5 + 2 = 7
- *   -> Window = [1, 2, 3, 4, 5] (5 levels centered on unlocked)
- *   -> Levels 6-7 can be created but are shown as locked/future
+ * Example: unlockedLevel=6, nextLevelToAssign=9, maxLevel=6
+ *   -> Window = [2, 3, 4, 5, 6] (no empty rows 7-9)
  */
 export function calculateDesignerLevelWindow(
   unlockedLevel: number,
@@ -5332,11 +5330,19 @@ export function calculateDesignerLevelWindow(
   // nextLevelToAssign value that undershoots it - otherwise that level's row (and its action
   // icons, like the "add next level" button that only lives on the last generated level)
   // silently stops rendering.
-  const maxLevelInDesigner = endOfAreaLevel ?? Math.max(nextLevelToAssign + 2, maxLevel ?? 0);
+  //
+  // It must also never run PAST maxLevel: rows beyond the last generated level are just inert
+  // "Asigná un paso" placeholders, and when they render (e.g. after deleting levels ahead, which
+  // leaves nextLevelToAssign/unlockedLevel+3 pointing past the real data) they push the real last
+  // level - the only row with the "+" button - out of the last slot, so no new level can be added.
+  const hasGeneratedLevels = maxLevel !== undefined && Number.isFinite(maxLevel) && maxLevel > 0;
+  const maxLevelInDesigner = hasGeneratedLevels
+    ? (endOfAreaLevel ? Math.min(endOfAreaLevel, maxLevel!) : maxLevel!)
+    : endOfAreaLevel ?? (nextLevelToAssign + 2);
 
   // Calculate the ideal window: [unlockedLevel-1, unlockedLevel, unlockedLevel+1, unlockedLevel+2, unlockedLevel+3]
   let windowStart = Math.max(1, unlockedLevel - 1);
-  let windowEnd = Math.max(unlockedLevel + 3, maxLevel ?? 0);
+  let windowEnd = Math.max(unlockedLevel + 3, hasGeneratedLevels ? maxLevel! : 0);
 
   // If total available levels < 5, adjust to show last 5 or all available
   const totalAvailable = maxLevelInDesigner;

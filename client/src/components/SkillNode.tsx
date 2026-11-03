@@ -1241,6 +1241,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   // Learning/tool finalize dialog shown right before a node with a staged learning gets
   // confirmed -- see runConfirmSequence and the isLearningFinalizeOpen Dialog below.
   const [isLearningFinalizeOpen, setIsLearningFinalizeOpen] = useState(false);
+  // Reflexión pop-up, opened by tapping an available Reflexión node (see handleClick).
+  const [isReflectionOpen, setIsReflectionOpen] = useState(false);
+  const [reflectionText, setReflectionText] = useState("");
   const [finalizeLearningTitle, setFinalizeLearningTitle] = useState("");
   const [finalizeLearningSentence, setFinalizeLearningSentence] = useState("");
   // Set the moment "Confirmar" is pressed in that dialog, so a second tap on the node while
@@ -2251,6 +2254,18 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     confirmNode({ title: finalTitle, sentence: finalSentence });
   };
 
+  // Saves the Reflexión pop-up's text as the node's description (the note), and optionally
+  // confirms the node right after.
+  const saveReflection = (confirm: boolean) => {
+    const description = reflectionText;
+    if (isSubSkillView) updateSubSkill(skill.id, { description });
+    else if (isProject) updateProjectSkill(activeId, skill.id, { description });
+    else updateSkill(activeId, skill.id, { description });
+    setEditAction(description);
+    setIsReflectionOpen(false);
+    if (confirm) confirmNode();
+  };
+
   const handleLearningFinalizeCancel = () => {
     // Just closes the dialog -- the node stays "available" and the staged learning stays
     // staged, so the player can pick this up again later without losing the draft.
@@ -2318,6 +2333,13 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     // aprendizaje" dialog before actually confirming -- see the Dialog below and
     // handleLearningFinalizeConfirm. Otherwise confirm right away, granting whatever else
     // (XP/fuerza/poder/tools) was staged in Step 3 / the Journal.
+    // Reflexión nodes don't confirm straight away: tapping opens the note pop-up, where the
+    // player can just save it ("Listo") or save it and confirm the node.
+    if (isReflectionNode && skill.status === "available") {
+      setReflectionText(skill.description || "");
+      setIsReflectionOpen(true);
+      return;
+    }
     if (skill.status === "available" && pendingLearning && !learningFinalizeSubmittedRef.current) {
       setFinalizeLearningTitle(pendingLearning.title);
       setFinalizeLearningSentence(pendingLearning.sentence);
@@ -2509,7 +2531,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             {hasUnlockedWithIncompleteSubtasks ? (
               <Lock size={14} className="text-foreground" />
             ) : isLocked ? (
-              <Lock size={14} />
+              skill.isReflection === 1 ? <NotebookPen size={14} /> : <Lock size={14} />
             ) : isMastered ? (
               <Check size={18} strokeWidth={3} />
             ) : skill.isReflection === 1 ? (
@@ -3243,19 +3265,22 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 transition={{ duration: 0.2 }}
                 className="flex-1 flex flex-col gap-4"
               >
+                {/* Reflexión nodes write their note from the pop-up opened by tapping the node. */}
+                {!isReflectionNode && (
                 <div>
-                  <Label htmlFor="edit-action" className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block">{isReflectionNode ? "PASO 2: Nota" : "PASO 2: Background"}</Label>
+                  <Label htmlFor="edit-action" className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block">PASO 2: Background</Label>
                   <Textarea
                     id="edit-action"
                     value={editAction}
                     onChange={(e) => setEditAction(e.target.value)}
-                    placeholder={isReflectionNode ? "Escribí tu reflexión..." : "Describe your next action..."}
-                    rows={isReflectionNode ? 6 : 2}
+                    placeholder="Describe your next action..."
+                    rows={2}
                     className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
                     data-testid="input-edit-action"
                     autoFocus
                   />
                 </div>
+                )}
                 <div>
                   <Label htmlFor="edit-when" className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block">When exactly?</Label>
                   {(() => {
@@ -4085,6 +4110,34 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
           </Button>
           <Button onClick={handleLearningFinalizeConfirm} className="flex-1 border-0" data-testid="button-confirm-finalize-learning">
             Confirmar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    {/* Reflexión pop-up: replaces the direct confirm for Reflexión nodes (see handleClick).
+        Closing it without a button keeps the draft unsaved. */}
+    <Dialog open={isReflectionOpen} onOpenChange={setIsReflectionOpen}>
+      <DialogContent className="sm:max-w-[400px] border-0 shadow-2xl">
+        <DialogHeader>
+          <DialogTitle className="text-lg font-medium">{skill.title || "Reflexión"}</DialogTitle>
+          <DialogDescription className="sr-only">Completá la reflexión</DialogDescription>
+        </DialogHeader>
+        <Textarea
+          value={reflectionText}
+          onChange={(e) => setReflectionText(e.target.value)}
+          placeholder="Escribí tu reflexión..."
+          rows={8}
+          className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+          data-testid="input-reflection"
+          autoFocus
+        />
+        <DialogFooter className="flex flex-row gap-2 pt-2 sm:justify-between">
+          <Button variant="ghost" onClick={() => saveReflection(false)} className="flex-1 bg-muted/50 hover:bg-muted" data-testid="button-reflection-done">
+            Listo
+          </Button>
+          <Button variant="ghost" onClick={() => saveReflection(true)} className="flex-1 bg-muted/50 hover:bg-muted" data-testid="button-reflection-confirm">
+            Confirmar nodo
           </Button>
         </DialogFooter>
       </DialogContent>
