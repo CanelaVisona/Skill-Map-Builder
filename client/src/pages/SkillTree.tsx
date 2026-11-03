@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import { isHabitScheduledOn } from "@shared/habitSchedule";
 import { createPortal } from "react-dom";
-import { SkillTreeProvider, useSkillTree, type Skill, type GlobalSkill, type Area, type Project } from "@/lib/skill-context";
+import { SkillTreeProvider, useSkillTree, isUnnamedNode, sortByTreeOrder, findAvailableNode, type Skill, type GlobalSkill, type Area, type Project } from "@/lib/skill-context";
 import { MenuProvider, useMenu } from "@/lib/menu-context";
 import { XP_PER_LEVEL } from "@/lib/skill-xp";
 import { AreaMenu } from "@/components/AreaMenu";
@@ -78,6 +78,7 @@ import { RadarSkillMapModal } from "@/components/RadarSkillMapModal";
 import { SkillsSparkIcon } from "@/components/SkillsSparkIcon";
 import { NodeConfirmFeedbackProvider } from "@/lib/node-confirm-feedback-context";
 import { JournalQuickAddDialog, type JournalQuickAddKind } from "@/components/JournalQuickAddDialog";
+import { clampToWordLimit, getNodeTitleWordLimit } from "@/lib/node-title-settings";
 import { useLongPress } from "@/lib/use-long-press";
 
 function calculateVisibleLevels(skills: Skill[], endOfAreaLevel?: number): Set<number> {
@@ -2007,11 +2008,22 @@ interface QuestTabGroup {
   count: number;
 }
 
-function useQuestGroups<T extends { skillId?: string | null }>(entries: T[], questMap: SkillQuestMap): QuestTabGroup[] {
+// Algunas entradas (Preguntas) vienen con el área/quest ya resuelta por el server, porque su
+// nodo puede ser un sub-nodo que no está en questMap; questMap también tiene cada quest por su
+// propia key ("area-<id>" / "project-<id>") para poder buscarla así.
+type QuestTaggedEntry = { skillId?: string | null; areaId?: string | null; projectId?: string | null };
+
+function entryQuestInfo(entry: QuestTaggedEntry, questMap: SkillQuestMap): SkillQuestInfo | undefined {
+  if (entry.areaId) return questMap.get(`area-${entry.areaId}`);
+  if (entry.projectId) return questMap.get(`project-${entry.projectId}`);
+  return entry.skillId ? questMap.get(entry.skillId) : undefined;
+}
+
+function useQuestGroups<T extends QuestTaggedEntry>(entries: T[], questMap: SkillQuestMap): QuestTabGroup[] {
   return React.useMemo(() => {
     const groups = new Map<string, QuestTabGroup>();
     entries.forEach((entry) => {
-      const info = entry.skillId ? questMap.get(entry.skillId) : undefined;
+      const info = entryQuestInfo(entry, questMap);
       if (!info) return;
       const existing = groups.get(info.key);
       if (existing) {
@@ -2100,7 +2112,7 @@ function ToolsSection({
   const questGroups = useQuestGroups(entries, questMap);
   const filteredEntries = selectedQuestKey === null
     ? entries
-    : entries.filter((entry) => entry.skillId && questMap.get(entry.skillId)?.key === selectedQuestKey);
+    : entries.filter((entry) => entryQuestInfo(entry, questMap)?.key === selectedQuestKey);
 
   const handleSelectQuest = (key: string | null) => {
     setSelectedQuestKey(key);
@@ -2328,6 +2340,157 @@ function ToolsSection({
 
 // También se usa para la tab "Estrategias" (misma forma que los aprendizajes): `variant`
 // cambia solo los textos, el ícono del estado vacío y los data-testid.
+// Preguntas: el server agrega el área/quest resuelta y, si la pregunta se pasó a nodo Reflexión,
+// el estado y los registros de ese nodo (ver GET /api/journal/questions).
+type JournalQuestionEntry = JournalQuestion & {
+  areaId?: string | null;
+  projectId?: string | null;
+  reflectionNode?: { status: string; entries: { date: string; text: string }[] } | null;
+};
+type JournalSectionEntry = JournalLearning | JournalStrategy | JournalQuestionEntry;
+// Dónde va el nodo: en el lugar del desbloqueado (se inserta antes de él) o en el primer nodo
+// sin nombre del árbol (se le pone el nombre, sin sumar nodos).
+type ReflectionNodePlacement = "available" | "unnamed";
+type ReflectionNodeScope = { kind: "area" | "project"; id: string; placement: ReflectionNodePlacement };
+
+const reflectionNodeOf = (entry: JournalSectionEntry) =>
+  "reflectionNode" in entry ? entry.reflectionNode ?? null : null;
+
+// Mantener apretado el título de una pregunta: ofrece agregarla como nodo Reflexión en el árbol
+// del área/quest elegida (por defecto, la de la pregunta).
+function QuestionToReflectionNodeDialog({
+  entry,
+  questMap,
+  onClose,
+  onConfirm,
+}: {
+  entry: JournalQuestionEntry | null;
+  questMap: SkillQuestMap;
+  onClose: () => void;
+  onConfirm: (entry: JournalQuestionEntry, scope: ReflectionNodeScope) => Promise<boolean>;
+}) {
+  const { areas, projects } = useSkillTree();
+  const [scopeKey, setScopeKey] = useState("");
+  const [placement, setPlacement] = useState<ReflectionNodePlacement>("available");
+  const [isSaving, setIsSaving] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!entry) return;
+    setScopeKey(entryQuestInfo(entry, questMap)?.key ?? "");
+    setFailed(false);
+  }, [entry, questMap]);
+
+  // Qué opciones tiene el árbol elegido: un nodo desbloqueado (o, si no hay, uno completado
+  // después del cual insertar) y algún nodo sin nombre.
+  const [scopeKind, ...scopeIdParts] = scopeKey.split("-");
+  const scopeId = scopeIdParts.join("-");
+  const scopeTree = scopeKind === "area" ? areas.find((a) => a.id === scopeId) : projects.find((p) => p.id === scopeId);
+  const sortedSkills = scopeTree ? [...scopeTree.skills].sort(sortByTreeOrder) : [];
+  const availableNode = findAvailableNode(sortedSkills);
+  const canPlaceAtAvailable = !!availableNode || sortedSkills.some((s) => s.status === "mastered");
+  const firstUnnamed = sortedSkills.find(isUnnamedNode);
+
+  useEffect(() => {
+    if (placement === "available" && !canPlaceAtAvailable && firstUnnamed) setPlacement("unnamed");
+    else if (placement === "unnamed" && !firstUnnamed && canPlaceAtAvailable) setPlacement("available");
+  }, [placement, canPlaceAtAvailable, firstUnnamed]);
+
+  const placementOptions: { value: ReflectionNodePlacement; label: string; detail: string; enabled: boolean }[] = [
+    {
+      value: "available",
+      label: "En el lugar del nodo desbloqueado",
+      detail: availableNode ? (availableNode.title?.trim() || "Sin nombre") : canPlaceAtAvailable ? "Después del último completado" : "No hay nodo desbloqueado",
+      enabled: canPlaceAtAvailable,
+    },
+    {
+      value: "unnamed",
+      label: "En el primer nodo sin nombre",
+      detail: firstUnnamed ? `Nivel ${firstUnnamed.level}` : "No hay nodos sin nombre",
+      enabled: !!firstUnnamed,
+    },
+  ];
+  const canConfirm = !!scopeKey && !!placementOptions.find((o) => o.value === placement)?.enabled;
+
+  const handleConfirm = async () => {
+    if (!entry || !canConfirm) return;
+    setIsSaving(true);
+    const ok = await onConfirm(entry, { kind: scopeKind as "area" | "project", id: scopeId, placement });
+    setIsSaving(false);
+    if (ok) onClose();
+    else setFailed(true);
+  };
+
+  return (
+    <Dialog open={!!entry} onOpenChange={(open) => { if (!open && !isSaving) onClose(); }}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Agregar como nodo Reflexión</DialogTitle>
+          <DialogDescription className="break-words">{entry?.title}</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2">
+          <Label className="text-xs text-muted-foreground uppercase tracking-wide">Área / quest</Label>
+          <Select value={scopeKey} onValueChange={setScopeKey}>
+            <SelectTrigger data-testid="select-reflection-node-scope">
+              <SelectValue placeholder="Elegí dónde agregarlo" />
+            </SelectTrigger>
+            <SelectContent>
+              {areas.length > 0 && (
+                <SelectGroup>
+                  <SelectLabel>Áreas</SelectLabel>
+                  {areas.map((area) => (
+                    <SelectItem key={area.id} value={`area-${area.id}`}>{area.name}</SelectItem>
+                  ))}
+                </SelectGroup>
+              )}
+              {projects.length > 0 && (
+                <SelectGroup>
+                  <SelectLabel>Quests</SelectLabel>
+                  {projects.map((project) => (
+                    <SelectItem key={project.id} value={`project-${project.id}`}>{project.name}</SelectItem>
+                  ))}
+                </SelectGroup>
+              )}
+            </SelectContent>
+          </Select>
+          {scopeKey && (
+            <div className="space-y-1.5 pt-2">
+              <Label className="text-xs text-muted-foreground uppercase tracking-wide">Dónde</Label>
+              {placementOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  disabled={!option.enabled}
+                  onClick={() => setPlacement(option.value)}
+                  className={cn(
+                    "w-full text-left rounded border px-3 py-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed",
+                    placement === option.value && option.enabled
+                      ? "border-foreground/40 bg-secondary text-foreground"
+                      : "border-border/50 text-muted-foreground hover:bg-secondary/50"
+                  )}
+                  data-testid={`option-reflection-node-${option.value}`}
+                >
+                  <span className="block text-sm">{option.label}</span>
+                  <span className="block text-xs text-muted-foreground break-words">{option.detail}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {failed && (
+            <p className="text-xs text-red-600 dark:text-red-400">No se pudo crear el nodo en ese árbol.</p>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose} disabled={isSaving}>Cancelar</Button>
+          <Button onClick={handleConfirm} disabled={!canConfirm || isSaving} data-testid="button-confirm-reflection-node">
+            {isSaving ? "Agregando..." : "Agregar nodo"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 const ENTRY_SECTION_TEXTS = {
   learnings: { icon: Lightbulb, label: "discoveries", empty: "No learnings yet", deleteQuestion: "Delete this learning?" },
   strategies: { icon: Split, label: "Estrategias", empty: "Todavía no hay estrategias", deleteQuestion: "¿Borrar esta estrategia?" },
@@ -2342,8 +2505,9 @@ function LearningsSection({
   questMap,
   variant = "learnings",
   onTitleLongPress,
+  onAddAsReflectionNode,
 }: {
-  entries: Array<JournalLearning | JournalStrategy | JournalQuestion>;
+  entries: JournalSectionEntry[];
   isLoading: boolean;
   onDelete: (id: string) => void;
   onUpdate?: (id: string, data: { title: string; sentence: string }) => void;
@@ -2351,11 +2515,14 @@ function LearningsSection({
   variant?: keyof typeof ENTRY_SECTION_TEXTS;
   // Mantener apretado el título ("N discoveries") abre "Nueva entrada" para agregar una de esta tab.
   onTitleLongPress?: () => void;
+  // Solo Preguntas: mantener apretada una pregunta de la lista la pasa a nodo Reflexión.
+  onAddAsReflectionNode?: (entry: JournalQuestionEntry, scope: ReflectionNodeScope) => Promise<boolean>;
 }) {
   const texts = ENTRY_SECTION_TEXTS[variant];
   const titleLongPress = useLongPress(onTitleLongPress);
   const EmptyIcon = texts.icon;
-  const [viewingEntry, setViewingEntry] = useState<JournalLearning | JournalStrategy | JournalQuestion | null>(null);
+  const [viewingEntry, setViewingEntry] = useState<JournalSectionEntry | null>(null);
+  const [reflectionNodeEntry, setReflectionNodeEntry] = useState<JournalQuestionEntry | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editSentence, setEditSentence] = useState("");
@@ -2363,10 +2530,18 @@ function LearningsSection({
   const [selectedQuestKey, setSelectedQuestKey] = useState<string | null>(null);
   const longPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const questGroups = useQuestGroups(entries, questMap);
+  // Pregunta pasada a nodo Reflexión: no se muestra hasta que el nodo se completa; después va
+  // al final de la lista (debajo de un divisor) con los registros del nodo.
+  const visibleEntries = entries.filter((entry) => {
+    const node = reflectionNodeOf(entry);
+    return !node || node.status === "mastered";
+  });
+  const questGroups = useQuestGroups(visibleEntries, questMap);
   const filteredEntries = selectedQuestKey === null
-    ? entries
-    : entries.filter((entry) => entry.skillId && questMap.get(entry.skillId)?.key === selectedQuestKey);
+    ? visibleEntries
+    : visibleEntries.filter((entry) => entryQuestInfo(entry, questMap)?.key === selectedQuestKey);
+  const openEntries = filteredEntries.filter((entry) => !reflectionNodeOf(entry));
+  const reflectedEntries = filteredEntries.filter((entry) => reflectionNodeOf(entry));
 
   const handleSelectQuest = (key: string | null) => {
     setSelectedQuestKey(key);
@@ -2377,8 +2552,12 @@ function LearningsSection({
     return <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">Loading...</div>;
   }
 
-  const handleLeftLongPressStart = (entry: JournalLearning | JournalStrategy | JournalQuestion) => {
+  const handleLeftLongPressStart = (entry: JournalSectionEntry) => {
     longPressTimer.current = setTimeout(() => {
+      if (onAddAsReflectionNode && "reflectionSkillId" in entry && !reflectionNodeOf(entry)) {
+        setReflectionNodeEntry(entry);
+        return;
+      }
       setViewingEntry(entry);
       setEditTitle(entry.title);
       setEditSentence(entry.sentence || "");
@@ -2435,7 +2614,7 @@ function LearningsSection({
         <div className="h-px w-8 bg-gradient-to-r from-muted-foreground to-transparent mt-1" />
       </div>
 
-      <QuestFilterTabs groups={questGroups} selectedKey={selectedQuestKey} onSelect={handleSelectQuest} totalCount={entries.length} />
+      <QuestFilterTabs groups={questGroups} selectedKey={selectedQuestKey} onSelect={handleSelectQuest} totalCount={visibleEntries.length} />
 
       <div className="flex flex-1 min-h-0 flex-col sm:flex-row gap-5 sm:gap-4">
         <div
@@ -2451,29 +2630,36 @@ function LearningsSection({
               </div>
             ) : (
               <div className="space-y-0.5">
-                {filteredEntries.map((entry, index) => (
-                  <div key={entry.id}>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setViewingEntry(entry); setIsEditMode(false); }}
-                      onTouchStart={() => handleLeftLongPressStart(entry)}
-                      onTouchEnd={handleLeftLongPressEnd}
-                      onTouchCancel={handleLeftLongPressEnd}
-                      onMouseDown={() => handleLeftLongPressStart(entry)}
-                      onMouseUp={handleLeftLongPressEnd}
-                      onMouseLeave={handleLeftLongPressEnd}
-                      className={`w-full text-left px-3 py-2 rounded text-sm transition-all cursor-pointer select-none ${
-                        viewingEntry?.id === entry.id
-                          ? "bg-secondary text-foreground shadow-sm"
-                          : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground/80"
-                      }`}
-                      data-testid={`card-${variant}-${entry.id}`}
-                    >
-                      {entry.title}
-                    </button>
-                    {index < filteredEntries.length - 1 && (
-                      <div className="h-px bg-border/30 mx-2" />
+                {[openEntries, reflectedEntries].map((group, groupIndex) => group.length > 0 && (
+                  <React.Fragment key={groupIndex}>
+                    {groupIndex === 1 && openEntries.length > 0 && (
+                      <div className="h-px bg-border my-3" data-testid={`divider-${variant}-reflected`} />
                     )}
-                  </div>
+                    {group.map((entry, index) => (
+                      <div key={entry.id}>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setViewingEntry(entry); setIsEditMode(false); }}
+                          onTouchStart={() => handleLeftLongPressStart(entry)}
+                          onTouchEnd={handleLeftLongPressEnd}
+                          onTouchCancel={handleLeftLongPressEnd}
+                          onMouseDown={() => handleLeftLongPressStart(entry)}
+                          onMouseUp={handleLeftLongPressEnd}
+                          onMouseLeave={handleLeftLongPressEnd}
+                          className={`w-full text-left px-3 py-2 rounded text-sm transition-all cursor-pointer select-none ${
+                            viewingEntry?.id === entry.id
+                              ? "bg-secondary text-foreground shadow-sm"
+                              : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground/80"
+                          }`}
+                          data-testid={`card-${variant}-${entry.id}`}
+                        >
+                          {entry.title}
+                        </button>
+                        {index < group.length - 1 && (
+                          <div className="h-px bg-border/30 mx-2" />
+                        )}
+                      </div>
+                    ))}
+                  </React.Fragment>
                 ))}
               </div>
             )}
@@ -2551,6 +2737,17 @@ function LearningsSection({
                   {viewingEntry.sentence && (
                     <p className="text-sm text-muted-foreground whitespace-pre-line leading-relaxed">{viewingEntry.sentence}</p>
                   )}
+                  {(reflectionNodeOf(viewingEntry)?.entries.length ?? 0) > 0 && (
+                    <div className="mt-4 pt-3 border-t border-border/50 space-y-3">
+                      <span className="text-xs text-muted-foreground uppercase tracking-wider">Registros</span>
+                      {reflectionNodeOf(viewingEntry)!.entries.map((record, i) => (
+                        <div key={i}>
+                          <span className="text-[11px] text-muted-foreground/70">{record.date}</span>
+                          <p className="text-sm text-foreground/90 leading-relaxed whitespace-pre-wrap break-words">{record.text}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </>
@@ -2586,6 +2783,19 @@ function LearningsSection({
             </div>
           </div>
         </div>
+      )}
+
+      {onAddAsReflectionNode && (
+        <QuestionToReflectionNodeDialog
+          entry={reflectionNodeEntry}
+          questMap={questMap}
+          onClose={() => setReflectionNodeEntry(null)}
+          onConfirm={async (entry, scope) => {
+            const ok = await onAddAsReflectionNode(entry, scope);
+            if (ok && viewingEntry?.id === entry.id) setViewingEntry(null);
+            return ok;
+          }}
+        />
       )}
 
     </div>
@@ -8904,7 +9114,7 @@ function QuestDiary() {
   const { isDiaryOpen, closeDiary } = useDiary();
   const queryClient = useQueryClient();
   const isMobile = useIsMobile();
-  const { areas, projects } = useSkillTree();
+  const { areas, projects, addSkillInPlaceOfAvailable, addSkillInFirstUnnamed } = useSkillTree();
   const [selectedPowerId, setSelectedPowerId] = useState<string | null>(null);
 
   // Maps each skill (quest node) to the area or project ("quest") it belongs to, so
@@ -8913,13 +9123,17 @@ function QuestDiary() {
   const skillQuestMap: SkillQuestMap = React.useMemo(() => {
     const map: SkillQuestMap = new Map();
     areas.forEach((area) => {
+      const info = { key: `area-${area.id}`, name: area.name, color: area.color };
+      map.set(info.key, info);
       area.skills.forEach((skill) => {
-        map.set(skill.id, { key: `area-${area.id}`, name: area.name, color: area.color });
+        map.set(skill.id, info);
       });
     });
     projects.forEach((project) => {
+      const info = { key: `project-${project.id}`, name: project.name };
+      map.set(info.key, info);
       project.skills.forEach((skill) => {
-        map.set(skill.id, { key: `project-${project.id}`, name: project.name });
+        map.set(skill.id, info);
       });
     });
     return map;
@@ -8980,10 +9194,34 @@ function QuestDiary() {
     enabled: isDiaryOpen,
   });
 
-  const { data: journalQuestions = [], isLoading: loadingJournalQuestions } = useQuery<JournalQuestion[]>({
+  const { data: journalQuestions = [], isLoading: loadingJournalQuestions } = useQuery<JournalQuestionEntry[]>({
     queryKey: ["/api/journal/questions"],
     enabled: isDiaryOpen,
+    // Al abrir el Journal se vuelve a pedir: una pregunta pasada a nodo Reflexión reaparece
+    // cuando ese nodo se completa en el árbol.
+    staleTime: 0,
   });
+
+  // Pregunta -> nodo Reflexión: el título va como nombre del nodo (recortado al límite de
+  // palabras; si se recorta, el título completo encabeza el Planteo) y la descripción como Planteo.
+  const addQuestionAsReflectionNode = async (question: JournalQuestionEntry, scope: ReflectionNodeScope) => {
+    const fullTitle = question.title.trim();
+    const title = clampToWordLimit(fullTitle, getNodeTitleWordLimit());
+    const sentence = (question.sentence || "").trim();
+    const reflectionPrompt = title === fullTitle ? sentence : [fullTitle, sentence].filter(Boolean).join("\n\n");
+    const fields = { isReflection: 1 as const, reflectionPrompt };
+    const node = scope.placement === "unnamed"
+      ? await addSkillInFirstUnnamed(scope.kind, scope.id, title, fields)
+      : await addSkillInPlaceOfAvailable(scope.kind, scope.id, title, fields, { fillUnnamed: false });
+    if (!node) return false;
+    await fetch(`/api/journal/questions/${question.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reflectionSkillId: node.id }),
+    });
+    queryClient.invalidateQueries({ queryKey: ["/api/journal/questions"] });
+    return true;
+  };
 
   const { data: thoughts = [], isLoading: loadingThoughts } = useQuery<JournalThought[]>({
     queryKey: ["/api/journal/thoughts"],
@@ -9576,6 +9814,7 @@ function QuestDiary() {
                   entries={journalQuestions}
                   isLoading={loadingJournalQuestions}
                   questMap={skillQuestMap}
+                  onAddAsReflectionNode={addQuestionAsReflectionNode}
                   onDelete={async (id) => {
                     await fetch(`/api/journal/questions/${id}`, { method: "DELETE" });
                     queryClient.invalidateQueries({ queryKey: ["/api/journal/questions"] });

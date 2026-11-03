@@ -3482,7 +3482,28 @@ export async function registerRoutes(
         const scopeSkillIds = new Set(await storage.getAllSkillIdsInScope({ areaId, projectId }));
         filtered = questions.filter(q => q.skillId != null && scopeSkillIds.has(q.skillId));
       }
-      res.json(filtered);
+      // El Journal agrupa por área/quest: se resuelve acá porque el nodo puede ser un sub-nodo
+      // que el front no tiene cargado. Sin nodo de origen, vale el del nodo Reflexión.
+      const scopeSkillIdOf = (q: typeof filtered[number]) => q.skillId || q.reflectionSkillId;
+      const scopes = await storage.getSkillRootScopes(
+        Array.from(new Set(filtered.map(scopeSkillIdOf).filter((id): id is string => !!id)))
+      );
+      // Pregunta pasada a nodo Reflexión: el Journal la oculta hasta que el nodo se completa, y
+      // después la muestra con sus registros. Si el nodo se borró, vuelve a ser una pregunta normal.
+      const reflectionNodes = new Map<string, { status: string; entries: { date: string; text: string }[] }>();
+      for (const id of Array.from(new Set(filtered.map(q => q.reflectionSkillId).filter((id): id is string => !!id)))) {
+        const node = await storage.getSkill(id);
+        if (node) reflectionNodes.set(id, { status: node.status, entries: node.reflectionEntries ?? [] });
+      }
+      res.json(filtered.map(q => {
+        const scopeSkillId = scopeSkillIdOf(q);
+        return {
+          ...q,
+          areaId: (scopeSkillId && scopes.get(scopeSkillId)?.areaId) || null,
+          projectId: (scopeSkillId && scopes.get(scopeSkillId)?.projectId) || null,
+          reflectionNode: (q.reflectionSkillId && reflectionNodes.get(q.reflectionSkillId)) || null,
+        };
+      }));
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -3514,6 +3535,7 @@ export async function registerRoutes(
       const data: any = {};
       if (title !== undefined) data.title = title;
       if (sentence !== undefined) data.sentence = sentence;
+      if (req.body.reflectionSkillId !== undefined) data.reflectionSkillId = req.body.reflectionSkillId;
       const question = await storage.updateJournalQuestion(req.params.id, data);
       if (!question) {
         res.status(404).json({ message: "Pregunta no encontrada" });

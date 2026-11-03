@@ -45,6 +45,7 @@ export interface IStorage {
   getSkills(areaId: string): Promise<Skill[]>;
   getProjectSkills(projectId: string): Promise<Skill[]>;
   getAllSkillIdsInScope(scope: { areaId?: string; projectId?: string }): Promise<string[]>;
+  getSkillRootScopes(skillIds: string[]): Promise<Map<string, { areaId: string | null; projectId: string | null }>>;
   getSkill(id: string): Promise<Skill | undefined>;
   createSkill(skill: InsertSkill): Promise<Skill>;
   updateSkill(id: string, skill: Partial<InsertSkill>): Promise<Skill | undefined>;
@@ -664,6 +665,29 @@ export class DbStorage implements IStorage {
     }));
   }
 
+  // Área/quest a la que pertenece cada nodo, subiendo por parent_skill_id hasta el nodo raíz
+  // (los sub-nodos no siempre tienen area_id/project_id propios, y el front solo tiene
+  // cargados los nodos de primer nivel).
+  async getSkillRootScopes(skillIds: string[]): Promise<Map<string, { areaId: string | null; projectId: string | null }>> {
+    const scopes = new Map<string, { areaId: string | null; projectId: string | null }>();
+    if (skillIds.length === 0) return scopes;
+    const result = await pool.query(
+      `WITH RECURSIVE chain AS (
+         SELECT s.id AS start_id, s.id, s.parent_skill_id, s.area_id, s.project_id
+         FROM skills s WHERE s.id = ANY($1::varchar[])
+         UNION ALL
+         SELECT c.start_id, p.id, p.parent_skill_id, p.area_id, p.project_id
+         FROM skills p JOIN chain c ON p.id = c.parent_skill_id
+       )
+       SELECT start_id, area_id, project_id FROM chain WHERE parent_skill_id IS NULL`,
+      [skillIds]
+    );
+    for (const r of result.rows) {
+      scopes.set(r.start_id, { areaId: r.area_id, projectId: r.project_id });
+    }
+    return scopes;
+  }
+
   async getSkill(id: string): Promise<Skill | undefined> {
     const result = await db.select().from(skills).where(eq(skills.id, id));
     return result[0];
@@ -712,6 +736,8 @@ export class DbStorage implements IStorage {
     if (skill.isFinalNode !== undefined) updateData.isFinalNode = skill.isFinalNode as 0 | 1;
     if (skill.isSideQuest !== undefined) updateData.isSideQuest = skill.isSideQuest as 0 | 1;
     if (skill.isReflection !== undefined) updateData.isReflection = skill.isReflection as 0 | 1;
+    if (skill.reflectionPrompt !== undefined) updateData.reflectionPrompt = skill.reflectionPrompt;
+    if (skill.reflectionEntries !== undefined) updateData.reflectionEntries = skill.reflectionEntries as { date: string; text: string }[];
     if (skill.level !== undefined) updateData.level = skill.level;
     if (skill.levelPosition !== undefined) updateData.levelPosition = skill.levelPosition;
     if (skill.plannedDate !== undefined) updateData.plannedDate = skill.plannedDate;

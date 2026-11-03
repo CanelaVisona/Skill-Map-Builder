@@ -60,6 +60,8 @@ export interface Skill {
   hasCompletionStar?: number;
   isSideQuest?: number;
   isReflection?: number;
+  reflectionPrompt?: string | null;
+  reflectionEntries?: { date: string; text: string }[] | null;
   level: number;
   levelPosition?: number;
   experiencePoints?: number;
@@ -147,7 +149,7 @@ interface SkillTreeContextType {
   toggleSkillStatus: (areaId: string, skillId: string) => void;
   toggleProjectSkillStatus: (projectId: string, skillId: string) => void;
   addSkill: (areaId: string, skill: Omit<Skill, "id">) => void;
-  updateSkill: (areaId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null }) => void;
+  updateSkill: (areaId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null; reflectionPrompt?: string; reflectionEntries?: { date: string; text: string }[] }) => void;
   deleteSkill: (areaId: string, skillId: string) => void;
   toggleLock: (areaId: string, skillId: string) => void;
   moveSkill: (areaId: string, skillId: string, direction: "up" | "down") => void;
@@ -157,7 +159,7 @@ interface SkillTreeContextType {
   swapAreaLevels: (areaId: string, levelA: number, levelB: number) => Promise<void>;
   addExtraAreaLevel: (areaId: string) => Promise<boolean>;
   deleteAreaLevel: (areaId: string, level: number) => Promise<void>;
-  updateProjectSkill: (projectId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null }) => void;
+  updateProjectSkill: (projectId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null; reflectionPrompt?: string; reflectionEntries?: { date: string; text: string }[] }) => void;
   deleteProjectSkill: (projectId: string, skillId: string) => void;
   toggleProjectLock: (projectId: string, skillId: string) => void;
   moveProjectSkill: (projectId: string, skillId: string, direction: "up" | "down") => void;
@@ -193,7 +195,7 @@ interface SkillTreeContextType {
   enterSubSkillTree: (skillId: string, skillTitle: string) => Promise<void>;
   exitSubSkillTree: () => void;
   toggleSubSkillStatus: (skillId: string) => void;
-  updateSubSkill: (skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null }) => void;
+  updateSubSkill: (skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null; reflectionPrompt?: string; reflectionEntries?: { date: string; text: string }[] }) => void;
   deleteSubSkill: (skillId: string) => void;
   toggleSubSkillLock: (skillId: string) => void;
   moveSubSkill: (skillId: string, direction: "up" | "down") => void;
@@ -202,7 +204,11 @@ interface SkillTreeContextType {
   addProjectSkillBelow: (projectId: string, skillId: string, title?: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; isSideQuest?: 0 | 1; isReflection?: 0 | 1 }) => Promise<void>;
   addSubSkillBelow: (skillId: string, title?: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; isSideQuest?: 0 | 1; isReflection?: 0 | 1 }) => Promise<void>;
   addSideQuestNode: (kind: "area" | "project" | "sub", parentId: string, skillId: string) => Promise<void>;
-  addSkillInPlaceOfAvailable: (kind: "area" | "project", parentId: string, title: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null }) => Promise<Skill | null>;
+  // fillUnnamed (default true): si el desbloqueado no tiene nombre se le pone el título, y el
+  // primer nodo sin nombre que queda después del nuevo se borra. En false, solo se inserta.
+  addSkillInPlaceOfAvailable: (kind: "area" | "project", parentId: string, title: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null; isReflection?: 0 | 1; reflectionPrompt?: string }, options?: { fillUnnamed?: boolean }) => Promise<Skill | null>;
+  // Le pone el título (y los campos) al primer nodo sin nombre del árbol, sin sumar nodos.
+  addSkillInFirstUnnamed: (kind: "area" | "project", parentId: string, title: string, copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null; isReflection?: 0 | 1; reflectionPrompt?: string }) => Promise<Skill | null>;
   materializePendingEventNodes: () => Promise<void>;
   // Relee áreas y quests del server (p.ej. después de cambiar estados de nodos por fuera del árbol).
   refreshSkillTrees: () => Promise<void>;
@@ -301,6 +307,17 @@ function computeLevelSwapYUpdates(
 // The currently unlocked level may take part in a level swap only while nobody has made
 // progress on it yet: the only mastered node allowed is Node 1 (the auto-mastered
 // decoration node every level starts with).
+// Nodos todavía sin nombre (los que se crean vacíos al armar un nivel o con un título por
+// defecto): una tarea nueva puede ocupar el lugar de uno de ellos en vez de sumar un nodo más.
+const UNNAMED_NODE_TITLES = new Set(["", "?", "Asigná un paso", "Next challenge", "Next objetive quest", "Objective quest"]);
+export const isUnnamedNode = (s: Pick<Skill, "status" | "isFinalNode" | "title">) =>
+  s.status !== "mastered" && !s.isFinalNode && UNNAMED_NODE_TITLES.has((s.title || "").trim());
+
+export const sortByTreeOrder = (a: Skill, b: Skill) => (a.level - b.level) || ((a.levelPosition || 0) - (b.levelPosition || 0));
+
+// Nodo desbloqueado del árbol donde se inserta una tarea nueva (el primero de cada nivel no cuenta).
+export const findAvailableNode = (sorted: Skill[]) => sorted.find(s => s.status === "available" && (s.levelPosition || 0) > 1);
+
 export function isLevelWithoutProgress(skills: { level: number; status: string; levelPosition?: number | null; isAutoComplete?: number | null }[], level: number): boolean {
   return !skills.some(s => s.level === level && s.status === "mastered" && s.levelPosition !== 1 && s.isAutoComplete !== 1);
 }
@@ -2076,7 +2093,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
-  const updateSkill = async (areaId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null }) => {
+  const updateSkill = async (areaId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null; reflectionPrompt?: string; reflectionEntries?: { date: string; text: string }[] }) => {
     console.log('[updateSkill] Called with skillId:', skillId, 'areaId:', areaId, 'updates:', updates);
     try {
       const response = await fetch(`/api/skills/${skillId}`, {
@@ -2348,7 +2365,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
-  const updateProjectSkill = async (projectId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null }) => {
+  const updateProjectSkill = async (projectId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null; reflectionPrompt?: string; reflectionEntries?: { date: string; text: string }[] }) => {
     try {
       await fetch(`/api/skills/${skillId}`, {
         method: "PATCH",
@@ -3134,7 +3151,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
-  const updateSubSkill = async (skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null }) => {
+  const updateSubSkill = async (skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null; reflectionPrompt?: string; reflectionEntries?: { date: string; text: string }[] }) => {
     try {
       await fetch(`/api/skills/${skillId}`, {
         method: "PATCH",
@@ -3705,43 +3722,75 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
+  // Se lee el árbol fresco del server (no el estado local): esto puede correr varias veces
+  // seguidas sobre el mismo árbol (eventos pendientes) y el estado local quedaría viejo.
+  const fetchFreshTree = async (kind: "area" | "project", parentId: string): Promise<Area | Project | undefined> => {
+    try {
+      const listRes = await fetch(kind === "area" ? "/api/areas" : "/api/projects", { credentials: "include" });
+      const list = listRes.ok ? await listRes.json() : [];
+      return (Array.isArray(list) ? list : []).find((p: Area | Project) => p.id === parentId);
+    } catch (error) {
+      console.error("Error loading tree for new node:", error);
+      return undefined;
+    }
+  };
+
+  const buildNewNodeFields = (copyFields?: Parameters<typeof addSkillInPlaceOfAvailable>[3]) => ({
+    ...(copyFields?.plannedDate !== undefined ? { plannedDate: copyFields.plannedDate } : {}),
+    ...(copyFields?.plannedDuration !== undefined ? { plannedDuration: copyFields.plannedDuration } : {}),
+    ...(copyFields?.plannedDeadline ? { plannedDeadline: copyFields.plannedDeadline } : {}),
+    ...(copyFields?.plannedStartTime ? { plannedStartTime: copyFields.plannedStartTime } : {}),
+    ...(copyFields?.isReflection ? { isReflection: 1 as const } : {}),
+    ...(copyFields?.reflectionPrompt ? { reflectionPrompt: copyFields.reflectionPrompt } : {}),
+  });
+
+  const addSkillInFirstUnnamed = async (
+    kind: "area" | "project",
+    parentId: string,
+    title: string,
+    copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null; isReflection?: 0 | 1; reflectionPrompt?: string }
+  ): Promise<Skill | null> => {
+    const parent = await fetchFreshTree(kind, parentId);
+    const target = parent && [...parent.skills].sort(sortByTreeOrder).find(isUnnamedNode);
+    if (!target) return null;
+    const fields = buildNewNodeFields(copyFields);
+    try {
+      const res = await fetch(`/api/skills/${target.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, ...fields }),
+      });
+      if (!res.ok) throw new Error("Failed to rename unnamed node");
+      if (kind === "area") await refreshAllAreas();
+      else await refreshAllProjects();
+      return { ...target, title, ...fields } as Skill;
+    } catch (error) {
+      console.error("Error filling unnamed node:", error);
+      return null;
+    }
+  };
+
   const addSkillInPlaceOfAvailable = async (
     kind: "area" | "project",
     parentId: string,
     title: string,
-    copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null }
+    copyFields?: { plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null; isReflection?: 0 | 1; reflectionPrompt?: string },
+    options?: { fillUnnamed?: boolean }
   ): Promise<Skill | null> => {
-    // Se lee el árbol fresco del server (no el estado local): esto puede correr varias veces
-    // seguidas sobre el mismo árbol (eventos pendientes) y el estado local quedaría viejo.
-    let parent: Area | Project | undefined;
-    try {
-      const listRes = await fetch(kind === "area" ? "/api/areas" : "/api/projects", { credentials: "include" });
-      const list = listRes.ok ? await listRes.json() : [];
-      parent = (Array.isArray(list) ? list : []).find((p: Area | Project) => p.id === parentId);
-    } catch (error) {
-      console.error("Error loading tree for new node:", error);
-    }
+    const fillUnnamed = options?.fillUnnamed ?? true;
+    const parent = await fetchFreshTree(kind, parentId);
     if (!parent) return null;
 
-    const byOrder = (a: Skill, b: Skill) => (a.level - b.level) || ((a.levelPosition || 0) - (b.levelPosition || 0));
-    const sorted = [...parent.skills].sort(byOrder);
-    const available = sorted.find(s => s.status === "available" && (s.levelPosition || 0) > 1);
+    const sorted = [...parent.skills].sort(sortByTreeOrder);
+    const available = findAvailableNode(sorted);
     const lastMastered = [...sorted].reverse().find(s => s.status === "mastered");
     const anchor = available ?? lastMastered;
     if (!anchor) return null;
 
-    // Nodos todavía sin nombre (los que se crean vacíos al armar un nivel o con un título por
-    // defecto): la tarea nueva ocupa el lugar de uno de ellos en vez de sumar un nodo más, así
-    // el árbol no sigue empujando para adelante los nodos sin nombre.
-    const UNNAMED_TITLES = new Set(["", "?", "Asigná un paso", "Next challenge", "Next objetive quest", "Objective quest"]);
-    const isUnnamed = (s: Skill) => s.status !== "mastered" && !s.isFinalNode && UNNAMED_TITLES.has((s.title || "").trim());
-
-    const plannedFields = {
-      ...(copyFields?.plannedDate !== undefined ? { plannedDate: copyFields.plannedDate } : {}),
-      ...(copyFields?.plannedDuration !== undefined ? { plannedDuration: copyFields.plannedDuration } : {}),
-      ...(copyFields?.plannedDeadline ? { plannedDeadline: copyFields.plannedDeadline } : {}),
-      ...(copyFields?.plannedStartTime ? { plannedStartTime: copyFields.plannedStartTime } : {}),
-    };
+    // Con fillUnnamed, la tarea nueva ocupa el lugar de un nodo sin nombre en vez de sumar un
+    // nodo más, así el árbol no sigue empujando para adelante los nodos sin nombre.
+    const isUnnamed = (s: Skill) => fillUnnamed && isUnnamedNode(s);
+    const plannedFields = buildNewNodeFields(copyFields);
 
     try {
       // El desbloqueado no tiene nombre: se le pone el de la tarea y queda en su lugar.
@@ -5232,6 +5281,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       moveSubSkill,
       addSkillBelow,
       addSkillInPlaceOfAvailable,
+      addSkillInFirstUnnamed,
       addSideQuestNode,
       materializePendingEventNodes,
       refreshSkillTrees: async () => { await Promise.all([refreshAllAreas(), refreshAllProjects()]); },

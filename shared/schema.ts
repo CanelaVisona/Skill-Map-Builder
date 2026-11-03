@@ -74,6 +74,9 @@ export const skills = pgTable("skills", {
   isSideQuest: integer("is_side_quest").$type<0 | 1>().default(0),
   // Reflexión node: works like a regular node, but is drawn with a note icon instead of the dot.
   isReflection: integer("is_reflection").$type<0 | 1>().default(0),
+  // Reflexión: the full question / context ("Planteo") and the dated entries written from the node pop-up.
+  reflectionPrompt: text("reflection_prompt").default(""),
+  reflectionEntries: jsonb("reflection_entries").$type<{ date: string; text: string }[]>().default([]),
   level: integer("level").notNull().default(1),
   levelPosition: integer("level_position").notNull().default(1),
   experiencePoints: integer("experience_points").default(0),
@@ -367,6 +370,8 @@ export const journalQuestions = pgTable("journal_questions", {
   skillId: varchar("skill_id"),
   title: text("title").notNull(),
   sentence: text("sentence").notNull().default(""),
+  // Nodo Reflexión creado desde esta pregunta (mantener apretado su título en el Journal).
+  reflectionSkillId: varchar("reflection_skill_id"),
 });
 
 export const journalTools = pgTable("journal_tools", {

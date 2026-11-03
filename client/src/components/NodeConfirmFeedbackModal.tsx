@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BookOpen, Lightbulb, Split, HelpCircle, Circle, Wrench, Shield, Check, ChevronLeft, Plus, X } from "lucide-react";
+import { BookOpen, Lightbulb, Split, HelpCircle, Circle, CirclePlus, Wrench, Shield, Check, ChevronLeft, Plus, X } from "lucide-react";
 import { SkillsSparkIcon } from "@/components/SkillsSparkIcon";
 import { type GlobalSkill } from "@/lib/skill-context";
 import { cn } from "@/lib/utils";
@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { SkillLinkPicker } from "@/components/SkillLinkPicker";
 import { BodyLinkPicker, type BodyLink } from "@/components/BodyLinkPicker";
 import { SkillPickerList, ChipListInput } from "@/components/skill-node-pickers";
+import { SkillDesigner } from "@/components/SkillDesigner";
 
 // Modal de "feedback" que aparece al confirmar un nodo: después del pop-up de la barra de nivel
 // del área/quest y antes de "Quest updated!" (ver confirmNode en SkillNode.tsx). Se divide en
@@ -112,7 +113,7 @@ export const isNodeFeedbackDraftEmpty = (draft: NodeFeedbackDraft) =>
   draft.powers.length === 0 &&
   draft.newPowers.length === 0;
 
-type CubeId = "thought" | "learning" | "strategy" | "question" | "tool" | "error" | "xp" | "power";
+type CubeId = "thought" | "learning" | "strategy" | "question" | "tool" | "error" | "xp" | "power" | "node";
 
 // Mismos íconos que el Journal (tabs de SkillTree.tsx): Learnings, Tools, Errores (círculo),
 // Skills (XP) y Poderes; pensamiento usa el BookOpen de la sección "Thoughts". Estrategias
@@ -126,12 +127,18 @@ const CUBES: Array<{ id: CubeId; label: string; icon: React.ComponentType<{ clas
   { id: "error", label: "Error", icon: Circle },
   { id: "xp", label: "Nuevo XP", icon: SkillsSparkIcon },
   { id: "power", label: "Poder", icon: Shield },
+  // "Nodo nuevo": elegís el área/quest y se abre adentro su Skill Designer, para agregar el nodo
+  // (y acomodarlo) ahí mismo. Lo que se hace en el designer se guarda en el momento, como
+  // siempre; el cubo solo lleva la cuenta de en qué áreas/quests se editó.
+  { id: "node", label: "Nodo nuevo", icon: CirclePlus },
 ];
 
 // Cada paso de cada formulario. La lista de pasos de un cubo depende de lo elegido en su primer
 // paso (error/poder nuevo vs. existente) -- ver stepKeys.
 type StepKey =
   | "scope"
+  | "nodeScope"
+  | "nodeDesigner"
   | "description"
   | "title"
   | "errorPick"
@@ -212,7 +219,7 @@ interface NodeConfirmFeedbackModalProps {
   legacySkills: string[];
   scopedGlobalSkills: GlobalSkill[];
   areas: Array<{ id: string; name: string }>;
-  projects: Array<{ id: string; name: string }>;
+  projects: Array<{ id: string; name: string; questType?: string | null }>;
   currentAreaId?: string;
   currentProjectId?: string;
   getGlobalSkillsForArea: (areaId: string) => GlobalSkill[];
@@ -251,6 +258,9 @@ export function NodeConfirmFeedbackModal({
 
   // Dentro de un cubo: "list" = lo ya cargado en ese cubo + "Agregar otro"; "form" = el formulario.
   const [cubeView, setCubeView] = useState<"list" | "form">("form");
+  // Áreas/quests editadas desde el cubo "Nodo nuevo" (solo para mostrarlo; lo editado ya quedó
+  // guardado desde el Skill Designer).
+  const [nodeEdits, setNodeEdits] = useState<Array<{ type: "area" | "project"; id: string }>>([]);
   // Formularios a medio escribir, por cubo (ver CubeForm).
   const [formDrafts, setFormDrafts] = useState<Partial<Record<CubeId, CubeForm>>>({});
 
@@ -299,6 +309,7 @@ export function NodeConfirmFeedbackModal({
       setStep(0);
       setFormDrafts({});
       setCubeView("form");
+      setNodeEdits([]);
     }
   }, [open]);
 
@@ -379,6 +390,7 @@ export function NodeConfirmFeedbackModal({
       case "error": return draft.errors.length + draft.errorActions.length;
       case "xp": return draft.xpSkillIds.length;
       case "power": return draft.powers.length + draft.newPowers.length;
+      case "node": return nodeEdits.length;
     }
   };
 
@@ -437,6 +449,9 @@ export function NodeConfirmFeedbackModal({
       case "power":
         if (powerTarget === NEW) return [...scopeStep, "powerPick", "powerDescription", "powerName"];
         return [...scopeStep, "powerPick", "powerConfirm"];
+      case "node":
+        // Siempre pregunta el área/quest (aunque lo confirmado ya tenga una).
+        return ["nodeScope", "nodeDesigner"];
     }
   };
 
@@ -448,6 +463,8 @@ export function NodeConfirmFeedbackModal({
     switch (currentKey) {
       case "scope":
         return pickedScope !== undefined;
+      case "nodeScope":
+        return !!pickedScope;
       case "title":
       case "errorName":
       case "powerName":
@@ -471,8 +488,14 @@ export function NodeConfirmFeedbackModal({
 
   const save = () => {
     if (!activeCube) return;
+    if (activeCube === "node" && pickedScope) {
+      const edited = pickedScope;
+      setNodeEdits((prev) => (prev.some((e) => e.type === edited.type && e.id === edited.id) ? prev : [...prev, edited]));
+    }
     setDraft((prev) => {
       switch (activeCube) {
+        case "node":
+          return prev;
         case "thought":
           return { ...prev, thoughts: [...prev.thoughts, { title: title.trim(), sentence: sentence.trim() }] };
         case "learning":
@@ -561,7 +584,10 @@ export function NodeConfirmFeedbackModal({
   const removeAt = (field: DraftArrayField, index: number) =>
     setDraft((prev) => ({ ...prev, [field]: (prev[field] as unknown[]).filter((_, i) => i !== index) }));
 
-  const listItems = (cube: CubeId): Array<{ key: string; label: string; detail?: string; onRemove: () => void }> => {
+  const scopeName = (scope: { type: "area" | "project"; id: string }) =>
+    (scope.type === "area" ? areas : projects).find((x) => x.id === scope.id)?.name ?? "Área/quest";
+
+  const listItems = (cube: CubeId): Array<{ key: string; label: string; detail?: string; onRemove?: () => void }> => {
     const entries = (field: "thoughts" | "learnings" | "strategies" | "questions" | "tools") =>
       draft[field].map((entry, i) => ({ key: `${field}-${i}`, label: entry.title, detail: entry.sentence || undefined, onRemove: () => removeAt(field, i) }));
     switch (cube) {
@@ -587,6 +613,9 @@ export function NodeConfirmFeedbackModal({
           ...draft.powers.map((p, i) => ({ key: `powers-${p.power.id}`, label: `${p.power.isUnlocked === 0 ? "Desbloquear" : "Dominar"}: ${p.power.name}`, onRemove: () => removeAt("powers", i) })),
           ...draft.newPowers.map((p, i) => ({ key: `newPowers-${i}`, label: `Nuevo: ${p.name}`, detail: p.description || undefined, onRemove: () => removeAt("newPowers", i) })),
         ];
+      case "node":
+        // Sin X: lo editado en el designer ya está guardado.
+        return nodeEdits.map((e) => ({ key: `node-${e.type}-${e.id}`, label: `Editado: ${scopeName(e)}`, detail: e.type === "project" ? "Quest" : undefined }));
     }
   };
 
@@ -637,7 +666,9 @@ export function NodeConfirmFeedbackModal({
     </button>
   );
 
-  const renderScopePick = () => {
+  // allowNone: false en "Nodo nuevo" (un nodo siempre es de un área/quest), que además solo
+  // ofrece las quests que el Skill Designer muestra (no las de experiencia).
+  const renderScopePick = (allowNone = true) => {
     const option = (scope: FeedbackScope, label: string, hint?: string) => (
       <button
         key={scopeKey(scope)}
@@ -654,8 +685,10 @@ export function NodeConfirmFeedbackModal({
       <div className="space-y-2">
         <Label className={fieldLabel}>¿De qué área o quest?</Label>
         {areas.map((a) => option({ type: "area", id: a.id }, a.name))}
-        {projects.map((p) => option({ type: "project", id: p.id }, p.name, "Quest"))}
-        {option(null, "Ninguna", activeCube === "power" ? "Queda en \"+ poderes\"" : "Queda en \"+ errores\"")}
+        {projects
+          .filter((p) => allowNone || p.questType !== "experience")
+          .map((p) => option({ type: "project", id: p.id }, p.name, "Quest"))}
+        {allowNone && option(null, "Ninguna", activeCube === "power" ? "Queda en \"+ poderes\"" : "Queda en \"+ errores\"")}
       </div>
     );
   };
@@ -664,6 +697,17 @@ export function NodeConfirmFeedbackModal({
     switch (currentKey) {
       case "scope":
         return renderScopePick();
+      case "nodeScope":
+        return renderScopePick(false);
+      case "nodeDesigner":
+        return pickedScope ? (
+          <div className="space-y-2">
+            <p className="text-[11px] text-muted-foreground">
+              Agregá el nodo donde va (botón + de un nodo) y acomodalo; los cambios se guardan en el momento. Cuando termines, apretá Listo.
+            </p>
+            <SkillDesigner open embedded scope={pickedScope} onOpenChange={() => {}} />
+          </div>
+        ) : null;
       case "description":
         return renderDescriptionInput(
           "Descripción",
@@ -897,9 +941,15 @@ export function NodeConfirmFeedbackModal({
       {/* Título y botones (Atrás-Siguiente) quedan fijos; solo el cuerpo scrollea, con barra
           minimalista. Sin botón "Listo": el modal se cierra (y entrega lo cargado) tocando afuera
           o con Escape. */}
-      <DialogContent className="sm:max-w-[400px] border-0 shadow-2xl max-h-[90dvh] flex flex-col gap-3 overflow-hidden">
+      <DialogContent
+        className={cn(
+          "border-0 shadow-2xl max-h-[90dvh] flex flex-col gap-3 overflow-hidden",
+          // El Skill Designer necesita más ancho que los formularios.
+          cubeView === "form" && currentKey === "nodeDesigner" ? "sm:max-w-2xl" : "sm:max-w-[400px]"
+        )}
+      >
         <DialogTitle className="text-lg font-medium shrink-0">{activeCubeMeta ? activeCubeMeta.label : "¿Qué te dejó este nodo?"}</DialogTitle>
-        <DialogDescription className="sr-only">Registrá pensamientos, aprendizajes, estrategias, preguntas, herramientas, errores, XP o poderes del nodo confirmado</DialogDescription>
+        <DialogDescription className="sr-only">Registrá pensamientos, aprendizajes, estrategias, preguntas, herramientas, errores, XP, poderes o nodos nuevos del nodo confirmado</DialogDescription>
 
         {activeCube === null ? (
           <>
@@ -942,15 +992,17 @@ export function NodeConfirmFeedbackModal({
                     <p className="text-sm font-medium break-words">{item.label}</p>
                     {item.detail && <p className="mt-0.5 text-xs text-muted-foreground break-words line-clamp-2">{item.detail}</p>}
                   </div>
-                  <button
-                    type="button"
-                    onClick={item.onRemove}
-                    className="shrink-0 text-muted-foreground hover:text-foreground"
-                    aria-label="Quitar"
-                    data-testid={`confirm-feedback-remove-${item.key}`}
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
+                  {item.onRemove && (
+                    <button
+                      type="button"
+                      onClick={item.onRemove}
+                      className="shrink-0 text-muted-foreground hover:text-foreground"
+                      aria-label="Quitar"
+                      data-testid={`confirm-feedback-remove-${item.key}`}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
               ))}
               <button
@@ -982,7 +1034,7 @@ export function NodeConfirmFeedbackModal({
                 {step === 0 ? "Volver" : "Atrás"}
               </Button>
               <Button size="sm" onClick={next} disabled={!canAdvance()} data-testid="confirm-feedback-next">
-                {isLastStep ? "Guardar" : "Siguiente"}
+                {currentKey === "nodeDesigner" ? "Listo" : isLastStep ? "Guardar" : "Siguiente"}
               </Button>
             </div>
           </>

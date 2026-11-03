@@ -146,9 +146,9 @@ app.use((req, res, next) => {
 
   // Nodos Reflexión. Ver migrations/0070_skill_reflection.sql.
   try {
-    await db.execute(sql`
-      ALTER TABLE "skills" ADD COLUMN IF NOT EXISTS "is_reflection" integer DEFAULT 0;
-    `);
+    await db.execute(sql`ALTER TABLE "skills" ADD COLUMN IF NOT EXISTS "is_reflection" integer DEFAULT 0;`);
+    await db.execute(sql`ALTER TABLE "skills" ADD COLUMN IF NOT EXISTS "reflection_prompt" text DEFAULT '';`);
+    await db.execute(sql`ALTER TABLE "skills" ADD COLUMN IF NOT EXISTS "reflection_entries" jsonb DEFAULT '[]'::jsonb;`);
   } catch (error: any) {
     console.error("⚠ skills.is_reflection migration warning:", error.message);
   }
@@ -170,7 +170,7 @@ app.use((req, res, next) => {
   }
 
   // "Preguntas" del Journal (cubo "Preguntas" del modal de feedback). Ver
-  // migrations/0069_journal_questions.sql.
+  // migrations/0069_journal_questions.sql y 0071_journal_question_reflection_node.sql.
   try {
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS "journal_questions" (
@@ -181,6 +181,7 @@ app.use((req, res, next) => {
         "sentence" text DEFAULT '' NOT NULL
       );
     `);
+    await db.execute(sql`ALTER TABLE "journal_questions" ADD COLUMN IF NOT EXISTS "reflection_skill_id" varchar;`);
   } catch (error: any) {
     console.error("⚠ journal_questions migration warning:", error.message);
   }

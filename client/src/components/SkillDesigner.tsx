@@ -17,10 +17,15 @@ import { useToast } from "@/hooks/use-toast";
 interface SkillDesignerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  // Sin su propio Dialog: el contenido se muestra adentro de otro (p.ej. el cubo "Nodo nuevo"
+  // del modal de feedback post-confirmación). Los diálogos internos (editar nodo, etc.) siguen.
+  embedded?: boolean;
+  // Solo esta área/quest (y abierta de entrada), en vez de todas.
+  scope?: { type: "area" | "project"; id: string };
 }
 
-export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
-  const { areas, projects, activeAreaId, activeProjectId, updateSkill, updateProjectSkill, updateLevelSubtitle, updateProjectLevelSubtitle, moveSkillToLevel, moveProjectSkillToLevel, changeSkillLevel, changeProjectSkillLevel, reorderSkillWithinLevel, reorderProjectSkillWithinLevel, swapAreaLevels, swapProjectLevels, addExtraAreaLevel, addExtraProjectLevel, deleteAreaLevel, deleteProjectLevel, addSkillBelow, addProjectSkillBelow, duplicateSkill, duplicateProjectSkill, deleteSkill, deleteProjectSkill, toggleFinalNode, toggleProjectFinalNode } = useSkillTree();
+export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: SkillDesignerProps) {
+  const { areas, projects, activeAreaId, activeProjectId, updateSkill, updateProjectSkill, updateLevelSubtitle, updateProjectLevelSubtitle, moveSkillToLevel, moveProjectSkillToLevel, changeSkillLevel, changeProjectSkillLevel, reorderSkillWithinLevel, reorderProjectSkillWithinLevel, swapAreaLevels, swapProjectLevels, addExtraAreaLevel, addExtraProjectLevel, deleteAreaLevel, deleteProjectLevel, addSkillBelow, addProjectSkillBelow, duplicateSkill, duplicateProjectSkill, deleteSkill, deleteProjectSkill, toggleFinalNode, toggleProjectFinalNode, addSideQuestNode } = useSkillTree();
   const { toast } = useToast();
   const [addingLevelId, setAddingLevelId] = useState<string | null>(null);
   // Tracks which skill's "add node" popover (Agregar / hermano / duplicar) is open
@@ -75,11 +80,15 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
 
   // Pre-open the accordion item for the area/project currently being viewed
   // in the Skill Tree, so the designer doesn't land on a fully collapsed list.
-  const defaultAccordionValue = activeAreaId
-    ? `area-${activeAreaId}`
-    : activeProjectId
-      ? `project-${activeProjectId}`
-      : undefined;
+  const defaultAccordionValue = scope
+    ? `${scope.type}-${scope.id}`
+    : activeAreaId
+      ? `area-${activeAreaId}`
+      : activeProjectId
+        ? `project-${activeProjectId}`
+        : undefined;
+  const shownAreas = scope ? (scope.type === "area" ? areas.filter((a) => a.id === scope.id) : []) : areas;
+  const shownProjects = scope ? (scope.type === "project" ? projects.filter((p) => p.id === scope.id) : []) : projects;
 
   const handleNodeLongPressStart = (skillId: string, currentName: string, areaId: string | null, projectId: string | null, level?: number, isLocked: boolean = false) => {
     longPressTimer.current = setTimeout(() => {
@@ -345,20 +354,10 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
     return level > unlockedLevel && level <= maxLevel;
   };
 
-  return (
-    <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto" showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle>Skill Designer</DialogTitle>
-            <DialogDescription className="sr-only">
-              Editar nombres de nodos y subtítulos de niveles.
-            </DialogDescription>
-          </DialogHeader>
-
+  const designerBody = (
           <Accordion type="single" collapsible className="w-full" defaultValue={defaultAccordionValue}>
             {/* Areas */}
-            {areas.map((area) => {
+            {shownAreas.map((area) => {
               const maxLevel = Math.max(...area.skills.map((s) => s.level));
               const levelsToShow = calculateDesignerLevelWindow(area.unlockedLevel, area.nextLevelToAssign, area.endOfAreaLevel, maxLevel);
               const visibleInSkillTree = area.endOfAreaLevel ?? (area.nextLevelToAssign + 2);
@@ -500,6 +499,10 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                     <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" onClick={() => { addSkillBelow(area.id, skill.id, '', { isReflection: 1 }); setOpenAddMenuSkillId(null); }}>
                                                       Reflexión
                                                     </Button>
+                                                    {/* SideQuest: toma el lugar del nodo desbloqueado del nivel (ver addSideQuestNode), igual que "+ → SideQuest" en el árbol. */}
+                                                    <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" title="Nodo que no es parte del título del nivel, pero que te hizo crecer en el área" onClick={() => { void addSideQuestNode("area", area.id, skill.id); setOpenAddMenuSkillId(null); }}>
+                                                      SideQuest
+                                                    </Button>
                                                     <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" onClick={() => { duplicateSkill(area.id, skill); setOpenAddMenuSkillId(null); }}>
                                                       Duplicar nodo
                                                     </Button>
@@ -564,7 +567,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
             })}
 
             {/* Main Quests */}
-            {projects
+            {shownProjects
               .filter((p) => !p.questType || p.questType === "main")
               .map((project) => {
                 const maxLevel = Math.max(...project.skills.map((s) => s.level));
@@ -706,6 +709,10 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                       <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" onClick={() => { addProjectSkillBelow(project.id, skill.id, '', { isReflection: 1 }); setOpenAddMenuSkillId(null); }}>
                                                         Reflexión
                                                       </Button>
+                                                      {/* SideQuest: toma el lugar del nodo desbloqueado del nivel (ver addSideQuestNode), igual que "+ → SideQuest" en el árbol. */}
+                                                      <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" title="Nodo que no es parte del título del nivel, pero que te hizo crecer en el área" onClick={() => { void addSideQuestNode("project", project.id, skill.id); setOpenAddMenuSkillId(null); }}>
+                                                        SideQuest
+                                                      </Button>
                                                       <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" onClick={() => { duplicateProjectSkill(project.id, skill); setOpenAddMenuSkillId(null); }}>
                                                         Duplicar nodo
                                                       </Button>
@@ -768,7 +775,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                   </AccordionItem>
                 );
               })}
-            {projects
+            {shownProjects
               .filter((p) => p.questType === "side")
               .map((project) => {
                 const maxLevel = Math.max(...project.skills.map((s) => s.level));
@@ -906,6 +913,10 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                     <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" onClick={() => { addProjectSkillBelow(project.id, skill.id, '', { isReflection: 1 }); setOpenAddMenuSkillId(null); }}>
                                                       Reflexión
                                                     </Button>
+                                                    {/* SideQuest: toma el lugar del nodo desbloqueado del nivel (ver addSideQuestNode), igual que "+ → SideQuest" en el árbol. */}
+                                                    <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" title="Nodo que no es parte del título del nivel, pero que te hizo crecer en el área" onClick={() => { void addSideQuestNode("project", project.id, skill.id); setOpenAddMenuSkillId(null); }}>
+                                                      SideQuest
+                                                    </Button>
                                                     <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" onClick={() => { duplicateProjectSkill(project.id, skill); setOpenAddMenuSkillId(null); }}>
                                                       Duplicar nodo
                                                     </Button>
@@ -969,7 +980,7 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
               })}
 
             {/* Emergent Quests */}
-            {projects
+            {shownProjects
               .filter((p) => p.questType === "emergent")
               .map((project) => {
                 const maxLevel = Math.max(...project.skills.map((s) => s.level));
@@ -1103,6 +1114,10 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                                                   <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" onClick={() => { addProjectSkillBelow(project.id, skill.id, '', { isReflection: 1 }); setOpenAddMenuSkillId(null); }}>
                                                     Reflexión
                                                   </Button>
+                                                  {/* SideQuest: toma el lugar del nodo desbloqueado del nivel (ver addSideQuestNode), igual que "+ → SideQuest" en el árbol. */}
+                                                  <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" title="Nodo que no es parte del título del nivel, pero que te hizo crecer en el área" onClick={() => { void addSideQuestNode("project", project.id, skill.id); setOpenAddMenuSkillId(null); }}>
+                                                    SideQuest
+                                                  </Button>
                                                   <Button variant="ghost" size="sm" className="h-7 px-3 text-xs justify-start font-normal" onClick={() => { duplicateProjectSkill(project.id, skill); setOpenAddMenuSkillId(null); }}>
                                                     Duplicar nodo
                                                   </Button>
@@ -1167,8 +1182,26 @@ export function SkillDesigner({ open, onOpenChange }: SkillDesignerProps) {
                 );
               })}
           </Accordion>
+  );
+
+  return (
+    <>
+      {embedded ? (
+        designerBody
+      ) : (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto" showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Skill Designer</DialogTitle>
+            <DialogDescription className="sr-only">
+              Editar nombres de nodos y subtítulos de niveles.
+            </DialogDescription>
+          </DialogHeader>
+
+          {designerBody}
         </DialogContent>
       </Dialog>
+      )}
 
       {/* Edit Name Dialog */}
       <Dialog

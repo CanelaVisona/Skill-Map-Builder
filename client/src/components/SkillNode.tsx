@@ -372,6 +372,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const suppressDurationOptionClickRef = useRef<string | null>(null);
   const [editDescription, setEditDescription] = useState(skill.description || "");
   const [editFeedback, setEditFeedback] = useState(skill.feedback || "");
+  // Reflexión nodes: "Planteo" (the full question / context), edited from the title dialog.
+  const [editReflectionPrompt, setEditReflectionPrompt] = useState(skill.reflectionPrompt || "");
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPress = useRef(false);
   const lastClickTime = useRef<number>(0); // Debounce flag to prevent duplicate onClick calls
@@ -1244,6 +1246,13 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   // Reflexión pop-up, opened by tapping an available Reflexión node (see handleClick).
   const [isReflectionOpen, setIsReflectionOpen] = useState(false);
   const [reflectionText, setReflectionText] = useState("");
+  // Everything written so far, oldest first. A note saved before entries existed lives in the
+  // description, so it's shown as a first, undated entry until the next entry is saved.
+  const reflectionEntries: { date: string; text: string }[] = skill.reflectionEntries?.length
+    ? skill.reflectionEntries
+    : skill.isReflection === 1 && skill.description?.trim()
+      ? [{ date: "", text: skill.description.trim() }]
+      : [];
   const [finalizeLearningTitle, setFinalizeLearningTitle] = useState("");
   const [finalizeLearningSentence, setFinalizeLearningSentence] = useState("");
   // Set the moment "Confirmar" is pressed in that dialog, so a second tap on the node while
@@ -1836,6 +1845,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       setPendingCustomDuration(false);
       setCustomDurationInputValue("");
       setEditFeedback(skill.feedback || "");
+      setEditReflectionPrompt(skill.reflectionPrompt || "");
       setXpValue(FIXED_XP_AMOUNT.toString());
       // First node of level (levelPosition === 1) starts at step 2 (background/date),
       // skipping the name+time step -- it's auto-named and can't be renamed.
@@ -2254,14 +2264,17 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     confirmNode({ title: finalTitle, sentence: finalSentence });
   };
 
-  // Saves the Reflexión pop-up's text as the node's description (the note), and optionally
-  // confirms the node right after.
+  // Appends what was written in the Reflexión pop-up as a new dated entry (empty text adds
+  // nothing), and optionally confirms the node right after.
   const saveReflection = (confirm: boolean) => {
-    const description = reflectionText;
-    if (isSubSkillView) updateSubSkill(skill.id, { description });
-    else if (isProject) updateProjectSkill(activeId, skill.id, { description });
-    else updateSkill(activeId, skill.id, { description });
-    setEditAction(description);
+    const text = reflectionText.trim();
+    if (text) {
+      const entries = [...reflectionEntries, { date: formatLocalDate(new Date()), text }];
+      if (isSubSkillView) updateSubSkill(skill.id, { reflectionEntries: entries });
+      else if (isProject) updateProjectSkill(activeId, skill.id, { reflectionEntries: entries });
+      else updateSkill(activeId, skill.id, { reflectionEntries: entries });
+    }
+    setReflectionText("");
     setIsReflectionOpen(false);
     if (confirm) confirmNode();
   };
@@ -2336,7 +2349,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     // Reflexión nodes don't confirm straight away: tapping opens the note pop-up, where the
     // player can just save it ("Listo") or save it and confirm the node.
     if (isReflectionNode && skill.status === "available") {
-      setReflectionText(skill.description || "");
+      setReflectionText("");
       setIsReflectionOpen(true);
       return;
     }
@@ -3019,8 +3032,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     <Dialog open={isEditDialogOpen} onOpenChange={(open) => {
       if (!open) {
         // Autosave when closing modal
-        if (editTitle.trim() || editAction.trim()) {
+        if (editTitle.trim() || editAction.trim() || editReflectionPrompt.trim()) {
           const combinedDescription = editAction;
+          const reflectionFields = isReflectionNode ? { reflectionPrompt: editReflectionPrompt } : {};
 
           if (isSubSkillView) {
             updateSubSkill(skill.id, {
@@ -3028,7 +3042,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               description: combinedDescription,
               feedback: editFeedback,
               plannedDate: editPlannedDate || null,
-              plannedDuration: editPlannedDuration
+              plannedDuration: editPlannedDuration,
+              ...reflectionFields
             });
           } else if (isProject) {
             updateProjectSkill(activeId, skill.id, {
@@ -3036,7 +3051,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               description: combinedDescription,
               feedback: editFeedback,
               plannedDate: editPlannedDate || null,
-              plannedDuration: editPlannedDuration
+              plannedDuration: editPlannedDuration,
+              ...reflectionFields
             });
           } else {
             updateSkill(activeId, skill.id, {
@@ -3044,7 +3060,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               description: combinedDescription,
               feedback: editFeedback,
               plannedDate: editPlannedDate || null,
-              plannedDuration: editPlannedDuration
+              plannedDuration: editPlannedDuration,
+              ...reflectionFields
             });
           }
         }
@@ -3067,7 +3084,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 className="flex-1 flex flex-col gap-4"
               >
                 <div>
-                  <Label htmlFor="edit-title" className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block">{isReflectionNode ? "PASO 1: Nombre" : "PASO 1: Nombre y tiempo"}</Label>
+                  <Label htmlFor="edit-title" className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block">{isReflectionNode ? "PASO 1: Nombre del nodo" : "PASO 1: Nombre y tiempo"}</Label>
                   <Input
                     id="edit-title"
                     value={editTitle}
@@ -3080,6 +3097,20 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                     autoFocus
                   />
                 </div>
+                {isReflectionNode && (
+                  <div>
+                    <Label htmlFor="edit-reflection-prompt" className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block">Planteo</Label>
+                    <Textarea
+                      id="edit-reflection-prompt"
+                      value={editReflectionPrompt}
+                      onChange={(e) => setEditReflectionPrompt(e.target.value)}
+                      placeholder="La pregunta completa o información sobre la pregunta..."
+                      rows={4}
+                      className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+                      data-testid="input-edit-reflection-prompt"
+                    />
+                  </div>
+                )}
                 {!isReflectionNode && (
                 <div>
                   <Label htmlFor="edit-duration" className="text-xs text-muted-foreground uppercase tracking-wide mb-2 block">Time</Label>
@@ -4123,6 +4154,30 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
           <DialogTitle className="text-lg font-medium">{skill.title || "Reflexión"}</DialogTitle>
           <DialogDescription className="sr-only">Completá la reflexión</DialogDescription>
         </DialogHeader>
+        {skill.reflectionPrompt?.trim() && (
+          <p className="font-description text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap break-words">
+            {skill.reflectionPrompt}
+          </p>
+        )}
+        {/* Previous entries: each one headed by the day it was written and closed by a divider,
+            so the next entry starts below the line. */}
+        {reflectionEntries.length > 0 && (
+          <div className="max-h-[40vh] overflow-y-auto minimal-scrollbar">
+            {reflectionEntries.map((entry, i) => (
+              <div key={i} className="pb-3 mb-3 border-b border-border">
+                {entry.date && (
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">
+                    {new Date(entry.date + "T00:00:00").toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" })}
+                  </div>
+                )}
+                <p className="text-sm text-foreground/90 leading-relaxed whitespace-pre-wrap break-words">{entry.text}</p>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="text-[10px] text-muted-foreground uppercase tracking-wide -mb-2">
+          {new Date().toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" })}
+        </div>
         <Textarea
           value={reflectionText}
           onChange={(e) => setReflectionText(e.target.value)}
