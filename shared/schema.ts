@@ -372,6 +372,9 @@ export const journalQuestions = pgTable("journal_questions", {
   sentence: text("sentence").notNull().default(""),
   // Nodo Reflexión creado desde esta pregunta (mantener apretado su título en el Journal).
   reflectionSkillId: varchar("reflection_skill_id"),
+  // Área/quest asignada a mano desde el Journal; manda sobre la que sale de skillId.
+  areaId: varchar("area_id"),
+  projectId: varchar("project_id"),
 });
 
 export const journalTools = pgTable("journal_tools", {

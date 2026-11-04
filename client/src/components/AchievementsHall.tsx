@@ -32,7 +32,8 @@ type CategoryKey =
   | "financial"
   | "missions"
   | "questions"
-  | "repairs";
+  | "repairs"
+  | "reflections";
 
 const CATEGORIES: Record<CategoryKey, { emoji: string; label: string }> = {
   manual: { emoji: "🏅", label: "Logros propios" },
@@ -49,6 +50,7 @@ const CATEGORIES: Record<CategoryKey, { emoji: string; label: string }> = {
   missions: { emoji: "🐷", label: "Misiones de ahorro" },
   questions: { emoji: "⚔️", label: "Problemas encontrados" },
   repairs: { emoji: "🔧", label: "Reparaciones hechas" },
+  reflections: { emoji: "📝", label: "Reflexiones" },
 };
 
 interface ManualAchievement {
@@ -70,6 +72,9 @@ interface Achievement {
   title: string;
   detail?: string;
   date?: string | null;
+  // Reflexión nodes: the full Planteo and every dated entry, shown under the title.
+  prompt?: string;
+  entries?: { date: string; text: string }[];
 }
 
 // Fechas "YYYY-MM-DD" se leen como día local; el resto (ISO/timestamp) tal cual.
@@ -374,6 +379,28 @@ export function AchievementsHall() {
       .filter((r) => r.done)
       .forEach((r) => list.push({ id: `repair-${r.id}`, cat: "repairs", title: r.text }));
 
+    // Nodos Reflexión confirmados de cada área/quest. Una nota escrita antes de que existieran
+    // los registros vive en la descripción y se muestra como un registro sin fecha.
+    [...areas.map((a) => ({ name: a.name, skills: a.skills })), ...projects.map((p) => ({ name: p.name, skills: p.skills }))]
+      .forEach(({ name, skills }) =>
+        skills
+          .filter((s) => s.isReflection === 1 && s.status === "mastered")
+          .forEach((s) => {
+            const entries = s.reflectionEntries?.length
+              ? s.reflectionEntries
+              : s.description?.trim() ? [{ date: "", text: s.description.trim() }] : [];
+            list.push({
+              id: `reflection-${s.id}`,
+              cat: "reflections",
+              title: s.title || "Reflexión",
+              detail: name,
+              date: s.completedAt || entries[entries.length - 1]?.date || null,
+              prompt: s.reflectionPrompt?.trim() || undefined,
+              entries,
+            });
+          }),
+      );
+
     manual.forEach((m) =>
       list.push({
         id: `manual-${m.id}`,
@@ -517,6 +544,21 @@ export function AchievementsHall() {
             <div className="min-w-0 flex-1">
               <p className="break-words text-sm font-medium text-foreground">{a.title}</p>
               {a.detail && <p className="break-words text-xs text-muted-foreground">{a.detail}</p>}
+              {a.prompt && (
+                <p className="mt-1.5 whitespace-pre-wrap break-words text-xs italic text-muted-foreground">{a.prompt}</p>
+              )}
+              {a.entries && a.entries.length > 0 && (
+                <div className="mt-2 border-t border-border/50">
+                  {a.entries.map((entry, i) => (
+                    <div key={i} className="border-b border-border/50 py-1.5">
+                      {entry.date && (
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{formatDate(entry.date)}</p>
+                      )}
+                      <p className="whitespace-pre-wrap break-words text-xs text-foreground/90">{entry.text}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             {a.date && <span className="shrink-0 text-xs text-muted-foreground">{formatDate(a.date)}</span>}
             {a.manualId && (

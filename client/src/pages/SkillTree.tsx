@@ -2340,51 +2340,91 @@ function ToolsSection({
 
 // También se usa para la tab "Estrategias" (misma forma que los aprendizajes): `variant`
 // cambia solo los textos, el ícono del estado vacío y los data-testid.
-// Preguntas: el server agrega el área/quest resuelta y, si la pregunta se pasó a nodo Reflexión,
-// el estado y los registros de ese nodo (ver GET /api/journal/questions).
+// Preguntas: el server devuelve el área/quest (la asignada a mano, o si no la de su nodo) y, si
+// la pregunta se pasó a nodo Reflexión, el estado y los registros de ese nodo (ver
+// GET /api/journal/questions).
 type JournalQuestionEntry = JournalQuestion & {
-  areaId?: string | null;
-  projectId?: string | null;
   reflectionNode?: { status: string; entries: { date: string; text: string }[] } | null;
 };
 type JournalSectionEntry = JournalLearning | JournalStrategy | JournalQuestionEntry;
 // Dónde va el nodo: en el lugar del desbloqueado (se inserta antes de él) o en el primer nodo
 // sin nombre del árbol (se le pone el nombre, sin sumar nodos).
 type ReflectionNodePlacement = "available" | "unnamed";
-type ReflectionNodeScope = { kind: "area" | "project"; id: string; placement: ReflectionNodePlacement };
+type QuestScope = { kind: "area" | "project"; id: string };
+type ReflectionNodeScope = QuestScope & { placement: ReflectionNodePlacement };
+
+function QuestScopeSelect({ value, onChange, placeholder }: { value: string; onChange: (key: string) => void; placeholder: string }) {
+  const { areas, projects } = useSkillTree();
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger data-testid="select-question-scope">
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent>
+        {areas.length > 0 && (
+          <SelectGroup>
+            <SelectLabel>Áreas</SelectLabel>
+            {areas.map((area) => (
+              <SelectItem key={area.id} value={`area-${area.id}`}>{area.name}</SelectItem>
+            ))}
+          </SelectGroup>
+        )}
+        {projects.length > 0 && (
+          <SelectGroup>
+            <SelectLabel>Quests</SelectLabel>
+            {projects.map((project) => (
+              <SelectItem key={project.id} value={`project-${project.id}`}>{project.name}</SelectItem>
+            ))}
+          </SelectGroup>
+        )}
+      </SelectContent>
+    </Select>
+  );
+}
+
+// "area-<id>" / "project-<id>" (las keys de questMap) -> área/quest.
+const parseQuestKey = (key: string): QuestScope => {
+  const [kind, ...rest] = key.split("-");
+  return { kind: kind as "area" | "project", id: rest.join("-") };
+};
 
 const reflectionNodeOf = (entry: JournalSectionEntry) =>
   "reflectionNode" in entry ? entry.reflectionNode ?? null : null;
 
-// Mantener apretado el título de una pregunta: ofrece agregarla como nodo Reflexión en el árbol
-// del área/quest elegida (por defecto, la de la pregunta).
-function QuestionToReflectionNodeDialog({
+// Mantener apretado el título de una pregunta: ofrece asignarla a un área/quest (para que se
+// categorice) o agregarla como nodo Reflexión en el árbol del área/quest elegida (por defecto,
+// la de la pregunta). Una pregunta que ya pasó por un nodo Reflexión solo se puede asignar.
+function QuestionActionsDialog({
   entry,
   questMap,
   onClose,
-  onConfirm,
+  onAssign,
+  onAddAsReflectionNode,
 }: {
   entry: JournalQuestionEntry | null;
   questMap: SkillQuestMap;
   onClose: () => void;
-  onConfirm: (entry: JournalQuestionEntry, scope: ReflectionNodeScope) => Promise<boolean>;
+  onAssign: (entry: JournalQuestionEntry, scope: QuestScope) => Promise<boolean>;
+  onAddAsReflectionNode: (entry: JournalQuestionEntry, scope: ReflectionNodeScope) => Promise<boolean>;
 }) {
   const { areas, projects } = useSkillTree();
+  const [mode, setMode] = useState<"menu" | "assign" | "node">("menu");
   const [scopeKey, setScopeKey] = useState("");
   const [placement, setPlacement] = useState<ReflectionNodePlacement>("available");
   const [isSaving, setIsSaving] = useState(false);
   const [failed, setFailed] = useState(false);
+  const canAddNode = !!entry && !reflectionNodeOf(entry);
 
   useEffect(() => {
     if (!entry) return;
+    setMode("menu");
     setScopeKey(entryQuestInfo(entry, questMap)?.key ?? "");
     setFailed(false);
   }, [entry, questMap]);
 
   // Qué opciones tiene el árbol elegido: un nodo desbloqueado (o, si no hay, uno completado
   // después del cual insertar) y algún nodo sin nombre.
-  const [scopeKind, ...scopeIdParts] = scopeKey.split("-");
-  const scopeId = scopeIdParts.join("-");
+  const { kind: scopeKind, id: scopeId } = parseQuestKey(scopeKey);
   const scopeTree = scopeKind === "area" ? areas.find((a) => a.id === scopeId) : projects.find((p) => p.id === scopeId);
   const sortedSkills = scopeTree ? [...scopeTree.skills].sort(sortByTreeOrder) : [];
   const availableNode = findAvailableNode(sortedSkills);
@@ -2410,50 +2450,58 @@ function QuestionToReflectionNodeDialog({
       enabled: !!firstUnnamed,
     },
   ];
-  const canConfirm = !!scopeKey && !!placementOptions.find((o) => o.value === placement)?.enabled;
+  const canConfirm = !!scopeKey && (mode === "assign" || !!placementOptions.find((o) => o.value === placement)?.enabled);
 
   const handleConfirm = async () => {
     if (!entry || !canConfirm) return;
     setIsSaving(true);
-    const ok = await onConfirm(entry, { kind: scopeKind as "area" | "project", id: scopeId, placement });
+    const scope = parseQuestKey(scopeKey);
+    const ok = mode === "assign"
+      ? await onAssign(entry, scope)
+      : await onAddAsReflectionNode(entry, { ...scope, placement });
     setIsSaving(false);
     if (ok) onClose();
     else setFailed(true);
   };
 
+  const menuOptions = [
+    { mode: "assign" as const, label: "Asignar a un área / quest", detail: entryQuestInfo(entry ?? {}, questMap)?.name ?? "Sin categoría", show: true },
+    { mode: "node" as const, label: "Agregar como nodo Reflexión", detail: "En el skill tree del área / quest", show: canAddNode },
+  ];
+
   return (
     <Dialog open={!!entry} onOpenChange={(open) => { if (!open && !isSaving) onClose(); }}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Agregar como nodo Reflexión</DialogTitle>
+          <DialogTitle>
+            {mode === "assign" ? "Asignar a un área / quest" : mode === "node" ? "Agregar como nodo Reflexión" : "Pregunta"}
+          </DialogTitle>
           <DialogDescription className="break-words">{entry?.title}</DialogDescription>
         </DialogHeader>
+        {mode === "menu" ? (
+          <div className="space-y-1.5">
+            {menuOptions.filter((option) => option.show).map((option) => (
+              <button
+                key={option.mode}
+                type="button"
+                onClick={() => setMode(option.mode)}
+                className="w-full text-left rounded border border-border/50 px-3 py-2 text-muted-foreground hover:bg-secondary/50 hover:text-foreground transition-colors"
+                data-testid={`option-question-${option.mode}`}
+              >
+                <span className="block text-sm">{option.label}</span>
+                <span className="block text-xs text-muted-foreground break-words">{option.detail}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
         <div className="space-y-2">
           <Label className="text-xs text-muted-foreground uppercase tracking-wide">Área / quest</Label>
-          <Select value={scopeKey} onValueChange={setScopeKey}>
-            <SelectTrigger data-testid="select-reflection-node-scope">
-              <SelectValue placeholder="Elegí dónde agregarlo" />
-            </SelectTrigger>
-            <SelectContent>
-              {areas.length > 0 && (
-                <SelectGroup>
-                  <SelectLabel>Áreas</SelectLabel>
-                  {areas.map((area) => (
-                    <SelectItem key={area.id} value={`area-${area.id}`}>{area.name}</SelectItem>
-                  ))}
-                </SelectGroup>
-              )}
-              {projects.length > 0 && (
-                <SelectGroup>
-                  <SelectLabel>Quests</SelectLabel>
-                  {projects.map((project) => (
-                    <SelectItem key={project.id} value={`project-${project.id}`}>{project.name}</SelectItem>
-                  ))}
-                </SelectGroup>
-              )}
-            </SelectContent>
-          </Select>
-          {scopeKey && (
+          <QuestScopeSelect
+            value={scopeKey}
+            onChange={setScopeKey}
+            placeholder={mode === "assign" ? "Elegí un área o quest" : "Elegí dónde agregarlo"}
+          />
+          {mode === "node" && scopeKey && (
             <div className="space-y-1.5 pt-2">
               <Label className="text-xs text-muted-foreground uppercase tracking-wide">Dónde</Label>
               {placementOptions.map((option) => (
@@ -2477,14 +2525,21 @@ function QuestionToReflectionNodeDialog({
             </div>
           )}
           {failed && (
-            <p className="text-xs text-red-600 dark:text-red-400">No se pudo crear el nodo en ese árbol.</p>
+            <p className="text-xs text-red-600 dark:text-red-400">
+              {mode === "assign" ? "No se pudo asignar la pregunta." : "No se pudo crear el nodo en ese árbol."}
+            </p>
           )}
         </div>
+        )}
         <DialogFooter>
-          <Button variant="ghost" onClick={onClose} disabled={isSaving}>Cancelar</Button>
-          <Button onClick={handleConfirm} disabled={!canConfirm || isSaving} data-testid="button-confirm-reflection-node">
-            {isSaving ? "Agregando..." : "Agregar nodo"}
+          <Button variant="ghost" onClick={mode === "menu" ? onClose : () => setMode("menu")} disabled={isSaving}>
+            {mode === "menu" ? "Cancelar" : "Volver"}
           </Button>
+          {mode !== "menu" && (
+            <Button onClick={handleConfirm} disabled={!canConfirm || isSaving} data-testid={`button-confirm-question-${mode}`}>
+              {mode === "assign" ? (isSaving ? "Guardando..." : "Asignar") : (isSaving ? "Agregando..." : "Agregar nodo")}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -2505,6 +2560,7 @@ function LearningsSection({
   questMap,
   variant = "learnings",
   onTitleLongPress,
+  onAssignQuest,
   onAddAsReflectionNode,
 }: {
   entries: JournalSectionEntry[];
@@ -2515,14 +2571,16 @@ function LearningsSection({
   variant?: keyof typeof ENTRY_SECTION_TEXTS;
   // Mantener apretado el título ("N discoveries") abre "Nueva entrada" para agregar una de esta tab.
   onTitleLongPress?: () => void;
-  // Solo Preguntas: mantener apretada una pregunta de la lista la pasa a nodo Reflexión.
+  // Solo Preguntas: mantener apretada una pregunta de la lista ofrece asignarla a un área/quest
+  // o pasarla a nodo Reflexión.
+  onAssignQuest?: (entry: JournalQuestionEntry, scope: QuestScope) => Promise<boolean>;
   onAddAsReflectionNode?: (entry: JournalQuestionEntry, scope: ReflectionNodeScope) => Promise<boolean>;
 }) {
   const texts = ENTRY_SECTION_TEXTS[variant];
   const titleLongPress = useLongPress(onTitleLongPress);
   const EmptyIcon = texts.icon;
   const [viewingEntry, setViewingEntry] = useState<JournalSectionEntry | null>(null);
-  const [reflectionNodeEntry, setReflectionNodeEntry] = useState<JournalQuestionEntry | null>(null);
+  const [actionsEntry, setActionsEntry] = useState<JournalQuestionEntry | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editSentence, setEditSentence] = useState("");
@@ -2554,8 +2612,8 @@ function LearningsSection({
 
   const handleLeftLongPressStart = (entry: JournalSectionEntry) => {
     longPressTimer.current = setTimeout(() => {
-      if (onAddAsReflectionNode && "reflectionSkillId" in entry && !reflectionNodeOf(entry)) {
-        setReflectionNodeEntry(entry);
+      if (onAssignQuest && onAddAsReflectionNode && "reflectionSkillId" in entry) {
+        setActionsEntry(entry);
         return;
       }
       setViewingEntry(entry);
@@ -2785,12 +2843,13 @@ function LearningsSection({
         </div>
       )}
 
-      {onAddAsReflectionNode && (
-        <QuestionToReflectionNodeDialog
-          entry={reflectionNodeEntry}
+      {onAssignQuest && onAddAsReflectionNode && (
+        <QuestionActionsDialog
+          entry={actionsEntry}
           questMap={questMap}
-          onClose={() => setReflectionNodeEntry(null)}
-          onConfirm={async (entry, scope) => {
+          onClose={() => setActionsEntry(null)}
+          onAssign={onAssignQuest}
+          onAddAsReflectionNode={async (entry, scope) => {
             const ok = await onAddAsReflectionNode(entry, scope);
             if (ok && viewingEntry?.id === entry.id) setViewingEntry(null);
             return ok;
@@ -9223,6 +9282,16 @@ function QuestDiary() {
     return true;
   };
 
+  const assignQuestionToQuest = async (question: JournalQuestionEntry, scope: QuestScope) => {
+    const res = await fetch(`/api/journal/questions/${question.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(scope.kind === "area" ? { areaId: scope.id, projectId: null } : { areaId: null, projectId: scope.id }),
+    });
+    queryClient.invalidateQueries({ queryKey: ["/api/journal/questions"] });
+    return res.ok;
+  };
+
   const { data: thoughts = [], isLoading: loadingThoughts } = useQuery<JournalThought[]>({
     queryKey: ["/api/journal/thoughts"],
     enabled: isDiaryOpen,
@@ -9814,6 +9883,7 @@ function QuestDiary() {
                   entries={journalQuestions}
                   isLoading={loadingJournalQuestions}
                   questMap={skillQuestMap}
+                  onAssignQuest={assignQuestionToQuest}
                   onAddAsReflectionNode={addQuestionAsReflectionNode}
                   onDelete={async (id) => {
                     await fetch(`/api/journal/questions/${id}`, { method: "DELETE" });

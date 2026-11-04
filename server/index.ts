@@ -170,7 +170,8 @@ app.use((req, res, next) => {
   }
 
   // "Preguntas" del Journal (cubo "Preguntas" del modal de feedback). Ver
-  // migrations/0069_journal_questions.sql y 0071_journal_question_reflection_node.sql.
+  // migrations/0069_journal_questions.sql, 0071_journal_question_reflection_node.sql y
+  // 0072_journal_question_scope.sql.
   try {
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS "journal_questions" (
@@ -182,6 +183,8 @@ app.use((req, res, next) => {
       );
     `);
     await db.execute(sql`ALTER TABLE "journal_questions" ADD COLUMN IF NOT EXISTS "reflection_skill_id" varchar;`);
+    await db.execute(sql`ALTER TABLE "journal_questions" ADD COLUMN IF NOT EXISTS "area_id" varchar;`);
+    await db.execute(sql`ALTER TABLE "journal_questions" ADD COLUMN IF NOT EXISTS "project_id" varchar;`);
   } catch (error: any) {
     console.error("⚠ journal_questions migration warning:", error.message);
   }

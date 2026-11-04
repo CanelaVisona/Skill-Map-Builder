@@ -3480,7 +3480,10 @@ export async function registerRoutes(
         filtered = questions.filter(q => q.skillId === skillId);
       } else if (areaId || projectId) {
         const scopeSkillIds = new Set(await storage.getAllSkillIdsInScope({ areaId, projectId }));
-        filtered = questions.filter(q => q.skillId != null && scopeSkillIds.has(q.skillId));
+        // Una pregunta asignada a mano a un área/quest cuenta solo para esa.
+        filtered = questions.filter(q => q.areaId || q.projectId
+          ? (areaId ? q.areaId === areaId : q.projectId === projectId)
+          : q.skillId != null && scopeSkillIds.has(q.skillId));
       }
       // El Journal agrupa por área/quest: se resuelve acá porque el nodo puede ser un sub-nodo
       // que el front no tiene cargado. Sin nodo de origen, vale el del nodo Reflexión.
@@ -3497,10 +3500,11 @@ export async function registerRoutes(
       }
       res.json(filtered.map(q => {
         const scopeSkillId = scopeSkillIdOf(q);
+        const assigned = !!(q.areaId || q.projectId);
         return {
           ...q,
-          areaId: (scopeSkillId && scopes.get(scopeSkillId)?.areaId) || null,
-          projectId: (scopeSkillId && scopes.get(scopeSkillId)?.projectId) || null,
+          areaId: assigned ? q.areaId : (scopeSkillId && scopes.get(scopeSkillId)?.areaId) || null,
+          projectId: assigned ? q.projectId : (scopeSkillId && scopes.get(scopeSkillId)?.projectId) || null,
           reflectionNode: (q.reflectionSkillId && reflectionNodes.get(q.reflectionSkillId)) || null,
         };
       }));
@@ -3536,6 +3540,8 @@ export async function registerRoutes(
       if (title !== undefined) data.title = title;
       if (sentence !== undefined) data.sentence = sentence;
       if (req.body.reflectionSkillId !== undefined) data.reflectionSkillId = req.body.reflectionSkillId;
+      if (req.body.areaId !== undefined) data.areaId = req.body.areaId;
+      if (req.body.projectId !== undefined) data.projectId = req.body.projectId;
       const question = await storage.updateJournalQuestion(req.params.id, data);
       if (!question) {
         res.status(404).json({ message: "Pregunta no encontrada" });
