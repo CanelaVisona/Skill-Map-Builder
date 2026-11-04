@@ -6639,9 +6639,80 @@ export async function registerRoutes(
     }
   });
 
+  // Actividades: tareas ya armadas (título + XP + skills globales) para agregar a "Tareas de hoy".
+  const parseActivityBody = (body: any, partial: boolean): { error?: string; value?: { title?: string; xp?: number; skillIds?: string[] } } => {
+    const { title, xp, skillIds } = body ?? {};
+    if (!partial || title !== undefined) {
+      if (typeof title !== "string" || !title.trim()) return { error: "title es requerido" };
+    }
+    if (!partial || xp !== undefined) {
+      if (!Number.isInteger(xp) || xp < 0 || xp > 100000) return { error: "xp debe ser un entero >= 0" };
+    }
+    if (skillIds !== undefined && (!Array.isArray(skillIds) || skillIds.some((id: unknown) => typeof id !== "string"))) {
+      return { error: "skillIds debe ser una lista de ids" };
+    }
+    return {
+      value: {
+        ...(title !== undefined ? { title: String(title).trim().slice(0, 200) } : {}),
+        ...(xp !== undefined ? { xp } : {}),
+        ...(skillIds !== undefined ? { skillIds: skillIds as string[] } : {}),
+      },
+    };
+  };
+
+  app.get("/api/today-activities", requireAuth, async (req, res) => {
+    try {
+      res.json(await storage.getTodayActivities(req.userId!));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/today-activities", requireAuth, async (req, res) => {
+    try {
+      const parsed = parseActivityBody(req.body, false);
+      if (parsed.error) return res.status(400).json({ message: parsed.error });
+      const v = parsed.value!;
+      const activity = await storage.createTodayActivity({ userId: req.userId!, title: v.title!, xp: v.xp!, skillIds: v.skillIds ?? [] });
+      res.status(201).json(activity);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/today-activities/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getTodayActivity(req.params.id);
+      if (!existing || existing.userId !== req.userId) {
+        return res.status(404).json({ message: "Actividad no encontrada" });
+      }
+      const parsed = parseActivityBody(req.body, true);
+      if (parsed.error) return res.status(400).json({ message: parsed.error });
+      res.json(await storage.updateTodayActivity(req.params.id, parsed.value!));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/today-activities/:id", requireAuth, async (req, res) => {
+    try {
+      const existing = await storage.getTodayActivity(req.params.id);
+      if (!existing || existing.userId !== req.userId) {
+        return res.status(404).json({ message: "Actividad no encontrada" });
+      }
+      await storage.deleteTodayActivity(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.post("/api/manual-today-tasks", requireAuth, async (req, res) => {
     try {
-      const { date, title, kind, linkedKind, linkedParentId, minutes, deadline, startTime } = req.body;
+      const { date, title, kind, linkedKind, linkedParentId, minutes, deadline, startTime, xp, xpSkillIds } = req.body;
+      if (xp !== undefined && xp !== null && (!Number.isInteger(xp) || xp < 0)) {
+        return res.status(400).json({ message: "xp debe ser un entero >= 0 o null" });
+      }
       if (minutes !== undefined && minutes !== null && (!Number.isInteger(minutes) || minutes < 0)) {
         return res.status(400).json({ message: "minutes debe ser un entero >= 0 o null" });
       }
@@ -6664,6 +6735,7 @@ export async function registerRoutes(
         ...(minutes ? { minutes } : {}),
         ...(typeof deadline === "string" && /^\d{2}:\d{2}$/.test(deadline) ? { deadline } : {}),
         ...(typeof startTime === "string" && /^\d{2}:\d{2}$/.test(startTime) ? { startTime } : {}),
+        ...(xp ? { xp, xpSkillIds: Array.isArray(xpSkillIds) ? xpSkillIds.map(String) : [] } : {}),
       });
       res.status(201).json(task);
     } catch (error: any) {
@@ -6713,7 +6785,25 @@ export async function registerRoutes(
       const radarUnlock = done !== undefined && done !== existing.done
         ? await syncRadarForTask(req.userId!, existing.id, done, !!existing.linkedSkillId)
         : null;
-      res.json(radarUnlock ? { ...updated, radarUnlock } : updated);
+      // Tarea creada desde una actividad: confirmarla suma su XP a sus skills globales y
+      // desconfirmarla lo resta (xpAwarded evita sumarlo dos veces).
+      const xpAwards: { skillId: string; skillName: string; xpAwarded: number; newXp: number; newLevel: number }[] = [];
+      let result = updated;
+      const xpSkillIds = Array.isArray(existing.xpSkillIds) ? existing.xpSkillIds : [];
+      if (done !== undefined && existing.xp && existing.xp > 0 && xpSkillIds.length > 0 &&
+          ((done === 1 && existing.xpAwarded !== 1) || (done === 0 && existing.xpAwarded === 1))) {
+        const delta = done === 1 ? existing.xp : -existing.xp;
+        for (const skillId of xpSkillIds) {
+          const skill = await storage.getGlobalSkill(skillId);
+          if (!skill || skill.userId !== req.userId) continue;
+          const after = await storage.addXpToGlobalSkill(skillId, delta);
+          if (after && delta > 0) {
+            xpAwards.push({ skillId, skillName: skill.name, xpAwarded: delta, newXp: after.currentXp, newLevel: after.level });
+          }
+        }
+        result = await storage.updateManualTodayTask(req.params.id, { xpAwarded: done === 1 ? 1 : 0 });
+      }
+      res.json({ ...result, ...(radarUnlock ? { radarUnlock } : {}), ...(xpAwards.length > 0 ? { xpAwards } : {}) });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

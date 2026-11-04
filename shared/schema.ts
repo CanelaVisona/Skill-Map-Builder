@@ -939,12 +939,32 @@ export const manualTodayTasks = pgTable("manual_today_tasks", {
   linkedKind: text("linked_kind").$type<"area" | "project">(),
   linkedParentId: varchar("linked_parent_id"),
   linkedSkillId: varchar("linked_skill_id"),
+  // Tarea creada desde una actividad (todayActivities): al confirmarla suma `xp` a cada skill
+  // global de xpSkillIds (copia de la actividad al crearla). xpAwarded = ya se sumó (desconfirmarla
+  // lo resta y vuelve a 0), así confirmar dos veces no suma dos veces.
+  xp: integer("xp"),
+  xpSkillIds: jsonb("xp_skill_ids").notNull().$type<string[]>().default([]),
+  xpAwarded: integer("xp_awarded").$type<0 | 1>().notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
+// Actividades: tareas ya armadas (título + XP + skills globales) que se agregan desde el
+// acordeón "Actividades" del formulario de nueva tarea de "Tareas de hoy".
+export const todayActivities = pgTable("today_activities", {
+  id: varchar("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  xp: integer("xp").notNull().default(0),
+  skillIds: jsonb("skill_ids").notNull().$type<string[]>().default([]),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export type TodayActivity = typeof todayActivities.$inferSelect;
 export const insertManualTodayTaskSchema = createInsertSchema(manualTodayTasks).omit({ id: true, createdAt: true }).extend({
   kind: z.enum(["task", "event"]).optional().default("task"),
   done: z.union([z.literal(0), z.literal(1)]).optional().default(0),
   linkedKind: z.enum(["area", "project"]).nullable().optional(),
+  xpSkillIds: z.array(z.string()).optional(),
+  xpAwarded: z.union([z.literal(0), z.literal(1)]).optional(),
 });
 export type InsertManualTodayTask = z.infer<typeof insertManualTodayTaskSchema>;
 export type ManualTodayTask = typeof manualTodayTasks.$inferSelect;

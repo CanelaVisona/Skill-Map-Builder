@@ -1,5 +1,6 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type { ManualTodayTask } from "@shared/schema";
+import { getCurrentTimeSlotKey } from "@/lib/useTodayTaskSlots";
 
 function getLocalDateStr(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -60,6 +61,38 @@ export function useManualTasksRange(startDate: string, endDate: string, enabled 
   });
 }
 
+// Agrega a "Tareas de hoy" una tarea manual ya completada, en la franja del momento en que se
+// hizo (p.ej. "Agregaste un registro en <reflexión>" al escribir un registro). No pasa por la
+// confirmación de la lista, así no dispara el modal de feedback de las tareas sueltas.
+export async function addCompletedManualTask(queryClient: QueryClient, title: string) {
+  const date = getLocalDateStr(new Date());
+  try {
+    const res = await fetch("/api/manual-today-tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date, title }),
+    });
+    if (!res.ok) throw new Error(`Failed to create manual task: ${res.status}`);
+    const task = (await res.json()) as ManualTodayTask;
+    await fetch(`/api/manual-today-tasks/${task.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ done: 1 }),
+    });
+    await fetch("/api/today-task-slots", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date, taskType: "manual", taskId: task.id, slot: getCurrentTimeSlotKey() }),
+    });
+  } catch (error) {
+    console.error("[addCompletedManualTask] Failed:", error);
+  } finally {
+    queryClient.invalidateQueries({ queryKey: ["manual-today-tasks", date] });
+    queryClient.invalidateQueries({ queryKey: ["manual-today-tasks-range"] });
+    queryClient.invalidateQueries({ queryKey: ["today-task-slots", date] });
+  }
+}
+
 export function useCreateManualTask() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -72,6 +105,8 @@ export function useCreateManualTask() {
       minutes,
       deadline,
       startTime,
+      xp,
+      xpSkillIds,
     }: {
       date: string;
       title: string;
@@ -85,11 +120,14 @@ export function useCreateManualTask() {
       deadline?: string | null;
       // Hora ("HH:MM") a la que empieza: al llegar pasa a ser la tarea de "Ahora".
       startTime?: string | null;
+      // Creada desde una actividad: XP que suma al confirmarla a esas skills globales.
+      xp?: number | null;
+      xpSkillIds?: string[];
     }) => {
       const res = await fetch("/api/manual-today-tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, title, kind, linkedKind, linkedParentId, minutes, deadline, startTime }),
+        body: JSON.stringify({ date, title, kind, linkedKind, linkedParentId, minutes, deadline, startTime, xp, xpSkillIds }),
       });
       if (!res.ok) throw new Error("Failed to create manual task");
       return res.json() as Promise<ManualTodayTask>;
@@ -123,7 +161,11 @@ export function useUpdateManualTask() {
       });
       if (!res.ok) throw new Error("Failed to update manual task");
       // radarUnlock: la tarea venía del mapa de habilidades y confirmarla desbloqueó esa habilidad.
-      return res.json() as Promise<ManualTodayTask & { radarUnlock?: { title: string; power: { name: string } | null } }>;
+      // xpAwards: la tarea venía de una actividad y confirmarla sumó su XP a esas skills.
+      return res.json() as Promise<ManualTodayTask & {
+        radarUnlock?: { title: string; power: { name: string } | null };
+        xpAwards?: { skillId: string; skillName: string; xpAwarded: number; newXp: number; newLevel: number }[];
+      }>;
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["manual-today-tasks", variables.date] });

@@ -321,6 +321,26 @@ app.use((req, res, next) => {
     console.error("⚠ manual_today_tasks node link migration warning:", error.message);
   }
 
+  // Actividades (tareas ya armadas con XP) y el XP de las tareas manuales creadas desde ellas.
+  try {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "today_activities" (
+        "id" varchar PRIMARY KEY,
+        "user_id" varchar NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+        "title" text NOT NULL,
+        "xp" integer DEFAULT 0 NOT NULL,
+        "skill_ids" jsonb DEFAULT '[]'::jsonb NOT NULL,
+        "sort_order" integer DEFAULT 0 NOT NULL,
+        "created_at" timestamp DEFAULT now() NOT NULL
+      );
+      ALTER TABLE "manual_today_tasks" ADD COLUMN IF NOT EXISTS "xp" integer;
+      ALTER TABLE "manual_today_tasks" ADD COLUMN IF NOT EXISTS "xp_skill_ids" jsonb DEFAULT '[]'::jsonb NOT NULL;
+      ALTER TABLE "manual_today_tasks" ADD COLUMN IF NOT EXISTS "xp_awarded" integer DEFAULT 0 NOT NULL;
+    `);
+  } catch (error: any) {
+    console.error("⚠ today_activities migration warning:", error.message);
+  }
+
   // Run data migration for old areas and skills
   // TEMPORARILY DISABLED: This migration was causing startup to hang
   // TODO: Revisit this migration and optimize it

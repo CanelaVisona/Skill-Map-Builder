@@ -4,7 +4,8 @@ import { InsightsCounterPopup } from "@/components/InsightsCounterPopup";
 import { markPopupActive } from "@/lib/popup-coordinator";
 
 // "task": nodo nuevo agregado desde el cubo "Nodo nuevo" del modal de feedback. "record": registro
-// en un nodo de reflexión (escrito en su pop-up, o el nodo completado desde "Tareas de hoy").
+// en un nodo de reflexión (escrito en su pop-up, o el nodo completado desde "Tareas de hoy"); el
+// "Agregaste un registro en …" va como tarea en "Tareas de hoy", no en el pop-up.
 // Estos dos solo muestran el anuncio ("¡Nueva tarea!" / "¡Nuevo registro!"), sin la fase del conteo.
 export type InsightsCounterKind = "thought" | "learning" | "strategy" | "question" | "tool" | "task" | "record";
 

@@ -9306,7 +9306,10 @@ function QuestDiary() {
   // Pregunta -> nodo Reflexión: el título va como nombre del nodo (recortado al límite de
   // palabras; si se recorta, el título completo encabeza el Planteo) y la descripción como Planteo.
   const addQuestionAsReflectionNode = async (question: JournalQuestionEntry, scope: ReflectionNodeScope) => {
-    const fullTitle = question.title.trim();
+    // En el árbol el nombre va con solo la primera letra en mayúscula (en el Journal las
+    // preguntas que vienen de un nodo se guardan todo en mayúsculas).
+    const lower = question.title.trim().toLocaleLowerCase("es");
+    const fullTitle = lower.charAt(0).toLocaleUpperCase("es") + lower.slice(1);
     const title = clampToWordLimit(fullTitle, getNodeTitleWordLimit());
     const sentence = (question.sentence || "").trim();
     const reflectionPrompt = title === fullTitle ? sentence : [fullTitle, sentence].filter(Boolean).join("\n\n");

@@ -8,6 +8,7 @@ import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { type ExperienceGainSnapshot } from "./ExperienceGainPopup";
 import { useXpPopup } from "@/lib/xp-popup-context";
 import { useInsightsCounterPopup } from "@/lib/insights-counter-popup-context";
+import { addCompletedManualTask } from "@/lib/useManualTasks";
 import { useBodyProgress, BODY_ZONES, BODY_ZONE_LABELS, type BodyZone, type BodyDimension } from "@/lib/body-progress-context";
 import { useBodyGainPopup } from "@/lib/body-gain-popup-context";
 import { useLevelUpCelebration } from "@/lib/level-up-celebration-context";
@@ -2276,12 +2277,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       else if (isProject) updateProjectSkill(activeId, skill.id, { reflectionEntries: entries });
       else updateSkill(activeId, skill.id, { reflectionEntries: entries });
       // "¡Nuevo registro!" -- antes del confirm (si lo hay), así va primero en la secuencia.
-      runPopupQueue([() => showInsightsCounterPopup({
-        type: "record",
-        countBefore: 0,
-        countAfter: 1,
-        detail: `Agregaste un registro en ${skill.title?.trim() || "Reflexión"}`,
-      })]);
+      runPopupQueue([() => showInsightsCounterPopup({ type: "record", countBefore: 0, countAfter: 1 })]);
+      // Y queda anotado en "Tareas de hoy", ya hecho, en la franja de ahora.
+      void addCompletedManualTask(queryClient, `Agregaste un registro en ${skill.title?.trim() || "Reflexión"}`);
     }
     setReflectionText("");
     setIsReflectionOpen(false);
@@ -2442,13 +2440,15 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       : {};
     try {
       const listRes = await fetch("/api/journal/questions");
-      const questions: { id: string; sentence: string; reflectionSkillId: string | null }[] = listRes.ok ? await listRes.json() : [];
+      const questions: { id: string; title: string; sentence: string; reflectionSkillId: string | null }[] = listRes.ok ? await listRes.json() : [];
       const linked = questions.find((q) => q.reflectionSkillId === skill.id);
+      // En el Journal, la pregunta que vuelve de un nodo va con el título todo en mayúsculas.
       const res = linked
         ? await fetch(`/api/journal/questions/${linked.id}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
+              title: linked.title.trim().toLocaleUpperCase("es"),
               reflectionSkillId: null,
               sentence: [linked.sentence?.trim(), records].filter(Boolean).join("\n\n"),
               ...scope,
@@ -2458,7 +2458,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              title: skill.title?.trim() || "Reflexión",
+              title: (skill.title?.trim() || "Reflexión").toLocaleUpperCase("es"),
               sentence: [skill.reflectionPrompt?.trim(), records].filter(Boolean).join("\n\n"),
               ...scope,
             }),

@@ -13,7 +13,9 @@ import { Calendar, ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Clo
 import { useSkillTree, type Area, type Project, type Skill } from "@/lib/skill-context";
 import { useNodeConfirmFeedback } from "@/lib/node-confirm-feedback-context";
 import { useInsightsCounterPopup } from "@/lib/insights-counter-popup-context";
-import { runPopupQueue } from "@/lib/popup-coordinator";
+import { runPopupQueue, beginPopupChain, endPopupChain } from "@/lib/popup-coordinator";
+import { useXpPopup } from "@/lib/xp-popup-context";
+import { useTodayActivities, useSaveTodayActivity, useDeleteTodayActivity } from "@/lib/useTodayActivities";
 import { useHabits, useUpdateHabitRecord } from "@/lib/useHabits";
 import { useTodayTaskSlots, useSetTodayTaskSlot, useClearTodayTaskSlot, useReorderTodayTaskSlot, getCurrentTimeSlotKey, getTimeSlotKeyForDate, type TaskSlotKey, type TaskType } from "@/lib/useTodayTaskSlots";
 import { useManualTasks, useManualTasksRange, isDefaultManualTask, defaultTaskMealId, useCreateManualTask, useUpdateManualTask, useDeleteManualTask } from "@/lib/useManualTasks";
@@ -28,7 +30,7 @@ import { useNowPlacement, setNowPlacement } from "@/lib/now-placement";
 import { useTaskTimer, useAllTaskTimers, useTaskTimersSync, taskTimerRowDate, taskTimerKey, clearTaskTimer, pauseTaskTimer, timerElapsedMs, isStarterReached, isFlowActive, wasStartTimeNowApplied, markStartTimeNowApplied } from "@/lib/task-timers";
 import { addSubSkillFromToday, toggleSubSkillFromToday, masterWholeSubSkillTree, isSubSkillPlaceholder, moveSubSkillFromToday, renameSubSkill, deleteSubSkillFromToday, fetchSubSkills } from "@/lib/subskill-tree";
 import { useTodayTaskSubsteps, useCreateTodayTaskSubstep, useUpdateTodayTaskSubstep, useDeleteTodayTaskSubstep, useCreateHabitSubstep, syncHabitSubsteps, type SubstepTaskType } from "@/lib/useTodayTaskSubsteps";
-import type { Habit, HabitRecord, TodayTaskSlot } from "@shared/schema";
+import type { Habit, HabitRecord, TodayTaskSlot, TodayActivity } from "@shared/schema";
 
 const LONG_PRESS_MS = 1500;
 
@@ -457,7 +459,7 @@ const NOW_CLEARED_STORAGE_KEY = "today-progress-now-cleared-date";
 export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const queryClient = useQueryClient();
   const { showPowerCelebration } = usePowerCelebration();
-  const { areas, projects, updateSkill, updateProjectSkill, globalSkills, toggleSkillStatus, toggleProjectSkillStatus, addSkillInPlaceOfAvailable, materializePendingEventNodes, refreshSkillTrees } = useSkillTree();
+  const { areas, projects, updateSkill, updateProjectSkill, globalSkills, refetchGlobalSkills, toggleSkillStatus, toggleProjectSkillStatus, addSkillInPlaceOfAvailable, materializePendingEventNodes, refreshSkillTrees } = useSkillTree();
   const { data: habitsData } = useHabits();
   // Confirmar un hábito/práctica desde acá tiene que otorgar exactamente lo mismo (XP, pop-ups)
   // que confirmarlo desde su pantalla de origen — ver useConfirmActions.ts. Los nodos ya usan
@@ -506,6 +508,12 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // Secciones desplegables del diálogo (cerradas por defecto): área/quest y agregar un hábito.
   const [newTaskParentOpen, setNewTaskParentOpen] = useState(false);
   const [newTaskHabitsOpen, setNewTaskHabitsOpen] = useState(false);
+  // Acordeón "Actividades" del formulario de nueva tarea, y el diálogo para crear/editar una
+  // (se abre manteniendo apretado el título "Actividades", o una actividad para editarla).
+  const [newTaskActivitiesOpen, setNewTaskActivitiesOpen] = useState(false);
+  const [activityEditor, setActivityEditor] = useState<{ id?: string; title: string; xp: string; skillIds: string[] } | null>(null);
+  const activityLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activityLongPressFired = useRef(false);
   // Franja a la que se asigna la tarea que se está por crear: null = sin asignar (mantener
   // presionado el fondo). Mantener presionado el título de una franja horaria en vez del fondo
   // apunta la tarea nueva directo a esa franja, para que no caiga en "Sin asignar".
@@ -971,6 +979,10 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
 
   const createManualTask = useCreateManualTask();
   const updateManualTask = useUpdateManualTask();
+  const { data: activities = [] } = useTodayActivities(open);
+  const saveActivity = useSaveTodayActivity();
+  const deleteActivity = useDeleteTodayActivity();
+  const { showXpPopup, hideXpPopup } = useXpPopup();
   const deleteManualTask = useDeleteManualTask();
 
   // Todo movimiento hecho en Tareas de hoy (orden o franja) pide sincronizar el orden de los
@@ -1091,6 +1103,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
           {t.kind === "event" ? <>📅 {stripLeadingEmoji(t.title)}</> : stripLeadingEmoji(t.title)}
           {t.done !== 1 && <StartTimeSuffix startTime={t.startTime} showRemaining={effectiveDate === todayStr} />}
           <MinutesSuffix minutes={t.minutes} deadline={t.done === 1 ? null : t.deadline} showRemaining={t.done !== 1 && effectiveDate === todayStr} timerKey={timerKeyFor(`manual:${t.id}`, t.minutes)} timerDone={t.done === 1} />
+          {t.xp ? <span className="ml-1 text-xs font-semibold text-violet-600 dark:text-violet-300">· +{t.xp} XP</span> : null}
         </>
       ),
       done: t.done === 1,
@@ -2065,6 +2078,28 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     setTaskSlot.mutate({ date: effectiveDate, taskType: item.type, taskId: item.id, slot: "hidden" });
   };
 
+  // Tarea creada desde una actividad: el server ya sumó su XP; acá se muestran los pop-ups (como
+  // al confirmar un hábito) y se refrescan las skills globales.
+  const showManualXpAwards = (awards: { skillId: string; skillName: string; xpAwarded: number; newXp: number; newLevel: number }[]) => {
+    beginPopupChain();
+    const tasks = awards.map((award) => () => {
+      const linkedSkill = globalSkills.find((sk) => sk.id === award.skillId);
+      const area = areas.find((a) => a.id === linkedSkill?.areaId);
+      hideXpPopup();
+      showXpPopup({
+        skillName: award.skillName,
+        areaColor: area?.color || "#c85a2a",
+        xpBefore: Math.max(0, award.newXp - award.xpAwarded),
+        xpAfter: award.newXp,
+        xpMax: linkedSkill?.goalXp || null,
+        level: award.newLevel,
+        celebrateLevelUp: true,
+      });
+    });
+    runPopupQueue(tasks, endPopupChain);
+    void refetchGlobalSkills();
+  };
+
   const toggleManualDone = (item: TodayItem) => {
     const task = manualTasks.find((t) => t.id === item.id);
     if (!task) return;
@@ -2075,6 +2110,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         // Tarea agendada desde el mapa de habilidades: el server desbloqueó esa habilidad y
         // registró su SideQuest + poder, igual que al desbloquearla en el mapa (RadarSkillMapModal).
         onSuccess: (res) => {
+          if (res.xpAwards?.length) showManualXpAwards(res.xpAwards);
+          else if (newDone === 0 && task.xpAwarded === 1) void refetchGlobalSkills();
           if (!res.radarUnlock) return;
           refreshSkillTrees();
           const powerName = res.radarUnlock.power?.name;
@@ -2263,12 +2300,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     // Completar un nodo de reflexión es sumar un registro: "¡Nuevo registro!" antes que el resto
     // de los pop-ups (y que el modal de feedback, que espera a que no haya ninguno en pantalla).
     if (node.isReflection === 1) {
-      runPopupQueue([() => showInsightsCounterPopup({
-        type: "record",
-        countBefore: 0,
-        countAfter: 1,
-        detail: `Agregaste un registro en ${node.title?.trim() || "Reflexión"}`,
-      })]);
+      runPopupQueue([() => showInsightsCounterPopup({ type: "record", countBefore: 0, countAfter: 1 })]);
     }
     requestNodeConfirmFeedback({ skillId, scopeType: parent.kind, scopeId: parent.parentId });
   };
@@ -3071,15 +3103,17 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     }
   };
 
-  const submitNewTask = async () => {
-    const title = newTaskTitle.trim();
+  // Con `activity`, la tarea sale de una actividad ya armada (su título y su XP); el tiempo y la
+  // franja elegidos en el formulario se usan igual.
+  const submitNewTask = async (activity?: TodayActivity) => {
+    const title = activity ? activity.title : newTaskTitle.trim();
     if (!title) return;
     const parsedMinutes = parseInt(newTaskMinutes, 10);
     const minutes = Number.isFinite(parsedMinutes) && parsedMinutes > 0 ? parsedMinutes : null;
     const deadline = minutes !== null && newTaskDeadline ? newTaskDeadline : null;
     const startTime = newTaskStartTime || null;
     setAddTaskDialogOpen(false);
-    if (newTaskKind === "event" && newTaskParent) {
+    if (!activity && newTaskKind === "event" && newTaskParent) {
       const [linkedKind, linkedParentId] = newTaskParent.split(":") as ["area" | "project", string];
       const created = await createManualTask.mutateAsync({ date: effectiveDate, title, kind: "event", linkedKind, linkedParentId, minutes, deadline, startTime });
       if (startTime) placeByStartTime("manual", created.id, startTime);
@@ -3093,7 +3127,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       }
       return;
     }
-    if (newTaskKind === "task" && newTaskParent) {
+    if (!activity && newTaskKind === "task" && newTaskParent) {
       const [parentKind, parentId] = newTaskParent.split(":") as ["area" | "project", string];
       const node = await addSkillInPlaceOfAvailable(parentKind, parentId, title, { plannedDate: effectiveDate, plannedDuration: minutes, plannedDeadline: deadline, plannedStartTime: startTime });
       if (node) {
@@ -3113,7 +3147,15 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       }
       return;
     }
-    const created = await createManualTask.mutateAsync({ date: effectiveDate, title, kind: newTaskKind, minutes, deadline, startTime });
+    const created = await createManualTask.mutateAsync({
+      date: effectiveDate,
+      title,
+      kind: activity ? "task" : newTaskKind,
+      minutes,
+      deadline,
+      startTime,
+      ...(activity && activity.xp > 0 ? { xp: activity.xp, xpSkillIds: activity.skillIds } : {}),
+    });
     // Con hora de inicio, la franja la decide esa hora (y se ordena entre las que tienen hora).
     if (startTime) {
       placeByStartTime("manual", created.id, startTime);
@@ -3142,6 +3184,38 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       ]);
       setTaskSlot.mutate({ date: effectiveDate, taskType: "manual", taskId: created.id, slot: addTaskTargetSlot });
     }
+  };
+
+  // Mantener apretado el título "Actividades" abre el diálogo para crear una; mantener apretada
+  // una actividad, para editarla. El click que sigue al long-press no hace nada.
+  const startActivityLongPress = (activity: TodayActivity | null) => {
+    activityLongPressFired.current = false;
+    if (activityLongPressTimer.current) clearTimeout(activityLongPressTimer.current);
+    activityLongPressTimer.current = setTimeout(() => {
+      activityLongPressFired.current = true;
+      setActivityEditor(activity
+        ? { id: activity.id, title: activity.title, xp: String(activity.xp), skillIds: activity.skillIds ?? [] }
+        : { title: "", xp: "10", skillIds: [] });
+    }, LONG_PRESS_MS);
+  };
+  const cancelActivityLongPress = () => {
+    if (activityLongPressTimer.current) {
+      clearTimeout(activityLongPressTimer.current);
+      activityLongPressTimer.current = null;
+    }
+  };
+  const consumeActivityLongPress = () => {
+    const fired = activityLongPressFired.current;
+    activityLongPressFired.current = false;
+    return fired;
+  };
+  const activityEditorXp = activityEditor ? parseInt(activityEditor.xp, 10) : NaN;
+  const activityEditorValid = !!activityEditor?.title.trim() && Number.isInteger(activityEditorXp) && activityEditorXp >= 0;
+  const submitActivityEditor = () => {
+    if (!activityEditor || !activityEditorValid) return;
+    saveActivity.mutate({ id: activityEditor.id, title: activityEditor.title.trim(), xp: activityEditorXp, skillIds: activityEditor.skillIds });
+    setNewTaskActivitiesOpen(true);
+    setActivityEditor(null);
   };
 
   // Agrega al día un hábito que no estaba programado para él: se guarda como una fila de franja
@@ -4478,7 +4552,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
             Cancelar
           </button>
           <button
-            onClick={submitNewTask}
+            onClick={() => submitNewTask()}
             disabled={!newTaskTitle.trim()}
             className="px-3 py-1.5 text-sm rounded-md bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
@@ -4512,6 +4586,167 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
             </div>
             )}
           </div>
+        )}
+        {/* Actividades: tareas ya armadas con su XP. Tocar una la suma al día; mantener apretado
+            el título crea una nueva, y mantener apretada una actividad la edita. */}
+        <div className="border-t border-border/30 pt-3 space-y-2">
+          <button
+            type="button"
+            onClick={() => {
+              if (consumeActivityLongPress()) return;
+              setNewTaskActivitiesOpen((o) => !o);
+            }}
+            onPointerDown={() => startActivityLongPress(null)}
+            onPointerUp={cancelActivityLongPress}
+            onPointerLeave={cancelActivityLongPress}
+            onPointerCancel={cancelActivityLongPress}
+            onContextMenu={(e) => e.preventDefault()}
+            className="flex w-full select-none items-center gap-1 text-xs font-bold uppercase tracking-wide text-muted-foreground"
+          >
+            {newTaskActivitiesOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+            Actividades
+          </button>
+          {newTaskActivitiesOpen && (
+            activities.length === 0 ? (
+              <p className="px-2 text-xs text-muted-foreground">Mantené apretado "Actividades" para crear una.</p>
+            ) : (
+              <div className="max-h-48 overflow-y-auto minimal-scrollbar space-y-1">
+                {activities.map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={() => {
+                      if (consumeActivityLongPress()) return;
+                      void submitNewTask(a);
+                    }}
+                    onPointerDown={() => startActivityLongPress(a)}
+                    onPointerUp={cancelActivityLongPress}
+                    onPointerLeave={cancelActivityLongPress}
+                    onPointerCancel={cancelActivityLongPress}
+                    onContextMenu={(e) => e.preventDefault()}
+                    className="flex w-full select-none items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted active:bg-muted/60"
+                  >
+                    <span className="truncate">{a.title}</span>
+                    <span className="shrink-0 text-xs font-semibold text-violet-600 dark:text-violet-300">+{a.xp} XP</span>
+                  </button>
+                ))}
+              </div>
+            )
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={!!activityEditor} onOpenChange={(o) => { if (!o) setActivityEditor(null); }}>
+      <DialogContent className="max-w-sm rounded-2xl max-h-[85vh] overflow-y-auto minimal-scrollbar">
+        <DialogTitle>{activityEditor?.id ? "Editar actividad" : "Nueva actividad"}</DialogTitle>
+        {activityEditor && (
+          <>
+            <Input
+              autoFocus
+              value={activityEditor.title}
+              onChange={(e) => setActivityEditor({ ...activityEditor, title: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") submitActivityEditor();
+              }}
+              placeholder="Título de la actividad"
+            />
+            <div className="space-y-1.5">
+              <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">XP al completarla</p>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {[5, 10, 20, 50, 100].map((xp) => (
+                  <button
+                    key={xp}
+                    type="button"
+                    onClick={() => setActivityEditor({ ...activityEditor, xp: String(xp) })}
+                    className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                      activityEditor.xp === String(xp)
+                        ? "border-violet-500 bg-violet-500/15 text-violet-700 dark:text-violet-300"
+                        : "border-border/50 hover:bg-muted"
+                    }`}
+                  >
+                    {xp} XP
+                  </button>
+                ))}
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  placeholder="Otro"
+                  value={activityEditor.xp}
+                  onChange={(e) => setActivityEditor({ ...activityEditor, xp: e.target.value })}
+                  className="h-7 w-20 text-xs"
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Habilidades que suben</p>
+              {globalSkills.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Todavía no tenés habilidades globales.</p>
+              ) : (
+                <div
+                  className="scrollbar-hide max-h-48 overflow-y-auto overscroll-contain touch-pan-y rounded-md bg-muted/50 p-1"
+                  onWheel={(e) => e.stopPropagation()}
+                  onTouchMove={(e) => e.stopPropagation()}
+                >
+                  {[...globalSkills].sort((a, b) => a.name.localeCompare(b.name)).map((sk) => {
+                    const selected = activityEditor.skillIds.includes(sk.id);
+                    return (
+                      <button
+                        key={sk.id}
+                        type="button"
+                        onClick={() =>
+                          setActivityEditor({
+                            ...activityEditor,
+                            skillIds: selected
+                              ? activityEditor.skillIds.filter((id) => id !== sk.id)
+                              : [...activityEditor.skillIds, sk.id],
+                          })
+                        }
+                        className={`flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors ${
+                          selected ? "bg-accent text-accent-foreground font-medium" : "hover:bg-accent/60"
+                        }`}
+                      >
+                        <span className="truncate">{sk.name}</span>
+                        {selected && <Check className="h-4 w-4 shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {activityEditor.skillIds.length === 0 && (
+                <p className="text-xs text-muted-foreground">Elegí al menos una habilidad para que el XP se sume.</p>
+              )}
+            </div>
+            <div className="flex items-center gap-2 pt-2">
+              {activityEditor.id && (
+                <button
+                  onClick={() => {
+                    deleteActivity.mutate(activityEditor.id!);
+                    setActivityEditor(null);
+                  }}
+                  className="px-3 py-1.5 text-sm rounded-md text-destructive hover:bg-destructive/10 transition-colors"
+                >
+                  Eliminar
+                </button>
+              )}
+              <div className="ml-auto flex gap-2">
+                <button
+                  onClick={() => setActivityEditor(null)}
+                  className="px-3 py-1.5 text-sm rounded-md hover:bg-muted transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={submitActivityEditor}
+                  disabled={!activityEditorValid}
+                  className="px-3 py-1.5 text-sm rounded-md bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Guardar
+                </button>
+              </div>
+            </div>
+          </>
         )}
       </DialogContent>
     </Dialog>
