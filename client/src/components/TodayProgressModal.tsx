@@ -513,6 +513,9 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // (se abre manteniendo apretado el título "Actividades", o una actividad para editarla).
   const [newTaskActivitiesOpen, setNewTaskActivitiesOpen] = useState(false);
   const [activityEditor, setActivityEditor] = useState<{ id?: string; title: string; skillIds: string[] } | null>(null);
+  // Área/quest abierta en el selector de habilidades del editor ("area:<id>", "project:<id>",
+  // "none"); null = la lista de áreas y quests.
+  const [activitySkillScope, setActivitySkillScope] = useState<string | null>(null);
   const activityLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activityLongPressFired = useRef(false);
   // Franja a la que se asigna la tarea que se está por crear: null = sin asignar (mantener
@@ -3194,6 +3197,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     if (activityLongPressTimer.current) clearTimeout(activityLongPressTimer.current);
     activityLongPressTimer.current = setTimeout(() => {
       activityLongPressFired.current = true;
+      setActivitySkillScope(null);
       setActivityEditor(activity
         ? { id: activity.id, title: activity.title, skillIds: activity.skillIds ?? [] }
         : { title: "", skillIds: [] });
@@ -3211,6 +3215,28 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     return fired;
   };
   const activityEditorValid = !!activityEditor?.title.trim();
+  // Habilidades globales agrupadas por su área o quest, para elegirlas en dos pasos en el editor.
+  const activitySkillScopes = (() => {
+    const scopes: { key: string; name: string; kindLabel: string; skills: typeof globalSkills; ordered: { skill: (typeof globalSkills)[number]; depth: number }[] }[] = [
+      ...areas.map((a) => ({ key: `area:${a.id}`, name: a.name, kindLabel: "Área", skills: globalSkills.filter((sk) => sk.areaId === a.id), ordered: [] })),
+      ...projects.map((pr) => ({ key: `project:${pr.id}`, name: pr.name, kindLabel: "Quest", skills: globalSkills.filter((sk) => sk.projectId === pr.id), ordered: [] })),
+      { key: "none", name: "Sin área ni quest", kindLabel: "Otras", skills: globalSkills.filter((sk) => !sk.areaId && !sk.projectId), ordered: [] },
+    ];
+    scopes.forEach((scope) => {
+      const ids = new Set(scope.skills.map((sk) => sk.id));
+      const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
+      const visit = (parentId: string | null, depth: number) =>
+        scope.skills
+          .filter((sk) => (parentId ? sk.parentSkillId === parentId : !sk.parentSkillId || !ids.has(sk.parentSkillId)))
+          .sort(byName)
+          .forEach((sk) => {
+            scope.ordered.push({ skill: sk, depth });
+            if (depth < 5) visit(sk.id, depth + 1);
+          });
+      visit(null, 0);
+    });
+    return scopes.filter((scope) => scope.skills.length > 0);
+  })();
   const submitActivityEditor = () => {
     if (!activityEditor || !activityEditorValid) return;
     saveActivity.mutate({ id: activityEditor.id, title: activityEditor.title.trim(), skillIds: activityEditor.skillIds });
@@ -4662,29 +4688,65 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                   onWheel={(e) => e.stopPropagation()}
                   onTouchMove={(e) => e.stopPropagation()}
                 >
-                  {[...globalSkills].sort((a, b) => a.name.localeCompare(b.name)).map((sk) => {
-                    const selected = activityEditor.skillIds.includes(sk.id);
-                    return (
+                  {activitySkillScope === null ? (
+                    // Paso 1: el área o quest (con cuántas de sus habilidades ya están elegidas).
+                    activitySkillScopes.map((scope) => {
+                      const chosen = scope.skills.filter((sk) => activityEditor.skillIds.includes(sk.id)).length;
+                      return (
+                        <button
+                          key={scope.key}
+                          type="button"
+                          onClick={() => setActivitySkillScope(scope.key)}
+                          className="flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent/60"
+                        >
+                          <span className="truncate">
+                            {scope.name}
+                            <span className="ml-1 text-xs text-muted-foreground">· {scope.kindLabel}</span>
+                          </span>
+                          <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+                            {chosen > 0 && <span className="font-semibold text-foreground">{chosen} ✓</span>}
+                            <ChevronRight className="h-3.5 w-3.5" />
+                          </span>
+                        </button>
+                      );
+                    })
+                  ) : (
+                    // Paso 2: las habilidades de ese área o quest (las sub-habilidades, debajo de la suya).
+                    <>
                       <button
-                        key={sk.id}
                         type="button"
-                        onClick={() =>
-                          setActivityEditor({
-                            ...activityEditor,
-                            skillIds: selected
-                              ? activityEditor.skillIds.filter((id) => id !== sk.id)
-                              : [...activityEditor.skillIds, sk.id],
-                          })
-                        }
-                        className={`flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors ${
-                          selected ? "bg-accent text-accent-foreground font-medium" : "hover:bg-accent/60"
-                        }`}
+                        onClick={() => setActivitySkillScope(null)}
+                        className="flex w-full items-center gap-1 rounded-sm px-2 py-1.5 text-left text-xs font-semibold text-muted-foreground transition-colors hover:bg-accent/60"
                       >
-                        <span className="truncate">{sk.name}</span>
-                        {selected && <Check className="h-4 w-4 shrink-0" />}
+                        <ChevronLeft className="h-3.5 w-3.5" />
+                        {activitySkillScopes.find((s) => s.key === activitySkillScope)?.name ?? "Volver"}
                       </button>
-                    );
-                  })}
+                      {(activitySkillScopes.find((s) => s.key === activitySkillScope)?.ordered ?? []).map(({ skill: sk, depth }) => {
+                        const selected = activityEditor.skillIds.includes(sk.id);
+                        return (
+                          <button
+                            key={sk.id}
+                            type="button"
+                            onClick={() =>
+                              setActivityEditor({
+                                ...activityEditor,
+                                skillIds: selected
+                                  ? activityEditor.skillIds.filter((id) => id !== sk.id)
+                                  : [...activityEditor.skillIds, sk.id],
+                              })
+                            }
+                            style={{ paddingLeft: 8 + depth * 14 }}
+                            className={`flex w-full items-center justify-between gap-2 rounded-sm py-1.5 pr-2 text-left text-sm transition-colors ${
+                              selected ? "bg-accent text-accent-foreground font-medium" : "hover:bg-accent/60"
+                            }`}
+                          >
+                            <span className="truncate">{sk.name}</span>
+                            {selected && <Check className="h-4 w-4 shrink-0" />}
+                          </button>
+                        );
+                      })}
+                    </>
+                  )}
                 </div>
               )}
               {activityEditor.skillIds.length === 0 && (
