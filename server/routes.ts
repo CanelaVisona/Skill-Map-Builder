@@ -3493,7 +3493,7 @@ export async function registerRoutes(
       );
       // Pregunta pasada a nodo Reflexión: el Journal la oculta hasta que el nodo se completa, y
       // después la muestra con sus registros. Si el nodo se borró, vuelve a ser una pregunta normal.
-      const reflectionNodes = new Map<string, { status: string; entries: { date: string; text: string }[] }>();
+      const reflectionNodes = new Map<string, { status: string; entries: { date: string; time?: string; text: string }[] }>();
       for (const id of Array.from(new Set(filtered.map(q => q.reflectionSkillId).filter((id): id is string => !!id)))) {
         const node = await storage.getSkill(id);
         if (node) reflectionNodes.set(id, { status: node.status, entries: node.reflectionEntries ?? [] });

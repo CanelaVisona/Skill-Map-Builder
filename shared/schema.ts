@@ -76,7 +76,7 @@ export const skills = pgTable("skills", {
   isReflection: integer("is_reflection").$type<0 | 1>().default(0),
   // Reflexión: the full question / context ("Planteo") and the dated entries written from the node pop-up.
   reflectionPrompt: text("reflection_prompt").default(""),
-  reflectionEntries: jsonb("reflection_entries").$type<{ date: string; text: string }[]>().default([]),
+  reflectionEntries: jsonb("reflection_entries").$type<{ date: string; time?: string; text: string }[]>().default([]),
   level: integer("level").notNull().default(1),
   levelPosition: integer("level_position").notNull().default(1),
   experiencePoints: integer("experience_points").default(0),

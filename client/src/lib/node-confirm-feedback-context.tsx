@@ -35,6 +35,9 @@ export interface NodeConfirmFeedbackTarget {
   // Área/quest de lo confirmado. Sin ella, los cubos de error/poder la preguntan.
   scopeType?: "area" | "project";
   scopeId?: string;
+  // Pop-ups que van después del modal (y de los pop-ups de lo cargado en él), nunca encima:
+  // p.ej. el XP de una tarea creada desde una actividad, que llega cuando el server responde.
+  popupsAfter?: Promise<Array<() => void>>;
 }
 
 interface NodeConfirmFeedbackContextValue {
@@ -346,6 +349,14 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
           setActive(target);
         });
         if (!isNodeFeedbackDraftEmpty(draft)) await commitRef.current(target, draft);
+        if (target.popupsAfter) {
+          const after = await target.popupsAfter.catch(() => [] as Array<() => void>);
+          if (after.length > 0) {
+            await waitForPopupsBusyClear();
+            await runPopupQueueAsync(after);
+            await waitForPopupsBusyClear();
+          }
+        }
       } catch (error) {
         console.error("[nodeConfirmFeedback] Failed:", error);
       } finally {

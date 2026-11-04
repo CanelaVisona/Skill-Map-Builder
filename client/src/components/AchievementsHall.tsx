@@ -74,7 +74,7 @@ interface Achievement {
   date?: string | null;
   // Reflexión nodes: the full Planteo and every dated entry, shown under the title.
   prompt?: string;
-  entries?: { date: string; text: string }[];
+  entries?: { date: string; time?: string; text: string }[];
 }
 
 // Fechas "YYYY-MM-DD" se leen como día local; el resto (ISO/timestamp) tal cual.
@@ -552,7 +552,7 @@ export function AchievementsHall() {
                   {a.entries.map((entry, i) => (
                     <div key={i} className="border-b border-border/50 py-1.5">
                       {entry.date && (
-                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{formatDate(entry.date)}</p>
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{formatDate(entry.date)}{entry.time && ` · ${entry.time}`}</p>
                       )}
                       <p className="whitespace-pre-wrap break-words text-xs text-foreground/90">{entry.text}</p>
                     </div>

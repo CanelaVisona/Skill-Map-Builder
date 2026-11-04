@@ -2344,7 +2344,7 @@ function ToolsSection({
 // la pregunta se pasó a nodo Reflexión, el estado y los registros de ese nodo (ver
 // GET /api/journal/questions).
 type JournalQuestionEntry = JournalQuestion & {
-  reflectionNode?: { status: string; entries: { date: string; text: string }[] } | null;
+  reflectionNode?: { status: string; entries: { date: string; time?: string; text: string }[] } | null;
 };
 type JournalSectionEntry = JournalLearning | JournalStrategy | JournalQuestionEntry;
 // Dónde va el nodo: en el lugar del desbloqueado (se inserta antes de él) o en el primer nodo
@@ -2800,7 +2800,7 @@ function LearningsSection({
                       <span className="text-xs text-muted-foreground uppercase tracking-wider">Registros</span>
                       {reflectionNodeOf(viewingEntry)!.entries.map((record, i) => (
                         <div key={i}>
-                          <span className="text-[11px] text-muted-foreground/70">{record.date}</span>
+                          <span className="text-[11px] text-muted-foreground/70">{record.date}{record.time && ` · ${record.time}`}</span>
                           <p className="text-sm text-foreground/90 leading-relaxed whitespace-pre-wrap break-words">{record.text}</p>
                         </div>
                       ))}
@@ -4384,6 +4384,7 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
                       {entry.date && (
                         <p className="text-[10px] uppercase tracking-wide text-zinc-500 mb-1">
                           {formatAchievementDate(entry.date + "T00:00:00")}
+                          {entry.time && ` · ${entry.time}`}
                         </p>
                       )}
                       <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap break-words">{entry.text}</p>

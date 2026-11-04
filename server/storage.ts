@@ -744,7 +744,7 @@ export class DbStorage implements IStorage {
     if (skill.isSideQuest !== undefined) updateData.isSideQuest = skill.isSideQuest as 0 | 1;
     if (skill.isReflection !== undefined) updateData.isReflection = skill.isReflection as 0 | 1;
     if (skill.reflectionPrompt !== undefined) updateData.reflectionPrompt = skill.reflectionPrompt;
-    if (skill.reflectionEntries !== undefined) updateData.reflectionEntries = skill.reflectionEntries as { date: string; text: string }[];
+    if (skill.reflectionEntries !== undefined) updateData.reflectionEntries = skill.reflectionEntries as { date: string; time?: string; text: string }[];
     if (skill.level !== undefined) updateData.level = skill.level;
     if (skill.levelPosition !== undefined) updateData.levelPosition = skill.levelPosition;
     if (skill.plannedDate !== undefined) updateData.plannedDate = skill.plannedDate;

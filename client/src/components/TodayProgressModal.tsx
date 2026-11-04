@@ -15,7 +15,6 @@ import { useNodeConfirmFeedback } from "@/lib/node-confirm-feedback-context";
 import { useInsightsCounterPopup } from "@/lib/insights-counter-popup-context";
 import { runPopupQueue, beginPopupChain, endPopupChain } from "@/lib/popup-coordinator";
 import { useXpPopup } from "@/lib/xp-popup-context";
-import { XP_PER_BLOCK } from "@/lib/skill-xp";
 import { useTodayActivities, useSaveTodayActivity, useDeleteTodayActivity } from "@/lib/useTodayActivities";
 import { useHabits, useUpdateHabitRecord } from "@/lib/useHabits";
 import { useTodayTaskSlots, useSetTodayTaskSlot, useClearTodayTaskSlot, useReorderTodayTaskSlot, getCurrentTimeSlotKey, getTimeSlotKeyForDate, type TaskSlotKey, type TaskType } from "@/lib/useTodayTaskSlots";
@@ -516,6 +515,9 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // Área/quest abierta en el selector de habilidades del editor ("area:<id>", "project:<id>",
   // "none"); null = la lista de áreas y quests.
   const [activitySkillScope, setActivitySkillScope] = useState<string | null>(null);
+  // Actividad con su menú (Editar/Eliminar) abierto por long-press, y la que se está por eliminar.
+  const [activityMenuId, setActivityMenuId] = useState<string | null>(null);
+  const [activityToDelete, setActivityToDelete] = useState<TodayActivity | null>(null);
   const activityLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activityLongPressFired = useRef(false);
   // Franja a la que se asigna la tarea que se está por crear: null = sin asignar (mantener
@@ -1107,7 +1109,6 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
           {t.kind === "event" ? <>📅 {stripLeadingEmoji(t.title)}</> : stripLeadingEmoji(t.title)}
           {t.done !== 1 && <StartTimeSuffix startTime={t.startTime} showRemaining={effectiveDate === todayStr} />}
           <MinutesSuffix minutes={t.minutes} deadline={t.done === 1 ? null : t.deadline} showRemaining={t.done !== 1 && effectiveDate === todayStr} timerKey={timerKeyFor(`manual:${t.id}`, t.minutes)} timerDone={t.done === 1} />
-          {t.xp ? <span className="ml-1 text-xs font-semibold text-violet-600 dark:text-violet-300">· +{Math.max(1, Math.round(t.xp / XP_PER_BLOCK))} XP</span> : null}
         </>
       ),
       done: t.done === 1,
@@ -2084,8 +2085,12 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
 
   // Tarea creada desde una actividad: el server ya sumó su XP; acá se muestran los pop-ups (como
   // al confirmar un hábito) y se refrescan las skills globales.
-  const showManualXpAwards = (awards: { skillId: string; skillName: string; xpAwarded: number; newXp: number; newLevel: number }[]) => {
-    beginPopupChain();
+  // Con `deferTo`, los pop-ups no se muestran acá: se le pasan a esa promesa (el modal de
+  // feedback los muestra cuando se cierra, así no quedan superpuestos).
+  const showManualXpAwards = (
+    awards: { skillId: string; skillName: string; xpAwarded: number; newXp: number; newLevel: number }[],
+    deferTo?: (tasks: Array<() => void>) => void
+  ) => {
     const tasks = awards.map((award) => () => {
       const linkedSkill = globalSkills.find((sk) => sk.id === award.skillId);
       const area = areas.find((a) => a.id === linkedSkill?.areaId);
@@ -2100,22 +2105,36 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         celebrateLevelUp: true,
       });
     });
-    runPopupQueue(tasks, endPopupChain);
     void refetchGlobalSkills();
+    if (deferTo) {
+      deferTo(tasks);
+      return;
+    }
+    beginPopupChain();
+    runPopupQueue(tasks, endPopupChain);
   };
 
   const toggleManualDone = (item: TodayItem) => {
     const task = manualTasks.find((t) => t.id === item.id);
     if (!task) return;
     const newDone = task.done === 1 ? 0 : 1;
+    // Tarea suelta (sin nodo ni área/quest): mismo modal de feedback que un nodo, sin nodo. Las
+    // vinculadas lo abren al confirmar su nodo (toggleNodeDone / el efecto de abajo). Las comidas
+    // por defecto (desayuno, almuerzo...) no lo abren.
+    const opensFeedback = newDone === 1 && !defaultTaskMealId(task.id) && !task.linkedSkillId && !(task.linkedKind && task.linkedParentId);
+    // El XP de una actividad se muestra después de cerrar ese feedback, no encima.
+    let resolveXpPopups: (tasks: Array<() => void>) => void = () => {};
+    const xpPopups = new Promise<Array<() => void>>((resolve) => (resolveXpPopups = resolve));
     updateManualTask.mutate(
       { id: item.id, date: effectiveDate, updates: { done: newDone } },
       {
+        onError: () => resolveXpPopups([]),
         // Tarea agendada desde el mapa de habilidades: el server desbloqueó esa habilidad y
         // registró su SideQuest + poder, igual que al desbloquearla en el mapa (RadarSkillMapModal).
         onSuccess: (res) => {
-          if (res.xpAwards?.length) showManualXpAwards(res.xpAwards);
+          if (res.xpAwards?.length) showManualXpAwards(res.xpAwards, opensFeedback ? resolveXpPopups : undefined);
           else if (newDone === 0 && task.xpAwarded === 1) void refetchGlobalSkills();
+          resolveXpPopups([]);
           if (!res.radarUnlock) return;
           refreshSkillTrees();
           const powerName = res.radarUnlock.power?.name;
@@ -2128,12 +2147,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     );
     // Al confirmarla, si tenía tiempo de sobra respecto de sus sub-pasos, pasa a su suma.
     if (newDone === 1) shrinkParentToChildrenSum(item, substepsFor(item).map((st) => st.minutes));
-    // Tarea suelta (sin nodo ni área/quest): mismo modal de feedback que un nodo, sin nodo. Las
-    // vinculadas lo abren al confirmar su nodo (toggleNodeDone / el efecto de abajo). Las comidas
-    // por defecto (desayuno, almuerzo...) no lo abren.
-    if (newDone === 1 && !defaultTaskMealId(task.id) && !task.linkedSkillId && !(task.linkedKind && task.linkedParentId)) {
-      requestNodeConfirmFeedback({});
-    }
+    if (opensFeedback) requestNodeConfirmFeedback({ popupsAfter: xpPopups });
     // Evento con nodo propio (ver newTaskParent): confirmarlo/desconfirmarlo hace lo mismo con
     // el nodo, salvo que el nodo ya esté en ese estado (p.ej. se confirmó desde el árbol).
     if (task.linkedSkillId) {
@@ -3191,16 +3205,20 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   };
 
   // Mantener apretado el título "Actividades" abre el diálogo para crear una; mantener apretada
-  // una actividad, para editarla. El click que sigue al long-press no hace nada.
+  // una actividad abre su menú (Editar / Eliminar). El click que sigue al long-press no hace nada.
+  const openActivityEditor = (activity: TodayActivity | null) => {
+    setActivitySkillScope(null);
+    setActivityEditor(activity
+      ? { id: activity.id, title: activity.title, skillIds: activity.skillIds ?? [] }
+      : { title: "", skillIds: [] });
+  };
   const startActivityLongPress = (activity: TodayActivity | null) => {
     activityLongPressFired.current = false;
     if (activityLongPressTimer.current) clearTimeout(activityLongPressTimer.current);
     activityLongPressTimer.current = setTimeout(() => {
       activityLongPressFired.current = true;
-      setActivitySkillScope(null);
-      setActivityEditor(activity
-        ? { id: activity.id, title: activity.title, skillIds: activity.skillIds ?? [] }
-        : { title: "", skillIds: [] });
+      if (activity) setActivityMenuId(activity.id);
+      else openActivityEditor(null);
     }, LONG_PRESS_MS);
   };
   const cancelActivityLongPress = () => {
@@ -4638,23 +4656,49 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
             ) : (
               <div className="max-h-48 overflow-y-auto minimal-scrollbar space-y-1">
                 {activities.map((a) => (
-                  <button
+                  <DropdownMenu
                     key={a.id}
-                    type="button"
-                    onClick={() => {
-                      if (consumeActivityLongPress()) return;
-                      void submitNewTask(a);
-                    }}
-                    onPointerDown={() => startActivityLongPress(a)}
-                    onPointerUp={cancelActivityLongPress}
-                    onPointerLeave={cancelActivityLongPress}
-                    onPointerCancel={cancelActivityLongPress}
-                    onContextMenu={(e) => e.preventDefault()}
-                    className="flex w-full select-none items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted active:bg-muted/60"
+                    open={activityMenuId === a.id}
+                    onOpenChange={(next) => setActivityMenuId(next ? a.id : null)}
                   >
-                    <span className="truncate">{a.title}</span>
-                    <span className="shrink-0 text-xs font-semibold text-violet-600 dark:text-violet-300">+1 XP</span>
-                  </button>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          // El menú solo se abre con long-press: el toque simple suma la actividad.
+                          e.preventDefault();
+                          if (consumeActivityLongPress()) return;
+                          void submitNewTask(a);
+                        }}
+                        onPointerDown={(e) => {
+                          e.preventDefault();
+                          startActivityLongPress(a);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            void submitNewTask(a);
+                          }
+                        }}
+                        onPointerUp={cancelActivityLongPress}
+                        onPointerLeave={cancelActivityLongPress}
+                        onPointerCancel={cancelActivityLongPress}
+                        onContextMenu={(e) => e.preventDefault()}
+                        className="flex w-full select-none items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted active:bg-muted/60"
+                      >
+                        <span className="truncate">{a.title}</span>
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => openActivityEditor(a)}>
+                        <Pencil className="mr-2 h-4 w-4" />
+                        Editar
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setActivityToDelete(a)} className="text-destructive focus:text-destructive">
+                        Eliminar
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 ))}
               </div>
             )
@@ -4662,6 +4706,26 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         </div>
       </DialogContent>
     </Dialog>
+
+    <AlertDialog open={!!activityToDelete} onOpenChange={(o) => { if (!o) setActivityToDelete(null); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>¿Eliminar la actividad "{activityToDelete?.title}"?</AlertDialogTitle>
+          <AlertDialogDescription>Deja de aparecer en "Actividades". Las tareas que ya agregaste con ella quedan.</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => {
+              if (activityToDelete) deleteActivity.mutate(activityToDelete.id);
+              setActivityToDelete(null);
+            }}
+          >
+            Eliminar
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
 
     <Dialog open={!!activityEditor} onOpenChange={(o) => { if (!o) setActivityEditor(null); }}>
       <DialogContent className="max-w-sm rounded-2xl max-h-[85vh] overflow-y-auto minimal-scrollbar">

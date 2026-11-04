@@ -1249,7 +1249,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const [reflectionText, setReflectionText] = useState("");
   // Everything written so far, oldest first. A note saved before entries existed lives in the
   // description, so it's shown as a first, undated entry until the next entry is saved.
-  const reflectionEntries: { date: string; text: string }[] = skill.reflectionEntries?.length
+  const reflectionEntries: { date: string; time?: string; text: string }[] = skill.reflectionEntries?.length
     ? skill.reflectionEntries
     : skill.isReflection === 1 && skill.description?.trim()
       ? [{ date: "", text: skill.description.trim() }]
@@ -2272,7 +2272,9 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   const saveReflection = (confirm: boolean) => {
     const text = reflectionText.trim();
     if (text) {
-      const entries = [...reflectionEntries, { date: formatLocalDate(new Date()), text }];
+      const now = new Date();
+      const time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      const entries = [...reflectionEntries, { date: formatLocalDate(now), time, text }];
       if (isSubSkillView) updateSubSkill(skill.id, { reflectionEntries: entries });
       else if (isProject) updateProjectSkill(activeId, skill.id, { reflectionEntries: entries });
       else updateSkill(activeId, skill.id, { reflectionEntries: entries });
@@ -4274,15 +4276,16 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
         Closing it without a button keeps the draft unsaved. */}
     <Dialog open={isReflectionOpen} onOpenChange={setIsReflectionOpen}>
       {/* Fixed size whatever the content: the Planteo and the previous entries scroll inside
-          the middle area, while the new entry and the buttons stay put. */}
-      <DialogContent className="sm:max-w-[400px] h-[min(560px,85vh)] flex flex-col gap-4 border-0 shadow-2xl">
+          the top area, and the new entry sits right below them; any leftover height goes
+          above the buttons instead of opening a gap between the Planteo and the new entry. */}
+      <DialogContent className="sm:max-w-[400px] h-[min(460px,85vh)] flex flex-col gap-3 border-0 shadow-2xl">
         <DialogHeader className="shrink-0">
           <DialogTitle className="text-lg font-medium">{skill.title || "Reflexión"}</DialogTitle>
           <DialogDescription className="sr-only">Completá la reflexión</DialogDescription>
         </DialogHeader>
-        <div className="flex-1 min-h-0 overflow-y-auto minimal-scrollbar pr-1">
+        <div className="min-h-0 overflow-y-auto minimal-scrollbar pr-1 space-y-3 empty:hidden">
         {skill.reflectionPrompt?.trim() && (
-          <p className="font-description text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap break-words mb-4">
+          <p className="font-description text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap break-words">
             {skill.reflectionPrompt}
           </p>
         )}
@@ -4295,6 +4298,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                 {entry.date && (
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">
                     {new Date(entry.date + "T00:00:00").toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" })}
+                    {entry.time && ` · ${entry.time}`}
                   </div>
                 )}
                 <p className="text-sm text-foreground/90 leading-relaxed whitespace-pre-wrap break-words">{entry.text}</p>
@@ -4305,16 +4309,19 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
         </div>
         <div className="shrink-0 text-[10px] text-muted-foreground uppercase tracking-wide -mb-2">
           {new Date().toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" })}
+          {" · "}
+          {new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false })}
         </div>
         <Textarea
           value={reflectionText}
           onChange={(e) => setReflectionText(e.target.value)}
           placeholder="Escribí tu reflexión..."
-          rows={5}
-          className="shrink-0 h-32 min-h-0 border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none minimal-scrollbar"
+          rows={3}
+          className="shrink-0 h-16 min-h-0 border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none minimal-scrollbar"
           data-testid="input-reflection"
           autoFocus
         />
+        <div className="flex-1" />
         <DialogFooter className="shrink-0 flex flex-row gap-2 sm:justify-between">
           <Button variant="ghost" onClick={() => saveReflection(false)} className="flex-1 bg-muted/50 hover:bg-muted" data-testid="button-reflection-done">
             Listo
