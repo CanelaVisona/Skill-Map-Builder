@@ -3,9 +3,10 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { InsightsCounterPopup } from "@/components/InsightsCounterPopup";
 import { markPopupActive } from "@/lib/popup-coordinator";
 
-// "task": nodo nuevo agregado desde el cubo "Nodo nuevo" del modal de feedback. Solo muestra el
-// anuncio ("¡Nueva tarea!"), sin la fase del conteo.
-export type InsightsCounterKind = "thought" | "learning" | "strategy" | "question" | "tool" | "task";
+// "task": nodo nuevo agregado desde el cubo "Nodo nuevo" del modal de feedback. "record": registro
+// en un nodo de reflexión (escrito en su pop-up, o el nodo completado desde "Tareas de hoy").
+// Estos dos solo muestran el anuncio ("¡Nueva tarea!" / "¡Nuevo registro!"), sin la fase del conteo.
+export type InsightsCounterKind = "thought" | "learning" | "strategy" | "question" | "tool" | "task" | "record";
 
 export interface InsightsCounterPopupSnapshot {
   type: InsightsCounterKind;
@@ -16,7 +17,7 @@ export interface InsightsCounterPopupSnapshot {
 }
 
 // Los tipos que solo muestran el anuncio, sin pasar al conteo.
-export const isAnnounceOnlyKind = (kind: InsightsCounterKind) => kind === "task";
+export const isAnnounceOnlyKind = (kind: InsightsCounterKind) => kind === "task" || kind === "record";
 
 // Primera fase del pop-up: el anuncio ("¡Pensamiento nuevo!") solo, antes de pasar -- en el
 // mismo cuadro -- al conteo creciendo.

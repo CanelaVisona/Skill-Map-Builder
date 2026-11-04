@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { createPortal } from "react-dom";
 import { useEffect, useState } from "react";
-import { CirclePlus, HelpCircle, Lightbulb, Pencil, Split, Wrench } from "lucide-react";
+import { CirclePlus, HelpCircle, Lightbulb, NotebookPen, Pencil, Split, Wrench } from "lucide-react";
 import { usePopupPalette, type PopupPalette } from "@/lib/popup-theme";
 import { playProgressAdvanceSound } from "@/lib/sound";
 
@@ -22,6 +22,8 @@ const KIND_META: Record<InsightsCounterKind, { icon: typeof Lightbulb; label: st
   question: { icon: HelpCircle, label: "Preguntas", announce: "¡Pregunta nueva!" },
   tool: { icon: Wrench, label: "Herramientas", announce: "¡Herramienta nueva!" },
   task: { icon: CirclePlus, label: "Tareas", announce: "¡Nueva tarea!" },
+  // Mismo ícono que los nodos de reflexión en el árbol.
+  record: { icon: NotebookPen, label: "Registros", announce: "¡Nuevo registro!" },
 };
 
 // Tiempo que se muestra el valor anterior antes de saltar al nuevo con el "+1".
@@ -157,7 +159,7 @@ export function InsightsCounterPopup({ snapshot, onClose }: InsightsCounterPopup
                     <KindIcon className="h-6 w-6" style={{ color: palette.text }} strokeWidth={2.1} />
                     <div className="text-[20px] font-semibold leading-tight" style={{ color: palette.text }}>{announce}</div>
                     {snapshot.detail && (
-                      <div className="text-[11px] uppercase tracking-[0.12em]" style={{ color: palette.textMuted }}>{snapshot.detail}</div>
+                      <div className="text-[12px] leading-snug break-words" style={{ color: palette.textMuted }}>{snapshot.detail}</div>
                     )}
                   </motion.div>
                 ) : (

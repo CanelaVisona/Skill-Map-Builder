@@ -12,6 +12,8 @@ import { Input } from "@/components/ui/input";
 import { Calendar, ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Pause, Pencil, Play, Plus, RotateCcw, Star } from "lucide-react";
 import { useSkillTree, type Area, type Project, type Skill } from "@/lib/skill-context";
 import { useNodeConfirmFeedback } from "@/lib/node-confirm-feedback-context";
+import { useInsightsCounterPopup } from "@/lib/insights-counter-popup-context";
+import { runPopupQueue } from "@/lib/popup-coordinator";
 import { useHabits, useUpdateHabitRecord } from "@/lib/useHabits";
 import { useTodayTaskSlots, useSetTodayTaskSlot, useClearTodayTaskSlot, useReorderTodayTaskSlot, getCurrentTimeSlotKey, getTimeSlotKeyForDate, type TaskSlotKey, type TaskType } from "@/lib/useTodayTaskSlots";
 import { useManualTasks, useManualTasksRange, isDefaultManualTask, defaultTaskMealId, useCreateManualTask, useUpdateManualTask, useDeleteManualTask } from "@/lib/useManualTasks";
@@ -2253,10 +2255,21 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // Tareas sueltas, hábitos y prácticas también lo abren (sin nodo ni área/quest), ver
   // toggleManualDone / toggleItemDone.
   const { requestNodeConfirmFeedback } = useNodeConfirmFeedback();
+  const { showInsightsCounterPopup } = useInsightsCounterPopup();
   const requestFeedbackIfConfirming = (skillId: string, parent: { parentId: string; kind: "area" | "project" }) => {
     const tree = (parent.kind === "area" ? areas : projects).find((p) => p.id === parent.parentId);
     const node = tree?.skills?.find((s: Skill) => s.id === skillId);
     if (node?.status !== "available") return;
+    // Completar un nodo de reflexión es sumar un registro: "¡Nuevo registro!" antes que el resto
+    // de los pop-ups (y que el modal de feedback, que espera a que no haya ninguno en pantalla).
+    if (node.isReflection === 1) {
+      runPopupQueue([() => showInsightsCounterPopup({
+        type: "record",
+        countBefore: 0,
+        countAfter: 1,
+        detail: `Agregaste un registro en ${node.title?.trim() || "Reflexión"}`,
+      })]);
+    }
     requestNodeConfirmFeedback({ skillId, scopeType: parent.kind, scopeId: parent.parentId });
   };
 

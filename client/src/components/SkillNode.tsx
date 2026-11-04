@@ -2275,6 +2275,13 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
       if (isSubSkillView) updateSubSkill(skill.id, { reflectionEntries: entries });
       else if (isProject) updateProjectSkill(activeId, skill.id, { reflectionEntries: entries });
       else updateSkill(activeId, skill.id, { reflectionEntries: entries });
+      // "¡Nuevo registro!" -- antes del confirm (si lo hay), así va primero en la secuencia.
+      runPopupQueue([() => showInsightsCounterPopup({
+        type: "record",
+        countBefore: 0,
+        countAfter: 1,
+        detail: `Agregaste un registro en ${skill.title?.trim() || "Reflexión"}`,
+      })]);
     }
     setReflectionText("");
     setIsReflectionOpen(false);
