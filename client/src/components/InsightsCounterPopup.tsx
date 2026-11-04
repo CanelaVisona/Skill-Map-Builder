@@ -1,11 +1,11 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { createPortal } from "react-dom";
 import { useEffect, useState } from "react";
-import { HelpCircle, Lightbulb, Pencil, Split, Wrench } from "lucide-react";
+import { CirclePlus, HelpCircle, Lightbulb, Pencil, Split, Wrench } from "lucide-react";
 import { usePopupPalette, type PopupPalette } from "@/lib/popup-theme";
 import { playProgressAdvanceSound } from "@/lib/sound";
 
-import { INSIGHTS_ANNOUNCE_MS, type InsightsCounterKind, type InsightsCounterPopupSnapshot } from "@/lib/insights-counter-popup-context";
+import { INSIGHTS_ANNOUNCE_MS, isAnnounceOnlyKind, type InsightsCounterKind, type InsightsCounterPopupSnapshot } from "@/lib/insights-counter-popup-context";
 
 interface InsightsCounterPopupProps {
   snapshot: InsightsCounterPopupSnapshot | null;
@@ -21,6 +21,7 @@ const KIND_META: Record<InsightsCounterKind, { icon: typeof Lightbulb; label: st
   strategy: { icon: Split, label: "Estrategias", announce: "¡Estrategia nueva!" },
   question: { icon: HelpCircle, label: "Preguntas", announce: "¡Pregunta nueva!" },
   tool: { icon: Wrench, label: "Herramientas", announce: "¡Herramienta nueva!" },
+  task: { icon: CirclePlus, label: "Tareas", announce: "¡Nueva tarea!" },
 };
 
 // Tiempo que se muestra el valor anterior antes de saltar al nuevo con el "+1".
@@ -92,6 +93,7 @@ export function InsightsCounterPopup({ snapshot, onClose }: InsightsCounterPopup
     if (snapshot.countAfter > snapshot.countBefore) {
       playProgressAdvanceSound();
     }
+    if (isAnnounceOnlyKind(snapshot.type)) return;
     const timer = setTimeout(() => setPhase("count"), INSIGHTS_ANNOUNCE_MS);
     return () => clearTimeout(timer);
   }, [snapshot]);
@@ -154,6 +156,9 @@ export function InsightsCounterPopup({ snapshot, onClose }: InsightsCounterPopup
                   >
                     <KindIcon className="h-6 w-6" style={{ color: palette.text }} strokeWidth={2.1} />
                     <div className="text-[20px] font-semibold leading-tight" style={{ color: palette.text }}>{announce}</div>
+                    {snapshot.detail && (
+                      <div className="text-[11px] uppercase tracking-[0.12em]" style={{ color: palette.textMuted }}>{snapshot.detail}</div>
+                    )}
                   </motion.div>
                 ) : (
                   <motion.div

@@ -224,6 +224,14 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
     draft.learnings.forEach((l) => blocks.push(journalBlock("learnings", "learning", l)));
     draft.strategies.forEach((st) => blocks.push(journalBlock("strategies", "strategy", st)));
     draft.questions.forEach((q) => blocks.push(journalBlock("questions", "question", q)));
+
+    // Nodos agregados desde el cubo "Nodo nuevo" (ya creados en el Skill Designer): solo su pop-up.
+    for (const task of draft.newTasks) {
+      blocks.push({
+        label: `+Tarea en ${task.scopeName}`,
+        run: (enqueue) => enqueue(() => showInsightsCounterPopup({ type: "task", countBefore: 0, countAfter: 1, detail: task.scopeName })),
+      });
+    }
     draft.tools.forEach((t) => blocks.push(journalBlock("tools", "tool", t)));
 
     // Error nuevo: se crea y se confirma de una ("¡Error nuevo detectado!"). Va con el nodo solo

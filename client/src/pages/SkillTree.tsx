@@ -32,7 +32,7 @@ import HousePriorityList from "../components/HousePriorityList";
 import HouseRepairsList from "../components/HouseRepairsList";
 import { EvidenceBoardModalWrapper } from "@/components/EvidenceBoardModal";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, ArrowRight, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, User, Menu, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Utensils, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt, OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation, Check, HelpCircle, PiggyBank, Search, X, Pentagon, Trophy, Split } from "lucide-react";
+import { ArrowLeft, ArrowRight, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, User, Menu, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Utensils, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt, OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation, Check, HelpCircle, PiggyBank, Search, X, Pentagon, Trophy, Split, NotebookPen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -4071,6 +4071,8 @@ interface AchievementActivity {
   sentence: string;
   completedAt?: string | null;
   skill?: SkillWithSource;
+  // Reflexión node: drawn with the note icon, shows its Planteo and opens every entry on click.
+  isReflection?: boolean;
 }
 
 const formatAchievementDate = (dateString: string): string => {
@@ -4092,8 +4094,9 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
   const [viewingThought, setViewingThought] = useState<JournalThought | null>(null);
   const [viewingLearning, setViewingLearning] = useState<JournalLearning | null>(null);
   const [viewingTool, setViewingTool] = useState<JournalTool | null>(null);
+  const [viewingReflection, setViewingReflection] = useState<Skill | null>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  
+
   // Extract skill name from learning title
   // Format: "Skill Title (+XP en SkillName)"
   const extractSkillNameFromLearning = (title: string): { skillName: string; xp: number } | null => {
@@ -4122,13 +4125,15 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
     const activities: AchievementActivity[] = [];
     // The first node of each level is auto-confirmed (see SkillNode), so it isn't a real achievement
     if (skill.status === "mastered" && skill.levelPosition !== 1) {
+      const isReflection = skill.isReflection === 1;
       activities.push({
         id: `node-${skill.id}`,
         type: 'node',
         title: skill.title,
-        sentence: skill.description,
+        sentence: isReflection ? (skill.reflectionPrompt || "") : skill.description,
         completedAt: skill.completedAt,
         skill,
+        isReflection,
       });
     }
     activities.push(
@@ -4141,7 +4146,8 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
 
   const openActivity = (activity: AchievementActivity) => {
     if (activity.type === 'node') {
-      if (activity.skill) handleSelectSkill(activity.skill);
+      if (activity.isReflection && activity.skill) setViewingReflection(activity.skill);
+      else if (activity.skill) handleSelectSkill(activity.skill);
     } else if (activity.type === 'learning') {
       const learning = learnings.find(l => l.id === activity.id);
       if (learning) setViewingLearning(learning);
@@ -4350,6 +4356,42 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
             <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap">
               {viewingThought?.sentence}
             </p>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reflexión Detail Dialog: everything written in the node -- title, Planteo and every
+          dated entry. A note saved before entries existed lives in the description. */}
+      <Dialog open={!!viewingReflection} onOpenChange={(open) => !open && setViewingReflection(null)}>
+        <DialogContent className="bg-zinc-900 border-zinc-700 max-w-lg max-h-[85vh] flex flex-col">
+          <DialogTitle className="text-zinc-100 shrink-0">
+            {viewingReflection?.title || "Reflexión"}
+          </DialogTitle>
+          <div className="flex-1 min-h-0 overflow-y-auto minimal-scrollbar pr-1 space-y-4">
+            {viewingReflection?.reflectionPrompt?.trim() && (
+              <p className="text-sm text-zinc-400 italic leading-relaxed whitespace-pre-wrap break-words">
+                {viewingReflection.reflectionPrompt}
+              </p>
+            )}
+            {(() => {
+              const entries = viewingReflection?.reflectionEntries?.length
+                ? viewingReflection.reflectionEntries
+                : viewingReflection?.description?.trim() ? [{ date: "", text: viewingReflection.description.trim() }] : [];
+              return entries.length > 0 && (
+                <div className="border-t border-zinc-700">
+                  {entries.map((entry, i) => (
+                    <div key={i} className="py-3 border-b border-zinc-700">
+                      {entry.date && (
+                        <p className="text-[10px] uppercase tracking-wide text-zinc-500 mb-1">
+                          {formatAchievementDate(entry.date + "T00:00:00")}
+                        </p>
+                      )}
+                      <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap break-words">{entry.text}</p>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
         </DialogContent>
       </Dialog>
@@ -4710,7 +4752,7 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
                                         : "w-12 h-12 rounded-full bg-background border-2 border-border flex items-center justify-center flex-shrink-0 hover:border-muted-foreground/50 transition-all hover:shadow-lg hover:shadow-foreground/10 dark:bg-zinc-900 dark:border-zinc-700 dark:hover:border-zinc-500 dark:hover:shadow-zinc-900/50 group relative z-10"}
                                     >
                                       {activity.type === 'node' ? (
-                                        <Check size={18} strokeWidth={3} />
+                                        activity.isReflection ? <NotebookPen size={18} /> : <Check size={18} strokeWidth={3} />
                                       ) : activity.type === 'learning' ? (
                                         <Lightbulb className="h-5 w-5 text-yellow-500 group-hover:text-yellow-400" />
                                       ) : activity.type === 'tool' ? (
@@ -4827,7 +4869,7 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
                                         : "w-12 h-12 rounded-full bg-background border-2 border-border flex items-center justify-center flex-shrink-0 hover:border-muted-foreground/50 transition-all hover:shadow-lg hover:shadow-foreground/10 dark:bg-zinc-900 dark:border-zinc-700 dark:hover:border-zinc-500 dark:hover:shadow-zinc-900/50 group relative z-10"}
                                     >
                                       {activity.type === 'node' ? (
-                                        <Check size={18} strokeWidth={3} />
+                                        activity.isReflection ? <NotebookPen size={18} /> : <Check size={18} strokeWidth={3} />
                                       ) : activity.type === 'learning' ? (
                                         <Lightbulb className="h-5 w-5 text-yellow-500 group-hover:text-yellow-400" />
                                       ) : activity.type === 'tool' ? (

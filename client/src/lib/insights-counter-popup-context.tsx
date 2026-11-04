@@ -3,13 +3,20 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { InsightsCounterPopup } from "@/components/InsightsCounterPopup";
 import { markPopupActive } from "@/lib/popup-coordinator";
 
-export type InsightsCounterKind = "thought" | "learning" | "strategy" | "question" | "tool";
+// "task": nodo nuevo agregado desde el cubo "Nodo nuevo" del modal de feedback. Solo muestra el
+// anuncio ("¡Nueva tarea!"), sin la fase del conteo.
+export type InsightsCounterKind = "thought" | "learning" | "strategy" | "question" | "tool" | "task";
 
 export interface InsightsCounterPopupSnapshot {
   type: InsightsCounterKind;
   countBefore: number;
   countAfter: number;
+  // Texto chico debajo del anuncio (p.ej. el área/quest del nodo nuevo).
+  detail?: string;
 }
+
+// Los tipos que solo muestran el anuncio, sin pasar al conteo.
+export const isAnnounceOnlyKind = (kind: InsightsCounterKind) => kind === "task";
 
 // Primera fase del pop-up: el anuncio ("¡Pensamiento nuevo!") solo, antes de pasar -- en el
 // mismo cuadro -- al conteo creciendo.
@@ -44,11 +51,12 @@ export function InsightsCounterPopupProvider({ children }: { children: React.Rea
       clearTimeout(closeTimerRef.current);
     }
 
-    markPopupActive(INSIGHTS_POPUP_VISIBLE_MS);
+    const visibleMs = isAnnounceOnlyKind(nextSnapshot.type) ? INSIGHTS_ANNOUNCE_MS + 600 : INSIGHTS_POPUP_VISIBLE_MS;
+    markPopupActive(visibleMs);
     setSnapshot(nextSnapshot);
     closeTimerRef.current = setTimeout(() => {
       setSnapshot(null);
-    }, INSIGHTS_POPUP_VISIBLE_MS);
+    }, visibleMs);
   }, []);
 
   useEffect(() => {

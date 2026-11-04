@@ -695,6 +695,8 @@ export class DbStorage implements IStorage {
 
   async createSkill(skill: InsertSkill): Promise<Skill> {
     const id = randomUUID();
+    // El subárbol de un nodo Reflexión es de nodos Reflexión, salvo que se pida otra cosa.
+    const isReflection = skill.isReflection ?? (skill.parentSkillId ? await this.isReflectionSkill(skill.parentSkillId) : 0);
     const insertData: typeof skills.$inferInsert = {
       id,
       areaId: skill.areaId,
@@ -709,7 +711,7 @@ export class DbStorage implements IStorage {
       manualLock: (skill.manualLock ?? 0) as 0 | 1,
       isFinalNode: (skill.isFinalNode ?? 0) as 0 | 1,
       isSideQuest: (skill.isSideQuest ?? 0) as 0 | 1,
-      isReflection: (skill.isReflection ?? 0) as 0 | 1,
+      isReflection: isReflection as 0 | 1,
       level: skill.level,
       levelPosition: skill.levelPosition,
       plannedDate: skill.plannedDate,
@@ -719,6 +721,11 @@ export class DbStorage implements IStorage {
     };
     const result = await db.insert(skills).values(insertData).returning();
     return result[0];
+  }
+
+  private async isReflectionSkill(skillId: string): Promise<0 | 1> {
+    const result = await db.select({ isReflection: skills.isReflection }).from(skills).where(eq(skills.id, skillId));
+    return result[0]?.isReflection === 1 ? 1 : 0;
   }
 
   async updateSkill(id: string, skill: Partial<InsertSkill>): Promise<Skill | undefined> {
@@ -1405,6 +1412,8 @@ export class DbStorage implements IStorage {
       const maxY = Math.max(...existingSkills.map(s => s.y ?? 0));
       calculatedStartY = maxY + 150;
     }
+    // El subárbol de un nodo Reflexión es de nodos Reflexión.
+    const isReflection = await this.isReflectionSkill(parentSkillId);
 
     await db.transaction(async (tx) => {
       for (let position = 1; position <= 6; position++) {
@@ -1442,6 +1451,7 @@ export class DbStorage implements IStorage {
           isFinalNode: isFinalNode ? (1 as 0 | 1) : (0 as 0 | 1),
           isAutoComplete: isFirstNode ? (1 as 0 | 1) : (0 as 0 | 1),
           manualLock: 0 as 0 | 1,
+          isReflection,
         };
 
         const result = await tx.insert(skills).values(skillData).returning();

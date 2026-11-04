@@ -2425,6 +2425,49 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     }
   };
 
+  // Reflexión -> pregunta del Journal: el nodo (con su subárbol) sale del árbol y queda como
+  // pregunta de esta área/quest. Si el nodo salió de una pregunta, vuelve esa misma. Los
+  // registros del nodo se agregan al final de la descripción para no perderlos.
+  const saveReflectionToJournal = async () => {
+    const records = reflectionEntries.map((e) => (e.date ? `${e.date}: ${e.text}` : e.text)).join("\n");
+    const scope = sourceType === "area" ? { areaId: sourceId, projectId: null }
+      : sourceType === "project" ? { areaId: null, projectId: sourceId }
+      : {};
+    try {
+      const listRes = await fetch("/api/journal/questions");
+      const questions: { id: string; sentence: string; reflectionSkillId: string | null }[] = listRes.ok ? await listRes.json() : [];
+      const linked = questions.find((q) => q.reflectionSkillId === skill.id);
+      const res = linked
+        ? await fetch(`/api/journal/questions/${linked.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              reflectionSkillId: null,
+              sentence: [linked.sentence?.trim(), records].filter(Boolean).join("\n\n"),
+              ...scope,
+            }),
+          })
+        : await fetch("/api/journal/questions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: skill.title?.trim() || "Reflexión",
+              sentence: [skill.reflectionPrompt?.trim(), records].filter(Boolean).join("\n\n"),
+              ...scope,
+            }),
+          });
+      if (!res.ok) throw new Error(`Saving question failed: ${res.status}`);
+    } catch (error) {
+      // Sin la pregunta guardada, el nodo no se borra.
+      console.error("Error saving reflection node to the Journal:", error);
+      return;
+    }
+    queryClient.invalidateQueries({ queryKey: ["/api/journal/questions"] });
+    if (isSubSkillView) deleteSubSkill(skill.id);
+    else if (isProject) deleteProjectSkill(activeId, skill.id);
+    else deleteSkill(activeId, skill.id);
+  };
+
   return (
     <>
     <Popover open={isOpen} onOpenChange={handleOpenChange}>
@@ -2561,7 +2604,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               </svg>
             )}
             {hasUnlockedWithIncompleteSubtasks ? (
-              <Lock size={14} className="text-foreground" />
+              skill.isReflection === 1 ? <NotebookPen size={14} className="text-foreground" /> : <Lock size={14} className="text-foreground" />
             ) : isLocked ? (
               skill.isReflection === 1 ? <NotebookPen size={14} /> : <Lock size={14} />
             ) : isMastered ? (
@@ -3028,6 +3071,22 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                          >
                            Cambiar tipo
                          </Button>
+                         {isReflectionNode && (
+                           <Button
+                             variant="ghost"
+                             size="sm"
+                             className="h-7 px-3 text-xs justify-start font-normal hover:bg-muted/50"
+                             title="El nodo sale del árbol y queda como pregunta en el Journal"
+                             onClick={() => {
+                               saveReflectionToJournal();
+                               setIsAddOptionsOpen(false);
+                               setIsOpen(false);
+                             }}
+                             data-testid="button-save-reflection-to-journal"
+                           >
+                             Guardar en Preguntas
+                           </Button>
+                         )}
                        </>
                      )}
                    </div>

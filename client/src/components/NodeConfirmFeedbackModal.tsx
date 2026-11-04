@@ -80,6 +80,9 @@ export interface NodeFeedbackDraft {
   learnings: NodeFeedbackEntry[];
   strategies: NodeFeedbackEntry[];
   questions: NodeFeedbackEntry[];
+  // Un elemento por nodo agregado desde el cubo "Nodo nuevo" (el nodo ya está creado: esto solo
+  // dispara su pop-up "¡Nueva tarea!" al cerrar el modal).
+  newTasks: Array<{ scopeName: string }>;
   tools: NodeFeedbackEntry[];
   errors: Array<NodeFeedbackError & { scope: FeedbackScope }>;
   errorActions: NodeFeedbackErrorAction[];
@@ -93,6 +96,7 @@ const EMPTY_DRAFT: NodeFeedbackDraft = {
   learnings: [],
   strategies: [],
   questions: [],
+  newTasks: [],
   tools: [],
   errors: [],
   errorActions: [],
@@ -106,6 +110,7 @@ export const isNodeFeedbackDraftEmpty = (draft: NodeFeedbackDraft) =>
   draft.learnings.length === 0 &&
   draft.strategies.length === 0 &&
   draft.questions.length === 0 &&
+  draft.newTasks.length === 0 &&
   draft.tools.length === 0 &&
   draft.errors.length === 0 &&
   draft.errorActions.length === 0 &&
@@ -218,8 +223,8 @@ interface NodeConfirmFeedbackModalProps {
   // Skill picker (XP) -- mismos datos que el picker del Step 3 del diálogo de edición.
   legacySkills: string[];
   scopedGlobalSkills: GlobalSkill[];
-  areas: Array<{ id: string; name: string }>;
-  projects: Array<{ id: string; name: string; questType?: string | null }>;
+  areas: Array<{ id: string; name: string; skills?: Array<{ id: string }> }>;
+  projects: Array<{ id: string; name: string; questType?: string | null; skills?: Array<{ id: string }> }>;
   currentAreaId?: string;
   currentProjectId?: string;
   getGlobalSkillsForArea: (areaId: string) => GlobalSkill[];
@@ -260,7 +265,10 @@ export function NodeConfirmFeedbackModal({
   const [cubeView, setCubeView] = useState<"list" | "form">("form");
   // Áreas/quests editadas desde el cubo "Nodo nuevo" (solo para mostrarlo; lo editado ya quedó
   // guardado desde el Skill Designer).
-  const [nodeEdits, setNodeEdits] = useState<Array<{ type: "area" | "project"; id: string }>>([]);
+  const [nodeEdits, setNodeEdits] = useState<Array<{ type: "area" | "project"; id: string; added: number }>>([]);
+  // Nodos que tenía cada área/quest al entrar a su Skill Designer (una vez por apertura del
+  // modal): al apretar Listo, los que no estaban son los nodos nuevos.
+  const [nodeBaselines, setNodeBaselines] = useState<Record<string, string[]>>({});
   // Formularios a medio escribir, por cubo (ver CubeForm).
   const [formDrafts, setFormDrafts] = useState<Partial<Record<CubeId, CubeForm>>>({});
 
@@ -310,6 +318,7 @@ export function NodeConfirmFeedbackModal({
       setFormDrafts({});
       setCubeView("form");
       setNodeEdits([]);
+      setNodeBaselines({});
     }
   }, [open]);
 
@@ -390,7 +399,7 @@ export function NodeConfirmFeedbackModal({
       case "error": return draft.errors.length + draft.errorActions.length;
       case "xp": return draft.xpSkillIds.length;
       case "power": return draft.powers.length + draft.newPowers.length;
-      case "node": return nodeEdits.length;
+      case "node": return nodeEdits.reduce((sum, e) => sum + Math.max(1, e.added), 0);
     }
   };
 
@@ -490,7 +499,21 @@ export function NodeConfirmFeedbackModal({
     if (!activeCube) return;
     if (activeCube === "node" && pickedScope) {
       const edited = pickedScope;
-      setNodeEdits((prev) => (prev.some((e) => e.type === edited.type && e.id === edited.id) ? prev : [...prev, edited]));
+      const k = `${edited.type}:${edited.id}`;
+      const before = new Set(nodeBaselines[k] ?? []);
+      const nowIds = scopeSkillIds(edited);
+      const added = nowIds.filter((id) => !before.has(id)).length;
+      // Lo nuevo de esta vuelta pasa a ser parte de la base, así no se cuenta dos veces.
+      setNodeBaselines((prev) => ({ ...prev, [k]: nowIds }));
+      setNodeEdits((prev) => {
+        const existing = prev.find((e) => e.type === edited.type && e.id === edited.id);
+        if (existing) return prev.map((e) => (e === existing ? { ...e, added: e.added + added } : e));
+        return [...prev, { ...edited, added }];
+      });
+      if (added > 0) {
+        const name = scopeName(edited);
+        setDraft((prev) => ({ ...prev, newTasks: [...prev.newTasks, ...Array.from({ length: added }, () => ({ scopeName: name }))] }));
+      }
     }
     setDraft((prev) => {
       switch (activeCube) {
@@ -563,8 +586,19 @@ export function NodeConfirmFeedbackModal({
     backToCubes();
   };
 
+  const scopeSkillIds = (scope: { type: "area" | "project"; id: string }) =>
+    ((scope.type === "area" ? areas : projects).find((x) => x.id === scope.id)?.skills ?? []).map((sk) => sk.id);
+
   const next = () => {
     if (!canAdvance()) return;
+    // Entrando al Skill Designer: se anotan los nodos que ya tenía esa área/quest.
+    if (currentKey === "nodeScope" && pickedScope) {
+      const k = `${pickedScope.type}:${pickedScope.id}`;
+      if (!nodeBaselines[k]) {
+        const ids = scopeSkillIds(pickedScope);
+        setNodeBaselines((prev) => ({ ...prev, [k]: ids }));
+      }
+    }
     if (isLastStep) save();
     else setStep((s) => s + 1);
   };
@@ -615,7 +649,11 @@ export function NodeConfirmFeedbackModal({
         ];
       case "node":
         // Sin X: lo editado en el designer ya está guardado.
-        return nodeEdits.map((e) => ({ key: `node-${e.type}-${e.id}`, label: `Editado: ${scopeName(e)}`, detail: e.type === "project" ? "Quest" : undefined }));
+        return nodeEdits.map((e) => ({
+          key: `node-${e.type}-${e.id}`,
+          label: e.added > 0 ? `+${e.added} tarea${e.added > 1 ? "s" : ""} en ${scopeName(e)}` : `Editado: ${scopeName(e)}`,
+          detail: e.type === "project" ? "Quest" : undefined,
+        }));
     }
   };
 
