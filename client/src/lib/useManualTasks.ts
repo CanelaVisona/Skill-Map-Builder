@@ -105,8 +105,7 @@ export function useCreateManualTask() {
       minutes,
       deadline,
       startTime,
-      xp,
-      xpSkillIds,
+      activityId,
     }: {
       date: string;
       title: string;
@@ -120,14 +119,13 @@ export function useCreateManualTask() {
       deadline?: string | null;
       // Hora ("HH:MM") a la que empieza: al llegar pasa a ser la tarea de "Ahora".
       startTime?: string | null;
-      // Creada desde una actividad: XP que suma al confirmarla a esas skills globales.
-      xp?: number | null;
-      xpSkillIds?: string[];
+      // Creada desde una actividad: al confirmarla suma XP a las skills globales de la actividad.
+      activityId?: string;
     }) => {
       const res = await fetch("/api/manual-today-tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, title, kind, linkedKind, linkedParentId, minutes, deadline, startTime, xp, xpSkillIds }),
+        body: JSON.stringify({ date, title, kind, linkedKind, linkedParentId, minutes, deadline, startTime, activityId }),
       });
       if (!res.ok) throw new Error("Failed to create manual task");
       return res.json() as Promise<ManualTodayTask>;

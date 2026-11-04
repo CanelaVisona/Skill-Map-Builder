@@ -6639,14 +6639,13 @@ export async function registerRoutes(
     }
   });
 
-  // Actividades: tareas ya armadas (título + XP + skills globales) para agregar a "Tareas de hoy".
+  // Actividades: tareas ya armadas (título + skills globales) para agregar a "Tareas de hoy".
+  // El XP no se elige: completar una suma siempre ACTIVITY_XP (1 bloque de los 10 de la barra).
+  const ACTIVITY_XP = 10;
   const parseActivityBody = (body: any, partial: boolean): { error?: string; value?: { title?: string; xp?: number; skillIds?: string[] } } => {
-    const { title, xp, skillIds } = body ?? {};
+    const { title, skillIds } = body ?? {};
     if (!partial || title !== undefined) {
       if (typeof title !== "string" || !title.trim()) return { error: "title es requerido" };
-    }
-    if (!partial || xp !== undefined) {
-      if (!Number.isInteger(xp) || xp < 0 || xp > 100000) return { error: "xp debe ser un entero >= 0" };
     }
     if (skillIds !== undefined && (!Array.isArray(skillIds) || skillIds.some((id: unknown) => typeof id !== "string"))) {
       return { error: "skillIds debe ser una lista de ids" };
@@ -6654,7 +6653,7 @@ export async function registerRoutes(
     return {
       value: {
         ...(title !== undefined ? { title: String(title).trim().slice(0, 200) } : {}),
-        ...(xp !== undefined ? { xp } : {}),
+        xp: ACTIVITY_XP,
         ...(skillIds !== undefined ? { skillIds: skillIds as string[] } : {}),
       },
     };
@@ -6709,9 +6708,11 @@ export async function registerRoutes(
 
   app.post("/api/manual-today-tasks", requireAuth, async (req, res) => {
     try {
-      const { date, title, kind, linkedKind, linkedParentId, minutes, deadline, startTime, xp, xpSkillIds } = req.body;
-      if (xp !== undefined && xp !== null && (!Number.isInteger(xp) || xp < 0)) {
-        return res.status(400).json({ message: "xp debe ser un entero >= 0 o null" });
+      const { date, title, kind, linkedKind, linkedParentId, minutes, deadline, startTime, activityId } = req.body;
+      // Creada desde una actividad: lleva sus skills y el XP fijo de las actividades.
+      const activity = activityId ? await storage.getTodayActivity(String(activityId)) : undefined;
+      if (activityId && (!activity || activity.userId !== req.userId)) {
+        return res.status(404).json({ message: "Actividad no encontrada" });
       }
       if (minutes !== undefined && minutes !== null && (!Number.isInteger(minutes) || minutes < 0)) {
         return res.status(400).json({ message: "minutes debe ser un entero >= 0 o null" });
@@ -6735,7 +6736,7 @@ export async function registerRoutes(
         ...(minutes ? { minutes } : {}),
         ...(typeof deadline === "string" && /^\d{2}:\d{2}$/.test(deadline) ? { deadline } : {}),
         ...(typeof startTime === "string" && /^\d{2}:\d{2}$/.test(startTime) ? { startTime } : {}),
-        ...(xp ? { xp, xpSkillIds: Array.isArray(xpSkillIds) ? xpSkillIds.map(String) : [] } : {}),
+        ...(activity ? { xp: ACTIVITY_XP, xpSkillIds: Array.isArray(activity.skillIds) ? activity.skillIds : [] } : {}),
       });
       res.status(201).json(task);
     } catch (error: any) {

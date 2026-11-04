@@ -1,8 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { TodayActivity } from "@shared/schema";
 
-// Actividades: tareas ya armadas (título + XP + skills globales) que se agregan a "Tareas de hoy"
-// desde el acordeón "Actividades" del formulario de nueva tarea.
+// Actividades: tareas ya armadas (título + skills globales) que se agregan a "Tareas de hoy"
+// desde el acordeón "Actividades" del formulario de nueva tarea. El XP no se elige: completarla
+// siempre suma 1 bloque (de los 10 de la barra) a cada skill.
 export function useTodayActivities(enabled = true) {
   return useQuery({
     queryKey: ["today-activities"],
@@ -15,7 +16,7 @@ export function useTodayActivities(enabled = true) {
   });
 }
 
-type ActivityFields = { title: string; xp: number; skillIds: string[] };
+type ActivityFields = { title: string; skillIds: string[] };
 
 export function useSaveTodayActivity() {
   const queryClient = useQueryClient();

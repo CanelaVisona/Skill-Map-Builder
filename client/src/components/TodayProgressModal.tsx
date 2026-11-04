@@ -15,6 +15,7 @@ import { useNodeConfirmFeedback } from "@/lib/node-confirm-feedback-context";
 import { useInsightsCounterPopup } from "@/lib/insights-counter-popup-context";
 import { runPopupQueue, beginPopupChain, endPopupChain } from "@/lib/popup-coordinator";
 import { useXpPopup } from "@/lib/xp-popup-context";
+import { XP_PER_BLOCK } from "@/lib/skill-xp";
 import { useTodayActivities, useSaveTodayActivity, useDeleteTodayActivity } from "@/lib/useTodayActivities";
 import { useHabits, useUpdateHabitRecord } from "@/lib/useHabits";
 import { useTodayTaskSlots, useSetTodayTaskSlot, useClearTodayTaskSlot, useReorderTodayTaskSlot, getCurrentTimeSlotKey, getTimeSlotKeyForDate, type TaskSlotKey, type TaskType } from "@/lib/useTodayTaskSlots";
@@ -511,7 +512,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // Acordeón "Actividades" del formulario de nueva tarea, y el diálogo para crear/editar una
   // (se abre manteniendo apretado el título "Actividades", o una actividad para editarla).
   const [newTaskActivitiesOpen, setNewTaskActivitiesOpen] = useState(false);
-  const [activityEditor, setActivityEditor] = useState<{ id?: string; title: string; xp: string; skillIds: string[] } | null>(null);
+  const [activityEditor, setActivityEditor] = useState<{ id?: string; title: string; skillIds: string[] } | null>(null);
   const activityLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activityLongPressFired = useRef(false);
   // Franja a la que se asigna la tarea que se está por crear: null = sin asignar (mantener
@@ -1103,7 +1104,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
           {t.kind === "event" ? <>📅 {stripLeadingEmoji(t.title)}</> : stripLeadingEmoji(t.title)}
           {t.done !== 1 && <StartTimeSuffix startTime={t.startTime} showRemaining={effectiveDate === todayStr} />}
           <MinutesSuffix minutes={t.minutes} deadline={t.done === 1 ? null : t.deadline} showRemaining={t.done !== 1 && effectiveDate === todayStr} timerKey={timerKeyFor(`manual:${t.id}`, t.minutes)} timerDone={t.done === 1} />
-          {t.xp ? <span className="ml-1 text-xs font-semibold text-violet-600 dark:text-violet-300">· +{t.xp} XP</span> : null}
+          {t.xp ? <span className="ml-1 text-xs font-semibold text-violet-600 dark:text-violet-300">· +{Math.max(1, Math.round(t.xp / XP_PER_BLOCK))} XP</span> : null}
         </>
       ),
       done: t.done === 1,
@@ -3103,7 +3104,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     }
   };
 
-  // Con `activity`, la tarea sale de una actividad ya armada (su título y su XP); el tiempo y la
+  // Con `activity`, la tarea sale de una actividad ya armada (su título y sus skills); el tiempo y la
   // franja elegidos en el formulario se usan igual.
   const submitNewTask = async (activity?: TodayActivity) => {
     const title = activity ? activity.title : newTaskTitle.trim();
@@ -3154,7 +3155,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       minutes,
       deadline,
       startTime,
-      ...(activity && activity.xp > 0 ? { xp: activity.xp, xpSkillIds: activity.skillIds } : {}),
+      ...(activity ? { activityId: activity.id } : {}),
     });
     // Con hora de inicio, la franja la decide esa hora (y se ordena entre las que tienen hora).
     if (startTime) {
@@ -3194,8 +3195,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     activityLongPressTimer.current = setTimeout(() => {
       activityLongPressFired.current = true;
       setActivityEditor(activity
-        ? { id: activity.id, title: activity.title, xp: String(activity.xp), skillIds: activity.skillIds ?? [] }
-        : { title: "", xp: "10", skillIds: [] });
+        ? { id: activity.id, title: activity.title, skillIds: activity.skillIds ?? [] }
+        : { title: "", skillIds: [] });
     }, LONG_PRESS_MS);
   };
   const cancelActivityLongPress = () => {
@@ -3209,11 +3210,10 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     activityLongPressFired.current = false;
     return fired;
   };
-  const activityEditorXp = activityEditor ? parseInt(activityEditor.xp, 10) : NaN;
-  const activityEditorValid = !!activityEditor?.title.trim() && Number.isInteger(activityEditorXp) && activityEditorXp >= 0;
+  const activityEditorValid = !!activityEditor?.title.trim();
   const submitActivityEditor = () => {
     if (!activityEditor || !activityEditorValid) return;
-    saveActivity.mutate({ id: activityEditor.id, title: activityEditor.title.trim(), xp: activityEditorXp, skillIds: activityEditor.skillIds });
+    saveActivity.mutate({ id: activityEditor.id, title: activityEditor.title.trim(), skillIds: activityEditor.skillIds });
     setNewTaskActivitiesOpen(true);
     setActivityEditor(null);
   };
@@ -4627,7 +4627,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                     className="flex w-full select-none items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted active:bg-muted/60"
                   >
                     <span className="truncate">{a.title}</span>
-                    <span className="shrink-0 text-xs font-semibold text-violet-600 dark:text-violet-300">+{a.xp} XP</span>
+                    <span className="shrink-0 text-xs font-semibold text-violet-600 dark:text-violet-300">+1 XP</span>
                   </button>
                 ))}
               </div>
@@ -4652,35 +4652,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
               placeholder="Título de la actividad"
             />
             <div className="space-y-1.5">
-              <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">XP al completarla</p>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {[5, 10, 20, 50, 100].map((xp) => (
-                  <button
-                    key={xp}
-                    type="button"
-                    onClick={() => setActivityEditor({ ...activityEditor, xp: String(xp) })}
-                    className={`rounded-full border px-3 py-1 text-xs transition-colors ${
-                      activityEditor.xp === String(xp)
-                        ? "border-violet-500 bg-violet-500/15 text-violet-700 dark:text-violet-300"
-                        : "border-border/50 hover:bg-muted"
-                    }`}
-                  >
-                    {xp} XP
-                  </button>
-                ))}
-                <Input
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  placeholder="Otro"
-                  value={activityEditor.xp}
-                  onChange={(e) => setActivityEditor({ ...activityEditor, xp: e.target.value })}
-                  className="h-7 w-20 text-xs"
-                />
-              </div>
-            </div>
-            <div className="space-y-1.5">
               <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Habilidades que suben</p>
+              <p className="text-xs text-muted-foreground">Al completarla, cada una suma 1 XP (1 de 10).</p>
               {globalSkills.length === 0 ? (
                 <p className="text-xs text-muted-foreground">Todavía no tenés habilidades globales.</p>
               ) : (
