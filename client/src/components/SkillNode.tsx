@@ -1269,6 +1269,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
   
   // Add options popup state
   const [isAddOptionsOpen, setIsAddOptionsOpen] = useState(false);
+  // "Cambiar tipo" submenu inside the pencil popup
+  const [isChangeTypeOpen, setIsChangeTypeOpen] = useState(false);
 
   // Get available Global Skills for the current area/quest
   const availableGlobalSkills = activeAreaId 
@@ -2406,6 +2408,23 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     }
   };
 
+  // Changes this node's type in place. Reflexión and SideQuest are exclusive; "normal" clears both.
+  const currentNodeKind: "normal" | "sidequest" | "reflection" =
+    skill.isReflection === 1 ? "reflection" : skill.isSideQuest === 1 ? "sidequest" : "normal";
+  const changeNodeKind = (kind: "normal" | "sidequest" | "reflection") => {
+    const updates = {
+      isReflection: (kind === "reflection" ? 1 : 0) as 0 | 1,
+      isSideQuest: (kind === "sidequest" ? 1 : 0) as 0 | 1,
+    };
+    if (isSubSkillView) {
+      updateSubSkill(skill.id, updates);
+    } else if (isProject) {
+      updateProjectSkill(activeId, skill.id, updates);
+    } else {
+      updateSkill(activeId, skill.id, updates);
+    }
+  };
+
   return (
     <>
     <Popover open={isOpen} onOpenChange={handleOpenChange}>
@@ -2884,15 +2903,16 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             </div>
             
             <div className="pt-2 border-t border-border flex flex-wrap justify-between gap-2">
-               <Popover open={isAddOptionsOpen} onOpenChange={setIsAddOptionsOpen}>
+               <Popover open={isAddOptionsOpen} onOpenChange={(o) => { setIsAddOptionsOpen(o); if (!o) setIsChangeTypeOpen(false); }}>
                  <PopoverTrigger asChild>
                    <Button 
                      variant="ghost" 
                      size="sm" 
                      className="h-8 w-8 p-0 text-xs bg-muted/50 hover:bg-muted"
                      data-testid="button-add-skill-below"
+                     title="Agregar nodo / cambiar tipo"
                    >
-                     +
+                     <Pencil className="h-3 w-3" />
                    </Button>
                  </PopoverTrigger>
                  <PopoverContent 
@@ -2902,76 +2922,114 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                    sideOffset={4}
                  >
                    <div className="flex flex-col gap-0.5">
-                     <Button
-                       variant="ghost"
-                       size="sm"
-                       className="h-7 px-3 text-xs justify-start font-normal hover:bg-muted/50"
-                       disabled={!canAddFromNode}
-                       title={!canAddFromNode ? "Solo se puede agregar desde el nodo confirmado anterior al desbloqueado" : undefined}
-                       onClick={() => {
-                         if (!canAddFromNode) return;
-                         addNodeBelow();
-                         setIsAddOptionsOpen(false);
-                         setIsOpen(false);
-                       }}
-                       data-testid="button-add-new"
-                     >
-                       Agregar
-                     </Button>
-                     <Button
-                       variant="ghost"
-                       size="sm"
-                       className="h-7 px-3 text-xs justify-start font-normal hover:bg-muted/50"
-                       disabled={!canAddFromNode}
-                       title={!canAddFromNode ? "Solo se puede agregar desde el nodo confirmado anterior al desbloqueado" : "Nodo que no es parte del título del nivel, pero que te hizo crecer en el área"}
-                       onClick={() => {
-                         if (!canAddFromNode) return;
-                         addNodeBelow("sidequest");
-                         setIsAddOptionsOpen(false);
-                         setIsOpen(false);
-                       }}
-                       data-testid="button-add-sidequest"
-                     >
-                       SideQuest
-                     </Button>
-                     <Button
-                       variant="ghost"
-                       size="sm"
-                       className="h-7 px-3 text-xs justify-start font-normal hover:bg-muted/50"
-                       disabled={!canAddFromNode}
-                       title={!canAddFromNode ? "Solo se puede agregar desde el nodo confirmado anterior al desbloqueado" : undefined}
-                       onClick={() => {
-                         if (!canAddFromNode) return;
-                         addNodeBelow("reflection");
-                         setIsAddOptionsOpen(false);
-                         setIsOpen(false);
-                       }}
-                       data-testid="button-add-reflection"
-                     >
-                       Reflexión
-                     </Button>
-                     <Button
-                       variant="ghost"
-                       size="sm"
-                       className="h-7 px-3 text-xs justify-start font-normal hover:bg-muted/50"
-                       disabled={!canAddFromNode}
-                       title={!canAddFromNode ? "Solo se puede duplicar desde el nodo confirmado anterior al desbloqueado" : undefined}
-                       onClick={() => {
-                         if (!canAddFromNode) return;
-                         if (isSubSkillView) {
-                           duplicateSubSkill(skill);
-                         } else if (isProject) {
-                           duplicateProjectSkill(activeId, skill);
-                         } else {
-                           duplicateSkill(activeId, skill);
-                         }
-                         setIsAddOptionsOpen(false);
-                         setIsOpen(false);
-                       }}
-                       data-testid="button-duplicate"
-                     >
-                       Duplicar
-                     </Button>
+                     {isChangeTypeOpen ? (
+                       <>
+                         {/* Cambiar tipo: el nodo queda en su lugar; solo se ofrecen los otros tipos. */}
+                         {([
+                           { value: "sidequest", label: "SideQuest" },
+                           { value: "reflection", label: "Reflexión" },
+                           { value: "normal", label: "Común" },
+                         ] as const).filter((opt) => opt.value !== currentNodeKind).map((opt) => (
+                           <Button
+                             key={opt.value}
+                             variant="ghost"
+                             size="sm"
+                             className="h-7 px-3 text-xs justify-start font-normal hover:bg-muted/50"
+                             onClick={() => {
+                               changeNodeKind(opt.value);
+                               setIsChangeTypeOpen(false);
+                               setIsAddOptionsOpen(false);
+                               setIsOpen(false);
+                             }}
+                             data-testid={`button-change-type-${opt.value}`}
+                           >
+                             {opt.label}
+                           </Button>
+                         ))}
+                       </>
+                     ) : (
+                       <>
+                         <Button
+                           variant="ghost"
+                           size="sm"
+                           className="h-7 px-3 text-xs justify-start font-normal hover:bg-muted/50"
+                           disabled={!canAddFromNode}
+                           title={!canAddFromNode ? "Solo se puede agregar desde el nodo confirmado anterior al desbloqueado" : undefined}
+                           onClick={() => {
+                             if (!canAddFromNode) return;
+                             addNodeBelow();
+                             setIsAddOptionsOpen(false);
+                             setIsOpen(false);
+                           }}
+                           data-testid="button-add-new"
+                         >
+                           + Nuevo nodo
+                         </Button>
+                         <Button
+                           variant="ghost"
+                           size="sm"
+                           className="h-7 px-3 text-xs justify-start font-normal hover:bg-muted/50"
+                           disabled={!canAddFromNode}
+                           title={!canAddFromNode ? "Solo se puede duplicar desde el nodo confirmado anterior al desbloqueado" : undefined}
+                           onClick={() => {
+                             if (!canAddFromNode) return;
+                             if (isSubSkillView) {
+                               duplicateSubSkill(skill);
+                             } else if (isProject) {
+                               duplicateProjectSkill(activeId, skill);
+                             } else {
+                               duplicateSkill(activeId, skill);
+                             }
+                             setIsAddOptionsOpen(false);
+                             setIsOpen(false);
+                           }}
+                           data-testid="button-duplicate"
+                         >
+                           + Duplicar
+                         </Button>
+                         <Button
+                           variant="ghost"
+                           size="sm"
+                           className="h-7 px-3 text-xs justify-start font-normal hover:bg-muted/50"
+                           disabled={!canAddFromNode}
+                           title={!canAddFromNode ? "Solo se puede agregar desde el nodo confirmado anterior al desbloqueado" : "Nodo que no es parte del título del nivel, pero que te hizo crecer en el área"}
+                           onClick={() => {
+                             if (!canAddFromNode) return;
+                             addNodeBelow("sidequest");
+                             setIsAddOptionsOpen(false);
+                             setIsOpen(false);
+                           }}
+                           data-testid="button-add-sidequest"
+                         >
+                           + SideQuest
+                         </Button>
+                         <Button
+                           variant="ghost"
+                           size="sm"
+                           className="h-7 px-3 text-xs justify-start font-normal hover:bg-muted/50"
+                           disabled={!canAddFromNode}
+                           title={!canAddFromNode ? "Solo se puede agregar desde el nodo confirmado anterior al desbloqueado" : undefined}
+                           onClick={() => {
+                             if (!canAddFromNode) return;
+                             addNodeBelow("reflection");
+                             setIsAddOptionsOpen(false);
+                             setIsOpen(false);
+                           }}
+                           data-testid="button-add-reflection"
+                         >
+                           + Reflexión
+                         </Button>
+                         <Button
+                           variant="ghost"
+                           size="sm"
+                           className="h-7 px-3 text-xs justify-start font-normal hover:bg-muted/50"
+                           onClick={() => setIsChangeTypeOpen(true)}
+                           data-testid="button-change-type"
+                         >
+                           Cambiar tipo
+                         </Button>
+                       </>
+                     )}
                    </div>
                  </PopoverContent>
                </Popover>
@@ -4149,20 +4207,23 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     {/* Reflexión pop-up: replaces the direct confirm for Reflexión nodes (see handleClick).
         Closing it without a button keeps the draft unsaved. */}
     <Dialog open={isReflectionOpen} onOpenChange={setIsReflectionOpen}>
-      <DialogContent className="sm:max-w-[400px] border-0 shadow-2xl">
-        <DialogHeader>
+      {/* Fixed size whatever the content: the Planteo and the previous entries scroll inside
+          the middle area, while the new entry and the buttons stay put. */}
+      <DialogContent className="sm:max-w-[400px] h-[min(560px,85vh)] flex flex-col gap-4 border-0 shadow-2xl">
+        <DialogHeader className="shrink-0">
           <DialogTitle className="text-lg font-medium">{skill.title || "Reflexión"}</DialogTitle>
           <DialogDescription className="sr-only">Completá la reflexión</DialogDescription>
         </DialogHeader>
+        <div className="flex-1 min-h-0 overflow-y-auto minimal-scrollbar pr-1">
         {skill.reflectionPrompt?.trim() && (
-          <p className="font-description text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap break-words">
+          <p className="font-description text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap break-words mb-4">
             {skill.reflectionPrompt}
           </p>
         )}
         {/* Previous entries: each one headed by the day it was written and closed by a divider,
             so the next entry starts below the line. */}
         {reflectionEntries.length > 0 && (
-          <div className="max-h-[40vh] overflow-y-auto minimal-scrollbar">
+          <div>
             {reflectionEntries.map((entry, i) => (
               <div key={i} className="pb-3 mb-3 border-b border-border">
                 {entry.date && (
@@ -4175,19 +4236,20 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             ))}
           </div>
         )}
-        <div className="text-[10px] text-muted-foreground uppercase tracking-wide -mb-2">
+        </div>
+        <div className="shrink-0 text-[10px] text-muted-foreground uppercase tracking-wide -mb-2">
           {new Date().toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" })}
         </div>
         <Textarea
           value={reflectionText}
           onChange={(e) => setReflectionText(e.target.value)}
           placeholder="Escribí tu reflexión..."
-          rows={8}
-          className="border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none"
+          rows={5}
+          className="shrink-0 h-32 min-h-0 border-0 bg-muted/50 focus-visible:ring-0 focus-visible:bg-muted resize-none minimal-scrollbar"
           data-testid="input-reflection"
           autoFocus
         />
-        <DialogFooter className="flex flex-row gap-2 pt-2 sm:justify-between">
+        <DialogFooter className="shrink-0 flex flex-row gap-2 sm:justify-between">
           <Button variant="ghost" onClick={() => saveReflection(false)} className="flex-1 bg-muted/50 hover:bg-muted" data-testid="button-reflection-done">
             Listo
           </Button>

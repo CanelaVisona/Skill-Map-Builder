@@ -149,7 +149,7 @@ interface SkillTreeContextType {
   toggleSkillStatus: (areaId: string, skillId: string) => void;
   toggleProjectSkillStatus: (projectId: string, skillId: string) => void;
   addSkill: (areaId: string, skill: Omit<Skill, "id">) => void;
-  updateSkill: (areaId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null; reflectionPrompt?: string; reflectionEntries?: { date: string; text: string }[] }) => void;
+  updateSkill: (areaId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null; reflectionPrompt?: string; reflectionEntries?: { date: string; text: string }[]; isReflection?: 0 | 1; isSideQuest?: 0 | 1 }) => void;
   deleteSkill: (areaId: string, skillId: string) => void;
   toggleLock: (areaId: string, skillId: string) => void;
   moveSkill: (areaId: string, skillId: string, direction: "up" | "down") => void;
@@ -159,7 +159,7 @@ interface SkillTreeContextType {
   swapAreaLevels: (areaId: string, levelA: number, levelB: number) => Promise<void>;
   addExtraAreaLevel: (areaId: string) => Promise<boolean>;
   deleteAreaLevel: (areaId: string, level: number) => Promise<void>;
-  updateProjectSkill: (projectId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null; reflectionPrompt?: string; reflectionEntries?: { date: string; text: string }[] }) => void;
+  updateProjectSkill: (projectId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null; reflectionPrompt?: string; reflectionEntries?: { date: string; text: string }[]; isReflection?: 0 | 1; isSideQuest?: 0 | 1 }) => void;
   deleteProjectSkill: (projectId: string, skillId: string) => void;
   toggleProjectLock: (projectId: string, skillId: string) => void;
   moveProjectSkill: (projectId: string, skillId: string, direction: "up" | "down") => void;
@@ -195,7 +195,7 @@ interface SkillTreeContextType {
   enterSubSkillTree: (skillId: string, skillTitle: string) => Promise<void>;
   exitSubSkillTree: () => void;
   toggleSubSkillStatus: (skillId: string) => void;
-  updateSubSkill: (skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null; reflectionPrompt?: string; reflectionEntries?: { date: string; text: string }[] }) => void;
+  updateSubSkill: (skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null; reflectionPrompt?: string; reflectionEntries?: { date: string; text: string }[]; isReflection?: 0 | 1; isSideQuest?: 0 | 1 }) => void;
   deleteSubSkill: (skillId: string) => void;
   toggleSubSkillLock: (skillId: string) => void;
   moveSubSkill: (skillId: string, direction: "up" | "down") => void;
@@ -2093,7 +2093,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
-  const updateSkill = async (areaId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null; reflectionPrompt?: string; reflectionEntries?: { date: string; text: string }[] }) => {
+  const updateSkill = async (areaId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null; reflectionPrompt?: string; reflectionEntries?: { date: string; text: string }[]; isReflection?: 0 | 1; isSideQuest?: 0 | 1 }) => {
     console.log('[updateSkill] Called with skillId:', skillId, 'areaId:', areaId, 'updates:', updates);
     try {
       const response = await fetch(`/api/skills/${skillId}`, {
@@ -2365,7 +2365,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
-  const updateProjectSkill = async (projectId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null; reflectionPrompt?: string; reflectionEntries?: { date: string; text: string }[] }) => {
+  const updateProjectSkill = async (projectId: string, skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null; reflectionPrompt?: string; reflectionEntries?: { date: string; text: string }[]; isReflection?: 0 | 1; isSideQuest?: 0 | 1 }) => {
     try {
       await fetch(`/api/skills/${skillId}`, {
         method: "PATCH",
@@ -3151,7 +3151,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
-  const updateSubSkill = async (skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null; reflectionPrompt?: string; reflectionEntries?: { date: string; text: string }[] }) => {
+  const updateSubSkill = async (skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null; reflectionPrompt?: string; reflectionEntries?: { date: string; text: string }[]; isReflection?: 0 | 1; isSideQuest?: 0 | 1 }) => {
     try {
       await fetch(`/api/skills/${skillId}`, {
         method: "PATCH",

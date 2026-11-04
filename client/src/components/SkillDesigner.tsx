@@ -8,11 +8,33 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { ChevronUp, ChevronDown, ChevronsUp, ChevronsDown, Lock, Plus, Trash2, Star } from "lucide-react";
+import { ChevronUp, ChevronDown, ChevronsUp, ChevronsDown, Lock, Plus, Trash2, Star, NotebookPen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getNodeTitleWordLimit, clampToWordLimit } from "@/lib/node-title-settings";
 import { getLevelTitleSuggestion, getOtherLevelTitles } from "@/lib/unique-level-title";
 import { useToast } from "@/hooks/use-toast";
+
+// Etiqueta junto al título para distinguir nodos Reflexión / SideQuest de los comunes
+// (mismo lenguaje visual que el árbol: ícono de nota y anillo punteado).
+function NodeTypeBadge({ skill }: { skill: { isReflection?: number | null; isSideQuest?: number | null } }) {
+  if (skill.isReflection === 1) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-sky-500/40 bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-medium text-sky-600 dark:text-sky-400 shrink-0" title="Nodo de reflexión">
+        <NotebookPen className="w-3 h-3" />
+        Reflexión
+      </span>
+    );
+  }
+  if (skill.isSideQuest === 1) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-dashed border-violet-500/50 bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-medium text-violet-600 dark:text-violet-400 shrink-0" title="Nodo que no es parte del título del nivel, pero que te hizo crecer en el área">
+        <span className="w-2.5 h-2.5 rounded-full border border-dotted border-current" />
+        SideQuest
+      </span>
+    );
+  }
+  return null;
+}
 
 interface SkillDesignerProps {
   open: boolean;
@@ -56,6 +78,7 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
   const [isLockedNode, setIsLockedNode] = useState(false);
   const [editingDescription, setEditingDescription] = useState("");
   const [editingPlannedDuration, setEditingPlannedDuration] = useState<number | null>(null);
+  const [editingNodeType, setEditingNodeType] = useState<"common" | "reflection" | "sidequest">("common");
   const [editingTargetLevel, setEditingTargetLevel] = useState<number | null>(null);
   const [isChangingLevel, setIsChangingLevel] = useState(false);
 
@@ -116,6 +139,9 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
         title: editingName,
         description: editingDescription,
         plannedDuration: editingPlannedDuration,
+        // Reflexión y SideQuest son excluyentes: elegir uno apaga el otro.
+        isReflection: (editingNodeType === "reflection" ? 1 : 0) as 0 | 1,
+        isSideQuest: (editingNodeType === "sidequest" ? 1 : 0) as 0 | 1,
       };
       if (editingAreaId) {
         updateSkill(editingAreaId, editingSkillId, updates);
@@ -451,6 +477,7 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
                                               setEditingName(skill.title || "");
                                               setEditingDescription(skill.description || "");
                                               setEditingPlannedDuration(skill.plannedDuration ?? null);
+                                              setEditingNodeType(skill.isReflection === 1 ? "reflection" : skill.isSideQuest === 1 ? "sidequest" : "common");
                                               setEditingAreaId(area.id);
                                               setEditingProjectId(null);
                                               setEditingLevel(level);
@@ -458,6 +485,7 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
                                             }}
                                           >
                                             <div className={cn("text-sm font-medium", displayStatus === "available" && "text-amber-400")}>{!skill.title ? "Asigná un paso" : skill.title}</div>
+                                            <NodeTypeBadge skill={skill} />
                                             {displayStatus === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
                                           </div>
                                           <div className="flex flex-row gap-1">
@@ -661,6 +689,7 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
                                                 setEditingName(skill.title || "");
                                                 setEditingDescription(skill.description || "");
                                                 setEditingPlannedDuration(skill.plannedDuration ?? null);
+                                                setEditingNodeType(skill.isReflection === 1 ? "reflection" : skill.isSideQuest === 1 ? "sidequest" : "common");
                                                 setEditingAreaId(null);
                                                 setEditingProjectId(project.id);
                                                 setEditingLevel(level);
@@ -668,6 +697,7 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
                                               }}
                                             >
                                               <div className={cn("text-sm font-medium", displayStatus === "available" && "text-amber-400")}>{!skill.title ? "Asigná un paso" : skill.title}</div>
+                                              <NodeTypeBadge skill={skill} />
                                               {displayStatus === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
                                             </div>
                                             <div className="flex flex-row gap-1">
@@ -866,6 +896,7 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
                                                 setEditingName(skill.title || "");
                                                 setEditingDescription(skill.description || "");
                                                 setEditingPlannedDuration(skill.plannedDuration ?? null);
+                                                setEditingNodeType(skill.isReflection === 1 ? "reflection" : skill.isSideQuest === 1 ? "sidequest" : "common");
                                                 setEditingAreaId(null);
                                                 setEditingProjectId(project.id);
                                                 setEditingLevel(level);
@@ -873,6 +904,7 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
                                               }}
                                             >
                                               <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{skill.isAutoComplete === 1 || skill.levelPosition === 1 ? "" : (!skill.title ? "Asigná un paso" : skill.title)}</div>
+                                              <NodeTypeBadge skill={skill} />
                                               {skill.status === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
                                             </div>
                                             <div className="flex items-center gap-1">
@@ -1066,6 +1098,7 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
                                               setEditingName(skill.title || "");
                                               setEditingDescription(skill.description || "");
                                               setEditingPlannedDuration(skill.plannedDuration ?? null);
+                                              setEditingNodeType(skill.isReflection === 1 ? "reflection" : skill.isSideQuest === 1 ? "sidequest" : "common");
                                               setEditingAreaId(null);
                                               setEditingProjectId(project.id);
                                               setEditingLevel(level);
@@ -1073,6 +1106,7 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
                                             }}
                                           >
                                             <div className={cn("text-sm font-medium", skill.status === "available" && "text-amber-400")}>{skill.isAutoComplete === 1 || skill.levelPosition === 1 ? "" : (!skill.title ? "Asigná un paso" : skill.title)}</div>
+                                            <NodeTypeBadge skill={skill} />
                                             {skill.status === "available" && <span className="text-lg font-bold text-amber-400">!</span>}
                                           </div>
                                           <div className="flex flex-row gap-1"> 
@@ -1233,6 +1267,27 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
             </div>
             {!isLockedNode && (
               <>
+                <div className="grid gap-2">
+                  <label className="text-xs text-muted-foreground uppercase tracking-wide">Tipo de nodo</label>
+                  <div className="flex gap-1">
+                    {([
+                      { value: "common", label: "Común" },
+                      { value: "reflection", label: "Reflexión" },
+                      { value: "sidequest", label: "SideQuest" },
+                    ] as const).map((opt) => (
+                      <Button
+                        key={opt.value}
+                        type="button"
+                        size="sm"
+                        variant={editingNodeType === opt.value ? "default" : "outline"}
+                        className="h-7 px-3 text-xs"
+                        onClick={() => setEditingNodeType(opt.value)}
+                      >
+                        {opt.label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
                 <div className="grid gap-2">
                   <label className="text-xs text-muted-foreground uppercase tracking-wide">Background</label>
                   <Textarea
