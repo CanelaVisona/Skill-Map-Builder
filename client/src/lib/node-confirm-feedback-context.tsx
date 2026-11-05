@@ -4,6 +4,9 @@ import { useSkillTree } from "@/lib/skill-context";
 import { useInsightsCounterPopup } from "@/lib/insights-counter-popup-context";
 import { usePowerCelebration } from "@/lib/power-celebration-context";
 import { useErrorCelebration } from "@/lib/error-celebration-context";
+import { useBugProgressPopup } from "@/lib/bug-progress-popup-context";
+import { useBodyProgress } from "@/lib/body-progress-context";
+import { useBodyGainPopup } from "@/lib/body-gain-popup-context";
 import { beginPopupChain, endPopupChain, getPopupBusyDelay, runPopupQueueAsync } from "@/lib/popup-coordinator";
 import { FIXED_XP_AMOUNT, useApplyExperienceGain, useErrorAdjustPopups, type ErrorAdjustResult } from "@/lib/node-reward-actions";
 import { type BodyLink } from "@/components/BodyLinkPicker";
@@ -13,6 +16,7 @@ import {
   type FeedbackScope,
   type NodeFeedbackDraft,
   type NodeFeedbackPower,
+  type NodeFeedbackAcierto,
 } from "@/components/NodeConfirmFeedbackModal";
 
 // Modal de feedback post-confirmación ("¿Qué te dejó este nodo?"), global: se abre al confirmar
@@ -112,6 +116,9 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
   const { showErrorCelebration } = useErrorCelebration();
   const applyExperienceGain = useApplyExperienceGain();
   const runErrorAdjustPopups = useErrorAdjustPopups();
+  const { showBugProgressPopup } = useBugProgressPopup();
+  const { addBodyBlock } = useBodyProgress();
+  const { showBodyGainPopup } = useBodyGainPopup();
 
   const [active, setActive] = useState<NodeConfirmFeedbackTarget | null>(null);
   // Área/quest elegida dentro del modal (cubos de error/poder) cuando lo confirmado no tiene.
@@ -158,6 +165,18 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
       return res.json();
     },
     enabled: !!active && !(active.skillId && activeScope),
+  });
+
+  // Aciertos del área/quest que se lista (los aciertos siempre son de una).
+  const aciertosUrl = listScope ? `/api/source-bugs/${listScope.type}/${listScope.id}?kind=acierto` : "";
+  const { data: listAciertos = [] } = useQuery<NodeFeedbackAcierto[]>({
+    queryKey: ["all-area-bugs", "acierto-feedback", listScope?.type, listScope?.id],
+    queryFn: async () => {
+      const res = await fetch(aciertosUrl);
+      if (!res.ok) throw new Error("Failed to fetch aciertos");
+      return res.json();
+    },
+    enabled: !!active && !!listScope,
   });
 
   const listErrors: ScopeError[] = active?.skillId && activeScope
@@ -227,6 +246,66 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
     draft.learnings.forEach((l) => blocks.push(journalBlock("learnings", "learning", l)));
     draft.strategies.forEach((st) => blocks.push(journalBlock("strategies", "strategy", st)));
     draft.questions.forEach((q) => blocks.push(journalBlock("questions", "question", q)));
+
+    // Aciertos nuevos: se crean (como un error del Journal, con kind "acierto") y "¡Acierto nuevo!".
+    for (const acierto of draft.aciertos) {
+      blocks.push({
+        label: `+Acierto: ${acierto.nombre}`,
+        run: async (enqueue) => {
+          await postJson("/api/source-bugs", "POST", {
+            ...(acierto.scope.type === "area" ? { areaId: acierto.scope.id } : { projectId: acierto.scope.id }),
+            kind: "acierto",
+            nombre: acierto.nombre,
+            accion: "",
+            estrategias: [],
+            desc: acierto.desc,
+            categoria: "",
+            barMode: "victorias",
+            reflexiones: [],
+          });
+          queryClient.invalidateQueries({ queryKey: ["all-area-bugs"] });
+          enqueue(() => showErrorCelebration({ name: acierto.nombre, kind: "acierto" }));
+        },
+      });
+    }
+
+    // Registros sobre aciertos existentes: mismos pop-ups que un registro de error del Journal
+    // (flexibilidad mental, progreso de la barra y, si la victoria sumó una estrategia, "¡Nueva
+    // estrategia!").
+    for (const record of draft.aciertoRecords) {
+      blocks.push({
+        label: `Acierto: ${record.aciertoName}`,
+        run: async (enqueue) => {
+          const field = record.resultado === "victoria" ? "estrategias" : "disparadores";
+          if (record.isNew) {
+            await postJson(`/api/source-bugs/${record.aciertoId}`, "PATCH", { [field]: [...record.savedOptions, record.value] });
+          }
+          const created = await postJson<{ bugProgress?: { bugName: string; victoryCountBefore: number; victoryCountAfter: number; statusBefore: any; statusAfter: any }; newStrategy?: string | null }>(
+            `/api/source-bugs/${record.aciertoId}/records`,
+            "POST",
+            {
+              fecha: new Date().toISOString().slice(0, 10),
+              situacion: "",
+              disparador: record.resultado === "derrota" ? record.value : "",
+              estrategia: record.resultado === "victoria" ? record.value : "",
+              resultado: record.resultado,
+            },
+          );
+          queryClient.invalidateQueries({ queryKey: ["all-area-bugs"] });
+          const { before, after } = addBodyBlock("mente", "flex");
+          enqueue(() => showBodyGainPopup({ zone: "mente", dimension: "flex", before, after }));
+          if (created.bugProgress) {
+            const progress = { ...created.bugProgress, resultado: record.resultado, kind: "acierto" as const };
+            enqueue(() => showBugProgressPopup(progress));
+          }
+          if (created.newStrategy) {
+            const name = created.newStrategy;
+            queryClient.invalidateQueries({ queryKey: ["/api/journal/strategies"] });
+            enqueue(() => showErrorCelebration({ name, kind: "estrategia" }));
+          }
+        },
+      });
+    }
 
     // Nodos agregados desde el cubo "Nodo nuevo" (ya creados en el Skill Designer): solo su pop-up.
     for (const task of draft.newTasks) {
@@ -407,6 +486,7 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
         onListScopeChange={setPickedScope}
         powers={powers}
         errors={listErrors}
+        aciertos={listAciertos}
         legacySkills={readLegacySkillsFor(activeScope)}
         scopedGlobalSkills={activeScope ? (activeScope.type === "area" ? getGlobalSkillsForArea(activeScope.id) : getGlobalSkillsForProject(activeScope.id)) : globalSkills}
         areas={areas}

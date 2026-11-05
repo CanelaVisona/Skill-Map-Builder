@@ -32,7 +32,7 @@ import HousePriorityList from "../components/HousePriorityList";
 import HouseRepairsList from "../components/HouseRepairsList";
 import { EvidenceBoardModalWrapper } from "@/components/EvidenceBoardModal";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, ArrowRight, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, User, Menu, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Utensils, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt, OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation, Check, HelpCircle, PiggyBank, Search, X, Pentagon, Trophy, Split, NotebookPen } from "lucide-react";
+import { ArrowLeft, ArrowRight, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, User, Menu, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Utensils, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt, OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation, Check, HelpCircle, PiggyBank, Search, X, Pentagon, Trophy, Split, NotebookPen, CircleCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
@@ -76,7 +76,8 @@ import { LevelNavigationPanel, type LevelNavItem } from "@/components/LevelNavig
 import { GoalsButton, CompletedGoalsJournal } from "@/components/GoalsPanel";
 import { RadarSkillMapModal } from "@/components/RadarSkillMapModal";
 import { SkillsSparkIcon } from "@/components/SkillsSparkIcon";
-import { NodeConfirmFeedbackProvider } from "@/lib/node-confirm-feedback-context";
+import { QuestFilterTabs, type QuestTabGroup } from "@/components/QuestFilterTabs";
+import { NodeConfirmFeedbackProvider, useNodeConfirmFeedback } from "@/lib/node-confirm-feedback-context";
 import { JournalQuickAddDialog, type JournalQuickAddKind } from "@/components/JournalQuickAddDialog";
 import { clampToWordLimit, getNodeTitleWordLimit } from "@/lib/node-title-settings";
 import { useLongPress } from "@/lib/use-long-press";
@@ -2001,12 +2002,6 @@ interface SkillQuestInfo {
 }
 type SkillQuestMap = Map<string, SkillQuestInfo>;
 
-interface QuestTabGroup {
-  key: string;
-  name: string;
-  color?: string;
-  count: number;
-}
 
 // Algunas entradas (Preguntas) vienen con el área/quest ya resuelta por el server, porque su
 // nodo puede ser un sub-nodo que no está en questMap; questMap también tiene cada quest por su
@@ -2034,54 +2029,6 @@ function useQuestGroups<T extends QuestTaggedEntry>(entries: T[], questMap: Skil
     });
     return Array.from(groups.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [entries, questMap]);
-}
-
-function QuestFilterTabs({
-  groups,
-  selectedKey,
-  onSelect,
-  totalCount,
-}: {
-  groups: QuestTabGroup[];
-  selectedKey: string | null;
-  onSelect: (key: string | null) => void;
-  totalCount: number;
-}) {
-  if (groups.length === 0) return null;
-
-  return (
-    <div className="flex items-center gap-1.5 overflow-x-auto pb-2 mb-2 -mx-1 px-1 minimal-scrollbar">
-      <button
-        onClick={() => onSelect(null)}
-        className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all whitespace-nowrap border ${
-          selectedKey === null
-            ? "bg-secondary text-foreground border-border shadow-sm"
-            : "text-muted-foreground border-transparent hover:bg-secondary/50 hover:text-foreground/80"
-        }`}
-        data-testid="tab-quest-filter-all"
-      >
-        Todos <span className="opacity-60">({totalCount})</span>
-      </button>
-      {groups.map((group) => (
-        <button
-          key={group.key}
-          onClick={() => onSelect(group.key)}
-          className={`shrink-0 flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all whitespace-nowrap border ${
-            selectedKey === group.key
-              ? "bg-secondary text-foreground border-border shadow-sm"
-              : "text-muted-foreground border-transparent hover:bg-secondary/50 hover:text-foreground/80"
-          }`}
-          data-testid={`tab-quest-filter-${group.key}`}
-        >
-          {group.color && (
-            <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: group.color }} />
-          )}
-          <span className="truncate max-w-[9rem]">{group.name}</span>
-          <span className="opacity-60">({group.count})</span>
-        </button>
-      ))}
-    </div>
-  );
 }
 
 function ToolsSection({
@@ -4081,6 +4028,31 @@ const formatAchievementDate = (dateString: string): string => {
   return new Intl.DateTimeFormat('es-AR', { year: 'numeric', month: 'long', day: 'numeric' }).format(date);
 };
 
+// Right-hand column of a Reflexión node's card in the Achievements graph: every entry written
+// in the node, each with its date/time and a divider. A note saved before entries existed
+// lives in the description.
+function ReflectionEntriesColumn({ skill }: { skill: Skill }) {
+  const entries: { date: string; time?: string; text: string }[] = skill.reflectionEntries?.length
+    ? skill.reflectionEntries
+    : skill.description?.trim() ? [{ date: "", text: skill.description.trim() }] : [];
+  if (entries.length === 0) return null;
+  return (
+    <div className="sm:w-1/2 shrink-0 sm:border-l border-t sm:border-t-0 border-border/30 dark:border-zinc-700/50 pt-3 sm:pt-0 sm:pl-4 max-h-60 overflow-y-auto minimal-scrollbar">
+      {entries.map((entry, i) => (
+        <div key={i} className="pb-2 mb-2 border-b border-border/30 dark:border-zinc-700/50 last:border-b-0 last:mb-0 last:pb-0">
+          {entry.date && (
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground dark:text-zinc-500 mb-0.5">
+              {formatAchievementDate(entry.date + "T00:00:00")}
+              {entry.time && ` · ${entry.time}`}
+            </p>
+          )}
+          <p className="text-xs text-foreground/90 dark:text-zinc-300 leading-relaxed whitespace-pre-wrap break-words">{entry.text}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { learnings?: JournalLearning[]; tools?: JournalTool[]; thoughts?: JournalThought[] }) {
   const { areas, mainQuests, sideQuests } = useSkillTree();
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
@@ -4769,6 +4741,8 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
                                     <div className="bg-transparent border border-border/30 rounded-lg p-4 hover:bg-muted/30 transition-colors cursor-pointer group dark:bg-zinc-800/40 dark:border-zinc-700/50 dark:hover:bg-zinc-800/60"
                                       onClick={() => openActivity(activity)}
                                     >
+                                      <div className="flex flex-col sm:flex-row gap-4">
+                                      <div className="flex-1 min-w-0">
                                       <p className="text-sm font-medium text-foreground mb-2 group-hover:text-foreground transition-colors dark:text-zinc-200 dark:group-hover:text-zinc-50">
                                         {activity.title}
                                       </p>
@@ -4780,6 +4754,9 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
                                       <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap group-hover:text-muted-foreground/80 transition-colors dark:text-zinc-400 dark:group-hover:text-zinc-300">
                                         {activity.sentence}
                                       </p>
+                                      </div>
+                                      {activity.isReflection && activity.skill && <ReflectionEntriesColumn skill={activity.skill} />}
+                                      </div>
                                     </div>
                                   </div>
                                 </div>
@@ -4886,6 +4863,8 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
                                     <div className="bg-transparent border border-border/30 rounded-lg p-4 hover:bg-muted/30 transition-colors cursor-pointer group dark:bg-zinc-800/40 dark:border-zinc-700/50 dark:hover:bg-zinc-800/60"
                                       onClick={() => openActivity(activity)}
                                     >
+                                      <div className="flex flex-col sm:flex-row gap-4">
+                                      <div className="flex-1 min-w-0">
                                       <p className="text-sm font-medium text-foreground mb-2 group-hover:text-foreground transition-colors dark:text-zinc-200 dark:group-hover:text-zinc-50">
                                         {activity.title}
                                       </p>
@@ -4897,6 +4876,9 @@ function AchievementsSection({ learnings = [], tools = [], thoughts = [] }: { le
                                       <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap group-hover:text-muted-foreground/80 transition-colors dark:text-zinc-400 dark:group-hover:text-zinc-300">
                                         {activity.sentence}
                                       </p>
+                                      </div>
+                                      {activity.isReflection && activity.skill && <ReflectionEntriesColumn skill={activity.skill} />}
+                                      </div>
                                     </div>
                                   </div>
                                 </div>
@@ -7538,6 +7520,7 @@ function BugNombreAccionInputs({
   onAccionChange,
   idPrefix,
   autoFocus,
+  nameLabel = "Error",
 }: {
   nombre: string;
   accion: string;
@@ -7546,6 +7529,7 @@ function BugNombreAccionInputs({
   onAccionChange: (value: string) => void;
   idPrefix: string;
   autoFocus?: boolean;
+  nameLabel?: string;
 }) {
   const options = Array.from(new Set(estrategias.map((item) => item.trim()).filter(Boolean)));
   // Sin estrategias cargadas (error nuevo) se arranca directo escribiendo una.
@@ -7554,10 +7538,10 @@ function BugNombreAccionInputs({
     <div>
       <div className="flex items-end gap-2">
         <div className="min-w-0 flex-1">
-          <Label htmlFor={`${idPrefix}-nombre`} className="text-xs text-muted-foreground">Error</Label>
+          <Label htmlFor={`${idPrefix}-nombre`} className="text-xs text-muted-foreground">{nameLabel}</Label>
           <Input
             id={`${idPrefix}-nombre`}
-            placeholder="ERROR"
+            placeholder={nameLabel.toUpperCase()}
             value={nombre}
             onChange={(e) => onNombreChange(e.target.value.toUpperCase())}
             className="uppercase"
@@ -7740,8 +7724,17 @@ function BugReflexionesTimeline({
   );
 }
 
-function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyResolved = false }: { open: boolean; onOpenChange?: (open: boolean) => void; embedded?: boolean; onlyResolved?: boolean }) {
-  const { areas, refreshSkillTrees } = useSkillTree();
+// kind "acierto": la misma lista que los errores (registros, barra, reflexiones), para los
+// aciertos (source_bugs con kind = "acierto"). Lo único distinto: sin categoría.
+function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyResolved = false, kind = "error" }: { open: boolean; onOpenChange?: (open: boolean) => void; embedded?: boolean; onlyResolved?: boolean; kind?: "error" | "acierto" }) {
+  const { areas, projects, refreshSkillTrees } = useSkillTree();
+  const { requestNodeConfirmFeedback } = useNodeConfirmFeedback();
+  const isAcierto = kind === "acierto";
+  const noun = isAcierto
+    ? { one: "acierto", many: "aciertos", One: "Acierto", Many: "Aciertos" }
+    : { one: "error", many: "errores", One: "Error", Many: "Errores" };
+  // Menú de áreas/quests (igual que Tools): null = todas.
+  const [selectedSourceKey, setSelectedSourceKey] = useState<string | null>(null);
   const { showXpPopup, hideXpPopup } = useXpPopup();
   const { addBodyBlock } = useBodyProgress();
   const { showBodyGainPopup, hideBodyGainPopup } = useBodyGainPopup();
@@ -7868,23 +7861,41 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
     [areas],
   );
 
-  const areaIdsQueryKey = orderedAreas.map((area) => area.id).join("|");
+  // Quests (no las de experiencia), después de las áreas.
+  const orderedQuests = React.useMemo(
+    () => (Array.isArray(projects) ? projects : [])
+      .filter((p) => p.questType !== "experience")
+      .sort((a, b) => a.name.localeCompare(b.name, "es")),
+    [projects],
+  );
+  const sources = React.useMemo(
+    () => [
+      ...orderedAreas.map((a) => ({ type: "area" as const, id: a.id, name: a.name, color: a.color })),
+      ...orderedQuests.map((p) => ({ type: "project" as const, id: p.id, name: p.name, color: undefined as string | undefined })),
+    ],
+    [orderedAreas, orderedQuests],
+  );
 
-  const { data: areaBugs = [], isLoading, isError } = useQuery<Array<{ areaId: string; areaName: string; bugs: SourceBug[] }>>({
-    queryKey: ["all-area-bugs", areaIdsQueryKey],
-    enabled: open && orderedAreas.length > 0,
+  const areaIdsQueryKey = sources.map((source) => source.id).join("|");
+
+  // `areaId` es el id del área o de la quest (sourceType dice cuál).
+  const { data: areaBugs = [], isLoading, isError } = useQuery<Array<{ areaId: string; areaName: string; sourceType: "area" | "project"; color?: string; bugs: SourceBug[] }>>({
+    queryKey: ["all-area-bugs", kind, areaIdsQueryKey],
+    enabled: open && sources.length > 0,
     queryFn: async () => {
       const results = await Promise.all(
-        orderedAreas.map(async (area) => {
-          const response = await fetch(`/api/source-bugs/area/${area.id}`);
+        sources.map(async (source) => {
+          const response = await fetch(`/api/source-bugs/${source.type}/${source.id}?kind=${kind}`);
           if (!response.ok) {
-            throw new Error(`Failed to fetch bugs for area ${area.id}: ${response.status}`);
+            throw new Error(`Failed to fetch bugs for ${source.type} ${source.id}: ${response.status}`);
           }
 
           const bugs = await response.json() as SourceBug[];
           return {
-            areaId: area.id,
-            areaName: area.name,
+            areaId: source.id,
+            areaName: source.name,
+            sourceType: source.type,
+            color: source.color,
             bugs,
           };
         }),
@@ -7908,10 +7919,14 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
     }
     return groups;
   }, [areaBugs, onlyResolved, embedded]);
+  const sourceTabGroups: QuestTabGroup[] = visibleGroups.map((g) => ({ key: g.areaId, name: g.areaName, color: g.color, count: g.bugs.length }));
+  const shownGroups = selectedSourceKey ? visibleGroups.filter((g) => g.areaId === selectedSourceKey) : visibleGroups;
 
   const createBug = useMutation({
     mutationFn: async (data: {
-      areaId: string;
+      areaId?: string;
+      projectId?: string;
+      kind: "error" | "acierto";
       nombre: string;
       accion: string;
       estrategias: string[];
@@ -7925,11 +7940,13 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("No se pudo crear el error");
+      if (!res.ok) throw new Error(`No se pudo crear el ${noun.one}`);
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["all-area-bugs"] });
+      // Las estrategias de un acierto también van a la tab Estrategias.
+      if (isAcierto) queryClient.invalidateQueries({ queryKey: ["/api/journal/strategies"] });
       // El server agregó un nodo SideQuest al área.
       refreshSkillTrees();
       closeNewBugWizard();
@@ -7951,6 +7968,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["all-area-bugs"] });
+      if (isAcierto) queryClient.invalidateQueries({ queryKey: ["/api/journal/strategies"] });
       setIsBugEditOpen(false);
       setBugEditError(null);
     },
@@ -7997,11 +8015,11 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
     : null;
 
   const { data: selectedAreaSkills = [] } = useQuery<LinkedGlobalSkill[]>({
-    queryKey: ["global-skills-by-area-for-bug-record", selectedAreaGroup?.areaId],
+    queryKey: ["global-skills-by-area-for-bug-record", selectedAreaGroup?.sourceType, selectedAreaGroup?.areaId],
     enabled: open && !!selectedAreaGroup?.areaId,
     queryFn: async () => {
       if (!selectedAreaGroup?.areaId) return [];
-      const response = await fetch(`/api/global-skills/area/${selectedAreaGroup.areaId}`);
+      const response = await fetch(`/api/global-skills/${selectedAreaGroup.sourceType === "project" ? "project" : "area"}/${selectedAreaGroup.areaId}`);
       if (!response.ok) {
         throw new Error("No se pudieron cargar los skills del area");
       }
@@ -8069,11 +8087,22 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
 
       if (createdRecord?.bugProgress) {
         growMentalFlexThenBug(
-          { ...createdRecord.bugProgress, resultado: variables.data.resultado },
+          { ...createdRecord.bugProgress, resultado: variables.data.resultado, kind },
           runAfterBug,
         );
       } else {
         runAfterBug();
+      }
+
+      // Después de un registro nuevo (error o acierto) se abre el modal de feedback
+      // ("¿Qué te dejó…?") de su área/quest -- en lugar del viejo campo "Nuevo aprendizaje".
+      // Espera a que terminen los pop-ups del registro (el primero aparece enseguida).
+      const recordGroup = areaBugs.find((g) => g.bugs.some((b) => b.id === variables.bugId));
+      if (recordGroup) {
+        requestNodeConfirmFeedback(
+          { scopeType: recordGroup.sourceType, scopeId: recordGroup.areaId },
+          new Promise((resolve) => setTimeout(resolve, 500)),
+        );
       }
 
       resetRecordForm();
@@ -8121,7 +8150,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
 
       if (updatedRecord?.bugProgress && variables.data.resultado) {
         growMentalFlexThenBug(
-          { ...updatedRecord.bugProgress, resultado: variables.data.resultado },
+          { ...updatedRecord.bugProgress, resultado: variables.data.resultado, kind },
           () => showBugRecordXpAwards(updatedRecord?.xpAwards, false),
         );
       } else {
@@ -8179,11 +8208,10 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
     setBugEditError(null);
   }, [selectedBugRef?.areaId, selectedBugRef?.bugId]);
 
-  const bugStatusLabel: Record<SourceBug["status"], string> = {
-    identificado: "Identificado",
-    debugueando: "Debugueando",
-    debugueado: "Debugueado",
-  };
+  // Aciertos: mismos estados, con sus propios nombres (Identificado / Reforzando / Consolidado).
+  const bugStatusLabel: Record<SourceBug["status"], string> = isAcierto
+    ? { identificado: "Identificado", debugueando: "Reforzando", debugueado: "Consolidado" }
+    : { identificado: "Identificado", debugueando: "Debugueando", debugueado: "Debugueado" };
 
   const bugStatusColor: Record<SourceBug["status"], string> = {
     identificado: "bg-red-400",
@@ -8324,17 +8352,23 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
 
   const handleCreateBug = () => {
     if (!addBugAreaId || !newBugNombre.trim()) return;
+    const targetGroup = areaBugs.find((group) => group.areaId === addBugAreaId);
     createBug.mutate({
-      areaId: addBugAreaId,
+      ...(targetGroup?.sourceType === "project" ? { projectId: addBugAreaId } : { areaId: addBugAreaId }),
+      kind,
       nombre: newBugNombre.trim(),
       accion: newBugAccion.trim(),
       estrategias: newBugAccion.trim() ? [newBugAccion.trim()] : [],
       desc: newBugDesc.trim(),
-      categoria: newBugCategoria,
+      categoria: isAcierto ? "" : newBugCategoria,
       barMode: newBugBarMode,
       reflexiones: newBugReflexion.trim() ? [newReflexion(newBugReflexion.trim())] : [],
     });
   };
+
+  // Pasos del alta: los aciertos no llevan categoría.
+  const newBugSteps = isAcierto ? [noun.One, "Barra", "Reflexión"] : [noun.One, "Categoría", "Barra", "Reflexión"];
+  const newBugStepName = newBugSteps[newBugStep];
 
   const startRecordItemLongPress = (recordId: string) => {
     if (recordItemLongPressTimer.current) {
@@ -8439,11 +8473,11 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
   const panelBody = (
             <>
               {isLoading ? (
-                <div className="text-sm text-muted-foreground">Cargando errores...</div>
+                <div className="text-sm text-muted-foreground">Cargando {noun.many}...</div>
               ) : isError ? (
-                <div className="text-sm text-red-500">No se pudieron cargar los errores de las areas.</div>
+                <div className="text-sm text-red-500">No se pudieron cargar los {noun.many} de las áreas y quests.</div>
               ) : visibleGroups.length === 0 ? (
-                <div className="text-sm text-muted-foreground">{onlyResolved ? "Todavía no debugueaste ningún error." : "No hay errores registrados en tus areas."}</div>
+                <div className="text-sm text-muted-foreground">{onlyResolved ? (isAcierto ? "Todavía no consolidaste ningún acierto." : `Todavía no debugueaste ningún ${noun.one}.`) : `No hay ${noun.many} registrados en tus áreas y quests.`}</div>
               ) : selectedBug && selectedAreaGroup ? (
                 <div className="space-y-4 min-w-0">
                   <div className="flex items-center justify-between gap-3 min-w-0">
@@ -8537,7 +8571,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                   <section className="rounded-xl border border-border/50 bg-muted/10 p-4 space-y-3">
                     <h5 className="text-xs font-semibold uppercase tracking-wide text-foreground">Registros</h5>
                     <div
-                      className="space-y-2 max-h-[220px] overflow-y-auto pr-1"
+                      className="space-y-2 max-h-[220px] overflow-y-auto pr-1 minimal-scrollbar"
                     >
                       {selectedBug.registros.length === 0 ? (
                         <p className="text-xs text-muted-foreground">Sin registros todavia (tocá + para agregar)</p>
@@ -8683,14 +8717,14 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                           </div>
                         </div>
                         <div>
-                          <Label className="text-xs text-muted-foreground">Estado del error</Label>
+                          <Label className="text-xs text-muted-foreground">Estado del {noun.one}</Label>
                           <div className="mt-1 grid grid-cols-2 gap-2">
                             <button
                               type="button"
                               className={`rounded-md border px-3 py-2 text-xs transition-colors ${!recordMarcarDebugueado ? "border-foreground bg-muted/60 text-foreground" : "border-border/60 text-muted-foreground hover:bg-muted/40"}`}
                               onClick={() => setRecordMarcarDebugueado(false)}
                             >
-                              Sigue debugueando
+                              {isAcierto ? "Sigue reforzando" : "Sigue debugueando"}
                             </button>
                             <button
                               type="button"
@@ -8699,7 +8733,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                               data-testid="all-bugs-record-debugueado"
                             >
                               <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                              Debugueado
+                              {bugStatusLabel.debugueado}
                             </button>
                           </div>
                         </div>
@@ -8809,30 +8843,6 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                             onChange={(e) => setRecordReflexion(e.target.value)}
                           />
                         </div>
-                        <div>
-                          <Label htmlFor="global-record-aprendizaje" className="text-xs text-muted-foreground">Nuevo aprendizaje</Label>
-                          {editingRecordId && selectedBug.registros.find((r) => r.id === editingRecordId)?.aprendizaje ? (
-                            <p className="mt-1 text-xs break-words">{recordAprendizaje}</p>
-                          ) : (
-                            <>
-                              <Input
-                                id="global-record-aprendizaje"
-                                placeholder="Título del aprendizaje (se suma al Journal)"
-                                value={recordAprendizaje}
-                                onChange={(e) => setRecordAprendizaje(e.target.value)}
-                              />
-                              {recordAprendizaje.trim() && (
-                                <Textarea
-                                  className="mt-2"
-                                  rows={2}
-                                  placeholder="Detalle (opcional)"
-                                  value={recordAprendizajeDetalle}
-                                  onChange={(e) => setRecordAprendizajeDetalle(e.target.value)}
-                                />
-                              )}
-                            </>
-                          )}
-                        </div>
                       </>
                     )}
 
@@ -8873,7 +8883,13 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                 </div>
               ) : (
                 <div className="space-y-4 min-w-0">
-                  {visibleGroups.map((group) => {
+                  <QuestFilterTabs
+                    groups={sourceTabGroups}
+                    selectedKey={selectedSourceKey}
+                    onSelect={setSelectedSourceKey}
+                    totalCount={visibleGroups.reduce((sum, g) => sum + g.bugs.length, 0)}
+                  />
+                  {shownGroups.map((group) => {
                     const isExpanded = !collapsedAreaIds.has(group.areaId);
                     const categoryGroups = BUG_CATEGORIES
                       .map((category) => ({
@@ -8895,7 +8911,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                       >
                         <h4 className="text-sm font-medium text-foreground min-w-0 truncate pr-2">{group.areaName}</h4>
                         <span className="inline-flex items-center gap-2 shrink-0">
-                          <span className="text-xs text-muted-foreground">{group.bugs.length} {group.bugs.length === 1 ? "error" : "errores"}</span>
+                          <span className="text-xs text-muted-foreground">{group.bugs.length} {group.bugs.length === 1 ? noun.one : noun.many}</span>
                           <ChevronDown
                             className={`h-4 w-4 text-muted-foreground transition-transform ${isExpanded ? "rotate-180" : ""}`}
                           />
@@ -8952,7 +8968,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      if (window.confirm(`¿Eliminar el error "${bug.nombre}" y todos sus registros?`)) {
+                                      if (window.confirm(`¿Eliminar el ${noun.one} "${bug.nombre}" y todos sus registros?`)) {
                                         deleteBug.mutate({ id: bug.id, registros: bug.registros ?? [] });
                                       }
                                     }}
@@ -8984,7 +9000,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                               onClick={() => openNewBugWizard(group.areaId)}
                               data-testid="all-bugs-add-bug"
                             >
-                              <Plus className="h-3.5 w-3.5 mr-1" /> Nuevo error
+                              <Plus className="h-3.5 w-3.5 mr-1" /> Nuevo {noun.one}
                             </button>
                           )}
                         </div>
@@ -9004,12 +9020,12 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                     onClick={(e) => e.stopPropagation()}
                   >
                     <div className="flex items-center justify-between gap-2 min-w-0">
-                      <h5 className="text-sm font-semibold uppercase tracking-wide text-foreground">Nuevo error</h5>
+                      <h5 className="text-sm font-semibold uppercase tracking-wide text-foreground">Nuevo {noun.one}</h5>
                       <span className="text-[11px] uppercase tracking-wide text-muted-foreground truncate">
                         {areaBugs.find((group) => group.areaId === addBugAreaId)?.areaName}
                       </span>
                     </div>
-                    <WizardStepDots step={newBugStep} total={4} labels={["Error", "Categoría", "Barra", "Reflexión"]} />
+                    <WizardStepDots step={newBugStep} total={newBugSteps.length} labels={newBugSteps} />
 
                     {newBugStep === 0 && (
                       <>
@@ -9021,12 +9037,13 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                           onAccionChange={setNewBugAccion}
                           estrategias={[]}
                           autoFocus
+                          nameLabel={noun.One}
                         />
                         <div>
                           <Label htmlFor="new-bug-desc" className="text-xs text-muted-foreground">Descripción</Label>
                           <Textarea
                             id="new-bug-desc"
-                            placeholder="¿Qué patrón/comportamiento es este error?"
+                            placeholder={`¿Qué patrón/comportamiento es este ${noun.one}?`}
                             rows={3}
                             value={newBugDesc}
                             onChange={(e) => setNewBugDesc(e.target.value)}
@@ -9035,22 +9052,22 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                       </>
                     )}
 
-                    {newBugStep === 1 && (
+                    {newBugStepName === "Categoría" && (
                       <BugCategoriaPicker value={newBugCategoria} onChange={setNewBugCategoria} />
                     )}
 
-                    {newBugStep === 2 && (
+                    {newBugStepName === "Barra" && (
                       <BugBarModePicker value={newBugBarMode} onChange={setNewBugBarMode} />
                     )}
 
-                    {newBugStep === 3 && (
+                    {newBugStepName === "Reflexión" && (
                       <div>
                         <Label htmlFor="new-bug-reflexion" className="text-xs text-muted-foreground">Reflexión (opcional)</Label>
                         <Textarea
                           id="new-bug-reflexion"
                           rows={3}
                           autoFocus
-                          placeholder="¿Qué ves en este error?"
+                          placeholder={`¿Qué ves en este ${noun.one}?`}
                           value={newBugReflexion}
                           onChange={(e) => setNewBugReflexion(e.target.value)}
                         />
@@ -9058,7 +9075,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                     )}
 
                     {createBug.isError && (
-                      <p className="text-xs text-red-500">No se pudo crear el error.</p>
+                      <p className="text-xs text-red-500">No se pudo crear el {noun.one}.</p>
                     )}
 
                     <div className="flex justify-between gap-2">
@@ -9069,7 +9086,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                       >
                         {newBugStep === 0 ? "Cancelar" : "Atrás"}
                       </Button>
-                      {newBugStep < 3 ? (
+                      {newBugStep < newBugSteps.length - 1 ? (
                         <Button
                           type="button"
                           disabled={newBugStep === 0 && !newBugNombre.trim()}
@@ -9079,7 +9096,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                         </Button>
                       ) : (
                         <Button type="button" disabled={!newBugNombre.trim() || createBug.isPending} onClick={handleCreateBug}>
-                          {createBug.isPending ? "Creando..." : "Crear error"}
+                          {createBug.isPending ? "Creando..." : `Crear ${noun.one}`}
                         </Button>
                       )}
                     </div>
@@ -9096,8 +9113,9 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                     className="w-full max-w-lg rounded-xl border border-border/60 bg-background p-5 space-y-3 shadow-2xl"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <h5 className="text-sm font-semibold uppercase tracking-wide text-foreground">Editar error</h5>
+                    <h5 className="text-sm font-semibold uppercase tracking-wide text-foreground">Editar {noun.one}</h5>
                     <BugNombreAccionInputs
+                      nameLabel={noun.One}
                       idPrefix="global-bug"
                       nombre={bugEditNombre}
                       accion={bugEditAccion}
@@ -9110,12 +9128,12 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                       <Textarea
                         id="global-bug-desc"
                         rows={3}
-                        placeholder="¿Qué patrón/comportamiento es este error?"
+                        placeholder={`¿Qué patrón/comportamiento es este ${noun.one}?`}
                         value={bugEditDesc}
                         onChange={(e) => setBugEditDesc(e.target.value)}
                       />
                     </div>
-                    <BugCategoriaPicker value={bugEditCategoria} onChange={setBugEditCategoria} />
+                    {!isAcierto && <BugCategoriaPicker value={bugEditCategoria} onChange={setBugEditCategoria} />}
                     <BugBarModePicker value={bugEditBarMode} onChange={setBugEditBarMode} />
                     <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
                       <input
@@ -9123,7 +9141,7 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
                         checked={bugEditDebugueado}
                         onChange={(e) => setBugEditDebugueado(e.target.checked)}
                       />
-                      Marcar como debugueado
+                      {isAcierto ? "Marcar como consolidado" : "Marcar como debugueado"}
                     </label>
                     <div>
                       <Label htmlFor="global-bug-reflexion" className="text-xs text-muted-foreground">Nueva reflexión</Label>
@@ -9199,10 +9217,10 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-5 py-4 border-b border-border/50 flex items-center justify-between">
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-foreground">Errores</h3>
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-foreground">{noun.Many}</h3>
             </div>
 
-            <div className="p-4 sm:p-5 overflow-y-auto overflow-x-hidden max-h-[calc(85dvh-70px)]">
+            <div className="p-4 sm:p-5 overflow-y-auto overflow-x-hidden max-h-[calc(85dvh-70px)] minimal-scrollbar">
               {panelBody}
             </div>
           </motion.div>
@@ -9396,6 +9414,17 @@ function QuestDiary() {
       powers: (projectPowerQueries[index]?.data ?? []).filter((power) => power.isUnlocked === 2),
     }))
     .filter((group) => group.powers.length > 0);
+
+  // Menú de áreas/quests de la tab Poderes (igual que Tools): null = todas; "none" = "+ poderes".
+  const [powerSourceKey, setPowerSourceKey] = useState<string | null>(null);
+  const powerTabGroups: QuestTabGroup[] = [
+    ...areaPowerGroups.map((g) => ({ key: g.id, name: g.name, color: g.color, count: g.powers.length })),
+    ...projectPowerGroups.map((g) => ({ key: g.id, name: g.name, count: g.powers.length })),
+    ...(unassignedPowers.length > 0 ? [{ key: "none", name: "+ poderes", count: unassignedPowers.length }] : []),
+  ];
+  const shownAreaPowerGroups = powerSourceKey ? areaPowerGroups.filter((g) => g.id === powerSourceKey) : areaPowerGroups;
+  const shownProjectPowerGroups = powerSourceKey ? projectPowerGroups.filter((g) => g.id === powerSourceKey) : projectPowerGroups;
+  const shownUnassignedPowers = !powerSourceKey || powerSourceKey === "none" ? unassignedPowers : [];
 
   const POWER_ICON_PALETTE = [Target, Shield, Star, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor] as const;
 
@@ -9802,7 +9831,7 @@ function QuestDiary() {
     />
     <Dialog open={isDiaryOpen} modal={false} onOpenChange={(open) => !open && closeDiary()}>
       <DialogContent
-        className="w-[calc(100vw-1.5rem)] max-w-[calc(100vw-1.5rem)] sm:max-w-4xl h-[92dvh] sm:h-[75vh] p-0 overflow-hidden bg-background border-2 border-border shadow-2xl"
+        className="journal-minimal-scroll w-[calc(100vw-1.5rem)] max-w-[calc(100vw-1.5rem)] sm:max-w-4xl h-[92dvh] sm:h-[75vh] p-0 overflow-hidden bg-background border-2 border-border shadow-2xl"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <VisuallyHidden>
@@ -9829,6 +9858,9 @@ function QuestDiary() {
               </TabsTrigger>
               <TabsTrigger value="errores" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-errores" title="Errores">
                 <Circle className="h-5 w-5" />
+              </TabsTrigger>
+              <TabsTrigger value="aciertos" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-aciertos" title="Aciertos">
+                <CircleCheck className="h-5 w-5" />
               </TabsTrigger>
               <TabsTrigger value="strategies" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-strategies" title="Estrategias">
                 <Split className="h-5 w-5" />
@@ -9985,11 +10017,17 @@ function QuestDiary() {
                     </div>
                   ) : (
                     <div className="flex-1 space-y-4 overflow-y-auto pr-1 minimal-scrollbar">
-                      {unassignedPowers.length > 0 && (
+                      <QuestFilterTabs
+                        groups={powerTabGroups}
+                        selectedKey={powerSourceKey}
+                        onSelect={setPowerSourceKey}
+                        totalCount={powerTabGroups.reduce((sum, g) => sum + g.count, 0)}
+                      />
+                      {shownUnassignedPowers.length > 0 && (
                         <section data-testid="journal-unassigned-powers">
                           <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">+ poderes</h3>
                           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                            {unassignedPowers.map((power) => {
+                            {shownUnassignedPowers.map((power) => {
                               const state = renderPowerState(power);
                               const PowerIcon = getPowerIcon(power.id);
                               const isSelected = selectedPowerId === power.id;
@@ -10024,10 +10062,10 @@ function QuestDiary() {
                         </section>
                       )}
 
-                      {areaPowerGroups.length > 0 && (
+                      {shownAreaPowerGroups.length > 0 && (
                         <section>
-                          <Accordion type="multiple" className="space-y-2" defaultValue={areaPowerGroups.map((group) => `area-${group.id}`)}>
-                            {areaPowerGroups.map((group) => (
+                          <Accordion type="multiple" className="space-y-2" defaultValue={shownAreaPowerGroups.map((group) => `area-${group.id}`)}>
+                            {shownAreaPowerGroups.map((group) => (
                               <AccordionItem key={group.id} value={`area-${group.id}`} className="rounded-lg border border-border/50 bg-background/70">
                                 <AccordionTrigger className="px-3 py-2 text-left hover:no-underline">
                                   <div className="flex items-center gap-2">
@@ -10077,11 +10115,11 @@ function QuestDiary() {
                         </section>
                       )}
 
-                      {projectPowerGroups.length > 0 && (
+                      {shownProjectPowerGroups.length > 0 && (
                         <section>
                           <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Proyectos</h3>
-                          <Accordion type="multiple" className="space-y-2" defaultValue={projectPowerGroups.map((group) => `project-${group.id}`)}>
-                            {projectPowerGroups.map((group) => (
+                          <Accordion type="multiple" className="space-y-2" defaultValue={shownProjectPowerGroups.map((group) => `project-${group.id}`)}>
+                            {shownProjectPowerGroups.map((group) => (
                               <AccordionItem key={group.id} value={`project-${group.id}`} className="rounded-lg border border-border/50 bg-background/70">
                                 <AccordionTrigger className="px-3 py-2 text-left hover:no-underline">
                                   <div className="flex items-center gap-2">
@@ -10194,8 +10232,32 @@ function QuestDiary() {
                     <AllAreaBugsModalWrapper open={isDiaryOpen} embedded />
                   </TabsContent>
 
-                  <TabsContent value="debugueados" className="flex-1 min-h-0 mt-0 overflow-y-auto pr-1">
+                  <TabsContent value="debugueados" className="flex-1 min-h-0 mt-0 overflow-y-auto pr-1 minimal-scrollbar">
                     <AllAreaBugsModalWrapper open={isDiaryOpen} embedded onlyResolved />
+                  </TabsContent>
+                </Tabs>
+              </TabsContent>
+
+              {/* Aciertos: igual que Errores (misma lista, registros y barra), sin categoría. */}
+              <TabsContent value="aciertos" className="flex-1 min-h-0 min-w-0 mt-0">
+                <Tabs defaultValue="activos" className="flex h-full flex-col">
+                  <TabsList className="w-fit mb-3">
+                    <TabsTrigger value="activos" className="text-xs" data-testid="aciertos-subtab-activos">
+                      <CircleCheck className="h-3.5 w-3.5 mr-1" />
+                      Aciertos
+                    </TabsTrigger>
+                    <TabsTrigger value="consolidados" className="text-xs" data-testid="aciertos-subtab-consolidados">
+                      <Check className="h-3.5 w-3.5 mr-1" />
+                      Consolidados
+                    </TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="activos" className="flex-1 min-h-0 mt-0 overflow-y-auto pr-1 minimal-scrollbar">
+                    <AllAreaBugsModalWrapper open={isDiaryOpen} embedded kind="acierto" />
+                  </TabsContent>
+
+                  <TabsContent value="consolidados" className="flex-1 min-h-0 mt-0 overflow-y-auto pr-1 minimal-scrollbar">
+                    <AllAreaBugsModalWrapper open={isDiaryOpen} embedded onlyResolved kind="acierto" />
                   </TabsContent>
                 </Tabs>
               </TabsContent>

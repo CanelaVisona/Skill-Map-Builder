@@ -8,7 +8,8 @@ export interface ErrorCelebrationState {
   // "detected" = toast chico al confirmar un error recién agregado.
   // "vencido" = la barra llegó a 50/50 -- celebración completa, igual que "Poder dominado".
   // "estrategia" = una victoria sumó su estrategia al Journal -- mismo toast chico que "detected".
-  kind: "detected" | "vencido" | "estrategia";
+  // "acierto" = acierto nuevo (cubo "Aciertos" del modal de feedback) -- mismo toast chico.
+  kind: "detected" | "vencido" | "estrategia" | "acierto";
 }
 
 interface ErrorCelebrationProps {
@@ -171,7 +172,7 @@ export function ErrorCelebration({ celebration }: ErrorCelebrationProps) {
               </div>
 
               <div className="mt-3 text-center text-[13px] font-bold" style={{ color: palette.text }}>
-                {celebration.kind === "estrategia" ? "¡Nueva estrategia!" : "¡Error nuevo detectado!"}
+                {celebration.kind === "estrategia" ? "¡Nueva estrategia!" : celebration.kind === "acierto" ? "¡Acierto nuevo!" : "¡Error nuevo detectado!"}
               </div>
             </motion.div>
           </div>

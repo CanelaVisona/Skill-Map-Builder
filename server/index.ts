@@ -169,6 +169,16 @@ app.use((req, res, next) => {
     console.error("⚠ journal_strategies migration warning:", error.message);
   }
 
+  // Aciertos: misma tabla que los errores (source_bugs), con kind = "acierto". Ver
+  // migrations/0073_source_bugs_kind.sql.
+  try {
+    await db.execute(sql`
+      ALTER TABLE "source_bugs" ADD COLUMN IF NOT EXISTS "kind" text DEFAULT 'error' NOT NULL;
+    `);
+  } catch (error: any) {
+    console.error("⚠ source_bugs.kind migration warning:", error.message);
+  }
+
   // "Preguntas" del Journal (cubo "Preguntas" del modal de feedback). Ver
   // migrations/0069_journal_questions.sql, 0071_journal_question_reflection_node.sql y
   // 0072_journal_question_scope.sql.

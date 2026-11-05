@@ -152,6 +152,35 @@ h1, h2, h3, h4, h5, h6 {
   background-color: rgba(113, 113, 122, 0.45);
 }
 
+/* Journal: todo lo que scrollea adentro usa la barra minimalista, aunque no lleve la clase. */
+.journal-minimal-scroll,
+.journal-minimal-scroll * {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(113, 113, 122, 0.28) transparent;
+}
+
+.journal-minimal-scroll::-webkit-scrollbar,
+.journal-minimal-scroll *::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.journal-minimal-scroll::-webkit-scrollbar-track,
+.journal-minimal-scroll *::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.journal-minimal-scroll::-webkit-scrollbar-thumb,
+.journal-minimal-scroll *::-webkit-scrollbar-thumb {
+  background-color: rgba(113, 113, 122, 0.28);
+  border-radius: 9999px;
+  border: none;
+}
+
+.journal-minimal-scroll *::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(113, 113, 122, 0.45);
+}
+
 /* Radix Select oculta la barra de su viewport con un estilo propio: con minimal-scrollbar se
    vuelve a mostrar (fina, como en el resto de la app). */
 [data-radix-select-viewport].minimal-scrollbar {

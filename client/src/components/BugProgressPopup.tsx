@@ -20,6 +20,8 @@ export interface BugProgressSnapshot {
   statusBefore: BugRecordStatus;
   statusAfter: BugRecordStatus;
   resultado: "victoria" | "empate" | "derrota";
+  // "acierto": mismos estados, con otros nombres (Identificado / Reforzando / Consolidado).
+  kind?: "error" | "acierto";
 }
 
 interface BugProgressPopupProps {
@@ -31,6 +33,13 @@ const STATUS_LABEL: Record<BugRecordStatus, string> = {
   identificado: "Identificado",
   debugueando: "Debugueando",
   debugueado: "Debugueado",
+};
+
+// Aciertos: los mismos estados que un error, con sus propios nombres.
+export const ACIERTO_STATUS_LABEL: Record<BugRecordStatus, string> = {
+  identificado: "Identificado",
+  debugueando: "Reforzando",
+  debugueado: "Consolidado",
 };
 
 const RESULT_LABEL: Record<BugProgressSnapshot["resultado"], string> = {
@@ -134,7 +143,7 @@ export function BugProgressPopup({ snapshot, onClose }: BugProgressPopupProps) {
                 className="shrink-0 rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em]"
                 style={{ borderColor: palette.border, backgroundColor: palette.surfaceInset, color: palette.text }}
               >
-                {STATUS_LABEL[statusAfter]}
+                {(snapshot.kind === "acierto" ? ACIERTO_STATUS_LABEL : STATUS_LABEL)[statusAfter]}
               </div>
             </div>
 
@@ -213,7 +222,7 @@ export function BugProgressPopup({ snapshot, onClose }: BugProgressPopupProps) {
                       borderWidth: "0.5px",
                     }}
                   >
-                    ¡Bug debugueado!
+                    {snapshot.kind === "acierto" ? "¡Acierto consolidado!" : "¡Bug debugueado!"}
                   </motion.div>
                 )}
               </AnimatePresence>

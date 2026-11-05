@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { playProgressAdvanceSound } from "@/lib/sound";
 import { GoalCompletedCelebration, GOAL_CELEBRATION_MS, type GoalCelebrationState } from "./GoalCompletedCelebration";
 import type { LifeGoalItem, LifeGoalMilestone, CompletedLifeGoal } from "@shared/schema";
+import { QuestFilterTabs, type QuestTabGroup } from "@/components/QuestFilterTabs";
 
 type LifeGoals = { shortTerm: LifeGoalItem[]; mediumTerm: LifeGoalItem[]; longTerm: LifeGoalItem[]; completed: CompletedLifeGoal[] };
 type GoalKey = "shortTerm" | "mediumTerm" | "longTerm";
@@ -1031,6 +1032,27 @@ export function CompletedGoalsJournal() {
       </section>
     );
 
+  // Menú de áreas/quests (igual que Tools en el Journal), uno por sub-tab: null = todas.
+  const [liveSourceKey, setLiveSourceKey] = useState<string | null>(null);
+  const [doneSourceKey, setDoneSourceKey] = useState<string | null>(null);
+  const liveCount = (source: JournalSource) => {
+    const g = goalsOf(source.type, source.id);
+    return g.shortTerm.length + g.mediumTerm.length + g.longTerm.length;
+  };
+  const liveTabGroups: QuestTabGroup[] = [...liveAreas, ...liveQuests].map((src) => ({
+    key: `${src.type}:${src.id}`,
+    name: src.name,
+    color: src.type === "area" ? (src.item as { color?: string })?.color : undefined,
+    count: liveCount(src),
+  }));
+  const doneTabGroups: QuestTabGroup[] = [...areaGroups, ...questGroups].map((g) => ({
+    key: `${g.type}:${g.id}`,
+    name: g.name,
+    count: g.goals.length,
+  }));
+  const pickLive = (list: JournalSource[]) => (liveSourceKey ? list.filter((src) => `${src.type}:${src.id}` === liveSourceKey) : list);
+  const pickDone = (list: typeof areaGroups) => (doneSourceKey ? list.filter((g) => `${g.type}:${g.id}` === doneSourceKey) : list);
+
   return (
     <Tabs defaultValue="live" className="flex h-full flex-col gap-3">
       <TabsList className="self-start">
@@ -1048,8 +1070,14 @@ export function CompletedGoalsJournal() {
           </div>
         ) : (
           <div className="flex-1 space-y-4 overflow-y-auto pr-1 minimal-scrollbar">
-            {renderLiveSection("Áreas", "live-area", liveAreas)}
-            {renderLiveSection("Quests", "live-project", liveQuests)}
+            <QuestFilterTabs
+              groups={liveTabGroups}
+              selectedKey={liveSourceKey}
+              onSelect={setLiveSourceKey}
+              totalCount={liveTabGroups.reduce((sum, g) => sum + g.count, 0)}
+            />
+            {renderLiveSection("Áreas", "live-area", pickLive(liveAreas))}
+            {renderLiveSection("Quests", "live-project", pickLive(liveQuests))}
           </div>
         )}
       </TabsContent>
@@ -1064,8 +1092,14 @@ export function CompletedGoalsJournal() {
           </div>
         ) : (
           <div className="flex-1 space-y-4 overflow-y-auto pr-1 minimal-scrollbar">
-            {renderSection("Áreas", "area", areaGroups)}
-            {renderSection("Quests", "project", questGroups)}
+            <QuestFilterTabs
+              groups={doneTabGroups}
+              selectedKey={doneSourceKey}
+              onSelect={setDoneSourceKey}
+              totalCount={doneTabGroups.reduce((sum, g) => sum + g.count, 0)}
+            />
+            {renderSection("Áreas", "area", pickDone(areaGroups))}
+            {renderSection("Quests", "project", pickDone(questGroups))}
           </div>
         )}
       </TabsContent>

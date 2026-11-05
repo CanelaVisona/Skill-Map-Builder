@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BookOpen, Lightbulb, Split, HelpCircle, Circle, CirclePlus, Wrench, Shield, Check, ChevronLeft, Plus, X } from "lucide-react";
+import { BookOpen, Lightbulb, Split, HelpCircle, Circle, CirclePlus, Wrench, Shield, Check, ChevronLeft, Plus, X, CircleCheck } from "lucide-react";
 import { SkillsSparkIcon } from "@/components/SkillsSparkIcon";
 import { type GlobalSkill } from "@/lib/skill-context";
 import { cn } from "@/lib/utils";
@@ -62,6 +62,16 @@ export type NodeFeedbackErrorAction = { errorId: string; errorName: string; scop
   | { type: "adjust"; delta: 10 | -10; value: string; isNew: boolean; savedOptions: string[]; links: { skillIds: string[]; bodyLinks: BodyLink[] } }
 );
 
+// Acierto ya registrado del área/quest (ver el cubo "Aciertos").
+export interface NodeFeedbackAcierto {
+  id: string;
+  nombre: string;
+  status: "identificado" | "debugueando" | "debugueado";
+  victoryCount: number;
+  estrategias: string[];
+  disparadores: string[];
+}
+
 export interface NodeFeedbackPower {
   id: string;
   name: string;
@@ -83,6 +93,19 @@ export interface NodeFeedbackDraft {
   // Un elemento por nodo agregado desde el cubo "Nodo nuevo" (el nodo ya está creado: esto solo
   // dispara su pop-up "¡Nueva tarea!" al cerrar el modal).
   newTasks: Array<{ scopeName: string }>;
+  // Cubo "Aciertos": igual que los errores del Journal (source_bugs con kind "acierto"), siempre
+  // de un área/quest. Aciertos nuevos, y registros (victoria con estrategia / derrota con
+  // disparador) sobre aciertos ya existentes.
+  aciertos: Array<{ nombre: string; desc: string; scope: { type: "area" | "project"; id: string } }>;
+  aciertoRecords: Array<{
+    aciertoId: string;
+    aciertoName: string;
+    resultado: "victoria" | "derrota";
+    value: string;
+    isNew: boolean;
+    savedOptions: string[];
+    scope: { type: "area" | "project"; id: string };
+  }>;
   tools: NodeFeedbackEntry[];
   errors: Array<NodeFeedbackError & { scope: FeedbackScope }>;
   errorActions: NodeFeedbackErrorAction[];
@@ -97,6 +120,8 @@ const EMPTY_DRAFT: NodeFeedbackDraft = {
   strategies: [],
   questions: [],
   newTasks: [],
+  aciertos: [],
+  aciertoRecords: [],
   tools: [],
   errors: [],
   errorActions: [],
@@ -111,6 +136,8 @@ export const isNodeFeedbackDraftEmpty = (draft: NodeFeedbackDraft) =>
   draft.strategies.length === 0 &&
   draft.questions.length === 0 &&
   draft.newTasks.length === 0 &&
+  draft.aciertos.length === 0 &&
+  draft.aciertoRecords.length === 0 &&
   draft.tools.length === 0 &&
   draft.errors.length === 0 &&
   draft.errorActions.length === 0 &&
@@ -118,7 +145,7 @@ export const isNodeFeedbackDraftEmpty = (draft: NodeFeedbackDraft) =>
   draft.powers.length === 0 &&
   draft.newPowers.length === 0;
 
-type CubeId = "thought" | "learning" | "strategy" | "question" | "tool" | "error" | "xp" | "power" | "node";
+type CubeId = "thought" | "learning" | "strategy" | "question" | "tool" | "error" | "acierto" | "xp" | "power" | "node";
 
 // Mismos íconos que el Journal (tabs de SkillTree.tsx): Learnings, Tools, Errores (círculo),
 // Skills (XP) y Poderes; pensamiento usa el BookOpen de la sección "Thoughts". Estrategias
@@ -130,6 +157,7 @@ const CUBES: Array<{ id: CubeId; label: string; icon: React.ComponentType<{ clas
   { id: "question", label: "Preguntas", icon: HelpCircle },
   { id: "tool", label: "Nueva herramienta", icon: Wrench },
   { id: "error", label: "Error", icon: Circle },
+  { id: "acierto", label: "Aciertos", icon: CircleCheck },
   { id: "xp", label: "Nuevo XP", icon: SkillsSparkIcon },
   { id: "power", label: "Poder", icon: Shield },
   // "Nodo nuevo": elegís el área/quest y se abre adentro su Skill Designer, para agregar el nodo
@@ -144,6 +172,11 @@ type StepKey =
   | "scope"
   | "nodeScope"
   | "nodeDesigner"
+  | "aciertoPick"
+  | "aciertoDescription"
+  | "aciertoName"
+  | "aciertoResult"
+  | "aciertoOption"
   | "description"
   | "title"
   | "errorPick"
@@ -220,6 +253,8 @@ interface NodeConfirmFeedbackModalProps {
   // Poderes/errores del área/quest actual (fixedScope, o la elegida).
   powers: NodeFeedbackPower[];
   errors: NodeFeedbackExistingError[];
+  // Aciertos del área/quest actual (fixedScope, o la elegida).
+  aciertos: NodeFeedbackAcierto[];
   // Skill picker (XP) -- mismos datos que el picker del Step 3 del diálogo de edición.
   legacySkills: string[];
   scopedGlobalSkills: GlobalSkill[];
@@ -248,6 +283,7 @@ export function NodeConfirmFeedbackModal({
   onListScopeChange,
   powers,
   errors,
+  aciertos,
   legacySkills,
   scopedGlobalSkills,
   areas,
@@ -400,6 +436,7 @@ export function NodeConfirmFeedbackModal({
       case "xp": return draft.xpSkillIds.length;
       case "power": return draft.powers.length + draft.newPowers.length;
       case "node": return nodeEdits.reduce((sum, e) => sum + Math.max(1, e.added), 0);
+      case "acierto": return draft.aciertos.length + draft.aciertoRecords.length;
     }
   };
 
@@ -440,6 +477,11 @@ export function NodeConfirmFeedbackModal({
     ? (actionDelta === 10 ? actionError.estrategias : actionError.disparadores)
     : [];
 
+  const selectedAcierto = activeCube === "acierto" ? aciertos.find((a) => a.id === errorTarget) ?? null : null;
+  const aciertoOptions = selectedAcierto && actionDelta !== null
+    ? (actionDelta === 10 ? selectedAcierto.estrategias : selectedAcierto.disparadores)
+    : [];
+
   const stepKeys = (cube: CubeId): StepKey[] => {
     const scopeStep: StepKey[] = fixedScope ? [] : ["scope"];
     switch (cube) {
@@ -461,6 +503,12 @@ export function NodeConfirmFeedbackModal({
       case "node":
         // Siempre pregunta el área/quest (aunque lo confirmado ya tenga una).
         return ["nodeScope", "nodeDesigner"];
+      case "acierto": {
+        // Un acierto siempre es de un área/quest: sin "Ninguna".
+        const aciertoScope: StepKey[] = fixedScope ? [] : ["nodeScope"];
+        if (errorTarget === NEW) return [...aciertoScope, "aciertoPick", "aciertoDescription", "aciertoName"];
+        return [...aciertoScope, "aciertoPick", "aciertoResult", "aciertoOption"];
+      }
     }
   };
 
@@ -477,7 +525,14 @@ export function NodeConfirmFeedbackModal({
       case "title":
       case "errorName":
       case "powerName":
+      case "aciertoName":
         return !!title.trim();
+      case "aciertoPick":
+        return errorTarget === NEW || !!selectedAcierto;
+      case "aciertoResult":
+        return actionDelta !== null;
+      case "aciertoOption":
+        return !!actionValue || !!actionNewValue.trim();
       case "errorPick":
         return errorTarget === NEW || !!actionError;
       case "errorDelta":
@@ -519,6 +574,30 @@ export function NodeConfirmFeedbackModal({
       switch (activeCube) {
         case "node":
           return prev;
+        case "acierto": {
+          const scope = fixedScope ?? pickedScope;
+          if (!scope) return prev;
+          if (errorTarget === NEW) {
+            return { ...prev, aciertos: [...prev.aciertos, { nombre: title.trim(), desc: sentence.trim(), scope }] };
+          }
+          if (!selectedAcierto || actionDelta === null) return prev;
+          const typed = actionNewValue.trim();
+          const value = typed || actionValue;
+          if (!value) return prev;
+          const savedOptions = actionDelta === 10 ? selectedAcierto.estrategias : selectedAcierto.disparadores;
+          return {
+            ...prev,
+            aciertoRecords: [...prev.aciertoRecords, {
+              aciertoId: selectedAcierto.id,
+              aciertoName: selectedAcierto.nombre,
+              resultado: actionDelta === 10 ? "victoria" : "derrota",
+              value,
+              isNew: !!typed && !savedOptions.includes(typed),
+              savedOptions,
+              scope,
+            }],
+          };
+        }
         case "thought":
           return { ...prev, thoughts: [...prev.thoughts, { title: title.trim(), sentence: sentence.trim() }] };
         case "learning":
@@ -614,7 +693,7 @@ export function NodeConfirmFeedbackModal({
   };
 
   // Lo ya cargado en un cubo, para su vista de lista (cada uno se puede quitar).
-  type DraftArrayField = "thoughts" | "learnings" | "strategies" | "questions" | "tools" | "errors" | "errorActions" | "xpSkillIds" | "powers" | "newPowers";
+  type DraftArrayField = "thoughts" | "learnings" | "strategies" | "questions" | "tools" | "errors" | "errorActions" | "xpSkillIds" | "powers" | "newPowers" | "aciertos" | "aciertoRecords";
   const removeAt = (field: DraftArrayField, index: number) =>
     setDraft((prev) => ({ ...prev, [field]: (prev[field] as unknown[]).filter((_, i) => i !== index) }));
 
@@ -646,6 +725,16 @@ export function NodeConfirmFeedbackModal({
         return [
           ...draft.powers.map((p, i) => ({ key: `powers-${p.power.id}`, label: `${p.power.isUnlocked === 0 ? "Desbloquear" : "Dominar"}: ${p.power.name}`, onRemove: () => removeAt("powers", i) })),
           ...draft.newPowers.map((p, i) => ({ key: `newPowers-${i}`, label: `Nuevo: ${p.name}`, detail: p.description || undefined, onRemove: () => removeAt("newPowers", i) })),
+        ];
+      case "acierto":
+        return [
+          ...draft.aciertos.map((a, i) => ({ key: `aciertos-${i}`, label: `Nuevo: ${a.nombre}`, detail: a.desc || undefined, onRemove: () => removeAt("aciertos", i) })),
+          ...draft.aciertoRecords.map((r, i) => ({
+            key: `aciertoRecords-${i}`,
+            label: `${r.resultado === "victoria" ? "Victoria" : "Derrota"}: ${r.aciertoName}`,
+            detail: r.value,
+            onRemove: () => removeAt("aciertoRecords", i),
+          })),
         ];
       case "node":
         // Sin X: lo editado en el designer ya está guardado.
@@ -737,6 +826,86 @@ export function NodeConfirmFeedbackModal({
         return renderScopePick();
       case "nodeScope":
         return renderScopePick(false);
+
+      // ----- Aciertos -----
+      case "aciertoPick":
+        return (
+          <div className="space-y-2">
+            {aciertos.filter((a) => a.status !== "debugueado").map((a) => (
+              <button
+                key={a.id}
+                type="button"
+                onClick={() => { setErrorTarget(a.id); setActionDelta(null); setActionValue(null); setActionNewValue(""); }}
+                className={optionClass(errorTarget === a.id)}
+                data-testid={`confirm-feedback-acierto-${a.id}`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium truncate">{a.nombre}</p>
+                  <span className="text-[11px] text-muted-foreground shrink-0">{a.victoryCount} / 5</span>
+                </div>
+              </button>
+            ))}
+            {renderNewOption("Nuevo acierto", errorTarget === NEW, () => setErrorTarget(NEW))}
+          </div>
+        );
+      case "aciertoDescription":
+        return renderDescriptionInput("Descripción", "¿Qué hiciste bien?", sentence, setSentence);
+      case "aciertoName":
+        return renderTitleInput("Acierto", "ACIERTO");
+      case "aciertoResult":
+        return selectedAcierto ? (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-medium truncate">{selectedAcierto.nombre}</p>
+              <p className="text-[11px] text-muted-foreground shrink-0">{selectedAcierto.victoryCount} / 5</p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {([-10, 10] as const).map((delta) => (
+                <button
+                  key={delta}
+                  type="button"
+                  onClick={() => { setActionDelta(delta); setActionValue(null); setActionNewValue(""); }}
+                  className={cn(optionClass(actionDelta === delta), "text-center")}
+                  data-testid={`confirm-feedback-acierto-${delta > 0 ? "victoria" : "derrota"}`}
+                >
+                  <p className="text-sm font-semibold">{delta > 0 ? "Victoria" : "Derrota"}</p>
+                  <p className="text-[11px] text-muted-foreground">{delta > 0 ? "Usé una estrategia" : "Hubo un disparador"}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null;
+      case "aciertoOption":
+        return (
+          <div className="space-y-2">
+            <Label className={fieldLabel}>{actionDelta === 10 ? "¿Qué estrategia usaste?" : "¿Qué lo disparó?"}</Label>
+            {aciertoOptions.length > 0 && (
+              <div className="space-y-1.5">
+                {aciertoOptions.map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => { setActionValue(option); setActionNewValue(""); }}
+                    className={cn(optionClass(actionValue === option && !actionNewValue.trim()), "rounded-md px-3 py-2 text-sm")}
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex items-center gap-1.5">
+              <Plus className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <Input
+                placeholder={actionDelta === 10 ? "Estrategia nueva" : "Disparador nuevo"}
+                value={actionNewValue}
+                onChange={(e) => setActionNewValue(e.target.value)}
+                onKeyDown={submitOnEnter}
+                className={cn("h-8 text-sm", inputClass)}
+                data-testid="confirm-feedback-acierto-new-option"
+              />
+            </div>
+          </div>
+        );
       case "nodeDesigner":
         return pickedScope ? (
           <div className="space-y-2">
@@ -987,7 +1156,7 @@ export function NodeConfirmFeedbackModal({
         )}
       >
         <DialogTitle className="text-lg font-medium shrink-0">{activeCubeMeta ? activeCubeMeta.label : "¿Qué te dejó este nodo?"}</DialogTitle>
-        <DialogDescription className="sr-only">Registrá pensamientos, aprendizajes, estrategias, preguntas, herramientas, errores, XP, poderes o nodos nuevos del nodo confirmado</DialogDescription>
+        <DialogDescription className="sr-only">Registrá pensamientos, aprendizajes, estrategias, preguntas, herramientas, errores, aciertos, XP, poderes o nodos nuevos del nodo confirmado</DialogDescription>
 
         {activeCube === null ? (
           <>

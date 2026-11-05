@@ -313,6 +313,17 @@ async function addVictoryStrategyToJournal(userId: string, estrategia: string | 
   return title;
 }
 
+// Aciertos: todas sus estrategias (las del acierto y las de cualquier registro, no solo las
+// victorias) quedan en la tab Estrategias del Journal. Devuelve las que se agregaron recién.
+async function addAciertoStrategiesToJournal(userId: string, estrategias: Array<string | null | undefined>, skillId: string | null): Promise<string[]> {
+  const added: string[] = [];
+  for (const estrategia of estrategias) {
+    const title = await addVictoryStrategyToJournal(userId, estrategia, skillId);
+    if (title) added.push(title);
+  }
+  return added;
+}
+
 // Avance de un libro / práctica de repetición espaciada unido a un área o quest: registra lo
 // hecho como un nodo SideQuest ya confirmado. Entra en el lugar del nodo desbloqueado del árbol
 // (que queda después, dependiendo del nuevo, y sigue desbloqueado); si no hay ninguno, justo
@@ -5115,8 +5126,10 @@ export async function registerRoutes(
         res.status(400).json({ message: "Invalid type. Must be 'area' or 'project'" });
         return;
       }
+      // ?kind=acierto trae los aciertos; sin kind (o kind=error), los errores de siempre.
+      const kind = req.query.kind === "acierto" ? "acierto" : "error";
       const bugs = await storage.getSourceBugs(req.userId!, type, sourceId);
-      res.json(bugs);
+      res.json(bugs.filter((bug) => (bug.kind ?? "error") === kind));
     } catch (error: any) {
       res.status(500).json({ message: error.message || "Failed to fetch bugs" });
     }
@@ -5127,9 +5140,16 @@ export async function registerRoutes(
       const data = { ...req.body, userId: req.userId };
       const validated = insertSourceBugSchema.parse(data);
       const bug = await storage.createSourceBug(validated);
-      // Un error nuevo queda registrado como nodo SideQuest en su área/proyecto.
+      if (bug.kind === "acierto") {
+        try {
+          await addAciertoStrategiesToJournal(req.userId!, [bug.accion, ...(bug.estrategias ?? [])], null);
+        } catch (strategyError) {
+          console.error("[POST /api/source-bugs] Journal strategy error:", strategyError);
+        }
+      }
+      // Un error (o acierto) nuevo queda registrado como nodo SideQuest en su área/proyecto.
       try {
-        await createLoggedSideQuestNode({ areaId: bug.areaId, projectId: bug.projectId }, req.userId!, `Error: ${bug.nombre}`);
+        await createLoggedSideQuestNode({ areaId: bug.areaId, projectId: bug.projectId }, req.userId!, `${bug.kind === "acierto" ? "Acierto" : "Error"}: ${bug.nombre}`);
       } catch (sideQuestError) {
         console.error("[POST /api/source-bugs] SideQuest node error:", sideQuestError);
       }
@@ -5146,6 +5166,13 @@ export async function registerRoutes(
       if (!updated) {
         res.status(404).json({ message: "Source bug not found" });
         return;
+      }
+      if (updated.kind === "acierto" && (Array.isArray(req.body?.estrategias) || typeof req.body?.accion === "string")) {
+        try {
+          await addAciertoStrategiesToJournal(req.userId!, [updated.accion, ...(updated.estrategias ?? [])], null);
+        } catch (strategyError) {
+          console.error("[PATCH /api/source-bugs/:id] Journal strategy error:", strategyError);
+        }
       }
       res.json(updated);
     } catch (error: any) {
@@ -5225,7 +5252,7 @@ export async function registerRoutes(
         } as any);
       }
       let newStrategy: string | null = null;
-      if (validated.resultado === "victoria") {
+      if (validated.resultado === "victoria" || bugBefore.kind === "acierto") {
         try {
           newStrategy = await addVictoryStrategyToJournal(req.userId!, validated.estrategia, sideQuestSkillId);
         } catch (strategyError) {

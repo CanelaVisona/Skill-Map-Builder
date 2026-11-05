@@ -266,6 +266,9 @@ export const sourceBugs = pgTable("source_bugs", {
   manualDebugueado: integer("manual_debugueado").$type<0 | 1>().notNull().default(0),
   // Reflexiones sueltas del error (las de los registros viven en source_bug_records.reflexion).
   reflexiones: jsonb("reflexiones").notNull().$type<SourceBugReflexion[]>().default([]),
+  // "error" (bug) o "acierto": los aciertos son lo mismo que los errores (registros, barra,
+  // reflexiones), pero se listan aparte (tab y cubo "Aciertos") y no llevan categoría.
+  kind: text("kind").$type<"error" | "acierto">().notNull().default("error"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
