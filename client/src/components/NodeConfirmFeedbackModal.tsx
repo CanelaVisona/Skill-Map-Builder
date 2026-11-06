@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { SkillLinkPicker } from "@/components/SkillLinkPicker";
 import { BodyLinkPicker, type BodyLink } from "@/components/BodyLinkPicker";
 import { SkillPickerList, ChipListInput } from "@/components/skill-node-pickers";
+import { BugNombreAccionInputs, BugCategoriaPicker, BugBarModePicker, type BugCategoria, type BugBarMode } from "@/components/bug-wizard-fields";
 import { SkillDesigner } from "@/components/SkillDesigner";
 
 // Modal de "feedback" que aparece al confirmar un nodo: después del pop-up de la barra de nivel
@@ -30,6 +31,9 @@ export interface NodeFeedbackEntry {
   sentence: string;
 }
 
+// Error nuevo: los pasos del error de nodo (¿cómo sí?, estrategias/disparadores, skills y
+// componentes) más los del alta en el Journal (nombre -> estrategia + descripción, categoría,
+// barra y reflexión). Se guarda en un solo lugar: error de nodo + su bug del Journal.
 export interface NodeFeedbackError {
   nombre: string;
   comoSi: string;
@@ -37,6 +41,11 @@ export interface NodeFeedbackError {
   disparadores: string[];
   skillIds: string[];
   bodyLinks: BodyLink[];
+  accion: string;
+  desc: string;
+  categoria: BugCategoria;
+  barMode: BugBarMode;
+  reflexion: string;
 }
 
 // Movimiento sobre un error ya registrado (lo que antes era la tab "Bugs"): confirmar uno
@@ -180,10 +189,13 @@ type StepKey =
   | "description"
   | "title"
   | "errorPick"
+  | "errorBug"
   | "errorComoSi"
-  | "errorName"
   | "errorChips"
   | "errorLinks"
+  | "errorCategoria"
+  | "errorBarra"
+  | "errorReflexion"
   | "errorConfirm"
   | "errorDelta"
   | "errorOption"
@@ -209,6 +221,10 @@ interface CubeForm {
   errorDisparadorDraft: string;
   errorSkillIds: string[];
   errorBodyLinks: BodyLink[];
+  errorAccion: string;
+  errorCategoria: BugCategoria;
+  errorBarMode: BugBarMode;
+  errorReflexion: string;
   xpSkillIds: string[];
   errorTarget: string | null;
   powerTarget: string | null;
@@ -229,6 +245,10 @@ const EMPTY_FORM: CubeForm = {
   errorDisparadorDraft: "",
   errorSkillIds: [],
   errorBodyLinks: [],
+  errorAccion: "",
+  errorCategoria: "",
+  errorBarMode: "victorias",
+  errorReflexion: "",
   xpSkillIds: [],
   errorTarget: null,
   powerTarget: null,
@@ -320,6 +340,10 @@ export function NodeConfirmFeedbackModal({
   const [errorDisparadorDraft, setErrorDisparadorDraft] = useState("");
   const [errorSkillIds, setErrorSkillIds] = useState<string[]>([]);
   const [errorBodyLinks, setErrorBodyLinks] = useState<BodyLink[]>([]);
+  const [errorAccion, setErrorAccion] = useState("");
+  const [errorCategoria, setErrorCategoria] = useState<BugCategoria>("");
+  const [errorBarMode, setErrorBarMode] = useState<BugBarMode>("victorias");
+  const [errorReflexion, setErrorReflexion] = useState("");
   const [xpSkillIds, setXpSkillIds] = useState<string[]>([]);
   // Error/poder elegido en el primer paso de su cubo: el id de uno existente, o NEW.
   const [errorTarget, setErrorTarget] = useState<string | null>(null);
@@ -369,6 +393,10 @@ export function NodeConfirmFeedbackModal({
     errorDisparadorDraft,
     errorSkillIds,
     errorBodyLinks,
+    errorAccion,
+    errorCategoria,
+    errorBarMode,
+    errorReflexion,
     xpSkillIds,
     errorTarget,
     powerTarget,
@@ -389,6 +417,10 @@ export function NodeConfirmFeedbackModal({
     setErrorDisparadorDraft(form.errorDisparadorDraft);
     setErrorSkillIds(form.errorSkillIds);
     setErrorBodyLinks(form.errorBodyLinks);
+    setErrorAccion(form.errorAccion);
+    setErrorCategoria(form.errorCategoria);
+    setErrorBarMode(form.errorBarMode);
+    setErrorReflexion(form.errorReflexion);
     setXpSkillIds(form.xpSkillIds);
     setErrorTarget(form.errorTarget);
     setPowerTarget(form.powerTarget);
@@ -492,7 +524,7 @@ export function NodeConfirmFeedbackModal({
       case "tool":
         return ["description", "title"];
       case "error":
-        if (errorTarget === NEW) return [...scopeStep, "errorPick", "errorComoSi", "errorName", "errorChips", "errorLinks"];
+        if (errorTarget === NEW) return [...scopeStep, "errorPick", "errorBug", "errorComoSi", "errorChips", "errorLinks", "errorCategoria", "errorBarra", "errorReflexion"];
         if (actionErrorState && !actionErrorState.confirmed) return [...scopeStep, "errorPick", "errorConfirm"];
         return [...scopeStep, "errorPick", "errorDelta", "errorOption"];
       case "xp":
@@ -523,7 +555,7 @@ export function NodeConfirmFeedbackModal({
       case "nodeScope":
         return !!pickedScope;
       case "title":
-      case "errorName":
+      case "errorBug":
       case "powerName":
       case "aciertoName":
         return !!title.trim();
@@ -622,10 +654,16 @@ export function NodeConfirmFeedbackModal({
               errors: [...prev.errors, {
                 nombre: title.trim(),
                 comoSi: errorComoSi.trim(),
-                estrategias: withPendingChip(errorEstrategias, errorEstrategiaDraft),
+                // La estrategia del primer paso también queda en la lista de estrategias.
+                estrategias: withPendingChip(withPendingChip(errorEstrategias, errorEstrategiaDraft), errorAccion),
                 disparadores: withPendingChip(errorDisparadores, errorDisparadorDraft),
                 skillIds: errorSkillIds,
                 bodyLinks: errorBodyLinks,
+                accion: errorAccion.trim(),
+                desc: sentence.trim(),
+                categoria: errorCategoria,
+                barMode: errorBarMode,
+                reflexion: errorReflexion.trim(),
                 scope: entryScope,
               }],
             };
@@ -711,7 +749,7 @@ export function NodeConfirmFeedbackModal({
       case "tool": return entries("tools");
       case "error":
         return [
-          ...draft.errors.map((e, i) => ({ key: `errors-${i}`, label: `Nuevo: ${e.nombre}`, detail: e.comoSi || undefined, onRemove: () => removeAt("errors", i) })),
+          ...draft.errors.map((e, i) => ({ key: `errors-${i}`, label: `Nuevo: ${e.nombre}${e.accion ? ` → ${e.accion}` : ""}`, detail: e.desc || undefined, onRemove: () => removeAt("errors", i) })),
           ...draft.errorActions.map((a, i) => ({
             key: `errorActions-${i}`,
             label: a.type === "confirm" ? `Confirmar: ${a.errorName}` : `${a.delta > 0 ? "+10p" : "-10p"} ${a.errorName}`,
@@ -849,7 +887,7 @@ export function NodeConfirmFeedbackModal({
           </div>
         );
       case "aciertoDescription":
-        return renderDescriptionInput("Descripción", "¿Qué hiciste bien?", sentence, setSentence);
+        return renderDescriptionInput("Descripción", "¿Qué hiciste bien y por qué?", sentence, setSentence);
       case "aciertoName":
         return renderTitleInput("Acierto", "ACIERTO");
       case "aciertoResult":
@@ -951,10 +989,33 @@ export function NodeConfirmFeedbackModal({
             {renderNewOption("Nuevo error", errorTarget === NEW, () => setErrorTarget(NEW))}
           </div>
         );
+      // Error nuevo: los mismos pasos (y campos) que "Nuevo error" en el Journal.
+      case "errorBug":
+        return (
+          <div className="space-y-3">
+            <BugNombreAccionInputs
+              idPrefix="confirm-feedback-error"
+              nombre={title}
+              accion={errorAccion}
+              onNombreChange={setTitle}
+              onAccionChange={setErrorAccion}
+              estrategias={[]}
+              autoFocus
+            />
+            <div>
+              <Label htmlFor="confirm-feedback-error-desc" className="text-xs text-muted-foreground">Descripción</Label>
+              <Textarea
+                id="confirm-feedback-error-desc"
+                placeholder="¿Cuál fue el error y por qué?"
+                rows={3}
+                value={sentence}
+                onChange={(e) => setSentence(e.target.value)}
+              />
+            </div>
+          </div>
+        );
       case "errorComoSi":
         return renderDescriptionInput("¿Cómo sí?", "En vez del error, ¿cómo sería la situación que sí querés?", errorComoSi, setErrorComoSi);
-      case "errorName":
-        return renderTitleInput("Nombre", "NOMBRE");
       case "errorChips":
         return (
           <div className="space-y-3">
@@ -1001,6 +1062,24 @@ export function NodeConfirmFeedbackModal({
                 Flexibilidad mental crece siempre, no hace falta linkearla. Estos, y los skills de arriba, solo suman con +10p.
               </p>
             </div>
+          </div>
+        );
+      case "errorCategoria":
+        return <BugCategoriaPicker value={errorCategoria} onChange={setErrorCategoria} />;
+      case "errorBarra":
+        return <BugBarModePicker value={errorBarMode} onChange={setErrorBarMode} />;
+      case "errorReflexion":
+        return (
+          <div>
+            <Label htmlFor="confirm-feedback-error-reflexion" className="text-xs text-muted-foreground">Reflexión (opcional)</Label>
+            <Textarea
+              id="confirm-feedback-error-reflexion"
+              rows={3}
+              autoFocus
+              placeholder="¿Qué ves en este error?"
+              value={errorReflexion}
+              onChange={(e) => setErrorReflexion(e.target.value)}
+            />
           </div>
         );
       case "errorConfirm":

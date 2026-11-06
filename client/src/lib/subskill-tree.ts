@@ -52,7 +52,7 @@ export async function makeLastCreatedSubSkillFinal(parentSkillId: string, level:
 }
 
 // "Agregar sub-nodo" desde Tareas de hoy: si el nodo no tiene sub-árbol se genera, y el sub-nodo
-// nuevo entra al final de los sub-nodos ya creados del primer nivel (pasa a ser el nodo final).
+// nuevo entra al final de los sub-nodos ya creados de su último nivel (pasa a ser el nodo final).
 // Queda desbloqueado si todos los anteriores están confirmados.
 export async function addSubSkillFromToday(parentSkillId: string, title: string): Promise<Skill | null> {
   let subSkills = await fetchSubSkills(parentSkillId);
@@ -64,9 +64,18 @@ export async function addSubSkillFromToday(parentSkillId: string, title: string)
     });
     subSkills = await fetchSubSkills(parentSkillId);
   }
-  const levelNodes = subSkills.filter(s => s.level === 1).sort(byOrder);
+  // Va al último nivel que ya tiene sub-nodos (no siempre al 1): si el desbloqueado está en un
+  // nivel posterior, uno nuevo en el nivel 1 quedaba desbloqueado antes que él y le quitaba el lugar.
+  const level = subSkills
+    .filter(s => (s.levelPosition || 0) > 1 && !isSubSkillPlaceholder(s))
+    .reduce((max, s) => Math.max(max, s.level), 1);
+  const levelNodes = subSkills.filter(s => s.level === level).sort(byOrder);
   const lastReal = [...levelNodes].reverse().find(s => !isSubSkillPlaceholder(s));
   if (!lastReal) return null;
+  // Queda desbloqueado solo si no hay ningún sub-nodo sin confirmar antes que él.
+  const pendingBefore = subSkills.some(s =>
+    s.status !== "mastered" && !isSubSkillPlaceholder(s) && (s.levelPosition || 0) > 1 && byOrder(s, lastReal) <= 0
+  );
 
   const res = await fetch("/api/skills", {
     method: "POST",
@@ -77,9 +86,9 @@ export async function addSubSkillFromToday(parentSkillId: string, title: string)
       description: "",
       x: lastReal.x,
       y: lastReal.y + 150,
-      status: lastReal.status === "mastered" ? "available" : "locked",
+      status: lastReal.status === "mastered" && !pendingBefore ? "available" : "locked",
       dependencies: [lastReal.id],
-      level: 1,
+      level,
       levelPosition: (lastReal.levelPosition || 0) + 1,
       isFinalNode: 0,
       manualLock: 0,
@@ -87,7 +96,7 @@ export async function addSubSkillFromToday(parentSkillId: string, title: string)
   });
   if (!res.ok) return null;
   const created: Skill = await res.json();
-  await makeLastCreatedSubSkillFinal(parentSkillId, 1, created.id);
+  await makeLastCreatedSubSkillFinal(parentSkillId, level, created.id);
   return created;
 }
 

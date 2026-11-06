@@ -179,6 +179,14 @@ app.use((req, res, next) => {
     console.error("⚠ source_bugs.kind migration warning:", error.message);
   }
 
+  // Todos los errores en el mismo lugar: une los errores de nodo con los del Journal que ya
+  // existían (cada uno queda en los dos lados, vinculado por node_errors.bug_id). Idempotente.
+  try {
+    await storage.linkAllErrors();
+  } catch (error: any) {
+    console.error("⚠ error link warning:", error.message);
+  }
+
   // "Preguntas" del Journal (cubo "Preguntas" del modal de feedback). Ver
   // migrations/0069_journal_questions.sql, 0071_journal_question_reflection_node.sql y
   // 0072_journal_question_scope.sql.

@@ -11,6 +11,15 @@ const normalizeSourceBugStatus = (status: string): "identificado" | "debugueando
   return "identificado";
 };
 
+// Campos del bug (Journal) que no tiene el error de nodo: se pasan al crearlo desde el feedback.
+export interface NodeErrorBugOverrides {
+  accion?: string;
+  desc?: string;
+  categoria?: "" | "ups" | "stretch" | "alto-riesgo" | "aha";
+  barMode?: "victorias" | "ved" | "ninguna";
+  reflexiones?: SourceBugReflexion[];
+}
+
 export interface IStorage {
   // Users
   createUser(username: string, password: string): Promise<User>;
@@ -194,7 +203,16 @@ export interface IStorage {
   deleteNodeError(id: string): Promise<void>;
   createNodeErrorRecord(errorId: string, delta: 10 | -10, userId?: string | null, estrategia?: string | null, disparador?: string | null): Promise<{ record: NodeErrorRecord; pointsBefore: number; pointsAfter: number }>;
   // Bugs y errores son lo mismo: al confirmar un error se crea (1:1) el bug de su área/proyecto.
-  ensureNodeErrorBug(nodeErrorId: string): Promise<string | null>;
+  ensureNodeErrorBug(nodeErrorId: string, overrides?: NodeErrorBugOverrides): Promise<string | null>;
+  // Un error cargado en el Journal (source_bug kind "error") también existe como error de nodo
+  // del área/quest (para elegirlo desde un nodo o el feedback). Idempotente.
+  ensureBugNodeError(bugId: string): Promise<void>;
+  // Nombre / estrategias / disparadores iguales en el error de nodo y su bug.
+  syncBugToNodeErrors(bug: SourceBug): Promise<void>;
+  syncNodeErrorToBug(err: NodeError): Promise<void>;
+  deleteNodeErrorsOfBug(bugId: string): Promise<void>;
+  // Une los errores que ya existían (una vez al arrancar): todos quedan en el Journal.
+  linkAllErrors(): Promise<void>;
   // Agrega valores a source_bugs.disparadores / .estrategias sin duplicar (para poblar los
   // desplegables del formulario de registro del bug con lo cargado desde el nodo).
   appendSourceBugListItems(bugId: string, field: "disparadores" | "estrategias", items: string[]): Promise<void>;
@@ -2213,7 +2231,7 @@ export class DbStorage implements IStorage {
   }
 
   // Crea (si todavía no existe) el source_bug 1:1 de este error y devuelve su id. Idempotente.
-  async ensureNodeErrorBug(nodeErrorId: string): Promise<string | null> {
+  async ensureNodeErrorBug(nodeErrorId: string, overrides?: NodeErrorBugOverrides): Promise<string | null> {
     const err = await this.getNodeError(nodeErrorId);
     if (!err) return null;
     if (err.bugId) return err.bugId;
@@ -2235,10 +2253,15 @@ export class DbStorage implements IStorage {
       nombre: err.nombre,
       status: "identificado",
       victoryCount: 0,
-      desc: err.comoSi ?? "",
+      desc: overrides?.desc ?? err.comoSi ?? "",
       aparece: [],
       disparadores: Array.isArray(err.disparadores) ? err.disparadores : [],
       estrategias: Array.isArray(err.estrategias) ? err.estrategias : [],
+      kind: "error",
+      ...(overrides?.accion !== undefined ? { accion: overrides.accion } : {}),
+      ...(overrides?.categoria !== undefined ? { categoria: overrides.categoria } : {}),
+      ...(overrides?.barMode !== undefined ? { barMode: overrides.barMode } : {}),
+      ...(overrides?.reflexiones !== undefined ? { reflexiones: overrides.reflexiones } : {}),
     } as InsertSourceBug);
 
     await db.update(nodeErrors).set({ bugId: bug.id, updatedAt: new Date() }).where(eq(nodeErrors.id, nodeErrorId));
@@ -2268,6 +2291,68 @@ export class DbStorage implements IStorage {
     }
 
     return bug.id;
+  }
+
+  async ensureBugNodeError(bugId: string): Promise<void> {
+    const bug = await this.getSourceBug(bugId);
+    if (!bug || bug.kind !== "error") return;
+    const [linked] = await db.select({ id: nodeErrors.id }).from(nodeErrors).where(eq(nodeErrors.bugId, bugId));
+    if (linked) return;
+    const points = bug.manualDebugueado === 1 ? 50 : Math.max(-50, Math.min(50, (bug.victoryCount ?? 0) * 10));
+    await db.insert(nodeErrors).values({
+      id: randomUUID(),
+      userId: bug.userId ?? null,
+      skillId: null,
+      areaId: bug.areaId ?? null,
+      projectId: bug.projectId ?? null,
+      nombre: bug.nombre,
+      comoSi: "",
+      points,
+      confirmed: 1,
+      estrategias: Array.isArray(bug.estrategias) ? bug.estrategias : [],
+      disparadores: Array.isArray(bug.disparadores) ? bug.disparadores : [],
+      bugId,
+    } as any);
+  }
+
+  async syncBugToNodeErrors(bug: SourceBug): Promise<void> {
+    if (bug.kind !== "error") return;
+    await db
+      .update(nodeErrors)
+      .set({
+        nombre: bug.nombre,
+        estrategias: Array.isArray(bug.estrategias) ? bug.estrategias : [],
+        disparadores: Array.isArray(bug.disparadores) ? bug.disparadores : [],
+        updatedAt: new Date(),
+      })
+      .where(eq(nodeErrors.bugId, bug.id));
+  }
+
+  async syncNodeErrorToBug(err: NodeError): Promise<void> {
+    if (!err.bugId) return;
+    await db.update(sourceBugs).set({ nombre: err.nombre, updatedAt: new Date() }).where(eq(sourceBugs.id, err.bugId));
+    await this.appendSourceBugListItems(err.bugId, "estrategias", Array.isArray(err.estrategias) ? err.estrategias : []);
+    await this.appendSourceBugListItems(err.bugId, "disparadores", Array.isArray(err.disparadores) ? err.disparadores : []);
+  }
+
+  async deleteNodeErrorsOfBug(bugId: string): Promise<void> {
+    await db.delete(nodeErrors).where(eq(nodeErrors.bugId, bugId));
+  }
+
+  async linkAllErrors(): Promise<void> {
+    // Errores de nodo con área/quest (o nodo) que todavía no tenían su bug en el Journal.
+    const unlinked = await db.select({ id: nodeErrors.id }).from(nodeErrors).where(isNull(nodeErrors.bugId));
+    for (const row of unlinked) {
+      await this.ensureNodeErrorBug(row.id);
+    }
+    // Errores del Journal que todavía no existían como error de nodo.
+    const bugs = await db
+      .select({ id: sourceBugs.id })
+      .from(sourceBugs)
+      .where(and(eq(sourceBugs.kind, "error"), sql`NOT EXISTS (SELECT 1 FROM node_errors ne WHERE ne.bug_id = ${sourceBugs.id})`));
+    for (const row of bugs) {
+      await this.ensureBugNodeError(row.id);
+    }
   }
 
   async appendSourceBugListItems(bugId: string, field: "disparadores" | "estrategias", items: string[]): Promise<void> {
@@ -3832,8 +3917,18 @@ export class DbStorage implements IStorage {
     if (templates.length === 0) return 0;
     const existing = await db.select().from(todayTaskSubsteps).where(and(eq(todayTaskSubsteps.userId, userId), eq(todayTaskSubsteps.date, date)));
     const copied = new Set(existing.map((s) => s.templateId).filter(Boolean));
-    const missing = templates.filter((t) => !copied.has(t.id));
+    const missing = templates.filter((t) => !copied.has(t.id)).sort((a, b) => a.sortOrder - b.sortOrder);
+    // Si ese día el hábito ya tiene sub-pasos, la copia nueva va después de todos (si no, el orden
+    // de la plantilla la podía meter antes del sub-paso desbloqueado y quitarle el lugar).
+    const nextOrderByHabit = new Map<string, number>();
+    existing.forEach((s) => {
+      if (s.taskType !== "habit") return;
+      nextOrderByHabit.set(s.taskId, Math.max(nextOrderByHabit.get(s.taskId) ?? 0, s.sortOrder + 1));
+    });
     for (const t of missing) {
+      const next = nextOrderByHabit.get(t.habitId);
+      const sortOrder = next === undefined ? t.sortOrder : Math.max(t.sortOrder, next);
+      if (next !== undefined) nextOrderByHabit.set(t.habitId, sortOrder + 1);
       await db.insert(todayTaskSubsteps).values({
         id: randomUUID(),
         userId,
@@ -3842,7 +3937,7 @@ export class DbStorage implements IStorage {
         taskId: t.habitId,
         title: t.title,
         done: 0,
-        sortOrder: t.sortOrder,
+        sortOrder,
         minutes: t.minutes,
         minutesManual: t.minutesManual,
         templateId: t.id,

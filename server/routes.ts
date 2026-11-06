@@ -1417,12 +1417,15 @@ export async function registerRoutes(
         });
         
         // Recalculate available statuses; when the client provided an explicit status,
-        // pass excludeSkillId so the new skill's status is never overwritten by recalculation
+        // pass excludeSkillId so the new skill's status is never overwritten by recalculation.
+        // Sub-nodes are the exception: their status always follows the sub-tree order, so a new
+        // one never takes the place of the unlocked sub-node that is still pending (the client's
+        // status comes from a snapshot that can be stale, e.g. while that one's timer runs over).
         await storage.recalculateAvailableStatus(skillLevel, {
           areaId: validatedSkill.areaId || undefined,
           projectId: validatedSkill.projectId || undefined,
           parentSkillId: validatedSkill.parentSkillId || undefined,
-          excludeSkillId: req.body.status !== undefined ? skill.id : undefined,
+          excludeSkillId: req.body.status !== undefined && !validatedSkill.parentSkillId ? skill.id : undefined,
         });
 
         res.status(201).json((await storage.getSkill(skill.id)) ?? skill);
@@ -5140,6 +5143,14 @@ export async function registerRoutes(
       const data = { ...req.body, userId: req.userId };
       const validated = insertSourceBugSchema.parse(data);
       const bug = await storage.createSourceBug(validated);
+      // Todos los errores en el mismo lugar: el del Journal también es error de nodo del área/quest.
+      if (bug.kind === "error") {
+        try {
+          await storage.ensureBugNodeError(bug.id);
+        } catch (linkError) {
+          console.error("[POST /api/source-bugs] node error link:", linkError);
+        }
+      }
       if (bug.kind === "acierto") {
         try {
           await addAciertoStrategiesToJournal(req.userId!, [bug.accion, ...(bug.estrategias ?? [])], null);
@@ -5167,6 +5178,7 @@ export async function registerRoutes(
         res.status(404).json({ message: "Source bug not found" });
         return;
       }
+      await storage.syncBugToNodeErrors(updated);
       if (updated.kind === "acierto" && (Array.isArray(req.body?.estrategias) || typeof req.body?.accion === "string")) {
         try {
           await addAciertoStrategiesToJournal(req.userId!, [updated.accion, ...(updated.estrategias ?? [])], null);
@@ -5182,6 +5194,7 @@ export async function registerRoutes(
 
   app.delete("/api/source-bugs/:id", requireAuth, async (req, res) => {
     try {
+      await storage.deleteNodeErrorsOfBug(req.params.id);
       await storage.deleteSourceBug(req.params.id);
       res.status(204).send();
     } catch (error: any) {
@@ -5496,9 +5509,25 @@ export async function registerRoutes(
     try {
       // Sin nodo, área ni proyecto también vale: es un error "suelto" (cargado desde el modal de
       // feedback de una tarea de "Tareas de hoy"), que se lista en la sección "+ errores".
+      const { accion, desc, categoria, barMode, reflexiones } = req.body ?? {};
       const validated = insertNodeErrorSchema.parse({ ...req.body, userId: req.userId });
       const created = await storage.createNodeError(validated);
-      res.status(201).json(created);
+      // Todos los errores en el mismo lugar: con nodo o área/quest, queda ya en la tab Errores del
+      // Journal (sin esperar a confirmarlo). Los campos del Journal (estrategia, descripción,
+      // categoría, barra, reflexión) vienen del feedback.
+      let bugId: string | null = null;
+      try {
+        bugId = await storage.ensureNodeErrorBug(created.id, {
+          ...(typeof accion === "string" ? { accion } : {}),
+          ...(typeof desc === "string" && desc ? { desc } : {}),
+          ...(["", "ups", "stretch", "alto-riesgo", "aha"].includes(categoria) ? { categoria } : {}),
+          ...(["victorias", "ved", "ninguna"].includes(barMode) ? { barMode } : {}),
+          ...(Array.isArray(reflexiones) ? { reflexiones } : {}),
+        });
+      } catch (linkError) {
+        console.error("[POST /api/node-errors] bug link:", linkError);
+      }
+      res.status(201).json(bugId ? { ...created, bugId } : created);
     } catch (error: any) {
       const validationError = fromError(error);
       res.status(400).json({ message: validationError.toString() });
@@ -5522,6 +5551,10 @@ export async function registerRoutes(
       let bugId = updated.bugId ?? null;
       if (req.body?.confirmed === 1 && !bugId) {
         bugId = await storage.ensureNodeErrorBug(req.params.id);
+      }
+      // Nombre editado desde el nodo/Journal -> también en el bug.
+      if (bugId && typeof req.body?.nombre === "string") {
+        await storage.syncNodeErrorToBug({ ...updated, bugId });
       }
       // Estrategias/disparadores cargados desde el nodo se reflejan en el bug para poblar los
       // desplegables del formulario de registro.
@@ -5548,6 +5581,8 @@ export async function registerRoutes(
         return;
       }
       await storage.deleteNodeError(req.params.id);
+      // Es el mismo error: también se va de la tab Errores.
+      if (existing.bugId) await storage.deleteSourceBug(existing.bugId);
       res.status(204).send();
     } catch (error: any) {
       res.status(500).json({ message: error.message });

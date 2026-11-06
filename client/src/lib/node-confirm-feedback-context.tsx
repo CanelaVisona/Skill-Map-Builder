@@ -1,4 +1,5 @@
 import { createContext, useContext, useRef, useState } from "react";
+import { newReflexion } from "@/components/bug-wizard-fields";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSkillTree } from "@/lib/skill-context";
 import { useInsightsCounterPopup } from "@/lib/insights-counter-popup-context";
@@ -318,7 +319,10 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
 
     // Error nuevo: se crea y se confirma de una ("¡Error nuevo detectado!"). Va con el nodo solo
     // si es de la misma área/quest que el nodo confirmado.
-    for (const { scope, ...error } of draft.errors) {
+    // Error nuevo: un solo error, en un solo lugar -- el error de nodo y su bug de la tab Errores
+    // del Journal (el server los crea vinculados; sin nodo ni área/quest queda en "+ errores").
+    // Se confirma de una ("¡Error nuevo detectado!").
+    for (const { scope, reflexion, ...error } of draft.errors) {
       blocks.push({
         label: `+Error: ${error.nombre}`,
         run: async (enqueue) => {
@@ -326,8 +330,10 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
             ...(skillId && confirmedScope ? { skillId } : {}),
             ...scopeBody(scope),
             ...error,
+            reflexiones: reflexion ? [newReflexion(reflexion)] : [],
           });
           await confirmError(scope, created.id, enqueue);
+          queryClient.invalidateQueries({ queryKey: ["all-area-bugs"] });
         },
       });
     }

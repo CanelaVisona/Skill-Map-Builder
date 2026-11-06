@@ -152,33 +152,64 @@ h1, h2, h3, h4, h5, h6 {
   background-color: rgba(113, 113, 122, 0.45);
 }
 
-/* Journal: todo lo que scrollea adentro usa la barra minimalista, aunque no lleve la clase. */
-.journal-minimal-scroll,
-.journal-minimal-scroll * {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(113, 113, 122, 0.28) transparent;
+/* Journal: todo lo que scrollea adentro usa la barra minimalista, aunque no lleve la clase --
+   también lo que se abre desde el Journal en una capa aparte (formularios de registro, "Nuevo
+   error", diálogos), vía body:has(...) mientras el Journal está abierto.
+   Ojo: en Chrome/Edge (sobre todo en Windows), si un elemento tiene scrollbar-width o
+   scrollbar-color, el navegador ignora ::-webkit-scrollbar y dibuja su barra "thin" nativa, con
+   flechitas. Por eso acá se vuelven a "auto" donde ::-webkit-scrollbar existe, y la barra fina
+   estándar queda solo para Firefox. Se dejan afuera los que esconden la barra a propósito. */
+@supports selector(::-webkit-scrollbar) {
+  .journal-minimal-scroll:not(.scrollbar-hide):not([data-radix-select-viewport]),
+  .journal-minimal-scroll *:not(.scrollbar-hide):not([data-radix-select-viewport]),
+  body:has(.journal-minimal-scroll) *:not(.scrollbar-hide):not([data-radix-select-viewport]) {
+    scrollbar-width: auto !important;
+    scrollbar-color: auto !important;
+  }
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  .journal-minimal-scroll:not(.scrollbar-hide):not([data-radix-select-viewport]),
+  .journal-minimal-scroll *:not(.scrollbar-hide):not([data-radix-select-viewport]),
+  body:has(.journal-minimal-scroll) *:not(.scrollbar-hide):not([data-radix-select-viewport]) {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(113, 113, 122, 0.28) transparent;
+  }
 }
 
 .journal-minimal-scroll::-webkit-scrollbar,
-.journal-minimal-scroll *::-webkit-scrollbar {
+.journal-minimal-scroll *::-webkit-scrollbar,
+body:has(.journal-minimal-scroll) *::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 .journal-minimal-scroll::-webkit-scrollbar-track,
-.journal-minimal-scroll *::-webkit-scrollbar-track {
+.journal-minimal-scroll *::-webkit-scrollbar-track,
+body:has(.journal-minimal-scroll) *::-webkit-scrollbar-track,
+.journal-minimal-scroll *::-webkit-scrollbar-corner,
+body:has(.journal-minimal-scroll) *::-webkit-scrollbar-corner {
   background: transparent;
 }
 
 .journal-minimal-scroll::-webkit-scrollbar-thumb,
-.journal-minimal-scroll *::-webkit-scrollbar-thumb {
+.journal-minimal-scroll *::-webkit-scrollbar-thumb,
+body:has(.journal-minimal-scroll) *::-webkit-scrollbar-thumb {
   background-color: rgba(113, 113, 122, 0.28);
   border-radius: 9999px;
   border: none;
 }
 
-.journal-minimal-scroll *::-webkit-scrollbar-thumb:hover {
+.journal-minimal-scroll *::-webkit-scrollbar-thumb:hover,
+body:has(.journal-minimal-scroll) *::-webkit-scrollbar-thumb:hover {
   background-color: rgba(113, 113, 122, 0.45);
+}
+
+.journal-minimal-scroll *::-webkit-scrollbar-button,
+body:has(.journal-minimal-scroll) *::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 /* Radix Select oculta la barra de su viewport con un estilo propio: con minimal-scrollbar se
