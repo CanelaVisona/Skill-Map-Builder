@@ -291,6 +291,17 @@ export function pauseTaskTimer(key: string) {
   setTimer(key, { status: "paused", elapsedMs: timerElapsedMs(state), starterMs: state.starterMs });
 }
 
+// Pone a correr un contador (sigue desde lo que llevaba si estaba pausado). No-op si ya corría.
+export function startTaskTimer(key: string, minutes: number) {
+  const state = timers[key];
+  if (state?.status === "running") return;
+  if (state?.status === "paused") {
+    setTimer(key, { status: "running", since: Date.now(), elapsedBeforeMs: state.elapsedMs, starterMs: state.starterMs });
+  } else {
+    setTimer(key, { status: "running", since: Date.now(), elapsedBeforeMs: 0, starterMs: minutes * 60_000 });
+  }
+}
+
 export function taskTimerKey(date: string, taskKey: string) {
   return `${date}|${taskKey}`;
 }
@@ -298,12 +309,7 @@ export function taskTimerKey(date: string, taskKey: string) {
 export function useTaskTimer(key: string | null, minutes: number) {
   const state = useSyncExternalStore(subscribe, () => (key ? timers[key] : undefined));
   const start = () => {
-    if (!key) return;
-    if (state?.status === "paused") {
-      setTimer(key, { status: "running", since: Date.now(), elapsedBeforeMs: state.elapsedMs, starterMs: state.starterMs });
-    } else if (!state) {
-      setTimer(key, { status: "running", since: Date.now(), elapsedBeforeMs: 0, starterMs: minutes * 60_000 });
-    }
+    if (key) startTaskTimer(key, minutes);
   };
   const pause = () => {
     if (key) pauseTaskTimer(key);
