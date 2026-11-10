@@ -1564,7 +1564,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
             title={stripLeadingEmoji(kid.title || "Sin nombre")}
             done={kid.status === "mastered"}
             current={kidIsCurrent}
-            dimmed={!isPastDay && !parentIsCurrent}
+            dimmed={!isPastDay && !kidIsCurrent}
             onToggleDone={
               !parentConfirmed && sub.status === "available" && (k === kidFirstUndone || k === kidLastDone)
                 ? () => toggleSubNode(sub.id, kid)
@@ -1599,8 +1599,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
               title={stripLeadingEmoji(sub.title || "Sin nombre")}
               done={sub.status === "mastered"}
               current={isCurrentSub && !pendingKids}
-              // Todo el bloque de la tarea desbloqueada (padre y sub-nodos) se ve resaltado.
-              dimmed={!isPastDay && !parentIsCurrent}
+              dimmed={!isPastDay && !(isCurrentSub && !pendingKids)}
               onToggleDone={
                 !parentConfirmed && !pendingKids && (i === firstUndone || i === lastDone)
                   ? () => toggleSubNode(item.id, sub)
@@ -1866,7 +1865,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         title={stripLeadingEmoji(st.title)}
         done={st.done === 1}
         current={parentIsCurrent && i === firstUndone}
-        dimmed={!isPastDay && !parentIsCurrent}
+        dimmed={!isPastDay && !(parentIsCurrent && i === firstUndone)}
         onToggleDone={
           i === firstUndone || i === lastDone
             ? () => {

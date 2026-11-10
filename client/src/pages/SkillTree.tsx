@@ -8535,11 +8535,11 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
 
                   {isRecordFormOpen && createPortal(
                     <div
-                      className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-black/70 p-4 py-10"
+                      className="fixed inset-0 z-[200] flex items-center justify-center overflow-hidden bg-black/70 p-4"
                       onClick={resetRecordForm}
                     >
                     <div
-                      className="w-full max-w-lg rounded-xl border border-border/60 bg-background p-5 space-y-3 shadow-2xl"
+                      className="w-full max-w-lg min-w-0 max-h-[calc(100dvh-2rem)] overflow-y-auto overflow-x-hidden overscroll-contain rounded-xl border border-border/60 bg-background p-5 space-y-3 shadow-2xl"
                       onClick={(e) => e.stopPropagation()}
                     >
                     <div className="flex items-center justify-between gap-2">
@@ -8880,11 +8880,11 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
               )}
               {addBugAreaId && createPortal(
                 <div
-                  className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-black/70 p-4 py-10"
+                  className="fixed inset-0 z-[200] flex items-center justify-center overflow-hidden bg-black/70 p-4"
                   onClick={closeNewBugWizard}
                 >
                   <div
-                    className="w-full max-w-lg rounded-xl border border-border/60 bg-background p-5 space-y-3 shadow-2xl"
+                    className="w-full max-w-lg min-w-0 max-h-[calc(100dvh-2rem)] overflow-y-auto overflow-x-hidden overscroll-contain rounded-xl border border-border/60 bg-background p-5 space-y-3 shadow-2xl"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <div className="flex items-center justify-between gap-2 min-w-0">
@@ -8974,11 +8974,11 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
               )}
               {isBugEditOpen && createPortal(
                 <div
-                  className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-black/70 p-4 py-10"
+                  className="fixed inset-0 z-[200] flex items-center justify-center overflow-hidden bg-black/70 p-4"
                   onClick={() => setIsBugEditOpen(false)}
                 >
                   <div
-                    className="w-full max-w-lg rounded-xl border border-border/60 bg-background p-5 space-y-3 shadow-2xl"
+                    className="w-full max-w-lg min-w-0 max-h-[calc(100dvh-2rem)] overflow-y-auto overflow-x-hidden overscroll-contain rounded-xl border border-border/60 bg-background p-5 space-y-3 shadow-2xl"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <h5 className="text-sm font-semibold uppercase tracking-wide text-foreground">Editar {noun.one}</h5>
