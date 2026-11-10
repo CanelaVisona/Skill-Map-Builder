@@ -32,7 +32,7 @@ export function SubtaskDonePopup({ data, onDone }: { data: SubtaskDonePopupData 
     <div className="absolute inset-0 z-20 flex items-center justify-center px-4" data-testid="popup-subtask-done">
       {/* Desenfoca la lista de tareas de abajo (y frena los clics) mientras se ve el pop-up. */}
       <div
-        className={`absolute inset-0 rounded-lg bg-background/30 backdrop-blur-md transition-opacity duration-200 ease-out ${
+        className={`absolute inset-0 rounded-lg bg-background/20 backdrop-blur-sm transition-opacity duration-200 ease-out ${
           shown ? "opacity-100" : "opacity-0"
         }`}
       />
