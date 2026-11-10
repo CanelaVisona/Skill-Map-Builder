@@ -3793,6 +3793,9 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
               )}
             </div>
 
+            {/* relative: el pop-up de sub-tarea completada se dibuja encima de esta lista (y la
+                desenfoca), no de todo el modal. */}
+            <div className="relative">
             <ScrollArea
               className="h-[40vh] pr-4"
               onMouseDown={startBackgroundLongPress}
@@ -3998,6 +4001,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                 )}
               </div>
             </ScrollArea>
+            <SubtaskDonePopup data={subtaskDonePopup} onDone={() => setSubtaskDonePopup(null)} />
+            </div>
           </div>
         ) : (
           <div className="flex flex-col gap-3">
@@ -5241,8 +5246,6 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
-
-    <SubtaskDonePopup data={subtaskDonePopup} onDone={() => setSubtaskDonePopup(null)} />
 
     <MealTrackerModal
       open={mealPopupId !== null}
