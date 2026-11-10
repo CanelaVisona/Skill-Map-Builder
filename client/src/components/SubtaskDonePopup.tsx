@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { Check } from "lucide-react";
 
 // Pop-up chiquito que aparece en el centro de la pantalla (= centro del modal de Tareas de hoy) cuando se completa una sub-tarea (sub-paso o
-// sub-nodo) y se va solo. No bloquea clics (pointer-events-none) para no cortar el flujo.
+// sub-nodo) y se va solo. Mientras se ve, todo lo demás queda desenfocado.
 export type SubtaskDonePopupData = { id: number; title: string };
 
 const VISIBLE_MS = 1600;
@@ -28,9 +28,16 @@ export function SubtaskDonePopup({ data, onDone }: { data: SubtaskDonePopupData 
   if (!data || typeof document === "undefined") return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[300] flex items-center justify-center pointer-events-none px-4" data-testid="popup-subtask-done">
+    <div className="fixed inset-0 z-[300] flex items-center justify-center px-4" data-testid="popup-subtask-done">
+      {/* Fondo desenfocado: tapa todo lo demás (y frena los clics) mientras se ve el pop-up, para
+          que la atención quede en él y no en la próxima tarea. */}
       <div
-        className={`flex items-center gap-2 max-w-sm rounded-full border border-emerald-500/40 bg-background/95 px-4 py-2 shadow-lg backdrop-blur transition-all duration-200 ease-out ${
+        className={`absolute inset-0 bg-black/30 backdrop-blur-md transition-opacity duration-200 ease-out ${
+          shown ? "opacity-100" : "opacity-0"
+        }`}
+      />
+      <div
+        className={`relative flex items-center gap-2 max-w-sm rounded-full border border-emerald-500/40 bg-background/95 px-4 py-2 shadow-lg backdrop-blur transition-all duration-200 ease-out ${
           shown ? "opacity-100 translate-y-0 scale-100" : "opacity-0 translate-y-0 scale-90"
         }`}
       >
