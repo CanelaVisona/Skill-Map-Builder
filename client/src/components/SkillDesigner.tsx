@@ -14,6 +14,7 @@ import { getNodeTitleWordLimit, clampToWordLimit } from "@/lib/node-title-settin
 import { getLevelTitleSuggestion, getOtherLevelTitles } from "@/lib/unique-level-title";
 import { useToast } from "@/hooks/use-toast";
 import { getQuickDateOptions, formatLocalDate } from "@/components/SkillNode";
+import { SubSkillTreeEditor, SubSkillTreeButton } from "@/components/SubSkillTreeEditor";
 
 const NO_DATE_VALUE = "__none__";
 const CUSTOM_DATE_VALUE = "__custom__";
@@ -56,6 +57,8 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
   const [addingLevelId, setAddingLevelId] = useState<string | null>(null);
   // Tracks which skill's "add node" popover (Agregar / hermano / duplicar) is open
   const [openAddMenuSkillId, setOpenAddMenuSkillId] = useState<string | null>(null);
+  // Nodo cuyo sub-árbol se está editando desde el designer (null = editor cerrado).
+  const [subTreeSkill, setSubTreeSkill] = useState<{ id: string; title: string; status?: string } | null>(null);
 
   const handleAddExtraLevel = async (areaId: string | null, projectId: string | null) => {
     const key = areaId ?? projectId;
@@ -554,6 +557,7 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
                                                   </div>
                                                 </PopoverContent>
                                               </Popover>
+                                              <SubSkillTreeButton skill={skill} onOpen={() => setSubTreeSkill({ id: skill.id, title: skill.title, status: skill.status })} />
                                               {isLastNodeInLevel(skillsInLevel, skill.id) && (
                                                 <Button
                                                   size="sm"
@@ -767,6 +771,7 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
                                                     </div>
                                                   </PopoverContent>
                                                 </Popover>
+                                                <SubSkillTreeButton skill={skill} onOpen={() => setSubTreeSkill({ id: skill.id, title: skill.title, status: skill.status })} />
                                                 {isLastNodeInLevel(skillsInLevel, skill.id) && (
                                                   <Button
                                                     size="sm"
@@ -974,6 +979,7 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
                                                   </div>
                                                 </PopoverContent>
                                               </Popover>
+                                              <SubSkillTreeButton skill={skill} onOpen={() => setSubTreeSkill({ id: skill.id, title: skill.title, status: skill.status })} />
                                               {isLastNodeInLevel(skillsInLevel, skill.id) && (
                                                 <Button
                                                   size="sm"
@@ -1178,6 +1184,7 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
                                                 </div>
                                               </PopoverContent>
                                             </Popover>
+                                            <SubSkillTreeButton skill={skill} onOpen={() => setSubTreeSkill({ id: skill.id, title: skill.title, status: skill.status })} />
                                             {isLastNodeInLevel(skillsInLevel, skill.id) && (
                                               <Button
                                                 size="sm"
@@ -1256,6 +1263,8 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
         </DialogContent>
       </Dialog>
       )}
+
+      <SubSkillTreeEditor rootSkill={subTreeSkill} onClose={() => setSubTreeSkill(null)} />
 
       {/* Edit Name Dialog */}
       <Dialog

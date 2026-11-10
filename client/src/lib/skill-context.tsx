@@ -194,6 +194,7 @@ interface SkillTreeContextType {
   subSkills: Skill[];
   enterSubSkillTree: (skillId: string, skillTitle: string) => Promise<void>;
   exitSubSkillTree: () => void;
+  refreshSubSkills: () => Promise<void>;
   toggleSubSkillStatus: (skillId: string) => void;
   updateSubSkill: (skillId: string, updates: { title?: string; description?: string; feedback?: string; experiencePoints?: number; plannedDate?: string | null; plannedDuration?: number | null; plannedDeadline?: string | null; plannedStartTime?: string | null; reflectionPrompt?: string; reflectionEntries?: { date: string; time?: string; text: string }[]; isReflection?: 0 | 1; isSideQuest?: 0 | 1 }) => void;
   deleteSubSkill: (skillId: string) => void;
@@ -3017,6 +3018,12 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
+  // Vuelve a pedir los sub-nodos del sub-árbol abierto (p.ej. después de editarlo desde el Skill Designer).
+  const refreshSubSkills = async () => {
+    if (!activeParentSkillId) return;
+    setSubSkills(await fetchSubSkills(activeParentSkillId));
+  };
+
   const exitSubSkillTree = () => {
     if (parentSkillStack.length <= 1) {
       setActiveParentSkillId(null);
@@ -5273,6 +5280,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       subSkills,
       enterSubSkillTree,
       exitSubSkillTree,
+      refreshSubSkills,
       toggleSubSkillStatus,
       updateSubSkill,
       deleteSubSkill,
