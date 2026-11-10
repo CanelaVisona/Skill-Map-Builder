@@ -32,7 +32,7 @@ import HousePriorityList from "../components/HousePriorityList";
 import HouseRepairsList from "../components/HouseRepairsList";
 import { EvidenceBoardModalWrapper } from "@/components/EvidenceBoardModal";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, ArrowRight, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, User, Menu, ChevronLeft, ChevronRight, Lightbulb, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Utensils, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt, OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation, Check, HelpCircle, PiggyBank, Search, X, Pentagon, Trophy, Split, NotebookPen, CircleCheck } from "lucide-react";
+import { ArrowLeft, ArrowRight, Sun, Moon, BookOpen, Trash2, Plus, Users, Map as MapIcon, Skull, Scroll, Pencil, User, Menu, ChevronLeft, ChevronRight, Lightbulb, Telescope, Wrench, Globe, ChevronDown, Target, FolderOpen, Image, Grid, Flame, Dumbbell, Star, Bookmark, Circle, House, BicepsFlexed, CalendarCheck, Utensils, Shield, Sparkles, Award, Gem, Crosshair, Feather, Rocket, Anchor, Lock, Shirt, OctagonAlert, TriangleAlert, ShieldAlert, Bomb, Biohazard, CircleAlert, Radiation, Check, HelpCircle, PiggyBank, Search, X, Pentagon, Trophy, Split, NotebookPen, CircleCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { DiaryProvider, useDiary } from "@/lib/diary-context";
