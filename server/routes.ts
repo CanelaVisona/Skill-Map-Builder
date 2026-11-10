@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
-import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertJournalShadowPageSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalStrategySchema, insertJournalQuestionSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileConceptSchema, insertProfileLimitingBeliefSchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertSourceObjectiveSchema, insertSourceBeliefSchema, insertSourceVisionSchema, insertSourcePowersSchema, insertSourceBugSchema, insertSourceBugRecordSchema, insertNodeErrorSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema, insertSpaceRepetitionPracticeSchema, insertRewiringTrackerSchema, type InsertSpaceRepetitionPractice, type SpaceRepetitionPractice, type RewiringTracker, skills, areas, projects, spaceRepetitionPractices } from "@shared/schema";
+import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertJournalShadowPageSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalStrategySchema, insertJournalDiscoverySchema, insertJournalQuestionSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileConceptSchema, insertProfileLimitingBeliefSchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertSourceObjectiveSchema, insertSourceBeliefSchema, insertSourceVisionSchema, insertSourcePowersSchema, insertSourceBugSchema, insertSourceBugRecordSchema, insertNodeErrorSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema, insertSpaceRepetitionPracticeSchema, insertRewiringTrackerSchema, type InsertSpaceRepetitionPractice, type SpaceRepetitionPractice, type RewiringTracker, skills, areas, projects, spaceRepetitionPractices } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import { z } from "zod";
 import cookieParser from "cookie-parser";
@@ -313,6 +313,19 @@ async function addVictoryStrategyToJournal(userId: string, estrategia: string | 
   return title;
 }
 
+// "LLEGAR TARDE" -> "Llegar tarde".
+function toSentenceCase(text: string | null | undefined): string {
+  const clean = (text ?? "").trim().toLocaleLowerCase("es");
+  return clean ? clean.charAt(0).toLocaleUpperCase("es") + clean.slice(1) : "";
+}
+
+// Descripción del nodo SideQuest de un error/acierto: su nombre y la estrategia escrita.
+function bugNodeDescription(nombre: string, accion: string | null | undefined): string {
+  const name = toSentenceCase(nombre);
+  const strategy = toSentenceCase(accion);
+  return strategy ? `${name} → ${strategy}` : name;
+}
+
 // Aciertos: todas sus estrategias (las del acierto y las de cualquier registro, no solo las
 // victorias) quedan en la tab Estrategias del Journal. Devuelve las que se agregaron recién.
 async function addAciertoStrategiesToJournal(userId: string, estrategias: Array<string | null | undefined>, skillId: string | null): Promise<string[]> {
@@ -335,6 +348,7 @@ async function createLoggedSideQuestNode(
   userId: string,
   title: string,
   pending = false,
+  description = "",
 ): Promise<string | null> {
   const areaId = link.areaId || undefined;
   const projectId = areaId ? undefined : (link.projectId || undefined);
@@ -363,7 +377,7 @@ async function createLoggedSideQuestNode(
   const skill = await storage.createSkill({
     ...(areaId ? { areaId } : { projectId }),
     title,
-    description: "",
+    description,
     status: pending ? "available" : "mastered",
     x: anchor.x,
     y: anchor.y,
@@ -3482,6 +3496,63 @@ export async function registerRoutes(
     }
   });
 
+  // Journal - Discoveries (misma forma que Learnings; ver journal_discoveries en schema.ts)
+  app.get("/api/journal/discoveries", requireAuth, async (req, res) => {
+    try {
+      const skillId = req.query.skillId as string | undefined;
+      const areaId = req.query.areaId as string | undefined;
+      const projectId = req.query.projectId as string | undefined;
+      const discoveries = await storage.getJournalDiscoveries(req.userId!);
+      let filtered = discoveries;
+      if (skillId) {
+        filtered = discoveries.filter(d => d.skillId === skillId);
+      } else if (areaId || projectId) {
+        const scopeSkillIds = new Set(await storage.getAllSkillIdsInScope({ areaId, projectId }));
+        filtered = discoveries.filter(d => d.skillId != null && scopeSkillIds.has(d.skillId));
+      }
+      res.json(filtered);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/journal/discoveries", requireAuth, async (req, res) => {
+    try {
+      const validated = insertJournalDiscoverySchema.parse({ ...req.body, userId: req.userId });
+      const discovery = await storage.createJournalDiscovery(validated);
+      res.status(201).json(discovery);
+    } catch (error: any) {
+      const validationError = fromError(error);
+      res.status(400).json({ message: validationError.toString() });
+    }
+  });
+
+  app.delete("/api/journal/discoveries/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteJournalDiscovery(req.params.id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/journal/discoveries/:id", requireAuth, async (req, res) => {
+    try {
+      const { title, sentence } = req.body;
+      const data: any = {};
+      if (title !== undefined) data.title = title;
+      if (sentence !== undefined) data.sentence = sentence;
+      const discovery = await storage.updateJournalDiscovery(req.params.id, data);
+      if (!discovery) {
+        res.status(404).json({ message: "Descubrimiento no encontrado" });
+        return;
+      }
+      res.json(discovery);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Journal - Questions (misma forma que Strategies; ver journal_questions en schema.ts)
   app.get("/api/journal/questions", requireAuth, async (req, res) => {
     try {
@@ -5151,20 +5222,27 @@ export async function registerRoutes(
           console.error("[POST /api/source-bugs] node error link:", linkError);
         }
       }
-      if (bug.kind === "acierto") {
-        try {
-          await addAciertoStrategiesToJournal(req.userId!, [bug.accion, ...(bug.estrategias ?? [])], null);
-        } catch (strategyError) {
-          console.error("[POST /api/source-bugs] Journal strategy error:", strategyError);
-        }
+      // Las estrategias escritas al crear el error/acierto van a la tab Estrategias del Journal;
+      // las recién agregadas vuelven en newStrategies para su pop-up "¡Nueva estrategia!".
+      let newStrategies: string[] = [];
+      try {
+        newStrategies = await addAciertoStrategiesToJournal(req.userId!, [bug.accion, ...(bug.estrategias ?? [])], null);
+      } catch (strategyError) {
+        console.error("[POST /api/source-bugs] Journal strategy error:", strategyError);
       }
       // Un error (o acierto) nuevo queda registrado como nodo SideQuest en su área/proyecto.
       try {
-        await createLoggedSideQuestNode({ areaId: bug.areaId, projectId: bug.projectId }, req.userId!, `${bug.kind === "acierto" ? "Acierto" : "Error"}: ${bug.nombre}`);
+        await createLoggedSideQuestNode(
+          { areaId: bug.areaId, projectId: bug.projectId },
+          req.userId!,
+          bug.kind === "acierto" ? "Detecté un acierto" : "Detecté un error",
+          false,
+          bugNodeDescription(bug.nombre, bug.accion),
+        );
       } catch (sideQuestError) {
         console.error("[POST /api/source-bugs] SideQuest node error:", sideQuestError);
       }
-      res.status(201).json(bug);
+      res.status(201).json({ ...bug, newStrategies });
     } catch (error: any) {
       const validationError = fromError(error);
       res.status(400).json({ message: validationError.toString() });
@@ -5527,7 +5605,15 @@ export async function registerRoutes(
       } catch (linkError) {
         console.error("[POST /api/node-errors] bug link:", linkError);
       }
-      res.status(201).json(bugId ? { ...created, bugId } : created);
+      // Las estrategias escritas al crear el error van a la tab Estrategias del Journal (pop-up
+      // "¡Nueva estrategia!" en el cliente con newStrategies).
+      let newStrategies: string[] = [];
+      try {
+        newStrategies = await addAciertoStrategiesToJournal(req.userId!, [accion, ...(created.estrategias ?? [])], created.skillId ?? null);
+      } catch (strategyError) {
+        console.error("[POST /api/node-errors] Journal strategy error:", strategyError);
+      }
+      res.status(201).json({ ...created, ...(bugId ? { bugId } : {}), newStrategies });
     } catch (error: any) {
       const validationError = fromError(error);
       res.status(400).json({ message: validationError.toString() });

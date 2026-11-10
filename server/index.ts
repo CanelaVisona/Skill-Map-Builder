@@ -169,6 +169,22 @@ app.use((req, res, next) => {
     console.error("⚠ journal_strategies migration warning:", error.message);
   }
 
+  // "Descubrimientos" del Journal (cubo "Nuevo descubrimiento" del modal de feedback). Ver
+  // migrations/0074_journal_discoveries.sql.
+  try {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "journal_discoveries" (
+        "id" varchar PRIMARY KEY NOT NULL,
+        "user_id" varchar REFERENCES "users"("id") ON DELETE CASCADE,
+        "skill_id" varchar,
+        "title" text NOT NULL,
+        "sentence" text DEFAULT '' NOT NULL
+      );
+    `);
+  } catch (error: any) {
+    console.error("⚠ journal_discoveries migration warning:", error.message);
+  }
+
   // Aciertos: misma tabla que los errores (source_bugs), con kind = "acierto". Ver
   // migrations/0073_source_bugs_kind.sql.
   try {

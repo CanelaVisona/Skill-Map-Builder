@@ -7,7 +7,7 @@ import { markPopupActive } from "@/lib/popup-coordinator";
 // en un nodo de reflexión (escrito en su pop-up, o el nodo completado desde "Tareas de hoy"); el
 // "Agregaste un registro en …" va como tarea en "Tareas de hoy", no en el pop-up.
 // Estos dos solo muestran el anuncio ("¡Nueva tarea!" / "¡Nuevo registro!"), sin la fase del conteo.
-export type InsightsCounterKind = "thought" | "learning" | "strategy" | "question" | "tool" | "task" | "record";
+export type InsightsCounterKind = "thought" | "learning" | "discovery" | "strategy" | "question" | "tool" | "task" | "record";
 
 export interface InsightsCounterPopupSnapshot {
   type: InsightsCounterKind;

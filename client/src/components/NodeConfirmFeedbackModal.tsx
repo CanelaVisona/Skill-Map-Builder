@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BookOpen, Lightbulb, Split, HelpCircle, Circle, CirclePlus, Wrench, Shield, Check, ChevronLeft, Plus, X, CircleCheck } from "lucide-react";
+import { BookOpen, Lightbulb, Telescope, Split, HelpCircle, Circle, CirclePlus, Wrench, Shield, Check, ChevronLeft, Plus, X, CircleCheck } from "lucide-react";
 import { SkillsSparkIcon } from "@/components/SkillsSparkIcon";
 import { type GlobalSkill } from "@/lib/skill-context";
 import { cn } from "@/lib/utils";
@@ -16,7 +16,7 @@ import { SkillDesigner } from "@/components/SkillDesigner";
 
 // Modal de "feedback" que aparece al confirmar un nodo: después del pop-up de la barra de nivel
 // del área/quest y antes de "Quest updated!" (ver confirmNode en SkillNode.tsx). Se divide en
-// cubos (pensamiento, aprendizaje, estrategia, pregunta, herramienta, error, XP, poder); cada cubo abre su formulario
+// cubos (pensamiento, aprendizaje, descubrimiento, estrategia, pregunta, herramienta, error, XP, poder); cada cubo abre su formulario
 // por pasos y, al guardarlo, vuelve a los cubos. Los cubos de error y poder sirven tanto para
 // elegir uno existente como para crear uno nuevo. Si lo confirmado no tiene área/quest (una
 // tarea suelta, un hábito o una práctica de "Tareas de hoy"), esos dos cubos primero preguntan
@@ -97,6 +97,7 @@ export interface NodeFeedbackNewPower {
 export interface NodeFeedbackDraft {
   thoughts: NodeFeedbackEntry[];
   learnings: NodeFeedbackEntry[];
+  discoveries: NodeFeedbackEntry[];
   strategies: NodeFeedbackEntry[];
   questions: NodeFeedbackEntry[];
   // Un elemento por nodo agregado desde el cubo "Nodo nuevo" (el nodo ya está creado: esto solo
@@ -126,6 +127,7 @@ export interface NodeFeedbackDraft {
 const EMPTY_DRAFT: NodeFeedbackDraft = {
   thoughts: [],
   learnings: [],
+  discoveries: [],
   strategies: [],
   questions: [],
   newTasks: [],
@@ -142,6 +144,7 @@ const EMPTY_DRAFT: NodeFeedbackDraft = {
 export const isNodeFeedbackDraftEmpty = (draft: NodeFeedbackDraft) =>
   draft.thoughts.length === 0 &&
   draft.learnings.length === 0 &&
+  draft.discoveries.length === 0 &&
   draft.strategies.length === 0 &&
   draft.questions.length === 0 &&
   draft.newTasks.length === 0 &&
@@ -154,7 +157,7 @@ export const isNodeFeedbackDraftEmpty = (draft: NodeFeedbackDraft) =>
   draft.powers.length === 0 &&
   draft.newPowers.length === 0;
 
-type CubeId = "thought" | "learning" | "strategy" | "question" | "tool" | "error" | "acierto" | "xp" | "power" | "node";
+type CubeId = "thought" | "learning" | "discovery" | "strategy" | "question" | "tool" | "error" | "acierto" | "xp" | "power" | "node";
 
 // Mismos íconos que el Journal (tabs de SkillTree.tsx): Learnings, Tools, Errores (círculo),
 // Skills (XP) y Poderes; pensamiento usa el BookOpen de la sección "Thoughts". Estrategias
@@ -162,6 +165,7 @@ type CubeId = "thought" | "learning" | "strategy" | "question" | "tool" | "error
 const CUBES: Array<{ id: CubeId; label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { id: "thought", label: "Nuevo pensamiento", icon: BookOpen },
   { id: "learning", label: "Nuevo aprendizaje", icon: Lightbulb },
+  { id: "discovery", label: "Nuevo descubrimiento", icon: Telescope },
   { id: "strategy", label: "Nuevas estrategias", icon: Split },
   { id: "question", label: "Preguntas", icon: HelpCircle },
   { id: "tool", label: "Nueva herramienta", icon: Wrench },
@@ -461,6 +465,7 @@ export function NodeConfirmFeedbackModal({
     switch (cube) {
       case "thought": return draft.thoughts.length;
       case "learning": return draft.learnings.length;
+      case "discovery": return draft.discoveries.length;
       case "strategy": return draft.strategies.length;
       case "question": return draft.questions.length;
       case "tool": return draft.tools.length;
@@ -519,6 +524,7 @@ export function NodeConfirmFeedbackModal({
     switch (cube) {
       case "thought":
       case "learning":
+      case "discovery":
       case "strategy":
       case "question":
       case "tool":
@@ -634,6 +640,8 @@ export function NodeConfirmFeedbackModal({
           return { ...prev, thoughts: [...prev.thoughts, { title: title.trim(), sentence: sentence.trim() }] };
         case "learning":
           return { ...prev, learnings: [...prev.learnings, { title: title.trim(), sentence: sentence.trim() }] };
+        case "discovery":
+          return { ...prev, discoveries: [...prev.discoveries, { title: title.trim(), sentence: sentence.trim() }] };
         case "strategy":
           return { ...prev, strategies: [...prev.strategies, { title: title.trim(), sentence: sentence.trim() }] };
         case "question":
@@ -731,7 +739,7 @@ export function NodeConfirmFeedbackModal({
   };
 
   // Lo ya cargado en un cubo, para su vista de lista (cada uno se puede quitar).
-  type DraftArrayField = "thoughts" | "learnings" | "strategies" | "questions" | "tools" | "errors" | "errorActions" | "xpSkillIds" | "powers" | "newPowers" | "aciertos" | "aciertoRecords";
+  type DraftArrayField = "thoughts" | "learnings" | "discoveries" | "strategies" | "questions" | "tools" | "errors" | "errorActions" | "xpSkillIds" | "powers" | "newPowers" | "aciertos" | "aciertoRecords";
   const removeAt = (field: DraftArrayField, index: number) =>
     setDraft((prev) => ({ ...prev, [field]: (prev[field] as unknown[]).filter((_, i) => i !== index) }));
 
@@ -739,11 +747,12 @@ export function NodeConfirmFeedbackModal({
     (scope.type === "area" ? areas : projects).find((x) => x.id === scope.id)?.name ?? "Área/quest";
 
   const listItems = (cube: CubeId): Array<{ key: string; label: string; detail?: string; onRemove?: () => void }> => {
-    const entries = (field: "thoughts" | "learnings" | "strategies" | "questions" | "tools") =>
+    const entries = (field: "thoughts" | "learnings" | "discoveries" | "strategies" | "questions" | "tools") =>
       draft[field].map((entry, i) => ({ key: `${field}-${i}`, label: entry.title, detail: entry.sentence || undefined, onRemove: () => removeAt(field, i) }));
     switch (cube) {
       case "thought": return entries("thoughts");
       case "learning": return entries("learnings");
+      case "discovery": return entries("discoveries");
       case "strategy": return entries("strategies");
       case "question": return entries("questions");
       case "tool": return entries("tools");
@@ -1019,16 +1028,7 @@ export function NodeConfirmFeedbackModal({
       case "errorChips":
         return (
           <div className="space-y-3">
-            <ChipListInput
-              label="Estrategias"
-              placeholder="Nueva estrategia"
-              items={errorEstrategias}
-              draft={errorEstrategiaDraft}
-              onDraftChange={setErrorEstrategiaDraft}
-              onAdd={() => addChip(errorEstrategiaDraft, errorEstrategias, setErrorEstrategias, setErrorEstrategiaDraft)}
-              onRemove={(i) => setErrorEstrategias((prev) => prev.filter((_, idx) => idx !== i))}
-              testIdPrefix="confirm-feedback-error-estrategia"
-            />
+            {/* La estrategia se escribe solo en el primer paso (nombre -> estrategia). */}
             <ChipListInput
               label="Disparadores"
               placeholder="Nuevo disparador"
@@ -1235,7 +1235,7 @@ export function NodeConfirmFeedbackModal({
         )}
       >
         <DialogTitle className="text-lg font-medium shrink-0">{activeCubeMeta ? activeCubeMeta.label : "¿Qué te dejó este nodo?"}</DialogTitle>
-        <DialogDescription className="sr-only">Registrá pensamientos, aprendizajes, estrategias, preguntas, herramientas, errores, aciertos, XP, poderes o nodos nuevos del nodo confirmado</DialogDescription>
+        <DialogDescription className="sr-only">Registrá pensamientos, aprendizajes, descubrimientos, estrategias, preguntas, herramientas, errores, aciertos, XP, poderes o nodos nuevos del nodo confirmado</DialogDescription>
 
         {activeCube === null ? (
           <>

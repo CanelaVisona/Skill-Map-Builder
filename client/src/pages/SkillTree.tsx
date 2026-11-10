@@ -46,7 +46,7 @@ import { ErrorProgressPopupProvider } from "@/lib/error-progress-popup-context";
 import { ErrorCelebrationProvider, useErrorCelebration } from "@/lib/error-celebration-context";
 import { BUG_POPUP_VISIBLE_MS, type BugProgressSnapshot } from "@/components/BugProgressPopup";
 import { BUG_CATEGORIES, BUG_BAR_MODES, BugNombreAccionInputs, BugCategoriaPicker, BugBarModePicker, newReflexion, type BugCategoria, type BugBarMode } from "@/components/bug-wizard-fields";
-import { POPUP_VISIBLE_MS } from "@/lib/popup-coordinator";
+import { POPUP_VISIBLE_MS, runPopupQueue } from "@/lib/popup-coordinator";
 import { LevelUpCelebrationProvider } from "@/lib/level-up-celebration-context";
 import { PowerCelebrationProvider } from "@/lib/power-celebration-context";
 import { TodayProgressPopupProvider } from "@/lib/today-progress-popup-context";
@@ -65,7 +65,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { JournalCharacter, JournalPlace, JournalShadow, JournalShadowPage, JournalLearning, JournalStrategy, JournalQuestion, JournalTool, JournalThought, HabitRecord } from "@shared/schema";
+import type { JournalCharacter, JournalPlace, JournalShadow, JournalShadowPage, JournalLearning, JournalDiscovery, JournalStrategy, JournalQuestion, JournalTool, JournalThought, HabitRecord } from "@shared/schema";
 import { OnboardingGuide, HelpButton, useOnboarding } from "@/components/OnboardingGuide";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
@@ -2277,7 +2277,7 @@ function ToolsSection({
 type JournalQuestionEntry = JournalQuestion & {
   reflectionNode?: { status: string; entries: { date: string; time?: string; text: string }[] } | null;
 };
-type JournalSectionEntry = JournalLearning | JournalStrategy | JournalQuestionEntry;
+type JournalSectionEntry = JournalLearning | JournalDiscovery | JournalStrategy | JournalQuestionEntry;
 // Dónde va el nodo: en el lugar del desbloqueado (se inserta antes de él) o en el primer nodo
 // sin nombre del árbol (se le pone el nombre, sin sumar nodos).
 type ReflectionNodePlacement = "available" | "unnamed";
@@ -2479,6 +2479,7 @@ function QuestionActionsDialog({
 
 const ENTRY_SECTION_TEXTS = {
   learnings: { icon: Lightbulb, label: "discoveries", empty: "No learnings yet", deleteQuestion: "Delete this learning?" },
+  discoveries: { icon: Telescope, label: "Descubrimientos", empty: "Todavía no hay descubrimientos", deleteQuestion: "¿Borrar este descubrimiento?" },
   strategies: { icon: Split, label: "Estrategias", empty: "Todavía no hay estrategias", deleteQuestion: "¿Borrar esta estrategia?" },
   questions: { icon: HelpCircle, label: "discoveries", empty: "Todavía no hay preguntas", deleteQuestion: "¿Borrar esta pregunta?" },
 } as const;
@@ -7806,10 +7807,14 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
       if (!res.ok) throw new Error(`No se pudo crear el ${noun.one}`);
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (created: { newStrategies?: string[] }) => {
       queryClient.invalidateQueries({ queryKey: ["all-area-bugs"] });
-      // Las estrategias de un acierto también van a la tab Estrategias.
-      if (isAcierto) queryClient.invalidateQueries({ queryKey: ["/api/journal/strategies"] });
+      // Las estrategias escritas al crear el error/acierto van a la tab Estrategias, con su pop-up.
+      queryClient.invalidateQueries({ queryKey: ["/api/journal/strategies"] });
+      const newStrategies = created?.newStrategies ?? [];
+      if (newStrategies.length > 0) {
+        runPopupQueue(newStrategies.map((name) => () => showErrorCelebration({ name, kind: "estrategia" })));
+      }
       // El server agregó un nodo SideQuest al área.
       refreshSkillTrees();
       closeNewBugWizard();
@@ -9172,6 +9177,11 @@ function QuestDiary() {
     enabled: isDiaryOpen,
   });
 
+  const { data: discoveries = [], isLoading: loadingDiscoveries } = useQuery<JournalDiscovery[]>({
+    queryKey: ["/api/journal/discoveries"],
+    enabled: isDiaryOpen,
+  });
+
   const { data: strategies = [], isLoading: loadingStrategies } = useQuery<JournalStrategy[]>({
     queryKey: ["/api/journal/strategies"],
     enabled: isDiaryOpen,
@@ -9716,6 +9726,9 @@ function QuestDiary() {
               <TabsTrigger value="learnings" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-learnings" title="Learnings">
                 <Lightbulb className="h-5 w-5" />
               </TabsTrigger>
+              <TabsTrigger value="discoveries" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-discoveries" title="Descubrimientos">
+                <Telescope className="h-5 w-5" />
+              </TabsTrigger>
               <TabsTrigger value="tools" className="shrink-0 p-2.5 rounded data-[state=active]:bg-secondary data-[state=active]:shadow-inner text-muted-foreground data-[state=active]:text-foreground transition-all" data-testid="tab-tools" title="Tools">
                 <Wrench className="h-5 w-5" />
               </TabsTrigger>
@@ -9795,6 +9808,28 @@ function QuestDiary() {
                 />
               </TabsContent>
               
+              <TabsContent value="discoveries" className="flex-1 min-h-0 min-w-0 mt-0">
+                <LearningsSection
+                  variant="discoveries"
+                  onTitleLongPress={() => setQuickAddKind("discovery")}
+                  entries={discoveries}
+                  isLoading={loadingDiscoveries}
+                  questMap={skillQuestMap}
+                  onDelete={async (id) => {
+                    await fetch(`/api/journal/discoveries/${id}`, { method: "DELETE" });
+                    queryClient.invalidateQueries({ queryKey: ["/api/journal/discoveries"] });
+                  }}
+                  onUpdate={async (id, data) => {
+                    await fetch(`/api/journal/discoveries/${id}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(data),
+                    });
+                    queryClient.invalidateQueries({ queryKey: ["/api/journal/discoveries"] });
+                  }}
+                />
+              </TabsContent>
+
               <TabsContent value="strategies" className="flex-1 min-h-0 min-w-0 mt-0">
                 <LearningsSection
                   variant="strategies"

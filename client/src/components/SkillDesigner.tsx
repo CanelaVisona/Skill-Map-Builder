@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useSkillTree, calculateDesignerLevelWindow, isLevelWithoutProgress } from "@/lib/skill-context";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -13,6 +13,10 @@ import { cn } from "@/lib/utils";
 import { getNodeTitleWordLimit, clampToWordLimit } from "@/lib/node-title-settings";
 import { getLevelTitleSuggestion, getOtherLevelTitles } from "@/lib/unique-level-title";
 import { useToast } from "@/hooks/use-toast";
+import { getQuickDateOptions, formatLocalDate } from "@/components/SkillNode";
+
+const NO_DATE_VALUE = "__none__";
+const CUSTOM_DATE_VALUE = "__custom__";
 
 // Etiqueta junto al título para distinguir nodos Reflexión / SideQuest de los comunes
 // (mismo lenguaje visual que el árbol: ícono de nota y anillo punteado).
@@ -79,6 +83,11 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
   const [editingDescription, setEditingDescription] = useState("");
   const [editingPlannedDuration, setEditingPlannedDuration] = useState<number | null>(null);
   const [editingNodeType, setEditingNodeType] = useState<"common" | "reflection" | "sidequest">("common");
+  // "When exactly?" del nodo (YYYY-MM-DD, "" = sin fecha).
+  const [editingPlannedDate, setEditingPlannedDate] = useState("");
+  // Se eligió "Elegir fecha" (muestra el selector de fecha aunque la fecha coincida con una opción rápida).
+  const [isCustomPlannedDate, setIsCustomPlannedDate] = useState(false);
+  useEffect(() => { setIsCustomPlannedDate(false); }, [editingSkillId]);
   const [editingTargetLevel, setEditingTargetLevel] = useState<number | null>(null);
   const [isChangingLevel, setIsChangingLevel] = useState(false);
 
@@ -119,6 +128,7 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
       setEditingName(currentName);
       setEditingDescription("");
       setEditingPlannedDuration(null);
+      setEditingPlannedDate("");
       setEditingAreaId(areaId);
       setEditingProjectId(projectId);
       if (level) setEditingLevel(level);
@@ -135,10 +145,16 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
   const handleSaveName = async () => {
     if (editingSkillId && editingName.trim()) {
       // Update existing skill
+      const parentSkills = editingAreaId
+        ? areas.find((a) => a.id === editingAreaId)?.skills
+        : projects.find((p) => p.id === editingProjectId)?.skills;
+      const originalPlannedDate = parentSkills?.find((s) => s.id === editingSkillId)?.plannedDate ?? "";
       const updates = {
         title: editingName,
         description: editingDescription,
         plannedDuration: editingPlannedDuration,
+        // Solo se manda la fecha si cambió, para no disparar efectos de planificación de más.
+        ...(editingPlannedDate !== originalPlannedDate ? { plannedDate: editingPlannedDate || null } : {}),
         // Reflexión y SideQuest son excluyentes: elegir uno apaga el otro.
         isReflection: (editingNodeType === "reflection" ? 1 : 0) as 0 | 1,
         isSideQuest: (editingNodeType === "sidequest" ? 1 : 0) as 0 | 1,
@@ -477,6 +493,7 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
                                               setEditingName(skill.title || "");
                                               setEditingDescription(skill.description || "");
                                               setEditingPlannedDuration(skill.plannedDuration ?? null);
+                                              setEditingPlannedDate(skill.plannedDate ?? "");
                                               setEditingNodeType(skill.isReflection === 1 ? "reflection" : skill.isSideQuest === 1 ? "sidequest" : "common");
                                               setEditingAreaId(area.id);
                                               setEditingProjectId(null);
@@ -689,6 +706,7 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
                                                 setEditingName(skill.title || "");
                                                 setEditingDescription(skill.description || "");
                                                 setEditingPlannedDuration(skill.plannedDuration ?? null);
+                                                setEditingPlannedDate(skill.plannedDate ?? "");
                                                 setEditingNodeType(skill.isReflection === 1 ? "reflection" : skill.isSideQuest === 1 ? "sidequest" : "common");
                                                 setEditingAreaId(null);
                                                 setEditingProjectId(project.id);
@@ -896,6 +914,7 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
                                                 setEditingName(skill.title || "");
                                                 setEditingDescription(skill.description || "");
                                                 setEditingPlannedDuration(skill.plannedDuration ?? null);
+                                                setEditingPlannedDate(skill.plannedDate ?? "");
                                                 setEditingNodeType(skill.isReflection === 1 ? "reflection" : skill.isSideQuest === 1 ? "sidequest" : "common");
                                                 setEditingAreaId(null);
                                                 setEditingProjectId(project.id);
@@ -1098,6 +1117,7 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
                                               setEditingName(skill.title || "");
                                               setEditingDescription(skill.description || "");
                                               setEditingPlannedDuration(skill.plannedDuration ?? null);
+                                              setEditingPlannedDate(skill.plannedDate ?? "");
                                               setEditingNodeType(skill.isReflection === 1 ? "reflection" : skill.isSideQuest === 1 ? "sidequest" : "common");
                                               setEditingAreaId(null);
                                               setEditingProjectId(project.id);
@@ -1269,25 +1289,74 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
               <>
                 <div className="grid gap-2">
                   <label className="text-xs text-muted-foreground uppercase tracking-wide">Tipo de nodo</label>
-                  <div className="flex gap-1">
-                    {([
-                      { value: "common", label: "Común" },
-                      { value: "reflection", label: "Reflexión" },
-                      { value: "sidequest", label: "SideQuest" },
-                    ] as const).map((opt) => (
-                      <Button
-                        key={opt.value}
-                        type="button"
-                        size="sm"
-                        variant={editingNodeType === opt.value ? "default" : "outline"}
-                        className="h-7 px-3 text-xs"
-                        onClick={() => setEditingNodeType(opt.value)}
-                      >
-                        {opt.label}
-                      </Button>
-                    ))}
-                  </div>
+                  <Select
+                    value={editingNodeType}
+                    onValueChange={(v) => setEditingNodeType(v as "common" | "reflection" | "sidequest")}
+                  >
+                    <SelectTrigger className="w-40">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="common">Común</SelectItem>
+                      <SelectItem value="reflection">Reflexión</SelectItem>
+                      <SelectItem value="sidequest">SideQuest</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
+                {(() => {
+                  const quickOptions = getQuickDateOptions();
+                  const matched = editingPlannedDate
+                    ? quickOptions.find((opt) => opt.value === editingPlannedDate)
+                    : undefined;
+                  const selectValue = isCustomPlannedDate
+                    ? CUSTOM_DATE_VALUE
+                    : !editingPlannedDate
+                    ? NO_DATE_VALUE
+                    : matched
+                      ? matched.id
+                      : CUSTOM_DATE_VALUE;
+                  return (
+                    <div className="grid gap-2">
+                      <label className="text-xs text-muted-foreground uppercase tracking-wide">When exactly?</label>
+                      <div className="flex items-center gap-2">
+                        <Select
+                          value={selectValue}
+                          onValueChange={(v) => {
+                            setIsCustomPlannedDate(v === CUSTOM_DATE_VALUE);
+                            if (v === NO_DATE_VALUE) {
+                              setEditingPlannedDate("");
+                            } else if (v === CUSTOM_DATE_VALUE) {
+                              // Arranca en hoy si no había fecha; se ajusta con el selector de al lado.
+                              if (!editingPlannedDate) setEditingPlannedDate(formatLocalDate(new Date()));
+                            } else {
+                              const chosen = quickOptions.find((opt) => opt.id === v);
+                              if (chosen) setEditingPlannedDate(chosen.value);
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="w-40">
+                            <SelectValue placeholder="Elegir..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={NO_DATE_VALUE}>Sin fecha</SelectItem>
+                            {quickOptions.map((opt) => (
+                              <SelectItem key={opt.id} value={opt.id}>{opt.label}</SelectItem>
+                            ))}
+                            <SelectItem value={CUSTOM_DATE_VALUE}>Elegir fecha</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {selectValue === CUSTOM_DATE_VALUE && (
+                          <Input
+                            type="date"
+                            value={editingPlannedDate}
+                            onChange={(e) => setEditingPlannedDate(e.target.value)}
+                            className="w-40"
+                          />
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
                 <div className="grid gap-2">
                   <label className="text-xs text-muted-foreground uppercase tracking-wide">Background</label>
                   <Textarea

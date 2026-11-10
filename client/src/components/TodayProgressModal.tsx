@@ -31,6 +31,8 @@ import { useTaskTimer, useAllTaskTimers, useTaskTimersSync, taskTimerRowDate, ta
 import { addSubSkillFromToday, toggleSubSkillFromToday, masterWholeSubSkillTree, isSubSkillPlaceholder, moveSubSkillFromToday, renameSubSkill, deleteSubSkillFromToday, fetchSubSkills } from "@/lib/subskill-tree";
 import { useTodayTaskSubsteps, useCreateTodayTaskSubstep, useUpdateTodayTaskSubstep, useDeleteTodayTaskSubstep, useCreateHabitSubstep, syncHabitSubsteps, type SubstepTaskType } from "@/lib/useTodayTaskSubsteps";
 import type { Habit, HabitRecord, TodayTaskSlot, TodayActivity } from "@shared/schema";
+import { SubtaskDonePopup, type SubtaskDonePopupData } from "@/components/SubtaskDonePopup";
+import { playSubtaskDoneSound } from "@/lib/sound";
 
 const LONG_PRESS_MS = 1500;
 
@@ -278,16 +280,21 @@ function MinutesSuffix({
   );
 }
 
-// Qué contadores son hijos de cuál (sub-nodos/sub-pasos de una tarea), por key de contador. El
-// padre suma lo que llevaron sus hijos (más el suyo propio, si se usó su ▶), sin cambiar su tiempo
-// asignado: pasarse no es un error, es entrar en flow. Para no contar dos veces, en una misma
-// familia corre un solo contador a la vez (dar ▶ en uno pausa al padre y a los hermanos).
+// Qué contadores son hijos de cuál (sub-nodos/sub-pasos de una tarea), por key de contador. Para
+// darle ▶ a una sub-tarea primero hay que darle ▶ a la tarea padre, y el padre sigue corriendo
+// aunque la sub-tarea se pause o se confirme (pausar al padre pausa a sus hijos). Entre hermanos
+// corre uno solo a la vez. Como el padre corre todo el tiempo que corren los hijos, lo que muestra
+// es lo suyo (o la suma de los hijos, si es mayor: contadores de antes de esta regla).
 // derivedKeys: tareas sin tiempo propio cuya fila muestra la suma del de sus hijos (ahí va su ▶).
 type TimerFamily = { childrenOf: Map<string, string[]>; parentOf: Map<string, string>; derivedKeys: Set<string> };
 const TimerFamilyContext = React.createContext<TimerFamily>({ childrenOf: new Map(), parentOf: new Map(), derivedKeys: new Set() });
 // ▶ solo en la tarea desbloqueada: cada fila de Tareas de hoy lo habilita solo si es la destacada
 // ("current"). Fuera de las filas (p.ej. el diálogo de "Asignar tiempo") queda habilitado.
 const TimerPlayContext = React.createContext(true);
+// Marco del bloque de la tarea desbloqueada cuando tiene sub-tareas: más suave que la tarjeta
+// dorada de la sub-tarea que sigue, para que se vea el bloque entero sin competir con ella.
+const CURRENT_BLOCK_CLASS =
+  "my-1.5 space-y-1.5 rounded-xl border border-amber-500/50 bg-amber-500/5 px-2 py-2 shadow-[0_0_14px_-4px_rgba(245,158,11,0.5)]";
 
 // Contador de arranque. "5 min ▶": tocar ▶ cuenta para atrás de a un minuto ("5 min" → "4 min",
 // sin segundos; ⏸ pausa). Al llegar a cero no corta: pasa a "✓ 5 · llevo 12 min" y sigue
@@ -315,18 +322,23 @@ function TaskTimerControl({ timerKey, minutes, done }: { timerKey: string; minut
   const free = minutes === 0;
   if (!used && done) return free ? null : <>{" "}· {minutes} min</>;
 
-  // Lo propio más lo de los hijos; el arranque es el del propio contador, o los minutos asignados.
-  const elapsedMs = (state ? timerElapsedMs(state) : 0) + childStates.reduce((acc, t) => acc + timerElapsedMs(t), 0);
+  // Lo propio (el padre corre mientras corren sus hijos), o la suma de los hijos si es mayor; el
+  // arranque es el del propio contador, o los minutos asignados.
+  const elapsedMs = Math.max(state ? timerElapsedMs(state) : 0, childStates.reduce((acc, t) => acc + timerElapsedMs(t), 0));
   const elapsedMin = Math.floor(elapsedMs / 60_000);
   const starterMs = state?.starterMs ?? minutes * 60_000;
   const reached = used && elapsedMs >= starterMs;
+  // Sub-tarea: solo se le puede dar ▶ con el padre andando.
+  const parentKey = family.parentOf.get(timerKey);
+  const parentRunning = !parentKey || allTimers[parentKey]?.status === "running";
   const startExclusive = () => {
-    const parentKey = family.parentOf.get(timerKey);
     const siblings = parentKey ? family.childrenOf.get(parentKey) ?? [] : [];
-    [...childKeys, ...(parentKey ? [parentKey] : []), ...siblings]
-      .filter((k) => k !== timerKey)
-      .forEach((k) => pauseTaskTimer(k));
+    siblings.filter((k) => k !== timerKey).forEach((k) => pauseTaskTimer(k));
     start();
+  };
+  const pauseWithChildren = () => {
+    childKeys.forEach((k) => pauseTaskTimer(k));
+    pause();
   };
   let label: React.ReactNode;
   if (free) label = used ? <>{done ? "" : "llevo "}{elapsedMin} min</> : null;
@@ -354,9 +366,11 @@ function TaskTimerControl({ timerKey, minutes, done }: { timerKey: string; minut
         " "
       )}
       {/* Un contador que ya corre en una tarea que dejó de ser la desbloqueada conserva su ⏸. */}
+      {/* Sub-tarea con el padre sin ▶: el botón se ve apagado y no hace nada. */}
       {!done && (canPlay || running) && (
         <button
           type="button"
+          aria-disabled={!running && !parentRunning}
           onPointerDown={stop}
           onMouseDown={stop}
           onTouchStart={stop}
@@ -364,11 +378,14 @@ function TaskTimerControl({ timerKey, minutes, done }: { timerKey: string; minut
           onClick={(e) => {
             e.stopPropagation();
             e.preventDefault();
-            if (running) pause();
-            else startExclusive();
+            if (running) pauseWithChildren();
+            else if (parentRunning) startExclusive();
           }}
-          className="flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
-          aria-label={running ? "Pausar" : "Iniciar"}
+          className={`flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground ${
+            !running && !parentRunning ? "cursor-not-allowed opacity-30" : "hover:bg-muted hover:text-foreground"
+          }`}
+          aria-label={running ? "Pausar" : parentRunning ? "Iniciar" : "Primero iniciá la tarea padre"}
+          title={!running && !parentRunning ? "Primero dale ▶ a la tarea padre" : undefined}
         >
           {running ? <Pause className="h-3 w-3 fill-current" /> : <Play className="h-3 w-3 fill-current" />}
         </button>
@@ -1422,6 +1439,13 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   }, [nowPlacementReady]);
 
   const [subNodeBusy, setSubNodeBusy] = useState(false);
+  // Sonido + pop-up chiquito al completar una sub-tarea (sub-paso o sub-nodo). Solo al marcarla
+  // como hecha, no al destildarla.
+  const [subtaskDonePopup, setSubtaskDonePopup] = useState<SubtaskDonePopupData | null>(null);
+  const celebrateSubtaskDone = (title: string | null | undefined) => {
+    playSubtaskDoneSound();
+    setSubtaskDonePopup({ id: Date.now(), title: stripLeadingEmoji(title || "") });
+  };
   // Al confirmar el padre, si tenía tiempo de sobra respecto de sus hijos, pasa a la suma del
   // tiempo de sus hijos (lo que realmente llevó). Hábitos y prácticas no: su tiempo es la
   // configuración del hábito/práctica, no algo de este día.
@@ -1462,7 +1486,9 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     if (subNodeBusy) return;
     setSubNodeBusy(true);
     try {
+      const willComplete = sub.status !== "mastered";
       await toggleSubSkillFromToday(parentId, sub, pastDayCompletedAt());
+      if (willComplete) celebrateSubtaskDone(sub.title);
       await refreshSkillTrees();
     } catch (error) {
       console.error("Error confirmando sub-nodo desde Tareas de hoy:", error);
@@ -1538,7 +1564,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
             title={stripLeadingEmoji(kid.title || "Sin nombre")}
             done={kid.status === "mastered"}
             current={kidIsCurrent}
-            dimmed={!isPastDay && !kidIsCurrent}
+            dimmed={!isPastDay && !parentIsCurrent}
             onToggleDone={
               !parentConfirmed && sub.status === "available" && (k === kidFirstUndone || k === kidLastDone)
                 ? () => toggleSubNode(sub.id, kid)
@@ -1573,7 +1599,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
               title={stripLeadingEmoji(sub.title || "Sin nombre")}
               done={sub.status === "mastered"}
               current={isCurrentSub && !pendingKids}
-              dimmed={!isPastDay && !(isCurrentSub && !pendingKids)}
+              // Todo el bloque de la tarea desbloqueada (padre y sub-nodos) se ve resaltado.
+              dimmed={!isPastDay && !parentIsCurrent}
               onToggleDone={
                 !parentConfirmed && !pendingKids && (i === firstUndone || i === lastDone)
                   ? () => toggleSubNode(item.id, sub)
@@ -1839,10 +1866,13 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
         title={stripLeadingEmoji(st.title)}
         done={st.done === 1}
         current={parentIsCurrent && i === firstUndone}
-        dimmed={!isPastDay && !(parentIsCurrent && i === firstUndone)}
+        dimmed={!isPastDay && !parentIsCurrent}
         onToggleDone={
           i === firstUndone || i === lastDone
-            ? () => updateSubstep.mutate({ id: st.id, date: effectiveDate, updates: { done: st.done === 1 ? 0 : 1 } })
+            ? () => {
+                if (st.done !== 1) celebrateSubtaskDone(st.title);
+                updateSubstep.mutate({ id: st.id, date: effectiveDate, updates: { done: st.done === 1 ? 0 : 1 } });
+              }
             : undefined
         }
         onMoveUp={i > 0 ? () => swapSubsteps(st, steps[i - 1]) : undefined}
@@ -1868,22 +1898,30 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // Fila de continuación: la tarea en otra franja que la suya, con sus sub-tareas de esa franja.
   // El título va tenue con "· continúa" y sin tilde (la tarea se confirma en su franja); sus
   // sub-tareas se confirman acá como siempre, y la que toca puede ser la desbloqueada.
-  const renderContinuationRow = (item: TodayItem, isCurrent: boolean) => (
-    <React.Fragment key={item.key}>
-      <TimerPlayContext.Provider value={false}>
-        <div className={`flex items-center gap-2 text-sm ${isPastDay || isCurrent ? "" : "opacity-60"}`}>
-          {item.dotEmoji && <TaskDot emoji={item.dotEmoji} color={item.dotColor || NODE_COLOR} size="md" />}
-          <span className="flex-1">
-            {item.label}
-            <span className="text-muted-foreground"> · continúa</span>
-          </span>
-        </div>
-      </TimerPlayContext.Provider>
-      {item.type === "node"
-        ? renderSubNodes(item, isCurrent && !isPreview, slotSubSet(item))
-        : renderSubsteps(item, isCurrent, slotSubSet(item))}
-    </React.Fragment>
-  );
+  // Desbloqueada: se resalta el bloque entero y la tarea muestra su ▶ (hay que darle ▶ a ella
+  // antes que a la sub-tarea).
+  const renderContinuationRow = (item: TodayItem, isCurrent: boolean) => {
+    const blockCurrent = isCurrent && !isPreview;
+    // El contador propio ya viene en item.label; sin tiempo propio va el de la suma de los hijos.
+    const { derivedMinutes, derivedTimerKey } = parentMinutesProps(item);
+    return (
+      <div key={item.key} className={blockCurrent ? CURRENT_BLOCK_CLASS : "space-y-1.5"}>
+        <TimerPlayContext.Provider value={blockCurrent}>
+          <div className={`flex items-center gap-2 text-sm ${isPastDay || isCurrent ? "" : "opacity-60"}`}>
+            {item.dotEmoji && <TaskDot emoji={item.dotEmoji} color={item.dotColor || NODE_COLOR} size="md" />}
+            <span className={`flex-1 ${blockCurrent ? "font-semibold" : ""}`}>
+              {item.label}
+              <span className="text-muted-foreground"> · continúa</span>
+              {blockCurrent && derivedMinutes ? <MinutesSuffix minutes={derivedMinutes} timerKey={derivedTimerKey} timerDone={item.done} /> : null}
+            </span>
+          </div>
+        </TimerPlayContext.Provider>
+        {item.type === "node"
+          ? renderSubNodes(item, isCurrent && !isPreview, slotSubSet(item))
+          : renderSubsteps(item, isCurrent, slotSubSet(item))}
+      </div>
+    );
+  };
 
   // El acordeón de franjas horarias solo se muestra si hay algo para agrupar ahí: tareas
   // configuradas para hoy, o actividad extra que ya se movió a una franja específica.
@@ -2919,7 +2957,9 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // El ▶ que está corriendo hoy (a lo sumo uno a la vez en la práctica), con su tarea.
   const runningTimer: RunningTimerInfo | null = (() => {
     if (effectiveDate !== todayStr) return null;
-    const entry = Object.entries(allTimers).find(([k, st]) => k.startsWith(`${todayStr}|`) && st.status === "running");
+    // Con una sub-tarea andando también anda su padre: cuenta la sub-tarea (la más específica).
+    const runningEntries = Object.entries(allTimers).filter(([k, st]) => k.startsWith(`${todayStr}|`) && st.status === "running");
+    const entry = runningEntries.find(([k]) => timerFamily.parentOf.has(k)) ?? runningEntries[0];
     if (!entry) return null;
     const key = entry[0];
     const taskKey = key.slice(todayStr.length + 1);
@@ -2951,6 +2991,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     pauseTaskTimer(running.key);
     if (running.taskKey.startsWith("step:")) {
       const id = running.taskKey.slice("step:".length);
+      const step = (substepsData || []).find((st) => st.id === id);
+      if (step && step.done !== 1) celebrateSubtaskDone(step.title);
       updateSubstep.mutate({ id, date: effectiveDate, updates: { done: 1 } });
     } else if (running.item && running.taskKey !== `${running.item.type}:${running.item.id}`) {
       const sub = subNodesFor(running.item).find((sn) => `node:${sn.id}` === running.taskKey);
@@ -3878,12 +3920,16 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                       // Nodo desbloqueado con sub-árbol: el destacado pasa a su
                                       // sub-nodo desbloqueado, que se muestra adentro de él.
                                       const isCurrent = !item.done && idx === firstUndoneIdx;
+                                      // Con sub-tareas pendientes, todo el bloque (la tarea y sus
+                                      // sub-tareas) se resalta, además de la sub-tarea desbloqueada.
+                                      const blockCurrent = isCurrent && (hasPendingSubsteps(item) || hasPendingSubNodes(item));
                                       return (
-                                      <React.Fragment key={item.key}>
+                                      <div key={item.key} className={blockCurrent ? CURRENT_BLOCK_CLASS : "space-y-1.5"}>
                                       <TodayTaskRow
                                         item={item}
                                         dimmed={!isPastDay && idx !== firstUndoneIdx}
-                                        current={isCurrent && !hasPendingSubsteps(item) && !hasPendingSubNodes(item)}
+                                        current={isCurrent && !blockCurrent}
+                                        blockCurrent={blockCurrent}
                                         pastDay={isPastDay}
                                         onMove={(slot) => moveItemToSlot(item, slot)}
                                         onClear={() => unassignItem(item)}
@@ -3903,7 +3949,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                                       />
                                       {renderSubNodes(item, isCurrent && !isPreview, slotSubSet(item))}
                                       {renderSubsteps(item, isCurrent, slotSubSet(item))}
-                                      </React.Fragment>
+                                      </div>
                                       );
                                     });
                                   })()}
@@ -5197,6 +5243,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       </AlertDialogContent>
     </AlertDialog>
 
+    <SubtaskDonePopup data={subtaskDonePopup} onDone={() => setSubtaskDonePopup(null)} />
+
     <MealTrackerModal
       open={mealPopupId !== null}
       onOpenChange={(o) => { if (!o) setMealPopupId(null); }}
@@ -5408,6 +5456,7 @@ function TodayTaskRow({
   nowActive,
   derivedMinutes,
   derivedTimerKey,
+  blockCurrent,
 }: {
   item: TodayItem;
   // Tarea que no es "la que sigue" (la primera pendiente de la franja horaria actual): se
@@ -5453,6 +5502,10 @@ function TodayTaskRow({
   derivedMinutes?: number;
   // Contador de esa suma (ver TaskTimerControl): el padre muestra lo que llevaron sus hijos.
   derivedTimerKey?: string | null;
+  // Tarea desbloqueada con sub-tareas pendientes: el destacado fuerte lo lleva la sub-tarea que
+  // sigue, pero la tarea queda resaltada (con el bloque) y con su ▶, que hay que darle primero
+  // para poder darle ▶ a la sub-tarea.
+  blockCurrent?: boolean;
 }) {
   const [hideConfirmOpen, setHideConfirmOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -5485,7 +5538,7 @@ function TodayTaskRow({
   };
 
   return (
-    <TimerPlayContext.Provider value={!!current}>
+    <TimerPlayContext.Provider value={!!current || !!blockCurrent}>
       <div
         className={`flex items-center gap-2 text-sm touch-none select-none transition-opacity ${
           dimmed ? "opacity-25" : ""
@@ -5533,7 +5586,7 @@ function TodayTaskRow({
           <DropdownMenuTrigger asChild>
             <span
               className={`flex-1 cursor-pointer ${item.done ? (pastDay ? "text-yellow-600 font-medium" : "text-yellow-600/60") : ""} ${
-                current ? "text-[15px] font-semibold leading-snug" : ""
+                current || blockCurrent ? "text-[15px] font-semibold leading-snug" : ""
               }`}
             >
               {item.label}

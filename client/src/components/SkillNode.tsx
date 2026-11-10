@@ -58,7 +58,7 @@ const CUSTOM_DATE_VALUE = "__custom__";
 // lugar de la tarea desbloqueada (justo antes de la primera pendiente de la franja actual).
 const NOW_DATE_VALUE = "__now__";
 
-interface QuickDateOption {
+export interface QuickDateOption {
   id: string;
   label: string;
   value: string;
@@ -100,7 +100,7 @@ function getPlannedDurationLabel(plannedDuration: number | null | undefined): st
   return `${plannedDuration} min`;
 }
 
-function formatLocalDate(date: Date): string {
+export function formatLocalDate(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
@@ -120,7 +120,7 @@ function getPlannedDateLabel(plannedDate: string | null | undefined): string | n
   return new Date(plannedDate + "T00:00:00").toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
-function getQuickDateOptions(): QuickDateOption[] {
+export function getQuickDateOptions(): QuickDateOption[] {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -839,10 +839,15 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
         const error = await res.json();
         throw new Error(error.message || "Failed to create error");
       }
-      return res.json() as Promise<SkillNodeError>;
+      return res.json() as Promise<SkillNodeError & { newStrategies?: string[] }>;
     },
     onSuccess: (created) => {
       queryClient.invalidateQueries({ queryKey: [`/api/node-errors/${skill.id}`] });
+      // Sus estrategias quedaron en la tab Estrategias del Journal: pop-up de cada una nueva.
+      if (created.newStrategies?.length) {
+        queryClient.invalidateQueries({ queryKey: ["/api/journal/strategies"] });
+        runPopupQueue(created.newStrategies.map((name) => () => showErrorCelebration({ name, kind: "estrategia" })));
+      }
       // Se selecciona de una -- así aparece el aviso "Error nuevo detectado" debajo del
       // título sin que haga falta un segundo tap sobre la lista.
       setSelectedErrorId(created.id);

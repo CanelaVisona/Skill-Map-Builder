@@ -1,7 +1,7 @@
 import { eq, and, or, asc, desc, sql, inArray, gte, lte, lt, isNull, isNotNull } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db, pool } from "./db";
-import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type JournalShadowPage, type InsertJournalShadowPage, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type ProfileConcept, type InsertProfileConcept, type ProfileLimitingBelief, type InsertProfileLimitingBelief, type JournalLearning, type InsertJournalLearning, type JournalStrategy, type InsertJournalStrategy, type JournalQuestion, type InsertJournalQuestion, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourceObjective, type InsertSourceObjective, type SourceBelief, type InsertSourceBelief, type SourceVision, type InsertSourceVision, type SourcePowers, type InsertSourcePowers, type SourceBug, type InsertSourceBug, type SourceBugReflexion, type SourceBugRecord, type InsertSourceBugRecord, type NodeError, type InsertNodeError, type NodeErrorRecord, type InsertNodeErrorRecord, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type BookWishlistItem, type InsertBookWishlistItem, type FinancialGoal, type InsertFinancialGoal, type BudgetQuarter, type InsertBudgetQuarter, type BudgetCategory, type InsertBudgetCategory, type IncomeSource, type InsertIncomeSource, type DollarRate, type InsertDollarRate, type PersonalIncome, type InsertPersonalIncome, type SavingMission, type InsertSavingMission, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, type BodyProgressRow, type InsertBodyProgress, type TodayTaskSlot, type InsertTodayTaskSlot, type TodayTaskSubstep, type HabitSubstep, type ManualTodayTask, type InsertManualTodayTask, type TodayActivity, todayActivities, type MealTrackerDay, type InsertMealTrackerDay, type MealTrackerCustomOption, type InsertMealTrackerCustomOption, type MealTrackerDish, type InsertMealTrackerDish, type MealTrackerMeta, type QuestionProblem, type InsertQuestionProblem, type QuestionItem, type InsertQuestionItem, type QuestionProblemWithItems, type EvidenceBoardRow, evidenceBoards, type LifeGoalsRow, type LifeGoalItem, type CompletedLifeGoal, lifeGoals, questionProblems, questionItems, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, journalShadowPages, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, profileConcepts, profileLimitingBeliefs, journalLearnings, journalStrategies, journalQuestions, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourceObjectives, sourceBeliefs, sourceVision, sourcePowers, sourceBugs, sourceBugRecords, nodeErrors, nodeErrorRecords, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, bookWishlist, financialGoals, budgetQuarters, budgetCategories, incomeSources, dollarRates, personalIncomes, savingMissions, rewiringTrackers, rewiringTrackerRecords, bodyProgress, todayTaskSlots, todayTaskSubsteps, habitSubsteps, todayPriorities, todayImprovementFocus, taskTimers, type TaskTimerRow, manualTodayTasks, mealTrackerDays, mealTrackerCustomOptions, mealTrackerDishes, mealTrackerMeta } from "@shared/schema";
+import { type Area, type Skill, type InsertArea, type InsertSkill, type Project, type InsertProject, type User, type Session, type JournalCharacter, type InsertJournalCharacter, type JournalPlace, type InsertJournalPlace, type JournalShadow, type InsertJournalShadow, type JournalShadowPage, type InsertJournalShadowPage, type ProfileValue, type InsertProfileValue, type ProfileLike, type InsertProfileLike, type ProfileExperience, type InsertProfileExperience, type ProfileContribution, type InsertProfileContribution, type ProfileMission, type InsertProfileMission, type ProfileAboutEntry, type InsertProfileAboutEntry, type ProfileConcept, type InsertProfileConcept, type ProfileLimitingBelief, type InsertProfileLimitingBelief, type JournalLearning, type InsertJournalLearning, type JournalStrategy, type InsertJournalStrategy, type JournalDiscovery, type InsertJournalDiscovery, type JournalQuestion, type InsertJournalQuestion, type JournalTool, type InsertJournalTool, type JournalThought, type InsertJournalThought, type InsertUserSkillsProgress, type SourceDescription, type InsertSourceDescription, type SourceGrowth, type InsertSourceGrowth, type SourceObjective, type InsertSourceObjective, type SourceBelief, type InsertSourceBelief, type SourceVision, type InsertSourceVision, type SourcePowers, type InsertSourcePowers, type SourceBug, type InsertSourceBug, type SourceBugReflexion, type SourceBugRecord, type InsertSourceBugRecord, type NodeError, type InsertNodeError, type NodeErrorRecord, type InsertNodeErrorRecord, type GlobalSkill, type InsertGlobalSkill, type Habit, type InsertHabit, type HabitRecord, type InsertHabitRecord, type SpaceRepetitionPractice, type InsertSpaceRepetitionPractice, type Book, type InsertBook, type BookReadingSession, type InsertBookReadingSession, type BookWishlistItem, type InsertBookWishlistItem, type FinancialGoal, type InsertFinancialGoal, type BudgetQuarter, type InsertBudgetQuarter, type BudgetCategory, type InsertBudgetCategory, type IncomeSource, type InsertIncomeSource, type DollarRate, type InsertDollarRate, type PersonalIncome, type InsertPersonalIncome, type SavingMission, type InsertSavingMission, type RewiringTracker, type InsertRewiringTracker, type RewiringTrackerRecord, type InsertRewiringTrackerRecord, type BodyProgressRow, type InsertBodyProgress, type TodayTaskSlot, type InsertTodayTaskSlot, type TodayTaskSubstep, type HabitSubstep, type ManualTodayTask, type InsertManualTodayTask, type TodayActivity, todayActivities, type MealTrackerDay, type InsertMealTrackerDay, type MealTrackerCustomOption, type InsertMealTrackerCustomOption, type MealTrackerDish, type InsertMealTrackerDish, type MealTrackerMeta, type QuestionProblem, type InsertQuestionProblem, type QuestionItem, type InsertQuestionItem, type QuestionProblemWithItems, type EvidenceBoardRow, evidenceBoards, type LifeGoalsRow, type LifeGoalItem, type CompletedLifeGoal, lifeGoals, questionProblems, questionItems, areas, skills, projects, users, sessions, journalCharacters, journalPlaces, journalShadows, journalShadowPages, profileValues, profileLikes, profileExperiences, profileContributions, profileMissions, profileAboutEntries, profileConcepts, profileLimitingBeliefs, journalLearnings, journalStrategies, journalDiscoveries, journalQuestions, journalTools, journalThoughts, userSkillsProgress, sourceDescriptions, sourceGrowth, sourceObjectives, sourceBeliefs, sourceVision, sourcePowers, sourceBugs, sourceBugRecords, nodeErrors, nodeErrorRecords, globalSkills, habits, habitRecords, spaceRepetitionPractices, booksLibrary, bookReadingSessions, bookWishlist, financialGoals, budgetQuarters, budgetCategories, incomeSources, dollarRates, personalIncomes, savingMissions, rewiringTrackers, rewiringTrackerRecords, bodyProgress, todayTaskSlots, todayTaskSubsteps, habitSubsteps, todayPriorities, todayImprovementFocus, taskTimers, type TaskTimerRow, manualTodayTasks, mealTrackerDays, mealTrackerCustomOptions, mealTrackerDishes, mealTrackerMeta } from "@shared/schema";
 
 const normalizeSourceBugStatus = (status: string): "identificado" | "debugueando" | "debugueado" => {
   if (status === "activo") return "identificado";
@@ -247,6 +247,10 @@ export interface IStorage {
   createJournalStrategy(strategy: InsertJournalStrategy): Promise<JournalStrategy>;
   updateJournalStrategy(id: string, data: Partial<InsertJournalStrategy>): Promise<JournalStrategy | undefined>;
   deleteJournalStrategy(id: string): Promise<void>;
+  getJournalDiscoveries(userId: string): Promise<JournalDiscovery[]>;
+  createJournalDiscovery(discovery: InsertJournalDiscovery): Promise<JournalDiscovery>;
+  updateJournalDiscovery(id: string, data: Partial<InsertJournalDiscovery>): Promise<JournalDiscovery | undefined>;
+  deleteJournalDiscovery(id: string): Promise<void>;
   getJournalQuestions(userId: string): Promise<JournalQuestion[]>;
   createJournalQuestion(question: InsertJournalQuestion): Promise<JournalQuestion>;
   updateJournalQuestion(id: string, data: Partial<InsertJournalQuestion>): Promise<JournalQuestion | undefined>;
@@ -2032,6 +2036,7 @@ export class DbStorage implements IStorage {
       barMode: entry.barMode ?? "victorias",
       manualDebugueado: entry.manualDebugueado ?? 0,
       reflexiones: Array.isArray(entry.reflexiones) ? (entry.reflexiones as SourceBugReflexion[]) : [],
+      kind: entry.kind === "acierto" ? "acierto" : "error",
     };
     if (insertData.manualDebugueado === 1) insertData.status = "debugueado";
     const result = await db.insert(sourceBugs).values(insertData).returning();
@@ -2504,6 +2509,26 @@ export class DbStorage implements IStorage {
 
   async deleteJournalStrategy(id: string): Promise<void> {
     await db.delete(journalStrategies).where(eq(journalStrategies.id, id));
+  }
+
+  // Journal - Discoveries (misma forma que Learnings)
+  async getJournalDiscoveries(userId: string): Promise<JournalDiscovery[]> {
+    return await db.select().from(journalDiscoveries).where(eq(journalDiscoveries.userId, userId));
+  }
+
+  async createJournalDiscovery(discovery: InsertJournalDiscovery): Promise<JournalDiscovery> {
+    const id = randomUUID();
+    const result = await db.insert(journalDiscoveries).values({ id, ...discovery }).returning();
+    return result[0];
+  }
+
+  async updateJournalDiscovery(id: string, data: Partial<InsertJournalDiscovery>): Promise<JournalDiscovery | undefined> {
+    const result = await db.update(journalDiscoveries).set(data).where(eq(journalDiscoveries.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteJournalDiscovery(id: string): Promise<void> {
+    await db.delete(journalDiscoveries).where(eq(journalDiscoveries.id, id));
   }
 
   // Journal - Questions (misma forma que Strategies)

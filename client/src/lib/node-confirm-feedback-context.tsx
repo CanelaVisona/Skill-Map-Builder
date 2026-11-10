@@ -188,7 +188,7 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
           : listScope.type === "area" ? e.areaId === listScope.id : e.projectId === listScope.id
       );
 
-  const getJournalEntryCount = async (kind: "learnings" | "strategies" | "questions" | "tools" | "thoughts", scope: FeedbackScope) => {
+  const getJournalEntryCount = async (kind: "learnings" | "discoveries" | "strategies" | "questions" | "tools" | "thoughts", scope: FeedbackScope) => {
     const url = scope
       ? `/api/journal/${kind}?${scope.type === "area" ? "areaId" : "projectId"}=${scope.id}`
       : `/api/journal/${kind}`;
@@ -233,7 +233,7 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
     const confirmedScope = targetScope(target);
     const blocks: RewardBlock[] = [];
 
-    const journalBlock = (kind: "thoughts" | "learnings" | "strategies" | "questions" | "tools", popupType: "thought" | "learning" | "strategy" | "question" | "tool", entry: { title: string; sentence: string }): RewardBlock => ({
+    const journalBlock = (kind: "thoughts" | "learnings" | "discoveries" | "strategies" | "questions" | "tools", popupType: "thought" | "learning" | "discovery" | "strategy" | "question" | "tool", entry: { title: string; sentence: string }): RewardBlock => ({
       label: `+${popupType}: ${entry.title}`,
       run: async (enqueue) => {
         const countBefore = await getJournalEntryCount(kind, confirmedScope);
@@ -245,6 +245,7 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
 
     draft.thoughts.forEach((t) => blocks.push(journalBlock("thoughts", "thought", t)));
     draft.learnings.forEach((l) => blocks.push(journalBlock("learnings", "learning", l)));
+    draft.discoveries.forEach((d) => blocks.push(journalBlock("discoveries", "discovery", d)));
     draft.strategies.forEach((st) => blocks.push(journalBlock("strategies", "strategy", st)));
     draft.questions.forEach((q) => blocks.push(journalBlock("questions", "question", q)));
 
@@ -326,7 +327,7 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
       blocks.push({
         label: `+Error: ${error.nombre}`,
         run: async (enqueue) => {
-          const created = await postJson<{ id: string }>("/api/node-errors", "POST", {
+          const created = await postJson<{ id: string; newStrategies?: string[] }>("/api/node-errors", "POST", {
             ...(skillId && confirmedScope ? { skillId } : {}),
             ...scopeBody(scope),
             ...error,
@@ -334,6 +335,11 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
           });
           await confirmError(scope, created.id, enqueue);
           queryClient.invalidateQueries({ queryKey: ["all-area-bugs"] });
+          // Sus estrategias quedaron en la tab Estrategias del Journal: pop-up de cada una nueva.
+          if (created.newStrategies?.length) {
+            queryClient.invalidateQueries({ queryKey: ["/api/journal/strategies"] });
+            for (const name of created.newStrategies) enqueue(() => showErrorCelebration({ name, kind: "estrategia" }));
+          }
         },
       });
     }
@@ -404,6 +410,7 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
       queryClient.invalidateQueries({ queryKey: [`/api/node-errors/${skillId}`] });
       queryClient.invalidateQueries({ queryKey: ["/api/journal/thoughts", skillId] });
       queryClient.invalidateQueries({ queryKey: ["/api/journal/learnings", skillId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/journal/discoveries", skillId] });
       queryClient.invalidateQueries({ queryKey: ["/api/journal/strategies", skillId] });
       queryClient.invalidateQueries({ queryKey: ["/api/journal/questions", skillId] });
       queryClient.invalidateQueries({ queryKey: ["/api/journal/tools", skillId] });
