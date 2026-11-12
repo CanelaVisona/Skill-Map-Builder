@@ -3812,13 +3812,16 @@ export class DbStorage implements IStorage {
   }
 
   // "¿En qué estoy trabajando para mejorar hoy?" — una respuesta por día.
-  async getImprovementFocusRange(userId: string, startDate: string, endDate: string): Promise<{ date: string; text: string }[]> {
+  // También trae "¿En qué voy a equivocarme hoy?" (mistakeText), de la misma fila.
+  async getImprovementFocusRange(userId: string, startDate: string, endDate: string): Promise<{ date: string; text: string; mistakeText: string }[]> {
     const rows = await db.select().from(todayImprovementFocus).where(and(
       eq(todayImprovementFocus.userId, userId),
       gte(todayImprovementFocus.date, startDate),
       lte(todayImprovementFocus.date, endDate),
     ));
-    return rows.filter((r) => r.text.trim()).map((r) => ({ date: r.date, text: r.text }));
+    return rows
+      .filter((r) => r.text.trim() || (r.mistakeText ?? "").trim())
+      .map((r) => ({ date: r.date, text: r.text, mistakeText: r.mistakeText ?? "" }));
   }
 
   // La respuesta más reciente antes de `date` (para precargar la de hoy al responder).
@@ -3830,13 +3833,21 @@ export class DbStorage implements IStorage {
     return rows.find((r) => r.text.trim())?.text ?? null;
   }
 
-  async setImprovementFocus(userId: string, date: string, text: string): Promise<string> {
+  // Guarda solo las respuestas que vienen (cada pregunta se responde por separado).
+  async setImprovementFocus(
+    userId: string,
+    date: string,
+    values: { text?: string; mistakeText?: string },
+  ): Promise<{ text: string; mistakeText: string }> {
     const id = `${userId}:${date}`;
+    const set: { text?: string; mistakeText?: string; updatedAt: Date } = { updatedAt: new Date() };
+    if (values.text !== undefined) set.text = values.text;
+    if (values.mistakeText !== undefined) set.mistakeText = values.mistakeText;
     const result = await db.insert(todayImprovementFocus)
-      .values({ id, userId, date, text })
-      .onConflictDoUpdate({ target: todayImprovementFocus.id, set: { text, updatedAt: new Date() } })
+      .values({ id, userId, date, text: values.text ?? "", mistakeText: values.mistakeText ?? "" })
+      .onConflictDoUpdate({ target: todayImprovementFocus.id, set })
       .returning();
-    return result[0]?.text ?? text;
+    return { text: result[0]?.text ?? "", mistakeText: result[0]?.mistakeText ?? "" };
   }
 
   // Task Timers (contador de arranque de las tareas de "Tareas de hoy"). Trae los del día y los

@@ -97,7 +97,7 @@ export function BugProgressPopup({ snapshot, onClose }: BugProgressPopupProps) {
             puede convivir con el modal de bugs abierto, y no debe robarle el próximo
             click al usuario. Se cierra solo por el timer de arriba. El fondo oscuro de
             abajo es solo visual (pointer-events: none), no afecta esto. */}
-        <div className="absolute inset-0" style={{ backgroundColor: "rgba(0,0,0,0.5)" }} />
+        <div className="absolute inset-0" style={{ backgroundColor: "rgba(0,0,0,0.5)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} />
 
         <div
           style={{

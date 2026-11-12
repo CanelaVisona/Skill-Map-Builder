@@ -51,7 +51,7 @@ export function PowerCelebration({ celebration }: PowerCelebrationProps) {
         >
           <motion.div
             className="absolute inset-0"
-            style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+            style={{ backgroundColor: "rgba(0,0,0,0.5)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -125,7 +125,7 @@ export function PowerCelebration({ celebration }: PowerCelebrationProps) {
         >
           {/* Dim puramente visual (pointer-events: none, igual que el resto de este
               wrapper): esta variante no bloquea clicks a propósito. */}
-          <div className="absolute inset-0" style={{ backgroundColor: "rgba(0,0,0,0.5)" }} />
+          <div className="absolute inset-0" style={{ backgroundColor: "rgba(0,0,0,0.5)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} />
 
           <div
             style={{

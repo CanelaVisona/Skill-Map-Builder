@@ -61,7 +61,7 @@ export function AreaLevelGainPopup({ snapshot, onClose }: AreaLevelGainPopupProp
           type="button"
           aria-label="Cerrar popup de progreso de área"
           className="absolute inset-0 cursor-default"
-          style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+          style={{ backgroundColor: "rgba(0,0,0,0.5)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}
           onClick={onClose}
         />
 

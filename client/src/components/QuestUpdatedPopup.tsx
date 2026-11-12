@@ -31,7 +31,7 @@ export function QuestUpdatedPopup({ show, onClose }: QuestUpdatedPopupProps) {
             type="button"
             aria-label="Cerrar popup de quest updated"
             className="absolute inset-0 cursor-default"
-            style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+            style={{ backgroundColor: "rgba(0,0,0,0.5)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}
             onClick={onClose}
           />
 

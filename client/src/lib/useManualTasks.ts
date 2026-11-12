@@ -64,9 +64,25 @@ export function useManualTasksRange(startDate: string, endDate: string, enabled 
 // Agrega a "Tareas de hoy" una tarea manual ya completada, en la franja del momento en que se
 // hizo (p.ej. "Agregaste un registro en <reflexión>" al escribir un registro). No pasa por la
 // confirmación de la lista, así no dispara el modal de feedback de las tareas sueltas.
-export async function addCompletedManualTask(queryClient: QueryClient, title: string) {
+// Con `oncePerDay`, no se agrega si hoy ya hay una tarea con ese mismo título (p.ej. un solo
+// "Agregaste un registro en <reflexión>" por nodo y por día, aunque se escriban varios).
+const pendingOncePerDay = new Set<string>();
+
+export async function addCompletedManualTask(queryClient: QueryClient, title: string, options?: { oncePerDay?: boolean }) {
   const date = getLocalDateStr(new Date());
+  const onceKey = `${date}|${title}`;
+  if (options?.oncePerDay) {
+    if (pendingOncePerDay.has(onceKey)) return;
+    pendingOncePerDay.add(onceKey);
+  }
   try {
+    if (options?.oncePerDay) {
+      const listRes = await fetch(`/api/manual-today-tasks?date=${date}`);
+      if (listRes.ok) {
+        const existing = (await listRes.json()) as ManualTodayTask[];
+        if (existing.some((t) => t.title === title)) return;
+      }
+    }
     const res = await fetch("/api/manual-today-tasks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -87,6 +103,7 @@ export async function addCompletedManualTask(queryClient: QueryClient, title: st
   } catch (error) {
     console.error("[addCompletedManualTask] Failed:", error);
   } finally {
+    pendingOncePerDay.delete(onceKey);
     queryClient.invalidateQueries({ queryKey: ["manual-today-tasks", date] });
     queryClient.invalidateQueries({ queryKey: ["manual-today-tasks-range"] });
     queryClient.invalidateQueries({ queryKey: ["today-task-slots", date] });

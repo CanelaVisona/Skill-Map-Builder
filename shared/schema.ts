@@ -865,6 +865,8 @@ export const todayImprovementFocus = pgTable("today_improvement_focus", {
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   date: varchar("date").notNull(), // YYYY-MM-DD format
   text: text("text").notNull().default(""),
+  // "¿En qué voy a equivocarme hoy?" — la otra pregunta de la misma sección, una opción por línea.
+  mistakeText: text("mistake_text").notNull().default(""),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 export type TodayImprovementFocus = typeof todayImprovementFocus.$inferSelect;

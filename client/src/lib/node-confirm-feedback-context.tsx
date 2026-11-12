@@ -8,7 +8,7 @@ import { useErrorCelebration } from "@/lib/error-celebration-context";
 import { useBugProgressPopup } from "@/lib/bug-progress-popup-context";
 import { useBodyProgress } from "@/lib/body-progress-context";
 import { useBodyGainPopup } from "@/lib/body-gain-popup-context";
-import { beginPopupChain, endPopupChain, getPopupBusyDelay, runPopupQueueAsync } from "@/lib/popup-coordinator";
+import { beginPopupChain, endPopupChain, getPopupBusyDelay, getRawPopupBusyDelay, holdPopups, markPopupActive, releasePopups, runPopupQueueAsync } from "@/lib/popup-coordinator";
 import { FIXED_XP_AMOUNT, useApplyExperienceGain, useErrorAdjustPopups, type ErrorAdjustResult } from "@/lib/node-reward-actions";
 import { type BodyLink } from "@/components/BodyLinkPicker";
 import {
@@ -26,9 +26,10 @@ import {
 // práctica, que no tienen nodo ni área/quest. Por eso el modal, sus datos y el guardado de lo
 // cargado viven acá y no en SkillNode.
 //
-// Orden de pop-ups: barra de nivel del área/quest -> (recompensas encoladas del nodo, o los
-// pop-ups de XP del hábito/práctica) -> este modal -> pop-ups de lo cargado en él -> "Quest
-// updated!" / "¡Subiste de nivel!" / progreso de hoy. Cada pedido abre su propia cadena de
+// Orden de pop-ups: barra de nivel del área/quest -> este modal -> (recompensas encoladas del
+// nodo, o los pop-ups de XP del hábito/práctica) -> pop-ups de lo cargado en él -> "Quest
+// updated!" / "¡Subiste de nivel!" / progreso de hoy. Mientras el modal está abierto los
+// pop-ups quedan en pausa (holdPopups en popup-coordinator.ts). Cada pedido abre su propia cadena de
 // pop-ups (beginPopupChain) en el mismo tick del click, y esos últimos esperan a que no haya
 // cadenas pendientes (runAfterPopupsClear en skill-context.tsx), así que siempre quedan después.
 // La cadena se cierra recién cuando lo cargado ya se guardó y sus pop-ups terminaron (o
@@ -103,6 +104,9 @@ interface RewardBlock {
   run: (enqueue: (fn: () => void) => void) => Promise<void> | void;
 }
 
+// Lo que tarda el modal de feedback en desaparecer al cerrarse.
+const MODAL_CLOSE_MS = 250;
+
 const waitForPopupsBusyClear = async () => {
   while (getPopupBusyDelay() > 0) {
     await new Promise((resolve) => setTimeout(resolve, getPopupBusyDelay() + 150));
@@ -124,7 +128,7 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
   const [active, setActive] = useState<NodeConfirmFeedbackTarget | null>(null);
   // Área/quest elegida dentro del modal (cubos de error/poder) cuando lo confirmado no tiene.
   const [pickedScope, setPickedScope] = useState<FeedbackScope>(null);
-  const queue = useRef<Array<{ target: NodeConfirmFeedbackTarget; waitFor?: Promise<unknown> }>>([]);
+  const queue = useRef<Array<{ target: NodeConfirmFeedbackTarget; waitFor?: Promise<unknown>; held?: boolean }>>([]);
   const processing = useRef(false);
   const pendingSkillIds = useRef<Map<string, number>>(new Map());
   const finishResolver = useRef<((draft: NodeFeedbackDraft) => void) | null>(null);
@@ -424,22 +428,48 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
   const processQueue = async () => {
     processing.current = true;
     while (queue.current.length > 0) {
-      const { target, waitFor } = queue.current.shift()!;
+      const { target, waitFor, held: heldAtRequest } = queue.current.shift()!;
+      let held = !!heldAtRequest;
       try {
-        if (waitFor) await waitFor.catch(() => undefined);
-        // Busy tiene que quedar libre un rato: el pop-up de la barra de nivel recién aparece
-        // ~150ms después de que vence su reserva de busy (runAfterBusyClears en skill-context),
-        // así que un solo chequeo justo al liberarse le podría ganar y abrir el modal encima.
-        do {
-          await waitForPopupsBusyClear();
-          await new Promise((resolve) => setTimeout(resolve, 400));
-        } while (getPopupBusyDelay() > 0);
+        if (!held) {
+          // Pedido encolado detrás de otro: espera a que terminen los pop-ups del anterior.
+          // Busy tiene que quedar libre un rato (un pop-up puede aparecer ~150ms después de
+          // que vence una reserva de busy), así que no alcanza con un solo chequeo.
+          do {
+            await waitForPopupsBusyClear();
+            await new Promise((resolve) => setTimeout(resolve, 400));
+          } while (getPopupBusyDelay() > 0);
+          holdPopups();
+          held = true;
+        }
 
+        // La barra de nivel del área/quest no queda en pausa (usa el busy crudo) y sale antes
+        // que el modal: se espera a que termine. Su reserva de busy se toma sincrónicamente al
+        // confirmar y el pop-up recién aparece ~150ms después de que vence (runAfterBusyClears
+        // en skill-context), así que busy tiene que quedar libre un rato, no alcanza con un
+        // solo chequeo.
+        do {
+          while (getRawPopupBusyDelay() > 0) {
+            await new Promise((resolve) => setTimeout(resolve, getRawPopupBusyDelay() + 150));
+          }
+          await new Promise((resolve) => setTimeout(resolve, 400));
+        } while (getRawPopupBusyDelay() > 0);
+
+        // Después el modal: los demás pop-ups de esta confirmación (recompensas encoladas del
+        // nodo, XP del hábito/práctica) siguen en pausa (holdPopups) hasta que se cierra.
         const draft = await new Promise<NodeFeedbackDraft>((resolve) => {
           finishResolver.current = resolve;
           setPickedScope(null);
           setActive(target);
         });
+        releasePopups();
+        held = false;
+        // Deja que el modal termine de cerrarse antes del primer pop-up.
+        markPopupActive(MODAL_CLOSE_MS);
+
+        // Primero los pop-ups de crecimiento que estaban en pausa, después los de lo cargado.
+        if (waitFor) await waitFor.catch(() => undefined);
+        await waitForPopupsBusyClear();
         if (!isNodeFeedbackDraftEmpty(draft)) await commitRef.current(target, draft);
         if (target.popupsAfter) {
           const after = await target.popupsAfter.catch(() => [] as Array<() => void>);
@@ -452,6 +482,7 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
       } catch (error) {
         console.error("[nodeConfirmFeedback] Failed:", error);
       } finally {
+        if (held) releasePopups();
         if (target.skillId) {
           const left = (pendingSkillIds.current.get(target.skillId) ?? 1) - 1;
           if (left > 0) pendingSkillIds.current.set(target.skillId, left);
@@ -465,12 +496,15 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
 
   const requestNodeConfirmFeedback = (target: NodeConfirmFeedbackTarget, waitFor?: Promise<unknown>) => {
     // Sincrónico, en el mismo tick que la confirmación: "Quest updated!" ya sabe que tiene que
-    // esperar.
+    // esperar, y (si no hay otro modal en curso) los pop-ups de esta confirmación quedan en
+    // pausa desde ya, para que el modal salga antes que ellos.
     beginPopupChain();
     if (target.skillId) {
       pendingSkillIds.current.set(target.skillId, (pendingSkillIds.current.get(target.skillId) ?? 0) + 1);
     }
-    queue.current.push({ target, waitFor });
+    const held = !processing.current;
+    if (held) holdPopups();
+    queue.current.push({ target, waitFor, held });
     if (!processing.current) void processQueue();
   };
 

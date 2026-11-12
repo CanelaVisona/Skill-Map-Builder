@@ -2279,14 +2279,19 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     if (text) {
       const now = new Date();
       const time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-      const entries = [...reflectionEntries, { date: formatLocalDate(now), time, text }];
+      const today = formatLocalDate(now);
+      const firstEntryToday = !reflectionEntries.some((e) => e.date === today);
+      const entries = [...reflectionEntries, { date: today, time, text }];
       if (isSubSkillView) updateSubSkill(skill.id, { reflectionEntries: entries });
       else if (isProject) updateProjectSkill(activeId, skill.id, { reflectionEntries: entries });
       else updateSkill(activeId, skill.id, { reflectionEntries: entries });
       // "¡Nuevo registro!" -- antes del confirm (si lo hay), así va primero en la secuencia.
       runPopupQueue([() => showInsightsCounterPopup({ type: "record", countBefore: 0, countAfter: 1 })]);
-      // Y queda anotado en "Tareas de hoy", ya hecho, en la franja de ahora.
-      void addCompletedManualTask(queryClient, `Agregaste un registro en ${skill.title?.trim() || "Reflexión"}`);
+      // Y queda anotado en "Tareas de hoy", ya hecho, en la franja de ahora -- una sola vez por
+      // día y por nodo: los registros siguientes del mismo día no agregan otra tarea.
+      if (firstEntryToday) {
+        void addCompletedManualTask(queryClient, `Agregaste un registro en ${skill.title?.trim() || "Reflexión"}`, { oncePerDay: true });
+      }
     }
     setReflectionText("");
     setIsReflectionOpen(false);

@@ -252,13 +252,11 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
   <div class="wiz-box">
     <div class="wiz-head">
       <div><div class="wiz-step" id="treeStep"></div><h2 id="treeTitle"></h2></div>
-      <button type="button" class="wiz-x" id="treeX" aria-label="Cerrar">×</button>
     </div>
     <div class="wiz-pane" id="treeBody"></div>
     <div class="wiz-foot">
       <button type="button" class="danger" id="treeDel" hidden>Quitar árbol</button>
       <p class="tree-prog" id="treeProg"></p>
-      <button type="button" class="ghost" id="treeEdit">Editar</button>
     </div>
   </div>
 </div>
@@ -402,6 +400,7 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
   function actVis(x){ return x.v!=null?x.v:true }
   /* Tocar el título lo oculta (sin disparar el toque del nodo, que confirma). */
   function tapLbl(t,onHide){ t.classList.add('tap'); t.addEventListener('click',function(ev){ ev.stopPropagation(); if(longFired||dragged){longFired=false;return} onHide(); save(); render() }) }
+  function fade(d){ return Math.max(.25,1-.17*Math.abs(d)).toFixed(2) }
   function getDesc(a,j){ return (a.descs&&a.descs[j])||'' }
   function setDesc(a,j,v){ a.descs=a.descs||{}; if(v) a.descs[j]=v; else delete a.descs[j] }
   /* Foco del mapa: una sola subskill (a.foco = j) marcada como la que hay que avanzar. Se destaca,
@@ -493,6 +492,8 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
         var st=j<a.level?'done':(j===a.level?'zdp':'locked'), fo=hasFoco(a)&&a.foco===j;
         var p=pt(i,rad(j+1)), node=el('g',{class:'node '+st+(j%PER===PER-1?' last':'')+(fo?' foco':(st==='zdp'&&hasFoco(a)?' fax':'')),tabindex:'0',role:'button'},gn);
         el('title',{},node).textContent=s+(getDesc(a,j)?' · '+getDesc(a,j):'');
+        /* Las que no son la desbloqueada se atenúan de a poco cuanto más lejos están de ella (el foco no). */
+        if(st!=='zdp'&&!fo) node.style.opacity=fade(j-a.level);
         if(fo){ anyFoco=true;
           if(j>a.level){ var p0=pt(i,rad(a.level+1)); gn.insertBefore(el('line',{class:'fpath',x1:p0[0],y1:p0[1],x2:p[0],y2:p[1]}),gn.firstChild) }
           el('circle',{class:'fring',cx:p[0],cy:p[1],r:st==='zdp'?19:14},node); top.push(node) }
@@ -589,7 +590,7 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
     if(!API||!zones[sa]||!title) return;
     fetch(API+'/side-quest',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({area:zones[sa].name,title:title,description:desc||'',taskId:taskId||undefined})})
       .then(function(r){ if(r.status===404){ noArea(); return } if(!r.ok) return; return r.json().then(function(d){ return d },function(){ return {} }).then(function(d){
-        try{ parent.postMessage({type:'radar-side-quest',power:d&&d.power?{name:d.power.name}:null},location.origin) }catch(e){}
+        try{ parent.postMessage({type:'radar-side-quest',power:d&&d.power?{name:d.power.name}:null,areaId:d&&d.areaId||null,nodeId:d&&d.nodeId||null},location.origin) }catch(e){}
       }) },function(){});
   }
   /* Una actividad hecha también queda como SideQuest confirmado en el área y como tarea hecha en
@@ -815,7 +816,7 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
     var all=nx<0, can=j===a.level;
     $('treeStep').textContent=a.name+' · árbol'; $('treeTitle').textContent=nm;
     body.textContent='';
-    body.appendChild(h('p',{text:ed?'Renombrá, ordená, agregá o quitá pasos. El nodo final siempre desbloquea la subskill.':'Completá los pasos en orden: el nodo final desbloquea la subskill. Mantené apretado un paso para editar el árbol.'}));
+    body.appendChild(h('p',{text:ed?'Renombrá, ordená, agregá o quitá pasos. El nodo final siempre desbloquea la subskill. Tocá afuera para terminar.':'Completá los pasos en orden: el nodo final desbloquea la subskill. Mantené apretado un paso para editar el árbol.'}));
     var ol=h('ol',{class:'tree-list'});
     L.forEach(function(x,k){
       var st=x.d?'done':(k===nx?'next':'locked'), dot=h('span',{class:'tdot','aria-hidden':'true',text:x.d?'✓':String(k+1)});
@@ -843,7 +844,7 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
     else press(fin,tapFinal,function(){ T.ed=true; buildTree() });
     ol.appendChild(fin); body.appendChild(ol);
     $('treeProg').textContent=L.filter(function(x){return x.d}).length+' de '+L.length+(L.length===1?' paso':' pasos');
-    $('treeEdit').textContent=ed?'Listo':'Editar'; $('treeDel').hidden=!ed; $('treeDel').textContent='Quitar árbol'; T.armed=false; T.just=null;
+    $('treeDel').hidden=!ed; $('treeDel').textContent='Quitar árbol'; T.armed=false; T.just=null;
     if(T.focus!=null){ var fi=$('tI'+T.focus); if(fi){ fi.focus(); fi.select() } T.focus=null }
     else if(T.re){ var rb=$(T.re); if(rb&&!rb.disabled) rb.focus(); else { var ri=$('tI'+T.re.slice(2)); if(ri) ri.focus() } T.re=null }
   }
@@ -871,14 +872,12 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
     if(!hasTree(a,j)){ newTree(a,j); toast('Árbol agregado a «'+sk(a)[j]+'»') }
     save(); closeEdit(); render(); openTree(a,j,function(){ unlock(i) });
   });
-  $('treeEdit').addEventListener('click',function(){ if(!T) return; if(T.ed){ fixNames(); save() } T.ed=!T.ed; buildTree(); if(!T.ed) $('treeEdit').focus() });
   $('treeDel').addEventListener('click',function(){
     if(!T) return;
     if(!T.armed){ T.armed=true; this.textContent='Confirmar: quitar árbol'; return }
     delete T.a.trees[T.j]; if(!Object.keys(T.a.trees).length) delete T.a.trees;
     var nm=leafSk(T.a)[T.j]; T=null; $('tree').hidden=true; save(); render(); toast('Árbol quitado de «'+nm+'»');
   });
-  $('treeX').addEventListener('click',closeTree);
   $('tree').addEventListener('click',function(ev){ if(ev.target===this) closeTree() });
   $('tree').addEventListener('keydown',function(ev){ if(ev.key==='Escape') closeTree(); else if(ev.key==='Enter'&&ev.target.type==='text'){ ev.preventDefault(); ev.target.blur() } });
   /* Un arrastre previo en el mapa deja dragged en true y press() ignoraría los toques del árbol. */

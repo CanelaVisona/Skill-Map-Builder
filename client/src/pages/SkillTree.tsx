@@ -46,7 +46,7 @@ import { ErrorProgressPopupProvider } from "@/lib/error-progress-popup-context";
 import { ErrorCelebrationProvider, useErrorCelebration } from "@/lib/error-celebration-context";
 import { BUG_POPUP_VISIBLE_MS, type BugProgressSnapshot } from "@/components/BugProgressPopup";
 import { BUG_CATEGORIES, BUG_BAR_MODES, BugNombreAccionInputs, BugCategoriaPicker, BugBarModePicker, newReflexion, type BugCategoria, type BugBarMode } from "@/components/bug-wizard-fields";
-import { POPUP_VISIBLE_MS, runPopupQueue } from "@/lib/popup-coordinator";
+import { getPopupBusyDelay, POPUP_VISIBLE_MS, runPopupQueue } from "@/lib/popup-coordinator";
 import { LevelUpCelebrationProvider } from "@/lib/level-up-celebration-context";
 import { PowerCelebrationProvider } from "@/lib/power-celebration-context";
 import { TodayProgressPopupProvider } from "@/lib/today-progress-popup-context";
@@ -7937,9 +7937,14 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
       // Orden de los pop-ups: (1) flexibilidad mental, (2) progreso del bug, (3) lo que ya
       // existía (XP de skills, crecimiento de cuerpo linkeado). Cada uno espera a que el
       // anterior termine en vez de solaparse.
+      // `onPopupsDone` se llama cuando terminó el último pop-up de la secuencia.
+      let onPopupsDone = () => {};
       const runXpAndBodyPopups = () => {
         const xpPopupsShown = showBugRecordXpAwards(createdRecord?.xpAwards, true);
-        growLinkedBody(Array.isArray(createdRecord?.bodyLinks) ? createdRecord.bodyLinks : [], xpPopupsShown);
+        const bodyLinks = Array.isArray(createdRecord?.bodyLinks) ? createdRecord.bodyLinks : [];
+        growLinkedBody(bodyLinks, xpPopupsShown);
+        const remaining = xpPopupsShown + bodyLinks.length;
+        window.setTimeout(() => onPopupsDone(), remaining > 0 ? remaining * 1800 : 0);
       };
       // Una victoria con estrategia nueva la sumó al Journal: "¡Nueva estrategia!" va justo
       // después del progreso del bug y antes del XP.
@@ -7953,24 +7958,37 @@ function AllAreaBugsModalWrapper({ open, onOpenChange, embedded = false, onlyRes
           }
         : runXpAndBodyPopups;
 
-      if (createdRecord?.bugProgress) {
-        growMentalFlexThenBug(
-          { ...createdRecord.bugProgress, resultado: variables.data.resultado, kind },
-          runAfterBug,
-        );
-      } else {
-        runAfterBug();
-      }
+      const playRecordPopups = () => {
+        if (createdRecord?.bugProgress) {
+          growMentalFlexThenBug(
+            { ...createdRecord.bugProgress, resultado: variables.data.resultado, kind },
+            runAfterBug,
+          );
+        } else {
+          runAfterBug();
+        }
+      };
 
       // Después de un registro nuevo (error o acierto) se abre el modal de feedback
       // ("¿Qué te dejó…?") de su área/quest -- en lugar del viejo campo "Nuevo aprendizaje".
-      // Espera a que terminen los pop-ups del registro (el primero aparece enseguida).
+      // El modal sale primero: los pop-ups del registro arrancan recién cuando se cierra
+      // (mientras está abierto, getPopupBusyDelay se mantiene ocupado -- ver holdPopups), y
+      // lo cargado en el modal espera a que terminen.
       const recordGroup = areaBugs.find((g) => g.bugs.some((b) => b.id === variables.bugId));
       if (recordGroup) {
+        const popupsDone = new Promise<void>((resolve) => { onPopupsDone = resolve; });
         requestNodeConfirmFeedback(
           { scopeType: recordGroup.sourceType, scopeId: recordGroup.areaId },
-          new Promise((resolve) => setTimeout(resolve, 500)),
+          popupsDone,
         );
+        const startWhenClear = () => {
+          const delay = getPopupBusyDelay();
+          if (delay > 0) window.setTimeout(startWhenClear, delay + 150);
+          else playRecordPopups();
+        };
+        window.setTimeout(startWhenClear, 150);
+      } else {
+        playRecordPopups();
       }
 
       resetRecordForm();

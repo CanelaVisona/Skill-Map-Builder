@@ -234,6 +234,8 @@ app.use((req, res, next) => {
         "updated_at" timestamp DEFAULT now() NOT NULL
       );
     `);
+    // "¿En qué voy a equivocarme hoy?" (misma sección, misma fila del día).
+    await db.execute(sql`ALTER TABLE "today_improvement_focus" ADD COLUMN IF NOT EXISTS "mistake_text" text DEFAULT '' NOT NULL;`);
   } catch (error: any) {
     console.error("⚠ today_improvement_focus migration warning:", error.message);
   }

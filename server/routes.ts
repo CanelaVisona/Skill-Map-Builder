@@ -204,15 +204,17 @@ async function logRadarSideQuest(
 ) {
   const match = await findAreaByName(userId, areaName);
   if (!match) return null;
+  let nodeId: string | null = null;
   if (node !== "skip") {
     const pendingNode = typeof node === "object" ? await storage.getSkill(node.confirmId) : undefined;
     if (pendingNode && pendingNode.areaId === match.id) {
+      nodeId = pendingNode.id;
       if (pendingNode.status !== "mastered") {
         await storage.updateSkill(pendingNode.id, { status: "mastered", completedAt: new Date() });
         await storage.recalculateAvailableStatus(pendingNode.level, { areaId: match.id });
       }
     } else {
-      await createLoggedSideQuestNode({ areaId: match.id }, userId, title);
+      nodeId = await createLoggedSideQuestNode({ areaId: match.id }, userId, title);
     }
   }
   const existingPowers = await storage.getSourcePowers(userId, "area", match.id);
@@ -222,7 +224,8 @@ async function logRadarSideQuest(
     const created = await storage.createSourcePower({ userId, areaId: match.id, name: title, description });
     power = (await storage.updateSourcePower(created.id, { isUnlocked: 2 })) ?? created;
   }
-  return { power };
+  // areaId/nodeId: el mapa los pasa a la app para abrir el modal de feedback de ese nodo.
+  return { power, areaId: match.id, nodeId };
 }
 
 // Habilidad del mapa de habilidades agendada en "Tareas de hoy": el mapa guarda en el eje
@@ -750,7 +753,7 @@ export async function registerRoutes(
         res.status(404).json({ message: "Área no encontrada" });
         return;
       }
-      res.json({ ok: true, power: result.power });
+      res.json({ ok: true, power: result.power, areaId: result.areaId, nodeId: result.nodeId });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -6681,7 +6684,7 @@ export async function registerRoutes(
       }
       const [today] = await storage.getImprovementFocusRange(req.userId!, date, date);
       const previous = await storage.getPreviousImprovementFocus(req.userId!, date);
-      res.json({ date, text: today?.text ?? "", previous });
+      res.json({ date, text: today?.text ?? "", mistakeText: today?.mistakeText ?? "", previous });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -6689,12 +6692,19 @@ export async function registerRoutes(
 
   app.put("/api/improvement-focus", requireAuth, async (req, res) => {
     try {
-      const { date, text } = req.body;
-      if (!isDateStr(date) || typeof text !== "string") {
-        return res.status(400).json({ message: "date (YYYY-MM-DD) y text son requeridos" });
+      // text = "¿En qué estoy trabajando para mejorar hoy?", mistakeText = "¿En qué voy a
+      // equivocarme hoy?". Se guarda solo lo que venga.
+      const { date, text, mistakeText } = req.body;
+      const hasText = typeof text === "string";
+      const hasMistake = typeof mistakeText === "string";
+      if (!isDateStr(date) || (!hasText && !hasMistake)) {
+        return res.status(400).json({ message: "date (YYYY-MM-DD) y text o mistakeText son requeridos" });
       }
-      const saved = await storage.setImprovementFocus(req.userId!, date, text.trim().slice(0, 2000));
-      res.json({ date, text: saved });
+      const saved = await storage.setImprovementFocus(req.userId!, date, {
+        ...(hasText ? { text: text.trim().slice(0, 2000) } : {}),
+        ...(hasMistake ? { mistakeText: mistakeText.trim().slice(0, 2000) } : {}),
+      });
+      res.json({ date, ...saved });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

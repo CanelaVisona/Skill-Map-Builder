@@ -98,7 +98,7 @@ export function ErrorProgressPopup({ snapshot, onClose }: ErrorProgressPopupProp
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
       >
-        <div className="absolute inset-0" style={{ backgroundColor: "rgba(0,0,0,0.5)" }} />
+        <div className="absolute inset-0" style={{ backgroundColor: "rgba(0,0,0,0.5)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} />
 
         <div
           style={{

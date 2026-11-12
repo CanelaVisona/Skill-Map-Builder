@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect, useRef } from "react";
 import { Music, Trophy, BookOpen, Home } from "lucide-react";
 import { useAreaXpPopup } from "@/lib/area-xp-popup-context";
 import { calculateLevelProgressPercentage, countMasteredSkillsInLevel, countSkillsInLevel } from "@/lib/area-progress";
-import { beginPopupChain, endPopupChain, getPopupBusyDelay, hasPendingPopupChain, markPopupActive, POPUP_VISIBLE_MS } from "@/lib/popup-coordinator";
+import { beginPopupChain, endPopupChain, getPopupBusyDelay, getRawPopupBusyDelay, hasPendingPopupChain, markPopupActive, POPUP_VISIBLE_MS } from "@/lib/popup-coordinator";
 import { getCurrentTimeSlotKey } from "@/lib/useTodayTaskSlots";
 import { playLevelUpSound } from "@/lib/sound";
 import { makeLastCreatedSubSkillFinal, fetchSubSkills } from "@/lib/subskill-tree";
@@ -550,9 +550,11 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
   // synchronously via beginPopupChain in SkillNode.tsx's runConfirmSequence right as the node
   // confirm click happens). If this waited on the chain too, it would get stuck behind that
   // entire chain instead of leading it.
+  // Usa el busy "crudo" (sin holdPopups): la barra de nivel sale incluso antes que el modal de
+  // feedback post-confirmación, que la espera (ver node-confirm-feedback-context.tsx).
   const runAfterBusyClears = (fn: () => void) => {
     const attempt = () => {
-      const delay = getPopupBusyDelay();
+      const delay = getRawPopupBusyDelay();
       if (delay > 0) {
         setTimeout(attempt, delay + 150);
         return;

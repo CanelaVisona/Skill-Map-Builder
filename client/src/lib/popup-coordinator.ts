@@ -17,8 +17,28 @@ export function markPopupActive(durationMs: number) {
   }
 }
 
-export function getPopupBusyDelay(): number {
+// Pausa de pop-ups mientras algo modal (el modal de feedback post-confirmación) está en
+// pantalla: todos los pop-ups de esta familia ven "ocupado" y esperan a que se cierre, así el
+// modal siempre sale primero y los pop-ups de crecimiento después.
+let holds = 0;
+const HOLD_POLL_MS = 300;
+
+export function holdPopups() {
+  holds += 1;
+}
+
+export function releasePopups() {
+  holds = Math.max(0, holds - 1);
+}
+
+// "Ocupado hasta" sin contar las pausas (holdPopups).
+export function getRawPopupBusyDelay(): number {
   return Math.max(0, busyUntil - Date.now());
+}
+
+export function getPopupBusyDelay(): number {
+  const raw = getRawPopupBusyDelay();
+  return holds > 0 ? Math.max(raw, HOLD_POLL_MS) : raw;
 }
 
 // Cadena de pop-ups "en vuelo" (p.ej. otorgar XP a los skills linkeados a un hábito/práctica y

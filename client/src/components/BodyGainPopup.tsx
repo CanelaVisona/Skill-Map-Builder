@@ -145,7 +145,7 @@ export function BodyGainPopup({ snapshot, onClose }: BodyGainPopupProps) {
             click instead of letting it reach the popover underneath. Dismissal is via
             the timer below and the explicit hide calls from the XP flow. The dim below
             is purely visual (pointer-events: none) so it doesn't affect that. */}
-        <div className="absolute inset-0" style={{ backgroundColor: "rgba(0,0,0,0.5)" }} />
+        <div className="absolute inset-0" style={{ backgroundColor: "rgba(0,0,0,0.5)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }} />
 
         <div
           style={{

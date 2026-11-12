@@ -181,6 +181,24 @@ function splitFocusOptions(text: string | null | undefined): string[] {
   return (text ?? "").split("\n").map((o) => o.trim()).filter(Boolean);
 }
 
+// Las dos preguntas de la sección desplegable de "Tareas de hoy" (misma forma de responder: una
+// opción por línea). "focus" se guarda en `text`, "mistake" en `mistakeText`.
+type FocusQuestionKind = "focus" | "mistake";
+const FOCUS_QUESTIONS: Record<FocusQuestionKind, { today: string; otherDay: string; placeholder: string; morePlaceholder: string }> = {
+  focus: {
+    today: "¿En qué estoy trabajando para mejorar hoy?",
+    otherDay: "¿En qué estoy trabajando para mejorar ese día?",
+    placeholder: "Ej: escuchar sin interrumpir",
+    morePlaceholder: "Otra cosa en la que estoy trabajando",
+  },
+  mistake: {
+    today: "¿En qué voy a equivocarme hoy?",
+    otherDay: "¿En qué me iba a equivocar ese día?",
+    placeholder: "Ej: apurarme a responder sin pensar",
+    morePlaceholder: "Otra cosa en la que me puedo equivocar",
+  },
+};
+
 // Minutos como texto: "45 min", y pasando los 60 en horas y minutos ("1 h 20 min", "2 h").
 function formatMinutesAsHours(total: number): string {
   if (total < 60) return `${total} min`;
@@ -536,9 +554,15 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // = se está eligiendo cuáles son, entre todas las tareas del día.
   const [prioritiesOpen, setPrioritiesOpen] = useState(false);
 
-  // "¿En qué estoy trabajando para mejorar hoy?": mantener presionado el título abre el diálogo
-  // para responder (la respuesta es del día que se está viendo).
-  const [focusDialogOpen, setFocusDialogOpen] = useState(false);
+  // Sección desplegable con "¿En qué estoy trabajando para mejorar hoy?" y "¿En qué voy a
+  // equivocarme hoy?": mantener presionada una pregunta abre el diálogo para responderla (la
+  // respuesta es del día que se está viendo). focusDialogKind = qué pregunta se está respondiendo.
+  const [focusSectionOpen, setFocusSectionOpen] = useState(false);
+  const [focusDialogKind, setFocusDialogKind] = useState<FocusQuestionKind | null>(null);
+  const focusDialogOpen = focusDialogKind !== null;
+  const setFocusDialogOpen = (open: boolean) => {
+    if (!open) setFocusDialogKind(null);
+  };
   const [focusDraft, setFocusDraft] = useState<string[]>([""]);
   const focusLongPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [prioritiesEditing, setPrioritiesEditing] = useState(false);
@@ -3235,7 +3259,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const { data: focusData } = useImprovementFocus(effectiveDate, open);
   const setImprovementFocus = useSetImprovementFocus();
   const { data: focusMonthData } = useImprovementFocusRange(calMonthStart, calMonthEnd, open && viewMode === "calendar");
-  const focusByDate = new Map((focusMonthData || []).map((f) => [f.date, f.text]));
+  const focusByDate = new Map((focusMonthData || []).filter((f) => f.text.trim()).map((f) => [f.date, f.text]));
+  const mistakeByDate = new Map((focusMonthData || []).filter((f) => (f.mistakeText ?? "").trim()).map((f) => [f.date, f.mistakeText]));
 
   const activeHabitsThisMonth = (habitsData || []).filter((h: Habit) => {
     if (!h.endDate) return true;
@@ -3481,13 +3506,16 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const pickerOffset = getFirstDayOfMonth(calAddPickerMonth);
 
   const focusText = focusData?.text ?? "";
-  function startFocusLongPress() {
+  const mistakeText = focusData?.mistakeText ?? "";
+  const focusAnsweredCount = (splitFocusOptions(focusText).length > 0 ? 1 : 0) + (splitFocusOptions(mistakeText).length > 0 ? 1 : 0);
+  function startFocusLongPress(kind: FocusQuestionKind) {
     cancelFocusLongPress();
     focusLongPressTimer.current = setTimeout(() => {
-      // Sin respuesta para este día, se precarga la más reciente: seguir con lo mismo o cambiarlo.
-      const options = splitFocusOptions(focusText || focusData?.previous);
+      // "Mejorar" sin respuesta para este día precarga la más reciente: seguir con lo mismo o
+      // cambiarlo. "Equivocarme" es de cada día, arranca vacía.
+      const options = kind === "focus" ? splitFocusOptions(focusText || focusData?.previous) : splitFocusOptions(mistakeText);
       setFocusDraft(options.length > 0 ? options : [""]);
-      setFocusDialogOpen(true);
+      setFocusDialogKind(kind);
     }, 500);
   }
   function cancelFocusLongPress() {
@@ -3497,7 +3525,10 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     }
   }
   const saveFocus = () => {
-    setImprovementFocus.mutate({ date: effectiveDate, text: splitFocusOptions(focusDraft.join("\n")).join("\n") });
+    const value = splitFocusOptions(focusDraft.join("\n")).join("\n");
+    setImprovementFocus.mutate(
+      focusDialogKind === "mistake" ? { date: effectiveDate, mistakeText: value } : { date: effectiveDate, text: value },
+    );
     setFocusDialogOpen(false);
   };
 
@@ -3577,30 +3608,53 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
               </div>
             </div>
 
-            {/* "¿En qué estoy trabajando para mejorar hoy?" — mantener presionado el título para
-                responder. La respuesta es de este día (cada día la suya) y queda en el calendario. */}
-            <div className="space-y-1">
-              <h3
-                className="cursor-pointer select-none text-sm font-semibold text-muted-foreground"
-                onMouseDown={startFocusLongPress}
-                onMouseUp={cancelFocusLongPress}
-                onMouseLeave={cancelFocusLongPress}
-                onTouchStart={startFocusLongPress}
-                onTouchEnd={cancelFocusLongPress}
-                onTouchCancel={cancelFocusLongPress}
-                onTouchMove={cancelFocusLongPress}
-                onContextMenu={(e) => e.preventDefault()}
+            {/* Sección desplegable (cerrada de entrada, para no quitarle lugar a las tareas) con
+                "¿En qué estoy trabajando para mejorar hoy?" y "¿En qué voy a equivocarme hoy?".
+                Mantener presionada una pregunta para responderla. Las respuestas son de este día
+                (cada día las suyas) y quedan en el calendario. */}
+            <div className="rounded-lg border border-border/30">
+              <button
+                type="button"
+                onClick={() => setFocusSectionOpen((v) => !v)}
+                className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-sm font-semibold text-muted-foreground"
+                aria-expanded={focusSectionOpen}
               >
-                {isPreview ? "¿En qué estoy trabajando para mejorar ese día?" : "¿En qué estoy trabajando para mejorar hoy?"}
-              </h3>
-              {splitFocusOptions(focusText).length > 0 ? (
-                <ul className="list-disc space-y-0.5 pl-5 text-sm">
-                  {splitFocusOptions(focusText).map((option, i) => (
-                    <li key={i}>{option}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-xs text-muted-foreground/70">Mantené presionado el título para responder.</p>
+                {focusSectionOpen ? <ChevronDown className="h-4 w-4 flex-shrink-0" /> : <ChevronRight className="h-4 w-4 flex-shrink-0" />}
+                <span className="flex-1">{isPreview ? "Foco de ese día" : "Foco de hoy"}</span>
+                <span className="text-xs font-normal text-muted-foreground/70">{focusAnsweredCount}/2</span>
+              </button>
+              {focusSectionOpen && (
+                <div className="space-y-3 px-3 pb-3">
+                  {(["focus", "mistake"] as const).map((kind) => {
+                    const options = splitFocusOptions(kind === "focus" ? focusText : mistakeText);
+                    return (
+                      <div key={kind} className="space-y-1">
+                        <h3
+                          className="cursor-pointer select-none text-sm font-semibold text-muted-foreground"
+                          onMouseDown={() => startFocusLongPress(kind)}
+                          onMouseUp={cancelFocusLongPress}
+                          onMouseLeave={cancelFocusLongPress}
+                          onTouchStart={() => startFocusLongPress(kind)}
+                          onTouchEnd={cancelFocusLongPress}
+                          onTouchCancel={cancelFocusLongPress}
+                          onTouchMove={cancelFocusLongPress}
+                          onContextMenu={(e) => e.preventDefault()}
+                        >
+                          {isPreview ? FOCUS_QUESTIONS[kind].otherDay : FOCUS_QUESTIONS[kind].today}
+                        </h3>
+                        {options.length > 0 ? (
+                          <ul className="list-disc space-y-0.5 pl-5 text-sm">
+                            {options.map((option, i) => (
+                              <li key={i}>{option}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-xs text-muted-foreground/70">Mantené presionada la pregunta para responder.</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
 
@@ -3916,7 +3970,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                       {day}
                     </div>
                     {/* Ese día respondió "¿En qué estoy trabajando para mejorar hoy?". */}
-                    {focusByDate.has(dateStr) && (
+                    {(focusByDate.has(dateStr) || mistakeByDate.has(dateStr)) && (
                       <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-sky-500" aria-label="Con foco de mejora" />
                     )}
                     {allDone && !isFuture && (
@@ -3995,6 +4049,16 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                       </ul>
                     </div>
                   )}
+                  {splitFocusOptions(mistakeByDate.get(selectedDay)).length > 0 && (
+                    <div className="text-sm">
+                      <span className="text-muted-foreground">Me iba a equivocar en:</span>
+                      <ul className="list-disc pl-5">
+                        {splitFocusOptions(mistakeByDate.get(selectedDay)).map((option, i) => (
+                          <li key={i}>{option}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   {selectedDayList.length > 0 ? (
                     <div className="space-y-1">{selectedDayList}</div>
                   ) : (
@@ -4010,11 +4074,11 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       </DialogContent>
     </Dialog>
 
-    {/* Respuesta a "¿En qué estoy trabajando para mejorar hoy?" del día que se está viendo. */}
+    {/* Respuesta a una de las preguntas de "Foco de hoy" del día que se está viendo. */}
     <Dialog open={focusDialogOpen} onOpenChange={setFocusDialogOpen}>
       <DialogContent className="max-w-sm rounded-2xl">
         <DialogTitle className="text-base">
-          {isPreview ? "¿En qué estoy trabajando para mejorar ese día?" : "¿En qué estoy trabajando para mejorar hoy?"}
+          {focusDialogKind && (isPreview ? FOCUS_QUESTIONS[focusDialogKind].otherDay : FOCUS_QUESTIONS[focusDialogKind].today)}
         </DialogTitle>
         {/* Una opción por campo; "Agregar otra" suma un campo y la × saca esa opción. */}
         <div className="space-y-2">
@@ -4029,7 +4093,11 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                     setFocusDraft((prev) => [...prev.slice(0, i + 1), "", ...prev.slice(i + 1)]);
                   }
                 }}
-                placeholder={i === 0 ? "Ej: escuchar sin interrumpir" : "Otra cosa en la que estoy trabajando"}
+                placeholder={
+                  i === 0
+                    ? FOCUS_QUESTIONS[focusDialogKind ?? "focus"].placeholder
+                    : FOCUS_QUESTIONS[focusDialogKind ?? "focus"].morePlaceholder
+                }
                 maxLength={200}
                 autoFocus={i === focusDraft.length - 1}
                 className="border-0 bg-muted/50 focus-visible:ring-0"

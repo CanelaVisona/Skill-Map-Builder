@@ -44,7 +44,7 @@ export function QuestUpdatedCelebration({ text }: QuestUpdatedCelebrationProps) 
         >
           <motion.div
             className="absolute inset-0"
-            style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+            style={{ backgroundColor: "rgba(0,0,0,0.5)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}

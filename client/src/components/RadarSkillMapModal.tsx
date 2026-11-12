@@ -4,6 +4,7 @@ import { useTheme } from "next-themes";
 import { useSkillTree } from "@/lib/skill-context";
 import { usePowerCelebration } from "@/lib/power-celebration-context";
 import { queryClient } from "@/lib/queryClient";
+import { useNodeConfirmFeedback } from "@/lib/node-confirm-feedback-context";
 
 // Mapa de habilidades radial: vive en /mapa-habilidades.html (JS propio, guarda en localStorage)
 // y se muestra en un iframe. Las áreas del skill tree viajan en el hash para que el mapa solo
@@ -12,6 +13,7 @@ export function RadarSkillMapModal({ open, onOpenChange }: { open: boolean; onOp
   const { areas, refreshSkillTrees } = useSkillTree();
   const { resolvedTheme } = useTheme();
   const { showPowerCelebration } = usePowerCelebration();
+  const { requestNodeConfirmFeedback } = useNodeConfirmFeedback();
 
   // Al lograr un subskill el mapa crea un nodo SideQuest y un poder en el área y avisa para
   // recargar los árboles (y los poderes) y mostrar el pop-up de nuevo poder.
@@ -32,14 +34,23 @@ export function RadarSkillMapModal({ open, onOpenChange }: { open: boolean; onOp
       if (e.data?.type !== "radar-side-quest") return;
       refreshSkillTrees();
       const powerName = e.data?.power?.name;
-      if (typeof powerName === "string" && powerName) {
+      const hasPower = typeof powerName === "string" && !!powerName;
+      if (hasPower) {
         queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0] ?? "").startsWith("/api/source-powers/") });
-        showPowerCelebration({ name: powerName, kind: "confirmed" });
       }
+      // Confirmar un subskill abre el modal de feedback ("¿Qué te dejó…?") de su nodo SideQuest
+      // en el área; el pop-up del poder nuevo sale después de cerrarlo, no encima.
+      const areaId = typeof e.data?.areaId === "string" ? e.data.areaId : undefined;
+      const nodeId = typeof e.data?.nodeId === "string" ? e.data.nodeId : undefined;
+      requestNodeConfirmFeedback({
+        skillId: nodeId,
+        ...(areaId ? { scopeType: "area" as const, scopeId: areaId } : {}),
+        popupsAfter: Promise.resolve(hasPower ? [() => showPowerCelebration({ name: powerName, kind: "confirmed" })] : []),
+      });
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [refreshSkillTrees, showPowerCelebration]);
+  }, [refreshSkillTrees, showPowerCelebration, requestNodeConfirmFeedback]);
 
   const areaNames = (Array.isArray(areas) ? areas : [])
     .filter((a) => !a.upcoming)
