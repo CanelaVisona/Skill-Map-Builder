@@ -257,6 +257,7 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
     <div class="wiz-foot">
       <button type="button" class="danger" id="treeDel" hidden>Quitar árbol</button>
       <p class="tree-prog" id="treeProg"></p>
+      <button type="button" class="ghost" id="treeDone" hidden>Listo</button>
     </div>
   </div>
 </div>
@@ -504,9 +505,9 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
         var tr=st!=='done'&&hasTree(a,j);
         if(tr){ el('circle',{class:'tbadge',cx:p[0]+r+2,cy:p[1]-r-2,r:5},node); node.firstChild.textContent+=' · árbol '+treeProg(a,j) }
         el('circle',{class:'hit',cx:p[0],cy:p[1],r:st==='zdp'?(getActs(a).length?11:17):Math.max(7,Math.min(17,sp/2))},node);
-        /* El título del foco siempre se ve (no se oculta al tocarlo). */
-        var vis=fo||isVis(a,j,st==='zdp');
-        if(vis){ var tl=el('text',Object.assign({class:(st==='zdp'?'zlbl':'nlbl')+(fo?' flbl':'')},place(i,p)),node); tl.textContent=(fo?'★ ':'')+s; if(!fo) tapLbl(tl,function(){ setVis(a,j,false) }); if(st!=='zdp') top.push(node) }
+        /* El título del foco y el de una subskill con árbol siempre se ven (no se ocultan al tocarlos). */
+        var vis=fo||tr||isVis(a,j,st==='zdp');
+        if(vis){ var tl=el('text',Object.assign({class:(st==='zdp'?'zlbl':'nlbl')+(fo?' flbl':'')},place(i,p)),node); tl.textContent=(fo?'★ ':'')+s; if(!fo&&!tr) tapLbl(tl,function(){ setVis(a,j,false) }); if(st!=='zdp') top.push(node) }
         node.setAttribute('aria-label',s+(fo?' (foco)':'')+(tr?' (tiene árbol, tocá para abrirlo)':st==='done'?' (lograda)':st==='zdp'?' (tocá para desbloquear)':' (bloqueada)'));
         press(node, tr?function(){ openTree(a,j,function(){ unlock(i) }) }
           :st==='zdp'?function(){ if(vis) unlock(i); else { setVis(a,j,true); save(); render() } }
@@ -541,8 +542,8 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
         var nj=nx.level, ntr=hasTree(nx,nj);
         if(ntr){ el('circle',{class:'tbadge',cx:zp[0]+12,cy:zp[1]-12,r:5},zn); zn.firstChild.textContent+=' · árbol '+treeProg(nx,nj) }
         el('circle',{class:'hit',cx:zp[0],cy:zp[1],r:17},zn);
-        var nv=gfo||isVis(nx,nj,true);
-        if(nv){ var nt=el('text',Object.assign({class:'zlbl'+(gfo?' flbl':'')},place(i,zp)),zn); nt.textContent=(gfo?'★ ':'')+nm; if(!gfo) tapLbl(nt,function(){ setVis(nx,nj,false) }) }
+        var nv=gfo||ntr||isVis(nx,nj,true);
+        if(nv){ var nt=el('text',Object.assign({class:'zlbl'+(gfo?' flbl':'')},place(i,zp)),zn); nt.textContent=(gfo?'★ ':'')+nm; if(!gfo&&!ntr) tapLbl(nt,function(){ setVis(nx,nj,false) }) }
         var gUnlock=function(){ if(nx.level!==nj) return; var nd=getDesc(nx,nx.level), nk=takeSched(nx,nx.level); nx.level++; reached(nx); sideQuest(nm,nd,nk); shown=null; save(); closeEdit(); burst(pt(i,rad(gAvg(a)))); render(); flash($('pReal')) };
         press(zn,function(){ if(ntr){ openTree(nx,nj,gUnlock); return } if(!nv){ setVis(nx,nj,true); save(); render(); return } gUnlock() },function(){});
         top.push(zn);
@@ -816,7 +817,7 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
     var all=nx<0, can=j===a.level;
     $('treeStep').textContent=a.name+' · árbol'; $('treeTitle').textContent=nm;
     body.textContent='';
-    body.appendChild(h('p',{text:ed?'Renombrá, ordená, agregá o quitá pasos. El nodo final siempre desbloquea la subskill. Tocá afuera para terminar.':'Completá los pasos en orden: el nodo final desbloquea la subskill. Mantené apretado un paso para editar el árbol.'}));
+    body.appendChild(h('p',{text:ed?'Renombrá, ordená, agregá o quitá pasos. El nodo final siempre desbloquea la subskill.':'Completá los pasos en orden: el nodo final desbloquea la subskill. Mantené apretado un paso para editar el árbol.'}));
     var ol=h('ol',{class:'tree-list'});
     L.forEach(function(x,k){
       var st=x.d?'done':(k===nx?'next':'locked'), dot=h('span',{class:'tdot','aria-hidden':'true',text:x.d?'✓':String(k+1)});
@@ -844,7 +845,7 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
     else press(fin,tapFinal,function(){ T.ed=true; buildTree() });
     ol.appendChild(fin); body.appendChild(ol);
     $('treeProg').textContent=L.filter(function(x){return x.d}).length+' de '+L.length+(L.length===1?' paso':' pasos');
-    $('treeDel').hidden=!ed; $('treeDel').textContent='Quitar árbol'; T.armed=false; T.just=null;
+    $('treeDel').hidden=!ed; $('treeDone').hidden=!ed; $('treeDel').textContent='Quitar árbol'; T.armed=false; T.just=null;
     if(T.focus!=null){ var fi=$('tI'+T.focus); if(fi){ fi.focus(); fi.select() } T.focus=null }
     else if(T.re){ var rb=$(T.re); if(rb&&!rb.disabled) rb.focus(); else { var ri=$('tI'+T.re.slice(2)); if(ri) ri.focus() } T.re=null }
   }
@@ -871,6 +872,11 @@ svg{display:block;width:100%;height:100%;max-width:100%;touch-action:none;-webki
     applyName(); var i=edit.i, a=areas[i], j=edit.j;
     if(!hasTree(a,j)){ newTree(a,j); toast('Árbol agregado a «'+sk(a)[j]+'»') }
     save(); closeEdit(); render(); openTree(a,j,function(){ unlock(i) });
+  });
+  /* Sale del modo edición (al que se entra manteniendo apretado un paso o el nodo final). */
+  $('treeDone').addEventListener('click',function(){
+    if(!T||!T.ed) return; fixNames(); save(); T.ed=false; buildTree();
+    var f=$('treeBody').querySelector('.tstep.next')||$('treeBody').querySelector('.tstep'); if(f) f.focus({preventScroll:true});
   });
   $('treeDel').addEventListener('click',function(){
     if(!T) return;
