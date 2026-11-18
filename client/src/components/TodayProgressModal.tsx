@@ -27,6 +27,7 @@ import { useImprovementFocus, useImprovementFocusRange, useSetImprovementFocus }
 import { MealTrackerModal } from "@/components/MealTrackerModal";
 import { usePowerCelebration } from "@/lib/power-celebration-context";
 import { useNowPlacement, setNowPlacement } from "@/lib/now-placement";
+import { conjugateTaskTitle } from "@/lib/voseo";
 import { useTaskTimer, useAllTaskTimers, useTaskTimersSync, taskTimerRowDate, taskTimerKey, clearTaskTimer, pauseTaskTimer, timerElapsedMs, isStarterReached, isFlowActive, wasStartTimeNowApplied, markStartTimeNowApplied } from "@/lib/task-timers";
 import { addSubSkillFromToday, toggleSubSkillFromToday, masterWholeSubSkillTree, isSubSkillPlaceholder, moveSubSkillFromToday, renameSubSkill, deleteSubSkillFromToday } from "@/lib/subskill-tree";
 import { useTodayTaskSubsteps, useCreateTodayTaskSubstep, useUpdateTodayTaskSubstep, useDeleteTodayTaskSubstep, useCreateHabitSubstep, syncHabitSubsteps, type SubstepTaskType } from "@/lib/useTodayTaskSubsteps";
@@ -417,6 +418,15 @@ function TaskTimerControl({ timerKey, minutes, done }: { timerKey: string; minut
   );
 }
 
+// Título de la tarea conjugado según su estado (escrito en imperativo con voseo): con el ▶
+// andando va en gerundio ("Meditando"), confirmada en pasado ("Medité"). Ver lib/voseo.
+function VerbTitle({ text, timerKey, done }: { text: string; timerKey?: string | null; done?: boolean }) {
+  const allTimers = useAllTaskTimers();
+  if (done) return <>{conjugateTaskTitle(text, "past")}</>;
+  if (timerKey && allTimers[timerKey]?.status === "running") return <>{conjugateTaskTitle(text, "gerund")}</>;
+  return <>{text}</>;
+}
+
 // Tres puntitos que saltan uno después del otro al lado del nombre mientras la tarea tiene el ▶
 // andando: indica que está en proceso. Nada si no corre o si ya está hecha.
 function RunningDots({ timerKey, done }: { timerKey?: string | null; done?: boolean }) {
@@ -702,7 +712,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       id: h.id,
       label: (
         <>
-          {h.emoji} {h.name}
+          {h.emoji} <VerbTitle text={h.name} timerKey={timerKeyFor(`habit:${h.id}`)} done={done} />
           <RunningDots timerKey={timerKeyFor(`habit:${h.id}`)} done={done} />
           <MinutesSuffix minutes={h.minMinutes} timerKey={timerKeyFor(`habit:${h.id}`, h.minMinutes)} timerDone={done} />
           {rewiringHabitBadgeById.has(h.id) && (
@@ -881,7 +891,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       id: h.id,
       label: (
         <>
-          {h.emoji} {h.name}
+          {h.emoji} <VerbTitle text={h.name} timerKey={timerKeyFor(`habit:${h.id}`)} done={done} />
           <RunningDots timerKey={timerKeyFor(`habit:${h.id}`)} done={done} />
           <MinutesSuffix minutes={h.minMinutes} timerKey={timerKeyFor(`habit:${h.id}`, h.minMinutes)} timerDone={done} />
           {rewiringHabitBadgeById.has(h.id) && (
@@ -1010,7 +1020,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       id: n.id,
       label: (
         <>
-          {stripLeadingEmoji(n.title)}
+          <VerbTitle text={stripLeadingEmoji(n.title)} timerKey={timerKeyFor(`node:${n.id}`)} done={n.done} />
           <RunningDots timerKey={timerKeyFor(`node:${n.id}`)} done={n.done} />{" "}
           <span className="text-muted-foreground">· {n.parentName}</span>
           {!n.done && <StartTimeSuffix startTime={n.plannedStartTime} showRemaining={effectiveDate === todayStr} />}
@@ -1140,7 +1150,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       id: n.id,
       label: (
         <>
-          {stripLeadingEmoji(n.title)}
+          <VerbTitle text={stripLeadingEmoji(n.title)} timerKey={timerKeyFor(`node:${n.id}`)} done={n.done} />
           <RunningDots timerKey={timerKeyFor(`node:${n.id}`)} done={n.done} />{" "}
           <span className="text-muted-foreground">· {n.parentName}</span>
           {!n.done && <StartTimeSuffix startTime={n.plannedStartTime} showRemaining={effectiveDate === todayStr} />}
@@ -1157,7 +1167,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       id: p.id,
       label: (
         <>
-          {p.emoji} {p.name}
+          {p.emoji} <VerbTitle text={p.name} timerKey={timerKeyFor(`practice:${p.id}`)} done={done} />
           <RunningDots timerKey={timerKeyFor(`practice:${p.id}`)} done={done} />
           <MinutesSuffix minutes={p.minMinutes} timerKey={timerKeyFor(`practice:${p.id}`, p.minMinutes)} timerDone={done} />
         </>
@@ -1175,7 +1185,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       id: t.id,
       label: (
         <>
-          {t.kind === "event" ? <>📅 {stripLeadingEmoji(t.title)}</> : stripLeadingEmoji(t.title)}
+          {t.kind === "event" ? "📅 " : null}
+          <VerbTitle text={stripLeadingEmoji(t.title)} timerKey={timerKeyFor(`manual:${t.id}`)} done={t.done === 1} />
           <RunningDots timerKey={timerKeyFor(`manual:${t.id}`)} done={t.done === 1} />
           {t.done !== 1 && <StartTimeSuffix startTime={t.startTime} showRemaining={effectiveDate === todayStr} />}
           <MinutesSuffix minutes={t.minutes} deadline={t.done === 1 ? null : t.deadline} showRemaining={t.done !== 1 && effectiveDate === todayStr} timerKey={timerKeyFor(`manual:${t.id}`, t.minutes)} timerDone={t.done === 1} />
@@ -5274,7 +5285,7 @@ function TodaySubRow({
         current ? "text-[15px] font-semibold leading-snug" : ""
       }`}
     >
-      {title}
+      <VerbTitle text={title} timerKey={timerKey} done={done} />
       <RunningDots timerKey={timerKey} done={done} />
       {!done && <StartTimeSuffix startTime={startTime} showRemaining={showRemaining} />}
       {/* Ya hecha: queda solo el tiempo previsto, sin la hora límite ni lo que falta. */}

@@ -357,12 +357,18 @@ export const journalLearnings = pgTable("journal_learnings", {
 
 // "Estrategias" del Journal: misma forma que journal_learnings (título + descripción, nodo
 // opcional). Se cargan desde el cubo "Nuevas estrategias" del modal de feedback post-confirmación.
+export const STRATEGY_LABELS = ["para-intentar", "util", "no-util"] as const;
+export type StrategyLabel = (typeof STRATEGY_LABELS)[number];
 export const journalStrategies = pgTable("journal_strategies", {
   id: varchar("id").primaryKey(),
   userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
   skillId: varchar("skill_id"),
   title: text("title").notNull(),
   sentence: text("sentence").notNull().default(""),
+  // Etiqueta elegida al crearla/usarla (editable desde el Journal). Ver migrations/0075.
+  label: text("label").$type<StrategyLabel>().notNull().default("para-intentar"),
+  // Veces que se usó en una victoria sobre un error o en un acierto.
+  useCount: integer("use_count").notNull().default(0),
 });
 
 // "Descubrimientos" del Journal: misma forma que journal_learnings (título + descripción, nodo
@@ -1004,6 +1010,7 @@ export const insertJournalLearningSchema = createInsertSchema(journalLearnings).
 });
 export const insertJournalStrategySchema = createInsertSchema(journalStrategies).omit({ id: true }).extend({
   skillId: z.string().min(1).nullable().optional(),
+  label: z.enum(STRATEGY_LABELS).optional(),
 });
 export const insertJournalDiscoverySchema = createInsertSchema(journalDiscoveries).omit({ id: true }).extend({
   skillId: z.string().min(1).nullable().optional(),

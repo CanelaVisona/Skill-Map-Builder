@@ -169,6 +169,15 @@ app.use((req, res, next) => {
     console.error("⚠ journal_strategies migration warning:", error.message);
   }
 
+  // Etiqueta y conteo de uso de las estrategias del Journal. Ver
+  // migrations/0075_journal_strategies_label.sql.
+  try {
+    await db.execute(sql`ALTER TABLE "journal_strategies" ADD COLUMN IF NOT EXISTS "label" text DEFAULT 'para-intentar' NOT NULL;`);
+    await db.execute(sql`ALTER TABLE "journal_strategies" ADD COLUMN IF NOT EXISTS "use_count" integer DEFAULT 0 NOT NULL;`);
+  } catch (error: any) {
+    console.error("⚠ journal_strategies.label migration warning:", error.message);
+  }
+
   // "Descubrimientos" del Journal (cubo "Nuevo descubrimiento" del modal de feedback). Ver
   // migrations/0074_journal_discoveries.sql.
   try {

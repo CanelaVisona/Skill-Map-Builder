@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
-import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertJournalShadowPageSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalStrategySchema, insertJournalDiscoverySchema, insertJournalQuestionSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileConceptSchema, insertProfileLimitingBeliefSchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertSourceObjectiveSchema, insertSourceBeliefSchema, insertSourceVisionSchema, insertSourcePowersSchema, insertSourceBugSchema, insertSourceBugRecordSchema, insertNodeErrorSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema, insertSpaceRepetitionPracticeSchema, insertRewiringTrackerSchema, type InsertSpaceRepetitionPractice, type SpaceRepetitionPractice, type RewiringTracker, skills, areas, projects, spaceRepetitionPractices } from "@shared/schema";
+import { insertAreaSchema, insertSkillSchema, insertProjectSchema, insertJournalCharacterSchema, insertJournalPlaceSchema, insertJournalShadowSchema, insertJournalShadowPageSchema, insertProfileValueSchema, insertProfileLikeSchema, insertJournalLearningSchema, insertJournalStrategySchema, insertJournalDiscoverySchema, insertJournalQuestionSchema, insertJournalToolSchema, insertJournalThoughtSchema, insertProfileMissionSchema, insertProfileAboutEntrySchema, insertProfileConceptSchema, insertProfileLimitingBeliefSchema, insertProfileExperienceSchema, insertProfileContributionSchema, insertUserSkillsProgressSchema, insertSourceDescriptionSchema, insertSourceGrowthSchema, insertSourceObjectiveSchema, insertSourceBeliefSchema, insertSourceVisionSchema, insertSourcePowersSchema, insertSourceBugSchema, insertSourceBugRecordSchema, insertNodeErrorSchema, insertGlobalSkillSchema, insertHabitSchema, insertHabitRecordSchema, insertSpaceRepetitionPracticeSchema, insertRewiringTrackerSchema, STRATEGY_LABELS, type StrategyLabel, type JournalStrategy, type InsertSpaceRepetitionPractice, type SpaceRepetitionPractice, type RewiringTracker, skills, areas, projects, spaceRepetitionPractices } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 import { z } from "zod";
 import cookieParser from "cookie-parser";
@@ -303,17 +303,46 @@ function orderWithMovedInSlot(targetOthers: any[], movedSkill: any, removedPosit
   return [...others.slice(0, insertAt), movedSkill, ...others.slice(insertAt)];
 }
 
-// Una victoria sobre un error con estrategia asignada la suma a las "Estrategias" del Journal,
-// salvo que ya haya una con el mismo título. Devuelve el título si la creó (para el pop-up
-// "¡Nueva estrategia!" del cliente), o null si ya existía.
-async function addVictoryStrategyToJournal(userId: string, estrategia: string | null | undefined, skillId: string | null): Promise<string | null> {
+// Busca (por título, sin importar mayúsculas) o crea la estrategia en las "Estrategias" del
+// Journal. Con `count`, suma un uso (victoria sobre un error, o acierto): si no se pasa una
+// etiqueta, una "Para intentar" que se usó pasa a "Útil". `label` la pisa siempre.
+async function upsertJournalStrategy(
+  userId: string,
+  estrategia: string | null | undefined,
+  skillId: string | null,
+  opts: { count: boolean; label?: StrategyLabel },
+): Promise<{ strategy: JournalStrategy; created: boolean } | null> {
   const title = (estrategia ?? "").trim();
   if (!title) return null;
   const existing = await storage.getJournalStrategies(userId);
   const key = title.toLocaleLowerCase();
-  if (existing.some((s) => s.title.trim().toLocaleLowerCase() === key)) return null;
-  await storage.createJournalStrategy({ userId, skillId, title, sentence: "" } as any);
-  return title;
+  const found = existing.find((s) => s.title.trim().toLocaleLowerCase() === key);
+  if (!found) {
+    const strategy = await storage.createJournalStrategy({
+      userId,
+      skillId,
+      title,
+      sentence: "",
+      label: opts.label ?? (opts.count ? "util" : "para-intentar"),
+      useCount: opts.count ? 1 : 0,
+    } as any);
+    return { strategy, created: true };
+  }
+  const data: Partial<JournalStrategy> = {};
+  if (opts.count) data.useCount = (found.useCount ?? 0) + 1;
+  if (opts.label) data.label = opts.label;
+  else if (opts.count && found.label === "para-intentar") data.label = "util";
+  if (Object.keys(data).length === 0) return { strategy: found, created: false };
+  const strategy = (await storage.updateJournalStrategy(found.id, data as any)) ?? found;
+  return { strategy, created: false };
+}
+
+// Una victoria sobre un error con estrategia asignada la suma a las "Estrategias" del Journal
+// (o le suma un uso si ya estaba). Devuelve el título si la creó (para el pop-up "¡Nueva
+// estrategia!" del cliente), o null si ya existía.
+async function addVictoryStrategyToJournal(userId: string, estrategia: string | null | undefined, skillId: string | null): Promise<string | null> {
+  const result = await upsertJournalStrategy(userId, estrategia, skillId, { count: true });
+  return result?.created ? result.strategy.title : null;
 }
 
 // "LLEGAR TARDE" -> "Llegar tarde".
@@ -333,9 +362,10 @@ function bugNodeDescription(nombre: string, accion: string | null | undefined): 
 // victorias) quedan en la tab Estrategias del Journal. Devuelve las que se agregaron recién.
 async function addAciertoStrategiesToJournal(userId: string, estrategias: Array<string | null | undefined>, skillId: string | null): Promise<string[]> {
   const added: string[] = [];
+  // Escribirlas al crear/editar el acierto no cuenta como uso (eso es en los registros).
   for (const estrategia of estrategias) {
-    const title = await addVictoryStrategyToJournal(userId, estrategia, skillId);
-    if (title) added.push(title);
+    const result = await upsertJournalStrategy(userId, estrategia, skillId, { count: false });
+    if (result?.created) added.push(result.strategy.title);
   }
   return added;
 }
@@ -3473,6 +3503,26 @@ export async function registerRoutes(
     }
   });
 
+  // Usar una estrategia (elegida o nueva) desde el modal de feedback: la crea si no existe,
+  // le suma un uso con `count` y le pone la etiqueta elegida.
+  app.post("/api/journal/strategies/use", requireAuth, async (req, res) => {
+    try {
+      const { title, label, skillId, count } = req.body ?? {};
+      if (typeof title !== "string" || !title.trim()) {
+        res.status(400).json({ message: "Falta la estrategia" });
+        return;
+      }
+      if (label !== undefined && !STRATEGY_LABELS.includes(label)) {
+        res.status(400).json({ message: "Etiqueta inválida" });
+        return;
+      }
+      const result = await upsertJournalStrategy(req.userId!, title, typeof skillId === "string" ? skillId : null, { count: count === true, label });
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.delete("/api/journal/strategies/:id", requireAuth, async (req, res) => {
     try {
       await storage.deleteJournalStrategy(req.params.id);
@@ -3484,10 +3534,17 @@ export async function registerRoutes(
 
   app.patch("/api/journal/strategies/:id", requireAuth, async (req, res) => {
     try {
-      const { title, sentence } = req.body;
+      const { title, sentence, label } = req.body;
       const data: any = {};
       if (title !== undefined) data.title = title;
       if (sentence !== undefined) data.sentence = sentence;
+      if (label !== undefined) {
+        if (!STRATEGY_LABELS.includes(label)) {
+          res.status(400).json({ message: "Etiqueta inválida" });
+          return;
+        }
+        data.label = label;
+      }
       const strategy = await storage.updateJournalStrategy(req.params.id, data);
       if (!strategy) {
         res.status(404).json({ message: "Estrategia no encontrada" });
