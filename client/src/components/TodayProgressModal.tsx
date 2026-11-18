@@ -381,7 +381,8 @@ function TaskTimerControl({ timerKey, minutes, done }: { timerKey: string; minut
     <span className="inline-flex items-center gap-1 align-middle">
       {label ? (
         <>
-          {" "}·{" "}
+          {/* Con el ▶ andando, los puntitos de RunningDots ya separan el nombre de los minutos. */}
+          {running && !done ? " " : <>{" "}·{" "}</>}
           <span className={used && !done ? "tabular-nums text-amber-600 dark:text-amber-400" : undefined}>{label}</span>
         </>
       ) : (
