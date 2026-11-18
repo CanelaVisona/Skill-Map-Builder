@@ -8,6 +8,8 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { StrategyLabelPicker } from "@/components/strategy-label";
+import type { StrategyLabel } from "@shared/schema";
 
 // "Nueva entrada" del Journal: se abre manteniendo apretado el fondo de sus tabs (ver QuestDiary
 // en SkillTree.tsx). Carga un pensamiento, aprendizaje, descubrimiento, herramienta, estrategia o pregunta suelto (sin
@@ -43,7 +45,11 @@ export function JournalQuickAddDialog({
   const [step, setStep] = useState(0);
   const [title, setTitle] = useState("");
   const [sentence, setSentence] = useState("");
+  const [label, setLabel] = useState<StrategyLabel>("para-intentar");
   const [saving, setSaving] = useState(false);
+  // Estrategia: un tercer paso para su etiqueta.
+  const stepCount = kind === "strategy" ? 3 : 2;
+  const isLastStep = step === stepCount - 1;
 
   useEffect(() => {
     if (open) {
@@ -51,6 +57,7 @@ export function JournalQuickAddDialog({
       setStep(0);
       setTitle("");
       setSentence("");
+      setLabel("para-intentar");
       setSaving(false);
     }
   }, [open, initialKind]);
@@ -67,7 +74,7 @@ export function JournalQuickAddDialog({
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: title.trim(), sentence: sentence.trim() }),
+        body: JSON.stringify({ title: title.trim(), sentence: sentence.trim(), ...(kind === "strategy" ? { label } : {}) }),
       });
       if (!res.ok) throw new Error(`POST ${url} failed: ${res.status}`);
       queryClient.invalidateQueries({ queryKey: [url] });
@@ -80,8 +87,9 @@ export function JournalQuickAddDialog({
   };
 
   const next = () => {
-    if (step === 0) setStep(1);
-    else void save();
+    if (step === 1 && !title.trim()) return;
+    if (isLastStep) void save();
+    else setStep(step + 1);
   };
 
   return (
@@ -95,7 +103,7 @@ export function JournalQuickAddDialog({
             <button
               key={id}
               type="button"
-              onClick={() => setKind(id)}
+              onClick={() => { setKind(id); if (id !== "strategy" && step > 1) setStep(1); }}
               className={cn(
                 "flex flex-col items-center gap-1 rounded-lg border p-2 text-[10px] font-medium transition-colors",
                 kind === id ? "border-primary/50 bg-primary/10" : "border-border/60 bg-muted/40 hover:bg-muted/60"
@@ -109,7 +117,7 @@ export function JournalQuickAddDialog({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto minimal-scrollbar -mx-1 px-1 space-y-4">
-          <p className="text-[11px] text-muted-foreground">Paso {step + 1} de 2</p>
+          <p className="text-[11px] text-muted-foreground">Paso {step + 1} de {stepCount}</p>
           {step === 0 ? (
             <div className="space-y-1.5">
               <Label className={fieldLabel}>Descripción</Label>
@@ -122,6 +130,11 @@ export function JournalQuickAddDialog({
                 data-testid="journal-quick-add-description"
                 autoFocus
               />
+            </div>
+          ) : step === 2 ? (
+            <div className="space-y-2">
+              <p className="text-sm font-medium break-words">{title.trim()}</p>
+              <StrategyLabelPicker value={label} onChange={setLabel} testIdPrefix="journal-quick-add-label" />
             </div>
           ) : (
             <div className="space-y-1.5">
@@ -143,14 +156,14 @@ export function JournalQuickAddDialog({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => (step === 0 ? onOpenChange(false) : setStep(0))}
+            onClick={() => (step === 0 ? onOpenChange(false) : setStep(step - 1))}
             className="bg-muted/50 hover:bg-muted"
           >
             <ChevronLeft className="h-4 w-4 mr-1" />
             {step === 0 ? "Cancelar" : "Atrás"}
           </Button>
-          <Button size="sm" onClick={next} disabled={step === 1 && (!title.trim() || saving)} data-testid="journal-quick-add-next">
-            {step === 0 ? "Siguiente" : "Guardar"}
+          <Button size="sm" onClick={next} disabled={(step >= 1 && !title.trim()) || saving} data-testid="journal-quick-add-next">
+            {isLastStep ? "Guardar" : "Siguiente"}
           </Button>
         </div>
       </DialogContent>

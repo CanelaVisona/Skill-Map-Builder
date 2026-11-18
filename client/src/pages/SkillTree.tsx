@@ -65,7 +65,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { JournalCharacter, JournalPlace, JournalShadow, JournalShadowPage, JournalLearning, JournalDiscovery, JournalStrategy, JournalQuestion, JournalTool, JournalThought, HabitRecord } from "@shared/schema";
+import type { JournalCharacter, JournalPlace, JournalShadow, JournalShadowPage, JournalLearning, JournalDiscovery, JournalStrategy, JournalQuestion, JournalTool, JournalThought, HabitRecord, StrategyLabel } from "@shared/schema";
+import { StrategyLabelPicker, StrategyCountBadge, StrategyLabelTag } from "@/components/strategy-label";
 import { OnboardingGuide, HelpButton, useOnboarding } from "@/components/OnboardingGuide";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
@@ -2278,6 +2279,9 @@ type JournalQuestionEntry = JournalQuestion & {
   reflectionNode?: { status: string; entries: { date: string; time?: string; text: string }[] } | null;
 };
 type JournalSectionEntry = JournalLearning | JournalDiscovery | JournalStrategy | JournalQuestionEntry;
+// La entrada como estrategia (con etiqueta y conteo de usos), o null si es de otra tab.
+const strategyOf = (entry: JournalSectionEntry): JournalStrategy | null =>
+  "useCount" in entry && "label" in entry ? (entry as JournalStrategy) : null;
 // Dónde va el nodo: en el lugar del desbloqueado (se inserta antes de él) o en el primer nodo
 // sin nombre del árbol (se le pone el nombre, sin sumar nodos).
 type ReflectionNodePlacement = "available" | "unnamed";
@@ -2498,7 +2502,7 @@ function LearningsSection({
   entries: JournalSectionEntry[];
   isLoading: boolean;
   onDelete: (id: string) => void;
-  onUpdate?: (id: string, data: { title: string; sentence: string }) => void;
+  onUpdate?: (id: string, data: { title: string; sentence: string; label?: StrategyLabel }) => void;
   questMap: SkillQuestMap;
   variant?: keyof typeof ENTRY_SECTION_TEXTS;
   // Mantener apretado el título ("N discoveries") abre "Nueva entrada" para agregar una de esta tab.
@@ -2516,6 +2520,8 @@ function LearningsSection({
   const [isEditMode, setIsEditMode] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editSentence, setEditSentence] = useState("");
+  // Solo Estrategias: etiqueta (Para intentar / Útil / No útil), editable.
+  const [editLabel, setEditLabel] = useState<StrategyLabel>("para-intentar");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [selectedQuestKey, setSelectedQuestKey] = useState<string | null>(null);
   const longPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2551,6 +2557,7 @@ function LearningsSection({
       setViewingEntry(entry);
       setEditTitle(entry.title);
       setEditSentence(entry.sentence || "");
+      setEditLabel(strategyOf(entry)?.label ?? "para-intentar");
       setIsEditMode(false);
     }, 500);
   };
@@ -2586,7 +2593,8 @@ function LearningsSection({
 
   const handleSaveEdit = () => {
     if (viewingEntry && onUpdate && editTitle.trim()) {
-      onUpdate(viewingEntry.id, { 
+      onUpdate(viewingEntry.id, {
+        ...(variant === "strategies" ? { label: editLabel } : {}), 
         title: editTitle.trim(), 
         sentence: editSentence.trim() 
       });
@@ -2642,7 +2650,12 @@ function LearningsSection({
                           }`}
                           data-testid={`card-${variant}-${entry.id}`}
                         >
-                          {entry.title}
+                          {strategyOf(entry) ? (
+                            <span className="flex items-center justify-between gap-2">
+                              <span className="min-w-0 break-words">{entry.title}</span>
+                              <StrategyCountBadge label={strategyOf(entry)!.label} count={strategyOf(entry)!.useCount} className="shrink-0" />
+                            </span>
+                          ) : entry.title}
                         </button>
                         {index < group.length - 1 && (
                           <div className="h-px bg-border/30 mx-2" />
@@ -2664,6 +2677,14 @@ function LearningsSection({
               <div className="border-b border-border/50 pb-2 mb-4 flex-shrink-0 flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <h3 className="font-medium text-foreground uppercase tracking-wide break-words">{viewingEntry.title}</h3>
+                  {strategyOf(viewingEntry) && (
+                    <div className="mt-1.5 flex items-center gap-1.5">
+                      <StrategyLabelTag label={strategyOf(viewingEntry)!.label} />
+                      <span className="text-[11px] text-muted-foreground">
+                        {strategyOf(viewingEntry)!.useCount} {strategyOf(viewingEntry)!.useCount === 1 ? "uso" : "usos"}
+                      </span>
+                    </div>
+                  )}
                   <div className="h-px w-12 bg-gradient-to-r from-muted-foreground to-transparent mt-2" />
                 </div>
                 <div className="flex gap-1 flex-shrink-0">
@@ -2673,6 +2694,7 @@ function LearningsSection({
                     onClick={() => {
                       setEditTitle(viewingEntry.title);
                       setEditSentence(viewingEntry.sentence || "");
+                      setEditLabel(strategyOf(viewingEntry)?.label ?? "para-intentar");
                       setIsEditMode((v) => !v);
                     }}
                     className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
@@ -2704,6 +2726,9 @@ function LearningsSection({
                     rows={3}
                     className="bg-secondary border-border text-foreground resize-none"
                   />
+                  {variant === "strategies" && (
+                    <StrategyLabelPicker value={editLabel} onChange={setEditLabel} testIdPrefix="journal-strategy-edit-label" />
+                  )}
                   <div className="flex gap-2 pt-2">
                     <Button
                       size="sm"

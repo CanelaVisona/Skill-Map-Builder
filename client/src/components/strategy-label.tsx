@@ -76,6 +76,15 @@ export function StrategyLabelPicker({
   );
 }
 
+// Nombre de la etiqueta, con su color (para listas de lo cargado).
+export function StrategyLabelTag({ label, className }: { label: StrategyLabel; className?: string }) {
+  return (
+    <span className={cn("inline-flex items-center rounded-full border px-1.5 text-[10px] font-medium leading-4", LABEL_STYLES[label].badge, className)}>
+      {strategyLabelName(label)}
+    </span>
+  );
+}
+
 // Conteo de usos con el color de la etiqueta (verde/gris/dorado).
 export function StrategyCountBadge({ label, count, className }: { label: StrategyLabel; count: number; className?: string }) {
   return (

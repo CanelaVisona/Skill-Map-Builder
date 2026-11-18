@@ -13,6 +13,9 @@ import { BodyLinkPicker, type BodyLink } from "@/components/BodyLinkPicker";
 import { SkillPickerList, ChipListInput } from "@/components/skill-node-pickers";
 import { BugNombreAccionInputs, BugCategoriaPicker, BugBarModePicker, type BugCategoria, type BugBarMode } from "@/components/bug-wizard-fields";
 import { SkillDesigner } from "@/components/SkillDesigner";
+import { useQuery } from "@tanstack/react-query";
+import type { JournalStrategy, StrategyLabel } from "@shared/schema";
+import { StrategyLabelPicker, StrategyLabelTag, StrategyCountBadge, findJournalStrategy, labelForUse } from "@/components/strategy-label";
 
 // Modal de "feedback" que aparece al confirmar un nodo: después del pop-up de la barra de nivel
 // del área/quest y antes de "Quest updated!" (ver confirmNode en SkillNode.tsx). Se divide en
@@ -46,6 +49,8 @@ export interface NodeFeedbackError {
   categoria: BugCategoria;
   barMode: BugBarMode;
   reflexion: string;
+  // Etiqueta de la estrategia escrita en `accion` (va a la tab Estrategias del Journal).
+  accionLabel: StrategyLabel;
 }
 
 // Movimiento sobre un error ya registrado (lo que antes era la tab "Bugs"): confirmar uno
@@ -68,7 +73,7 @@ export interface NodeFeedbackExistingError {
 
 export type NodeFeedbackErrorAction = { errorId: string; errorName: string; scope: FeedbackScope } & (
   | { type: "confirm" }
-  | { type: "adjust"; delta: 10 | -10; value: string; isNew: boolean; savedOptions: string[]; links: { skillIds: string[]; bodyLinks: BodyLink[] } }
+  | { type: "adjust"; delta: 10 | -10; value: string; isNew: boolean; savedOptions: string[]; links: { skillIds: string[]; bodyLinks: BodyLink[] }; strategyLabel?: StrategyLabel }
 );
 
 // Acierto ya registrado del área/quest (ver el cubo "Aciertos").
@@ -98,7 +103,7 @@ export interface NodeFeedbackDraft {
   thoughts: NodeFeedbackEntry[];
   learnings: NodeFeedbackEntry[];
   discoveries: NodeFeedbackEntry[];
-  strategies: NodeFeedbackEntry[];
+  strategies: Array<NodeFeedbackEntry & { label: StrategyLabel }>;
   questions: NodeFeedbackEntry[];
   // Un elemento por nodo agregado desde el cubo "Nodo nuevo" (el nodo ya está creado: esto solo
   // dispara su pop-up "¡Nueva tarea!" al cerrar el modal).
@@ -106,7 +111,8 @@ export interface NodeFeedbackDraft {
   // Cubo "Aciertos": igual que los errores del Journal (source_bugs con kind "acierto"), siempre
   // de un área/quest. Aciertos nuevos, y registros (victoria con estrategia / derrota con
   // disparador) sobre aciertos ya existentes.
-  aciertos: Array<{ nombre: string; desc: string; scope: { type: "area" | "project"; id: string } }>;
+  // `estrategia`: la que se usó en el acierto ("" = ninguna); suma un uso en el Journal.
+  aciertos: Array<{ nombre: string; desc: string; estrategia: string; estrategiaLabel: StrategyLabel; scope: { type: "area" | "project"; id: string } }>;
   aciertoRecords: Array<{
     aciertoId: string;
     aciertoName: string;
@@ -115,6 +121,7 @@ export interface NodeFeedbackDraft {
     isNew: boolean;
     savedOptions: string[];
     scope: { type: "area" | "project"; id: string };
+    strategyLabel?: StrategyLabel;
   }>;
   tools: NodeFeedbackEntry[];
   errors: Array<NodeFeedbackError & { scope: FeedbackScope }>;
@@ -188,12 +195,15 @@ type StepKey =
   | "aciertoPick"
   | "aciertoDescription"
   | "aciertoName"
+  | "aciertoStrategy"
   | "aciertoResult"
   | "aciertoOption"
   | "description"
   | "title"
+  | "strategyLabel"
   | "errorPick"
   | "errorBug"
+  | "errorAccionLabel"
   | "errorComoSi"
   | "errorChips"
   | "errorLinks"
@@ -235,6 +245,8 @@ interface CubeForm {
   actionDelta: 10 | -10 | null;
   actionValue: string | null;
   actionNewValue: string;
+  // Etiqueta de la estrategia del formulario; null = la sugerida (ver labelForUse).
+  strategyLabel: StrategyLabel | null;
   pickedScope: FeedbackScope | undefined;
 }
 
@@ -259,6 +271,7 @@ const EMPTY_FORM: CubeForm = {
   actionDelta: null,
   actionValue: null,
   actionNewValue: "",
+  strategyLabel: null,
   pickedScope: undefined,
 };
 
@@ -355,6 +368,10 @@ export function NodeConfirmFeedbackModal({
   const [actionDelta, setActionDelta] = useState<10 | -10 | null>(null);
   const [actionValue, setActionValue] = useState<string | null>(null);
   const [actionNewValue, setActionNewValue] = useState("");
+  const [strategyLabel, setStrategyLabel] = useState<StrategyLabel | null>(null);
+  // Estrategias del Journal: para sugerir su etiqueta al elegirlas y para el paso de estrategia
+  // de un acierto nuevo.
+  const { data: journalStrategies = [] } = useQuery<JournalStrategy[]>({ queryKey: ["/api/journal/strategies"], enabled: open });
   // Área/quest elegida en el primer paso de error/poder (solo sin fixedScope). undefined = todavía
   // sin elegir; null = ninguna (suelto).
   const [pickedScope, setPickedScope] = useState<FeedbackScope | undefined>(undefined);
@@ -407,6 +424,7 @@ export function NodeConfirmFeedbackModal({
     actionDelta,
     actionValue,
     actionNewValue,
+    strategyLabel,
     pickedScope,
   });
 
@@ -431,6 +449,7 @@ export function NodeConfirmFeedbackModal({
     setActionDelta(form.actionDelta);
     setActionValue(form.actionValue);
     setActionNewValue(form.actionNewValue);
+    setStrategyLabel(form.strategyLabel);
     setPickedScope(form.pickedScope);
     // Las listas de errores/poderes tienen que volver a ser las del área/quest elegida.
     if (form.pickedScope !== undefined) onListScopeChange?.(form.pickedScope);
@@ -519,18 +538,28 @@ export function NodeConfirmFeedbackModal({
     ? (actionDelta === 10 ? selectedAcierto.estrategias : selectedAcierto.disparadores)
     : [];
 
+  // Estrategia elegida/tipeada en el formulario (victoria de un error/acierto, o acierto nuevo).
+  const chosenStrategy = (actionNewValue.trim() || actionValue || "").trim();
+  // Etiqueta efectiva: la elegida, o la sugerida para esa estrategia (ver labelForUse). Una
+  // estrategia que se crea (cubo "Nuevas estrategias" o la del error nuevo) arranca en la que ya
+  // tenga en el Journal, o en "Para intentar".
+  const usedStrategyLabel: StrategyLabel = strategyLabel ?? labelForUse(findJournalStrategy(journalStrategies, chosenStrategy));
+  const createdStrategyLabel = (strategyTitle: string): StrategyLabel =>
+    strategyLabel ?? findJournalStrategy(journalStrategies, strategyTitle)?.label ?? "para-intentar";
+
   const stepKeys = (cube: CubeId): StepKey[] => {
     const scopeStep: StepKey[] = fixedScope ? [] : ["scope"];
     switch (cube) {
+      case "strategy":
+        return ["description", "title", "strategyLabel"];
       case "thought":
       case "learning":
       case "discovery":
-      case "strategy":
       case "question":
       case "tool":
         return ["description", "title"];
       case "error":
-        if (errorTarget === NEW) return [...scopeStep, "errorPick", "errorBug", "errorComoSi", "errorChips", "errorLinks", "errorCategoria", "errorBarra", "errorReflexion"];
+        if (errorTarget === NEW) return [...scopeStep, "errorPick", "errorBug", ...(errorAccion.trim() ? ["errorAccionLabel" as const] : []), "errorComoSi", "errorChips", "errorLinks", "errorCategoria", "errorBarra", "errorReflexion"];
         if (actionErrorState && !actionErrorState.confirmed) return [...scopeStep, "errorPick", "errorConfirm"];
         return [...scopeStep, "errorPick", "errorDelta", "errorOption"];
       case "xp":
@@ -544,7 +573,7 @@ export function NodeConfirmFeedbackModal({
       case "acierto": {
         // Un acierto siempre es de un área/quest: sin "Ninguna".
         const aciertoScope: StepKey[] = fixedScope ? [] : ["nodeScope"];
-        if (errorTarget === NEW) return [...aciertoScope, "aciertoPick", "aciertoDescription", "aciertoName"];
+        if (errorTarget === NEW) return [...aciertoScope, "aciertoPick", "aciertoDescription", "aciertoName", "aciertoStrategy"];
         return [...aciertoScope, "aciertoPick", "aciertoResult", "aciertoOption"];
       }
     }
@@ -616,7 +645,16 @@ export function NodeConfirmFeedbackModal({
           const scope = fixedScope ?? pickedScope;
           if (!scope) return prev;
           if (errorTarget === NEW) {
-            return { ...prev, aciertos: [...prev.aciertos, { nombre: title.trim(), desc: sentence.trim(), scope }] };
+            return {
+              ...prev,
+              aciertos: [...prev.aciertos, {
+                nombre: title.trim(),
+                desc: sentence.trim(),
+                estrategia: chosenStrategy,
+                estrategiaLabel: usedStrategyLabel,
+                scope,
+              }],
+            };
           }
           if (!selectedAcierto || actionDelta === null) return prev;
           const typed = actionNewValue.trim();
@@ -633,6 +671,7 @@ export function NodeConfirmFeedbackModal({
               isNew: !!typed && !savedOptions.includes(typed),
               savedOptions,
               scope,
+              ...(actionDelta === 10 ? { strategyLabel: usedStrategyLabel } : {}),
             }],
           };
         }
@@ -643,7 +682,7 @@ export function NodeConfirmFeedbackModal({
         case "discovery":
           return { ...prev, discoveries: [...prev.discoveries, { title: title.trim(), sentence: sentence.trim() }] };
         case "strategy":
-          return { ...prev, strategies: [...prev.strategies, { title: title.trim(), sentence: sentence.trim() }] };
+          return { ...prev, strategies: [...prev.strategies, { title: title.trim(), sentence: sentence.trim(), label: createdStrategyLabel(title) }] };
         case "question":
           return { ...prev, questions: [...prev.questions, { title: title.trim(), sentence: sentence.trim() }] };
         case "tool":
@@ -672,6 +711,7 @@ export function NodeConfirmFeedbackModal({
                 categoria: errorCategoria,
                 barMode: errorBarMode,
                 reflexion: errorReflexion.trim(),
+                accionLabel: createdStrategyLabel(errorAccion),
                 scope: entryScope,
               }],
             };
@@ -697,6 +737,7 @@ export function NodeConfirmFeedbackModal({
               savedOptions,
               links: { skillIds: actionError.skillIds ?? [], bodyLinks: actionError.bodyLinks ?? [] },
               scope: entryScope,
+              ...(actionDelta === 10 ? { strategyLabel: usedStrategyLabel } : {}),
             }],
           };
         }
@@ -746,14 +787,15 @@ export function NodeConfirmFeedbackModal({
   const scopeName = (scope: { type: "area" | "project"; id: string }) =>
     (scope.type === "area" ? areas : projects).find((x) => x.id === scope.id)?.name ?? "Área/quest";
 
-  const listItems = (cube: CubeId): Array<{ key: string; label: string; detail?: string; onRemove?: () => void }> => {
+  const listItems = (cube: CubeId): Array<{ key: string; label: string; detail?: string; strategyLabel?: StrategyLabel; onRemove?: () => void }> => {
     const entries = (field: "thoughts" | "learnings" | "discoveries" | "strategies" | "questions" | "tools") =>
       draft[field].map((entry, i) => ({ key: `${field}-${i}`, label: entry.title, detail: entry.sentence || undefined, onRemove: () => removeAt(field, i) }));
     switch (cube) {
       case "thought": return entries("thoughts");
       case "learning": return entries("learnings");
       case "discovery": return entries("discoveries");
-      case "strategy": return entries("strategies");
+      case "strategy":
+        return draft.strategies.map((entry, i) => ({ key: `strategies-${i}`, label: entry.title, detail: entry.sentence || undefined, strategyLabel: entry.label, onRemove: () => removeAt("strategies", i) }));
       case "question": return entries("questions");
       case "tool": return entries("tools");
       case "error":
@@ -763,6 +805,7 @@ export function NodeConfirmFeedbackModal({
             key: `errorActions-${i}`,
             label: a.type === "confirm" ? `Confirmar: ${a.errorName}` : `${a.delta > 0 ? "+10p" : "-10p"} ${a.errorName}`,
             detail: a.type === "adjust" ? a.value : undefined,
+            strategyLabel: a.type === "adjust" ? a.strategyLabel : undefined,
             onRemove: () => removeAt("errorActions", i),
           })),
         ];
@@ -775,11 +818,18 @@ export function NodeConfirmFeedbackModal({
         ];
       case "acierto":
         return [
-          ...draft.aciertos.map((a, i) => ({ key: `aciertos-${i}`, label: `Nuevo: ${a.nombre}`, detail: a.desc || undefined, onRemove: () => removeAt("aciertos", i) })),
+          ...draft.aciertos.map((a, i) => ({
+            key: `aciertos-${i}`,
+            label: `Nuevo: ${a.nombre}`,
+            detail: [a.estrategia && `Estrategia: ${a.estrategia}`, a.desc].filter(Boolean).join(" · ") || undefined,
+            strategyLabel: a.estrategia ? a.estrategiaLabel : undefined,
+            onRemove: () => removeAt("aciertos", i),
+          })),
           ...draft.aciertoRecords.map((r, i) => ({
             key: `aciertoRecords-${i}`,
             label: `${r.resultado === "victoria" ? "Victoria" : "Derrota"}: ${r.aciertoName}`,
             detail: r.value,
+            strategyLabel: r.strategyLabel,
             onRemove: () => removeAt("aciertoRecords", i),
           })),
         ];
@@ -882,7 +932,7 @@ export function NodeConfirmFeedbackModal({
               <button
                 key={a.id}
                 type="button"
-                onClick={() => { setErrorTarget(a.id); setActionDelta(null); setActionValue(null); setActionNewValue(""); }}
+                onClick={() => { setErrorTarget(a.id); setActionDelta(null); setActionValue(null); setActionNewValue(""); setStrategyLabel(null); }}
                 className={optionClass(errorTarget === a.id)}
                 data-testid={`confirm-feedback-acierto-${a.id}`}
               >
@@ -899,6 +949,50 @@ export function NodeConfirmFeedbackModal({
         return renderDescriptionInput("Descripción", "¿Qué hiciste bien y por qué?", sentence, setSentence);
       case "aciertoName":
         return renderTitleInput("Acierto", "ACIERTO");
+      // Acierto nuevo: qué estrategia usé (de las del Journal, o una nueva) y su etiqueta.
+      case "aciertoStrategy":
+        return (
+          <div className="space-y-2">
+            <Label className={fieldLabel}>¿Qué estrategia usaste?</Label>
+            {journalStrategies.length > 0 && (
+              <div className="space-y-1.5 max-h-56 overflow-y-auto minimal-scrollbar pr-1">
+                {journalStrategies.map((strategy) => {
+                  const selected = actionValue === strategy.title && !actionNewValue.trim();
+                  return (
+                    <button
+                      key={strategy.id}
+                      type="button"
+                      onClick={() => { setActionValue(selected ? null : strategy.title); setActionNewValue(""); setStrategyLabel(null); }}
+                      className={cn(optionClass(selected), "rounded-md px-3 py-2 text-sm flex items-center justify-between gap-2")}
+                      data-testid={`confirm-feedback-acierto-strategy-${strategy.id}`}
+                    >
+                      <span className="min-w-0 truncate">{strategy.title}</span>
+                      <StrategyCountBadge label={strategy.label} count={strategy.useCount} />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <div className="flex items-center gap-1.5">
+              <Plus className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <Input
+                placeholder="Estrategia nueva"
+                value={actionNewValue}
+                onChange={(e) => { setActionNewValue(e.target.value); setStrategyLabel(null); }}
+                onKeyDown={submitOnEnter}
+                className={cn("h-8 text-sm", inputClass)}
+                data-testid="confirm-feedback-acierto-strategy-new"
+              />
+            </div>
+            {chosenStrategy ? (
+              <div className="pt-2">
+                <StrategyLabelPicker value={usedStrategyLabel} onChange={setStrategyLabel} title="Etiqueta de la estrategia" testIdPrefix="confirm-feedback-acierto-strategy-label" />
+              </div>
+            ) : (
+              <p className="text-[11px] text-muted-foreground">Opcional: si no elegís ninguna, el acierto se guarda sin estrategia.</p>
+            )}
+          </div>
+        );
       case "aciertoResult":
         return selectedAcierto ? (
           <div className="space-y-3">
@@ -911,7 +1005,7 @@ export function NodeConfirmFeedbackModal({
                 <button
                   key={delta}
                   type="button"
-                  onClick={() => { setActionDelta(delta); setActionValue(null); setActionNewValue(""); }}
+                  onClick={() => { setActionDelta(delta); setActionValue(null); setActionNewValue(""); setStrategyLabel(null); }}
                   className={cn(optionClass(actionDelta === delta), "text-center")}
                   data-testid={`confirm-feedback-acierto-${delta > 0 ? "victoria" : "derrota"}`}
                 >
@@ -932,7 +1026,7 @@ export function NodeConfirmFeedbackModal({
                   <button
                     key={option}
                     type="button"
-                    onClick={() => { setActionValue(option); setActionNewValue(""); }}
+                    onClick={() => { setActionValue(option); setActionNewValue(""); setStrategyLabel(null); }}
                     className={cn(optionClass(actionValue === option && !actionNewValue.trim()), "rounded-md px-3 py-2 text-sm")}
                   >
                     {option}
@@ -945,12 +1039,17 @@ export function NodeConfirmFeedbackModal({
               <Input
                 placeholder={actionDelta === 10 ? "Estrategia nueva" : "Disparador nuevo"}
                 value={actionNewValue}
-                onChange={(e) => setActionNewValue(e.target.value)}
+                onChange={(e) => { setActionNewValue(e.target.value); setStrategyLabel(null); }}
                 onKeyDown={submitOnEnter}
                 className={cn("h-8 text-sm", inputClass)}
                 data-testid="confirm-feedback-acierto-new-option"
               />
             </div>
+            {actionDelta === 10 && chosenStrategy && (
+              <div className="pt-2">
+                <StrategyLabelPicker value={usedStrategyLabel} onChange={setStrategyLabel} title="Etiqueta de la estrategia" testIdPrefix="confirm-feedback-strategy-label" />
+              </div>
+            )}
           </div>
         );
       case "nodeDesigner":
@@ -971,6 +1070,21 @@ export function NodeConfirmFeedbackModal({
         );
       case "title":
         return renderTitleInput("Título", "TÍTULO");
+      case "strategyLabel":
+        return (
+          <div className="space-y-2">
+            <p className="text-sm font-medium break-words">{title.trim()}</p>
+            <StrategyLabelPicker value={createdStrategyLabel(title)} onChange={setStrategyLabel} testIdPrefix="confirm-feedback-strategy-label" />
+          </div>
+        );
+      case "errorAccionLabel":
+        return (
+          <div className="space-y-2">
+            <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Estrategia</p>
+            <p className="text-sm font-medium break-words">{errorAccion.trim()}</p>
+            <StrategyLabelPicker value={createdStrategyLabel(errorAccion)} onChange={setStrategyLabel} testIdPrefix="confirm-feedback-error-strategy-label" />
+          </div>
+        );
 
       // ----- Error -----
       case "errorPick":
@@ -982,7 +1096,7 @@ export function NodeConfirmFeedbackModal({
                 <button
                   key={error.id}
                   type="button"
-                  onClick={() => { setErrorTarget(error.id); setActionDelta(null); setActionValue(null); setActionNewValue(""); }}
+                  onClick={() => { setErrorTarget(error.id); setActionDelta(null); setActionValue(null); setActionNewValue(""); setStrategyLabel(null); }}
                   className={optionClass(errorTarget === error.id)}
                   data-testid={`confirm-feedback-error-${error.id}`}
                 >
@@ -1108,7 +1222,7 @@ export function NodeConfirmFeedbackModal({
                     key={delta}
                     type="button"
                     disabled={disabled}
-                    onClick={() => { setActionDelta(delta); setActionValue(null); setActionNewValue(""); }}
+                    onClick={() => { setActionDelta(delta); setActionValue(null); setActionNewValue(""); setStrategyLabel(null); }}
                     className={cn(optionClass(actionDelta === delta), "text-center disabled:opacity-50 disabled:cursor-not-allowed")}
                     data-testid={`confirm-feedback-error-${delta > 0 ? "plus" : "minus"}`}
                   >
@@ -1130,7 +1244,7 @@ export function NodeConfirmFeedbackModal({
                   <button
                     key={option}
                     type="button"
-                    onClick={() => { setActionValue(option); setActionNewValue(""); }}
+                    onClick={() => { setActionValue(option); setActionNewValue(""); setStrategyLabel(null); }}
                     className={cn(optionClass(actionValue === option && !actionNewValue.trim()), "rounded-md px-3 py-2 text-sm")}
                   >
                     {option}
@@ -1143,12 +1257,17 @@ export function NodeConfirmFeedbackModal({
               <Input
                 placeholder={actionDelta === 10 ? "Estrategia nueva" : "Disparador nuevo"}
                 value={actionNewValue}
-                onChange={(e) => setActionNewValue(e.target.value)}
+                onChange={(e) => { setActionNewValue(e.target.value); setStrategyLabel(null); }}
                 onKeyDown={submitOnEnter}
                 className={cn("h-8 text-sm", inputClass)}
                 data-testid="confirm-feedback-error-new-option"
               />
             </div>
+            {actionDelta === 10 && chosenStrategy && (
+              <div className="pt-2">
+                <StrategyLabelPicker value={usedStrategyLabel} onChange={setStrategyLabel} title="Etiqueta de la estrategia" testIdPrefix="confirm-feedback-strategy-label" />
+              </div>
+            )}
           </div>
         );
 
@@ -1276,6 +1395,7 @@ export function NodeConfirmFeedbackModal({
                   <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium break-words">{item.label}</p>
+                    {item.strategyLabel && <StrategyLabelTag label={item.strategyLabel} className="mt-1" />}
                     {item.detail && <p className="mt-0.5 text-xs text-muted-foreground break-words line-clamp-2">{item.detail}</p>}
                   </div>
                   {item.onRemove && (

@@ -11,6 +11,7 @@ import { useBodyGainPopup } from "@/lib/body-gain-popup-context";
 import { beginPopupChain, endPopupChain, getPopupBusyDelay, getRawPopupBusyDelay, holdPopups, markPopupActive, releasePopups, runPopupQueueAsync } from "@/lib/popup-coordinator";
 import { FIXED_XP_AMOUNT, useApplyExperienceGain, useErrorAdjustPopups, type ErrorAdjustResult } from "@/lib/node-reward-actions";
 import { type BodyLink } from "@/components/BodyLinkPicker";
+import type { StrategyLabel } from "@shared/schema";
 import {
   NodeConfirmFeedbackModal,
   isNodeFeedbackDraftEmpty,
@@ -206,6 +207,15 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
     return res.json();
   };
 
+  // Usa una estrategia del Journal: la crea si no existe, le pone la etiqueta y, con `count`,
+  // le suma un uso. Devuelve si la creó (para el pop-up "¡Nueva estrategia!").
+  const applyJournalStrategy = async (title: string, label: StrategyLabel | undefined, count: boolean, skillId: string | null) => {
+    if (!title.trim()) return false;
+    const result = await postJson<{ created: boolean } | null>("/api/journal/strategies/use", "POST", { title, label, count, skillId });
+    queryClient.invalidateQueries({ queryKey: ["/api/journal/strategies"] });
+    return !!result?.created;
+  };
+
   const invalidateScope = (scope: FeedbackScope) => {
     queryClient.invalidateQueries({ queryKey: ["/api/node-errors"] });
     if (scope) {
@@ -237,11 +247,11 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
     const confirmedScope = targetScope(target);
     const blocks: RewardBlock[] = [];
 
-    const journalBlock = (kind: "thoughts" | "learnings" | "discoveries" | "strategies" | "questions" | "tools", popupType: "thought" | "learning" | "discovery" | "strategy" | "question" | "tool", entry: { title: string; sentence: string }): RewardBlock => ({
+    const journalBlock = (kind: "thoughts" | "learnings" | "discoveries" | "strategies" | "questions" | "tools", popupType: "thought" | "learning" | "discovery" | "strategy" | "question" | "tool", entry: { title: string; sentence: string; label?: StrategyLabel }): RewardBlock => ({
       label: `+${popupType}: ${entry.title}`,
       run: async (enqueue) => {
         const countBefore = await getJournalEntryCount(kind, confirmedScope);
-        await postJson(`/api/journal/${kind}`, "POST", { title: entry.title, sentence: entry.sentence, skillId });
+        await postJson(`/api/journal/${kind}`, "POST", { title: entry.title, sentence: entry.sentence, skillId, ...(entry.label ? { label: entry.label } : {}) });
         queryClient.invalidateQueries({ queryKey: [`/api/journal/${kind}`] });
         enqueue(() => showInsightsCounterPopup({ type: popupType, countBefore, countAfter: countBefore + 1 }));
       },
@@ -258,12 +268,13 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
       blocks.push({
         label: `+Acierto: ${acierto.nombre}`,
         run: async (enqueue) => {
-          await postJson("/api/source-bugs", "POST", {
+          const createdAcierto = await postJson<{ newStrategies?: string[] }>("/api/source-bugs", "POST", {
             ...(acierto.scope.type === "area" ? { areaId: acierto.scope.id } : { projectId: acierto.scope.id }),
             kind: "acierto",
             nombre: acierto.nombre,
             accion: "",
-            estrategias: [],
+            // La estrategia usada queda en la lista del acierto, para sus próximos registros.
+            estrategias: acierto.estrategia ? [acierto.estrategia] : [],
             desc: acierto.desc,
             categoria: "",
             barMode: "victorias",
@@ -271,6 +282,13 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
           });
           queryClient.invalidateQueries({ queryKey: ["all-area-bugs"] });
           enqueue(() => showErrorCelebration({ name: acierto.nombre, kind: "acierto" }));
+          // Usarla en el acierto la refuerza en el Journal (+1 uso, con su etiqueta).
+          if (acierto.estrategia) {
+            // El alta del acierto ya la crea en el Journal si era nueva (newStrategies).
+            const createdByUse = await applyJournalStrategy(acierto.estrategia, acierto.estrategiaLabel, true, skillId);
+            const name = acierto.estrategia;
+            if (createdByUse || (createdAcierto.newStrategies?.length ?? 0) > 0) enqueue(() => showErrorCelebration({ name, kind: "estrategia" }));
+          }
         },
       });
     }
@@ -298,6 +316,10 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
             },
           );
           queryClient.invalidateQueries({ queryKey: ["all-area-bugs"] });
+          // El registro ya le sumó el uso a la estrategia; acá solo va la etiqueta elegida.
+          if (record.resultado === "victoria" && record.strategyLabel) {
+            await applyJournalStrategy(record.value, record.strategyLabel, false, skillId);
+          }
           const { before, after } = addBodyBlock("mente", "flex");
           enqueue(() => showBodyGainPopup({ zone: "mente", dimension: "flex", before, after }));
           if (created.bugProgress) {
@@ -327,7 +349,7 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
     // Error nuevo: un solo error, en un solo lugar -- el error de nodo y su bug de la tab Errores
     // del Journal (el server los crea vinculados; sin nodo ni área/quest queda en "+ errores").
     // Se confirma de una ("¡Error nuevo detectado!").
-    for (const { scope, reflexion, ...error } of draft.errors) {
+    for (const { scope, reflexion, accionLabel, ...error } of draft.errors) {
       blocks.push({
         label: `+Error: ${error.nombre}`,
         run: async (enqueue) => {
@@ -339,6 +361,8 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
           });
           await confirmError(scope, created.id, enqueue);
           queryClient.invalidateQueries({ queryKey: ["all-area-bugs"] });
+          // La estrategia (acción) del error queda con la etiqueta elegida; crearla no es un uso.
+          if (error.accion) await applyJournalStrategy(error.accion, accionLabel, false, skillId);
           // Sus estrategias quedaron en la tab Estrategias del Journal: pop-up de cada una nueva.
           if (created.newStrategies?.length) {
             queryClient.invalidateQueries({ queryKey: ["/api/journal/strategies"] });
@@ -367,6 +391,10 @@ export function NodeConfirmFeedbackProvider({ children }: { children: React.Reac
             disparador: action.delta < 0 ? action.value : null,
           });
           invalidateScope(action.scope);
+          // El +10 ya le sumó el uso a la estrategia; acá solo va la etiqueta elegida.
+          if (action.delta > 0 && action.strategyLabel) {
+            await applyJournalStrategy(action.value, action.strategyLabel, false, skillId);
+          }
           await runErrorAdjustPopups(result, action.delta, action.links, AREA_COLOR);
         },
       });
