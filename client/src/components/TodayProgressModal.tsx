@@ -416,6 +416,20 @@ function TaskTimerControl({ timerKey, minutes, done }: { timerKey: string; minut
   );
 }
 
+// Tres puntitos que saltan uno después del otro al lado del nombre mientras la tarea tiene el ▶
+// andando: indica que está en proceso. Nada si no corre o si ya está hecha.
+function RunningDots({ timerKey, done }: { timerKey?: string | null; done?: boolean }) {
+  const allTimers = useAllTaskTimers();
+  if (!timerKey || done || allTimers[timerKey]?.status !== "running") return null;
+  return (
+    <span className="running-dots ml-1 inline-flex items-end gap-[2px] align-baseline text-amber-500" aria-label="En proceso" role="status">
+      <span />
+      <span />
+      <span />
+    </span>
+  );
+}
+
 // Contador "hechas/total" que se muestra arriba del nombre de una tarea que se completa varias
 // veces por día: un rewiring "veces por día" (1/3, 2/3…) o el hábito que lo reemplaza al
 // cerrarse la cuota (3/3). Se omite cuando el total es 1 — ahí no aporta nada.
@@ -688,6 +702,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       label: (
         <>
           {h.emoji} {h.name}
+          <RunningDots timerKey={timerKeyFor(`habit:${h.id}`)} done={done} />
           <MinutesSuffix minutes={h.minMinutes} timerKey={timerKeyFor(`habit:${h.id}`, h.minMinutes)} timerDone={done} />
           {rewiringHabitBadgeById.has(h.id) && (
             <TaskCountBadge {...rewiringHabitBadgeById.get(h.id)!} />
@@ -866,6 +881,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       label: (
         <>
           {h.emoji} {h.name}
+          <RunningDots timerKey={timerKeyFor(`habit:${h.id}`)} done={done} />
           <MinutesSuffix minutes={h.minMinutes} timerKey={timerKeyFor(`habit:${h.id}`, h.minMinutes)} timerDone={done} />
           {rewiringHabitBadgeById.has(h.id) && (
             <TaskCountBadge {...rewiringHabitBadgeById.get(h.id)!} />
@@ -993,7 +1009,9 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       id: n.id,
       label: (
         <>
-          {stripLeadingEmoji(n.title)} <span className="text-muted-foreground">· {n.parentName}</span>
+          {stripLeadingEmoji(n.title)}
+          <RunningDots timerKey={timerKeyFor(`node:${n.id}`)} done={n.done} />{" "}
+          <span className="text-muted-foreground">· {n.parentName}</span>
           {!n.done && <StartTimeSuffix startTime={n.plannedStartTime} showRemaining={effectiveDate === todayStr} />}
           <MinutesSuffix minutes={n.plannedDuration} />
         </>
@@ -1121,7 +1139,9 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       id: n.id,
       label: (
         <>
-          {stripLeadingEmoji(n.title)} <span className="text-muted-foreground">· {n.parentName}</span>
+          {stripLeadingEmoji(n.title)}
+          <RunningDots timerKey={timerKeyFor(`node:${n.id}`)} done={n.done} />{" "}
+          <span className="text-muted-foreground">· {n.parentName}</span>
           {!n.done && <StartTimeSuffix startTime={n.plannedStartTime} showRemaining={effectiveDate === todayStr} />}
           <MinutesSuffix minutes={n.plannedDuration} deadline={n.done ? null : n.plannedDeadline} showRemaining={!n.done && effectiveDate === todayStr} timerKey={timerKeyFor(`node:${n.id}`, n.plannedDuration)} timerDone={n.done} />
         </>
@@ -1137,6 +1157,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       label: (
         <>
           {p.emoji} {p.name}
+          <RunningDots timerKey={timerKeyFor(`practice:${p.id}`)} done={done} />
           <MinutesSuffix minutes={p.minMinutes} timerKey={timerKeyFor(`practice:${p.id}`, p.minMinutes)} timerDone={done} />
         </>
       ),
@@ -1154,6 +1175,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       label: (
         <>
           {t.kind === "event" ? <>📅 {stripLeadingEmoji(t.title)}</> : stripLeadingEmoji(t.title)}
+          <RunningDots timerKey={timerKeyFor(`manual:${t.id}`)} done={t.done === 1} />
           {t.done !== 1 && <StartTimeSuffix startTime={t.startTime} showRemaining={effectiveDate === todayStr} />}
           <MinutesSuffix minutes={t.minutes} deadline={t.done === 1 ? null : t.deadline} showRemaining={t.done !== 1 && effectiveDate === todayStr} timerKey={timerKeyFor(`manual:${t.id}`, t.minutes)} timerDone={t.done === 1} />
         </>
@@ -5252,6 +5274,7 @@ function TodaySubRow({
       }`}
     >
       {title}
+      <RunningDots timerKey={timerKey} done={done} />
       {!done && <StartTimeSuffix startTime={startTime} showRemaining={showRemaining} />}
       {/* Ya hecha: queda solo el tiempo previsto, sin la hora límite ni lo que falta. */}
       <MinutesSuffix minutes={minutes} deadline={done ? null : deadline} showRemaining={showRemaining && !done} timerKey={timerKey} timerDone={done} />
