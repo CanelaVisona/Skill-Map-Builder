@@ -158,6 +158,25 @@ function minutesUntilDeadline(deadline: string): number | null {
 
 // Re-renderiza cada vez que cambia el minuto del reloj (alineado al segundo 0, no cada 60 s
 // desde que se montó), para que lo que depende de la hora se actualice justo a tiempo.
+// Radix abre los DropdownMenu en pointerdown: con el dedo, apoyarlo para scrollear ya abría el
+// menú de la tarea. Para touch/lápiz se cancela ese pointerdown (preventDefault en pointerdown no
+// frena el scroll) y el menú se abre en el click, que el navegador solo dispara si el dedo no se
+// movió. Con mouse sigue igual que siempre. Va en el DropdownMenuTrigger.
+function useTapToOpenMenu(onTap: () => void) {
+  const touchRef = React.useRef(false);
+  return {
+    onPointerDown: (e: React.PointerEvent) => {
+      touchRef.current = e.pointerType !== "mouse";
+      if (touchRef.current) e.preventDefault();
+    },
+    onClick: () => {
+      if (!touchRef.current) return;
+      touchRef.current = false;
+      onTap();
+    },
+  };
+}
+
 function useMinuteTick(active: boolean) {
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -3007,7 +3026,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // manual suelta, sin área/quest; respeta "Empieza a las" y la franja del diálogo.
   const submitNewTask = async (activity?: TodayActivity, freeMinutes?: number) => {
     const isFreeTime = freeMinutes !== undefined;
-    const title = isFreeTime ? "Tiempo libre" : activity ? activity.title : newTaskTitle.trim();
+    const title = isFreeTime ? `${freeMinutes} minutos de tiempo libre` : activity ? activity.title : newTaskTitle.trim();
     if (!title) return;
     const parsedMinutes = parseInt(newTaskMinutes, 10);
     const minutes = isFreeTime ? freeMinutes : Number.isFinite(parsedMinutes) && parsedMinutes > 0 ? parsedMinutes : null;
@@ -3550,7 +3569,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   return (
     <TimerFamilyContext.Provider value={timerFamily}>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md rounded-2xl border-none max-h-[85vh] overflow-y-auto minimal-scrollbar" showCloseButton={false}>
+      <DialogContent className="no-touch-select max-w-md rounded-2xl border-none max-h-[85vh] overflow-y-auto minimal-scrollbar" showCloseButton={false}>
         <VisuallyHidden>
           <DialogTitle>Progreso de hoy</DialogTitle>
         </VisuallyHidden>
@@ -4382,7 +4401,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     </Dialog>
 
     <Dialog open={addTaskDialogOpen} onOpenChange={setAddTaskDialogOpen}>
-      <DialogContent className="max-w-sm rounded-2xl">
+      <DialogContent className="no-touch-select max-w-sm rounded-2xl">
         <DialogTitle>
           {addTaskTargetSlot
             ? `Nueva tarea para ${TIME_SLOTS.find((s) => s.key === addTaskTargetSlot)?.label}`
@@ -5223,6 +5242,8 @@ function TodaySubRow({
   onClearSlot?: () => void;
 }) {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const tapToOpenMenu = useTapToOpenMenu(() => setMenuOpen(true));
   const hasMenu = !!(onMoveUp || onMoveDown || onRename || onAssignTime || onAddChild || onDelete || onMoveToSlot);
   const titleNode = (
     <span
@@ -5259,8 +5280,8 @@ function TodaySubRow({
             {done && <Check className="h-2 w-2 text-yellow-900" strokeWidth={3} />}
           </span>
           {hasMenu ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>{titleNode}</DropdownMenuTrigger>
+            <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+              <DropdownMenuTrigger asChild {...tapToOpenMenu}>{titleNode}</DropdownMenuTrigger>
               <DropdownMenuContent
                 align="end"
                 className="max-h-[min(60vh,var(--radix-dropdown-menu-content-available-height))] overflow-y-auto overscroll-contain touch-pan-y minimal-scrollbar"
@@ -5420,12 +5441,19 @@ function TodayTaskRow({
   // cuando aplica. Mismo timing (1500ms) que el long-press de SkillNode. "Sacar de
   // hoy"/"Eliminar" quedan en el menú de un click, no en el long-press.
   const canLongPress = !!onChangeDay;
+  // Toque (sin arrastrar) abre el menú; después de un long-press no.
+  const tapToOpenMenu = useTapToOpenMenu(() => {
+    if (!isLongPress.current) setMenuOpen(true);
+  });
+  // Dónde se apoyó el dedo: si se mueve más de unos px (está scrolleando), no es long-press.
+  const touchStart = React.useRef<{ x: number; y: number } | null>(null);
 
   const startLongPress = (e: React.MouseEvent | React.TouchEvent) => {
     // No debe burbujear al fondo (que tiene su propio long-press para agregar una tarea).
     e.stopPropagation();
-    if (!canLongPress) return;
     isLongPress.current = false;
+    if ("touches" in e && e.touches[0]) touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    if (!canLongPress) return;
     longPressTimer.current = setTimeout(() => {
       isLongPress.current = true;
       onChangeDay?.();
@@ -5440,10 +5468,17 @@ function TodayTaskRow({
     }
   };
 
+  const moveLongPress = (e: React.TouchEvent) => {
+    const t = e.touches[0];
+    const start = touchStart.current;
+    if (!t || !start) return;
+    if (Math.abs(t.clientX - start.x) > 8 || Math.abs(t.clientY - start.y) > 8) cancelLongPress(e);
+  };
+
   return (
     <TimerPlayContext.Provider value={!!current || !!blockCurrent}>
       <div
-        className={`flex items-center gap-2 text-sm touch-none select-none transition-opacity ${
+        className={`flex items-center gap-2 text-sm select-none transition-opacity ${
           dimmed ? "opacity-25" : ""
         } ${
           current
@@ -5454,6 +5489,7 @@ function TodayTaskRow({
         onMouseUp={cancelLongPress}
         onMouseLeave={cancelLongPress}
         onTouchStart={startLongPress}
+        onTouchMove={moveLongPress}
         onTouchEnd={cancelLongPress}
         onTouchCancel={cancelLongPress}
       >
@@ -5486,7 +5522,7 @@ function TodayTaskRow({
             setMenuOpen(next);
           }}
         >
-          <DropdownMenuTrigger asChild>
+          <DropdownMenuTrigger asChild {...tapToOpenMenu}>
             <span
               className={`flex-1 cursor-pointer ${item.done ? (pastDay ? "text-yellow-600 font-medium" : "text-yellow-600/60") : ""} ${
                 current || blockCurrent ? "text-[15px] font-semibold leading-snug" : ""

@@ -328,3 +328,19 @@ body:has(.journal-minimal-scroll) *::-webkit-scrollbar-button {
 .page-flip-back {
   transform: rotateY(180deg);
 }
+
+/* Zonas con "mantener apretado" (Tareas de hoy): en iPhone el long-press del sistema selecciona
+   el texto (y muestra la lupa/menú de copiar) antes de que llegue nuestro pop-up. Se apaga la
+   selección y el callout ahí, pero los campos de texto siguen siendo editables. */
+.no-touch-select {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.no-touch-select input,
+.no-touch-select textarea,
+.no-touch-select [contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
