@@ -527,6 +527,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   const [newTaskStartTime, setNewTaskStartTime] = useState("");
   // Secciones desplegables del diálogo (cerradas por defecto): área/quest y agregar un hábito.
   const [newTaskParentOpen, setNewTaskParentOpen] = useState(false);
+  // Acordeón "Tiempo libre" del diálogo de nueva tarea: chips de minutos que agregan un bloque.
+  const [newTaskFreeTimeOpen, setNewTaskFreeTimeOpen] = useState(false);
   const [newTaskHabitsOpen, setNewTaskHabitsOpen] = useState(false);
   // Acordeón "Actividades" del formulario de nueva tarea, y el diálogo para crear/editar una
   // (se abre manteniendo apretado el título "Actividades", o una actividad para editarla).
@@ -2955,6 +2957,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       setNewTaskDeadline("");
       setNewTaskStartTime("");
       setNewTaskParentOpen(false);
+      setNewTaskFreeTimeOpen(false);
       setNewTaskHabitsOpen(false);
       setAddTaskTargetSlot(null);
       setAddTaskDialogOpen(true);
@@ -2983,6 +2986,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       setNewTaskDeadline("");
       setNewTaskStartTime("");
       setNewTaskParentOpen(false);
+      setNewTaskFreeTimeOpen(false);
       setNewTaskHabitsOpen(false);
       setAddTaskTargetSlot(slot);
       setAddTaskDialogOpen(true);
@@ -2999,14 +3003,25 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
 
   // Con `activity`, la tarea sale de una actividad ya armada (su título y sus skills); el tiempo y la
   // franja elegidos en el formulario se usan igual.
-  const submitNewTask = async (activity?: TodayActivity) => {
-    const title = activity ? activity.title : newTaskTitle.trim();
+  // Con `freeMinutes`, es un bloque de "Tiempo libre" de esa duración (chips del acordeón): tarea
+  // manual suelta, sin área/quest; respeta "Empieza a las" y la franja del diálogo.
+  const submitNewTask = async (activity?: TodayActivity, freeMinutes?: number) => {
+    const isFreeTime = freeMinutes !== undefined;
+    const title = isFreeTime ? "Tiempo libre" : activity ? activity.title : newTaskTitle.trim();
     if (!title) return;
     const parsedMinutes = parseInt(newTaskMinutes, 10);
-    const minutes = Number.isFinite(parsedMinutes) && parsedMinutes > 0 ? parsedMinutes : null;
-    const deadline = minutes !== null && newTaskDeadline ? newTaskDeadline : null;
+    const minutes = isFreeTime ? freeMinutes : Number.isFinite(parsedMinutes) && parsedMinutes > 0 ? parsedMinutes : null;
+    const deadline = !isFreeTime && minutes !== null && newTaskDeadline ? newTaskDeadline : null;
     const startTime = newTaskStartTime || null;
     setAddTaskDialogOpen(false);
+    if (isFreeTime) {
+      const created = await createManualTask.mutateAsync({ date: effectiveDate, title, kind: "task", minutes, deadline: null, startTime });
+      if (startTime) placeByStartTime("manual", created.id, startTime);
+      else if (addTaskTargetSlot) {
+        setTaskSlot.mutate({ date: effectiveDate, taskType: "manual", taskId: created.id, slot: addTaskTargetSlot });
+      }
+      return;
+    }
     if (!activity && newTaskKind === "event" && newTaskParent) {
       const [linkedKind, linkedParentId] = newTaskParent.split(":") as ["area" | "project", string];
       const created = await createManualTask.mutateAsync({ date: effectiveDate, title, kind: "event", linkedKind, linkedParentId, minutes, deadline, startTime });
@@ -4436,37 +4451,66 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
               className="h-7 w-20 text-xs"
             />
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground whitespace-nowrap">O hasta las</span>
-            <Input
-              type="time"
-              value={newTaskDeadline}
-              onChange={(e) => {
-                const value = e.target.value;
-                setNewTaskDeadline(value);
-                const m = value ? minutesUntilDeadline(value) : null;
-                setNewTaskMinutes(m ? String(m) : "");
-              }}
-              className="h-7 w-28 text-xs"
-            />
-            {newTaskDeadline && (
-              <span className="text-xs text-muted-foreground">
-                {minutesUntilDeadline(newTaskDeadline)
-                  ? `${minutesUntilDeadline(newTaskDeadline)} min · hasta ${formatDeadline(newTaskDeadline)}`
-                  : "Elegí una hora que todavía no pasó"}
-              </span>
-            )}
+          {/* "Empieza a las" (al llegar esa hora, la tarea pasa sola a ser la de "Ahora") y al
+              lado "Hasta las" (los minutos se calculan desde ahora hasta esa hora). */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground whitespace-nowrap">Empieza a las</span>
+              <Input
+                type="time"
+                value={newTaskStartTime}
+                onChange={(e) => setNewTaskStartTime(e.target.value)}
+                className="h-7 w-24 text-xs"
+              />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground whitespace-nowrap">Hasta las</span>
+              <Input
+                type="time"
+                value={newTaskDeadline}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setNewTaskDeadline(value);
+                  const m = value ? minutesUntilDeadline(value) : null;
+                  setNewTaskMinutes(m ? String(m) : "");
+                }}
+                className="h-7 w-24 text-xs"
+              />
+            </div>
           </div>
-          {/* Al llegar esa hora, la tarea pasa sola a ser la de "Ahora". */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground whitespace-nowrap">Empieza a las</span>
-            <Input
-              type="time"
-              value={newTaskStartTime}
-              onChange={(e) => setNewTaskStartTime(e.target.value)}
-              className="h-7 w-28 text-xs"
-            />
-          </div>
+          {newTaskDeadline && (
+            <p className="text-xs text-muted-foreground">
+              {minutesUntilDeadline(newTaskDeadline)
+                ? `${minutesUntilDeadline(newTaskDeadline)} min · hasta ${formatDeadline(newTaskDeadline)}`
+                : "Elegí una hora que todavía no pasó"}
+            </p>
+          )}
+        </div>
+        {/* Tiempo libre: tocar un chip agrega al toque un bloque "Tiempo libre" de esa duración
+            (usa "Empieza a las" y la franja del diálogo, si hay). */}
+        <div className="space-y-1.5">
+          <button
+            type="button"
+            onClick={() => setNewTaskFreeTimeOpen((o) => !o)}
+            className="flex w-full items-center gap-1 text-xs font-bold uppercase tracking-wide text-muted-foreground"
+          >
+            {newTaskFreeTimeOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+            Tiempo libre
+          </button>
+          {newTaskFreeTimeOpen && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {[5, 10, 15, 30, 45, 60, 90].map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => submitNewTask(undefined, m)}
+                  className="rounded-full border border-border/50 px-3 py-1 text-xs transition-colors hover:bg-muted active:bg-muted/60"
+                >
+                  {m} min
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         {(areas.length > 0 || projects.length > 0) && (
           <div className="space-y-1.5">
