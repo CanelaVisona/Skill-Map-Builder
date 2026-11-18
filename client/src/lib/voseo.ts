@@ -13,6 +13,9 @@ const NOT_VERBS = new Set([
   "más", "sí", "así", "aquí", "ahí", "allí", "acá", "allá", "ya", "mamá", "papá", "sofá", "café",
   "bebé", "puré", "menú", "champú", "colibrí", "maní", "esquí", "rubí", "ají", "jabalí", "también",
   "jamás", "quizá", "está", "esté", "será", "habrá", "podrá", "tendrá", "bidé", "comité", "carné",
+  "té", "sé", "dé", "mí", "tú", "él", "paté", "canapé", "consomé", "parqué", "suflé", "frappé",
+  "cliché", "chalé", "corsé", "bisturí", "maniquí", "frenesí", "alhelí", "pirulí", "Perú", "vudú",
+  "canadá", "panamá", "bogotá", "sofás",
 ]);
 // Sustantivos que terminan como un verbo con pronombre pegado ("toma+te", "mode+lo").
 const NOUNS_LIKE_CLITIC = new Set([
@@ -23,6 +26,11 @@ const NOUNS_LIKE_CLITIC = new Set([
   "tornillo", "camello", "sello", "cuello", "bella", "botella", "estrella", "huella", "olla", "pantalla",
   "toalla", "medalla", "batalla", "muralla", "valla", "silla", "mejilla", "semilla", "orilla", "pastilla",
   "almohadilla", "tortilla", "ardilla", "rodilla", "zapatilla", "vainilla", "manzanilla", "mantequilla",
+  "regalo", "regalos", "caramelo", "caramelos", "pomelo", "pomelos", "modelos", "estilo", "estilos",
+  "kilos", "hilos", "palos", "intervalo", "protocolo", "escala", "escalas", "novela", "novelas",
+  "mochila", "mochilas", "consola", "consolas", "canela", "velas", "telas", "pilas", "bolas", "colas",
+  "salas", "animales", "materiales", "señales", "canales", "pañales", "postales", "metales",
+  "tamales", "frutales", "hospitales", "vegetales", "cereales", "manuales", "rituales", "mensuales",
 ]);
 
 // Pronombres pegados al imperativo (de más largo a más corto) y cómo quedan antes del verbo en
@@ -126,32 +134,65 @@ function pastFirstPerson(inf: string): string {
 
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 // Lo que se le dice a uno pasa a primera persona en el resto del título.
-const toFirstPerson = (rest: string) =>
-  rest.replace(/(^|[^\p{L}])(tu|tus|Tu|Tus)(?=$|[^\p{L}])/gu, (_m, pre: string, w: string) =>
-    pre + ({ tu: "mi", tus: "mis", Tu: "Mi", Tus: "Mis" } as Record<string, string>)[w]);
+const FIRST_PERSON: Record<string, string> = { tu: "mi", tus: "mis", Tu: "Mi", Tus: "Mis" };
+// Palabras que suelen unir dos órdenes ("Meditá y escribí", "Lavate, vestite y desayuná").
+const JOINERS = new Set(["y", "e", "o", "u", "ni", "luego", "después", "despues", "entonces", "pero", "mientras", "antes"]);
+
+function conjugateWord(word: string, parsed: Parsed, tense: "gerund" | "past"): string {
+  const upper = word.charAt(0) !== word.charAt(0).toLowerCase();
+  let verb: string;
+  if (tense === "gerund") {
+    verb = gerund(parsed.infinitive);
+    // Pronombre pegado: el gerundio lleva tilde ("Lavándome", "Haciéndolo").
+    if (parsed.clitic) verb = verb.replace(/([ae])(ndo)$/, (_x, v: string, n: string) => ACCENTED[v] + n) + parsed.clitic.post;
+  } else {
+    verb = pastFirstPerson(parsed.infinitive);
+    if (parsed.clitic) verb = parsed.clitic.pre + " " + verb;
+  }
+  return upper ? capitalize(verb) : verb;
+}
 
 const cache = new Map<string, string>();
 
+// Conjuga todos los verbos en imperativo del título. La primera palabra se reconoce sola; las
+// demás tienen que estar en minúscula (una con mayúscula en el medio es un nombre: "Llamá a
+// José") y, si no llevan tilde ("lavate", "hacelo"), venir después de una coma o de un "y/o/
+// luego…", para no confundir sustantivos como "regalo" o "animales" con un verbo + pronombre.
 export function conjugateTaskTitle(title: string, tense: "gerund" | "past"): string {
   const key = tense + "\u0000" + title;
   const hit = cache.get(key);
   if (hit !== undefined) return hit;
-  let result = title;
-  const m = title.match(/^([^\p{L}]*)(\p{L}+)([\s\S]*)$/u);
-  const parsed = m ? parseImperative(m[2]) : null;
-  if (m && parsed) {
-    const [, lead, word, rest] = m;
-    const upper = word.charAt(0) !== word.charAt(0).toLowerCase();
-    let verb: string;
-    if (tense === "gerund") {
-      verb = gerund(parsed.infinitive);
-      // Pronombre pegado: el gerundio lleva tilde ("Lavándome", "Haciéndolo").
-      if (parsed.clitic) verb = verb.replace(/([ae])(ndo)$/, (_x, v: string, n: string) => ACCENTED[v] + n) + parsed.clitic.post;
-    } else {
-      verb = pastFirstPerson(parsed.infinitive);
-      if (parsed.clitic) verb = parsed.clitic.pre + " " + verb;
+  const words = [...title.matchAll(/\p{L}+/gu)];
+  const out: string[] = [];
+  let cursor = 0;
+  let anyVerb = false;
+  let prevWord = "";
+  words.forEach((m, i) => {
+    const word = m[0];
+    const start = m.index!;
+    const gap = title.slice(cursor, start);
+    out.push(gap);
+    cursor = start + word.length;
+    let parsed: Parsed | null = null;
+    if (i === 0) parsed = parseImperative(word);
+    else if (word === word.toLowerCase()) {
+      const candidate = parseImperative(word);
+      const afterJoiner = JOINERS.has(prevWord.toLowerCase()) || /[,;:.!?\-–—/+→]/.test(gap);
+      // En el medio, "-los/-las/-les" casi siempre es un plural ("animales", "regalos").
+      const pluralClitic = /(los|las|les)$/.test(word) && !!candidate?.clitic;
+      if (candidate && (!candidate.clitic || (afterJoiner && !pluralClitic))) parsed = candidate;
     }
-    result = lead + (upper ? capitalize(verb) : verb) + toFirstPerson(rest);
+    if (parsed) {
+      anyVerb = true;
+      out.push(conjugateWord(word, parsed, tense));
+    } else out.push(word);
+    prevWord = word;
+  });
+  out.push(title.slice(cursor));
+  let result = title;
+  if (anyVerb) {
+    // Segunda pasada solo para "tu/tus" → "mi/mis" (palabras que no son verbos).
+    result = out.join("").replace(/(?<!\p{L})(tu|tus|Tu|Tus)(?!\p{L})/gu, (w) => FIRST_PERSON[w]);
   }
   cache.set(key, result);
   return result;
