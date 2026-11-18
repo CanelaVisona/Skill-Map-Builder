@@ -775,7 +775,7 @@ function JournalSection({
                   <div key={entry.id}>
                     <button
                       onClick={(e) => { e.stopPropagation(); setViewingEntry(entry); }}
-                      className={`w-full text-left px-3 py-2 rounded text-sm transition-all cursor-pointer select-none ${
+                      className={`w-full text-left px-3 py-2 rounded text-sm uppercase transition-all cursor-pointer select-none ${
                         viewingEntry?.id === entry.id 
                           ? "bg-zinc-700 text-zinc-100 shadow-sm" 
                           : "text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200"
@@ -2139,7 +2139,7 @@ function ToolsSection({
                       onMouseDown={() => handleLeftLongPressStart(entry)}
                       onMouseUp={handleLeftLongPressEnd}
                       onMouseLeave={handleLeftLongPressEnd}
-                      className={`w-full text-left px-3 py-2 rounded text-sm transition-all cursor-pointer select-none ${
+                      className={`w-full text-left px-3 py-2 rounded text-sm uppercase transition-all cursor-pointer select-none ${
                         viewingEntry?.id === entry.id
                           ? "bg-secondary text-foreground shadow-sm"
                           : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground/80"
@@ -2192,7 +2192,9 @@ function ToolsSection({
                 </div>
               </div>
               {isEditMode ? (
-                <div className="space-y-3">
+                // Todo lo editable (incluida la etiqueta de la estrategia) queda dentro del panel;
+                // si no entra, scrollea con la barra minimalista.
+                <div className="flex-1 min-h-0 overflow-y-auto minimal-scrollbar pr-1 space-y-3">
                   <Input
                     placeholder="Title"
                     value={editTitle}
@@ -2502,7 +2504,7 @@ function LearningsSection({
   entries: JournalSectionEntry[];
   isLoading: boolean;
   onDelete: (id: string) => void;
-  onUpdate?: (id: string, data: { title: string; sentence: string; label?: StrategyLabel }) => void;
+  onUpdate?: (id: string, data: { title: string; sentence: string; label?: StrategyLabel; areaId?: string | null; projectId?: string | null }) => void;
   questMap: SkillQuestMap;
   variant?: keyof typeof ENTRY_SECTION_TEXTS;
   // Mantener apretado el título ("N discoveries") abre "Nueva entrada" para agregar una de esta tab.
@@ -2522,6 +2524,8 @@ function LearningsSection({
   const [editSentence, setEditSentence] = useState("");
   // Solo Estrategias: etiqueta (Para intentar / Útil / No útil), editable.
   const [editLabel, setEditLabel] = useState<StrategyLabel>("para-intentar");
+  // Solo Estrategias: área/quest ("area-<id>" / "project-<id>"; "" = sin asignar).
+  const [editQuestKey, setEditQuestKey] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [selectedQuestKey, setSelectedQuestKey] = useState<string | null>(null);
   const longPressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2558,6 +2562,7 @@ function LearningsSection({
       setEditTitle(entry.title);
       setEditSentence(entry.sentence || "");
       setEditLabel(strategyOf(entry)?.label ?? "para-intentar");
+      setEditQuestKey(entryQuestInfo(entry, questMap)?.key ?? "");
       setIsEditMode(false);
     }, 500);
   };
@@ -2593,8 +2598,12 @@ function LearningsSection({
 
   const handleSaveEdit = () => {
     if (viewingEntry && onUpdate && editTitle.trim()) {
+      // El área/quest se manda solo si se cambió (si no, sigue saliendo de su nodo).
+      const questChanged = variant === "strategies" && !!editQuestKey && editQuestKey !== (entryQuestInfo(viewingEntry, questMap)?.key ?? "");
+      const quest = questChanged ? parseQuestKey(editQuestKey) : null;
       onUpdate(viewingEntry.id, {
-        ...(variant === "strategies" ? { label: editLabel } : {}), 
+        ...(variant === "strategies" ? { label: editLabel } : {}),
+        ...(quest ? { areaId: quest.kind === "area" ? quest.id : null, projectId: quest.kind === "project" ? quest.id : null } : {}), 
         title: editTitle.trim(), 
         sentence: editSentence.trim() 
       });
@@ -2643,7 +2652,7 @@ function LearningsSection({
                           onMouseDown={() => handleLeftLongPressStart(entry)}
                           onMouseUp={handleLeftLongPressEnd}
                           onMouseLeave={handleLeftLongPressEnd}
-                          className={`w-full text-left px-3 py-2 rounded text-sm transition-all cursor-pointer select-none ${
+                          className={`w-full text-left px-3 py-2 rounded text-sm uppercase transition-all cursor-pointer select-none ${
                             viewingEntry?.id === entry.id
                               ? "bg-secondary text-foreground shadow-sm"
                               : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground/80"
@@ -2670,7 +2679,7 @@ function LearningsSection({
         </div>
 
         <div
-          className="w-full sm:w-1/2 h-full flex flex-col bg-secondary/20 rounded border border-border/50 p-4 select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)] dark:shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
+          className="w-full sm:w-1/2 h-full min-h-0 overflow-hidden flex flex-col bg-secondary/20 rounded border border-border/50 p-4 select-none shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)] dark:shadow-[inset_0_2px_4px_rgba(0,0,0,0.15)]"
         >
           {viewingEntry ? (
             <>
@@ -2695,6 +2704,7 @@ function LearningsSection({
                       setEditTitle(viewingEntry.title);
                       setEditSentence(viewingEntry.sentence || "");
                       setEditLabel(strategyOf(viewingEntry)?.label ?? "para-intentar");
+                      setEditQuestKey(entryQuestInfo(viewingEntry, questMap)?.key ?? "");
                       setIsEditMode((v) => !v);
                     }}
                     className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
@@ -2712,7 +2722,9 @@ function LearningsSection({
                 </div>
               </div>
               {isEditMode ? (
-                <div className="space-y-3">
+                // Todo lo editable (incluida la etiqueta de la estrategia) queda dentro del panel;
+                // si no entra, scrollea con la barra minimalista.
+                <div className="flex-1 min-h-0 overflow-y-auto minimal-scrollbar pr-1 space-y-3">
                   <Input
                     placeholder="Title"
                     value={editTitle}
@@ -2727,7 +2739,13 @@ function LearningsSection({
                     className="bg-secondary border-border text-foreground resize-none"
                   />
                   {variant === "strategies" && (
-                    <StrategyLabelPicker value={editLabel} onChange={setEditLabel} testIdPrefix="journal-strategy-edit-label" />
+                    <>
+                      <div className="space-y-1.5">
+                        <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Área o quest</p>
+                        <QuestScopeSelect value={editQuestKey} onChange={setEditQuestKey} placeholder="Sin área/quest" />
+                      </div>
+                      <StrategyLabelPicker value={editLabel} onChange={setEditLabel} testIdPrefix="journal-strategy-edit-label" />
+                    </>
                   )}
                   <div className="flex gap-2 pt-2">
                     <Button
@@ -3922,7 +3940,7 @@ function ProfileSection() {
                   <div key={entry.id}>
                     <button
                       onClick={(e) => { e.stopPropagation(); setViewingEntry(entry); }}
-                      className={`w-full text-left px-3 py-2 rounded text-sm transition-all cursor-pointer select-none ${activeTab === "concepts" || activeTab === "limitingBeliefs" ? "uppercase " : ""}${
+                      className={`w-full text-left px-3 py-2 rounded text-sm uppercase transition-all cursor-pointer select-none ${
                         viewingEntry?.id === entry.id
                           ? "bg-secondary text-foreground shadow-sm"
                           : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
@@ -7503,11 +7521,11 @@ function BugTitle({ bug }: { bug: Pick<SourceBug, "nombre" | "accion"> }) {
   const accion = bug.accion?.trim();
   return (
     <>
-      <span className="opacity-50">{bug.nombre}</span>
+      <span className="opacity-50 uppercase">{bug.nombre}</span>
       {accion && (
         <>
           <span className="opacity-50 mx-1.5">→</span>
-          <span>{accion}</span>
+          <span className="uppercase">{accion}</span>
         </>
       )}
     </>

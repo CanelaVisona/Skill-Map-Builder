@@ -369,6 +369,9 @@ export const journalStrategies = pgTable("journal_strategies", {
   label: text("label").$type<StrategyLabel>().notNull().default("para-intentar"),
   // Veces que se usó en una victoria sobre un error o en un acierto.
   useCount: integer("use_count").notNull().default(0),
+  // Área/quest asignada a mano al editarla; manda sobre la que sale de skillId. Ver migrations/0076.
+  areaId: varchar("area_id"),
+  projectId: varchar("project_id"),
 });
 
 // "Descubrimientos" del Journal: misma forma que journal_learnings (título + descripción, nodo

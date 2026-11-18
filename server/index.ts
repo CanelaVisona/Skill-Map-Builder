@@ -174,6 +174,9 @@ app.use((req, res, next) => {
   try {
     await db.execute(sql`ALTER TABLE "journal_strategies" ADD COLUMN IF NOT EXISTS "label" text DEFAULT 'para-intentar' NOT NULL;`);
     await db.execute(sql`ALTER TABLE "journal_strategies" ADD COLUMN IF NOT EXISTS "use_count" integer DEFAULT 0 NOT NULL;`);
+    // Área/quest asignada a mano (migrations/0076_journal_strategies_scope.sql).
+    await db.execute(sql`ALTER TABLE "journal_strategies" ADD COLUMN IF NOT EXISTS "area_id" varchar;`);
+    await db.execute(sql`ALTER TABLE "journal_strategies" ADD COLUMN IF NOT EXISTS "project_id" varchar;`);
   } catch (error: any) {
     console.error("⚠ journal_strategies.label migration warning:", error.message);
   }

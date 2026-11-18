@@ -306,6 +306,10 @@ function orderWithMovedInSlot(targetOthers: any[], movedSkill: any, removedPosit
 // Busca (por título, sin importar mayúsculas) o crea la estrategia en las "Estrategias" del
 // Journal. Con `count`, suma un uso (victoria sobre un error, o acierto): si no se pasa una
 // etiqueta, una "Para intentar" que se usó pasa a "Útil". `label` la pisa siempre.
+// Guardarla o pasarla a "Útil" también suma +1, salvo que en la misma llamada ya se contó un uso.
+const usefulBonus = (before: StrategyLabel | null, after: StrategyLabel) =>
+  after === "util" && before !== "util" ? 1 : 0;
+
 async function upsertJournalStrategy(
   userId: string,
   estrategia: string | null | undefined,
@@ -324,14 +328,16 @@ async function upsertJournalStrategy(
       title,
       sentence: "",
       label: opts.label ?? (opts.count ? "util" : "para-intentar"),
-      useCount: opts.count ? 1 : 0,
+      // Un uso, o nacer "Útil": +1 (no se suman los dos).
+      useCount: opts.count || opts.label === "util" ? 1 : 0,
     } as any);
     return { strategy, created: true };
   }
   const data: Partial<JournalStrategy> = {};
-  if (opts.count) data.useCount = (found.useCount ?? 0) + 1;
   if (opts.label) data.label = opts.label;
   else if (opts.count && found.label === "para-intentar") data.label = "util";
+  const increment = opts.count ? 1 : data.label ? usefulBonus(found.label, data.label) : 0;
+  if (increment) data.useCount = (found.useCount ?? 0) + increment;
   if (Object.keys(data).length === 0) return { strategy: found, created: false };
   const strategy = (await storage.updateJournalStrategy(found.id, data as any)) ?? found;
   return { strategy, created: false };
@@ -3484,7 +3490,10 @@ export async function registerRoutes(
         filtered = strategies.filter(s => s.skillId === skillId);
       } else if (areaId || projectId) {
         const scopeSkillIds = new Set(await storage.getAllSkillIdsInScope({ areaId, projectId }));
-        filtered = strategies.filter(s => s.skillId != null && scopeSkillIds.has(s.skillId));
+        // Una estrategia asignada a mano a un área/quest cuenta solo para esa.
+        filtered = strategies.filter(s => s.areaId || s.projectId
+          ? (areaId ? s.areaId === areaId : s.projectId === projectId)
+          : s.skillId != null && scopeSkillIds.has(s.skillId));
       }
       res.json(filtered);
     } catch (error: any) {
@@ -3495,7 +3504,11 @@ export async function registerRoutes(
   app.post("/api/journal/strategies", requireAuth, async (req, res) => {
     try {
       const validated = insertJournalStrategySchema.parse({ ...req.body, userId: req.userId });
-      const strategy = await storage.createJournalStrategy(validated);
+      // Guardada como "Útil": arranca con +1.
+      const strategy = await storage.createJournalStrategy({
+        ...validated,
+        useCount: Math.max(validated.useCount ?? 0, usefulBonus(null, validated.label ?? "para-intentar")),
+      });
       res.status(201).json(strategy);
     } catch (error: any) {
       const validationError = fromError(error);
@@ -3538,12 +3551,17 @@ export async function registerRoutes(
       const data: any = {};
       if (title !== undefined) data.title = title;
       if (sentence !== undefined) data.sentence = sentence;
+      if (req.body.areaId !== undefined) data.areaId = req.body.areaId;
+      if (req.body.projectId !== undefined) data.projectId = req.body.projectId;
       if (label !== undefined) {
         if (!STRATEGY_LABELS.includes(label)) {
           res.status(400).json({ message: "Etiqueta inválida" });
           return;
         }
         data.label = label;
+        // Editada a "Útil" (desde otra etiqueta): +1.
+        const current = (await storage.getJournalStrategies(req.userId!)).find((s) => s.id === req.params.id);
+        if (current && usefulBonus(current.label, label)) data.useCount = (current.useCount ?? 0) + 1;
       }
       const strategy = await storage.updateJournalStrategy(req.params.id, data);
       if (!strategy) {
