@@ -423,7 +423,7 @@ function RunningDots({ timerKey, done }: { timerKey?: string | null; done?: bool
   const allTimers = useAllTaskTimers();
   if (!timerKey || done || allTimers[timerKey]?.status !== "running") return null;
   return (
-    <span className="running-dots ml-1 inline-flex items-end gap-[2px] align-baseline text-amber-500" aria-label="En proceso" role="status">
+    <span className="running-dots ml-1 mr-1.5 inline-flex items-end gap-[2px] align-baseline text-amber-500" aria-label="En proceso" role="status">
       <span />
       <span />
       <span />
