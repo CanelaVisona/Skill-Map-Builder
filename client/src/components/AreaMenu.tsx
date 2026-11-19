@@ -25,6 +25,7 @@ import { Textarea } from "./ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
 import { ScrollArea } from "./ui/scroll-area";
 import { Checkbox } from "./ui/checkbox";
+import { VisionWhiteboard } from "./VisionWhiteboard";
 import { useState, useEffect, useRef, type TouchEvent, type PointerEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -1852,14 +1853,12 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
 
           <TabsContent value="vision" className="mt-4 min-h-0">
             <p className="text-xs text-muted-foreground italic mb-2">¿Cómo es mi situación ideal en esta área específica?</p>
-            <ScrollArea
-              className="h-[min(52dvh,320px)] pr-4"
-              onPointerDown={handleBackgroundPointerDown}
-              onPointerUp={handleBackgroundPointerUp}
-              onPointerCancel={handleBackgroundPointerUp}
-            >
-              {renderEntryList(vision, true, (id) => deleteVision.mutate(id), handleStartEdit)}
-            </ScrollArea>
+            <VisionWhiteboard
+              key={`${sourceType}-${sourceId}`}
+              sourceType={sourceType}
+              sourceId={sourceId}
+              enabled={isOpen}
+            />
           </TabsContent>
 
           <TabsContent value="objectives" className="mt-4 min-h-0">
