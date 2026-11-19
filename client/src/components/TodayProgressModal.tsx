@@ -9,7 +9,7 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
-import { Calendar, ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Pause, Pencil, Play, Plus, RotateCcw, Star } from "lucide-react";
+import { Calendar, ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Pause, Pencil, PictureInPicture2, Play, Plus, RotateCcw, Star } from "lucide-react";
 import { useSkillTree, type Area, type Project, type Skill } from "@/lib/skill-context";
 import { useNodeConfirmFeedback } from "@/lib/node-confirm-feedback-context";
 import { useInsightsCounterPopup } from "@/lib/insights-counter-popup-context";
@@ -28,7 +28,8 @@ import { MealTrackerModal } from "@/components/MealTrackerModal";
 import { usePowerCelebration } from "@/lib/power-celebration-context";
 import { useNowPlacement, setNowPlacement } from "@/lib/now-placement";
 import { conjugateTaskTitle } from "@/lib/voseo";
-import { useTaskTimer, useAllTaskTimers, useTaskTimersSync, taskTimerRowDate, taskTimerKey, clearTaskTimer, pauseTaskTimer, timerElapsedMs, isStarterReached, isFlowActive, wasStartTimeNowApplied, markStartTimeNowApplied } from "@/lib/task-timers";
+import { useTaskPip, type PipTask } from "@/components/TaskPictureInPicture";
+import { useTaskTimer, useAllTaskTimers, useTaskTimersSync, taskTimerRowDate, taskTimerKey, clearTaskTimer, pauseTaskTimer, startTaskTimer, timerElapsedMs, isStarterReached, isFlowActive, wasStartTimeNowApplied, markStartTimeNowApplied } from "@/lib/task-timers";
 import { addSubSkillFromToday, toggleSubSkillFromToday, masterWholeSubSkillTree, isSubSkillPlaceholder, moveSubSkillFromToday, renameSubSkill, deleteSubSkillFromToday } from "@/lib/subskill-tree";
 import { useTodayTaskSubsteps, useCreateTodayTaskSubstep, useUpdateTodayTaskSubstep, useDeleteTodayTaskSubstep, useCreateHabitSubstep, syncHabitSubsteps, type SubstepTaskType } from "@/lib/useTodayTaskSubsteps";
 import type { Habit, HabitRecord, TodayTaskSlot, TodayActivity } from "@shared/schema";
@@ -49,6 +50,9 @@ interface TodayItem {
   type: TaskType;
   id: string;
   label: React.ReactNode;
+  // Título en texto plano (sin emoji ni sufijos), para mostrarlo fuera de la fila (p.ej. en la
+  // ventanita de picture in picture).
+  title?: string;
   done: boolean;
   // Mismo color que su puntito en el calendario de actividades (NODE_COLOR/TASK_COLOR/
   // EVENT_COLOR) — solo se completa para nodos y tareas/eventos manuales, que son los que se
@@ -316,6 +320,9 @@ const TimerFamilyContext = React.createContext<TimerFamily>({ childrenOf: new Ma
 // ▶ solo en la tarea desbloqueada: cada fila de Tareas de hoy lo habilita solo si es la destacada
 // ("current"). Fuera de las filas (p.ej. el diálogo de "Asignar tiempo") queda habilitado.
 const TimerPlayContext = React.createContext(true);
+// Qué destacado tiene la fila: "current" = la tarea/sub-tarea desbloqueada; "block" = tarea padre
+// cuyo bloque está resaltado porque la desbloqueada es una de sus sub-tareas.
+const RowHighlightContext = React.createContext<"current" | "block" | null>(null);
 // Marco del bloque de la tarea desbloqueada cuando tiene sub-tareas: más suave que la tarjeta
 // dorada de la sub-tarea que sigue, para que se vea el bloque entero sin competir con ella.
 const CURRENT_BLOCK_CLASS =
@@ -429,9 +436,15 @@ function VerbTitle({ text, timerKey, done }: { text: string; timerKey?: string |
 
 // Tres puntitos que saltan uno después del otro al lado del nombre mientras la tarea tiene el ▶
 // andando: indica que está en proceso. Nada si no corre o si ya está hecha.
+// Solo en la tarea desbloqueada ("current"); en el bloque de una tarea padre ("block") solo
+// mientras ninguna de sus sub-tareas tenga el ▶ andando (ahí los puntitos los lleva la sub-tarea).
 function RunningDots({ timerKey, done }: { timerKey?: string | null; done?: boolean }) {
   const allTimers = useAllTaskTimers();
+  const highlight = useContext(RowHighlightContext);
+  const family = useContext(TimerFamilyContext);
   if (!timerKey || done || allTimers[timerKey]?.status !== "running") return null;
+  if (highlight === null) return null;
+  if (highlight === "block" && (family.childrenOf.get(timerKey) ?? []).some((k) => allTimers[k]?.status === "running")) return null;
   return (
     <span className="running-dots ml-1 mr-1.5 inline-flex items-end gap-[2px] align-baseline text-amber-500" aria-label="En proceso" role="status">
       <span />
@@ -710,6 +723,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     );
     return {
       id: h.id,
+      title: h.name,
       label: (
         <>
           {h.emoji} <VerbTitle text={h.name} timerKey={timerKeyFor(`habit:${h.id}`)} done={done} />
@@ -889,6 +903,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     );
     return {
       id: h.id,
+      title: h.name,
       label: (
         <>
           {h.emoji} <VerbTitle text={h.name} timerKey={timerKeyFor(`habit:${h.id}`)} done={done} />
@@ -1018,6 +1033,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       key: `node:${n.id}`,
       type: "node" as const,
       id: n.id,
+      title: stripLeadingEmoji(n.title),
       label: (
         <>
           <VerbTitle text={stripLeadingEmoji(n.title)} timerKey={timerKeyFor(`node:${n.id}`)} done={n.done} />
@@ -1148,6 +1164,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       key: `node:${n.id}`,
       type: "node" as const,
       id: n.id,
+      title: stripLeadingEmoji(n.title),
       label: (
         <>
           <VerbTitle text={stripLeadingEmoji(n.title)} timerKey={timerKeyFor(`node:${n.id}`)} done={n.done} />
@@ -1165,6 +1182,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       key: `practice:${p.id}`,
       type: "practice" as const,
       id: p.id,
+      title: p.name,
       label: (
         <>
           {p.emoji} <VerbTitle text={p.name} timerKey={timerKeyFor(`practice:${p.id}`)} done={done} />
@@ -1183,6 +1201,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       key: `manual:${t.id}`,
       type: "manual" as const,
       id: t.id,
+      title: stripLeadingEmoji(t.title),
       label: (
         <>
           {t.kind === "event" ? "📅 " : null}
@@ -1901,6 +1920,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     return (
       <div key={item.key} className={blockCurrent ? CURRENT_BLOCK_CLASS : "space-y-1.5"}>
         <TimerPlayContext.Provider value={blockCurrent}>
+          <RowHighlightContext.Provider value={blockCurrent ? "block" : null}>
           <div className={`flex items-center gap-2 text-sm ${isPastDay || isCurrent ? "" : "opacity-60"}`}>
             {item.dotEmoji && <TaskDot emoji={item.dotEmoji} color={item.dotColor || NODE_COLOR} size="md" />}
             <span className={`flex-1 ${blockCurrent ? "font-semibold" : ""}`}>
@@ -1908,6 +1928,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
               <span className="text-muted-foreground"> · continúa</span>
             </span>
           </div>
+          </RowHighlightContext.Provider>
         </TimerPlayContext.Provider>
         {item.type === "node"
           ? renderSubNodes(item, isCurrent && !isPreview, slotSubSet(item))
@@ -2855,7 +2876,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     const parentKey = timerFamily.parentOf.get(key);
     const ownerTaskKey = parentKey ? parentKey.slice(todayStr.length + 1) : taskKey;
     const item = todayItems.find((i) => !i.traceSubs && `${i.type}:${i.id}` === ownerTaskKey) ?? null;
-    let name = item && typeof item.label === "string" ? item.label : "la tarea que está andando";
+    let name = item?.title ?? (item && typeof item.label === "string" ? item.label : "la tarea que está andando");
     if (taskKey.startsWith("step:")) {
       name = (substepsData || []).find((st) => `step:${st.id}` === taskKey)?.title ?? name;
     } else if (parentKey && item) {
@@ -2864,6 +2885,34 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     return { key, taskKey, item, name };
   })();
   runningTimerRef.current = runningTimer;
+  // Picture in picture: la tarea con el ▶ andando o, si no hay, la desbloqueada de hoy.
+  const pipTask: PipTask | null = (() => {
+    if (runningTimer) return { timerKey: runningTimer.key, title: stripLeadingEmoji(runningTimer.name), minutes: null };
+    const nowItem = currentNowKey ? todayItems.find((i) => i.key === currentNowKey) : undefined;
+    if (!nowItem || effectiveDate !== todayStr) return null;
+    return {
+      timerKey: taskTimerKey(todayStr, `${nowItem.type}:${nowItem.id}`),
+      title: nowItem.title ?? (typeof nowItem.label === "string" ? nowItem.label : "Tarea de ahora"),
+      minutes: currentMinutes(nowItem) ?? null,
+    };
+  })();
+  // ▶/⏸ desde la ventanita, con las mismas reglas que el botón de la fila: pausar a una tarea
+  // pausa a sus sub-tareas; una sub-tarea arranca solo con el padre andando y pausa a sus hermanas.
+  const togglePipTimer = pipTask
+    ? () => {
+        const key = pipTask.timerKey;
+        if (allTimers[key]?.status === "running") {
+          (timerFamily.childrenOf.get(key) ?? []).forEach((k) => pauseTaskTimer(k));
+          pauseTaskTimer(key);
+          return;
+        }
+        const parentKey = timerFamily.parentOf.get(key);
+        if (parentKey && allTimers[parentKey]?.status !== "running") return;
+        if (parentKey) (timerFamily.childrenOf.get(parentKey) ?? []).filter((k) => k !== key).forEach((k) => pauseTaskTimer(k));
+        startTaskTimer(key, pipTask.minutes ?? 0);
+      }
+    : null;
+  const pip = useTaskPip(pipTask, togglePipTimer, open && !isPreview);
   // Cuando la que andaba se confirmó o se paró, la tarea en espera pasa a "Ahora".
   useEffect(() => {
     if (!pendingNow || runningTimer) return;
@@ -3602,6 +3651,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
 
   return (
     <TimerFamilyContext.Provider value={timerFamily}>
+    {pip.portal}
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="no-touch-select max-w-md rounded-2xl border-none max-h-[85vh] overflow-y-auto minimal-scrollbar" showCloseButton={false}>
         <VisuallyHidden>
@@ -3629,6 +3679,20 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                {pip.supported && !isPreview && (
+                  <button
+                    onClick={() => void pip.toggle()}
+                    className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border transition-colors ${
+                      pip.active
+                        ? "border-amber-500/60 bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                        : "border-border/30 bg-muted text-muted-foreground hover:bg-muted/80 active:bg-muted/60"
+                    }`}
+                    title={pip.active ? "Cerrar picture in picture" : "Picture in picture: la tarea de ahora en una ventanita flotante"}
+                    aria-label="Picture in picture"
+                  >
+                    <PictureInPicture2 className="h-4 w-4" />
+                  </button>
+                )}
                 <button
                   onClick={openPriorities}
                   className="relative flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-border/30 bg-muted hover:bg-muted/80 active:bg-muted/60 transition-colors"
@@ -5182,7 +5246,7 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
           <AlertDialogTitle>Hay una tarea andando</AlertDialogTitle>
           <AlertDialogDescription>
             {runningTimer && pendingNow &&
-              `"${runningTimer.name}" tiene el tiempo corriendo. Confirmala o parala para pasar a "${typeof pendingNow.label === "string" ? pendingNow.label : "la otra tarea"}" como Ahora.`}
+              `"${runningTimer.name}" tiene el tiempo corriendo. Confirmala o parala para pasar a "${pendingNow.title ?? (typeof pendingNow.label === "string" ? pendingNow.label : "la otra tarea")}" como Ahora.`}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -5294,6 +5358,7 @@ function TodaySubRow({
   );
   return (
     <TimerPlayContext.Provider value={!!current}>
+    <RowHighlightContext.Provider value={current ? "current" : null}>
       <div className={`${depth > 0 ? "ml-10" : "ml-5"} border-l-2 pl-3 transition-opacity ${current ? "border-amber-500/40" : "border-border/40"} ${dimmed ? "opacity-25" : ""}`}>
         <div
           className={`flex items-center gap-2 text-sm ${
@@ -5389,6 +5454,7 @@ function TodaySubRow({
           </AlertDialogContent>
         </AlertDialog>
       )}
+    </RowHighlightContext.Provider>
     </TimerPlayContext.Provider>
   );
 }
@@ -5512,6 +5578,7 @@ function TodayTaskRow({
 
   return (
     <TimerPlayContext.Provider value={!!current || !!blockCurrent}>
+    <RowHighlightContext.Provider value={current ? "current" : blockCurrent ? "block" : null}>
       <div
         className={`flex items-center gap-2 text-sm select-none transition-opacity ${
           dimmed ? "opacity-25" : ""
@@ -5704,6 +5771,7 @@ function TodayTaskRow({
           </AlertDialogContent>
         </AlertDialog>
       )}
+    </RowHighlightContext.Provider>
     </TimerPlayContext.Provider>
   );
 }
