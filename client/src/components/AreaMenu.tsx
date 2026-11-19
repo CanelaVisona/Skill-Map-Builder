@@ -25,7 +25,7 @@ import { Textarea } from "./ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
 import { ScrollArea } from "./ui/scroll-area";
 import { Checkbox } from "./ui/checkbox";
-import { VisionWhiteboard } from "./VisionWhiteboard";
+import { VisionWhiteboards } from "./VisionWhiteboard";
 import { useState, useEffect, useRef, type TouchEvent, type PointerEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -1811,7 +1811,12 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="flex w-[calc(100vw-1rem)] max-w-[42rem] max-h-[calc(100dvh-1rem)] flex-col overflow-hidden p-3 sm:w-[min(92vw,42rem)] sm:max-h-[min(90dvh,52rem)] sm:p-5">
+      <DialogContent
+        className={cn(
+          "flex w-[calc(100vw-1rem)] max-w-[42rem] max-h-[calc(100dvh-1rem)] flex-col overflow-hidden p-3 sm:w-[min(92vw,42rem)] sm:max-h-[min(90dvh,52rem)] sm:p-5",
+          activeTab === "vision" && "h-[calc(100dvh-1rem)] sm:h-[min(90dvh,52rem)]"
+        )}
+      >
         <DialogHeader>
           <DialogTitle>{sourceName}</DialogTitle>
         </DialogHeader>
@@ -1851,9 +1856,9 @@ function ViewSourceDialog({ isOpen, onClose, sourceName, sourceType, sourceId }:
             </ScrollArea>
           </TabsContent>
 
-          <TabsContent value="vision" className="mt-4 min-h-0">
+          <TabsContent value="vision" className="mt-4 min-h-0 flex-1 flex-col data-[state=active]:flex">
             <p className="text-xs text-muted-foreground italic mb-2">¿Cómo es mi situación ideal en esta área específica?</p>
-            <VisionWhiteboard
+            <VisionWhiteboards
               key={`${sourceType}-${sourceId}`}
               sourceType={sourceType}
               sourceId={sourceId}
