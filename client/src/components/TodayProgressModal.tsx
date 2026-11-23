@@ -34,6 +34,7 @@ import { addSubSkillFromToday, toggleSubSkillFromToday, masterWholeSubSkillTree,
 import { useTodayTaskSubsteps, useCreateTodayTaskSubstep, useUpdateTodayTaskSubstep, useDeleteTodayTaskSubstep, useCreateHabitSubstep, syncHabitSubsteps, type SubstepTaskType } from "@/lib/useTodayTaskSubsteps";
 import type { Habit, HabitRecord, TodayTaskSlot, TodayActivity } from "@shared/schema";
 import { SubtaskDonePopup, type SubtaskDonePopupData } from "@/components/SubtaskDonePopup";
+import { ConceptReviewDialog } from "@/components/ConceptReviewDialog";
 import { playSubtaskDoneSound } from "@/lib/sound";
 
 const LONG_PRESS_MS = 1500;
@@ -543,6 +544,8 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
   // toggleSkillStatus/toggleProjectSkillStatus (centralizados en skill-context.tsx) directo.
   const { confirmHabit, unconfirmHabit } = useConfirmHabit();
   const { confirmPractice } = useConfirmPractice();
+  // "Repetición de conceptos" esperando que se responda en el pop-up antes de confirmarse.
+  const [pendingConceptPractice, setPendingConceptPractice] = useState<SpaceRepetitionPractice | null>(null);
   const [viewMode, setViewMode] = useState<"progress" | "calendar">("progress");
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
@@ -2444,7 +2447,12 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
     if (item.type === "practice") {
       if (item.done) return;
       const practice = (practicesData || []).find((p) => p.id === item.id);
-      if (practice) requestNodeConfirmFeedback({}, confirmPractice(practice));
+      if (!practice) return;
+      if (practice.repetitionType === "concept") {
+        setPendingConceptPractice(practice);
+        return;
+      }
+      requestNodeConfirmFeedback({}, confirmPractice(practice));
     }
   };
 
@@ -5273,6 +5281,19 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       onOpenChange={(o) => { if (!o) setMealPopupId(null); }}
       initialMealId={mealPopupId}
       initialDate={effectiveDate}
+    />
+
+    <ConceptReviewDialog
+      open={pendingConceptPractice !== null}
+      concept={pendingConceptPractice?.name ?? ""}
+      emoji={pendingConceptPractice?.emoji}
+      hints={Array.isArray(pendingConceptPractice?.conceptHints) ? pendingConceptPractice!.conceptHints! : []}
+      onCancel={() => setPendingConceptPractice(null)}
+      onDone={(answer) => {
+        const practice = pendingConceptPractice;
+        setPendingConceptPractice(null);
+        if (practice) requestNodeConfirmFeedback({}, confirmPractice(practice, answer));
+      }}
     />
     </TimerFamilyContext.Provider>
   );

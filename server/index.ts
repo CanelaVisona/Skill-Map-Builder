@@ -135,6 +135,19 @@ app.use((req, res, next) => {
     console.error("⚠ users.radar_maps migration warning:", error.message);
   }
 
+  // Repetición espaciada: proyecto, tipos de repetición (conceptos) y pistas/respuestas.
+  // Ver migrations/0077_space_repetition_types.sql.
+  try {
+    await db.execute(sql`ALTER TABLE "space_repetition_practices" ADD COLUMN IF NOT EXISTS "project_id" varchar REFERENCES "projects"("id") ON DELETE SET NULL;`);
+    await db.execute(sql`ALTER TABLE "space_repetition_practices" ADD COLUMN IF NOT EXISTS "repetition_type" text DEFAULT 'practice' NOT NULL;`);
+    await db.execute(sql`ALTER TABLE "space_repetition_practices" ADD COLUMN IF NOT EXISTS "concept_hints" jsonb DEFAULT '[]'::jsonb NOT NULL;`);
+    await db.execute(sql`ALTER TABLE "space_repetition_practices" ADD COLUMN IF NOT EXISTS "concept_answers" jsonb DEFAULT '[]'::jsonb NOT NULL;`);
+    await db.execute(sql`ALTER TABLE "space_repetition_practices" ADD COLUMN IF NOT EXISTS "context_description" text DEFAULT '' NOT NULL;`);
+    await db.execute(sql`ALTER TABLE "space_repetition_practices" ADD COLUMN IF NOT EXISTS "target_levels" integer;`);
+  } catch (error: any) {
+    console.error("⚠ space_repetition_practices types migration warning:", error.message);
+  }
+
   // Tiempo estimado de una tarea manual de "Tareas de hoy", agregado después de crear la tabla.
   try {
     await db.execute(sql`

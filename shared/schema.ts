@@ -512,9 +512,31 @@ export const spaceRepetitionPractices = pgTable("space_repetition_practices", {
   // Área o quest unido: cada intervalo confirmado crea ahí un nodo SideQuest confirmado (uno u otro, nunca ambos).
   sideQuestAreaId: varchar("side_quest_area_id").references(() => areas.id, { onDelete: "set null" }),
   sideQuestProjectId: varchar("side_quest_project_id").references(() => projects.id, { onDelete: "set null" }),
+  // Proyecto (quest) al que pertenece la repetición, para agruparlas por proyecto (el área va en areaId).
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  // Tipo de repetición: "practice" (práctica general) o "concept" (Repetición de conceptos:
+  // al confirmar un intervalo hay que responder el concepto/pregunta, con pistas opcionales).
+  repetitionType: text("repetition_type").notNull().$type<SpaceRepetitionType>().default("practice"),
+  conceptHints: jsonb("concept_hints").notNull().$type<string[]>().default([]), // Punteo de lo que tiene que decir el concepto
+  conceptAnswers: jsonb("concept_answers").notNull().$type<ConceptAnswer[]>().default([]), // Respuestas escritas en cada intervalo confirmado (en "context": un registro por cada vez que sucedió la situación)
+  // "Repetición por contexto": la circunstancia que tiene que darse para poder practicarla
+  // (p.ej. "cuando surja una discusión"). No depende del tiempo, sino de que la situación suceda.
+  contextDescription: text("context_description").notNull().default(""),
+  // Niveles (de 5 veces cada uno) necesarios para que una "Repetición por contexto" quede
+  // completada y pase a "Conquistados". null = sin meta.
+  targetLevels: integer("target_levels"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
+export type SpaceRepetitionType = "practice" | "concept" | "context";
+export interface ConceptAnswer {
+  answer: string;
+  reinforcement?: boolean; // "Reforzar" desde Conquistados (vez practicada después del nivel asignado)
+  date: string; // YYYY-MM-DD
+  level: 1 | 2;
+  intervalIdx: number;
+}
 
 // ============ BOOK READING TRACKER TABLES ============
 
@@ -1201,6 +1223,17 @@ export const insertSpaceRepetitionPracticeSchema = createInsertSchema(spaceRepet
   level1CompletedDate: z.string().optional().nullable(),
   completedIntervalsL2: z.array(z.number()).optional().default([]),
   skillIds: z.array(z.string()).optional().default([]),
+  repetitionType: z.enum(["practice", "concept", "context"]).optional().default("practice"),
+  contextDescription: z.string().optional().default(""),
+  conceptHints: z.array(z.string()).optional().default([]),
+  conceptAnswers: z.array(z.object({
+    answer: z.string(),
+    date: z.string(),
+    level: z.union([z.literal(1), z.literal(2)]),
+    intervalIdx: z.number(),
+    reinforcement: z.boolean().optional(),
+  })).optional().default([]),
+  targetLevels: z.number().int().min(1).max(100).optional().nullable(),
 });
 export const insertBooksLibrarySchema = createInsertSchema(booksLibrary).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertBookReadingSessionSchema = createInsertSchema(bookReadingSessions).omit({ id: true, createdAt: true });

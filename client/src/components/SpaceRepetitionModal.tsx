@@ -3,17 +3,19 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { ArrowLeft, Plus, Trash2, Archive } from "lucide-react";
 import { useTheme } from "next-themes";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Area } from "@shared/schema";
+import { ConceptReviewDialog } from "@/components/ConceptReviewDialog";
 import { useBodyProgress } from "@/lib/body-progress-context";
 import { useBodyGainPopup } from "@/lib/body-gain-popup-context";
 import { BodyLinkPicker, type BodyLink } from "@/components/BodyLinkPicker";
 import { SkillLinkPicker } from "@/components/SkillLinkPicker";
 import { SideQuestLinkPicker, type SideQuestLink } from "@/components/SideQuestLinkPicker";
-import { useSkillTree } from "@/lib/skill-context";
+import { useSkillTree, type Project } from "@/lib/skill-context";
 import { useXpPopup } from "@/lib/xp-popup-context";
 import { beginPopupChain, endPopupChain, runPopupQueue } from "@/lib/popup-coordinator";
 
@@ -34,8 +36,59 @@ export interface SpaceRepetitionPractice {
   lastConfirmedAt?: string | null;
   sideQuestAreaId?: string | null;
   sideQuestProjectId?: string | null;
+  projectId?: string | null;
+  repetitionType?: RepetitionType;
+  conceptHints?: string[];
+  conceptAnswers?: { answer: string; date: string; level: 1 | 2; intervalIdx: number; reinforcement?: boolean }[];
+  contextDescription?: string;
+  targetLevels?: number | null;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export type RepetitionType = "practice" | "concept" | "context";
+
+// Tipos de repetición que se eligen en bloques al crear una repetición.
+const REPETITION_TYPES: { id: RepetitionType; emoji: string; title: string; description: string }[] = [
+  { id: "practice", emoji: "💪", title: "Práctica", description: "Repetir una práctica o habilidad en cada intervalo" },
+  { id: "concept", emoji: "🧠", title: "Repetición de conceptos", description: "Ver si me acuerdo un concepto y repetirlo" },
+  { id: "context", emoji: "🎯", title: "Repetición por contexto", description: "Se practica cuando se da la situación (p.ej. una discusión), no por tiempo" },
+];
+
+const TYPE_DEFAULT_EMOJI: Record<RepetitionType, string> = { practice: "💪", concept: "🧠", context: "🎯" };
+
+// Registros (cada vez que sucedió la situación) de una "Repetición por contexto".
+function getContextRecords(practice: SpaceRepetitionPractice) {
+  return Array.isArray(practice.conceptAnswers) ? practice.conceptAnswers : [];
+}
+
+// "Repetición por contexto": cada CONTEXT_REPS_PER_LEVEL veces practicada se sube de nivel.
+const CONTEXT_REPS_PER_LEVEL = 5;
+function getContextLevel(count: number) {
+  return {
+    level: Math.floor(count / CONTEXT_REPS_PER_LEVEL) + 1,
+    progress: count % CONTEXT_REPS_PER_LEVEL,
+  };
+}
+
+const DEFAULT_TARGET_LEVELS = 3;
+
+// Veces necesarias para completar la meta de niveles (null si no tiene meta).
+function getContextGoal(practice: SpaceRepetitionPractice): number | null {
+  return practice.targetLevels && practice.targetLevels > 0 ? practice.targetLevels * CONTEXT_REPS_PER_LEVEL : null;
+}
+
+// Completada: llegó al nivel asignado. Pasa a "Conquistados".
+function isContextConquered(practice: SpaceRepetitionPractice): boolean {
+  const goal = getContextGoal(practice);
+  return practice.repetitionType === "context" && goal !== null && getContextRecords(practice).length >= goal;
+}
+
+// Veces practicadas después de completar el nivel asignado (los "Reforzar").
+function getReinforcementCount(practice: SpaceRepetitionPractice): number {
+  const goal = getContextGoal(practice);
+  if (goal === null) return 0;
+  return Math.max(0, getContextRecords(practice).length - goal);
 }
 
 interface ArchivedPractice {
@@ -147,7 +200,8 @@ function formatTimeRemaining(hoursRemaining: number): string {
   return `${hours}:${minutes}:${seconds}`;
 }
 
-type PracticeStatus = "waiting" | "expires_soon" | "loss" | "frozen" | "complete" | "level2_waiting";
+// "situational": "Repetición por contexto" — no vence ni se pierde, espera a que se dé la situación.
+type PracticeStatus = "waiting" | "expires_soon" | "loss" | "frozen" | "complete" | "level2_waiting" | "situational";
 
 // Núcleo compartido por L1 y L2: recorre los intervalos y compara horas reales transcurridas
 // desde `anchor` (la última confirmación, no una fecha de calendario) contra el gap (en horas)
@@ -184,6 +238,7 @@ function calculateStatusFromAnchor(intervals: number[], completedIndices: Set<nu
 }
 
 export function calculateStatus(practice: SpaceRepetitionPractice): PracticeStatus {
+  if (practice.repetitionType === "context") return "situational";
   const level = practice.level || 1;
 
   // Handle L2 special case
@@ -197,6 +252,7 @@ export function calculateStatus(practice: SpaceRepetitionPractice): PracticeStat
 }
 
 export function calculateStatusL2(practice: SpaceRepetitionPractice): PracticeStatus {
+  if (practice.repetitionType === "context") return "situational";
   // If L1 not complete, shouldn't reach here
   if (practice.level !== 2 || !practice.level1CompletedDate) {
     return calculateStatus({ ...practice, level: 1 });
@@ -259,6 +315,8 @@ function getStateColor(status: PracticeStatus): string {
       return "bg-green-500/20 border-green-500 text-green-700 dark:text-green-400";
     case "level2_waiting":
       return "bg-indigo-500/20 border-indigo-500 text-indigo-700 dark:text-indigo-400";
+    case "situational":
+      return "bg-sky-500/20 border-sky-500 text-sky-700 dark:text-sky-400";
     default:
       return "";
   }
@@ -278,6 +336,8 @@ function getStateLabel(status: PracticeStatus): string {
       return "✅ Completado";
     case "level2_waiting":
       return "💜 Esperando L2";
+    case "situational":
+      return "🎯 Esperando la situación";
   }
 }
 
@@ -422,7 +482,7 @@ export function SpaceRepetitionModal({
   open,
   onOpenChange,
 }: SpaceRepetitionModalProps) {
-  const [currentPanel, setCurrentPanel] = useState<"main" | "add" | "detail" | "archived" | "edit">("main");
+  const [currentPanel, setCurrentPanel] = useState<"main" | "add" | "detail" | "archived" | "edit" | "conquered">("main");
   const [practices, setPractices] = useState<SpaceRepetitionPractice[]>([]);
   const [archived, setArchived] = useState<ArchivedPractice[]>([]);
   const [selectedPracticeId, setSelectedPracticeId] = useState<string | null>(null);
@@ -433,13 +493,22 @@ export function SpaceRepetitionModal({
   const [newBodyLinks, setNewBodyLinks] = useState<BodyLink[]>([]);
   const [newMinMinutes, setNewMinMinutes] = useState<number | null>(null);
   const [newSideQuestLink, setNewSideQuestLink] = useState<SideQuestLink>({ sideQuestAreaId: null, sideQuestProjectId: null });
+  const [newType, setNewType] = useState<RepetitionType>("practice");
+  const [newProjectId, setNewProjectId] = useState<string | null>(null);
+  const [newHints, setNewHints] = useState<string[]>([]);
+  const [newContext, setNewContext] = useState("");
+  const [newTargetLevels, setNewTargetLevels] = useState<number | null>(DEFAULT_TARGET_LEVELS);
+  // "Repetición por contexto" esperando que se anote cómo se respondió en el pop-up.
+  const [pendingContextId, setPendingContextId] = useState<string | null>(null);
+  // Intervalo de una "Repetición de conceptos" esperando que se responda en el pop-up.
+  const [pendingConcept, setPendingConcept] = useState<{ practiceId: string; intervalIdx: number } | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
   const { theme } = useTheme();
   const queryClient = useQueryClient();
   const { addBodyBlock } = useBodyProgress();
   const { showBodyGainPopup } = useBodyGainPopup();
   const { showXpPopup, hideXpPopup } = useXpPopup();
-  const { refreshSkillTrees } = useSkillTree();
+  const { refreshSkillTrees, projects } = useSkillTree();
 
   // Fetch areas (used by the area select + to color the XP popup for linked skills)
   const { data: areas = [] } = useQuery<Area[]>({
@@ -478,6 +547,11 @@ export function SpaceRepetitionModal({
   const [editBodyLinks, setEditBodyLinks] = useState<BodyLink[]>([]);
   const [editMinMinutes, setEditMinMinutes] = useState<number | null>(null);
   const [editSideQuestLink, setEditSideQuestLink] = useState<SideQuestLink>({ sideQuestAreaId: null, sideQuestProjectId: null });
+  const [editType, setEditType] = useState<RepetitionType>("practice");
+  const [editProjectId, setEditProjectId] = useState<string | null>(null);
+  const [editHints, setEditHints] = useState<string[]>([]);
+  const [editContext, setEditContext] = useState("");
+  const [editTargetLevels, setEditTargetLevels] = useState<number | null>(DEFAULT_TARGET_LEVELS);
   const [editPanelSkills, setEditPanelSkills] = useState<any[]>([]);
 
   useEffect(() => {
@@ -631,6 +705,21 @@ export function SpaceRepetitionModal({
     if (archivedUpdated) setArchived(archivedUpdated);
   };
 
+  const resetNewForm = () => {
+    setNewName("");
+    setNewEmoji("💪");
+    setNewAreaId(null);
+    setNewSkillIds([]);
+    setNewBodyLinks([]);
+    setNewMinMinutes(null);
+    setNewSideQuestLink({ sideQuestAreaId: null, sideQuestProjectId: null });
+    setNewType("practice");
+    setNewProjectId(null);
+    setNewHints([]);
+    setNewContext("");
+    setNewTargetLevels(DEFAULT_TARGET_LEVELS);
+  };
+
   const addPractice = async () => {
     if (!newName.trim()) return;
     try {
@@ -647,18 +736,17 @@ export function SpaceRepetitionModal({
           bodyLinks: newBodyLinks,
           minMinutes: newMinMinutes,
           ...newSideQuestLink,
+          projectId: newProjectId,
+          repetitionType: newType,
+          conceptHints: newType !== "practice" ? newHints.map((h) => h.trim()).filter(Boolean) : [],
+          contextDescription: newType === "context" ? newContext.trim() : "",
+          targetLevels: newType === "context" ? newTargetLevels : null,
         })
       });
       if (!res.ok) throw new Error("Error creating practice");
       const newPractice = await res.json();
       setPractices([...practices, newPractice]);
-      setNewName("");
-      setNewEmoji("💪");
-      setNewAreaId(null);
-      setNewSkillIds([]);
-      setNewBodyLinks([]);
-      setNewMinMinutes(null);
-      setNewSideQuestLink({ sideQuestAreaId: null, sideQuestProjectId: null });
+      resetNewForm();
       setCurrentPanel("main");
     } catch (error) {
       console.error("Error adding practice:", error);
@@ -679,6 +767,11 @@ export function SpaceRepetitionModal({
     setEditBodyLinks(practice.bodyLinks ?? []);
     setEditMinMinutes(practice.minMinutes ?? null);
     setEditSideQuestLink({ sideQuestAreaId: practice.sideQuestAreaId ?? null, sideQuestProjectId: practice.sideQuestProjectId ?? null });
+    setEditType(practice.repetitionType ?? "practice");
+    setEditProjectId(practice.projectId ?? null);
+    setEditHints(Array.isArray(practice.conceptHints) ? practice.conceptHints : []);
+    setEditContext(practice.contextDescription ?? "");
+    setEditTargetLevels(practice.targetLevels ?? (practice.repetitionType === "context" ? null : DEFAULT_TARGET_LEVELS));
     setCurrentPanel("edit");
   };
 
@@ -696,6 +789,11 @@ export function SpaceRepetitionModal({
           bodyLinks: editBodyLinks,
           minMinutes: editMinMinutes,
           ...editSideQuestLink,
+          projectId: editProjectId,
+          repetitionType: editType,
+          conceptHints: editType !== "practice" ? editHints.map((h) => h.trim()).filter(Boolean) : [],
+          contextDescription: editType === "context" ? editContext.trim() : "",
+          targetLevels: editType === "context" ? editTargetLevels : null,
         }),
       });
       if (!res.ok) throw new Error("Error updating practice");
@@ -724,8 +822,9 @@ export function SpaceRepetitionModal({
       // eliminar la práctica hay que revertir todo lo acumulado (sin pop-up, es una baja silenciosa).
       const links = Array.isArray(practice?.bodyLinks) ? practice!.bodyLinks : [];
       if (practice && links.length > 0) {
-        const confirmedIntervals =
-          (practice.completedIntervals?.length || 0) + (practice.completedIntervalsL2?.length || 0);
+        const confirmedIntervals = practice.repetitionType === "context"
+          ? getContextRecords(practice).length
+          : (practice.completedIntervals?.length || 0) + (practice.completedIntervalsL2?.length || 0);
         if (confirmedIntervals > 0) {
           links.forEach((link) => addBodyBlock(link.zone, link.dimension, -confirmedIntervals));
         }
@@ -737,12 +836,17 @@ export function SpaceRepetitionModal({
     }
   };
 
-  const toggleInterval = async (practiceId: string, intervalIndex: number) => {
+  // `answer`: respuesta escrita en el pop-up de una "Repetición de conceptos" (se guarda junto
+  // con el intervalo confirmado).
+  const toggleInterval = async (practiceId: string, intervalIndex: number, answer?: string) => {
     try {
       const practice = practices.find((p) => p.id === practiceId);
       if (!practice) return;
 
       const level = practice.level || 1;
+      const answerFields = answer !== undefined
+        ? { conceptAnswers: [...(Array.isArray(practice.conceptAnswers) ? practice.conceptAnswers : []), { answer, date: getLocalDateString(), level, intervalIdx: intervalIndex }] }
+        : {};
 
       // Handle Level 2 intervals
       if (level === 2) {
@@ -762,6 +866,7 @@ export function SpaceRepetitionModal({
               endDate: getLocalDateString(),
               lostIntervals: [],
               lastConfirmedAt: new Date().toISOString(),
+              ...answerFields,
             })
           });
           if (!res.ok) throw new Error("Error updating practice");
@@ -789,6 +894,7 @@ export function SpaceRepetitionModal({
             completedIntervalsL2: newCompletedL2,
             lostIntervals: [],
             lastConfirmedAt: new Date().toISOString(),
+            ...answerFields,
           })
         });
         if (!res.ok) throw new Error("Error updating practice");
@@ -817,6 +923,7 @@ export function SpaceRepetitionModal({
             completedIntervalsL2: [],
             lostIntervals: [],
             lastConfirmedAt: new Date().toISOString(),
+            ...answerFields,
           })
         });
         if (!res.ok) throw new Error("Error updating practice");
@@ -836,6 +943,7 @@ export function SpaceRepetitionModal({
           completedIntervals: newCompleted,
           lostIntervals: [],
           lastConfirmedAt: new Date().toISOString(),
+          ...answerFields,
         })
       });
       if (!res.ok) throw new Error("Error updating practice");
@@ -853,6 +961,59 @@ export function SpaceRepetitionModal({
       // El intervalo pudo crear un nodo SideQuest en el área/quest unido.
       refreshSkillTrees();
     }
+  };
+
+  // "Repetición por contexto": se registra cada vez que sucedió la situación, con lo que se
+  // anotó en el pop-up. Otorga las mismas recompensas que confirmar un intervalo.
+  const registerContext = async (practiceId: string, answer: string, reinforcement = false) => {
+    try {
+      const practice = practices.find((p) => p.id === practiceId);
+      if (!practice) return;
+      const records = getContextRecords(practice);
+      const res = await fetch(`/api/space-repetition/${practiceId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conceptAnswers: [...records, { answer, date: getLocalDateString(), level: 1, intervalIdx: records.length, ...(reinforcement ? { reinforcement: true } : {}) }],
+          lastConfirmedAt: new Date().toISOString(),
+        }),
+      });
+      if (!res.ok) throw new Error("Error registering context practice");
+      const updated = await res.json();
+      setPractices(practices.map((p) => (p.id === practiceId ? updated : p)));
+      const newCount = records.length + 1;
+      const goal = getContextGoal(practice);
+      setNotification(
+        reinforcement
+          ? "⚔ ¡Reforzado!"
+          : goal !== null && newCount === goal
+            ? "⚔ ¡Conquistado! Pasó a Conquistados"
+            : newCount % CONTEXT_REPS_PER_LEVEL === 0
+              ? `🏆 ¡Subiste a nivel ${getContextLevel(newCount).level}!`
+              : "🎯 ¡Situación registrada!"
+      );
+      await awardXpAndGrowBody(practice);
+    } catch (error) {
+      console.error("Error registering context practice:", error);
+    } finally {
+      queryClient.invalidateQueries({ queryKey: ["space-repetition"] });
+      refreshSkillTrees();
+    }
+  };
+
+  // Registrar un intervalo: las "Repeticiones de conceptos" primero piden responder el concepto
+  // en un pop-up; el resto se confirma directo.
+  const requestRegister = (practiceId: string, intervalIndex: number) => {
+    const practice = practices.find((p) => p.id === practiceId);
+    if (practice?.repetitionType === "context") {
+      setPendingContextId(practiceId);
+      return;
+    }
+    if (practice?.repetitionType === "concept") {
+      setPendingConcept({ practiceId, intervalIdx: intervalIndex });
+      return;
+    }
+    toggleInterval(practiceId, intervalIndex);
   };
 
   const handleExpiredReset = async (practiceId: string) => {
@@ -915,6 +1076,8 @@ export function SpaceRepetitionModal({
   if (!open) return null;
 
   const selectedPractice = practices.find((p) => p.id === selectedPracticeId);
+  const pendingConceptPractice = pendingConcept ? practices.find((p) => p.id === pendingConcept.practiceId) : undefined;
+  const pendingContextPractice = pendingContextId ? practices.find((p) => p.id === pendingContextId) : undefined;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -946,9 +1109,13 @@ export function SpaceRepetitionModal({
                 setCurrentPanel("detail");
               }}
               onArchived={() => setCurrentPanel("archived")}
+              conqueredCount={practices.filter(isContextConquered).length}
+              onConquered={() => setCurrentPanel("conquered")}
               onEdit={(id) => showEdit(id)}
+              areas={areas}
+              projects={projects}
               onRegister={(practiceId, intervalIdx) => {
-                toggleInterval(practiceId, intervalIdx);
+                requestRegister(practiceId, intervalIdx);
               }}
               onRecover={(practiceId) => handleRecover(practiceId)}
             />
@@ -966,6 +1133,21 @@ export function SpaceRepetitionModal({
               minMinutes={newMinMinutes}
               sideQuestLink={newSideQuestLink}
               onSideQuestLinkChange={setNewSideQuestLink}
+              repetitionType={newType}
+              onRepetitionTypeChange={(t) => {
+                setNewType(t);
+                // Si el emoji sigue siendo el default de algún tipo, pasa al default del nuevo.
+                if (Object.values(TYPE_DEFAULT_EMOJI).includes(newEmoji)) setNewEmoji(TYPE_DEFAULT_EMOJI[t]);
+              }}
+              contextDescription={newContext}
+              onContextDescriptionChange={setNewContext}
+              targetLevels={newTargetLevels}
+              onTargetLevelsChange={setNewTargetLevels}
+              projectId={newProjectId}
+              onProjectIdChange={setNewProjectId}
+              projects={projects}
+              hints={newHints}
+              onHintsChange={setNewHints}
               onEmojiChange={setNewEmoji}
               onNameChange={setNewName}
               onAreaIdChange={setNewAreaId}
@@ -973,13 +1155,7 @@ export function SpaceRepetitionModal({
               onBodyLinksChange={setNewBodyLinks}
               onMinMinutesChange={setNewMinMinutes}
               onBack={() => {
-                setNewName("");
-                setNewEmoji("💪");
-                setNewAreaId(null);
-                setNewSkillIds([]);
-                setNewBodyLinks([]);
-                setNewMinMinutes(null);
-                setNewSideQuestLink({ sideQuestAreaId: null, sideQuestProjectId: null });
+                resetNewForm();
                 setCurrentPanel("main");
               }}
               onSubmit={addPractice}
@@ -993,7 +1169,8 @@ export function SpaceRepetitionModal({
                 setSelectedPracticeId(null);
                 setCurrentPanel("main");
               }}
-              onToggleInterval={(idx) => toggleInterval(selectedPractice.id, idx)}
+              onToggleInterval={(idx) => requestRegister(selectedPractice.id, idx)}
+              onReinforce={() => registerContext(selectedPractice.id, "", true)}
               onReset={() => handleExpiredReset(selectedPractice.id)}
               onRecover={() => handleRecover(selectedPractice.id)}
             />
@@ -1011,6 +1188,17 @@ export function SpaceRepetitionModal({
               minMinutes={editMinMinutes}
               sideQuestLink={editSideQuestLink}
               onSideQuestLinkChange={setEditSideQuestLink}
+              repetitionType={editType}
+              onRepetitionTypeChange={setEditType}
+              contextDescription={editContext}
+              onContextDescriptionChange={setEditContext}
+              targetLevels={editTargetLevels}
+              onTargetLevelsChange={setEditTargetLevels}
+              projectId={editProjectId}
+              onProjectIdChange={setEditProjectId}
+              projects={projects}
+              hints={editHints}
+              onHintsChange={setEditHints}
               onEmojiChange={setEditEmoji}
               onNameChange={setEditName}
               onAreaIdChange={setEditAreaId}
@@ -1033,6 +1221,18 @@ export function SpaceRepetitionModal({
             />
           )}
 
+          {currentPanel === "conquered" && (
+            <ConqueredPanel
+              practices={practices.filter(isContextConquered)}
+              onBack={() => setCurrentPanel("main")}
+              onDetail={(id) => {
+                setSelectedPracticeId(id);
+                setCurrentPanel("detail");
+              }}
+              onReinforce={(id) => registerContext(id, "", true)}
+            />
+          )}
+
           {currentPanel === "archived" && (
             <ArchivedPanel
               archived={archived}
@@ -1040,6 +1240,37 @@ export function SpaceRepetitionModal({
             />
           )}
         </div>
+        <ConceptReviewDialog
+          open={!!pendingConcept && !!pendingConceptPractice}
+          concept={pendingConceptPractice?.name ?? ""}
+          emoji={pendingConceptPractice?.emoji}
+          hints={Array.isArray(pendingConceptPractice?.conceptHints) ? pendingConceptPractice!.conceptHints! : []}
+          onCancel={() => setPendingConcept(null)}
+          onDone={async (answer) => {
+            if (!pendingConcept) return;
+            const { practiceId, intervalIdx } = pendingConcept;
+            setPendingConcept(null);
+            await toggleInterval(practiceId, intervalIdx, answer);
+          }}
+        />
+        <ConceptReviewDialog
+          open={!!pendingContextPractice}
+          concept={pendingContextPractice?.name ?? ""}
+          emoji={pendingContextPractice?.emoji}
+          context={pendingContextPractice?.contextDescription}
+          hints={Array.isArray(pendingContextPractice?.conceptHints) ? pendingContextPractice!.conceptHints! : []}
+          description="Se dio la situación: anotá qué pasó y cómo respondiste."
+          placeholder="¿Qué pasó y cómo respondí?"
+          hintsLabel="Cómo quiero responder"
+          emptyHintsText="No cargaste puntos de cómo querés responder."
+          onCancel={() => setPendingContextId(null)}
+          onDone={async (answer) => {
+            if (!pendingContextId) return;
+            const id = pendingContextId;
+            setPendingContextId(null);
+            await registerContext(id, answer);
+          }}
+        />
       </DialogContent>
     </Dialog>
   );
@@ -1055,6 +1286,10 @@ function MainPanel({
   onEdit,
   onRegister,
   onRecover,
+  areas,
+  projects,
+  conqueredCount,
+  onConquered,
 }: {
   practices: SpaceRepetitionPractice[];
   activeCount: number;
@@ -1065,7 +1300,26 @@ function MainPanel({
   onEdit: (id: string) => void;
   onRegister: (practiceId: string, intervalIdx: number) => void;
   onRecover: (practiceId: string) => void;
+  areas: Area[];
+  projects: Project[];
+  conqueredCount: number;
+  onConquered: () => void;
 }) {
+  const [groupBy, setGroupBy] = useState<"area" | "project">(() => {
+    try {
+      return localStorage.getItem("sr_group_by") === "project" ? "project" : "area";
+    } catch {
+      return "area";
+    }
+  });
+  const changeGroupBy = (value: "area" | "project") => {
+    setGroupBy(value);
+    try {
+      localStorage.setItem("sr_group_by", value);
+    } catch {
+      // sin storage: solo se pierde la preferencia
+    }
+  };
   const today = new Date();
   const todayStr = today.toLocaleDateString("es-AR", {
     weekday: "long",
@@ -1075,15 +1329,41 @@ function MainPanel({
 
   const longPressHandler = useLongPress(onLongPressAdd, 3000);
 
-  const practicesWithStatus = practices.map((p) => ({
+  // Las "Repeticiones por contexto" que ya llegaron a su nivel asignado van a "Conquistados".
+  const practicesWithStatus = practices.filter((p) => !isContextConquered(p)).map((p) => ({
     ...p,
     status: (p.level === 2) ? calculateStatusL2(p) : calculateStatus(p),
     nextIdx: getNextIntervalIndex(p),
   }));
 
-  const pendingPractices = practicesWithStatus.filter(
-    (p) => p.status === "expires_soon" || p.status === "loss" || p.status === "frozen"
-  );
+  const isPending = (status: PracticeStatus) =>
+    status === "expires_soon" || status === "loss" || status === "frozen";
+
+  // Grupos según el criterio elegido (área o proyecto), en el orden de las áreas/proyectos, con
+  // las repeticiones sin asignar al final. Dentro de cada grupo, primero las pendientes.
+  const groupSources: { id: string; name: string; color?: string; icon?: string }[] =
+    groupBy === "area"
+      ? areas.map((a) => ({ id: a.id, name: a.name, color: a.color }))
+      : projects.map((p) => ({ id: p.id, name: p.name, icon: p.icon }));
+  const keyOf = (p: SpaceRepetitionPractice) => (groupBy === "area" ? p.areaId : p.projectId) || null;
+  const knownIds = new Set(groupSources.map((g) => g.id));
+  const groups = [
+    ...groupSources.map((g) => ({ ...g, items: practicesWithStatus.filter((p) => keyOf(p) === g.id) })),
+    {
+      id: "__none__",
+      name: groupBy === "area" ? "Sin área" : "Sin proyecto",
+      items: practicesWithStatus.filter((p) => { const k = keyOf(p); return !k || !knownIds.has(k); }),
+    },
+  ]
+    .map((g) => ({
+      ...g,
+      pending: g.items.filter((p) => isPending(p.status)),
+      // "level2_waiting" (los 15 días entre L1 y L2) también va en espera: si no, la
+      // repetición desaparecía de la lista durante esos días.
+      waiting: g.items.filter((p) => p.status === "waiting" || p.status === "level2_waiting"),
+      situational: g.items.filter((p) => p.status === "situational"),
+    }))
+    .filter((g) => g.pending.length + g.waiting.length + g.situational.length > 0);
 
   return (
     <div className="w-full">
@@ -1098,6 +1378,23 @@ function MainPanel({
         </p>
       </div>
 
+      {/* Separar por áreas / proyectos */}
+      <div className="px-5 pt-3">
+        <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted/50 p-1">
+          {(["area", "project"] as const).map((value) => (
+            <button
+              key={value}
+              onClick={() => changeGroupBy(value)}
+              className={`rounded-lg py-1.5 text-xs font-bold transition-colors ${
+                groupBy === value ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {value === "area" ? "Áreas" : "Proyectos"}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Practices List */}
       <div className="px-5 py-3 flex flex-col gap-2 max-h-96 overflow-y-auto minimal-scrollbar">
         {practices.length === 0 ? (
@@ -1106,13 +1403,24 @@ function MainPanel({
           </p>
         ) : (
           <>
-            {/* Pending Section */}
-            {pendingPractices.length > 0 && (
-              <div>
-                <p className="text-xs font-bold text-muted-foreground mb-2 px-1">
-                  PENDIENTES ({pendingPractices.length})
-                </p>
-                {pendingPractices.map((practice) => (
+            {groups.map((group) => (
+              <div key={group.id} className="mb-2">
+                <div className="flex items-center gap-2 mb-2 px-1 mt-2">
+                  {group.color ? (
+                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: group.color }} />
+                  ) : group.icon ? (
+                    <span className="text-sm flex-shrink-0">{group.icon}</span>
+                  ) : null}
+                  <p className="text-xs font-bold text-muted-foreground uppercase flex-1 truncate">{group.name}</p>
+                  <p className="text-[10px] text-muted-foreground flex-shrink-0">
+                    {group.pending.length > 0 && `${group.pending.length} pendiente${group.pending.length > 1 ? "s" : ""}`}
+                    {group.pending.length > 0 && group.waiting.length > 0 && " · "}
+                    {group.waiting.length > 0 && `${group.waiting.length} en espera`}
+                    {(group.pending.length > 0 || group.waiting.length > 0) && group.situational.length > 0 && " · "}
+                    {group.situational.length > 0 && `${group.situational.length} por contexto`}
+                  </p>
+                </div>
+                {group.pending.map((practice) => (
                   <PracticeCardWithLongPress
                     key={practice.id}
                     practice={practice}
@@ -1126,38 +1434,46 @@ function MainPanel({
                     onRecover={() => onRecover(practice.id)}
                   />
                 ))}
+                {group.waiting.map((practice) => (
+                  <PracticeWaitingCardWithLongPress
+                    key={practice.id}
+                    practice={practice}
+                    daysLeft={daysUntilNextInterval(practice)}
+                    onDetail={() => onDetail(practice.id)}
+                    onEdit={() => onEdit(practice.id)}
+                  />
+                ))}
+                {group.situational.map((practice) => (
+                  <ContextCardWithLongPress
+                    key={practice.id}
+                    practice={practice}
+                    onDetail={() => onDetail(practice.id)}
+                    onEdit={() => onEdit(practice.id)}
+                    onRegister={() => onRegister(practice.id, 0)}
+                  />
+                ))}
               </div>
-            )}
-
-            {/* Waiting Section */}
-            {practicesWithStatus.filter((p) => p.status === "waiting").length > 0 && (
-              <div>
-                <p className="text-xs font-bold text-muted-foreground mb-2 px-1 mt-3">
-                  EN ESPERA ({practicesWithStatus.filter((p) => p.status === "waiting").length})
-                </p>
-                {practicesWithStatus
-                  .filter((p) => p.status === "waiting")
-                  .map((practice) => {
-                    const daysLeft = daysUntilNextInterval(practice);
-                    return (
-                      <PracticeWaitingCardWithLongPress
-                        key={practice.id}
-                        practice={practice}
-                        daysLeft={daysLeft}
-                        onDetail={() => onDetail(practice.id)}
-                        onEdit={() => onEdit(practice.id)}
-                      />
-                    );
-                  })}
-              </div>
-            )}
+            ))}
           </>
         )}
       </div>
 
       {/* Footer Icon */}
-      {archivedCount > 0 && (
-        <div className="border-t border-border/30 px-5 py-3 flex justify-center">
+      {(archivedCount > 0 || conqueredCount > 0) && (
+        <div className="border-t border-border/30 px-5 py-3 flex justify-center items-center gap-6">
+          {conqueredCount > 0 && (
+            <motion.button
+              onClick={onConquered}
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.95 }}
+              className="flex items-center gap-1.5 text-sm font-bold text-amber-600 dark:text-amber-400 hover:text-amber-500 transition-colors cursor-pointer"
+              title={`Conquistados (${conqueredCount})`}
+            >
+              <span className="text-xl">⚔</span>
+              Conquistados ({conqueredCount})
+            </motion.button>
+          )}
+          {archivedCount > 0 && (
           <motion.button
             onClick={onArchived}
             whileHover={{ scale: 1.1 }}
@@ -1169,6 +1485,7 @@ function MainPanel({
               <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
             </svg>
           </motion.button>
+          )}
         </div>
       )}
     </div>
@@ -1295,6 +1612,7 @@ function PracticeCardWithLongPress({
       <div className="flex items-center gap-2 mb-2">
         <span className="text-lg flex-shrink-0">{practice.emoji}</span>
         <span className="font-bold text-sm text-foreground flex-1">{practice.name}</span>
+        {practice.repetitionType === "concept" && <ConceptBadge />}
         
         {/* Level pill */}
         <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
@@ -1538,6 +1856,7 @@ function PracticeWaitingCardWithLongPress({
       <div className="flex items-center gap-2 mb-3">
         <span className="text-lg flex-shrink-0">{practice.emoji}</span>
         <span className="font-bold text-sm text-foreground flex-1">{practice.name}</span>
+        {practice.repetitionType === "concept" && <ConceptBadge />}
         <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${practice.level === 2 ? "bg-purple-500/30 text-purple-700 dark:text-purple-400" : "bg-yellow-500/30 text-yellow-700 dark:text-yellow-400"}`}>
           L{practice.level}
         </span>
@@ -1613,6 +1932,222 @@ function PracticeWaitingCardWithLongPress({
   );
 }
 
+// Línea de progreso de una "Repetición por contexto": un tramo por cada vez practicada dentro
+// del nivel actual; al completar los 5 tramos se sube de nivel y la línea arranca de nuevo.
+function ContextProgressLine({ count, targetLevels, size = "sm" }: { count: number; targetLevels?: number | null; size?: "sm" | "lg" }) {
+  const { level, progress } = getContextLevel(count);
+  const node = size === "lg" ? "w-8 h-8 text-sm" : "w-5 h-5 text-[10px]";
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-sky-500/30 text-sky-700 dark:text-sky-400">
+          Nivel {level}{targetLevels ? ` de ${targetLevels}` : ""}
+        </span>
+        <span className="text-[11px] text-muted-foreground">
+          {progress}/{CONTEXT_REPS_PER_LEVEL} {targetLevels && level === targetLevels ? "para completar" : `para nivel ${level + 1}`}
+        </span>
+      </div>
+      <div className="flex items-center">
+        {Array.from({ length: CONTEXT_REPS_PER_LEVEL }).map((_, idx) => {
+          const done = idx < progress;
+          const isLast = idx === CONTEXT_REPS_PER_LEVEL - 1;
+          return (
+            <div key={idx} className={`flex items-center ${isLast ? "" : "flex-1"}`}>
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ delay: idx * 0.05 }}
+                className={`${node} rounded-full flex items-center justify-center font-bold flex-shrink-0 border-2 ${
+                  done ? "bg-sky-500/30 border-sky-500 text-sky-700 dark:text-sky-300" : "bg-muted border-muted-foreground/40 text-muted-foreground"
+                }`}
+              >
+                {done ? "✓" : isLast ? "🏆" : ""}
+              </motion.div>
+              {!isLast && (
+                <div className={`h-0.5 flex-1 ${idx < progress - 1 ? "bg-sky-500" : idx === progress - 1 ? "bg-gradient-to-r from-sky-500 to-muted-foreground/25" : "bg-muted-foreground/25"}`} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ContextBadge() {
+  return (
+    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-sky-500/20 text-sky-700 dark:text-sky-400 flex-shrink-0">
+      🎯 Por contexto
+    </span>
+  );
+}
+
+// Tarjeta de una "Repetición por contexto": no tiene timeline ni cuenta regresiva, solo la
+// situación, cuántas veces se practicó y el botón para registrar que sucedió.
+function ContextCardWithLongPress({
+  practice,
+  onDetail,
+  onEdit,
+  onRegister,
+}: {
+  practice: SpaceRepetitionPractice;
+  onDetail: () => void;
+  onEdit: () => void;
+  onRegister: () => void;
+}) {
+  const longPressHandler = useLongPress(onEdit, 800);
+  const records = getContextRecords(practice);
+  const last = records[records.length - 1];
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -10 }}
+      animate={{ opacity: 1, y: 0 }}
+      {...longPressHandler}
+      onClick={onDetail}
+      className="rounded-2xl border border-sky-400/70 bg-sky-400/15 px-3 py-2.5 mb-2 cursor-pointer hover:border-sky-400/90 hover:bg-sky-400/25 active:bg-sky-400/35 transition-all"
+    >
+      <div className="flex items-center gap-2 mb-1">
+        <span className="text-lg flex-shrink-0">{practice.emoji}</span>
+        <span className="font-bold text-sm text-foreground flex-1">{practice.name}</span>
+        <ContextBadge />
+      </div>
+      {practice.contextDescription && (
+        <p className="text-xs text-muted-foreground mb-2 line-clamp-2">📍 {practice.contextDescription}</p>
+      )}
+      <div className="mb-2">
+        <ContextProgressLine count={records.length} targetLevels={practice.targetLevels} />
+      </div>
+      <p className="text-[11px] text-muted-foreground mb-2">
+        {records.length === 0
+          ? "Todavía no se dio la situación"
+          : `Practicado ${records.length} ${records.length === 1 ? "vez" : "veces"} · última: ${formatDate(`${last.date}T00:00:00`)}`}
+      </p>
+      <Button
+        onClick={(e) => {
+          e.stopPropagation();
+          onRegister();
+        }}
+        className="w-full rounded-xl bg-sky-500/20 text-sky-700 dark:text-sky-400 hover:bg-sky-500/30 border border-sky-500/50 text-xs h-8"
+      >
+        🎯 Sucedió: registrar
+      </Button>
+    </motion.div>
+  );
+}
+
+function ConceptBadge() {
+  return (
+    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-pink-500/20 text-pink-700 dark:text-pink-400 flex-shrink-0">
+      🧠 Concepto
+    </span>
+  );
+}
+
+// Bloques para elegir el tipo de repetición al crearla / editarla.
+function RepetitionTypeBlocks({
+  value,
+  onChange,
+}: {
+  value: RepetitionType;
+  onChange: (type: RepetitionType) => void;
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-foreground mb-2">Tipo de repetición</label>
+      <div className="grid grid-cols-1 gap-2">
+        {REPETITION_TYPES.map((type) => {
+          const selected = value === type.id;
+          return (
+            <button
+              key={type.id}
+              type="button"
+              onClick={() => onChange(type.id)}
+              className={`text-left rounded-2xl border-2 px-3 py-3 transition-all flex items-center gap-3 ${
+                selected
+                  ? "border-purple-500 bg-purple-500/15"
+                  : "border-border/50 hover:border-border bg-muted/20"
+              }`}
+            >
+              <span className="text-2xl flex-shrink-0">{type.emoji}</span>
+              <span className="min-w-0">
+                <span className="font-bold text-sm text-foreground block leading-tight">{type.title}</span>
+                <span className="text-[11px] text-muted-foreground block mt-1 leading-snug">{type.description}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Punteo de pistas de un concepto: lo que tiene que decir la respuesta.
+function HintsEditor({
+  hints,
+  onChange,
+  label = "Pistas",
+  placeholder = "Punto que tiene que decir el concepto",
+  helper = 'Se muestran al apretar "Pistas" cuando repasás el concepto',
+}: {
+  hints: string[];
+  onChange: (hints: string[]) => void;
+  label?: string;
+  placeholder?: string;
+  helper?: string;
+}) {
+  const rows = hints.length === 0 ? [""] : hints;
+  const update = (idx: number, value: string) => onChange(rows.map((h, i) => (i === idx ? value : h)));
+  const remove = (idx: number) => onChange(rows.filter((_, i) => i !== idx));
+
+  return (
+    <div>
+      <label className="block text-sm font-medium text-foreground mb-2">{label}</label>
+      <div className="flex flex-col gap-2">
+        {rows.map((hint, idx) => (
+          <div key={idx} className="flex items-center gap-2">
+            <span className="text-muted-foreground text-sm">•</span>
+            <Input
+              value={hint}
+              onChange={(e) => update(idx, e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  onChange([...rows, ""]);
+                }
+              }}
+              placeholder={placeholder}
+              className="rounded-xl flex-1"
+            />
+            {rows.length > 1 && (
+              <button
+                type="button"
+                onClick={() => remove(idx)}
+                className="text-muted-foreground hover:text-red-500 transition-colors"
+                title="Quitar pista"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        ))}
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => onChange([...rows, ""])}
+          className="rounded-xl text-xs h-8 self-start"
+        >
+          <Plus className="h-3.5 w-3.5 mr-1" />
+          Agregar pista
+        </Button>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        {helper}
+      </p>
+    </div>
+  );
+}
+
 function AddPanel({
   emoji,
   name,
@@ -1624,6 +2159,17 @@ function AddPanel({
   minMinutes,
   sideQuestLink,
   onSideQuestLinkChange,
+  repetitionType,
+  onRepetitionTypeChange,
+  contextDescription,
+  onContextDescriptionChange,
+  targetLevels,
+  onTargetLevelsChange,
+  projectId,
+  onProjectIdChange,
+  projects,
+  hints,
+  onHintsChange,
   onEmojiChange,
   onNameChange,
   onAreaIdChange,
@@ -1643,6 +2189,17 @@ function AddPanel({
   minMinutes: number | null;
   sideQuestLink: SideQuestLink;
   onSideQuestLinkChange: (link: SideQuestLink) => void;
+  repetitionType: RepetitionType;
+  onRepetitionTypeChange: (type: RepetitionType) => void;
+  contextDescription: string;
+  onContextDescriptionChange: (value: string) => void;
+  targetLevels: number | null;
+  onTargetLevelsChange: (value: number | null) => void;
+  projectId: string | null;
+  onProjectIdChange: (id: string | null) => void;
+  projects: Project[];
+  hints: string[];
+  onHintsChange: (hints: string[]) => void;
   onEmojiChange: (emoji: string) => void;
   onNameChange: (name: string) => void;
   onAreaIdChange: (id: string | null) => void;
@@ -1667,6 +2224,9 @@ function AddPanel({
 
       {/* Content */}
       <div className="px-6 py-5 flex flex-col gap-4">
+        {/* Tipo de repetición */}
+        <RepetitionTypeBlocks value={repetitionType} onChange={onRepetitionTypeChange} />
+
         {/* Emoji Input */}
         <div>
           <label className="block text-sm font-medium text-foreground mb-2">
@@ -1690,15 +2250,65 @@ function AddPanel({
         {/* Name Input */}
         <div>
           <label className="block text-sm font-medium text-foreground mb-2">
-            Nombre
+            {repetitionType === "concept" ? "Pregunta o nombre del concepto" : repetitionType === "context" ? "Qué quiero practicar" : "Nombre"}
           </label>
           <Input
             value={name}
             onChange={(e) => onNameChange(e.target.value)}
-            placeholder="Por ej: Vocabulario, Guitarra..."
+            placeholder={repetitionType === "concept" ? "Por ej: ¿Qué es la fotosíntesis?" : repetitionType === "context" ? "Por ej: Responder con calma en una discusión" : "Por ej: Vocabulario, Guitarra..."}
             className="rounded-xl"
           />
         </div>
+
+        {/* Pistas (solo Repetición de conceptos) */}
+        {repetitionType === "concept" && <HintsEditor hints={hints} onChange={onHintsChange} />}
+
+        {/* Contexto + cómo quiero responder (solo Repetición por contexto) */}
+        {repetitionType === "context" && (
+          <>
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Contexto
+              </label>
+              <Textarea
+                value={contextDescription}
+                onChange={(e) => onContextDescriptionChange(e.target.value)}
+                placeholder="Por ej: Cuando surja una discusión con alguien"
+                className="rounded-xl min-h-20"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                La situación que tiene que darse para poder practicarla
+              </p>
+            </div>
+            <HintsEditor
+              hints={hints}
+              onChange={onHintsChange}
+              label="Cómo quiero responder"
+              placeholder="Por ej: Escuchar antes de contestar"
+              helper='Se muestran al apretar "Cómo quiero responder" cuando registrás la situación'
+            />
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Niveles para completar
+              </label>
+              <Input
+                type="number"
+                min={1}
+                value={targetLevels ?? ""}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  onTargetLevelsChange(raw === "" ? null : Math.max(1, parseInt(raw, 10) || 1));
+                }}
+                placeholder="Ej: 3"
+                className="rounded-xl"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Cada nivel son {CONTEXT_REPS_PER_LEVEL} veces. Al llegar pasa a ⚔ Conquistados
+                {targetLevels ? ` (${targetLevels * CONTEXT_REPS_PER_LEVEL} veces en total)` : ""}
+              </p>
+            </div>
+          </>
+        )}
 
         {/* Minimum Minutes Input */}
         <div>
@@ -1740,6 +2350,28 @@ function AddPanel({
           </select>
           <p className="mt-1 text-xs text-muted-foreground">
             Opcional: vincular la práctica a un área
+          </p>
+        </div>
+
+        {/* Project Select */}
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-2">
+            Proyecto
+          </label>
+          <select
+            value={projectId || ""}
+            onChange={(e) => onProjectIdChange(e.target.value || null)}
+            className="w-full px-3 py-2.5 border border-border/50 rounded-xl bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 transition-all text-sm appearance-none cursor-pointer"
+          >
+            <option value="">Sin proyecto asignado</option>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.icon} {project.name}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Opcional: agrupar la repetición dentro de un proyecto
           </p>
         </div>
 
@@ -1813,6 +2445,17 @@ function EditPanel({
   minMinutes,
   sideQuestLink,
   onSideQuestLinkChange,
+  repetitionType,
+  onRepetitionTypeChange,
+  contextDescription,
+  onContextDescriptionChange,
+  targetLevels,
+  onTargetLevelsChange,
+  projectId,
+  onProjectIdChange,
+  projects,
+  hints,
+  onHintsChange,
   onEmojiChange,
   onNameChange,
   onAreaIdChange,
@@ -1833,6 +2476,17 @@ function EditPanel({
   minMinutes: number | null;
   sideQuestLink: SideQuestLink;
   onSideQuestLinkChange: (link: SideQuestLink) => void;
+  repetitionType: RepetitionType;
+  onRepetitionTypeChange: (type: RepetitionType) => void;
+  contextDescription: string;
+  onContextDescriptionChange: (value: string) => void;
+  targetLevels: number | null;
+  onTargetLevelsChange: (value: number | null) => void;
+  projectId: string | null;
+  onProjectIdChange: (id: string | null) => void;
+  projects: Project[];
+  hints: string[];
+  onHintsChange: (hints: string[]) => void;
   onEmojiChange: (emoji: string) => void;
   onNameChange: (name: string) => void;
   onAreaIdChange: (id: string | null) => void;
@@ -1858,6 +2512,9 @@ function EditPanel({
 
       {/* Content */}
       <div className="px-6 py-5 flex flex-col gap-4">
+        {/* Tipo de repetición */}
+        <RepetitionTypeBlocks value={repetitionType} onChange={onRepetitionTypeChange} />
+
         {/* Emoji Input */}
         <div>
           <label className="block text-sm font-medium text-foreground mb-2">
@@ -1881,15 +2538,65 @@ function EditPanel({
         {/* Name Input */}
         <div>
           <label className="block text-sm font-medium text-foreground mb-2">
-            Nombre
+            {repetitionType === "concept" ? "Pregunta o nombre del concepto" : repetitionType === "context" ? "Qué quiero practicar" : "Nombre"}
           </label>
           <Input
             value={name}
             onChange={(e) => onNameChange(e.target.value)}
-            placeholder="Por ej: Vocabulario, Guitarra..."
+            placeholder={repetitionType === "concept" ? "Por ej: ¿Qué es la fotosíntesis?" : repetitionType === "context" ? "Por ej: Responder con calma en una discusión" : "Por ej: Vocabulario, Guitarra..."}
             className="rounded-xl"
           />
         </div>
+
+        {/* Pistas (solo Repetición de conceptos) */}
+        {repetitionType === "concept" && <HintsEditor hints={hints} onChange={onHintsChange} />}
+
+        {/* Contexto + cómo quiero responder (solo Repetición por contexto) */}
+        {repetitionType === "context" && (
+          <>
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Contexto
+              </label>
+              <Textarea
+                value={contextDescription}
+                onChange={(e) => onContextDescriptionChange(e.target.value)}
+                placeholder="Por ej: Cuando surja una discusión con alguien"
+                className="rounded-xl min-h-20"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                La situación que tiene que darse para poder practicarla
+              </p>
+            </div>
+            <HintsEditor
+              hints={hints}
+              onChange={onHintsChange}
+              label="Cómo quiero responder"
+              placeholder="Por ej: Escuchar antes de contestar"
+              helper='Se muestran al apretar "Cómo quiero responder" cuando registrás la situación'
+            />
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Niveles para completar
+              </label>
+              <Input
+                type="number"
+                min={1}
+                value={targetLevels ?? ""}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  onTargetLevelsChange(raw === "" ? null : Math.max(1, parseInt(raw, 10) || 1));
+                }}
+                placeholder="Ej: 3"
+                className="rounded-xl"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Cada nivel son {CONTEXT_REPS_PER_LEVEL} veces. Al llegar pasa a ⚔ Conquistados
+                {targetLevels ? ` (${targetLevels * CONTEXT_REPS_PER_LEVEL} veces en total)` : ""}
+              </p>
+            </div>
+          </>
+        )}
 
         {/* Minimum Minutes Input */}
         <div>
@@ -1931,6 +2638,28 @@ function EditPanel({
           </select>
           <p className="mt-1 text-xs text-muted-foreground">
             Opcional: vincular la práctica a un área
+          </p>
+        </div>
+
+        {/* Project Select */}
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-2">
+            Proyecto
+          </label>
+          <select
+            value={projectId || ""}
+            onChange={(e) => onProjectIdChange(e.target.value || null)}
+            className="w-full px-3 py-2.5 border border-border/50 rounded-xl bg-background hover:border-border focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 transition-all text-sm appearance-none cursor-pointer"
+          >
+            <option value="">Sin proyecto asignado</option>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.icon} {project.name}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Opcional: agrupar la repetición dentro de un proyecto
           </p>
         </div>
 
@@ -2007,13 +2736,18 @@ function DetailPanel({
   onToggleInterval,
   onReset,
   onRecover,
+  onReinforce,
 }: {
   practice: SpaceRepetitionPractice;
   onBack: () => void;
   onToggleInterval: (index: number) => void;
   onReset: () => void;
   onRecover?: () => void;
+  onReinforce?: () => void;
 }) {
+  if (practice.repetitionType === "context") {
+    return <ContextDetailPanel practice={practice} onBack={onBack} onRegister={() => onToggleInterval(0)} onReinforce={() => onReinforce?.()} />;
+  }
   const status = practice.level === 2 ? calculateStatusL2(practice) : calculateStatus(practice);
   const refDate = practice.level === 2 && practice.level1CompletedDate ? practice.level1CompletedDate : practice.startDate;
   const daysSince = calculateDaysSince(refDate);
@@ -2085,6 +2819,123 @@ function DetailPanel({
           >
             ❄️ Recuperar
           </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ContextDetailPanel({
+  practice,
+  onBack,
+  onRegister,
+  onReinforce,
+}: {
+  practice: SpaceRepetitionPractice;
+  onBack: () => void;
+  onRegister: () => void;
+  onReinforce: () => void;
+}) {
+  const records = getContextRecords(practice);
+  const conquered = isContextConquered(practice);
+  const points = (Array.isArray(practice.conceptHints) ? practice.conceptHints : []).filter((h) => h.trim());
+
+  return (
+    <div className="w-full">
+      <div className="border-b border-border/30 px-6 py-5 flex items-center gap-3">
+        <button onClick={onBack} className="text-muted-foreground hover:text-foreground transition-colors">
+          <ArrowLeft className="h-5 w-5" />
+        </button>
+        <div className="flex-1 min-w-0">
+          <h2 className="font-black text-xl text-foreground flex items-center gap-2">
+            <span>{practice.emoji}</span>
+            <span className="truncate">{practice.name}</span>
+          </h2>
+          <p className="text-xs text-muted-foreground mt-1">Iniciado {practice.startDate}</p>
+        </div>
+      </div>
+
+      <div className="px-6 py-5 flex flex-col gap-4">
+        {conquered ? (
+          <div className="rounded-2xl border px-4 py-3 text-center bg-amber-500/20 border-amber-500 text-amber-700 dark:text-amber-400">
+            <p className="font-bold text-sm">⚔ Conquistado</p>
+            <p className="text-xs mt-1">Llegaste al nivel {practice.targetLevels}. Podés seguir reforzándola</p>
+          </div>
+        ) : (
+          <div className={`rounded-2xl border px-4 py-3 text-center ${getStateColor("situational")}`}>
+            <p className="font-bold text-sm">{getStateLabel("situational")}</p>
+            <p className="text-xs mt-1">No depende del tiempo: registrala cuando se dé la situación</p>
+          </div>
+        )}
+
+        {practice.contextDescription && (
+          <div>
+            <p className="text-sm font-medium text-foreground mb-1">Contexto</p>
+            <p className="text-sm text-muted-foreground whitespace-pre-wrap">{practice.contextDescription}</p>
+          </div>
+        )}
+
+        {points.length > 0 && (
+          <div>
+            <p className="text-sm font-medium text-foreground mb-1">Cómo quiero responder</p>
+            <ul className="list-disc pl-5 space-y-1 text-sm text-muted-foreground">
+              {points.map((point, i) => <li key={i}>{point}</li>)}
+            </ul>
+          </div>
+        )}
+
+        {!conquered && <ContextProgressLine count={records.length} targetLevels={practice.targetLevels} size="lg" />}
+
+        <div className="grid grid-cols-2 gap-2">
+          <div className="rounded-xl border border-border/30 bg-muted/30 px-3 py-2 text-center">
+            <p className="text-xl font-bold text-foreground">{records.length}</p>
+            <p className="text-xs text-muted-foreground">Veces practicada</p>
+          </div>
+          {conquered ? (
+            <div className="rounded-xl border border-border/30 bg-muted/30 px-3 py-2 text-center">
+              <p className="text-xl font-bold text-foreground">{getReinforcementCount(practice)}</p>
+              <p className="text-xs text-muted-foreground">Refuerzos</p>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-border/30 bg-muted/30 px-3 py-2 text-center">
+              <p className="text-xl font-bold text-foreground">
+                {getContextLevel(records.length).level}{practice.targetLevels ? `/${practice.targetLevels}` : ""}
+              </p>
+              <p className="text-xs text-muted-foreground">Nivel</p>
+            </div>
+          )}
+        </div>
+
+        {conquered ? (
+          <Button
+            onClick={onReinforce}
+            className="w-full rounded-xl bg-amber-500/20 text-amber-700 dark:text-amber-400 hover:bg-amber-500/30 border border-amber-500/50"
+          >
+            ⚔ Reforzar
+          </Button>
+        ) : (
+          <Button
+            onClick={onRegister}
+            className="w-full rounded-xl bg-sky-500/20 text-sky-700 dark:text-sky-400 hover:bg-sky-500/30 border border-sky-500/50"
+          >
+            🎯 Sucedió: registrar
+          </Button>
+        )}
+
+        {records.length > 0 && (
+          <div>
+            <p className="text-sm font-medium text-foreground mb-2">Historial</p>
+            <div className="flex flex-col gap-2">
+              {[...records].reverse().map((record, i) => (
+                <div key={i} className="rounded-xl border border-border/30 bg-muted/20 px-3 py-2">
+                  <p className="text-[11px] font-bold text-muted-foreground mb-1">{formatDate(`${record.date}T00:00:00`)}</p>
+                  <p className="text-sm text-foreground whitespace-pre-wrap">
+                    {record.reinforcement && !record.answer ? "⚔ Refuerzo" : record.answer}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </div>
     </div>
@@ -2231,6 +3082,69 @@ function TimelineVisual({
           </p>
           <p className="text-xs text-muted-foreground">Días transcurridos</p>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// "Conquistados": Repeticiones por contexto que llegaron a su nivel asignado. "Reforzar" suma
+// una vez más (cuenta como refuerzo, después del nivel asignado).
+function ConqueredPanel({
+  practices,
+  onBack,
+  onDetail,
+  onReinforce,
+}: {
+  practices: SpaceRepetitionPractice[];
+  onBack: () => void;
+  onDetail: (id: string) => void;
+  onReinforce: (id: string) => void;
+}) {
+  return (
+    <div className="w-full">
+      <div className="border-b border-amber-500/30 px-6 py-5 bg-gradient-to-r from-amber-500/5 to-orange-500/5 flex items-center gap-3">
+        <button onClick={onBack} className="text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 rounded p-1 transition-colors">
+          <ArrowLeft className="h-5 w-5" />
+        </button>
+        <h2 className="font-black text-xl text-amber-700 dark:text-amber-300 flex items-center gap-2">
+          <span>⚔</span> Conquistados
+        </h2>
+      </div>
+
+      <div className="px-5 py-3 flex flex-col gap-2 max-h-96 overflow-y-auto minimal-scrollbar">
+        {practices.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-4 text-center">Todavía no conquistaste ninguna</p>
+        ) : (
+          practices.map((practice) => {
+            const reinforcements = getReinforcementCount(practice);
+            return (
+              <div
+                key={practice.id}
+                onClick={() => onDetail(practice.id)}
+                className="rounded-2xl border-2 border-amber-400/50 px-4 py-3 bg-gradient-to-br from-amber-500/15 via-orange-500/10 to-amber-500/10 hover:border-amber-400 transition-all cursor-pointer"
+              >
+                <div className="flex items-center gap-3 mb-2">
+                  <span className="text-2xl flex-shrink-0">{practice.emoji}</span>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-black text-sm text-foreground block truncate">{practice.name}</span>
+                    <span className="text-xs text-muted-foreground">
+                      ⚔ Nivel {practice.targetLevels} · {reinforcements} refuerzo{reinforcements === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                </div>
+                <Button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onReinforce(practice.id);
+                  }}
+                  className="w-full rounded-xl bg-amber-500/20 text-amber-700 dark:text-amber-400 hover:bg-amber-500/30 border border-amber-500/50 text-xs h-8"
+                >
+                  ⚔ Reforzar
+                </Button>
+              </div>
+            );
+          })
+        )}
       </div>
     </div>
   );

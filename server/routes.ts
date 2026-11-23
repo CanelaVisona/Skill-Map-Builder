@@ -7146,7 +7146,9 @@ export async function registerRoutes(
       };
       const confirmedInterval =
         (req.body.completedIntervals !== undefined && intervalCount(req.body.completedIntervals) > intervalCount(practice.completedIntervals)) ||
-        (req.body.completedIntervalsL2 !== undefined && intervalCount(req.body.completedIntervalsL2) > intervalCount(practice.completedIntervalsL2));
+        (req.body.completedIntervalsL2 !== undefined && intervalCount(req.body.completedIntervalsL2) > intervalCount(practice.completedIntervalsL2)) ||
+        // "Repetición por contexto": no tiene intervalos, cada vez que sucedió la situación suma un registro.
+        (updated.repetitionType === "context" && req.body.conceptAnswers !== undefined && intervalCount(req.body.conceptAnswers) > intervalCount(practice.conceptAnswers));
       if (confirmedInterval && (updated.sideQuestAreaId || updated.sideQuestProjectId)) {
         try {
           await createLoggedSideQuestNode(
