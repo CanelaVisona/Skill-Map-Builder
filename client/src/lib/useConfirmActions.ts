@@ -248,6 +248,8 @@ export function useConfirmPractice() {
           completedIntervals: newCompleted,
           lostIntervals: [],
           lastConfirmedAt: new Date().toISOString(),
+          // Los días empiezan a contar desde el primer registro, no desde que se creó.
+          ...((practice.completedIntervals || []).length === 0 ? { startDate: new Date().toLocaleDateString("en-CA") } : {}),
           ...answerFields,
         }),
       });

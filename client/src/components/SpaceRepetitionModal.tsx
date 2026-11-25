@@ -210,13 +210,12 @@ function calculateStatusFromAnchor(intervals: number[], completedIndices: Set<nu
   const gaps = getGapsForIntervals(intervals);
   const hSince = hoursSince(anchor);
 
-  // Nada confirmado todavía: no puede haber pérdida ni congelamiento. Queda "por vencer" las
-  // primeras 48hs después de que el primer intervalo queda disponible, y en espera indefinida
-  // (sin penalidad) después.
+  // Nada confirmado todavía: la cuenta de días todavía no arrancó (arranca con el primer
+  // registro), así que no puede haber pérdida ni congelamiento. Una vez que el primer intervalo
+  // queda disponible, sigue disponible para registrar sin límite de tiempo.
   if (completedIndices.size === 0) {
     const gapHours = gaps[0] * 24;
-    if (hSince < gapHours) return "waiting";
-    return (hSince - gapHours) <= 48 ? "expires_soon" : "waiting";
+    return hSince < gapHours ? "waiting" : "expires_soon";
   }
 
   for (let i = 0; i < intervals.length; i++) {
@@ -943,6 +942,8 @@ export function SpaceRepetitionModal({
           completedIntervals: newCompleted,
           lostIntervals: [],
           lastConfirmedAt: new Date().toISOString(),
+          // Los días empiezan a contar desde el primer registro, no desde que se creó.
+          ...((practice.completedIntervals || []).length === 0 ? { startDate: getLocalDateString() } : {}),
           ...answerFields,
         })
       });
