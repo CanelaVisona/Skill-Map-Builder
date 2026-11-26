@@ -2710,6 +2710,19 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             </div>
           )}
 
+          {/* Nivel completado: tilde chiquito y discreto en cada nodo del nivel una vez que todos
+              sus nodos están confirmados. Esquina superior izquierda (la derecha la usan la
+              estrella, la cumbre y la reflexión). */}
+          {isLevelCompleted && (
+            <div
+              className="absolute -top-0.5 -left-0.5 z-30 flex h-3 w-3 items-center justify-center rounded-full bg-background ring-1 ring-border"
+              title="Nivel completado"
+              data-testid="badge-level-completed"
+            >
+              <Check className="h-2 w-2 text-muted-foreground" strokeWidth={3} />
+            </div>
+          )}
+
           {/* Completion Star - permanent badge on every node once the area/project this
               node belongs to has been fully conquered (its star node was mastered) */}
           {skill.hasCompletionStar === 1 && (
