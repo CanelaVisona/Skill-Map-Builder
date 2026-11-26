@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import { SkillTreeProvider, useSkillTree, isUnnamedNode, sortByTreeOrder, findAvailableNode, type Skill, type GlobalSkill, type Area, type Project } from "@/lib/skill-context";
 import { MenuProvider, useMenu } from "@/lib/menu-context";
 import { XP_PER_LEVEL } from "@/lib/skill-xp";
-import { AreaMenu } from "@/components/AreaMenu";
+import { AreaMenu, extendedIconMap } from "@/components/AreaMenu";
 import { SkillNode } from "@/components/SkillNode";
 import { getErrorBarBlocks } from "@/components/ErrorProgressPopup";
 import { SkillConnection } from "@/components/SkillConnection";
@@ -16,6 +16,7 @@ import { HabitStreakModal } from "@/components/HabitStreakModal";
 import { useHabits } from "@/lib/useHabits";
 import { useManualTasks } from "@/lib/useManualTasks";
 import { useTodayTaskSlots, getCurrentTimeSlotKey } from "@/lib/useTodayTaskSlots";
+import { FolderKanban } from "lucide-react";
 import { SpaceRepetitionModal, calculateStatus, calculateStatusL2, type SpaceRepetitionPractice } from "@/components/SpaceRepetitionModal";
 import { MealTrackerModal } from "@/components/MealTrackerModal";
 import { ProgressModal } from "@/components/ProgressModal";
@@ -6566,7 +6567,7 @@ function SkillsSection({ journalLearnings, journalTools, journalThoughts }: { jo
                         }}
                         className="accent-blue-500"
                       />
-                      <span className="mr-2">{project.icon}</span>
+                      {(() => { const ProjectIcon = extendedIconMap[project.icon] || FolderKanban; return <ProjectIcon className="mr-2 h-4 w-4 inline-block" />; })()}
                       {project.name}
                     </label>
                   ))

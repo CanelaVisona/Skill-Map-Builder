@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
-import { ArrowLeft, Plus, Trash2, Archive } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Archive, FolderKanban } from "lucide-react";
+import { extendedIconMap } from "@/components/AreaMenu";
 import { useTheme } from "next-themes";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Area } from "@shared/schema";
@@ -1410,7 +1411,11 @@ function MainPanel({
                   {group.color ? (
                     <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: group.color }} />
                   ) : group.icon ? (
-                    <span className="text-sm flex-shrink-0">{group.icon}</span>
+                    (() => {
+                      // El ícono del proyecto se guarda como nombre de lucide ("BookOpen").
+                      const GroupIcon = extendedIconMap[group.icon] || FolderKanban;
+                      return <GroupIcon className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />;
+                    })()
                   ) : null}
                   <p className="text-xs font-bold text-muted-foreground uppercase flex-1 truncate">{group.name}</p>
                   <p className="text-[10px] text-muted-foreground flex-shrink-0">
@@ -1977,8 +1982,8 @@ function ContextProgressLine({ count, targetLevels, size = "sm" }: { count: numb
 
 function ContextBadge() {
   return (
-    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-sky-500/20 text-sky-700 dark:text-sky-400 flex-shrink-0">
-      🎯 Por contexto
+    <span title="Por contexto" className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-sky-500/20 text-sky-700 dark:text-sky-400 flex-shrink-0">
+      🎯
     </span>
   );
 }
@@ -2039,8 +2044,8 @@ function ContextCardWithLongPress({
 
 function ConceptBadge() {
   return (
-    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-pink-500/20 text-pink-700 dark:text-pink-400 flex-shrink-0">
-      🧠 Concepto
+    <span title="Concepto" className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-pink-500/20 text-pink-700 dark:text-pink-400 flex-shrink-0">
+      🧠
     </span>
   );
 }
@@ -2367,7 +2372,7 @@ function AddPanel({
             <option value="">Sin proyecto asignado</option>
             {projects.map((project) => (
               <option key={project.id} value={project.id}>
-                {project.icon} {project.name}
+                {project.name}
               </option>
             ))}
           </select>
@@ -2655,7 +2660,7 @@ function EditPanel({
             <option value="">Sin proyecto asignado</option>
             {projects.map((project) => (
               <option key={project.id} value={project.id}>
-                {project.icon} {project.name}
+                {project.name}
               </option>
             ))}
           </select>

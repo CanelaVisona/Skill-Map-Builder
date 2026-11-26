@@ -123,7 +123,7 @@ function getPowerIcon(id: string) {
   return POWER_ICON_PALETTE[hash % POWER_ICON_PALETTE.length];
 }
 
-const extendedIconMap: Record<string, any> = {
+export const extendedIconMap: Record<string, any> = {
   ...iconMap,
   Dumbbell,
   Briefcase,
