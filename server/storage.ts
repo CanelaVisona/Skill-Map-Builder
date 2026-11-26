@@ -540,6 +540,7 @@ export class DbStorage implements IStorage {
     if (area.levelSubtitleDescriptions !== undefined) updateData.levelSubtitleDescriptions = area.levelSubtitleDescriptions as Record<string, string>;
     if (area.archived !== undefined) updateData.archived = area.archived as 0 | 1;
     if (area.endOfAreaLevel !== undefined) updateData.endOfAreaLevel = area.endOfAreaLevel;
+    if (area.milestoneLevels !== undefined) updateData.milestoneLevels = area.milestoneLevels as number[];
     if (area.currentXp !== undefined) updateData.currentXp = area.currentXp;
     if (area.upcoming !== undefined) updateData.upcoming = area.upcoming as 0 | 1;
     if (area.scheduledUnlockAt !== undefined) {
@@ -1362,6 +1363,7 @@ export class DbStorage implements IStorage {
     if (project.levelSubtitleDescriptions !== undefined) updateData.levelSubtitleDescriptions = project.levelSubtitleDescriptions as Record<string, string>;
     if (project.archived !== undefined) updateData.archived = project.archived as 0 | 1;
     if (project.endOfAreaLevel !== undefined) updateData.endOfAreaLevel = project.endOfAreaLevel;
+    if (project.milestoneLevels !== undefined) updateData.milestoneLevels = project.milestoneLevels as number[];
     if (project.currentXp !== undefined) updateData.currentXp = project.currentXp;
     if (project.upcoming !== undefined) updateData.upcoming = project.upcoming as 0 | 1;
     if (project.scheduledUnlockAt !== undefined) {

@@ -78,6 +78,7 @@ import { BodyStrengthPanel } from "@/components/BodyStrengthPanel";
 import { LevelNavigationPanel, type LevelNavItem } from "@/components/LevelNavigationPanel";
 import { GoalsButton, CompletedGoalsJournal } from "@/components/GoalsPanel";
 import { RadarSkillMapModal } from "@/components/RadarSkillMapModal";
+import { CumbreCard } from "@/components/CumbreCard";
 import { SkillsSparkIcon } from "@/components/SkillsSparkIcon";
 import { QuestFilterTabs, type QuestTabGroup } from "@/components/QuestFilterTabs";
 import { NodeConfirmFeedbackProvider, useNodeConfirmFeedback } from "@/lib/node-confirm-feedback-context";
@@ -10808,6 +10809,9 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
                 </button>
               </div>
             </div>
+            {(isProject ? activeProject : activeArea) && (
+              <CumbreCard container={(isProject ? activeProject : activeArea)!} />
+            )}
           </div>
 
           {/* Header Section */}

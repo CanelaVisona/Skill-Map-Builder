@@ -46,6 +46,8 @@ export const areas = pgTable("areas", {
   levelSubtitleDescriptions: jsonb("level_subtitle_descriptions").notNull().$type<Record<string, string>>().default({}),
   archived: integer("archived").$type<0 | 1>().default(0),
   endOfAreaLevel: integer("end_of_area_level"),
+  // Cumbres: niveles cuyo nodo final marca el fin de un tramo (celebra, pero NO termina el área/quest).
+  milestoneLevels: jsonb("milestone_levels").$type<number[]>().default([]),
   currentXp: integer("current_xp").notNull().default(0),
   // "Próximos": quest queued for later, hidden from the menu until activated.
   upcoming: integer("upcoming").$type<0 | 1>().default(0),
@@ -106,6 +108,8 @@ export const projects = pgTable("projects", {
   archived: integer("archived").$type<0 | 1>().default(0),
   questType: text("quest_type").$type<"main" | "side" | "emergent" | "experience">().default("main"),
   endOfAreaLevel: integer("end_of_area_level"),
+  // Cumbres: niveles cuyo nodo final marca el fin de un tramo (celebra, pero NO termina el área/quest).
+  milestoneLevels: jsonb("milestone_levels").$type<number[]>().default([]),
   currentXp: integer("current_xp").notNull().default(0),
   // "Próximos": quest queued for later, hidden from the menu until activated.
   upcoming: integer("upcoming").$type<0 | 1>().default(0),

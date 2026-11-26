@@ -2,7 +2,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { type Skill, type GlobalSkill, useSkillTree } from "@/lib/skill-context";
 import { type JournalThought, type JournalLearning, type JournalTool } from "@shared/schema";
 import { cn } from "@/lib/utils";
-import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus, Star, ChevronRight, ChevronLeft, Wrench, Lightbulb, Bug, X, NotebookPen } from "lucide-react";
+import { Check, Lock, Trash2, ChevronUp, ChevronDown, Pencil, Plus, Star, ChevronRight, ChevronLeft, Wrench, Lightbulb, Bug, X, NotebookPen, Flag } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { type ExperienceGainSnapshot } from "./ExperienceGainPopup";
@@ -193,6 +193,8 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     updateProjectLevelSubtitle,
     toggleFinalNode,
     toggleProjectFinalNode,
+    toggleMilestone,
+    toggleProjectMilestone,
     globalSkills,
     getGlobalSkillsForArea,
     getGlobalSkillsForProject,
@@ -233,6 +235,12 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
     : isProject
       ? (activeProject?.endOfAreaLevel === skill.level)
       : (activeArea?.endOfAreaLevel === skill.level);
+
+  // Cumbre (milestoneLevels): el nivel de este nodo cierra un tramo (ver toggleMilestoneFor en skill-context).
+  // Es por nivel, así que solo se dibuja/controla desde su nodo final por posición.
+  const isMilestoneLevel = !isSubSkillView && !isStarActive && (
+    (isProject ? activeProject?.milestoneLevels : activeArea?.milestoneLevels) || []
+  ).includes(skill.level);
 
   // Calculate effective locked state: final nodes (by position) should appear locked
   // if not all other nodes in level are mastered (UNLESS star is active, then node itself blocks)
@@ -2668,6 +2676,16 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             </div>
           )}
 
+          {/* Cumbre: fin de un tramo, sin terminar el área/quest. */}
+          {isMilestoneLevel && isLastNodeOfLevel && skill.hasCompletionStar !== 1 && (
+            <div className="absolute -top-1 -right-1 z-30" title="Cumbre: fin de este tramo">
+              <Flag
+                size={14}
+                className="fill-red-500 text-red-500 drop-shadow-lg"
+              />
+            </div>
+          )}
+
           {/* Reflexión badge: once confirmed the check takes the note icon's place, so a small
               note in the corner keeps the node recognizable as a reflection. */}
           {skill.isReflection === 1 && isMastered && (
@@ -3111,6 +3129,31 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                    </div>
                  </PopoverContent>
                </Popover>
+
+               {/* Cumbre button - marca el fin de un tramo sin terminar el área/quest. Solo en el nodo
+                   final del nivel y no en el nivel de la estrella (ahí el área ya termina). */}
+               {!isSubSkillView && isLastNodeOfLevel && !isStarActive && (
+                 <Button
+                   variant="ghost"
+                   size="sm"
+                   className={cn(
+                     "h-8 w-8 p-0 text-xs",
+                     isMilestoneLevel ? "bg-red-500 hover:bg-red-600 text-white" : "bg-muted/50 hover:bg-muted"
+                   )}
+                   onClick={() => {
+                     if (isProject) {
+                       toggleProjectMilestone(activeId, skill.id);
+                     } else {
+                       toggleMilestone(activeId, skill.id);
+                     }
+                     setIsOpen(false);
+                   }}
+                   data-testid="button-toggle-milestone"
+                   title={isMilestoneLevel ? "Quitar cumbre" : "Marcar como cumbre (fin de tramo)"}
+                 >
+                   <Flag className={cn("h-3 w-3", isMilestoneLevel && "fill-white")} />
+                 </Button>
+               )}
 
                {/* Star button - show for last node of level OR if star is currently active (to allow removal).
                    Sub-skill trees have no toggle: their final-final node is always active and can't be

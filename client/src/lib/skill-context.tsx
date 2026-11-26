@@ -84,6 +84,8 @@ export interface Area {
   levelSubtitles: Record<string, string>;
   levelSubtitleDescriptions: Record<string, string>;
   endOfAreaLevel?: number;
+  // Cumbres: niveles cuyo nodo final cierra un tramo (celebra pero no termina el área/quest).
+  milestoneLevels?: number[] | null;
   currentXp: number;
   skills: Skill[];
   // "Próximos": queued for later, hidden from the menu until activated.
@@ -101,6 +103,8 @@ export interface Project {
   levelSubtitles: Record<string, string>;
   levelSubtitleDescriptions: Record<string, string>;
   endOfAreaLevel?: number;
+  // Cumbres: niveles cuyo nodo final cierra un tramo (celebra pero no termina el área/quest).
+  milestoneLevels?: number[] | null;
   currentXp: number;
   skills: Skill[];
   questType?: "main" | "side" | "emergent" | "experience";
@@ -223,6 +227,8 @@ interface SkillTreeContextType {
   updateProjectLevelSubtitle: (projectId: string, level: number, subtitle: string, description?: string) => Promise<void>;
   toggleFinalNode: (areaId: string, skillId: string) => Promise<void>;
   toggleProjectFinalNode: (projectId: string, skillId: string) => Promise<void>;
+  toggleMilestone: (areaId: string, skillId: string) => Promise<void>;
+  toggleProjectMilestone: (projectId: string, skillId: string) => Promise<void>;
   toggleSubSkillFinalNode: (skillId: string) => Promise<void>;
   showCompleted: boolean;
   questCompletedCelebration: { name: string; type: "area" | "project" } | null;
@@ -1324,7 +1330,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           // this confirm.
           setTimeout(() => {
             runAfterPopupsClear(() => triggerQuestCelebration(
-              "¡Subiste de nivel!",
+              (area.milestoneLevels || []).includes(skill.level) ? "¡Cumbre alcanzada!" : "¡Subiste de nivel!",
               // onShow: flip the confirmed node to "mastered" locally right as the banner
               // appears, in sync with it -- this is what makes every node in the level turn
               // orange (isLevelCompleted) at that exact moment instead of earlier. Also lifts
@@ -1800,7 +1806,7 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
           // toggleSkillStatus above.
           setTimeout(() => {
             runAfterPopupsClear(() => triggerQuestCelebration(
-              "¡Subiste de nivel!",
+              (project.milestoneLevels || []).includes(skill.level) ? "¡Cumbre alcanzada!" : "¡Subiste de nivel!",
               () => {
                 setProjects(prev => prev.map(p => p.id !== projectId ? p : {
                   ...p,
@@ -4403,6 +4409,34 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
     }
   };
 
+  // Cumbre: marca el nivel del nodo como fin de un tramo. A diferencia de la estrella
+  // (endOfAreaLevel) no termina el área/quest ni borra niveles: al confirmar su nodo final se
+  // celebra "¡Cumbre alcanzada!" y se abre el nivel siguiente como siempre. Se guarda por nivel
+  // (no en el nodo), así agregar nodos antes del final no le quita la marca al tramo.
+  const toggleMilestoneFor = async (kind: "areas" | "projects", id: string, skillId: string) => {
+    const container = kind === "areas" ? areas.find(a => a.id === id) : projects.find(p => p.id === id);
+    if (!container) return;
+    const skill = container.skills.find(s => s.id === skillId);
+    if (!skill) return;
+    const current = container.milestoneLevels || [];
+    const next = current.includes(skill.level)
+      ? current.filter(l => l !== skill.level)
+      : [...current, skill.level].sort((a, b) => a - b);
+    try {
+      await fetch(`/api/${kind}/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ milestoneLevels: next }),
+        credentials: "include",
+      });
+      await refreshAllAreas();
+    } catch (error) {
+      console.error("Error toggling milestone:", error);
+    }
+  };
+  const toggleMilestone = (areaId: string, skillId: string) => toggleMilestoneFor("areas", areaId, skillId);
+  const toggleProjectMilestone = (projectId: string, skillId: string) => toggleMilestoneFor("projects", projectId, skillId);
+
   const toggleSubSkillFinalNode = async (skillId: string) => {
     const skill = subSkills.find(s => s.id === skillId);
     if (!skill || !skill.parentSkillId) return;
@@ -4545,10 +4579,12 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       updatedDescriptions[levelA] = descB;
       updatedDescriptions[levelB] = descA;
 
+      // La cumbre viaja con su nivel, igual que el subtítulo.
+      const swappedMilestones = (area.milestoneLevels || []).map(l => (l === levelA ? levelB : l === levelB ? levelA : l));
       await fetch(`/api/areas/${areaId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ levelSubtitles: updatedSubtitles, levelSubtitleDescriptions: updatedDescriptions }),
+        body: JSON.stringify({ levelSubtitles: updatedSubtitles, levelSubtitleDescriptions: updatedDescriptions, milestoneLevels: swappedMilestones }),
         credentials: "include",
       });
 
@@ -4638,6 +4674,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       };
       if (area.endOfAreaLevel && area.endOfAreaLevel > level) {
         patchBody.endOfAreaLevel = area.endOfAreaLevel - 1;
+      }
+      if ((area.milestoneLevels || []).length > 0) {
+        patchBody.milestoneLevels = (area.milestoneLevels || []).filter(l => l !== level).map(l => (l > level ? l - 1 : l));
       }
 
       await fetch(`/api/areas/${areaId}`, {
@@ -4864,10 +4903,12 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       updatedDescriptions[levelA] = descB;
       updatedDescriptions[levelB] = descA;
 
+      // La cumbre viaja con su nivel, igual que el subtítulo.
+      const swappedMilestones = (project.milestoneLevels || []).map(l => (l === levelA ? levelB : l === levelB ? levelA : l));
       await fetch(`/api/projects/${projectId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ levelSubtitles: updatedSubtitles, levelSubtitleDescriptions: updatedDescriptions }),
+        body: JSON.stringify({ levelSubtitles: updatedSubtitles, levelSubtitleDescriptions: updatedDescriptions, milestoneLevels: swappedMilestones }),
         credentials: "include",
       });
 
@@ -4949,6 +4990,9 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       };
       if (project.endOfAreaLevel && project.endOfAreaLevel > level) {
         patchBody.endOfAreaLevel = project.endOfAreaLevel - 1;
+      }
+      if ((project.milestoneLevels || []).length > 0) {
+        patchBody.milestoneLevels = (project.milestoneLevels || []).filter(l => l !== level).map(l => (l > level ? l - 1 : l));
       }
 
       await fetch(`/api/projects/${projectId}`, {
@@ -5319,6 +5363,8 @@ export function SkillTreeProvider({ children }: { children: React.ReactNode }): 
       updateProjectLevelSubtitle,
       toggleFinalNode,
       toggleProjectFinalNode,
+      toggleMilestone,
+      toggleProjectMilestone,
       toggleSubSkillFinalNode,
       showCompleted,
       questCompletedCelebration,

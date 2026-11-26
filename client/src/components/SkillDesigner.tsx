@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { ChevronUp, ChevronDown, ChevronsUp, ChevronsDown, Lock, Plus, Trash2, Star, NotebookPen } from "lucide-react";
+import { ChevronUp, ChevronDown, ChevronsUp, ChevronsDown, Lock, Plus, Trash2, Star, NotebookPen, Flag } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getNodeTitleWordLimit, clampToWordLimit } from "@/lib/node-title-settings";
 import { getLevelTitleSuggestion, getOtherLevelTitles } from "@/lib/unique-level-title";
@@ -52,7 +52,7 @@ interface SkillDesignerProps {
 }
 
 export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: SkillDesignerProps) {
-  const { areas, projects, activeAreaId, activeProjectId, updateSkill, updateProjectSkill, updateLevelSubtitle, updateProjectLevelSubtitle, moveSkillToLevel, moveProjectSkillToLevel, changeSkillLevel, changeProjectSkillLevel, reorderSkillWithinLevel, reorderProjectSkillWithinLevel, swapAreaLevels, swapProjectLevels, addExtraAreaLevel, addExtraProjectLevel, deleteAreaLevel, deleteProjectLevel, addSkillBelow, addProjectSkillBelow, duplicateSkill, duplicateProjectSkill, deleteSkill, deleteProjectSkill, toggleFinalNode, toggleProjectFinalNode, addSideQuestNode } = useSkillTree();
+  const { areas, projects, activeAreaId, activeProjectId, updateSkill, updateProjectSkill, updateLevelSubtitle, updateProjectLevelSubtitle, moveSkillToLevel, moveProjectSkillToLevel, changeSkillLevel, changeProjectSkillLevel, reorderSkillWithinLevel, reorderProjectSkillWithinLevel, swapAreaLevels, swapProjectLevels, addExtraAreaLevel, addExtraProjectLevel, deleteAreaLevel, deleteProjectLevel, addSkillBelow, addProjectSkillBelow, duplicateSkill, duplicateProjectSkill, deleteSkill, deleteProjectSkill, toggleFinalNode, toggleProjectFinalNode, toggleMilestone, toggleProjectMilestone, addSideQuestNode } = useSkillTree();
   const { toast } = useToast();
   const [addingLevelId, setAddingLevelId] = useState<string | null>(null);
   // Tracks which skill's "add node" popover (Agregar / hermano / duplicar) is open
@@ -558,6 +558,17 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
                                                 </PopoverContent>
                                               </Popover>
                                               <SubSkillTreeButton skill={skill} onOpen={() => setSubTreeSkill({ id: skill.id, title: skill.title, status: skill.status })} />
+                                              {isLastNodeInLevel(skillsInLevel, skill.id) && area.endOfAreaLevel !== level && (
+                                                <Button
+                                                  size="sm"
+                                                  variant="ghost"
+                                                  onClick={() => toggleMilestone(area.id, skill.id)}
+                                                  className={cn("h-8 w-8", (area.milestoneLevels || []).includes(level) && "bg-red-500 hover:bg-red-600")}
+                                                  title={(area.milestoneLevels || []).includes(level) ? "Quitar cumbre" : "Marcar como cumbre (fin de tramo)"}
+                                                >
+                                                  <Flag className={cn("w-4 h-4", (area.milestoneLevels || []).includes(level) ? "fill-white text-white" : "text-muted-foreground")} />
+                                                </Button>
+                                              )}
                                               {isLastNodeInLevel(skillsInLevel, skill.id) && (
                                                 <Button
                                                   size="sm"
@@ -772,6 +783,17 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
                                                   </PopoverContent>
                                                 </Popover>
                                                 <SubSkillTreeButton skill={skill} onOpen={() => setSubTreeSkill({ id: skill.id, title: skill.title, status: skill.status })} />
+                                                {isLastNodeInLevel(skillsInLevel, skill.id) && project.endOfAreaLevel !== level && (
+                                                  <Button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    onClick={() => toggleProjectMilestone(project.id, skill.id)}
+                                                    className={cn("h-8 w-8", (project.milestoneLevels || []).includes(level) && "bg-red-500 hover:bg-red-600")}
+                                                    title={(project.milestoneLevels || []).includes(level) ? "Quitar cumbre" : "Marcar como cumbre (fin de tramo)"}
+                                                  >
+                                                    <Flag className={cn("w-4 h-4", (project.milestoneLevels || []).includes(level) ? "fill-white text-white" : "text-muted-foreground")} />
+                                                  </Button>
+                                                )}
                                                 {isLastNodeInLevel(skillsInLevel, skill.id) && (
                                                   <Button
                                                     size="sm"
@@ -980,6 +1002,17 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
                                                 </PopoverContent>
                                               </Popover>
                                               <SubSkillTreeButton skill={skill} onOpen={() => setSubTreeSkill({ id: skill.id, title: skill.title, status: skill.status })} />
+                                              {isLastNodeInLevel(skillsInLevel, skill.id) && project.endOfAreaLevel !== level && (
+                                                <Button
+                                                  size="sm"
+                                                  variant="ghost"
+                                                  onClick={() => toggleProjectMilestone(project.id, skill.id)}
+                                                  className={cn("h-8 w-8", (project.milestoneLevels || []).includes(level) && "bg-red-500 hover:bg-red-600")}
+                                                  title={(project.milestoneLevels || []).includes(level) ? "Quitar cumbre" : "Marcar como cumbre (fin de tramo)"}
+                                                >
+                                                  <Flag className={cn("w-4 h-4", (project.milestoneLevels || []).includes(level) ? "fill-white text-white" : "text-muted-foreground")} />
+                                                </Button>
+                                              )}
                                               {isLastNodeInLevel(skillsInLevel, skill.id) && (
                                                 <Button
                                                   size="sm"
@@ -1185,6 +1218,17 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
                                               </PopoverContent>
                                             </Popover>
                                             <SubSkillTreeButton skill={skill} onOpen={() => setSubTreeSkill({ id: skill.id, title: skill.title, status: skill.status })} />
+                                            {isLastNodeInLevel(skillsInLevel, skill.id) && project.endOfAreaLevel !== level && (
+                                              <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                onClick={() => toggleProjectMilestone(project.id, skill.id)}
+                                                className={cn("h-8 w-8", (project.milestoneLevels || []).includes(level) && "bg-red-500 hover:bg-red-600")}
+                                                title={(project.milestoneLevels || []).includes(level) ? "Quitar cumbre" : "Marcar como cumbre (fin de tramo)"}
+                                              >
+                                                <Flag className={cn("w-4 h-4", (project.milestoneLevels || []).includes(level) ? "fill-white text-white" : "text-muted-foreground")} />
+                                              </Button>
+                                            )}
                                             {isLastNodeInLevel(skillsInLevel, skill.id) && (
                                               <Button
                                                 size="sm"
