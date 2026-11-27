@@ -2681,7 +2681,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
             <div className="absolute -top-1 -right-1 z-30" title="Cumbre: fin de este tramo">
               <Flag
                 size={14}
-                className="fill-red-500 text-red-500 drop-shadow-lg"
+                className="fill-emerald-500 text-emerald-500 drop-shadow-lg"
               />
             </div>
           )}
@@ -3151,7 +3151,7 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
                    size="sm"
                    className={cn(
                      "h-8 w-8 p-0 text-xs",
-                     isMilestoneLevel ? "bg-red-500 hover:bg-red-600 text-white" : "bg-muted/50 hover:bg-muted"
+                     isMilestoneLevel ? "bg-emerald-500 hover:bg-emerald-600 text-white" : "bg-muted/50 hover:bg-muted"
                    )}
                    onClick={() => {
                      if (isProject) {

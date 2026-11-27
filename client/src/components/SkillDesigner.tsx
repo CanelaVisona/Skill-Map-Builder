@@ -563,7 +563,7 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
                                                   size="sm"
                                                   variant="ghost"
                                                   onClick={() => toggleMilestone(area.id, skill.id)}
-                                                  className={cn("h-8 w-8", (area.milestoneLevels || []).includes(level) && "bg-red-500 hover:bg-red-600")}
+                                                  className={cn("h-8 w-8", (area.milestoneLevels || []).includes(level) && "bg-emerald-500 hover:bg-emerald-600")}
                                                   title={(area.milestoneLevels || []).includes(level) ? "Quitar cumbre" : "Marcar como cumbre (fin de tramo)"}
                                                 >
                                                   <Flag className={cn("w-4 h-4", (area.milestoneLevels || []).includes(level) ? "fill-white text-white" : "text-muted-foreground")} />
@@ -788,7 +788,7 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
                                                     size="sm"
                                                     variant="ghost"
                                                     onClick={() => toggleProjectMilestone(project.id, skill.id)}
-                                                    className={cn("h-8 w-8", (project.milestoneLevels || []).includes(level) && "bg-red-500 hover:bg-red-600")}
+                                                    className={cn("h-8 w-8", (project.milestoneLevels || []).includes(level) && "bg-emerald-500 hover:bg-emerald-600")}
                                                     title={(project.milestoneLevels || []).includes(level) ? "Quitar cumbre" : "Marcar como cumbre (fin de tramo)"}
                                                   >
                                                     <Flag className={cn("w-4 h-4", (project.milestoneLevels || []).includes(level) ? "fill-white text-white" : "text-muted-foreground")} />
@@ -1007,7 +1007,7 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
                                                   size="sm"
                                                   variant="ghost"
                                                   onClick={() => toggleProjectMilestone(project.id, skill.id)}
-                                                  className={cn("h-8 w-8", (project.milestoneLevels || []).includes(level) && "bg-red-500 hover:bg-red-600")}
+                                                  className={cn("h-8 w-8", (project.milestoneLevels || []).includes(level) && "bg-emerald-500 hover:bg-emerald-600")}
                                                   title={(project.milestoneLevels || []).includes(level) ? "Quitar cumbre" : "Marcar como cumbre (fin de tramo)"}
                                                 >
                                                   <Flag className={cn("w-4 h-4", (project.milestoneLevels || []).includes(level) ? "fill-white text-white" : "text-muted-foreground")} />
@@ -1223,7 +1223,7 @@ export function SkillDesigner({ open, onOpenChange, embedded = false, scope }: S
                                                 size="sm"
                                                 variant="ghost"
                                                 onClick={() => toggleProjectMilestone(project.id, skill.id)}
-                                                className={cn("h-8 w-8", (project.milestoneLevels || []).includes(level) && "bg-red-500 hover:bg-red-600")}
+                                                className={cn("h-8 w-8", (project.milestoneLevels || []).includes(level) && "bg-emerald-500 hover:bg-emerald-600")}
                                                 title={(project.milestoneLevels || []).includes(level) ? "Quitar cumbre" : "Marcar como cumbre (fin de tramo)"}
                                               >
                                                 <Flag className={cn("w-4 h-4", (project.milestoneLevels || []).includes(level) ? "fill-white text-white" : "text-muted-foreground")} />

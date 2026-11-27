@@ -54,9 +54,9 @@ export function CumbreCard({ container }: { container: Area | Project }) {
         type="button"
         onClick={() => setPreviewOpen(true)}
         className={cn(
-          "mt-2 w-full rounded-lg border px-3 py-2 text-left backdrop-blur",
+          "mt-6 w-full rounded-lg border px-3 py-2 text-left backdrop-blur",
           "bg-background/80 hover:bg-muted/60 transition-colors",
-          isFinal ? "border-amber-400/40" : "border-red-500/40"
+          isFinal ? "border-amber-400/40" : "border-emerald-500/40"
         )}
         title="Ver vista previa del nivel"
         data-testid="button-cumbre-card"
@@ -65,9 +65,9 @@ export function CumbreCard({ container }: { container: Area | Project }) {
           {isFinal ? (
             <Star className="h-4 w-4 flex-shrink-0 fill-amber-400 text-amber-400" />
           ) : (
-            <Flag className="h-4 w-4 flex-shrink-0 fill-red-500 text-red-500" />
+            <Flag className="h-4 w-4 flex-shrink-0 fill-emerald-500 text-emerald-500" />
           )}
-          <span className={cn("text-xs font-level font-bold tracking-wider", isFinal ? "text-amber-400" : "text-red-500")}>
+          <span className={cn("text-xs font-level font-bold tracking-wider", isFinal ? "text-amber-400" : "text-emerald-500")}>
             {isFinal ? "FINAL:" : "CUMBRE:"}
           </span>
           <span className="text-sm font-medium truncate">{labelOf(container, target)}</span>
@@ -85,7 +85,7 @@ export function CumbreCard({ container }: { container: Area | Project }) {
               {isFinal ? (
                 <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
               ) : (
-                <Flag className="h-4 w-4 fill-red-500 text-red-500" />
+                <Flag className="h-4 w-4 fill-emerald-500 text-emerald-500" />
               )}
               {isFinal ? "Final" : "Cumbre"} · Nivel {target}
             </DialogTitle>
@@ -103,7 +103,7 @@ export function CumbreCard({ container }: { container: Area | Project }) {
                   key={s.id}
                   className={cn(
                     "flex items-start gap-2 rounded-md px-2 py-1.5 text-sm",
-                    isLast && (isFinal ? "bg-amber-400/10" : "bg-red-500/10")
+                    isLast && (isFinal ? "bg-amber-400/10" : "bg-emerald-500/10")
                   )}
                 >
                   {done ? (

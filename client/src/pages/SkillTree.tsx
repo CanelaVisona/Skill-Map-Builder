@@ -10809,9 +10809,6 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
                 </button>
               </div>
             </div>
-            {(isProject ? activeProject : activeArea) && (
-              <CumbreCard container={(isProject ? activeProject : activeArea)!} />
-            )}
           </div>
 
           {/* Header Section */}
@@ -11187,6 +11184,13 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
               </motion.div>
             </AnimatePresence>
           </div>
+
+          {/* Cumbre: debajo de todo, después del nodo final visible del mapa. */}
+          {(isProject ? activeProject : activeArea) && (
+            <div className="pb-8">
+              <CumbreCard container={(isProject ? activeProject : activeArea)!} />
+            </div>
+          )}
         </div>
       </div>
 
