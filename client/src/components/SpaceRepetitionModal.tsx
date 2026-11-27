@@ -11,20 +11,8 @@ import { useTheme } from "next-themes";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Area } from "@shared/schema";
 import { ConceptReviewDialog } from "@/components/ConceptReviewDialog";
-import { ConceptRecallSession, LevelStepper } from "@/components/ConceptRecallSession";
-import {
-  ACTIVITIES,
-  COMPREHENSION_LABELS,
-  INDICATOR_LABELS,
-  getConceptPoints,
-  getLearningState,
-  getMastery,
-  mergePointsWithTitles,
-  pointsToFields,
-  type ConceptPoint,
-  type HelpLevel,
-} from "@/lib/conceptLearning";
-import { HELP_CONTEXT_LABELS, achievementEmoji, achievementLabel, getAchievements } from "@/lib/conceptAchievements";
+import { ConceptRecallSession } from "@/components/ConceptRecallSession";
+import { getConceptPoints, mergePointsWithTitles, pointsToFields, type ConceptPoint } from "@/lib/conceptLearning";
 import { useBodyProgress } from "@/lib/body-progress-context";
 import { useBodyGainPopup } from "@/lib/body-gain-popup-context";
 import { BodyLinkPicker, type BodyLink } from "@/components/BodyLinkPicker";
@@ -1246,7 +1234,6 @@ export function SpaceRepetitionModal({
               onReinforce={() => registerContext(selectedPractice.id, "", true)}
               onReset={() => handleExpiredReset(selectedPractice.id)}
               onRecover={() => handleRecover(selectedPractice.id)}
-              onPatch={(fields) => patchPracticeFields(selectedPractice.id, fields)}
             />
           )}
 
@@ -2841,7 +2828,6 @@ function DetailPanel({
   onReset,
   onRecover,
   onReinforce,
-  onPatch,
 }: {
   practice: SpaceRepetitionPractice;
   onBack: () => void;
@@ -2849,7 +2835,6 @@ function DetailPanel({
   onReset: () => void;
   onRecover?: () => void;
   onReinforce?: () => void;
-  onPatch?: (fields: Record<string, unknown>) => void;
 }) {
   if (practice.repetitionType === "context") {
     return <ContextDetailPanel practice={practice} onBack={onBack} onRegister={() => onToggleInterval(0)} onReinforce={() => onReinforce?.()} />;
@@ -2927,176 +2912,43 @@ function DetailPanel({
           </Button>
         )}
 
-        {practice.repetitionType === "concept" && <ConceptLearningCard practice={practice} onPatch={onPatch} />}
+        {practice.repetitionType === "concept" && <ConceptAnswersCard practice={practice} />}
       </div>
     </div>
   );
 }
 
-// Estado de la recuperación activa de un concepto (CÓMO repasarlo), independiente del
-// calendario de arriba (CUÁNDO). El nivel de ayuda se puede mover a mano en cualquier momento.
-function ConceptLearningCard({ practice, onPatch }: { practice: SpaceRepetitionPractice; onPatch?: (fields: Record<string, unknown>) => void }) {
-  const [showHistory, setShowHistory] = useState(false);
-  const [showAllAnswers, setShowAllAnswers] = useState(false);
-  // Respuestas registradas en cada repaso (incluye las de antes de la recuperación activa).
+// Detalle de un concepto: solo las respuestas registradas en cada repaso (incluye las de antes
+// de la recuperación activa), de la más nueva a la más vieja.
+function ConceptAnswersCard({ practice }: { practice: SpaceRepetitionPractice }) {
+  const [showAll, setShowAll] = useState(false);
   const answers = (Array.isArray(practice.conceptAnswers) ? practice.conceptAnswers : [])
     .filter((a) => a && typeof a.answer === "string" && a.answer.trim())
     .slice()
     .reverse();
-  const visibleAnswers = showAllAnswers ? answers : answers.slice(0, 3);
-  const state = getLearningState(practice);
-  const points = getConceptPoints(practice);
-  const mastery = getMastery(state);
-  const achievements = getAchievements(practice);
-  const nextLevel: HelpLevel = state.next?.helpLevel ?? state.helpLevel;
-  const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("es-AR", { day: "2-digit", month: "short" }) : "—");
-
-  const changeLevel = (level: HelpLevel) => {
-    const at = new Date().toISOString();
-    const next = {
-      activity: level === 5 ? ("free" as const) : state.next?.activity === "reread" && level === 1 ? ("reread" as const) : ("hints" as const),
-      helpLevel: level,
-      reason: "Nivel de ayuda elegido por vos.",
-      focusPointIds: state.next?.focusPointIds ?? [],
-      at,
-    };
-    onPatch?.({ conceptLearning: { ...state, helpLevel: Math.min(level, 4) as HelpLevel, next } });
-  };
+  const visible = showAll ? answers : answers.slice(0, 3);
 
   return (
-    <div className="rounded-2xl border border-purple-500/30 bg-purple-500/5 px-4 py-3 flex flex-col gap-3">
-      <div className="flex items-center justify-between">
-        <p className="font-bold text-sm text-foreground">🧠 Cómo lo estoy aprendiendo</p>
-        <span className="text-xs text-muted-foreground">{mastery.label}</span>
-      </div>
-
-      <div className="grid grid-cols-2 gap-2 text-xs">
-        <div>
-          <p className="text-muted-foreground">Comprensión (autoevaluada)</p>
-          <p className="font-semibold">{state.comprehension ? COMPREHENSION_LABELS[state.comprehension] : "Sin registrar"}</p>
-        </div>
-        <div>
-          <p className="text-muted-foreground">Último repaso</p>
-          <p className="font-semibold">
-            {fmt(state.lastReviewAt)}
-            {state.lastActivity && ` · ${ACTIVITIES[state.lastActivity].emoji}`}
-          </p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-5 gap-1">
-        {(Object.keys(INDICATOR_LABELS) as (keyof typeof INDICATOR_LABELS)[]).map((k) => {
-          const v = state.indicators[k].value;
-          return (
-            <div key={k} className="flex flex-col items-center gap-1 text-center" title={INDICATOR_LABELS[k]}>
-              <span className={`h-2 w-full rounded-full ${v === "yes" ? "bg-green-500" : v === "partial" ? "bg-amber-400" : v === "no" ? "bg-sky-400" : "bg-muted"}`} />
-              <span className="text-[9px] leading-tight text-muted-foreground">{INDICATOR_LABELS[k]}</span>
+    <div className="rounded-2xl border border-purple-500/30 bg-purple-500/5 px-4 py-3 flex flex-col gap-2">
+      <p className="font-bold text-sm text-foreground">📝 Mis respuestas ({answers.length})</p>
+      {answers.length === 0 ? (
+        <p className="text-xs italic text-muted-foreground">Todavía no registraste respuestas.</p>
+      ) : (
+        <>
+          {visible.map((a, i) => (
+            <div key={`${a.date}-${a.intervalIdx}-${i}`} className="rounded-xl border border-border/40 bg-background/50 px-3 py-2">
+              <p className="text-[10px] font-bold uppercase text-muted-foreground">
+                {formatDate(`${a.date}T00:00:00`)} · {(a.level === 2 ? LABELS_L2 : LABELS_L1)[a.intervalIdx] ?? `Repaso ${a.intervalIdx + 1}`}
+              </p>
+              <p className="text-sm whitespace-pre-wrap text-foreground">{a.answer}</p>
             </div>
-          );
-        })}
-      </div>
-
-      {state.next && (
-        <div className="text-xs">
-          <p className="text-muted-foreground">Próxima actividad</p>
-          <p className="font-semibold">{ACTIVITIES[state.next.activity].emoji} {ACTIVITIES[state.next.activity].title}</p>
-          <p className="text-muted-foreground">{state.next.reason}</p>
-          {state.next.focusPointIds.length > 0 && (
-            <p className="mt-1">🎯 Reforzar: {state.next.focusPointIds.map((id) => points.find((p) => p.id === id)?.title).filter(Boolean).join(", ")}</p>
+          ))}
+          {answers.length > 3 && (
+            <button type="button" onClick={() => setShowAll((v) => !v)} className="self-start text-xs font-semibold text-purple-700 dark:text-purple-300 hover:underline">
+              {showAll ? "Ver menos" : `Ver todas (${answers.length})`}
+            </button>
           )}
-        </div>
-      )}
-
-      <div>
-        <p className="text-xs text-muted-foreground mb-1">Nivel de ayuda para el próximo repaso</p>
-        <LevelStepper level={nextLevel} onChange={changeLevel} />
-      </div>
-
-      {points.length > 0 && Object.keys(state.points).length > 0 && (
-        <div className="flex flex-col gap-1 text-xs">
-          <p className="text-muted-foreground">Puntos</p>
-          {points.map((p) => {
-            const pp = state.points[p.id];
-            return (
-              <div key={p.id} className="flex items-center justify-between gap-2">
-                <span className="truncate">{p.title}</span>
-                <span className="flex-shrink-0 text-muted-foreground">
-                  {pp ? `✅ ${pp.remembered} · 💡 ${pp.hinted} · 🔁 ${pp.forgotten}` : "—"}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      <div className="flex flex-col gap-1.5">
-        <p className="text-xs text-muted-foreground">📝 Mis respuestas ({answers.length})</p>
-        {answers.length === 0 ? (
-          <p className="text-xs italic text-muted-foreground">Todavía no registraste respuestas.</p>
-        ) : (
-          <>
-            {visibleAnswers.map((a, i) => (
-              <div key={`${a.date}-${a.intervalIdx}-${i}`} className="rounded-xl border border-border/40 bg-background/50 px-3 py-2">
-                <p className="text-[10px] font-bold uppercase text-muted-foreground">
-                  {formatDate(`${a.date}T00:00:00`)} · {(a.level === 2 ? LABELS_L2 : LABELS_L1)[a.intervalIdx] ?? `Repaso ${a.intervalIdx + 1}`}
-                </p>
-                <p className="text-sm whitespace-pre-wrap text-foreground">{a.answer}</p>
-              </div>
-            ))}
-            {answers.length > 3 && (
-              <button type="button" onClick={() => setShowAllAnswers((v) => !v)} className="self-start text-xs font-semibold text-purple-700 dark:text-purple-300 hover:underline">
-                {showAllAnswers ? "Ver menos" : `Ver todas (${answers.length})`}
-              </button>
-            )}
-          </>
-        )}
-      </div>
-
-      {state.sessions.length > 0 && (
-        <div>
-          <button type="button" onClick={() => setShowHistory((v) => !v)} className="text-xs font-semibold text-purple-700 dark:text-purple-300 hover:underline">
-            {showHistory ? "Ocultar historial" : `Ver historial (${state.sessions.length} sesiones)`}
-          </button>
-          {showHistory && (
-            <div className="mt-2 flex flex-col gap-2">
-              {[...state.sessions].reverse().map((s) => (
-                <div key={s.id} className="rounded-xl border border-border/40 px-3 py-2 text-[11px] leading-relaxed">
-                  <p className="font-bold text-foreground">
-                    Sesión {s.number} · {fmt(s.startedAt)} {!s.completedAt && <span className="font-normal text-muted-foreground">(sin terminar)</span>}
-                  </p>
-                  {s.initialComprehension && <p>Comprensión inicial: {COMPREHENSION_LABELS[s.initialComprehension]}</p>}
-                  {s.recommended && <p>Recomendado: {ACTIVITIES[s.recommended.activity].title} — {s.recommended.reason}</p>}
-                  {s.performedActivity && <p>Realizado: {(s.activitiesPerformed?.length ? s.activitiesPerformed : [s.performedActivity]).map((a) => ACTIVITIES[a].title).join(" → ")}{s.helpLevel ? ` · nivel ${s.helpLevel}` : ""}</p>}
-                  {Object.keys(s.pointResults).length > 0 && (
-                    <p>
-                      Puntos: {Object.values(s.pointResults).filter((r) => r === "remembered").length} recordados ·{" "}
-                      {Object.values(s.pointResults).filter((r) => r === "hinted").length} con pista ·{" "}
-                      {Object.values(s.pointResults).filter((r) => r === "forgotten").length} olvidados
-                    </p>
-                  )}
-                  {s.answer?.trim() && (
-                    <p className="mt-1 whitespace-pre-wrap rounded-lg bg-muted/40 px-2 py-1 text-foreground">{s.answer}</p>
-                  )}
-                  {s.afterComprehension && <p>Después: {COMPREHENSION_LABELS[s.afterComprehension]}</p>}
-                  {s.next && <p>Siguiente: {ACTIVITIES[s.next.activity].title} (nivel {s.next.helpLevel})</p>}
-                  {achievements.some((a) => a.sessionId === s.id) && (
-                    <div className="mt-1">
-                      <p className="font-semibold text-emerald-700 dark:text-emerald-400">Logros</p>
-                      {achievements.filter((a) => a.sessionId === s.id).map((a) => (
-                        <p key={a.id}>
-                          {achievementEmoji(a.type)} {achievementLabel(a)}{" "}
-                          <span className="text-muted-foreground">
-                            · {new Date(a.at).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })} · {HELP_CONTEXT_LABELS[a.helpContext]}
-                          </span>
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        </>
       )}
     </div>
   );

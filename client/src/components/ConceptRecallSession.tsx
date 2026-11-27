@@ -440,7 +440,6 @@ export function ConceptRecallSession({
       onRemove={(id) => persistAchievements(achievements.filter((a) => a.id !== id))}
     />
   );
-  const wide = step === "reread" || step === "activity";
 
   const activityType: ActivityType | null =
     step === "reread" || step === "after_reread" ? "reread" : step === "activity" || step === "compare" ? (session.performedActivity ?? null) : null;
@@ -450,7 +449,7 @@ export function ConceptRecallSession({
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) cancel(); }}>
-      <DialogContent className={`${wide && !editing ? "max-w-lg md:max-w-3xl" : "max-w-lg"} rounded-3xl max-h-[90vh] overflow-y-auto minimal-scrollbar`}>
+      <DialogContent className="max-w-lg rounded-3xl max-h-[90vh] overflow-y-auto minimal-scrollbar">
         <DialogTitle className="flex items-center gap-2 text-lg font-black pr-6">
           {practice.emoji && <span>{practice.emoji}</span>}
           <span>{practice.name}</span>
@@ -524,15 +523,12 @@ export function ConceptRecallSession({
                   onEditPoint={(id) => setEditing({ kind: "point", id })}
                   onAddPoint={() => setEditing({ kind: "new" })}
                 />
-                <div className="grid gap-3 md:grid-cols-[1fr_260px] md:items-start">
-                  <Textarea
-                    value={rereadNote}
-                    onChange={(e) => setRereadNote(e.target.value)}
-                    placeholder="Opcional: explicá con tus palabras qué significa el concepto"
-                    className="min-h-28 rounded-xl"
-                  />
-                  {achievementsPanel()}
-                </div>
+                <Textarea
+                  value={rereadNote}
+                  onChange={(e) => setRereadNote(e.target.value)}
+                  placeholder="Opcional: explicá con tus palabras qué significa el concepto"
+                  className="min-h-28 rounded-xl"
+                />
                 <Button
                   onClick={() => {
                     if (!session.activityStarted) patchSession({ activityStarted: true });
@@ -549,6 +545,7 @@ export function ConceptRecallSession({
 
             {step === "after_reread" && (
               <div className="flex flex-col gap-3">
+                {achievementsPanel()}
                 <p className="font-bold text-foreground">Después de realizar esta actividad, ¿cómo describirías tu comprensión del concepto?</p>
                 {AFTER_ACTIVITY_OPTIONS.map((o) => (
                   <OptionButton key={o.value} emoji={o.emoji} label={o.label} onClick={() => answerAfterReread(o.value)} />
@@ -650,16 +647,13 @@ export function ConceptRecallSession({
                   />
                 )}
 
-                <div className="grid gap-3 md:grid-cols-[1fr_260px] md:items-start">
-                  <Textarea
-                    autoFocus
-                    value={session.answer}
-                    onChange={(e) => patchSession({ answer: e.target.value })}
-                    placeholder="Escribí lo que recordás del concepto…"
-                    className="min-h-48 rounded-xl"
-                  />
-                  {achievementsPanel()}
-                </div>
+                <Textarea
+                  autoFocus
+                  value={session.answer}
+                  onChange={(e) => patchSession({ answer: e.target.value })}
+                  placeholder="Escribí lo que recordás del concepto…"
+                  className="min-h-40 rounded-xl"
+                />
 
                 <div className="flex flex-wrap gap-2">
                   {points.some((p) => !revealed.includes(p.id)) && (
@@ -706,6 +700,7 @@ export function ConceptRecallSession({
                   <p className="text-[11px] font-bold uppercase text-muted-foreground mb-1">Tu respuesta</p>
                   <p className="text-sm whitespace-pre-wrap">{session.answer}</p>
                 </div>
+                {achievementsPanel()}
                 <ModelAnswerBlock text={modelAnswer} onHold={() => setEditing({ kind: "answer" })} />
 
                 {points.length > 0 && (
@@ -738,8 +733,6 @@ export function ConceptRecallSession({
                   <RatingRow label="¿Pudiste explicar cómo se relacionan los puntos?" value={session.relations} onChange={(v) => patchSession({ relations: v })} />
                 )}
 
-                {achievementsPanel()}
-
                 <div className="flex gap-2">
                   <Button variant="outline" onClick={() => setStep("activity")} className="flex-1 rounded-xl">Volver</Button>
                   <Button onClick={() => setStep("result")} disabled={!canSeeResult} className="flex-1 rounded-xl bg-purple-500 hover:bg-purple-600 text-white">
@@ -752,7 +745,6 @@ export function ConceptRecallSession({
             {/* ---------- Resultado de la sesión ---------- */}
             {step === "result" && outcome && next && (
               <>
-              {achievementsPanel(true)}
               <ResultView
                 outcome={outcome}
                 points={points}

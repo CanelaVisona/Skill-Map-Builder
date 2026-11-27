@@ -43,7 +43,7 @@ export function ConceptAchievementsPanel({
     <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-3 py-2.5">
       <div className="mb-1.5 flex items-center gap-2">
         <p className="flex-1 text-[11px] font-bold uppercase text-emerald-700 dark:text-emerald-400">
-          {summary ? `Mis logros de esta sesión (${achievements.length})` : "Mis logros durante la respuesta"}
+          {summary ? `Mis logros de esta sesión (${achievements.length})` : "¿Qué lograste en esta respuesta?"}
         </p>
         <span className="text-[10px] text-muted-foreground">
           {saveState === "saving" ? "Guardando…" : saveState === "saved" ? "Guardado ✓" : saveState === "error" ? "No se pudo guardar" : ""}
