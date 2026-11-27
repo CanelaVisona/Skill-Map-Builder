@@ -2715,11 +2715,11 @@ export function SkillNode({ skill, areaColor, onClick, isFirstOfLevel, isOnboard
               estrella, la cumbre y la reflexión). */}
           {isLevelCompleted && (
             <div
-              className="absolute -top-0.5 -left-0.5 z-30 flex h-3 w-3 items-center justify-center rounded-full bg-background ring-1 ring-border"
+              className="absolute -top-1 -left-1 z-30 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-foreground text-background shadow-sm"
               title="Nivel completado"
               data-testid="badge-level-completed"
             >
-              <Check className="h-2 w-2 text-muted-foreground" strokeWidth={3} />
+              <Check className="h-2.5 w-2.5" strokeWidth={3.5} />
             </div>
           )}
 

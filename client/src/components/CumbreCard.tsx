@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { Flag, Lock, Check, Star } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
@@ -6,8 +6,9 @@ import type { Area, Project, Skill } from "@/lib/skill-context";
 
 // Cumbre = nivel marcado con la bandera (milestoneLevels): cierra un tramo sin terminar el
 // área/quest. La estrella (endOfAreaLevel) sigue siendo el nodo final final que termina todo.
-// Esta tarjeta queda fija arriba del mapa mostrando la próxima cumbre aunque su nivel siga
-// bloqueado; al tocarla abre una vista previa de solo lectura de ese nivel.
+// Muestra la próxima cumbre aunque su nivel siga bloqueado; al tocarla abre una vista previa de
+// solo lectura de ese nivel. Hay dos versiones: una a lo ancho, en el flujo, debajo del nodo
+// final del árbol; y una fija en pantalla que solo se ve mientras la de abajo está fuera de vista.
 
 const DEFAULT_TITLE = "Asigná un paso";
 
@@ -44,10 +45,25 @@ function finalNodeOf(skills: Skill[], level: number): Skill | undefined {
   return inLevel.reduce((a, b) => ((b.levelPosition ?? 0) > (a.levelPosition ?? 0) ? b : a));
 }
 
+// Título del nivel (subtítulo del nivel); si no tiene, el título de su nodo final.
 function labelOf(container: Area | Project, level: number): string {
   const node = finalNodeOf(container.skills || [], level);
   const nodeTitle = node && node.title !== DEFAULT_TITLE ? node.title.trim() : "";
-  return nodeTitle || container.levelSubtitles?.[level]?.trim() || "Sin nombre todavía";
+  return container.levelSubtitles?.[level]?.trim() || nodeTitle || "Sin nombre todavía";
+}
+
+// true mientras el elemento está en pantalla (también dentro del contenedor con scroll del mapa).
+function useInView<T extends Element>(ref: RefObject<T | null>, deps: unknown[]): boolean {
+  const [inView, setInView] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return setInView(false);
+    const io = new IntersectionObserver(([entry]) => setInView(entry.isIntersecting), { threshold: 0.01 });
+    io.observe(el);
+    return () => io.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+  return inView;
 }
 
 export function CumbreCard({ container }: { container: Area | Project }) {
@@ -67,46 +83,72 @@ export function CumbreCard({ container }: { container: Area | Project }) {
 
   // Sin cumbre pendiente, la tarjeta apunta al nodo final final (si hay y no está hecho).
   const target = nextCumbre ?? (endLevel != null && !finalDone ? endLevel : null);
+  const inlineRef = useRef<HTMLButtonElement>(null);
+  const inlineInView = useInView(inlineRef, [target, container.id]);
   if (target == null) return null;
   const isFinal = nextCumbre == null;
 
-  const tramo = cumbres.filter(l => l < target).length + 1;
-  const currentLevel = Math.min(container.unlockedLevel, target);
+  const title = labelOf(container, target);
+  const kicker = isFinal ? "FINAL:" : "CUMBRE:";
+  const icon = (cls: string) => isFinal
+    ? <Star className={cn(cls, "flex-shrink-0 fill-amber-400 text-amber-400")} />
+    : <Flag className={cn(cls, "flex-shrink-0 fill-emerald-500 text-emerald-500")} />;
+  const borderCls = isFinal ? "border-amber-400/40" : "border-emerald-500/40";
+  const kickerCls = isFinal ? "text-amber-400" : "text-emerald-500";
+  // La fija desaparece (con fundido) cuando la de abajo entra en pantalla.
+  const fixedHidden = inlineInView ? "opacity-0 pointer-events-none" : "opacity-100";
   const previewSkills = skills
     .filter(s => s.level === target)
-    .sort((a, b) => (a.levelPosition ?? 0) - (b.levelPosition ?? 0));
+    // De abajo hacia arriba, como se sube la montaña: el nodo final (la cumbre) queda primero.
+    .sort((a, b) => (b.levelPosition ?? 0) - (a.levelPosition ?? 0));
   const isLockedLevel = target > container.unlockedLevel;
 
   return (
     <>
+      {/* A lo ancho, debajo del nodo final del árbol. */}
+      <button
+        ref={inlineRef}
+        type="button"
+        onClick={() => setPreviewOpen(true)}
+        className={cn(
+          "mt-6 mb-24 w-full rounded-lg border px-4 py-3 text-left",
+          "bg-background/80 hover:bg-muted/60 transition-colors",
+          borderCls
+        )}
+        title="Ver vista previa del nivel"
+        data-testid="button-cumbre-card-inline"
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          {icon("h-4 w-4")}
+          <span className={cn("text-xs font-level font-bold tracking-wider flex-shrink-0", kickerCls)}>{kicker}</span>
+          <span className="text-sm font-semibold truncate">{title}</span>
+        </div>
+        <div className="mt-0.5 pl-6 text-xs text-muted-foreground">Nivel {target}</div>
+      </button>
+
+      {/* Fija mientras no se ve la de abajo. */}
       {fitsInGutter ? (
         <button
           type="button"
           onClick={() => setPreviewOpen(true)}
           className={cn(
             "fixed bottom-16 z-40 rounded-lg border px-3 py-2 text-left backdrop-blur-md shadow-lg",
-            "bg-background/85 hover:bg-muted/70 transition-colors",
-            isFinal ? "border-amber-400/40" : "border-emerald-500/40"
+            "bg-background/85 hover:bg-muted/70 transition-[opacity,background-color] duration-200",
+            borderCls,
+            fixedHidden
           )}
           style={{ right: EDGE, width: CARD_WIDTH }}
           title="Ver vista previa del nivel"
+          aria-hidden={inlineInView}
+          tabIndex={inlineInView ? -1 : 0}
           data-testid="button-cumbre-card"
         >
           <div className="flex items-center gap-2 min-w-0">
-            {isFinal ? (
-              <Star className="h-3.5 w-3.5 flex-shrink-0 fill-amber-400 text-amber-400" />
-            ) : (
-              <Flag className="h-3.5 w-3.5 flex-shrink-0 fill-emerald-500 text-emerald-500" />
-            )}
-            <span className={cn("text-[11px] font-level font-bold tracking-wider", isFinal ? "text-amber-400" : "text-emerald-500")}>
-              {isFinal ? "FINAL:" : "CUMBRE:"}
-            </span>
-            <span className="text-xs font-medium truncate">{labelOf(container, target)}</span>
+            {icon("h-3.5 w-3.5")}
+            <span className={cn("text-[11px] font-level font-bold tracking-wider flex-shrink-0", kickerCls)}>{kicker}</span>
+            <span className="text-xs font-semibold truncate">{title}</span>
           </div>
-          <div className="mt-0.5 pl-5 text-[11px] text-muted-foreground truncate">
-            {isFinal ? "Último tramo" : `Tramo ${tramo}`} · Nivel {currentLevel} de {target}
-            {!isFinal && endLevel != null && ` · Final en nivel ${endLevel}`}
-          </div>
+          <div className="mt-0.5 pl-5 text-[11px] text-muted-foreground">Nivel {target}</div>
         </button>
       ) : (
         <button
@@ -114,18 +156,17 @@ export function CumbreCard({ container }: { container: Area | Project }) {
           onClick={() => setPreviewOpen(true)}
           className={cn(
             "fixed bottom-4 right-16 z-40 flex h-10 items-center gap-1.5 rounded-full border px-3 backdrop-blur-md",
-            "bg-background/80 hover:bg-muted/70 transition-colors text-xs text-muted-foreground",
-            isFinal ? "border-amber-400/40" : "border-emerald-500/40"
+            "bg-background/80 hover:bg-muted/70 transition-[opacity,background-color] duration-200 text-xs text-muted-foreground",
+            borderCls,
+            fixedHidden
           )}
-          title={`${isFinal ? "Final" : "Cumbre"}: ${labelOf(container, target)}`}
+          title={`${isFinal ? "Final" : "Cumbre"}: ${title} · Nivel ${target}`}
+          aria-hidden={inlineInView}
+          tabIndex={inlineInView ? -1 : 0}
           data-testid="button-cumbre-card"
         >
-          {isFinal ? (
-            <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-          ) : (
-            <Flag className="h-3.5 w-3.5 fill-emerald-500 text-emerald-500" />
-          )}
-          <span className="font-medium tabular-nums">{currentLevel}/{target}</span>
+          {icon("h-3.5 w-3.5")}
+          <span className="font-medium tabular-nums">Nv {target}</span>
         </button>
       )}
 
@@ -141,13 +182,13 @@ export function CumbreCard({ container }: { container: Area | Project }) {
               {isFinal ? "Final" : "Cumbre"} · Nivel {target}
             </DialogTitle>
             <DialogDescription>
-              {container.levelSubtitles?.[target]?.trim() || labelOf(container, target)}
+              {title}
               {isLockedLevel && " — vista previa, este nivel todavía está bloqueado."}
             </DialogDescription>
           </DialogHeader>
           <ol className="flex flex-col gap-1.5">
             {previewSkills.map((s, i) => {
-              const isLast = i === previewSkills.length - 1;
+              const isLast = i === 0; // el nodo final, arriba de todo
               const done = s.status === "mastered";
               return (
                 <li
