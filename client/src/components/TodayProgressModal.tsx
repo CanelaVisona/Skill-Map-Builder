@@ -19,7 +19,8 @@ import { useTodayActivities, useSaveTodayActivity, useDeleteTodayActivity } from
 import { useHabits, useUpdateHabitRecord } from "@/lib/useHabits";
 import { useTodayTaskSlots, useSetTodayTaskSlot, useClearTodayTaskSlot, useReorderTodayTaskSlot, getCurrentTimeSlotKey, getTimeSlotKeyForDate, type TaskSlotKey, type TaskType } from "@/lib/useTodayTaskSlots";
 import { useManualTasks, useManualTasksRange, isDefaultManualTask, defaultTaskMealId, useCreateManualTask, useUpdateManualTask, useDeleteManualTask } from "@/lib/useManualTasks";
-import { calculateStatus, calculateStatusL2, type SpaceRepetitionPractice } from "@/components/SpaceRepetitionModal";
+import { calculateStatus, calculateStatusL2, getNextReviewDateAfterConfirm, type SpaceRepetitionPractice } from "@/components/SpaceRepetitionModal";
+import { ConceptRecallSession } from "@/components/ConceptRecallSession";
 import { rewiringDayRows } from "@/lib/rewiringTasks";
 import { useConfirmHabit, useConfirmPractice } from "@/lib/useConfirmActions";
 import { useTodayPriorities, useSetTodayPriorities, MAX_TODAY_PRIORITIES } from "@/lib/useTodayPriorities";
@@ -34,7 +35,6 @@ import { addSubSkillFromToday, toggleSubSkillFromToday, masterWholeSubSkillTree,
 import { useTodayTaskSubsteps, useCreateTodayTaskSubstep, useUpdateTodayTaskSubstep, useDeleteTodayTaskSubstep, useCreateHabitSubstep, syncHabitSubsteps, type SubstepTaskType } from "@/lib/useTodayTaskSubsteps";
 import type { Habit, HabitRecord, TodayTaskSlot, TodayActivity } from "@shared/schema";
 import { SubtaskDonePopup, type SubtaskDonePopupData } from "@/components/SubtaskDonePopup";
-import { ConceptReviewDialog } from "@/components/ConceptReviewDialog";
 import { playSubtaskDoneSound } from "@/lib/sound";
 
 const LONG_PRESS_MS = 1500;
@@ -5283,16 +5283,30 @@ export function TodayProgressModal({ open, onOpenChange }: { open: boolean; onOp
       initialDate={effectiveDate}
     />
 
-    <ConceptReviewDialog
+    <ConceptRecallSession
       open={pendingConceptPractice !== null}
-      concept={pendingConceptPractice?.name ?? ""}
-      emoji={pendingConceptPractice?.emoji}
-      hints={Array.isArray(pendingConceptPractice?.conceptHints) ? pendingConceptPractice!.conceptHints! : []}
+      practice={pendingConceptPractice}
+      nextReviewDate={pendingConceptPractice ? getNextReviewDateAfterConfirm(pendingConceptPractice) : null}
       onCancel={() => setPendingConceptPractice(null)}
-      onDone={(answer) => {
+      onPersist={async (fields) => {
+        // Ediciones de pistas/respuesta o sesión incompleta: se guardan sin registrar el intervalo.
+        const practice = pendingConceptPractice;
+        if (!practice) return;
+        const res = await fetch(`/api/space-repetition/${practice.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(fields),
+        });
+        if (res.ok) {
+          const updated = await res.json();
+          setPendingConceptPractice((p) => (p && p.id === updated.id ? updated : p));
+        }
+        queryClient.invalidateQueries({ queryKey: ["space-repetition"] });
+      }}
+      onDone={(answer, fields) => {
         const practice = pendingConceptPractice;
         setPendingConceptPractice(null);
-        if (practice) requestNodeConfirmFeedback({}, confirmPractice(practice, answer));
+        if (practice) requestNodeConfirmFeedback({}, confirmPractice(practice, answer, fields));
       }}
     />
     </TimerFamilyContext.Provider>

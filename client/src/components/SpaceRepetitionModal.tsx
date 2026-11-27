@@ -11,6 +11,20 @@ import { useTheme } from "next-themes";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Area } from "@shared/schema";
 import { ConceptReviewDialog } from "@/components/ConceptReviewDialog";
+import { ConceptRecallSession, LevelStepper } from "@/components/ConceptRecallSession";
+import {
+  ACTIVITIES,
+  COMPREHENSION_LABELS,
+  INDICATOR_LABELS,
+  getConceptPoints,
+  getLearningState,
+  getMastery,
+  mergePointsWithTitles,
+  pointsToFields,
+  type ConceptPoint,
+  type HelpLevel,
+} from "@/lib/conceptLearning";
+import { HELP_CONTEXT_LABELS, achievementEmoji, achievementLabel, getAchievements } from "@/lib/conceptAchievements";
 import { useBodyProgress } from "@/lib/body-progress-context";
 import { useBodyGainPopup } from "@/lib/body-gain-popup-context";
 import { BodyLinkPicker, type BodyLink } from "@/components/BodyLinkPicker";
@@ -43,6 +57,11 @@ export interface SpaceRepetitionPractice {
   conceptAnswers?: { answer: string; date: string; level: 1 | 2; intervalIdx: number; reinforcement?: boolean }[];
   contextDescription?: string;
   targetLevels?: number | null;
+  // Recuperación activa de conceptos (ver lib/conceptLearning.ts).
+  conceptPoints?: ConceptPoint[];
+  conceptModelAnswer?: string;
+  conceptLearning?: unknown;
+  conceptAchievements?: unknown; // Logros durante la respuesta (ver lib/conceptAchievements.ts)
   createdAt?: string;
   updatedAt?: string;
 }
@@ -297,6 +316,26 @@ function hoursUntilNextInterval(practice: SpaceRepetitionPractice): number {
   return gaps[nextIdx] * 24 - hoursSince(anchor);
 }
 
+// Fecha (YYYY-MM-DD) del próximo repaso si se registra hoy el intervalo pendiente: lo decide la
+// repetición espaciada (no la capa de recuperación activa). null si es el último de L2.
+export function getNextReviewDateAfterConfirm(practice: SpaceRepetitionPractice): string | null {
+  const nextIdx = getNextIntervalIndex(practice);
+  if (nextIdx === -1) return null;
+  const level = practice.level || 1;
+  let days: number;
+  if (level === 1 && nextIdx === INTERVALS_L1.length - 1) {
+    // Completa L1: el primer intervalo de L2 cuenta desde hoy (y nunca antes de los 15 días).
+    days = Math.max(15, INTERVALS_L2[0]);
+  } else if (level === 2 && nextIdx === INTERVALS_L2.length - 1) {
+    return null;
+  } else {
+    days = getGapsForIntervals(level === 2 ? INTERVALS_L2 : INTERVALS_L1)[nextIdx + 1];
+  }
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return getLocalDateString(d);
+}
+
 function daysUntilNextInterval(practice: SpaceRepetitionPractice): number {
   return Math.max(0, Math.ceil(hoursUntilNextInterval(practice) / 24));
 }
@@ -496,6 +535,7 @@ export function SpaceRepetitionModal({
   const [newType, setNewType] = useState<RepetitionType>("practice");
   const [newProjectId, setNewProjectId] = useState<string | null>(null);
   const [newHints, setNewHints] = useState<string[]>([]);
+  const [newModelAnswer, setNewModelAnswer] = useState("");
   const [newContext, setNewContext] = useState("");
   const [newTargetLevels, setNewTargetLevels] = useState<number | null>(DEFAULT_TARGET_LEVELS);
   // "Repetición por contexto" esperando que se anote cómo se respondió en el pop-up.
@@ -550,6 +590,7 @@ export function SpaceRepetitionModal({
   const [editType, setEditType] = useState<RepetitionType>("practice");
   const [editProjectId, setEditProjectId] = useState<string | null>(null);
   const [editHints, setEditHints] = useState<string[]>([]);
+  const [editModelAnswer, setEditModelAnswer] = useState("");
   const [editContext, setEditContext] = useState("");
   const [editTargetLevels, setEditTargetLevels] = useState<number | null>(DEFAULT_TARGET_LEVELS);
   const [editPanelSkills, setEditPanelSkills] = useState<any[]>([]);
@@ -716,6 +757,7 @@ export function SpaceRepetitionModal({
     setNewType("practice");
     setNewProjectId(null);
     setNewHints([]);
+    setNewModelAnswer("");
     setNewContext("");
     setNewTargetLevels(DEFAULT_TARGET_LEVELS);
   };
@@ -738,7 +780,9 @@ export function SpaceRepetitionModal({
           ...newSideQuestLink,
           projectId: newProjectId,
           repetitionType: newType,
-          conceptHints: newType !== "practice" ? newHints.map((h) => h.trim()).filter(Boolean) : [],
+          ...(newType === "concept"
+            ? { ...pointsToFields(mergePointsWithTitles([], newHints)), conceptModelAnswer: newModelAnswer.trim() }
+            : { conceptHints: newType !== "practice" ? newHints.map((h) => h.trim()).filter(Boolean) : [] }),
           contextDescription: newType === "context" ? newContext.trim() : "",
           targetLevels: newType === "context" ? newTargetLevels : null,
         })
@@ -770,6 +814,7 @@ export function SpaceRepetitionModal({
     setEditType(practice.repetitionType ?? "practice");
     setEditProjectId(practice.projectId ?? null);
     setEditHints(Array.isArray(practice.conceptHints) ? practice.conceptHints : []);
+    setEditModelAnswer(practice.conceptModelAnswer ?? "");
     setEditContext(practice.contextDescription ?? "");
     setEditTargetLevels(practice.targetLevels ?? (practice.repetitionType === "context" ? null : DEFAULT_TARGET_LEVELS));
     setCurrentPanel("edit");
@@ -791,7 +836,9 @@ export function SpaceRepetitionModal({
           ...editSideQuestLink,
           projectId: editProjectId,
           repetitionType: editType,
-          conceptHints: editType !== "practice" ? editHints.map((h) => h.trim()).filter(Boolean) : [],
+          ...(editType === "concept"
+            ? { ...pointsToFields(mergePointsWithTitles(getConceptPoints(practices.find((p) => p.id === editingId) ?? { startDate: "" }), editHints)), conceptModelAnswer: editModelAnswer.trim() }
+            : { conceptHints: editType !== "practice" ? editHints.map((h) => h.trim()).filter(Boolean) : [] }),
           contextDescription: editType === "context" ? editContext.trim() : "",
           targetLevels: editType === "context" ? editTargetLevels : null,
         }),
@@ -838,15 +885,18 @@ export function SpaceRepetitionModal({
 
   // `answer`: respuesta escrita en el pop-up de una "Repetición de conceptos" (se guarda junto
   // con el intervalo confirmado).
-  const toggleInterval = async (practiceId: string, intervalIndex: number, answer?: string) => {
+  const toggleInterval = async (practiceId: string, intervalIndex: number, answer?: string, extraFields: Record<string, unknown> = {}) => {
     try {
       const practice = practices.find((p) => p.id === practiceId);
       if (!practice) return;
 
       const level = practice.level || 1;
-      const answerFields = answer !== undefined
-        ? { conceptAnswers: [...(Array.isArray(practice.conceptAnswers) ? practice.conceptAnswers : []), { answer, date: getLocalDateString(), level, intervalIdx: intervalIndex }] }
-        : {};
+      const answerFields = {
+        ...(answer !== undefined
+          ? { conceptAnswers: [...(Array.isArray(practice.conceptAnswers) ? practice.conceptAnswers : []), { answer, date: getLocalDateString(), level, intervalIdx: intervalIndex }] }
+          : {}),
+        ...extraFields,
+      };
 
       // Handle Level 2 intervals
       if (level === 2) {
@@ -1075,6 +1125,25 @@ export function SpaceRepetitionModal({
     }
   };
 
+  // Guarda campos de un concepto sin registrar un intervalo (pistas/respuesta editadas, nivel
+  // de ayuda cambiado a mano, sesión de repaso incompleta).
+  const patchPracticeFields = async (practiceId: string, fields: Record<string, unknown>) => {
+    try {
+      const res = await fetch(`/api/space-repetition/${practiceId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(fields),
+      });
+      if (!res.ok) throw new Error("Error updating practice");
+      const updated = await res.json();
+      setPractices((prev) => prev.map((p) => (p.id === practiceId ? updated : p)));
+    } catch (error) {
+      console.error("Error updating practice fields:", error);
+    } finally {
+      queryClient.invalidateQueries({ queryKey: ["space-repetition"] });
+    }
+  };
+
   if (!open) return null;
 
   const selectedPractice = practices.find((p) => p.id === selectedPracticeId);
@@ -1150,6 +1219,8 @@ export function SpaceRepetitionModal({
               projects={projects}
               hints={newHints}
               onHintsChange={setNewHints}
+              modelAnswer={newModelAnswer}
+              onModelAnswerChange={setNewModelAnswer}
               onEmojiChange={setNewEmoji}
               onNameChange={setNewName}
               onAreaIdChange={setNewAreaId}
@@ -1175,6 +1246,7 @@ export function SpaceRepetitionModal({
               onReinforce={() => registerContext(selectedPractice.id, "", true)}
               onReset={() => handleExpiredReset(selectedPractice.id)}
               onRecover={() => handleRecover(selectedPractice.id)}
+              onPatch={(fields) => patchPracticeFields(selectedPractice.id, fields)}
             />
           )}
 
@@ -1201,6 +1273,8 @@ export function SpaceRepetitionModal({
               projects={projects}
               hints={editHints}
               onHintsChange={setEditHints}
+              modelAnswer={editModelAnswer}
+              onModelAnswerChange={setEditModelAnswer}
               onEmojiChange={setEditEmoji}
               onNameChange={setEditName}
               onAreaIdChange={setEditAreaId}
@@ -1242,17 +1316,17 @@ export function SpaceRepetitionModal({
             />
           )}
         </div>
-        <ConceptReviewDialog
+        <ConceptRecallSession
           open={!!pendingConcept && !!pendingConceptPractice}
-          concept={pendingConceptPractice?.name ?? ""}
-          emoji={pendingConceptPractice?.emoji}
-          hints={Array.isArray(pendingConceptPractice?.conceptHints) ? pendingConceptPractice!.conceptHints! : []}
+          practice={pendingConceptPractice}
+          nextReviewDate={pendingConceptPractice ? getNextReviewDateAfterConfirm(pendingConceptPractice) : null}
           onCancel={() => setPendingConcept(null)}
-          onDone={async (answer) => {
+          onPersist={(fields) => (pendingConcept ? patchPracticeFields(pendingConcept.practiceId, fields) : undefined)}
+          onDone={async (answer, fields) => {
             if (!pendingConcept) return;
             const { practiceId, intervalIdx } = pendingConcept;
             setPendingConcept(null);
-            await toggleInterval(practiceId, intervalIdx, answer);
+            await toggleInterval(practiceId, intervalIdx, answer, fields);
           }}
         />
         <ConceptReviewDialog
@@ -2088,13 +2162,29 @@ function RepetitionTypeBlocks({
   );
 }
 
+// Respuesta completa de un concepto: otro tipo de ayuda y el contenido original con el que se compara.
+function ModelAnswerField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-foreground mb-2">Respuesta completa</label>
+      <Textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="La explicación completa del concepto"
+        className="min-h-24 rounded-xl"
+      />
+      <p className="mt-1 text-xs text-muted-foreground">Opcional. Se usa para releer el concepto y para comparar tu respuesta.</p>
+    </div>
+  );
+}
+
 // Punteo de pistas de un concepto: lo que tiene que decir la respuesta.
 function HintsEditor({
   hints,
   onChange,
-  label = "Pistas",
+  label = "Puntos principales (pistas)",
   placeholder = "Punto que tiene que decir el concepto",
-  helper = 'Se muestran al apretar "Pistas" cuando repasás el concepto',
+  helper = "Se muestran de a uno como pistas al repasar. Durante el repaso, mantené apretado un punto para agregarle palabras clave, una pregunta o una imagen.",
 }: {
   hints: string[];
   onChange: (hints: string[]) => void;
@@ -2176,6 +2266,8 @@ function AddPanel({
   projects,
   hints,
   onHintsChange,
+  modelAnswer,
+  onModelAnswerChange,
   onEmojiChange,
   onNameChange,
   onAreaIdChange,
@@ -2206,6 +2298,8 @@ function AddPanel({
   projects: Project[];
   hints: string[];
   onHintsChange: (hints: string[]) => void;
+  modelAnswer: string;
+  onModelAnswerChange: (value: string) => void;
   onEmojiChange: (emoji: string) => void;
   onNameChange: (name: string) => void;
   onAreaIdChange: (id: string | null) => void;
@@ -2267,7 +2361,7 @@ function AddPanel({
         </div>
 
         {/* Pistas (solo Repetición de conceptos) */}
-        {repetitionType === "concept" && <HintsEditor hints={hints} onChange={onHintsChange} />}
+        {repetitionType === "concept" && <><HintsEditor hints={hints} onChange={onHintsChange} /><ModelAnswerField value={modelAnswer} onChange={onModelAnswerChange} /></>}
 
         {/* Contexto + cómo quiero responder (solo Repetición por contexto) */}
         {repetitionType === "context" && (
@@ -2462,6 +2556,8 @@ function EditPanel({
   projects,
   hints,
   onHintsChange,
+  modelAnswer,
+  onModelAnswerChange,
   onEmojiChange,
   onNameChange,
   onAreaIdChange,
@@ -2493,6 +2589,8 @@ function EditPanel({
   projects: Project[];
   hints: string[];
   onHintsChange: (hints: string[]) => void;
+  modelAnswer: string;
+  onModelAnswerChange: (value: string) => void;
   onEmojiChange: (emoji: string) => void;
   onNameChange: (name: string) => void;
   onAreaIdChange: (id: string | null) => void;
@@ -2555,7 +2653,7 @@ function EditPanel({
         </div>
 
         {/* Pistas (solo Repetición de conceptos) */}
-        {repetitionType === "concept" && <HintsEditor hints={hints} onChange={onHintsChange} />}
+        {repetitionType === "concept" && <><HintsEditor hints={hints} onChange={onHintsChange} /><ModelAnswerField value={modelAnswer} onChange={onModelAnswerChange} /></>}
 
         {/* Contexto + cómo quiero responder (solo Repetición por contexto) */}
         {repetitionType === "context" && (
@@ -2743,6 +2841,7 @@ function DetailPanel({
   onReset,
   onRecover,
   onReinforce,
+  onPatch,
 }: {
   practice: SpaceRepetitionPractice;
   onBack: () => void;
@@ -2750,6 +2849,7 @@ function DetailPanel({
   onReset: () => void;
   onRecover?: () => void;
   onReinforce?: () => void;
+  onPatch?: (fields: Record<string, unknown>) => void;
 }) {
   if (practice.repetitionType === "context") {
     return <ContextDetailPanel practice={practice} onBack={onBack} onRegister={() => onToggleInterval(0)} onReinforce={() => onReinforce?.()} />;
@@ -2826,7 +2926,178 @@ function DetailPanel({
             ❄️ Recuperar
           </Button>
         )}
+
+        {practice.repetitionType === "concept" && <ConceptLearningCard practice={practice} onPatch={onPatch} />}
       </div>
+    </div>
+  );
+}
+
+// Estado de la recuperación activa de un concepto (CÓMO repasarlo), independiente del
+// calendario de arriba (CUÁNDO). El nivel de ayuda se puede mover a mano en cualquier momento.
+function ConceptLearningCard({ practice, onPatch }: { practice: SpaceRepetitionPractice; onPatch?: (fields: Record<string, unknown>) => void }) {
+  const [showHistory, setShowHistory] = useState(false);
+  const [showAllAnswers, setShowAllAnswers] = useState(false);
+  // Respuestas registradas en cada repaso (incluye las de antes de la recuperación activa).
+  const answers = (Array.isArray(practice.conceptAnswers) ? practice.conceptAnswers : [])
+    .filter((a) => a && typeof a.answer === "string" && a.answer.trim())
+    .slice()
+    .reverse();
+  const visibleAnswers = showAllAnswers ? answers : answers.slice(0, 3);
+  const state = getLearningState(practice);
+  const points = getConceptPoints(practice);
+  const mastery = getMastery(state);
+  const achievements = getAchievements(practice);
+  const nextLevel: HelpLevel = state.next?.helpLevel ?? state.helpLevel;
+  const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("es-AR", { day: "2-digit", month: "short" }) : "—");
+
+  const changeLevel = (level: HelpLevel) => {
+    const at = new Date().toISOString();
+    const next = {
+      activity: level === 5 ? ("free" as const) : state.next?.activity === "reread" && level === 1 ? ("reread" as const) : ("hints" as const),
+      helpLevel: level,
+      reason: "Nivel de ayuda elegido por vos.",
+      focusPointIds: state.next?.focusPointIds ?? [],
+      at,
+    };
+    onPatch?.({ conceptLearning: { ...state, helpLevel: Math.min(level, 4) as HelpLevel, next } });
+  };
+
+  return (
+    <div className="rounded-2xl border border-purple-500/30 bg-purple-500/5 px-4 py-3 flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <p className="font-bold text-sm text-foreground">🧠 Cómo lo estoy aprendiendo</p>
+        <span className="text-xs text-muted-foreground">{mastery.label}</span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <div>
+          <p className="text-muted-foreground">Comprensión (autoevaluada)</p>
+          <p className="font-semibold">{state.comprehension ? COMPREHENSION_LABELS[state.comprehension] : "Sin registrar"}</p>
+        </div>
+        <div>
+          <p className="text-muted-foreground">Último repaso</p>
+          <p className="font-semibold">
+            {fmt(state.lastReviewAt)}
+            {state.lastActivity && ` · ${ACTIVITIES[state.lastActivity].emoji}`}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-5 gap-1">
+        {(Object.keys(INDICATOR_LABELS) as (keyof typeof INDICATOR_LABELS)[]).map((k) => {
+          const v = state.indicators[k].value;
+          return (
+            <div key={k} className="flex flex-col items-center gap-1 text-center" title={INDICATOR_LABELS[k]}>
+              <span className={`h-2 w-full rounded-full ${v === "yes" ? "bg-green-500" : v === "partial" ? "bg-amber-400" : v === "no" ? "bg-sky-400" : "bg-muted"}`} />
+              <span className="text-[9px] leading-tight text-muted-foreground">{INDICATOR_LABELS[k]}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      {state.next && (
+        <div className="text-xs">
+          <p className="text-muted-foreground">Próxima actividad</p>
+          <p className="font-semibold">{ACTIVITIES[state.next.activity].emoji} {ACTIVITIES[state.next.activity].title}</p>
+          <p className="text-muted-foreground">{state.next.reason}</p>
+          {state.next.focusPointIds.length > 0 && (
+            <p className="mt-1">🎯 Reforzar: {state.next.focusPointIds.map((id) => points.find((p) => p.id === id)?.title).filter(Boolean).join(", ")}</p>
+          )}
+        </div>
+      )}
+
+      <div>
+        <p className="text-xs text-muted-foreground mb-1">Nivel de ayuda para el próximo repaso</p>
+        <LevelStepper level={nextLevel} onChange={changeLevel} />
+      </div>
+
+      {points.length > 0 && Object.keys(state.points).length > 0 && (
+        <div className="flex flex-col gap-1 text-xs">
+          <p className="text-muted-foreground">Puntos</p>
+          {points.map((p) => {
+            const pp = state.points[p.id];
+            return (
+              <div key={p.id} className="flex items-center justify-between gap-2">
+                <span className="truncate">{p.title}</span>
+                <span className="flex-shrink-0 text-muted-foreground">
+                  {pp ? `✅ ${pp.remembered} · 💡 ${pp.hinted} · 🔁 ${pp.forgotten}` : "—"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="flex flex-col gap-1.5">
+        <p className="text-xs text-muted-foreground">📝 Mis respuestas ({answers.length})</p>
+        {answers.length === 0 ? (
+          <p className="text-xs italic text-muted-foreground">Todavía no registraste respuestas.</p>
+        ) : (
+          <>
+            {visibleAnswers.map((a, i) => (
+              <div key={`${a.date}-${a.intervalIdx}-${i}`} className="rounded-xl border border-border/40 bg-background/50 px-3 py-2">
+                <p className="text-[10px] font-bold uppercase text-muted-foreground">
+                  {formatDate(`${a.date}T00:00:00`)} · {(a.level === 2 ? LABELS_L2 : LABELS_L1)[a.intervalIdx] ?? `Repaso ${a.intervalIdx + 1}`}
+                </p>
+                <p className="text-sm whitespace-pre-wrap text-foreground">{a.answer}</p>
+              </div>
+            ))}
+            {answers.length > 3 && (
+              <button type="button" onClick={() => setShowAllAnswers((v) => !v)} className="self-start text-xs font-semibold text-purple-700 dark:text-purple-300 hover:underline">
+                {showAllAnswers ? "Ver menos" : `Ver todas (${answers.length})`}
+              </button>
+            )}
+          </>
+        )}
+      </div>
+
+      {state.sessions.length > 0 && (
+        <div>
+          <button type="button" onClick={() => setShowHistory((v) => !v)} className="text-xs font-semibold text-purple-700 dark:text-purple-300 hover:underline">
+            {showHistory ? "Ocultar historial" : `Ver historial (${state.sessions.length} sesiones)`}
+          </button>
+          {showHistory && (
+            <div className="mt-2 flex flex-col gap-2">
+              {[...state.sessions].reverse().map((s) => (
+                <div key={s.id} className="rounded-xl border border-border/40 px-3 py-2 text-[11px] leading-relaxed">
+                  <p className="font-bold text-foreground">
+                    Sesión {s.number} · {fmt(s.startedAt)} {!s.completedAt && <span className="font-normal text-muted-foreground">(sin terminar)</span>}
+                  </p>
+                  {s.initialComprehension && <p>Comprensión inicial: {COMPREHENSION_LABELS[s.initialComprehension]}</p>}
+                  {s.recommended && <p>Recomendado: {ACTIVITIES[s.recommended.activity].title} — {s.recommended.reason}</p>}
+                  {s.performedActivity && <p>Realizado: {(s.activitiesPerformed?.length ? s.activitiesPerformed : [s.performedActivity]).map((a) => ACTIVITIES[a].title).join(" → ")}{s.helpLevel ? ` · nivel ${s.helpLevel}` : ""}</p>}
+                  {Object.keys(s.pointResults).length > 0 && (
+                    <p>
+                      Puntos: {Object.values(s.pointResults).filter((r) => r === "remembered").length} recordados ·{" "}
+                      {Object.values(s.pointResults).filter((r) => r === "hinted").length} con pista ·{" "}
+                      {Object.values(s.pointResults).filter((r) => r === "forgotten").length} olvidados
+                    </p>
+                  )}
+                  {s.answer?.trim() && (
+                    <p className="mt-1 whitespace-pre-wrap rounded-lg bg-muted/40 px-2 py-1 text-foreground">{s.answer}</p>
+                  )}
+                  {s.afterComprehension && <p>Después: {COMPREHENSION_LABELS[s.afterComprehension]}</p>}
+                  {s.next && <p>Siguiente: {ACTIVITIES[s.next.activity].title} (nivel {s.next.helpLevel})</p>}
+                  {achievements.some((a) => a.sessionId === s.id) && (
+                    <div className="mt-1">
+                      <p className="font-semibold text-emerald-700 dark:text-emerald-400">Logros</p>
+                      {achievements.filter((a) => a.sessionId === s.id).map((a) => (
+                        <p key={a.id}>
+                          {achievementEmoji(a.type)} {achievementLabel(a)}{" "}
+                          <span className="text-muted-foreground">
+                            · {new Date(a.at).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })} · {HELP_CONTEXT_LABELS[a.helpContext]}
+                          </span>
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

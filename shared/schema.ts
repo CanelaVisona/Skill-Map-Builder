@@ -529,11 +529,27 @@ export const spaceRepetitionPractices = pgTable("space_repetition_practices", {
   // Niveles (de 5 veces cada uno) necesarios para que una "Repetición por contexto" quede
   // completada y pase a "Conquistados". null = sin meta.
   targetLevels: integer("target_levels"),
+  // "Repetición de conceptos" — capa de recuperación activa (CÓMO repasar; el CUÁNDO lo siguen
+  // decidiendo los intervalos). Ver client/src/lib/conceptLearning.ts.
+  conceptPoints: jsonb("concept_points").notNull().$type<ConceptPoint[]>().default([]), // Puntos con sus pistas (título, palabras clave, pregunta, imagen)
+  conceptModelAnswer: text("concept_model_answer").notNull().default(""), // Respuesta completa / contenido original
+  conceptLearning: jsonb("concept_learning").$type<Record<string, unknown> | null>(), // Estado adaptativo + historial de sesiones (null = sin sesiones todavía)
+  // Logros registrados en tiempo real durante el repaso. Capa independiente: no modifica el
+  // dominio ni los indicadores. Ver client/src/lib/conceptAchievements.ts.
+  conceptAchievements: jsonb("concept_achievements").notNull().$type<Record<string, unknown>[]>().default([]),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
 export type SpaceRepetitionType = "practice" | "concept" | "context";
+// Un punto principal de un concepto, con sus distintos tipos de pista.
+export interface ConceptPoint {
+  id: string;
+  title: string;
+  keywords?: string; // Palabras clave
+  question?: string; // Pregunta disparadora
+  imageUrl?: string; // Imagen asociada (data URL)
+}
 export interface ConceptAnswer {
   answer: string;
   reinforcement?: boolean; // "Reforzar" desde Conquistados (vez practicada después del nivel asignado)
@@ -1238,6 +1254,16 @@ export const insertSpaceRepetitionPracticeSchema = createInsertSchema(spaceRepet
     reinforcement: z.boolean().optional(),
   })).optional().default([]),
   targetLevels: z.number().int().min(1).max(100).optional().nullable(),
+  conceptPoints: z.array(z.object({
+    id: z.string(),
+    title: z.string(),
+    keywords: z.string().optional(),
+    question: z.string().optional(),
+    imageUrl: z.string().optional(),
+  })).optional().default([]),
+  conceptModelAnswer: z.string().optional().default(""),
+  conceptLearning: z.record(z.unknown()).optional().nullable(),
+  conceptAchievements: z.array(z.record(z.unknown())).optional().default([]),
 });
 export const insertBooksLibrarySchema = createInsertSchema(booksLibrary).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertBookReadingSessionSchema = createInsertSchema(bookReadingSessions).omit({ id: true, createdAt: true });

@@ -168,16 +168,17 @@ export function useConfirmPractice() {
   // "Registrar" en SpaceRepetitionModal (incluye transición a Nivel 2 y archivado al completar
   // Nivel 2). No hace nada si no hay ningún intervalo pendiente para confirmar.
   // `answer`: respuesta del pop-up de una "Repetición de conceptos", se guarda con el intervalo.
-  const confirmPractice = async (practice: SpaceRepetitionPractice, answer?: string) => {
+  const confirmPractice = async (practice: SpaceRepetitionPractice, answer?: string, extraFields: Record<string, unknown> = {}) => {
     const nextIdx = getNextIntervalIndex(practice);
     if (nextIdx === -1) return;
 
     const level = practice.level || 1;
     const now = new Date();
     const localDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-    const answerFields = answer !== undefined
+    const answerFields: Record<string, unknown> = answer !== undefined
       ? { conceptAnswers: [...(Array.isArray(practice.conceptAnswers) ? practice.conceptAnswers : []), { answer, date: localDate, level, intervalIdx: nextIdx }] }
       : {};
+    Object.assign(answerFields, extraFields);
 
     try {
       if (level === 2) {

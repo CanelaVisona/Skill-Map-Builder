@@ -144,6 +144,12 @@ app.use((req, res, next) => {
     await db.execute(sql`ALTER TABLE "space_repetition_practices" ADD COLUMN IF NOT EXISTS "concept_answers" jsonb DEFAULT '[]'::jsonb NOT NULL;`);
     await db.execute(sql`ALTER TABLE "space_repetition_practices" ADD COLUMN IF NOT EXISTS "context_description" text DEFAULT '' NOT NULL;`);
     await db.execute(sql`ALTER TABLE "space_repetition_practices" ADD COLUMN IF NOT EXISTS "target_levels" integer;`);
+    // Recuperación activa de conceptos (migrations/0079_concept_active_recall.sql).
+    await db.execute(sql`ALTER TABLE "space_repetition_practices" ADD COLUMN IF NOT EXISTS "concept_points" jsonb DEFAULT '[]'::jsonb NOT NULL;`);
+    await db.execute(sql`ALTER TABLE "space_repetition_practices" ADD COLUMN IF NOT EXISTS "concept_model_answer" text DEFAULT '' NOT NULL;`);
+    await db.execute(sql`ALTER TABLE "space_repetition_practices" ADD COLUMN IF NOT EXISTS "concept_learning" jsonb;`);
+    // Logros durante la respuesta (migrations/0080_concept_achievements.sql).
+    await db.execute(sql`ALTER TABLE "space_repetition_practices" ADD COLUMN IF NOT EXISTS "concept_achievements" jsonb DEFAULT '[]'::jsonb NOT NULL;`);
   } catch (error: any) {
     console.error("⚠ space_repetition_practices types migration warning:", error.message);
   }
