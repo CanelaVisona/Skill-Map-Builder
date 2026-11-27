@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Flag, Lock, Check, Star } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
@@ -10,6 +10,33 @@ import type { Area, Project, Skill } from "@/lib/skill-context";
 // bloqueado; al tocarla abre una vista previa de solo lectura de ese nivel.
 
 const DEFAULT_TITLE = "Asigná un paso";
+
+// La tarjeta es fija; para no tapar títulos ni nodos se ubica en el margen libre a la derecha
+// de la columna del mapa (marcada con data-cumbre-anchor en SkillTree). Si ese margen no
+// alcanza, se achica a una pastilla junto al botón de "ir al nodo pendiente".
+const CARD_WIDTH = 260;
+const EDGE = 16;
+
+function useRightGutter(): number {
+  const [gutter, setGutter] = useState(0);
+  useEffect(() => {
+    const measure = () => {
+      const anchor = document.querySelector("[data-cumbre-anchor]");
+      if (!anchor) return setGutter(0);
+      setGutter(window.innerWidth - anchor.getBoundingClientRect().right);
+    };
+    measure();
+    const anchor = document.querySelector("[data-cumbre-anchor]");
+    const ro = anchor ? new ResizeObserver(measure) : null;
+    if (anchor && ro) ro.observe(anchor);
+    window.addEventListener("resize", measure);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, []);
+  return gutter;
+}
 
 function finalNodeOf(skills: Skill[], level: number): Skill | undefined {
   const inLevel = skills.filter(s => s.level === level);
@@ -25,6 +52,8 @@ function labelOf(container: Area | Project, level: number): string {
 
 export function CumbreCard({ container }: { container: Area | Project }) {
   const [previewOpen, setPreviewOpen] = useState(false);
+  const gutter = useRightGutter();
+  const fitsInGutter = gutter >= CARD_WIDTH + EDGE * 2;
   const skills = container.skills || [];
   const endLevel = container.endOfAreaLevel || null;
   const finalDone = endLevel != null && finalNodeOf(skills, endLevel)?.status === "mastered";
@@ -50,33 +79,55 @@ export function CumbreCard({ container }: { container: Area | Project }) {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setPreviewOpen(true)}
-        className={cn(
-          "mt-6 w-full rounded-lg border px-3 py-2 text-left backdrop-blur",
-          "bg-background/80 hover:bg-muted/60 transition-colors",
-          isFinal ? "border-amber-400/40" : "border-emerald-500/40"
-        )}
-        title="Ver vista previa del nivel"
-        data-testid="button-cumbre-card"
-      >
-        <div className="flex items-center gap-2 min-w-0">
-          {isFinal ? (
-            <Star className="h-4 w-4 flex-shrink-0 fill-amber-400 text-amber-400" />
-          ) : (
-            <Flag className="h-4 w-4 flex-shrink-0 fill-emerald-500 text-emerald-500" />
+      {fitsInGutter ? (
+        <button
+          type="button"
+          onClick={() => setPreviewOpen(true)}
+          className={cn(
+            "fixed bottom-16 z-40 rounded-lg border px-3 py-2 text-left backdrop-blur-md shadow-lg",
+            "bg-background/85 hover:bg-muted/70 transition-colors",
+            isFinal ? "border-amber-400/40" : "border-emerald-500/40"
           )}
-          <span className={cn("text-xs font-level font-bold tracking-wider", isFinal ? "text-amber-400" : "text-emerald-500")}>
-            {isFinal ? "FINAL:" : "CUMBRE:"}
-          </span>
-          <span className="text-sm font-medium truncate">{labelOf(container, target)}</span>
-        </div>
-        <div className="mt-0.5 pl-6 text-xs text-muted-foreground">
-          {isFinal ? "Último tramo" : `Tramo ${tramo}`} · Nivel {currentLevel} de {target}
-          {!isFinal && endLevel != null && ` · Final en nivel ${endLevel}`}
-        </div>
-      </button>
+          style={{ right: EDGE, width: CARD_WIDTH }}
+          title="Ver vista previa del nivel"
+          data-testid="button-cumbre-card"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            {isFinal ? (
+              <Star className="h-3.5 w-3.5 flex-shrink-0 fill-amber-400 text-amber-400" />
+            ) : (
+              <Flag className="h-3.5 w-3.5 flex-shrink-0 fill-emerald-500 text-emerald-500" />
+            )}
+            <span className={cn("text-[11px] font-level font-bold tracking-wider", isFinal ? "text-amber-400" : "text-emerald-500")}>
+              {isFinal ? "FINAL:" : "CUMBRE:"}
+            </span>
+            <span className="text-xs font-medium truncate">{labelOf(container, target)}</span>
+          </div>
+          <div className="mt-0.5 pl-5 text-[11px] text-muted-foreground truncate">
+            {isFinal ? "Último tramo" : `Tramo ${tramo}`} · Nivel {currentLevel} de {target}
+            {!isFinal && endLevel != null && ` · Final en nivel ${endLevel}`}
+          </div>
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setPreviewOpen(true)}
+          className={cn(
+            "fixed bottom-4 right-16 z-40 flex h-10 items-center gap-1.5 rounded-full border px-3 backdrop-blur-md",
+            "bg-background/80 hover:bg-muted/70 transition-colors text-xs text-muted-foreground",
+            isFinal ? "border-amber-400/40" : "border-emerald-500/40"
+          )}
+          title={`${isFinal ? "Final" : "Cumbre"}: ${labelOf(container, target)}`}
+          data-testid="button-cumbre-card"
+        >
+          {isFinal ? (
+            <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+          ) : (
+            <Flag className="h-3.5 w-3.5 fill-emerald-500 text-emerald-500" />
+          )}
+          <span className="font-medium tabular-nums">{currentLevel}/{target}</span>
+        </button>
+      )}
 
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
         <DialogContent className="max-w-md">

@@ -10791,7 +10791,7 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
       <QuestUpdatedCelebration text={questCelebrationText} />
       <QuestUpdatedPopup show={showQuestUpdatedPopup} onClose={hideQuestUpdatedPopup} />
       <div className="flex-1 overflow-y-auto p-8 scroll-smooth scrollbar-hide" data-skill-canvas-scroll="true">
-        <div className="w-full relative max-w-4xl mx-auto min-h-full">
+        <div className="w-full relative max-w-4xl mx-auto min-h-full" data-cumbre-anchor>
           
           {/* Sticky Progress Bar */}
           <div className="sticky top-0 z-20 py-3 mb-6 -mx-8 px-8">
@@ -11185,11 +11185,9 @@ function SkillCanvas({ onOpenProgress }: { onOpenProgress: () => void }) {
             </AnimatePresence>
           </div>
 
-          {/* Cumbre: debajo de todo, después del nodo final visible del mapa. */}
+          {/* Cumbre: fija en pantalla, en el margen libre (ver CumbreCard). */}
           {(isProject ? activeProject : activeArea) && (
-            <div className="pb-8">
-              <CumbreCard container={(isProject ? activeProject : activeArea)!} />
-            </div>
+            <CumbreCard container={(isProject ? activeProject : activeArea)!} />
           )}
         </div>
       </div>
