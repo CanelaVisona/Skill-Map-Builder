@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/compone
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { ChevronLeft, ChevronRight, Lightbulb, BookOpen, EyeOff, Eye, Plus, Trash2, ImagePlus, X } from "lucide-react";
+import { Lightbulb, BookOpen, Plus, Trash2, ImagePlus, X } from "lucide-react";
 import {
   ACTIVITIES,
   COMPREHENSION_LABELS,
@@ -180,11 +180,9 @@ export function ConceptRecallSession({
   const [mode, setMode] = useState<"hints" | "free">("hints");
   const [level, setLevel] = useState<HelpLevel>(2);
   const [revealed, setRevealed] = useState<string[]>([]);
-  const [hintsHidden, setHintsHidden] = useState(false);
   const [showFull, setShowFull] = useState(false);
   const [expandedDoubts, setExpandedDoubts] = useState<string[]>([]);
   const [rereadNote, setRereadNote] = useState("");
-  const [nextOverride, setNextOverride] = useState<Partial<Recommendation> | null>(null);
   const [editing, setEditing] = useState<Editing>(null);
   const [saving, setSaving] = useState(false);
   // Logros (capa independiente): TODOS los del concepto, de esta y de sesiones anteriores.
@@ -205,11 +203,9 @@ export function ConceptRecallSession({
     setMode("hints");
     setLevel(clampLevel(Math.min(learning.next?.helpLevel ?? learning.helpLevel, 4)));
     setRevealed([]);
-    setHintsHidden(false);
     setShowFull(false);
     setExpandedDoubts([]);
     setRereadNote("");
-    setNextOverride(null);
     setEditing(null);
     setSaving(false);
     setAchievements(getAchievements(practice));
@@ -281,7 +277,6 @@ export function ConceptRecallSession({
     const initial = m === "hints" ? [...focus] : [];
     if (m === "hints" && early && points[0] && !initial.includes(points[0].id)) initial.push(points[0].id);
     setRevealed(initial);
-    setHintsHidden(false);
     setShowFull(usedLevel === 1);
     patchSession({
       activityStarted: true,
@@ -310,7 +305,6 @@ export function ConceptRecallSession({
     if (revealed.includes(id)) return;
     const updated = [...revealed, id];
     setRevealed(updated);
-    setHintsHidden(false);
     patchSession({ hintedPointIds: Array.from(new Set([...session.hintedPointIds, id])) });
   };
 
@@ -337,7 +331,7 @@ export function ConceptRecallSession({
   };
   const outcome = step === "result" ? completeSession(learning, finalSession, points, now()) : null;
   const next: Recommendation | null = outcome
-    ? { ...outcome.state.next!, ...(nextOverride || {}) }
+    ? outcome.state.next!
     : null;
 
   const save = async () => {
@@ -373,7 +367,6 @@ export function ConceptRecallSession({
   };
 
   const repeatSameLevel = () => {
-    setNextOverride(null);
     if (session.performedActivity === "reread" || !session.performedActivity) {
       setStep("reread");
       return;
@@ -449,7 +442,8 @@ export function ConceptRecallSession({
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) cancel(); }}>
-      <DialogContent className="max-w-lg rounded-3xl max-h-[90vh] overflow-y-auto minimal-scrollbar">
+      <DialogContent className="w-[calc(100%-2.5rem)] max-w-lg rounded-3xl sm:rounded-3xl p-0 overflow-hidden">
+        <div className="max-h-[80vh] overflow-y-auto overflow-x-hidden minimal-scrollbar p-6 flex flex-col gap-4">
         <DialogTitle className="flex items-center gap-2 text-lg font-black pr-6">
           {practice.emoji && <span>{practice.emoji}</span>}
           <span>{practice.name}</span>
@@ -565,6 +559,7 @@ export function ConceptRecallSession({
                     point={p}
                     index={i}
                     open={expandedDoubts.includes(p.id)}
+                    emptyNote
                     onClick={() => setExpandedDoubts((ids) => (ids.includes(p.id) ? ids.filter((x) => x !== p.id) : [...ids, p.id]))}
                     onHold={() => setEditing({ kind: "point", id: p.id })}
                   />
@@ -611,31 +606,12 @@ export function ConceptRecallSession({
                   <p className="text-xs text-muted-foreground">🎯 Para reforzar: {focusIds.map((id) => pointById(id)?.title).join(", ")}</p>
                 )}
 
-                {/* Nivel de ayuda: 1–4 con pistas, 5 = sin pistas. Se cambia en cualquier momento. */}
-                <div className="flex items-center gap-2">
-                  <LevelStepper
-                    level={session.helpLevel ?? level}
-                    compact
-                    onChange={(l) => {
-                      if (l < 5) setLevel(l);
-                      setMode(l === 5 ? "free" : "hints");
-                      patchSession({ helpLevel: l, performedActivity: l === 5 ? "free" : "hints" });
-                      setShowFull(l === 1);
-                    }}
-                  />
-                  {session.performedActivity === "hints" && (
-                    <button
-                      type="button"
-                      onClick={() => setHintsHidden((v) => !v)}
-                      className="ml-auto flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                    >
-                      {hintsHidden ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
-                      {hintsHidden ? "Mostrar pistas" : "Ocultar pistas"}
-                    </button>
-                  )}
-                </div>
+                {/* Nivel de ayuda: lo asigna el cuestionario y no se cambia a mano. */}
+                <p className="text-xs font-bold text-foreground">
+                  Nivel {session.helpLevel ?? level} · {HELP_LEVELS[(session.helpLevel ?? level) - 1].title}
+                </p>
 
-                {!hintsHidden && (session.performedActivity === "hints" || revealed.length > 0) && (session.helpLevel ?? 5) !== 1 && (
+                {(session.performedActivity === "hints" || revealed.length > 0) && (session.helpLevel ?? 5) !== 1 && (
                   <HintsPanel
                     points={points}
                     revealed={revealed}
@@ -750,8 +726,6 @@ export function ConceptRecallSession({
                 points={points}
                 next={next}
                 nextReviewDate={nextReviewDate}
-                onChangeNextLevel={(l) => setNextOverride({ helpLevel: l, activity: l === 5 ? "free" : l === 1 && next.activity === "reread" ? "reread" : "hints" })}
-                onNotReady={() => setNextOverride({ activity: "hints", helpLevel: 4, reason: "Preferís seguir con pistas un tiempo más. Está perfecto: se intenta sin pistas cuando te sientas cómodo." })}
                 onRepeat={repeatSameLevel}
                 onSave={save}
                 saving={saving}
@@ -760,6 +734,7 @@ export function ConceptRecallSession({
             )}
           </>
         )}
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -791,24 +766,6 @@ function ActivityCard({ activity, reason }: { activity: ActivityType; reason?: s
       <ol className="mt-1 list-decimal pl-5 text-xs text-muted-foreground space-y-0.5">
         {a.instructions.map((s, i) => <li key={i}>{s}</li>)}
       </ol>
-    </div>
-  );
-}
-
-export function LevelStepper({ level, onChange, max = 5, compact }: { level: HelpLevel; onChange: (l: HelpLevel) => void; max?: number; compact?: boolean }) {
-  const info = HELP_LEVELS[level - 1];
-  return (
-    <div className={`flex items-center gap-2 ${compact ? "" : "rounded-xl bg-muted/40 px-2 py-1.5"}`}>
-      <button type="button" disabled={level <= 1} onClick={() => onChange(clampLevel(level - 1))} className="rounded-lg p-1 text-muted-foreground hover:text-foreground disabled:opacity-30" title="Más ayuda">
-        <ChevronLeft className="h-4 w-4" />
-      </button>
-      <div className="min-w-0 flex-1 text-center">
-        <p className="text-xs font-bold text-foreground">Nivel {level} · {info.title}</p>
-        {!compact && <p className="text-[11px] text-muted-foreground">{info.description}</p>}
-      </div>
-      <button type="button" disabled={level >= max} onClick={() => onChange(clampLevel(level + 1))} className="rounded-lg p-1 text-muted-foreground hover:text-foreground disabled:opacity-30" title="Menos ayuda">
-        <ChevronRight className="h-4 w-4" />
-      </button>
     </div>
   );
 }
@@ -895,7 +852,7 @@ function HintRow({ point, index, level, shown, focus, onReveal, onEdit }: {
   );
 }
 
-function PointCard({ point, index, open, onClick, onHold }: { point: ConceptPoint; index: number; open: boolean; onClick: () => void; onHold: () => void }) {
+function PointCard({ point, index, open, onClick, onHold, emptyNote }: { point: ConceptPoint; index: number; open: boolean; onClick: () => void; onHold: () => void; emptyNote?: boolean }) {
   const hold = useHold(onHold);
   return (
     <div
@@ -904,14 +861,17 @@ function PointCard({ point, index, open, onClick, onHold }: { point: ConceptPoin
       className="select-none cursor-pointer rounded-xl border border-border/40 px-3 py-2 hover:border-border"
     >
       <p className="text-sm font-semibold">{index + 1}. {point.title}</p>
-      {open && <PointDetails point={point} />}
+      {open && <PointDetails point={point} emptyNote={emptyNote} />}
     </div>
   );
 }
 
-function PointDetails({ point }: { point: ConceptPoint }) {
+function PointDetails({ point, emptyNote }: { point: ConceptPoint; emptyNote?: boolean }) {
+  const empty = !!emptyNote && !point.explanation?.trim() && !point.keywords && !point.question && !point.imageUrl;
   return (
     <div className="mt-1 flex flex-col gap-1 text-xs text-muted-foreground">
+      {point.explanation?.trim() && <p className="whitespace-pre-wrap text-sm text-foreground">{point.explanation}</p>}
+      {empty && <p className="italic">Este punto no tiene desarrollo. Mantené apretado para agregarlo.</p>}
       {point.keywords && <p><b>Palabras clave:</b> {point.keywords}</p>}
       {point.question && <p><b>Pregunta:</b> {point.question}</p>}
       {point.imageUrl && <img src={point.imageUrl} alt="" className="max-h-40 rounded-lg" draggable={false} />}
@@ -973,13 +933,11 @@ function RatingRow({ label, value, onChange }: { label: string; value: Rating | 
   );
 }
 
-function ResultView({ outcome, points, next, nextReviewDate, onChangeNextLevel, onNotReady, onRepeat, onSave, saving }: {
+function ResultView({ outcome, points, next, nextReviewDate, onRepeat, onSave, saving }: {
   outcome: ReturnType<typeof completeSession>;
   points: ConceptPoint[];
   next: Recommendation;
   nextReviewDate: string | null;
-  onChangeNextLevel: (l: HelpLevel) => void;
-  onNotReady: () => void;
   onRepeat: () => void;
   onSave: () => void;
   saving: boolean;
@@ -1020,12 +978,7 @@ function ResultView({ outcome, points, next, nextReviewDate, onChangeNextLevel, 
         <p className="font-bold text-foreground">{ACTIVITIES[next.activity].emoji} {ACTIVITIES[next.activity].title}</p>
         <p className="text-xs text-muted-foreground mt-1">{next.reason}</p>
         {next.activity !== "reread" && (
-          <div className="mt-2"><LevelStepper level={next.helpLevel} onChange={onChangeNextLevel} /></div>
-        )}
-        {next.activity === "free" && (
-          <button type="button" onClick={onNotReady} className="mt-2 text-xs font-semibold text-purple-700 dark:text-purple-300 hover:underline">
-            Todavía no me siento listo para sin pistas
-          </button>
+          <p className="mt-2 text-xs font-bold text-foreground">Nivel {next.helpLevel} · {HELP_LEVELS[next.helpLevel - 1].title}</p>
         )}
       </div>
 
@@ -1058,6 +1011,9 @@ function PointEditor({ point, onSave, onCancel, onDelete }: {
       <p className="font-bold text-foreground">{point ? "Editar punto" : "Nuevo punto"}</p>
       <label className="text-xs font-semibold text-muted-foreground">Título del punto
         <Input value={draft.title} onChange={(e) => set({ title: e.target.value })} className="mt-1 rounded-xl" autoFocus />
+      </label>
+      <label className="text-xs font-semibold text-muted-foreground">Desarrollo del punto (opcional)
+        <Textarea value={draft.explanation ?? ""} onChange={(e) => set({ explanation: e.target.value })} placeholder="Lo que tiene que decir este punto" className="mt-1 min-h-20 rounded-xl" />
       </label>
       <label className="text-xs font-semibold text-muted-foreground">Palabras clave
         <Input value={draft.keywords ?? ""} onChange={(e) => set({ keywords: e.target.value })} placeholder="Por ej: luz, clorofila, glucosa" className="mt-1 rounded-xl" />
@@ -1104,6 +1060,7 @@ function PointEditor({ point, onSave, onCancel, onDelete }: {
           onClick={() => run(() => onSave({
             ...draft,
             title: draft.title.trim(),
+            explanation: draft.explanation?.trim() || undefined,
             keywords: draft.keywords?.trim() || undefined,
             question: draft.question?.trim() || undefined,
           }))}

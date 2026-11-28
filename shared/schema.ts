@@ -546,6 +546,7 @@ export type SpaceRepetitionType = "practice" | "concept" | "context";
 export interface ConceptPoint {
   id: string;
   title: string;
+  explanation?: string; // Desarrollo del punto (opcional)
   keywords?: string; // Palabras clave
   question?: string; // Pregunta disparadora
   imageUrl?: string; // Imagen asociada (data URL)
@@ -1257,6 +1258,7 @@ export const insertSpaceRepetitionPracticeSchema = createInsertSchema(spaceRepet
   conceptPoints: z.array(z.object({
     id: z.string(),
     title: z.string(),
+    explanation: z.string().optional(),
     keywords: z.string().optional(),
     question: z.string().optional(),
     imageUrl: z.string().optional(),

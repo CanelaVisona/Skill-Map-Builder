@@ -12,7 +12,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import type { Area } from "@shared/schema";
 import { ConceptReviewDialog } from "@/components/ConceptReviewDialog";
 import { ConceptRecallSession } from "@/components/ConceptRecallSession";
-import { getConceptPoints, mergePointsWithTitles, pointsToFields, type ConceptPoint } from "@/lib/conceptLearning";
+import { getConceptPoints, newId, pointsToFields, type ConceptPoint } from "@/lib/conceptLearning";
 import { useBodyProgress } from "@/lib/body-progress-context";
 import { useBodyGainPopup } from "@/lib/body-gain-popup-context";
 import { BodyLinkPicker, type BodyLink } from "@/components/BodyLinkPicker";
@@ -524,6 +524,7 @@ export function SpaceRepetitionModal({
   const [newProjectId, setNewProjectId] = useState<string | null>(null);
   const [newHints, setNewHints] = useState<string[]>([]);
   const [newModelAnswer, setNewModelAnswer] = useState("");
+  const [newPoints, setNewPoints] = useState<ConceptPoint[]>([]);
   const [newContext, setNewContext] = useState("");
   const [newTargetLevels, setNewTargetLevels] = useState<number | null>(DEFAULT_TARGET_LEVELS);
   // "Repetición por contexto" esperando que se anote cómo se respondió en el pop-up.
@@ -579,6 +580,7 @@ export function SpaceRepetitionModal({
   const [editProjectId, setEditProjectId] = useState<string | null>(null);
   const [editHints, setEditHints] = useState<string[]>([]);
   const [editModelAnswer, setEditModelAnswer] = useState("");
+  const [editPoints, setEditPoints] = useState<ConceptPoint[]>([]);
   const [editContext, setEditContext] = useState("");
   const [editTargetLevels, setEditTargetLevels] = useState<number | null>(DEFAULT_TARGET_LEVELS);
   const [editPanelSkills, setEditPanelSkills] = useState<any[]>([]);
@@ -746,6 +748,7 @@ export function SpaceRepetitionModal({
     setNewProjectId(null);
     setNewHints([]);
     setNewModelAnswer("");
+    setNewPoints([]);
     setNewContext("");
     setNewTargetLevels(DEFAULT_TARGET_LEVELS);
   };
@@ -769,7 +772,7 @@ export function SpaceRepetitionModal({
           projectId: newProjectId,
           repetitionType: newType,
           ...(newType === "concept"
-            ? { ...pointsToFields(mergePointsWithTitles([], newHints)), conceptModelAnswer: newModelAnswer.trim() }
+            ? { ...pointsToFields(newPoints), conceptModelAnswer: newModelAnswer.trim() }
             : { conceptHints: newType !== "practice" ? newHints.map((h) => h.trim()).filter(Boolean) : [] }),
           contextDescription: newType === "context" ? newContext.trim() : "",
           targetLevels: newType === "context" ? newTargetLevels : null,
@@ -803,6 +806,7 @@ export function SpaceRepetitionModal({
     setEditProjectId(practice.projectId ?? null);
     setEditHints(Array.isArray(practice.conceptHints) ? practice.conceptHints : []);
     setEditModelAnswer(practice.conceptModelAnswer ?? "");
+    setEditPoints(getConceptPoints(practice));
     setEditContext(practice.contextDescription ?? "");
     setEditTargetLevels(practice.targetLevels ?? (practice.repetitionType === "context" ? null : DEFAULT_TARGET_LEVELS));
     setCurrentPanel("edit");
@@ -825,7 +829,7 @@ export function SpaceRepetitionModal({
           projectId: editProjectId,
           repetitionType: editType,
           ...(editType === "concept"
-            ? { ...pointsToFields(mergePointsWithTitles(getConceptPoints(practices.find((p) => p.id === editingId) ?? { startDate: "" }), editHints)), conceptModelAnswer: editModelAnswer.trim() }
+            ? { ...pointsToFields(editPoints), conceptModelAnswer: editModelAnswer.trim() }
             : { conceptHints: editType !== "practice" ? editHints.map((h) => h.trim()).filter(Boolean) : [] }),
           contextDescription: editType === "context" ? editContext.trim() : "",
           targetLevels: editType === "context" ? editTargetLevels : null,
@@ -1140,12 +1144,12 @@ export function SpaceRepetitionModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md p-0 border-0 bg-background max-h-[85vh] overflow-y-auto minimal-scrollbar">
+      <DialogContent className="w-[calc(100%-2.5rem)] max-w-md p-0 border-0 bg-transparent shadow-none rounded-3xl sm:rounded-3xl overflow-hidden">
         <VisuallyHidden>
           <DialogTitle>Repetición Espaciada</DialogTitle>
           <DialogDescription>Gestiona tus prácticas con repetición espaciada</DialogDescription>
         </VisuallyHidden>
-        <div className="overflow-hidden rounded-3xl border border-border/50">
+        <div className="max-h-[80vh] overflow-y-auto overflow-x-hidden minimal-scrollbar rounded-3xl border border-border/50 bg-background shadow-lg">
           {notification && (
             <motion.div
               initial={{ opacity: 0, y: -10 }}
@@ -1208,6 +1212,8 @@ export function SpaceRepetitionModal({
               hints={newHints}
               onHintsChange={setNewHints}
               modelAnswer={newModelAnswer}
+              points={newPoints}
+              onPointsChange={setNewPoints}
               onModelAnswerChange={setNewModelAnswer}
               onEmojiChange={setNewEmoji}
               onNameChange={setNewName}
@@ -1261,6 +1267,8 @@ export function SpaceRepetitionModal({
               hints={editHints}
               onHintsChange={setEditHints}
               modelAnswer={editModelAnswer}
+              points={editPoints}
+              onPointsChange={setEditPoints}
               onModelAnswerChange={setEditModelAnswer}
               onEmojiChange={setEditEmoji}
               onNameChange={setEditName}
@@ -2149,6 +2157,56 @@ function RepetitionTypeBlocks({
   );
 }
 
+// Puntos principales de un concepto en el formulario: título + desarrollo opcional. Las demás
+// pistas del punto (palabras clave, pregunta, imagen) se conservan y se editan manteniendo
+// apretado el punto durante el repaso.
+function ConceptPointsEditor({ points, onChange }: { points: ConceptPoint[]; onChange: (points: ConceptPoint[]) => void }) {
+  const rows = points.length === 0 ? [{ id: "draft-0", title: "" }] : points;
+  // La fila vacía inicial recibe un id real recién cuando se escribe algo en ella.
+  const update = (idx: number, patch: Partial<ConceptPoint>) =>
+    onChange(rows.map((p, i) => (i === idx ? { ...p, ...patch, id: p.id.startsWith("draft-") ? newId() : p.id } : p)));
+  const remove = (idx: number) => onChange(rows.filter((_, i) => i !== idx));
+  const add = () => onChange([...rows, { id: newId(), title: "" }]);
+
+  return (
+    <div>
+      <label className="block text-sm font-medium text-foreground mb-2">Puntos principales (pistas)</label>
+      <div className="flex flex-col gap-3">
+        {rows.map((point, idx) => (
+          <div key={point.id} className="rounded-xl border border-border/40 p-2 flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground text-sm font-bold">{idx + 1}.</span>
+              <Input
+                value={point.title}
+                onChange={(e) => update(idx, { title: e.target.value })}
+                placeholder="Título del punto"
+                className="rounded-xl flex-1"
+              />
+              {rows.length > 1 && (
+                <button type="button" onClick={() => remove(idx)} className="text-muted-foreground hover:text-red-500 transition-colors" title="Quitar punto">
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+            <Textarea
+              value={point.explanation ?? ""}
+              onChange={(e) => update(idx, { explanation: e.target.value })}
+              placeholder="Desarrollo del punto (opcional)"
+              className="min-h-16 rounded-xl text-sm"
+            />
+          </div>
+        ))}
+        <Button type="button" variant="outline" onClick={add} className="rounded-xl text-xs">
+          <Plus className="h-4 w-4 mr-1" /> Agregar punto
+        </Button>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Se muestran de a uno como pistas al repasar. Durante el repaso podés mantener apretado un punto para agregarle palabras clave, una pregunta o una imagen.
+      </p>
+    </div>
+  );
+}
+
 // Respuesta completa de un concepto: otro tipo de ayuda y el contenido original con el que se compara.
 function ModelAnswerField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   return (
@@ -2254,6 +2312,8 @@ function AddPanel({
   hints,
   onHintsChange,
   modelAnswer,
+  points,
+  onPointsChange,
   onModelAnswerChange,
   onEmojiChange,
   onNameChange,
@@ -2286,6 +2346,8 @@ function AddPanel({
   hints: string[];
   onHintsChange: (hints: string[]) => void;
   modelAnswer: string;
+  points: ConceptPoint[];
+  onPointsChange: (points: ConceptPoint[]) => void;
   onModelAnswerChange: (value: string) => void;
   onEmojiChange: (emoji: string) => void;
   onNameChange: (name: string) => void;
@@ -2348,7 +2410,7 @@ function AddPanel({
         </div>
 
         {/* Pistas (solo Repetición de conceptos) */}
-        {repetitionType === "concept" && <><HintsEditor hints={hints} onChange={onHintsChange} /><ModelAnswerField value={modelAnswer} onChange={onModelAnswerChange} /></>}
+        {repetitionType === "concept" && <><ConceptPointsEditor points={points} onChange={onPointsChange} /><ModelAnswerField value={modelAnswer} onChange={onModelAnswerChange} /></>}
 
         {/* Contexto + cómo quiero responder (solo Repetición por contexto) */}
         {repetitionType === "context" && (
@@ -2544,6 +2606,8 @@ function EditPanel({
   hints,
   onHintsChange,
   modelAnswer,
+  points,
+  onPointsChange,
   onModelAnswerChange,
   onEmojiChange,
   onNameChange,
@@ -2577,6 +2641,8 @@ function EditPanel({
   hints: string[];
   onHintsChange: (hints: string[]) => void;
   modelAnswer: string;
+  points: ConceptPoint[];
+  onPointsChange: (points: ConceptPoint[]) => void;
   onModelAnswerChange: (value: string) => void;
   onEmojiChange: (emoji: string) => void;
   onNameChange: (name: string) => void;
@@ -2640,7 +2706,7 @@ function EditPanel({
         </div>
 
         {/* Pistas (solo Repetición de conceptos) */}
-        {repetitionType === "concept" && <><HintsEditor hints={hints} onChange={onHintsChange} /><ModelAnswerField value={modelAnswer} onChange={onModelAnswerChange} /></>}
+        {repetitionType === "concept" && <><ConceptPointsEditor points={points} onChange={onPointsChange} /><ModelAnswerField value={modelAnswer} onChange={onModelAnswerChange} /></>}
 
         {/* Contexto + cómo quiero responder (solo Repetición por contexto) */}
         {repetitionType === "context" && (

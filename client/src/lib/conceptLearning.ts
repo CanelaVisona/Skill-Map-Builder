@@ -325,7 +325,7 @@ export function recommendFromRecallChecks(
   return {
     activity: "free",
     helpLevel: 5,
-    reason: "Comprendés la idea, identificás los puntos y podés desarrollarlos: podés intentar sin pistas (solo si te sentís cómodo).",
+    reason: "Comprendés la idea, identificás los puntos y podés desarrollarlos: el próximo paso es recuperarlo sin pistas.",
     focusPointIds: focus,
     at,
   };
@@ -416,7 +416,7 @@ export function completeSession(
         : {
             activity: usedLevel + 1 >= 5 ? "free" : "hints",
             helpLevel: clampLevel(usedLevel + 1),
-            reason: "Recordaste todo con este nivel de ayuda: la próxima podés probar con un poco menos (solo si te sentís cómodo).",
+            reason: "Recordaste todo con este nivel de ayuda: la próxima vez vas a usar un poco menos de ayuda.",
             focusPointIds: [],
             at,
           };
